@@ -1,0 +1,14 @@
+{
+  "comment": "The dangerous case, recorded. The principal holds Reader on ONE resource group, so it cannot read permissions at the subscription's own scope and ARM answers 403 AuthorizationFailed. scope_verified stays false and the code is SCOPE_UNVERIFIED (Req 12.3, 12.12) — and note that this same principal's inventory query would succeed and return that group's resources, which is exactly why the gate cannot be a coverage check.",
+  "status": 403,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-failure-cause": "gateway"
+  },
+  "body": {
+    "error": {
+      "code": "AuthorizationFailed",
+      "message": "The client '22222222-2222-2222-2222-222222222222' with object id '22222222-2222-2222-2222-222222222222' does not have authorization to perform action 'Microsoft.Authorization/permissions/read' over scope '/subscriptions/3f2b0000-0000-0000-0000-000000000000' or the scope is invalid. If access was recently granted, please refresh your credentials."
+    }
+  }
+}

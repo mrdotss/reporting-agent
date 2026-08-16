@@ -1,0 +1,21 @@
+{
+  "comment": "A custom role granting '*/read' at subscription scope while subtracting the resources read through notActions. The grant half matches and the deny half cancels it, so scope_verified is false (Req 12.2 — both halves are required). Recorded because an implementation reading only `actions` calls this a verified subscription scope, and every metric request behind it would then succeed against an estate it cannot enumerate.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "actions": [
+          "*/read"
+        ],
+        "notActions": [
+          "Microsoft.Resources/subscriptions/resources/read"
+        ],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    ]
+  }
+}

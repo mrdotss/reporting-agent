@@ -1,0 +1,36 @@
+{
+  "comment": "A resource_skus.list response for a SKU whose capabilities carry vCPUs but NOT vCPUsAvailable (Req 21.9) -- an older or unusual SKU listing that predates the capability, or one Azure simply never populated it for. The SKU catalog must record a sku_capability_missing gap naming the SKU and 'vCPUsAvailable', and must read no vCPU capacity from the vCPUs capability in its place; the accumulator must then emit no per-core derived value for any resource carrying this SKU. MemoryGB IS present here, so this fixture isolates a missing vCPUsAvailable from a missing MemoryGB -- resource_skus_missing_memory_gb.json is the sibling for the other capability.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "resourceType": "virtualMachines",
+        "name": "Standard_Legacy_A2",
+        "tier": "Standard",
+        "size": "A2",
+        "family": "standardA0_A7Family",
+        "locations": [
+          "southeastasia"
+        ],
+        "capabilities": [
+          {
+            "name": "vCPUs",
+            "value": "2"
+          },
+          {
+            "name": "MemoryGB",
+            "value": "3.5"
+          },
+          {
+            "name": "MaxDataDiskCount",
+            "value": "4"
+          }
+        ],
+        "restrictions": []
+      }
+    ]
+  }
+}

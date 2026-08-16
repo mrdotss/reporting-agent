@@ -1,0 +1,776 @@
+import { existsSync, readFileSync, readdirSync } from "node:fs"
+import path from "node:path"
+import { fileURLToPath } from "node:url"
+
+import ts from "typescript"
+import { describe, expect, test } from "vitest"
+
+/**
+ * Hygiene guards for the web-side properties themselves (Requirements 42.1,
+ * 42.7, 42.8).
+ *
+ * A property test that passes by testing nothing is worse than no test, because
+ * it reports green. Each rule below makes one specific way of doing that a
+ * failure:
+ *
+ * 1. **No property is skipped, isolated, or expected to fail** (Requirement
+ *    42.7). `test.skip`, `test.todo`, `test.fails` and `test.only` are all
+ *    rejected — `.only` because it skips every sibling in the file, which is the
+ *    same outcome reached from the other direction.
+ * 2. **No `fc.assert` runs fewer than 100 generated cases** (Requirement 42.1).
+ *    `test/setup.ts` sets the global floor, so the failure mode is a local
+ *    `numRuns` below it.
+ * 3. **A property carrying declared cases raises its budget to match.**
+ *    fast-check draws declared examples from the *same* budget as generated
+ *    ones: `SourceValuesIterator` yields the examples first and then takes at
+ *    most `numRuns` values in total. So a property with five declared cases at
+ *    `numRuns: 100` runs **95** generated cases, not 100 — Requirement 42.1
+ *    quietly violated by the very act of satisfying Requirement 42.8. The rule
+ *    is therefore `numRuns >= 100 + declared cases`, which is the convention
+ *    both property modules already document.
+ * 4. **A fixed counterexample stays fixed** (Requirement 42.8). Retention is a
+ *    **ratchet**: {@link MINIMUM_DECLARED_CASES} records how many declared cases
+ *    each module carries today and the count may only grow. Adding a case is
+ *    free; deleting one fails.
+ *
+ * Every rule is asserted over the **TypeScript AST**, not over text. These
+ * modules explain in prose why they declare what they declare — the `numRuns`
+ * convention above is spelled out in a comment in each of them — so a regex for
+ * `numRuns` or for `skip` would fail on exactly the tree that documents the
+ * rules best. `typescript` is already a dev dependency; nothing is added for
+ * this.
+ *
+ * The agent half of these rules is `agent/tests/test_property_hygiene.py`. One
+ * requirement, two languages, deliberately parallel in structure.
+ */
+
+const projectRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  ".."
+)
+
+/** Requirement 42.1 — the floor, and the base of the rule 3 arithmetic. */
+const MINIMUM_RUNS = 100
+
+/** What makes a module a property module. */
+const PROPERTY_MODULE_SUFFIX = ".property.test.ts"
+
+/** Directories the discovery walk descends. `test/` holds this guard, not a property. */
+const PROPERTY_SEARCH_DIRECTORIES = [
+  "lib",
+  "app",
+  "components",
+  "hooks",
+] as const
+
+const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".next"])
+
+/**
+ * Requirement 42.8 — the ratchet. Distinct declared cases per module: the sum of
+ * the lengths of the case arrays each module hands to fast-check, counted once
+ * each however many properties share them.
+ *
+ * Every property module must appear here, which is what stops a new one from
+ * arriving unratcheted. Raise an entry when a counterexample is added; never
+ * lower one.
+ */
+const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
+  "lib/crypto.property.test.ts": 11,
+  "lib/aws/redact.property.test.ts": 5,
+  "lib/subscriptions/azure-artifacts.property.test.ts": 8,
+}
+
+/** Recorded from the tree, so deleting a whole entry above is caught too. */
+const MINIMUM_DECLARED_CASES_TOTAL = 24
+
+/**
+ * Requirement 42.7 — modifiers that stop a property from running or accept its
+ * failure.
+ *
+ * `only` earns its place: it does not mark *this* property as skipped, it skips
+ * every other one in the file. `skipIf` and `runIf` are conditional forms of the
+ * same thing, and a condition that is true on CI and false locally is the worst
+ * version of it.
+ */
+const FORBIDDEN_MODIFIERS = new Set([
+  "skip",
+  "skipIf",
+  "runIf",
+  "todo",
+  "fails",
+  "only",
+])
+
+/** The callers those modifiers would hang off. */
+const TEST_CALLERS = new Set(["test", "it", "describe", "suite", "bench"])
+
+// --- Reading ---------------------------------------------------------------
+
+function readProjectFile(relativePath: string): string {
+  const absolutePath = path.join(projectRoot, relativePath)
+  expect(
+    existsSync(absolutePath),
+    `${relativePath} is missing from ${projectRoot}`
+  ).toBe(true)
+  return readFileSync(absolutePath, "utf8")
+}
+
+/** Parsed with position info, so `getText` works for the identifier reads below. */
+function parseModule(relativePath: string): ts.SourceFile {
+  return ts.createSourceFile(
+    relativePath,
+    readProjectFile(relativePath),
+    ts.ScriptTarget.Latest,
+    true
+  )
+}
+
+/** Parse a source string, for the detector self-tests at the end. */
+function parseSource(source: string): ts.SourceFile {
+  return ts.createSourceFile(
+    "synthetic.property.test.ts",
+    source,
+    ts.ScriptTarget.Latest,
+    true
+  )
+}
+
+function walk(node: ts.Node, visit: (node: ts.Node) => void): void {
+  visit(node)
+  ts.forEachChild(node, (child) => walk(child, visit))
+}
+
+/** Every property module, as repository-relative sorted paths. */
+function listPropertyModules(): readonly string[] {
+  const found: string[] = []
+
+  const descend = (relative: string): void => {
+    const absolute = path.join(projectRoot, relative)
+    if (!existsSync(absolute)) return
+
+    for (const entry of readdirSync(absolute, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        if (EXCLUDED_DIRECTORIES.has(entry.name)) continue
+        descend(path.join(relative, entry.name))
+        continue
+      }
+      if (entry.isFile() && entry.name.endsWith(PROPERTY_MODULE_SUFFIX)) {
+        found.push(path.join(relative, entry.name))
+      }
+    }
+  }
+
+  for (const directory of PROPERTY_SEARCH_DIRECTORIES) descend(directory)
+
+  return found.sort()
+}
+
+// --- Array literals declared at module scope -------------------------------
+
+/**
+ * Every `const NAME = [ … ]` in the module, by name, with its element count.
+ *
+ * Used twice: to resolve an `examples: EXAMPLES` reference to a case count, and
+ * to resolve a `numRuns: NUM_RUNS` whose initializer reads `100 +
+ * EXAMPLES.length`.
+ */
+function arrayLengthsByName(
+  source: ts.SourceFile
+): ReadonlyMap<string, number> {
+  const lengths = new Map<string, number>()
+
+  walk(source, (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined &&
+      ts.isArrayLiteralExpression(node.initializer)
+    ) {
+      lengths.set(node.name.text, node.initializer.elements.length)
+    }
+  })
+
+  return lengths
+}
+
+/** Every `const NAME = <expression>` in the module, by name. */
+function initializersByName(
+  source: ts.SourceFile
+): ReadonlyMap<string, ts.Expression> {
+  const initializers = new Map<string, ts.Expression>()
+
+  walk(source, (node) => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer !== undefined
+    ) {
+      initializers.set(node.name.text, node.initializer)
+    }
+  })
+
+  return initializers
+}
+
+// --- `fc.assert` call sites ------------------------------------------------
+
+type AssertSite = {
+  readonly modulePath: string
+  readonly line: number
+  /** The options object, when one was passed. */
+  readonly options?: ts.ObjectLiteralExpression
+}
+
+function lineOf(source: ts.SourceFile, node: ts.Node): number {
+  return source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
+}
+
+/** Is this call `fc.assert(…)`, however `fast-check` was imported? */
+function isFcAssert(
+  node: ts.Node,
+  source: ts.SourceFile
+): node is ts.CallExpression {
+  if (!ts.isCallExpression(node)) return false
+  const callee = node.expression
+  if (ts.isPropertyAccessExpression(callee))
+    return callee.name.text === "assert"
+  return (
+    ts.isIdentifier(callee) && callee.text === "assert" && source !== undefined
+  )
+}
+
+function assertSites(
+  modulePath: string,
+  source: ts.SourceFile
+): readonly AssertSite[] {
+  const sites: AssertSite[] = []
+
+  walk(source, (node) => {
+    if (!isFcAssert(node, source)) return
+
+    const options = node.arguments[1]
+    sites.push({
+      modulePath,
+      line: lineOf(source, node),
+      options:
+        options !== undefined && ts.isObjectLiteralExpression(options)
+          ? options
+          : undefined,
+    })
+  })
+
+  return sites
+}
+
+function optionValue(
+  options: ts.ObjectLiteralExpression | undefined,
+  key: string
+): ts.Expression | undefined {
+  if (options === undefined) return undefined
+
+  for (const property of options.properties) {
+    if (!ts.isPropertyAssignment(property)) continue
+    if (property.name.getText() === key) return property.initializer
+  }
+
+  return undefined
+}
+
+/** Thrown-shaped result: a resolved number, or the reason it could not be read. */
+type Resolved = { readonly value: number } | { readonly unreadable: string }
+
+/**
+ * Resolve a `numRuns` expression to a number.
+ *
+ * Two forms are accepted, which are the two the property modules use: a numeric
+ * literal, and `<integer> + <identifier>.length` where the identifier names a
+ * module-scope array literal. Anything else is **unreadable**, and unreadable
+ * fails — a hygiene guard that guesses at a budget it cannot evaluate is not
+ * enforcing a floor, it is hoping for one.
+ */
+function resolveRunCount(
+  expression: ts.Expression,
+  source: ts.SourceFile
+): Resolved {
+  if (ts.isNumericLiteral(expression)) {
+    return { value: Number(expression.text) }
+  }
+
+  if (ts.isIdentifier(expression)) {
+    const initializer = initializersByName(source).get(expression.text)
+    if (initializer === undefined) {
+      return { unreadable: `${expression.text} is not declared in this module` }
+    }
+    return resolveRunCount(initializer, source)
+  }
+
+  if (
+    ts.isBinaryExpression(expression) &&
+    expression.operatorToken.kind === ts.SyntaxKind.PlusToken
+  ) {
+    const left = resolveRunCount(expression.left, source)
+    const right = resolveRunCount(expression.right, source)
+    if ("unreadable" in left) return left
+    if ("unreadable" in right) return right
+    return { value: left.value + right.value }
+  }
+
+  // `EXAMPLES.length`, the only property access the convention uses.
+  if (
+    ts.isPropertyAccessExpression(expression) &&
+    expression.name.text === "length" &&
+    ts.isIdentifier(expression.expression)
+  ) {
+    const length = arrayLengthsByName(source).get(expression.expression.text)
+    if (length === undefined) {
+      return {
+        unreadable: `${expression.expression.text} is not a module-scope array literal`,
+      }
+    }
+    return { value: length }
+  }
+
+  return { unreadable: expression.getText() }
+}
+
+/**
+ * How many declared cases this `examples:` value carries.
+ *
+ * An inline array literal is counted directly; an identifier is resolved to a
+ * module-scope array literal. Anything else is unreadable and fails.
+ */
+function resolveCaseCount(
+  expression: ts.Expression,
+  source: ts.SourceFile
+): Resolved {
+  if (ts.isArrayLiteralExpression(expression)) {
+    return { value: expression.elements.length }
+  }
+
+  if (ts.isIdentifier(expression)) {
+    const length = arrayLengthsByName(source).get(expression.text)
+    if (length === undefined) {
+      return {
+        unreadable: `${expression.text} is not a module-scope array literal`,
+      }
+    }
+    return { value: length }
+  }
+
+  return { unreadable: expression.getText() }
+}
+
+/**
+ * Distinct declared cases in a module (Requirement 42.8's ratchet).
+ *
+ * Distinct rather than summed per call site: three properties sharing one
+ * five-case array have retained five counterexamples, not fifteen. Summing would
+ * make the floor rise by adding a property, which is not what the requirement is
+ * about.
+ */
+function declaredCaseCount(modulePath: string): number {
+  const source = parseModule(modulePath)
+  const bySource = new Map<string, number>()
+
+  for (const site of assertSites(modulePath, source)) {
+    const examples = optionValue(site.options, "examples")
+    if (examples === undefined) continue
+
+    const key = ts.isIdentifier(examples)
+      ? examples.text
+      : `inline@${site.line}`
+    const resolved = resolveCaseCount(examples, source)
+
+    expect(
+      resolved,
+      `${modulePath}:${site.line} declares examples the guard cannot read`
+    ).toHaveProperty("value")
+
+    if ("value" in resolved) bySource.set(key, resolved.value)
+  }
+
+  return [...bySource.values()].reduce((total, count) => total + count, 0)
+}
+
+// --- The forbidden modifiers ----------------------------------------------
+
+/**
+ * Every forbidden `test.skip` / `describe.only` style call in the module, as
+ * readable labels.
+ *
+ * Matched on the AST, so a comment or a string mentioning `skip` is not a hit —
+ * and neither is a legitimate `expect(…).toBe("skip")`.
+ */
+function modifierOffenders(
+  modulePath: string,
+  source: ts.SourceFile
+): readonly string[] {
+  const offenders: string[] = []
+
+  walk(source, (node) => {
+    if (!ts.isCallExpression(node)) return
+
+    let callee = node.expression
+    const modifiers: string[] = []
+
+    // Unwind `test.concurrent.skip` as well as `test.skip`.
+    while (ts.isPropertyAccessExpression(callee)) {
+      modifiers.unshift(callee.name.text)
+      callee = callee.expression
+    }
+
+    if (!ts.isIdentifier(callee) || !TEST_CALLERS.has(callee.text)) return
+
+    for (const modifier of modifiers) {
+      if (FORBIDDEN_MODIFIERS.has(modifier)) {
+        offenders.push(
+          `${modulePath}:${lineOf(source, node)} ${callee.text}.${modifier}`
+        )
+      }
+    }
+  })
+
+  return offenders
+}
+
+// ---------------------------------------------------------------------------
+
+describe("Requirements 42.1, 42.7 — the scan sees the properties at all", () => {
+  test("property modules are found", () => {
+    const modules = listPropertyModules()
+
+    expect(
+      modules.length,
+      `no ${PROPERTY_MODULE_SUFFIX} module was found under ` +
+        `${PROPERTY_SEARCH_DIRECTORIES.join(", ")}, so every rule below would ` +
+        `assert nothing`
+    ).toBeGreaterThan(0)
+
+    // Named anchors. A listing that stopped reaching one of these would leave
+    // the rules green over the remainder.
+    expect(modules).toEqual([...Object.keys(MINIMUM_DECLARED_CASES)].sort())
+  })
+
+  test("every property module registers in the ratchet", () => {
+    // Exhaustive in the direction that matters: a module added later must be
+    // registered before the suite passes, so its declared cases are ratcheted
+    // from the day it lands.
+    const unregistered = listPropertyModules().filter(
+      (modulePath) => !(modulePath in MINIMUM_DECLARED_CASES)
+    )
+
+    expect(
+      unregistered,
+      `these property modules carry no entry in MINIMUM_DECLARED_CASES, so ` +
+        `their declared counterexamples are not retained (Requirement 42.8)`
+    ).toEqual([])
+  })
+
+  test("every property module contains at least one fc.assert", () => {
+    for (const modulePath of listPropertyModules()) {
+      const sites = assertSites(modulePath, parseModule(modulePath))
+
+      expect(
+        sites.length,
+        `${modulePath} is named a property module but hands nothing to fast-check`
+      ).toBeGreaterThan(0)
+    }
+  })
+
+  test("the assert-site reader finds every call in a known module", () => {
+    // The anchor for the reader. `lib/crypto.property.test.ts` carries five
+    // properties, four of them with declared cases and one relying on the global
+    // floor — which is the shape rule 3 below has to handle correctly.
+    const modulePath = "lib/crypto.property.test.ts"
+    const sites = assertSites(modulePath, parseModule(modulePath))
+
+    expect(sites.length).toBe(5)
+    expect(sites.filter((site) => site.options !== undefined).length).toBe(4)
+  })
+})
+
+describe("Requirement 42.7 — no property is skipped, isolated or expected to fail", () => {
+  test("no forbidden modifier appears in any property module", () => {
+    const offenders = listPropertyModules().flatMap((modulePath) =>
+      modifierOffenders(modulePath, parseModule(modulePath))
+    )
+
+    expect(
+      offenders,
+      `a property that does not run reports green while proving nothing; ` +
+        `.only is included because it skips every sibling in the file`
+    ).toEqual([])
+  })
+
+  test.each([
+    ['test.skip("p", () => {})', true],
+    ['it.skip("p", () => {})', true],
+    ['describe.skip("p", () => {})', true],
+    ['test.only("p", () => {})', true],
+    ['describe.only("p", () => {})', true],
+    ['test.todo("p")', true],
+    ['test.fails("p", () => {})', true],
+    ["test.skipIf(process.env.CI)('p', () => {})", true],
+    ["test.runIf(process.env.CI)('p', () => {})", true],
+    ['test.concurrent.skip("p", () => {})', true],
+    // Permitted: the ordinary forms, and prose or data that merely says "skip".
+    ['test("p", () => {})', false],
+    ['describe("p", () => {})', false],
+    ['test.each([1, 2])("p %i", () => {})', false],
+    ["// do not test.skip this property", false],
+    ['const message = "test.skip is forbidden here"', false],
+    ['expect(outcome).toBe("skip")', false],
+    // `fc.pre` is a precondition, not a skip: the global `maxSkipsPerRun` is
+    // what bounds it, and Requirement 42.7 wants it bounded rather than banned.
+    ["fc.pre(value > 0)", false],
+  ] as const)("the detector on %s → %s", (source, expected) => {
+    const parsed = parseSource(source)
+    expect(modifierOffenders("synthetic", parsed).length > 0).toBe(expected)
+  })
+})
+
+describe("Requirement 42.1 — every property runs at least 100 generated cases", () => {
+  test("the global floor is configured in test/setup.ts", () => {
+    // Read from the AST of the real file rather than trusted: this is the single
+    // declaration that gives a property with no options of its own its 100 runs.
+    const setup = parseModule(path.join("test", "setup.ts"))
+    let configured: ts.ObjectLiteralExpression | undefined
+
+    walk(setup, (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText().endsWith("configureGlobal") &&
+        node.arguments[0] !== undefined &&
+        ts.isObjectLiteralExpression(node.arguments[0])
+      ) {
+        configured = node.arguments[0]
+      }
+    })
+
+    expect(
+      configured,
+      "test/setup.ts calls no fc.configureGlobal"
+    ).toBeDefined()
+
+    const runs = optionValue(configured, "numRuns")
+    expect(runs, "fc.configureGlobal declares no numRuns").toBeDefined()
+
+    const resolved = resolveRunCount(runs!, setup)
+    expect(resolved).toHaveProperty("value")
+    expect("value" in resolved && resolved.value).toBeGreaterThanOrEqual(
+      MINIMUM_RUNS
+    )
+
+    // Requirement 42.7's precondition bound. `maxSkips = maxSkipsPerRun *
+    // numRuns`, so this is what makes a property that filters away most of its
+    // input fail rather than pass over the remainder. Asserted as a ceiling so
+    // it cannot be loosened.
+    const skips = optionValue(configured, "maxSkipsPerRun")
+    expect(skips, "fc.configureGlobal declares no maxSkipsPerRun").toBeDefined()
+    expect(Number(skips!.getText())).toBeLessThanOrEqual(0.25)
+
+    // Requirement 42.3 — the failure report carries the shrunk counterexample
+    // with the seed that re-runs it.
+    expect(optionValue(configured, "verbose")).toBeDefined()
+  })
+
+  test("no fc.assert declares a run count below the floor", () => {
+    const offenders: string[] = []
+
+    for (const modulePath of listPropertyModules()) {
+      const source = parseModule(modulePath)
+
+      for (const site of assertSites(modulePath, source)) {
+        const runs = optionValue(site.options, "numRuns")
+        // No declaration is fine: the global floor above applies.
+        if (runs === undefined) continue
+
+        const resolved = resolveRunCount(runs, source)
+        if ("unreadable" in resolved) {
+          offenders.push(
+            `${modulePath}:${site.line} declares numRuns the guard cannot read: ` +
+              resolved.unreadable
+          )
+        } else if (resolved.value < MINIMUM_RUNS) {
+          offenders.push(
+            `${modulePath}:${site.line} declares numRuns=${resolved.value}, below ` +
+              `the floor of ${MINIMUM_RUNS}`
+          )
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  test("a property with declared cases raises its budget to cover them", () => {
+    // The rule that is easy to get wrong in the direction that looks right:
+    // fast-check yields declared examples from the same budget as generated
+    // ones, so retaining five counterexamples at the floor of 100 silently
+    // drops the generated count to 95. Satisfying Requirement 42.8 must not
+    // cost Requirement 42.1.
+    const offenders: string[] = []
+
+    for (const modulePath of listPropertyModules()) {
+      const source = parseModule(modulePath)
+
+      for (const site of assertSites(modulePath, source)) {
+        const examples = optionValue(site.options, "examples")
+        if (examples === undefined) continue
+
+        const cases = resolveCaseCount(examples, source)
+        if ("unreadable" in cases) {
+          offenders.push(
+            `${modulePath}:${site.line} declares examples the guard cannot read: ` +
+              cases.unreadable
+          )
+          continue
+        }
+
+        const runs = optionValue(site.options, "numRuns")
+        if (runs === undefined) {
+          offenders.push(
+            `${modulePath}:${site.line} declares ${cases.value} cases but no ` +
+              `numRuns, so it generates ${MINIMUM_RUNS - cases.value} cases ` +
+              `rather than ${MINIMUM_RUNS}`
+          )
+          continue
+        }
+
+        const resolved = resolveRunCount(runs, source)
+        if ("unreadable" in resolved) {
+          offenders.push(
+            `${modulePath}:${site.line} declares numRuns the guard cannot read: ` +
+              resolved.unreadable
+          )
+        } else if (resolved.value < MINIMUM_RUNS + cases.value) {
+          offenders.push(
+            `${modulePath}:${site.line} declares ${cases.value} cases at ` +
+              `numRuns=${resolved.value}; needs at least ` +
+              `${MINIMUM_RUNS + cases.value}`
+          )
+        }
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  test.each([
+    ["128", 128],
+    ["100", 100],
+    ["NUM_RUNS", 105],
+    ["100 + EXAMPLES.length", 105],
+    ["EXAMPLES.length", 5],
+  ] as const)(
+    "the run-count resolver reads %s as %i",
+    (expression, expected) => {
+      const source = parseSource(
+        "const EXAMPLES = [1, 2, 3, 4, 5]\n" +
+          "const NUM_RUNS = 100 + EXAMPLES.length\n" +
+          `fc.assert(fc.property(g, f), { numRuns: ${expression} })\n`
+      )
+      const runs = optionValue(
+        assertSites("synthetic", source)[0].options,
+        "numRuns"
+      )
+
+      expect(resolveRunCount(runs!, source)).toEqual({ value: expected })
+    }
+  )
+
+  test.each(["someRunCount", "config.numRuns", "Math.max(100, 4)", "100 * 2"])(
+    "the resolver refuses to guess at %s",
+    (expression) => {
+      // Failing closed is the point. A guard that assumed an unreadable
+      // expression was ≥ 100 would be enforcing nothing on exactly the sites that
+      // stopped being simple.
+      const source = parseSource(
+        `fc.assert(fc.property(g, f), { numRuns: ${expression} })\n`
+      )
+      const runs = optionValue(
+        assertSites("synthetic", source)[0].options,
+        "numRuns"
+      )
+
+      expect(resolveRunCount(runs!, source)).toHaveProperty("unreadable")
+    }
+  )
+})
+
+describe("Requirement 42.8 — a fixed counterexample stays fixed", () => {
+  test.each(Object.entries(MINIMUM_DECLARED_CASES))(
+    "%s retains at least %i declared cases",
+    (modulePath, minimum) => {
+      // The ratchet. A declared case is the committed form of "this input broke
+      // us once" — the only form that runs for everyone on every subsequent
+      // execution.
+      expect(
+        existsSync(path.join(projectRoot, modulePath)),
+        `${modulePath} is absent`
+      ).toBe(true)
+
+      expect(
+        declaredCaseCount(modulePath),
+        `${modulePath} declares fewer cases than it did; raise the entry when you ` +
+          `add one, never lower it`
+      ).toBeGreaterThanOrEqual(minimum)
+    }
+  )
+
+  test("the recorded total still accounts for the tree", () => {
+    // Catches what the per-module ratchet cannot: deleting an entry from the map
+    // together with the cases it guarded. The per-module test would then simply
+    // not run for that module, and report green.
+    const total = listPropertyModules().reduce(
+      (sum, modulePath) => sum + declaredCaseCount(modulePath),
+      0
+    )
+
+    expect(total).toBeGreaterThanOrEqual(MINIMUM_DECLARED_CASES_TOTAL)
+    expect(
+      Object.values(MINIMUM_DECLARED_CASES).reduce((sum, n) => sum + n, 0)
+    ).toBeGreaterThanOrEqual(MINIMUM_DECLARED_CASES_TOTAL)
+  })
+
+  test("cases shared by several properties are counted once", () => {
+    // The distinctness rule, proven rather than described. Three properties
+    // sharing one five-case array have retained five counterexamples; summing
+    // per call site would report fifteen and let the floor rise by adding a
+    // property that retains nothing new.
+    const source = parseSource(
+      "const EXAMPLES = [1, 2, 3, 4, 5]\n" +
+        "fc.assert(fc.property(g, f), { numRuns: 105, examples: EXAMPLES })\n" +
+        "fc.assert(fc.property(g, f), { numRuns: 105, examples: EXAMPLES })\n" +
+        "fc.assert(fc.property(g, f), { numRuns: 105, examples: EXAMPLES })\n"
+    )
+
+    const distinct = new Map<string, number>()
+    for (const site of assertSites("synthetic", source)) {
+      const examples = optionValue(site.options, "examples")!
+      const resolved = resolveCaseCount(examples, source)
+      if ("value" in resolved) {
+        distinct.set((examples as ts.Identifier).text, resolved.value)
+      }
+    }
+
+    expect(assertSites("synthetic", source).length).toBe(3)
+    expect([...distinct.values()].reduce((a, b) => a + b, 0)).toBe(5)
+  })
+
+  test("the case counter reads both the inline and the referenced form", () => {
+    const source = parseSource(
+      "const EXAMPLES = [1, 2]\n" +
+        "fc.assert(fc.property(g, f), { numRuns: 102, examples: EXAMPLES })\n" +
+        "fc.assert(fc.property(g, f), { numRuns: 103, examples: [[1], [2], [3]] })\n"
+    )
+    const sites = assertSites("synthetic", source)
+
+    expect(
+      resolveCaseCount(optionValue(sites[0].options, "examples")!, source)
+    ).toEqual({ value: 2 })
+    expect(
+      resolveCaseCount(optionValue(sites[1].options, "examples")!, source)
+    ).toEqual({ value: 3 })
+  })
+})

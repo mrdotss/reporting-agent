@@ -1,0 +1,28 @@
+{
+  "comment": "x-ms-user-quota-remaining is exactly '1' (Req 20.3): the boundary value for 'issue the next paged request immediately, with no interposed wait'. A collector that treats only values strictly greater than 1 as free of a wait would wait unnecessarily here and this fixture exists to catch exactly that off-by-one. Carries a skipToken so a real collector does have a next request to issue immediately.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "1",
+    "x-ms-user-quota-resets-after": "00:00:05"
+  },
+  "body": {
+    "totalRecords": 1,
+    "count": 1,
+    "resultTruncated": "true",
+    "skipToken": "eyJ0eXAiOiJza2lwIiwicGFnZSI6Mn0=",
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-app-01",
+        "name": "prod-app-01",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {},
+        "sku": "Standard_D2s_v5",
+        "powerState": "PowerState/running"
+      }
+    ],
+    "facets": []
+  }
+}

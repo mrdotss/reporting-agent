@@ -1,0 +1,123 @@
+{
+  "catalog_version": "1.0.0",
+  "resource_types": {
+    "Microsoft.Compute/virtualMachines": {
+      "metric_namespace": "Microsoft.Compute/virtualMachines",
+      "sku_capabilities": ["vCPUsAvailable", "MemoryGB"],
+      "metrics": [
+        {
+          "name": "Percentage CPU",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 2,
+          "percentiles": ["p50", "p90", "p95", "p99"]
+        },
+        {
+          "name": "Available Memory Bytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 0
+        },
+        {
+          "name": "Disk Read Bytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 0
+        },
+        {
+          "name": "Disk Write Bytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 0
+        },
+        {
+          "name": "Disk Read Operations/Sec",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 2
+        },
+        {
+          "name": "Disk Write Operations/Sec",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 2
+        },
+        {
+          "name": "Network In Total",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 0,
+          "label": "NIC-level bytes",
+          "interval_scoped": true
+        },
+        {
+          "name": "Network Out Total",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "scale": 0,
+          "label": "NIC-level bytes",
+          "interval_scoped": true
+        }
+      ],
+      "derived": [
+        {
+          "statistic_id": "memory_used_pct",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "scale": 2,
+          "observation": "host_observed",
+          "note": "Host-observed. Typically reads 1-3 percentage points below the guest-reported value, because the host cannot observe guest-internal caching and reclaim.",
+          "formula": "(sku_memory_bytes - available_memory_bytes) / sku_memory_bytes * 100",
+          "sources": [
+            {
+              "kind": "metric",
+              "name": "Available Memory Bytes",
+              "statistic": "avg",
+              "binds": "available_memory_bytes",
+              "for_statistic": "avg"
+            },
+            {
+              "kind": "metric",
+              "name": "Available Memory Bytes",
+              "statistic": "min",
+              "binds": "available_memory_bytes",
+              "for_statistic": "max"
+            },
+            {
+              "kind": "metric",
+              "name": "Available Memory Bytes",
+              "statistic": "max",
+              "binds": "available_memory_bytes",
+              "for_statistic": "min"
+            },
+            {
+              "kind": "sku_capability",
+              "name": "MemoryGB",
+              "binds": "sku_memory_bytes",
+              "unit": "bytes"
+            }
+          ]
+        }
+      ],
+      "enhanced_counters": [
+        {
+          "object": "LogicalDisk",
+          "counter": "% Free Space",
+          "per_instance": true,
+          "statistic_id": "disk_free_pct",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "scale": 2
+        }
+      ]
+    }
+  }
+}

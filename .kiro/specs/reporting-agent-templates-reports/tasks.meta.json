@@ -1,0 +1,688 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Move `OWNER_TAG_KEY` and `owner_tags` into the pure storage base": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786851975741
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786853090612
+      }
+    ],
+    "1.2 Extract `run_collection(...)` from `collect/pipeline.py`, keeping the existing entry point as a wrapper": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786851982254
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786855605517
+      }
+    ],
+    "1.4 Add `RPT_PROSE_MODEL_ID` to the agent's config and create `agent/.env.example`": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786851988004
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786855612088
+      }
+    ],
+    "1.5 Resolve, pin and smoke-test the two front-end dependency families": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786851994721
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786855619426
+      }
+    ],
+    "1.6 Pin the three agent dependencies and lock them": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786855628902
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786856669931
+      }
+    ],
+    "1.3 Add the six terminal error codes to both halves": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786856676464
+      },
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786867129920
+      }
+    ],
+    "1. Foundation touch-ups and the two unpinned dependency families": [
+      {
+        "executionId": "57270157-78da-4719-86c6-528c12b7cead",
+        "chatSessionId": "sess_5c7c6d45-9e64-401e-aaab-cc345e14165a",
+        "timestamp": 1786867130157
+      }
+    ],
+    "2.1 Define `report_templates` and `report_template_versions`": [
+      {
+        "executionId": "fa360cda-dbee-4c48-90c2-2d443841837f",
+        "chatSessionId": "sess_ab53ba23-478c-48a1-9700-fdae97e48785",
+        "timestamp": 1786873039616
+      },
+      {
+        "executionId": "fa360cda-dbee-4c48-90c2-2d443841837f",
+        "chatSessionId": "sess_ab53ba23-478c-48a1-9700-fdae97e48785",
+        "timestamp": 1786882430869
+      }
+    ],
+    "2.2 Define `report_verifications` and add `template_version_id` to `report_runs`": [
+      {
+        "executionId": "fa360cda-dbee-4c48-90c2-2d443841837f",
+        "chatSessionId": "sess_ab53ba23-478c-48a1-9700-fdae97e48785",
+        "timestamp": 1786882470471
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786889026249
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786889039042
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786891857215
+      }
+    ],
+    "2.3 Implement `lib/templates/store.ts`": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883158781
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883198010
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786888512010
+      }
+    ],
+    "2.4 Implement `lib/verifications/store.ts` and `lib/verifications/result.ts`": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883159383
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786888607855
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786889012042
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786891870713
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786893179658
+      }
+    ],
+    "2.5 Add the two new projections, extend `RunView`, and assert every key set in the same task": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883159581
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786893194300
+      }
+    ],
+    "2.6 Integration tests for versioning, verification append and the partial CHECK": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883159784
+      }
+    ],
+    "3.1 Declare the block-type set and the per-type config schemas, and guard the declarations": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883160005
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786888618065
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786888873841
+      }
+    ],
+    "3.2 Implement `lib/templates/definition.ts` — the zod definition schema": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883160255
+      }
+    ],
+    "3.3 Property test — definition validation is total and reports every violation": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883160477
+      }
+    ],
+    "3.4 Implement `lib/templates/version.ts` and its digest property": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883160676
+      }
+    ],
+    "3.5 Implement `lib/templates/period.ts` — the Period_Resolver — and its property": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883160893
+      }
+    ],
+    "3.6 Ship the three starter templates and seed them at account creation": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883161104
+      }
+    ],
+    "3.7 Implement `lib/templates/composer.ts` — the pure reducer — and its property": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883161324
+      }
+    ],
+    "4. Checkpoint — the definition model and the schema": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883161560
+      }
+    ],
+    "5.1 Implement `compile/definition.py` — the mirrored validator": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883161706
+      }
+    ],
+    "5.2 Ship the shared fixture corpus and the Mirror_Guard's behavioural half": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883161896
+      }
+    ],
+    "5.3 Implement `compile/snapshot_view.py` — the only source of a value": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883162121
+      }
+    ],
+    "5.4 Implement `compile/ast.py` and ship the AST numeric-leaf guard with it": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883162250
+      }
+    ],
+    "5.5 Implement `compile/figures.py` — the ledger and the cursor, in one task with the AST": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883162500
+      }
+    ],
+    "5.6 Implement `compile/format.py` and `compile/estimators.py`, with Property 1": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883162742
+      }
+    ],
+    "5.7 Implement `compile/scope.py` — the Scope_Resolver — with Property 7": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883162965
+      }
+    ],
+    "5.8 Implement `compile/blocks/` — one module per declared block type": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883163210
+      }
+    ],
+    "5.9 Implement `compare/delta.py` — the Delta_Compiler": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883163347
+      }
+    ],
+    "5.10 Unit tests for block compilation and the compile refusals": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883163568
+      }
+    ],
+    "6. Checkpoint — a snapshot compiles to an AST and a ledger": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883163708
+      }
+    ],
+    "7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883164044
+      }
+    ],
+    "7.2 Extend the Dockerfile — LibreOffice, arm64 fonts, a pre-warmed profile and the build assertions": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883164479
+      }
+    ],
+    "7.3 Append the categorical palette and add the shared palette module": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883164742
+      }
+    ],
+    "7.4 Implement `render/docx.py` — the DOCX emitter": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883165182
+      }
+    ],
+    "7.5 Implement `render/anchors.py` — the two structural contracts the verifier depends on": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883165542
+      }
+    ],
+    "7.6 Implement `render/charts.py` and `render/chartstyle.py`": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883166017
+      }
+    ],
+    "7.7 Implement `render/pdf.py` — conversion from the produced DOCX only": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883166381
+      }
+    ],
+    "7.8 Implement `render/html.py` — the second emitter over the same tree": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883166714
+      }
+    ],
+    "8. Checkpoint — a document renders, in both emitters": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167120
+      }
+    ],
+    "9.1 Implement `verify/findings.py` — the finding vocabulary and the result document": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167271
+      }
+    ],
+    "9.2 Implement `verify/tokens.py` — reading the document the way Word stores it": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167428
+      }
+    ],
+    "9.3 Implement `verify/masking.py` and `verify/allowlist.py` — five ordered stages": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167692
+      }
+    ],
+    "9.4 Property test — token extraction and prose masking": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167820
+      }
+    ],
+    "9.5 Implement `verify/anchors.py` — anchored cell equality — with Property 3": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883167985
+      }
+    ],
+    "9.6 Implement `verify/charts.py` — an image tied to the numbers beside it": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883168143
+      }
+    ],
+    "9.7 Implement `verify/coverage.py` — the gate that stops a clean empty report": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883168629
+      }
+    ],
+    "9.8 Implement `verify/pdf.py` — the fidelity gate": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883169087
+      }
+    ],
+    "9.9 Implement `verify/replay.py`, its purity guard and Property 4": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883169469
+      }
+    ],
+    "9.10 Implement `verify/drift.py`, `verify/ports.py` and Property 5": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883169764
+      }
+    ],
+    "9.11 Implement `verify/verifier.py` — the orchestrator and bidirectional completeness": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883170096
+      }
+    ],
+    "9.12 Implement `narrate/summary.py` and `narrate/review.py`": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883170570
+      }
+    ],
+    "9.13 Property test — the ledger and the AST agree in both directions": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883170857
+      }
+    ],
+    "10. Checkpoint — the verifier gates": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883171349
+      }
+    ],
+    "11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883171786
+      }
+    ],
+    "11.2 Route `verify_report` and `render_preview`, and write the invoke contract": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883172096
+      }
+    ],
+    "11.3 Emit the four declared event types and assert the ordering contract": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883172259
+      }
+    ],
+    "11.4 Write the report artifacts under the actor prefix and scrub before writing": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883172589
+      }
+    ],
+    "11.5 Drive the three phases, extend the reaper, and add the verification callback": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883173049
+      }
+    ],
+    "11.6 Integration tests for the extended machine, the reaper and the relay's reconstruction": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883173452
+      }
+    ],
+    "12. Checkpoint — a full run reaches `completed` behind a passing verification": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883173609
+      }
+    ],
+    "13.1 Implement the template routes and server actions": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883173941
+      }
+    ],
+    "13.2 Build the wizard shell and the seven steps": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883174384
+      }
+    ],
+    "13.3 Build the block composer — palette, canvas, inspector": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883174716
+      }
+    ],
+    "13.4 Build the style preset picker and its real thumbnails": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883174867
+      }
+    ],
+    "13.5 Build the paper preview and the real-preview path": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883175007
+      }
+    ],
+    "13.6 Build the reports list, the report detail surface and the provenance reveal": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883175346
+      }
+    ],
+    "13.7 Build the verification panel as an audit certificate": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883175651
+      }
+    ],
+    "13.8 Gate the download, extend the artifact-key predicate, and add Property 12": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883175983
+      }
+    ],
+    "13.9 Build the in-app charts and the delta table": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883176265
+      }
+    ],
+    "13.10 RTL tests for the composer and the report surfaces": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883176589
+      }
+    ],
+    "14.1 N1 — one digit changed": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883176893
+      }
+    ],
+    "14.2 N2 — two table columns transposed": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883177070
+      }
+    ],
+    "14.3 N3 — a block that rendered zero rows, and its twin that must pass": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883177402
+      }
+    ],
+    "14.4 N4 — a chart data hash mismatch": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883177870
+      }
+    ],
+    "14.5 N5 — a PDF converted under a comma-decimal locale": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883178349
+      }
+    ],
+    "14.6 N6 — an expired secret producing an empty scope": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883178641
+      }
+    ],
+    "14.7 The remaining blocking finding types, one test each": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883178996
+      }
+    ],
+    "14.8 The enumeration meta-test over all sixteen blocking types": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883179382
+      }
+    ],
+    "15.1 Complete the static boundary guards in both halves": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883179608
+      }
+    ],
+    "15.2 Extend the property-hygiene guards and run the foundation regression gate": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883179744
+      }
+    ],
+    "15.3 Wire and verify one full report run end to end": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883180079
+      }
+    ],
+    "16. Final checkpoint": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786883180410
+      }
+    ]
+  }
+}

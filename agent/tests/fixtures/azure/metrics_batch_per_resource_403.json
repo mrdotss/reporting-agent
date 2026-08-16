@@ -1,0 +1,67 @@
+{
+  "comment": "An HTTP 200 MetricResultsResponse in which one requested resource's metric carries a per-resource error at the Metric level (Req 29.1). prod-sql-01's 'Percentage CPU' entry answers with errorCode 'Forbidden' and no timeseries -- the call as a whole succeeded, so a collector that only inspects the top-level status would fold this silently into a zero. The collector must inspect every resource entry's errorCode and record a permission_denied gap for prod-sql-01 while prod-web-01's entry, whose errorCode is 'Success', folds normally.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "values": [
+      {
+        "starttime": "2026-07-01T00:00:00Z",
+        "endtime": "2026-07-01T01:00:00Z",
+        "interval": "PT1H",
+        "namespace": "microsoft.compute/virtualmachines",
+        "resourceregion": "southeastasia",
+        "resourceid": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        "value": [
+          {
+            "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01/providers/Microsoft.Insights/metrics/Percentage CPU",
+            "type": "Microsoft.Insights/metrics",
+            "name": {
+              "value": "Percentage CPU",
+              "localizedValue": "Percentage CPU"
+            },
+            "unit": "Percent",
+            "errorCode": "Success",
+            "timeseries": [
+              {
+                "metadatavalues": [],
+                "data": [
+                  {
+                    "timeStamp": "2026-07-01T00:00:00Z",
+                    "total": 1284.5,
+                    "count": 60,
+                    "minimum": 8.1,
+                    "maximum": 41.2
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "starttime": "2026-07-01T00:00:00Z",
+        "endtime": "2026-07-01T01:00:00Z",
+        "interval": "PT1H",
+        "namespace": "microsoft.compute/virtualmachines",
+        "resourceregion": "southeastasia",
+        "resourceid": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-sql-01",
+        "value": [
+          {
+            "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-sql-01/providers/Microsoft.Insights/metrics/Percentage CPU",
+            "type": "Microsoft.Insights/metrics",
+            "name": {
+              "value": "Percentage CPU",
+              "localizedValue": "Percentage CPU"
+            },
+            "unit": "Percent",
+            "errorCode": "Forbidden",
+            "errorMessage": "The caller does not have permission to read metrics for this resource.",
+            "timeseries": []
+          }
+        ]
+      }
+    ]
+  }
+}

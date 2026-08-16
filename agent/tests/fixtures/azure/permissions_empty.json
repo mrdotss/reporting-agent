@@ -1,0 +1,10 @@
+{
+  "comment": "HTTP 200 with an empty entry list: the request succeeded and proved nothing. This is what the subscription-scope permissions call returns for a principal whose only assignments sit below that scope and which can still read the permissions operation itself. Req 12.3 names the empty list explicitly, because 200 plus an empty array is the shape most likely to be read as success.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": []
+  }
+}

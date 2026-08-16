@@ -1,0 +1,14 @@
+{
+  "comment": "HTTP 429 carrying Retry-After as an HTTP-date (RFC 7231 IMF-fixdate), the second legal form Req 23.8 names -- 'Tue, 01 Jul 2026 00:05:00 GMT'. The metrics collector must parse this into a wait duration relative to when the response was received rather than rejecting it as unparseable just because it is not a bare integer; a test replaying this fixture supplies its own notion of 'now' (or asserts only that the collector attempted to parse it as a date, not as seconds) rather than this file asserting a real wall-clock wait.",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "retry-after": "Tue, 01 Jul 2026 00:05:00 GMT"
+  },
+  "body": {
+    "error": {
+      "code": "TooManyRequests",
+      "message": "Rate limit is exceeded. Try again later."
+    }
+  }
+}

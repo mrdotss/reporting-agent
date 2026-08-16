@@ -1,0 +1,50 @@
+{
+  "comment": "The other half of Req 31.6's condition: InstanceName is present as a column but empty on every row, rather than collapsed to the literal '_Total'. Azure Monitor Agent can produce either shape for the same underlying regression, and the requirement treats an absent or empty InstanceName identically to '_Total' -- a collector that only string-matches '_Total' would miss this recording and silently attribute an empty-instance row to a single volume.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "tables": [
+      {
+        "name": "PrimaryResult",
+        "columns": [
+          {
+            "name": "TimeGenerated",
+            "type": "datetime"
+          },
+          {
+            "name": "Computer",
+            "type": "string"
+          },
+          {
+            "name": "ObjectName",
+            "type": "string"
+          },
+          {
+            "name": "CounterName",
+            "type": "string"
+          },
+          {
+            "name": "InstanceName",
+            "type": "string"
+          },
+          {
+            "name": "CounterValue",
+            "type": "real"
+          }
+        ],
+        "rows": [
+          [
+            "2026-07-31T16:00:00Z",
+            "prod-sql-02",
+            "LogicalDisk",
+            "% Free Space",
+            "",
+            52.4
+          ]
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,80 @@
+{
+  "comment": "The Req 19.3 fixture: an Azure Resource Graph page holding 2 resource types across 2 locations, so a collection over it has to build more than one Azure client — one per (location, resource_type) group, because the batch metrics endpoint takes one metric namespace per call and its data plane is regional. That is what makes 'exactly one ClientSecretCredential, constructed before the first client' a countable claim rather than a reading of the code. Resource Graph lowercases `type`, projects `powerState` from properties.extended.instanceView.powerState.code, and returns an empty string for a resource that has no power state; one VM is recorded deallocated because that is ordinary and must not be dropped.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "14",
+    "x-ms-user-quota-resets-after": "00:00:05"
+  },
+  "body": {
+    "totalRecords": 5,
+    "count": 5,
+    "resultTruncated": "false",
+    "skipToken": null,
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        "name": "prod-web-01",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod",
+          "tier": "web"
+        },
+        "sku": "Standard_D4s_v5",
+        "powerState": "PowerState/running"
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-sql-01",
+        "name": "prod-sql-01",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod",
+          "tier": "data"
+        },
+        "sku": "Standard_E32-8s_v5",
+        "powerState": "PowerState/running"
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-dr-aue/providers/Microsoft.Compute/virtualMachines/dr-web-01",
+        "name": "dr-web-01",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "australiaeast",
+        "resourceGroup": "rg-dr-aue",
+        "tags": {
+          "env": "dr"
+        },
+        "sku": "Standard_D2s_v5",
+        "powerState": "PowerState/deallocated"
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Storage/storageAccounts/prodseastore01",
+        "name": "prodseastore01",
+        "type": "microsoft.storage/storageaccounts",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod"
+        },
+        "sku": "Standard_LRS",
+        "powerState": ""
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-dr-aue/providers/Microsoft.Storage/storageAccounts/draustore01",
+        "name": "draustore01",
+        "type": "microsoft.storage/storageaccounts",
+        "location": "australiaeast",
+        "resourceGroup": "rg-dr-aue",
+        "tags": {
+          "env": "dr"
+        },
+        "sku": "Standard_LRS",
+        "powerState": ""
+      }
+    ],
+    "facets": []
+  }
+}

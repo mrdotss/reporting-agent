@@ -1,0 +1,24 @@
+{
+  "comment": "Monitoring Reader at subscription scope and nothing else — a plausible 'least privilege' counter-offer from a customer. Metrics would flow; inventory would not, and there is nothing to collect metrics FOR. No pattern here matches Microsoft.Resources/subscriptions/resources/read, so scope_verified is false and the code is SCOPE_UNVERIFIED (Req 12.3). Recorded because a 200 carrying a long, legitimate-looking action list is the case an implementation that merely checks 'are there any entries' gets wrong.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "actions": [
+          "Microsoft.Insights/AlertRules/*/read",
+          "Microsoft.Insights/MetricDefinitions/read",
+          "Microsoft.Insights/Metrics/read",
+          "Microsoft.OperationalInsights/workspaces/query/read",
+          "Microsoft.OperationalInsights/workspaces/search/action",
+          "Microsoft.Support/*"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    ]
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "comment": "Page 1 of a 2-page Resource Graph collection (Req 20.2, 20.3). Carries a non-null skipToken, so the inventory collector must issue a further request rather than stopping here, and x-ms-user-quota-remaining is '9' (>= 1), so that next request must be issued with no interposed wait. The last row, prod-web-02, is the one that reappears verbatim on page 2 across the page boundary, which is what page_2_of_2_duplicate_boundary.json exists to pair with.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "9",
+    "x-ms-user-quota-resets-after": "00:00:05"
+  },
+  "body": {
+    "totalRecords": 3,
+    "count": 2,
+    "resultTruncated": "true",
+    "skipToken": "eyJ0eXAiOiJza2lwIiwicGFnZSI6MX0=",
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        "name": "prod-web-01",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod"
+        },
+        "sku": "Standard_D4s_v5",
+        "powerState": "PowerState/running"
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-02",
+        "name": "prod-web-02",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod"
+        },
+        "sku": "Standard_D4s_v5",
+        "powerState": "PowerState/running"
+      }
+    ],
+    "facets": []
+  }
+}

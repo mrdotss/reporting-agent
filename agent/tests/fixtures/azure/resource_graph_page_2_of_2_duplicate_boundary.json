@@ -1,0 +1,42 @@
+{
+  "comment": "Page 2 of the same collection as page_1_of_2.json (Req 20.12). The first row, prod-web-02, is byte-identical to the last row of page 1 -- the same resource id repeated across the skipToken page boundary, which the inventory collector must fold into exactly one entry while recording a duplicate_inventory_row gap, so the page boundary changes neither the resource count nor the snapshot content. carries no skipToken, so this is the final page: no further request follows. x-ms-user-quota-remaining is '8'.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "8",
+    "x-ms-user-quota-resets-after": "00:00:05"
+  },
+  "body": {
+    "totalRecords": 3,
+    "count": 1,
+    "resultTruncated": "false",
+    "skipToken": null,
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-02",
+        "name": "prod-web-02",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod"
+        },
+        "sku": "Standard_D4s_v5",
+        "powerState": "PowerState/running"
+      },
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-03",
+        "name": "prod-web-03",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {
+          "env": "prod"
+        },
+        "sku": "Standard_D4s_v5",
+        "powerState": "PowerState/deallocated"
+      }
+    ],
+    "facets": []
+  }
+}

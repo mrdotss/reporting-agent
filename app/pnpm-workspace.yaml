@@ -1,0 +1,12 @@
+packages: []
+
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
+  msw: false
+  # argon2 is a native addon: node-gyp-build resolves the shipped prebuild and
+  # compiles as a fallback, so its install script has to be allowed to run.
+  argon2: true
+  # esbuild's postinstall resolves its platform binary; vitest and drizzle-kit
+  # both depend on it working.
+  esbuild: true

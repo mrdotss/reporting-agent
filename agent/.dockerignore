@@ -1,0 +1,19 @@
+# The image needs requirements.lock and src/reporting_agent/ and nothing else.
+# Without this, a local .venv ships ~190 MB of context to the daemon on every build.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.ruff_cache/
+*.egg-info/
+tests/
+*.md
+.python-version
+
+# The dev closure (pytest, hypothesis, ruff) must never reach the image. The Dockerfile
+# names requirements.lock exactly, so this is belt-and-braces — but this file works by
+# exclusion, so anything not listed here IS in the build context, and a future
+# `COPY requirements*.lock ./` would otherwise silently pull the dev tools in.
+requirements-dev.lock

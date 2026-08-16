@@ -1,0 +1,20 @@
+{
+  "comment": "Reader assigned at the subscription's own scope, as returned by GET /subscriptions/{id}/providers/Microsoft.Authorization/permissions?api-version=2022-04-01. The built-in Reader role carries actions ['*/read'] with no notActions, so the wildcard covers Microsoft.Resources/subscriptions/resources/read and scope_verified is true (Req 12.2). This is the only recorded permissions fixture that may produce true.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-ratelimit-remaining-subscription-reads": "11999"
+  },
+  "body": {
+    "value": [
+      {
+        "actions": [
+          "*/read"
+        ],
+        "notActions": [],
+        "dataActions": [],
+        "notDataActions": []
+      }
+    ]
+  }
+}

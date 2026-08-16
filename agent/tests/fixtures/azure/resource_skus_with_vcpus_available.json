@@ -1,0 +1,44 @@
+{
+  "comment": "A resource_skus.list(filter=\"location eq 'southeastasia'\") response for a constrained-core SKU, Standard_E32-8s_v5 (Req 21.2, 21.3, 21.9). Its capabilities carry BOTH vCPUs ('32', the parent SKU's advertised count) and vCPUsAvailable ('8', what this SKU actually exposes) -- the SKU catalog must read vCPUsAvailable and must never fall back to vCPUs, because using vCPUs here overstates capacity by 4x and every derived per-core figure would be wrong. MemoryGB is '256', to be parsed as Decimal and multiplied by exactly 1073741824.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "resourceType": "virtualMachines",
+        "name": "Standard_E32-8s_v5",
+        "tier": "Standard",
+        "size": "E32-8s_v5",
+        "family": "standardESv5Family",
+        "locations": [
+          "southeastasia"
+        ],
+        "capabilities": [
+          {
+            "name": "vCPUs",
+            "value": "32"
+          },
+          {
+            "name": "vCPUsAvailable",
+            "value": "8"
+          },
+          {
+            "name": "MemoryGB",
+            "value": "256"
+          },
+          {
+            "name": "MaxDataDiskCount",
+            "value": "32"
+          },
+          {
+            "name": "PremiumIO",
+            "value": "True"
+          }
+        ],
+        "restrictions": []
+      }
+    ]
+  }
+}

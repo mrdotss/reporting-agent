@@ -1,0 +1,27 @@
+{
+  "comment": "x-ms-user-quota-remaining is '0' and x-ms-user-quota-resets-after is ABSENT (Req 20.14): the collector must fall back to waiting 5 seconds, and may do so at most 3 consecutive times before a 4th required wait reports THROTTLED. This fixture is the absent-header case; resource_graph_quota_remaining_0_unparseable_reset.json is the present-but-unparseable sibling that must be treated identically.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "0"
+  },
+  "body": {
+    "totalRecords": 1,
+    "count": 1,
+    "resultTruncated": "true",
+    "skipToken": "eyJ0eXAiOiJza2lwIiwicGFnZSI6NH0=",
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-app-03",
+        "name": "prod-app-03",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {},
+        "sku": "Standard_D2s_v5",
+        "powerState": "PowerState/running"
+      }
+    ],
+    "facets": []
+  }
+}

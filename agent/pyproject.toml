@@ -1,0 +1,149 @@
+[project]
+name = "reporting-agent"
+version = "0.1.0"
+description = "Deterministic infrastructure utilization collector on Bedrock AgentCore Runtime"
+requires-python = "==3.12.*"          # pinned: Property 2.4 needs one hash across two processes
+dependencies = [
+  "bedrock-agentcore==1.18.1",
+  "azure-identity==1.19.0",
+  "azure-mgmt-resourcegraph==8.0.0",
+  "azure-mgmt-compute==33.0.0",
+  # --- All THREE Azure Monitor packages are required, pinned together. ----------
+  # azure-monitor-query 2.0.0 removed BOTH metrics clients — MetricsClient AND
+  # MetricsQueryClient — and is now logs-only. Its __all__ is:
+  #   LogsBatchQuery, LogsQueryClient, LogsQueryError, LogsQueryPartialResult,
+  #   LogsQueryResult, LogsQueryStatus, LogsTable, LogsTableRow,
+  #   MonitorQueryLogsClient
+  # So the metrics surface lives in two other packages, and the mapping is:
+  #   azure-monitor-querymetrics -> MetricsClient.query_resources      (batch values,
+  #                                 regional data plane)
+  #   azure-mgmt-monitor         -> metric_definitions.list(resource_uri)
+  #                                 metrics.list(resource_uri, ...)   (per-resource
+  #                                 values — the regional fallback)
+  #   azure-monitor-query        -> LogsQueryClient (enhanced tier ONLY)
+  #
+  # Installing only a subset fails at import in a way that reads like a version-pin
+  # problem and is not: `from azure.monitor.query import MetricsQueryClient` raises
+  # ImportError at >=2,<3, and azure.monitor.querymetrics.MetricsClient exposes only
+  # query_resources — no metric definitions, no per-resource values.
+  #
+  # azure-mgmt-monitor is the ARM CONTROL-PLANE API on management.azure.com, which
+  # has no regional endpoint. That is exactly why metrics.list is a sound fallback
+  # when a region's metrics data-plane host fails DNS resolution, and why it needs
+  # no new token scope: the single ClientSecretCredential already serves that
+  # audience, so azure/credential.py is unchanged.
+  "azure-monitor-query>=2,<3",        # Req 17.2 — LogsQueryClient ONLY (enhanced tier)
+  "azure-monitor-querymetrics>=1,<2", # Req 17.3 — MetricsClient.query_resources
+  "azure-mgmt-monitor==7.0.0",        # metric_definitions.list + metrics.list (fallback)
+  "boto3==1.43.51",
+  "httpx==0.28.1",
+  "rfc8785==0.1.4",                   # pure-Python RFC 8785 JCS, no dependencies
+  # --- Rendering and the PDF fidelity gate -------------------------------------
+  # python-docx emits the .docx by walking the compiled document AST, and the AST is
+  # its ONLY source of content (Req 20.1). There is no template document to fill in,
+  # which is why docxtpl is absent below rather than merely unused.
+  "python-docx==1.2.0",
+  # pypdf extracts the produced .pdf's text so the fidelity gate can assert every
+  # ledger `formatted` string is locatable in it (Req 33.5). Pure Python
+  # (py3-none-any), so there is nothing arm64-specific to go wrong in the image.
+  "pypdf==6.16.1",
+  # matplotlib renders the static chart images embedded in the .docx (Req 22.14),
+  # Agg only — never an interactive backend. The backend is selected in
+  # src/reporting_agent/__init__.py so one setting holds in the container, in the
+  # suite and on a developer machine; see the comment there. It ships a cp312
+  # manylinux aarch64 wheel, so the arm64 image needs no build toolchain.
+  "matplotlib==3.11.1",
+]
+
+# --- Three deliberate absences ------------------------------------------------
+# Recorded here and adjacent to the pins in requirements.lock, because "we did not
+# need it yet" and "it must never be installed" are different statements:
+#
+#   docxtpl        — there is no template document and no placeholder to substitute.
+#                    A template is a versioned JSON definition compiled to a typed
+#                    AST, so a substitution engine has nothing to act on and would
+#                    reintroduce figures with no provenance (Req 20.2).
+#   pandas         — float-backed. A float anywhere on the path from a snapshot value
+#                    to a `formatted` string is exactly what is forbidden (Req 18.5);
+#                    accumulation and bucketing are Decimal, in collect/.
+#   strands-agents — there is no tool registry in this spec. Report generation is a
+#                    deterministic command, and no module here calls a model.
+#
+# The first two are enforced: the banned-api table below fails them in the editor and
+# tests/test_dependency_pins.py fails them in CI over src/reporting_agent/**.
+
+# Dev-only. Deliberately NOT in [project.dependencies] and NOT in requirements.lock:
+# the image installs the runtime closure only, so pytest, hypothesis and ruff never
+# ship. requirements-dev.lock is the hashed closure for THIS group; see README.md.
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "hypothesis==6.165.2",
+  "ruff==0.16.3",
+]
+
+[tool.pytest.ini_options]
+# `src` on the path rather than an editable install, which is exactly what the
+# image does: it copies src/reporting_agent/ next to the entrypoint and runs
+# `python -m reporting_agent.main`. One import path, two environments.
+pythonpath = ["src"]
+testpaths = ["tests"]
+addopts = "--strict-markers --strict-config"
+
+# ---------------------------------------------------------------------------------
+# Linter only. `ruff format` is deliberately NOT part of the workflow: no Python
+# formatter is established here, and adopting one would reformat the whole tree in a
+# change that is supposed to be tooling. So the rule selection avoids anything a
+# formatter would otherwise own — E501 in particular, which is why the pycodestyle
+# selection is E4/E7/E9 (ruff's own default) rather than all of E.
+[tool.ruff]
+target-version = "py312"              # matches requires-python = "==3.12.*"
+src = ["src", "tests"]                # first-party roots, so import order sorts right
+# Not enforced (E501 is not selected). It is here because isort's wrapping decision
+# reads it, and 88 would rewrap import blocks this tree already writes on one line.
+line-length = 100
+
+[tool.ruff.lint]
+# A useful core, not everything. Correctness and hygiene rules that are mechanical to
+# satisfy; nothing that would force docstring (D) or annotation (ANN) churn across a
+# tree whose docstrings are prose by design.
+select = [
+  "E4", "E7", "E9",  # pycodestyle errors, minus the formatter's business
+  "F",               # pyflakes — unused imports/names, undefined names
+  "W",               # pycodestyle warnings — trailing whitespace, invalid escapes
+  "I",               # isort — one import order
+  "UP",              # pyupgrade — keep the 3.12 floor honest
+  "B",               # flake8-bugbear
+  "C4",              # flake8-comprehensions
+  "TID",             # flake8-tidy-imports — the banned-api table below
+  "RUF",             # ruff's own checks
+]
+ignore = [
+  # RUF001/002/003 flag "ambiguous" Unicode — characters confusable with ASCII. The
+  # only ones in this tree are EN DASHes inside prose docstrings and comments, and
+  # every one of them is a numeric range: `33–128`, `Req 38.1–38.4`, `1–4 deep`. An en
+  # dash is the correct character there, so the rule is asking us to make the prose
+  # wrong. It earns its keep against homoglyph attacks in identifiers and data, which
+  # is not what these files contain.
+  "RUF001", "RUF002", "RUF003",
+]
+
+# Two project invariants, enforced in the editor rather than only in CI.
+#
+# The DefaultAzureCredential ban DELIBERATELY OVERLAPS the AST scan in
+# tests/test_boundaries.py (Req 19.7): ruff catches it as you type, the test catches
+# it in CI where ruff may not have run. Neither replaces the other, and the reason is
+# a real limit of this rule — banned-api matches import paths and qualified attribute
+# access, so it does NOT catch `getattr(identity, "DefaultAzureCredential")`. The AST
+# scan's exact-match check on string constants does. That route is precisely why the
+# scan stays.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"azure.identity.DefaultAzureCredential".msg = "The credential is built from the invocation `context` only (Req 19.7). DefaultAzureCredential walks an ambient chain, so it would authenticate as the container's own identity against a customer's subscription. Use reporting_agent.azure.credential."
+"azure.identity.aio.DefaultAzureCredential".msg = "The credential is built from the invocation `context` only (Req 19.7). DefaultAzureCredential walks an ambient chain, so it would authenticate as the container's own identity against a customer's subscription. Use reporting_agent.azure.credential."
+"azure.monitor.query.MetricsQueryClient".msg = "No pinned package exports that name: azure-monitor-query>=2 removed BOTH metrics clients and is logs-only. Batch metric values come from azure-monitor-querymetrics (MetricsClient.query_resources); metric definitions and the per-resource regional fallback come from azure-mgmt-monitor."
+# The same deliberate overlap: the AST scan in tests/test_dependency_pins.py catches
+# these in CI, ruff catches them as you type. Neither replaces the other — banned-api
+# does not see `importlib.import_module("pandas")`, and the scan does not run in the
+# editor.
+"docxtpl".msg = "There is no template document and no placeholder to substitute (Req 20.2). The .docx is emitted by walking the compiled document AST with python-docx, which is what makes provenance structural."
+"pandas".msg = "pandas is float-backed, and no float may sit on the path from a snapshot value to a `formatted` string (Req 18.5). Accumulation, bucketing and roll-ups are Decimal; see reporting_agent.collect."

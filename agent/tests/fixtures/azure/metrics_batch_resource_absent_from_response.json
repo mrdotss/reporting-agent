@@ -1,0 +1,45 @@
+{
+  "comment": "A batch response answering for only one of two requested resources (Req 23.12). The request this recording answers asked for prod-web-01 and prod-web-02; only prod-web-01 appears in 'values'. The collector must match returned series to requested resources by resource id, discover prod-web-02 is absent, and record a resource_absent_from_response gap naming it -- never infer a zero for the missing resource from its absence, and never match by position (there is nothing at the second position to mismatch into).",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "values": [
+      {
+        "starttime": "2026-07-01T00:00:00Z",
+        "endtime": "2026-07-01T01:00:00Z",
+        "interval": "PT1H",
+        "namespace": "microsoft.compute/virtualmachines",
+        "resourceregion": "southeastasia",
+        "resourceid": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        "value": [
+          {
+            "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01/providers/Microsoft.Insights/metrics/Percentage CPU",
+            "type": "Microsoft.Insights/metrics",
+            "name": {
+              "value": "Percentage CPU",
+              "localizedValue": "Percentage CPU"
+            },
+            "unit": "Percent",
+            "errorCode": "Success",
+            "timeseries": [
+              {
+                "metadatavalues": [],
+                "data": [
+                  {
+                    "timeStamp": "2026-07-01T00:00:00Z",
+                    "total": 720.0,
+                    "count": 60,
+                    "minimum": 5.0,
+                    "maximum": 30.0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

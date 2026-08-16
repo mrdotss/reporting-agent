@@ -1,0 +1,51 @@
+{
+  "comment": "A response whose second interval omits 'count' entirely (Req 23.13). The first interval (00:00) is complete; the second (01:00) carries total and the extremes but no count, which is exactly the shape a count-weighted average cannot use -- there is no sample count to weight by. The collector must record an interval_counts_missing gap naming the resource and the metric, and the accumulator must exclude that interval from the average while still folding the complete first interval.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "values": [
+      {
+        "starttime": "2026-07-01T00:00:00Z",
+        "endtime": "2026-07-01T02:00:00Z",
+        "interval": "PT1H",
+        "namespace": "microsoft.compute/virtualmachines",
+        "resourceregion": "southeastasia",
+        "resourceid": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        "value": [
+          {
+            "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-web-01/providers/Microsoft.Insights/metrics/Percentage CPU",
+            "type": "Microsoft.Insights/metrics",
+            "name": {
+              "value": "Percentage CPU",
+              "localizedValue": "Percentage CPU"
+            },
+            "unit": "Percent",
+            "errorCode": "Success",
+            "timeseries": [
+              {
+                "metadatavalues": [],
+                "data": [
+                  {
+                    "timeStamp": "2026-07-01T00:00:00Z",
+                    "total": 720.0,
+                    "count": 60,
+                    "minimum": 5.0,
+                    "maximum": 30.0
+                  },
+                  {
+                    "timeStamp": "2026-07-01T01:00:00Z",
+                    "total": 850.0,
+                    "minimum": 6.0,
+                    "maximum": 35.0
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

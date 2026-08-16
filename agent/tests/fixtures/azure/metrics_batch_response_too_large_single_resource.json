@@ -1,0 +1,14 @@
+{
+  "comment": "The same ResponseTooLarge rejection as metrics_batch_response_too_large.json, but recorded separately because what happens next differs by caller: when the halving loop's batch has already reached exactly 1 resource and this is the answer, Req 23.14 requires splitting by metric name rather than halving further (a batch of 1 cannot halve), and if even a single-metric request rejects the same way the collector records response_too_large with no zero value. Kept as its own fixture so a test asserting 'the floor-of-one-resource response' is not accidentally coupled to the multi-resource recording's comment.",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-error-code": "ResponseTooLarge"
+  },
+  "body": {
+    "error": {
+      "code": "BadRequest",
+      "message": "The response payload for the requested combination of resources, metrics and time range is too large. Reduce the number of resources or metrics in the request, or shorten the time range, and retry."
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "comment": "x-ms-user-quota-remaining is '0' and x-ms-user-quota-resets-after is PRESENT but not parseable as a duration -- 'unknown', not a d.hh:mm:ss value (Req 20.14). Must be treated identically to the header being absent entirely: a 5-second fallback wait, at most 3 consecutive times before a 4th required wait reports THROTTLED. A collector that only checks presence rather than parseability would wrongly treat this as a normal reset-header wait rather than the fallback path.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "0",
+    "x-ms-user-quota-resets-after": "unknown"
+  },
+  "body": {
+    "totalRecords": 1,
+    "count": 1,
+    "resultTruncated": "true",
+    "skipToken": "eyJ0eXAiOiJza2lwIiwicGFnZSI6NX0=",
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-app-04",
+        "name": "prod-app-04",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {},
+        "sku": "Standard_D2s_v5",
+        "powerState": "PowerState/running"
+      }
+    ],
+    "facets": []
+  }
+}

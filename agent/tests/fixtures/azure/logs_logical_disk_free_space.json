@@ -1,0 +1,50 @@
+{
+  "comment": "A Log Analytics answer to the logical-disk '% Free Space' query, with rows — the only evidence that distinguishes the enhanced tier from baseline, because there is no platform metric for free space inside a VM. Rows present in the trailing 24 hours means the Azure Monitor Agent and its Data Collection Rule are actually delivering, so the preflight records `enhanced` (Req 12.8). Note the per-drive InstanceName values here are real drive letters; the recording of the AMA regression that collapses them to '_Total' belongs to the metrics tasks that must turn it into a gap.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "tables": [
+      {
+        "name": "PrimaryResult",
+        "columns": [
+          {
+            "name": "TimeGenerated",
+            "type": "datetime"
+          },
+          {
+            "name": "Computer",
+            "type": "string"
+          },
+          {
+            "name": "ObjectName",
+            "type": "string"
+          },
+          {
+            "name": "CounterName",
+            "type": "string"
+          },
+          {
+            "name": "InstanceName",
+            "type": "string"
+          },
+          {
+            "name": "CounterValue",
+            "type": "real"
+          }
+        ],
+        "rows": [
+          [
+            "2026-07-31T16:55:00Z",
+            "prod-sql-01",
+            "LogicalDisk",
+            "% Free Space",
+            "C:",
+            41.7
+          ]
+        ]
+      }
+    ]
+  }
+}

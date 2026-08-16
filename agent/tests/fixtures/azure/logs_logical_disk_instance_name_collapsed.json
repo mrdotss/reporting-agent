@@ -1,0 +1,58 @@
+{
+  "comment": "The known Azure Monitor Agent regression (azure-integration.md): per-drive InstanceName collapses to '_Total' instead of the individual drive letters, for a resource whose per-volume free-space figures were requested. Contrast with logs_logical_disk_free_space.json, whose rows carry a real drive letter ('C:') -- this recording is what the metrics collector must turn into an instance_name_collapsed gap naming the resource and the counter, emitting NO per-volume free-space value for that resource, rather than reporting '_Total' as though it were one real, whole-VM volume. Two rows are included, both collapsed, to rule out an implementation that only checks the first row.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "tables": [
+      {
+        "name": "PrimaryResult",
+        "columns": [
+          {
+            "name": "TimeGenerated",
+            "type": "datetime"
+          },
+          {
+            "name": "Computer",
+            "type": "string"
+          },
+          {
+            "name": "ObjectName",
+            "type": "string"
+          },
+          {
+            "name": "CounterName",
+            "type": "string"
+          },
+          {
+            "name": "InstanceName",
+            "type": "string"
+          },
+          {
+            "name": "CounterValue",
+            "type": "real"
+          }
+        ],
+        "rows": [
+          [
+            "2026-07-31T16:00:00Z",
+            "prod-sql-01",
+            "LogicalDisk",
+            "% Free Space",
+            "_Total",
+            37.2
+          ],
+          [
+            "2026-07-31T16:55:00Z",
+            "prod-sql-01",
+            "LogicalDisk",
+            "% Free Space",
+            "_Total",
+            36.9
+          ]
+        ]
+      }
+    ]
+  }
+}

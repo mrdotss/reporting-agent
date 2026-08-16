@@ -1,0 +1,14 @@
+{
+  "comment": "The getBatch endpoint's response-too-large rejection (Req 23.3). Azure answers oversized batch requests with an ErrorResponse carrying x-ms-error-code: ResponseTooLarge at the envelope level rather than inside 'values' -- there is no per-resource shape to read because no metric values were computed at all. The metrics collector must halve the batch's resource count by integer division and retry rather than treating this like an ordinary per-resource error; azure/metrics.py:11.6 recognises this by status plus the x-ms-error-code header, not by parsing the message text.",
+  "status": 400,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-error-code": "ResponseTooLarge"
+  },
+  "body": {
+    "error": {
+      "code": "BadRequest",
+      "message": "The response payload for the requested combination of resources, metrics and time range is too large. Reduce the number of resources or metrics in the request, or shorten the time range, and retry."
+    }
+  }
+}

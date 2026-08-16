@@ -1,0 +1,100 @@
+# Integration-test Postgres for the `app/` Vitest suites.
+#
+# Nothing the running application reads points here. This service exists only for
+# the scratch-schema harness in `test/db/scratch-schema.ts`, which creates one
+# throwaway schema per test file, applies `lib/db/migrations` into it, and drops
+# it afterwards.
+#
+# ---------------------------------------------------------------------------
+# Why the major version is pinned, and why it must track the deployment
+# ---------------------------------------------------------------------------
+# The integration suites assert *engine* behaviour, not application behaviour:
+# the reaper's claim is `FOR UPDATE SKIP LOCKED` (Req 39.4, 39.5) and
+# `report_runs_error_code_ck` is a CHECK constraint (Req 36.6). Proving either
+# against a different Postgres major proves it against the wrong engine — the
+# suite still passes, and it has stopped testing the thing that ships. So the
+# tag below is a fixed version rather than `latest` or a floating `17`, and when
+# the deployed Postgres major changes this tag changes in the same commit.
+#
+# ---------------------------------------------------------------------------
+# TEST_DATABASE_URL
+# ---------------------------------------------------------------------------
+# The harness reads exactly one variable, from `process.env`:
+#
+#   TEST_DATABASE_URL=postgresql://rpt_test:rpt_test@127.0.0.1:55432/rpt_test
+#
+# It is read *only* by `test/db/scratch-schema.ts`. It is deliberately absent
+# from `REQUIRED_ENV_VARS` in `lib/env.ts` — it is not a runtime variable and no
+# module under `app/` outside the harness reads it — and therefore deliberately
+# absent from `.env.example` too, because the boundary guard asserts that
+# `.env.example`'s key set *equals* `REQUIRED_ENV_VARS` exactly.
+#
+# Vite does not copy unprefixed variables out of a `.env` file into
+# `process.env`, so a `.env.test` would not reach the harness. Export it:
+#
+#   pnpm test:db:up
+#   export TEST_DATABASE_URL='postgresql://rpt_test:rpt_test@127.0.0.1:55432/rpt_test'
+#   pnpm test
+#
+# With the variable unset every integration suite skips and says so, naming both
+# the variable and `pnpm test:db:up`. `pnpm test:db:down` removes the container
+# and its volume, so the next `test:db:up` starts from an empty cluster.
+
+name: rpt-reporting-agent-test-db
+
+services:
+  postgres:
+    # Postgres 17 — see the note above before changing this.
+    image: postgres:17.10-alpine
+
+    environment:
+      POSTGRES_USER: rpt_test
+      # A throwaway credential for a loopback-only container that holds no
+      # customer data and no application secret. Not a secret, and not the
+      # pattern for anything outside this file.
+      POSTGRES_PASSWORD: rpt_test
+      POSTGRES_DB: rpt_test
+      # Deterministic collation, so an ORDER BY in a test sorts the same way on
+      # every developer's machine.
+      POSTGRES_INITDB_ARGS: "--locale=C --encoding=UTF8"
+
+    # A non-default host port: 5432 usually belongs to the developer's own
+    # Postgres, and silently connecting a test run to the wrong server is worse
+    # than a refused connection. Bound to loopback so the test cluster is not
+    # reachable off the machine.
+    ports:
+      - "127.0.0.1:55432:5432"
+
+    # Durability settings are pointless for a database whose entire lifetime is
+    # one test run and whose volume `test:db:down` deletes. Turning them off
+    # makes the per-file migration apply materially cheaper.
+    command:
+      - postgres
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+      # One scratch schema per test file, each holding its own pool, so the
+      # default 100 is tight once several files run in parallel.
+      - -c
+      - max_connections=200
+
+    healthcheck:
+      # Over TCP on purpose. The official image runs its bootstrap on a
+      # unix-socket-only server, so a socket `pg_isready` reports ready during
+      # initdb and `--wait` returns before the port accepts connections.
+      test:
+        ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U rpt_test -d rpt_test"]
+      interval: 1s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  # Named, so `docker compose ... down -v` removes it and a run starts clean.
+  pgdata:

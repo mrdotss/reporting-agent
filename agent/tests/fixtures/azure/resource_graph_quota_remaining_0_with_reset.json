@@ -1,0 +1,28 @@
+{
+  "comment": "x-ms-user-quota-remaining is '0' and x-ms-user-quota-resets-after carries a parseable duration, '00:00:05' (Req 20.4): the collector must wait exactly that duration before its next request and must apply no locally chosen backoff in its place. Carries a skipToken so there is a next request to delay.",
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ms-user-quota-remaining": "0",
+    "x-ms-user-quota-resets-after": "00:00:05"
+  },
+  "body": {
+    "totalRecords": 1,
+    "count": 1,
+    "resultTruncated": "true",
+    "skipToken": "eyJ0eXAiOiJza2lwIiwicGFnZSI6M30=",
+    "data": [
+      {
+        "id": "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/rg-prod-sea/providers/Microsoft.Compute/virtualMachines/prod-app-02",
+        "name": "prod-app-02",
+        "type": "microsoft.compute/virtualmachines",
+        "location": "southeastasia",
+        "resourceGroup": "rg-prod-sea",
+        "tags": {},
+        "sku": "Standard_D2s_v5",
+        "powerState": "PowerState/running"
+      }
+    ],
+    "facets": []
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "comment": "HTTP 429 carrying Retry-After as a plain count of seconds (Req 23.8) -- the first of the two forms the header may take. The metrics collector must wait exactly the duration this header specifies, honouring it rather than applying any locally chosen backoff; metrics_batch_429_retry_after_http_date.json is the sibling recording the other legal form (an HTTP-date), which must be honoured identically after being parsed to a duration rather than treated as unparseable.",
+  "status": 429,
+  "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "retry-after": "30"
+  },
+  "body": {
+    "error": {
+      "code": "TooManyRequests",
+      "message": "Rate limit is exceeded. Try again in 30 seconds."
+    }
+  }
+}
