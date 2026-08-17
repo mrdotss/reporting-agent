@@ -422,7 +422,7 @@ migration.
     - Check **every** chart node rather than stopping at the first with a finding, and record the count of chart nodes checked, the count of hashes matched, and the identity of every chart carrying a blocking finding
     - _Requirements: 22.3, 22.4, 22.5, 30.1, 30.2, 30.3, 30.4, 30.5, 30.6, 30.7_
 
-  - [ ] 9.7 Implement `verify/coverage.py` — the gate that stops a clean empty report
+  - [x] 9.7 Implement `verify/coverage.py` — the gate that stops a clean empty report
     - `scope_verified` **false, absent or unrecorded** ⇒ `scope_unverified`, fail. The gate **fails closed on a missing value**: subscription-scope read is unproven unless the preflight proved it
     - Every resource id of the run's union scope must be present in the snapshot's resource set; each absence is one `coverage_resource_absent` naming that identifier. A union that cannot be resolved at all is **also** `coverage_resource_absent` naming the rule, failing closed rather than reporting complete coverage
     - A verification against a snapshot whose resource set is empty is `empty_scope`, fail, so re-verifying a stored empty snapshot fails rather than passing
@@ -432,7 +432,7 @@ migration.
     - Unit tests: `scope_verified` false, absent and unrecorded all three failing; an unresolvable union; a snapshot with zero resources
     - _Requirements: 32.1, 32.2, 32.4, 32.5, 32.6, 32.7, 32.8_
 
-  - [ ] 9.8 Implement `verify/pdf.py` — the fidelity gate
+  - [x] 9.8 Implement `verify/pdf.py` — the fidelity gate
     - For every ledger entry, assert a **located** occurrence of that entry's `formatted` string in the normalized PDF text, where located means bounded at each end by the text's start, its end, or a character that is neither a digit, nor the decimal separator, nor the grouping separator — so `12.4` appearing only inside `112.45` counts as absent
     - Apply the same whitespace normalization to both sides; each absence is one `pdf_figure_missing` naming the AST path, the `formatted` string and the `snapshot_path`, recorded for **every** entry lacking an occurrence rather than stopping at the first
     - Identify the checked `.pdf` by asserting its SHA-256 equals the recorded `pdf_sha256`, so the gate cannot be satisfied by an independently rendered file, one emitted from the AST, or one emitted from the ledger
