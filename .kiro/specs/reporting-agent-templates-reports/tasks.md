@@ -379,7 +379,7 @@ migration.
     - Extend `agent/tests/test_boundaries.py`: **no module under `verify/` may reference `.paragraphs` or `.tables` on a `python-docx` document**
     - _Requirements: 26.1, 26.2, 26.3, 26.4, 26.5, 26.6, 26.7, 26.8, 26.9, 26.10, 33.5_
 
-  - [ ] 9.3 Implement `verify/masking.py` and `verify/allowlist.py` — five ordered stages
+  - [x] 9.3 Implement `verify/masking.py` and `verify/allowlist.py` — five ordered stages
     - The paragraph is a mutable character buffer and a matched span is **overwritten** with `MASK_CHAR = "\u0007"`, which carries no decimal digit and is not `\w`; every later stage runs against the overwritten buffer, so no stage re-reads or re-matches text an earlier stage consumed and the five stages produce one identical output for one input. Overwriting rather than deleting keeps offsets stable, so a finding's location still points at the right paragraph and a figure inside punctuation masks cleanly
     - Stage 1 — every occurrence of every ledger `formatted` string by exact equality, **longest first** by character count with ties broken by ascending code-point sequence, so a shorter figure that is a substring of a longer one cannot mask part of it and leave a digit-bearing fragment behind, and so the ordering is identical on every run over the same ledger
     - Stage 2 — identifiers, `[A-Za-z_][\w.\-]*[0-9][\w.\-]*`, leftmost-longest and non-overlapping, because a figure never begins with a letter
@@ -391,7 +391,7 @@ migration.
     - Apply the stages to every paragraph the extractor returned irrespective of which block authored it, including paragraphs inside data tables, layout tables, headers and footers
     - _Requirements: 19.4, 19.6, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.7, 28.8, 28.9, 28.10, 28.11, 28.12, 28.13_
 
-  - [ ] 9.4 Property test — token extraction and prose masking
+  - [x] 9.4 Property test — token extraction and prose masking
     - **Property 2: Token extraction and prose masking**
     - **Validates: Requirements 26.1, 26.3, 26.6, 26.7, 26.8, 26.9, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.9, 28.11, 29.1, 19.3, 19.4, 33.5, 33.6, 45.1**
     - `hypothesis` over documents of 1–5,000 paragraphs and 0–500 data tables; each `formatted` string split across 1–5 consecutive `w:t` runs at random boundaries; paragraphs nested inside data tables, layout tables, headers and footers; prose seeded with stage-2 identifiers, GUIDs, Azure resource ids, IPv4/IPv6/CIDR, dates, timestamps, ISO 8601 durations and allowlist strings; a ledger containing one `formatted` string that is a **proper substring** of another; and, for the negative half, one injected numeric absent from both the ledger and the allowlist

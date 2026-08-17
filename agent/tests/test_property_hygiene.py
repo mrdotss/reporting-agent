@@ -92,6 +92,16 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # single-sample near-edge defect (see the block above the examples in that file).
     "test_sketch_property.py": 26,
     "test_snapshot_property.py": 5,
+    # Property 2's three declared cases: the substring-shadowed ledger pair
+    # (12.4% inside 112.4%), the same pair on the longest-first property, and the
+    # three-run split of `1,234.56`. The two counterexamples Property 2 found against
+    # the first implementation — a one-character allowlist entry punching a hole in an
+    # unrelated token, and a GUID shredded by the identifier stage — are pinned as
+    # named cases in `tests/test_verify_masking.py` rather than as `@example`
+    # decorators, because both are about a fixed literal rather than a generated draw
+    # and a generator that produced them would be a generator written backwards from
+    # the answer.
+    "test_tokens_property.py": 3,
     # Property 1's seven declared examples: 0, 0.000001, -0.5, 9007199254740993, 0.1,
     # 0.30000000000000004, and a number format whose decimal separator is `,` and
     # grouping separator is `.` — the last of which kills a formatter hard-coding
