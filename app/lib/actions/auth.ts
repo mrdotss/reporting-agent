@@ -20,6 +20,7 @@ import {
 } from "@/lib/auth/session"
 import { getDb } from "@/lib/db"
 import { users } from "@/lib/db/schema"
+import { seedStarterTemplates } from "@/lib/templates/seed"
 import {
   DEFAULT_RETURN_TO,
   EMAIL_POLICY_MESSAGE,
@@ -441,6 +442,27 @@ export async function registerAction(
   }
 
   await createSession(userId)
+
+  /**
+   * Requirement 10.2 — the three starter templates, seeded **only** here, at
+   * account creation.
+   *
+   * Placed after the `users` insert has committed and after the session exists,
+   * and outside every `try`, because it can fail neither of them:
+   * `seedStarterTemplates` never throws and returns its outcome instead
+   * (Requirement 10.6). All three starters go in one transaction, so a failure
+   * leaves no partially inserted starter or version row and leaves this account
+   * able to author a template through the wizard.
+   *
+   * The outcome is not returned to the form. This action redirects on success,
+   * and after a redirect there is no form left to render an `AuthActionState` —
+   * so Requirement 10.6's "state that the starter templates could not be
+   * initialized" is served by the seeder's own `[starters]` log line plus
+   * `readSeededStarterKeys`, which lets the `/templates` surface state the
+   * shortfall from the row. See `lib/templates/seed.ts` for that reasoning in
+   * full.
+   */
+  await seedStarterTemplates(userId)
 
   // Requirement 7.1 — the dashboard, not `returnTo`: registration is not the
   // resumption of an interrupted request.

@@ -3,7 +3,7 @@ import type { Metadata } from "next"
 import { RunForm } from "@/components/reports/run-form"
 import { RunList } from "@/components/reports/run-list"
 import { requireSession } from "@/lib/auth/guard"
-import { toRunView } from "@/lib/db/views"
+import { toRunView, UNRESOLVED_RUN_VIEW_EXTRAS } from "@/lib/db/views"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 
@@ -73,7 +73,10 @@ export default async function ReportsPage() {
           Runs
         </h2>
 
-        <RunList runs={runs.map(toRunView)} subscriptions={subscriptions} />
+        <RunList
+          runs={runs.map((run) => toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS))}
+          subscriptions={subscriptions}
+        />
       </section>
     </div>
   )

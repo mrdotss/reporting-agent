@@ -71,7 +71,7 @@ migration.
     - Extend `tests/test_dependency_pins.py`: `docx`, `pypdf` and `matplotlib` import; `matplotlib.get_backend()` is `Agg`; an AST scan fails the suite if any module under `src/reporting_agent/` imports `docxtpl` or `pandas`
     - _Requirements: 20.1, 20.2, 22.14, 33.5, 18.5_
 
-- [~] 2. Postgres schema, the three stores and the browser-safe projections
+- [x] 2. Postgres schema, the three stores and the browser-safe projections
   - [x] 2.1 Define `report_templates` and `report_template_versions`
     - Extend `app/lib/db/schema.ts` with `report_templates` (`id` PK, `user_id` FK → `users.id` `ON DELETE CASCADE` with an index, `name` CHECK length 1–120, `description` NOT NULL default `''` CHECK length ≤ 1000, `current_version_id` nullable FK → `report_template_versions.id`, `draft_definition jsonb` nullable, `seeded_starter_key text` nullable with UNIQUE `(user_id, seeded_starter_key)`, `created_at`, `updated_at` with `$onUpdate`)
     - `report_template_versions` (`id` PK, `template_id` FK with an index, `version integer`, `definition jsonb`, `definition_sha256 text`, `created_at`) with **every column NOT NULL**, UNIQUE `(template_id, version)`, and deliberately **no `updated_at`** — there is no update path
@@ -101,28 +101,28 @@ migration.
     - `readLatestVerificationStatus(runId)` used by the download gate and by the `verifying → completed` precondition
     - _Requirements: 36.1, 36.2, 36.3, 36.5, 36.6, 36.7, 36.8_
 
-  - [-] 2.5 Add the two new projections, extend `RunView`, and assert every key set in the same task
+  - [x] 2.5 Add the two new projections, extend `RunView`, and assert every key set in the same task
     - `app/lib/db/views.ts`: `TemplateView` (8 keys), `TemplateVersionView` (4 keys: `id`, `version`, `definitionSha256`, `createdAt`, excluding every field of a connected subscription), `VerificationView` (12 keys), and `RunView` extended from fourteen to **seventeen** keys with `templateName`, `templateVersion` and `verificationStatus`
     - `toRunView(row, extras)` takes the verification status and includes the report artifact keys **only** when it is `pass`, so no shape exists in which a browser holds a document key for an unproven run; that is the download gate implemented in the projection rather than in a component
     - Each `FindingView` carries no unbounded text: the agent truncates every quoted excerpt to 200 characters before writing, so the projection has nothing to truncate and cannot be where the truncation is forgotten
     - In the **same task**, extend `app/lib/db/views.test.ts` with the Projection_Guard assertions: the **exact sorted key set** for each of the four projections as a set equality rather than a containment check; both `RunView` branches; and, over fixtures assigning distinct non-empty values, that no serialization contains a `progress_token_hash`, a `claimed_by`, a `dedupe_key`, a client-secret ciphertext or an unmasked subscription id
     - _Requirements: 43.4, 43.5, 43.6, 43.9, 40.4, 37.1_
 
-  - [~] 2.6 Integration tests for versioning, verification append and the partial CHECK
+  - [x] 2.6 Integration tests for versioning, verification append and the partial CHECK
     - Against the foundation's scratch-schema harness and real Postgres: `version` = `max + 1`; an unchanged canonical digest inserting nothing and returning the existing version; a modification attempt rejected with every existing row byte-identical; two **concurrent transactions** both computing the same next `version` resolving to one committed row with a bounded retry on the loser
     - `report_verifications` insert-only; a re-verification appending a row with a distinct `id` and its own `created_at` while every earlier row is retained; `(run_id, attempt_id)` making a retried callback idempotent
     - The partial CHECK on `report_runs.template_version_id` accepting a foundation-era row with a null and rejecting a newly created row with one
     - Editing a template that a **completed** run pinned leaves that run's `docx_sha256`, `pdf_sha256`, `snapshot_sha256` and `template_version_id` unchanged, and the run continues to resolve against its pinned version rather than the newest one
     - _Requirements: 9.2, 9.3, 9.5, 9.6, 9.8, 9.11, 36.2, 36.7_
 
-- [ ] 3. The definition model, its mirror, and the pure web-side modules
-  - [ ] 3.1 Declare the block-type set and the per-type config schemas, and guard the declarations
+- [x] 3. The definition model, its mirror, and the pure web-side modules
+  - [x] 3.1 Declare the block-type set and the per-type config schemas, and guard the declarations
     - `app/lib/templates/blocks.ts` declaring, **between `// --- BEGIN BLOCK TYPES ---` / `// --- END BLOCK TYPES ---` and `// --- BEGIN BLOCK CONFIG ---` / `// --- END BLOCK CONFIG ---` sentinels**, exactly the sixteen block types — `cover`, `executive_summary`, `kpi_row`, `resource_table`, `top_n_table`, `timeseries_chart`, `distribution_chart`, `capacity_vs_usage`, `gaps_and_coverage`, `comparison_delta`, `verification_record`, `appendix_methodology`, `row`, `page_break`, `heading`, `rich_text` — and for each type its config field names, each field's required status, and each enumerated field's permitted values
     - Mirror the identical declarations between matching sentinels in `agent/src/reporting_agent/compile/definition.py`, creating the `compile/` package
     - `app/test/mirror.static.test.ts` — the Mirror_Guard's **declaration half**: extract both sentinel-delimited regions, compare the block-type sets, every type's field names, every field's required status and every enumerated field's permitted values, and fail naming **every** differing type and field, or naming either declaration as absent or unparseable. Sentinels rather than a parser for the same reason the event vocabulary uses them: the guard then needs neither a TypeScript nor a Python parser and cannot itself drift
     - _Requirements: 2.5, 2.6, 6.1, 6.2_
 
-  - [ ] 3.2 Implement `lib/templates/definition.ts` — the zod definition schema
+  - [x] 3.2 Implement `lib/templates/definition.ts` — the zod definition schema
     - The seven **required** top-level keys `schema_version`, `identity`, `scope`, `period`, `metrics`, `blocks`, `design`, with unknown keys **rejected by name** rather than stripped, and a type mismatch rejected rather than coerced
     - `scopeSpecSchema`: 0–20 fully qualified resource types, 0–10 tag filters (key 1–512, value 0–256), 0–50 resource groups (1–90), optional top-N (count 1–500 **with** a metric name and a statistic), optional sort `descending` | `ascending`; accepted both as the template default and as a per-block `scope_override`, with more than one override on a block rejected
     - **Reject a fully qualified Azure resource identifier, a subscription identifier or a tenant identifier in any scope field**, naming the offending field's path and stating that a scope is expressed as resource types, tag filters and resource groups rather than as named resources
@@ -136,7 +136,7 @@ migration.
     - An accepted percentile entry is **persisted carrying the estimator label and the fidelity tier the Metric_Catalog declares** for that statistic and resource type, so a stored definition already names how its percentiles are produced
     - _Requirements: 1.3, 2.1, 2.2, 2.4, 2.7, 2.9, 2.10, 3.1, 3.2, 3.10, 4.1, 4.2, 4.12, 5.1, 5.2, 5.3, 5.5, 5.7, 5.8, 5.9, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11, 7.1, 7.2, 7.8_
 
-  - [ ] 3.3 Property test — definition validation is total and reports every violation
+  - [x] 3.3 Property test — definition validation is total and reports every violation
     - **Property 8: Definition validation is total and reports every violation**
     - **Validates: Requirements 2.1, 2.3, 2.7, 2.9, 2.10, 6.3, 6.4, 6.6, 6.7, 6.9, 6.11, 3.1, 3.2, 3.10, 5.1, 5.2, 5.3, 5.5, 5.8, 5.9, 7.1, 7.2, 7.8, 1.3, 45.1**
     - `fast-check` over valid definitions with 1–6 injected defects drawn from: an undeclared top-level key; a missing required key; an undeclared block type; a `row` nested at depth 1–3; a duplicate `id` planted **at top level and inside a row column**; a `rich_text` config binding a metric; an absolute-position field; a `schema_version` of `0`, `"1"` and `99`; a name of 0 and 121 characters; a body above 262,144 bytes; 201 blocks; a scope dimension over its bound; a top-N without a metric; a metric absent from the catalog; a percentile without its estimator label; and **a fully qualified resource id, subscription id or tenant id injected into a randomly chosen scope dimension**
@@ -144,7 +144,7 @@ migration.
     - Kills: a zod schema left at its default strip-unknown-keys behaviour, which accepts an undeclared key and drops it, turning a save-time error into a failed run minutes later; a validator returning only the first error, which hides five of six defects; a nesting check that looks one level down; a duplicate-id check scanning only top-level ids; a resource-id check scanning only `resource_types`
     - _Requirements: 2.1, 2.3, 2.7, 2.9, 2.10, 3.1, 3.2, 3.10, 5.1, 5.2, 5.3, 5.5, 5.8, 5.9, 6.3, 6.4, 6.6, 6.7, 6.9, 6.11, 7.1, 7.2, 7.8, 1.3, 45.1, 45.3, 45.4_
 
-  - [ ] 3.4 Implement `lib/templates/version.ts` and its digest property
+  - [x] 3.4 Implement `lib/templates/version.ts` and its digest property
     - RFC 8785 (JCS) canonicalization of a definition in TypeScript, then SHA-256 over the UTF-8 bytes rendered as 64 lowercase hexadecimal characters, mutating no input and applying **no Unicode normalization**
     - **Property 11: The definition digest is stable, sensitive and cross-language**
     - **Validates: Requirements 9.4, 9.5, 2.11, 45.1**
@@ -153,7 +153,7 @@ migration.
     - Kills: a digest over `JSON.stringify` with sorted keys, which sorts by UTF-16 code unit inconsistently with a Python code-point sort and produces two ids for one definition; one that normalizes, making two genuinely different keys hash alike
     - _Requirements: 9.4, 9.5, 2.11, 45.1, 45.3, 45.4_
 
-  - [ ] 3.5 Implement `lib/templates/period.ts` — the Period_Resolver — and its property
+  - [x] 3.5 Implement `lib/templates/period.ts` — the Period_Resolver — and its property
     - `resolvePeriod(spec, at: Date, timeZone: string): ResolvedPeriod`, **pure**: `at` and `timeZone` are parameters, so the resolution derives from the run's timezone and the current instant and from no host or process time-zone setting
     - `last_24h` → the single local day preceding the current local date; `last_7d` / `last_30d` → the 7 or 30 consecutive local days ending on the day preceding it; `last_full_month` → the whole preceding local calendar month; `mtd` → the first local day of the current local month through the day preceding it; `custom` → the two declared dates. Both endpoints inclusive in every case, and every resolution ends **at or before the local day preceding the current local date**, because today is incomplete and a partial trailing day would understate every daily figure derived from it
     - A resolution of zero local days — including `mtd` on the first of a month — is an **enqueue rejection** stating that the period contains no complete local day, not a silent empty run
@@ -163,14 +163,14 @@ migration.
     - Declared examples: `mtd` on the first local day of a month ⇒ rejection; `last_full_month` on 1 January ⇒ the whole of the previous December; an instant of `2026-07-01T16:30Z` at `Asia/Jakarta`, which is `2026-07-01T23:30+07:00`, so `last_24h` is **30 June and not 1 July** — which kills a resolver computing from a UTC clock; and the result unchanged when the process `TZ` is set to three different zones
     - _Requirements: 4.2, 4.4, 4.5, 4.6, 4.8, 45.1, 45.3, 45.4_
 
-  - [ ] 3.6 Ship the three starter templates and seed them at account creation
+  - [x] 3.6 Ship the three starter templates and seed them at account creation
     - `app/lib/templates/starters.ts` declaring exactly three definitions — **Monthly utilization**, **Capacity planning**, **Executive summary** — versioned in the repository and reviewed as code, each accepted by the Template_Validator, each carrying a **relative** period specification rather than `custom` so a starter runs unedited in a later month, and each composed from at least one of `kpi_row` / `resource_table` / `top_n_table` / `timeseries_chart` / `distribution_chart` / `capacity_vs_usage`, at least one of `executive_summary` / `rich_text`, and one `verification_record`, so a starter demonstrates the provenance chain end to end
     - Seed at **user creation only**: one `report_templates` row per starter carrying that user's id, one `report_template_versions` row at `version` 1 with its canonical digest, `current_version_id` set, inserted with `ON CONFLICT (user_id, seeded_starter_key) DO NOTHING` so a retried registration creates no duplicate and a deleted starter is never resurrected
     - A failure after fewer than three inserts retains **no** partially inserted starter or version row, leaves the user able to author a template, and states that the starters could not be initialized
     - `app/test/starters.static.test.ts` validates all three through `definition.ts` and **fails the build** naming each failing field path, so a broken starter is caught at build time rather than by a first-time user
     - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8_
 
-  - [ ] 3.7 Implement `lib/templates/composer.ts` — the pure reducer — and its property
+  - [x] 3.7 Implement `lib/templates/composer.ts` — the pure reducer — and its property
     - `ComposerAction` = `insert` | `move` | `nudge` | `remove` | `select` | `splitRow` | `patchConfig`; `reduce(state, action): ComposerResult` returning either `{ok:true, state, announcement}` or `{ok:false, state, refusal}` **with the same state object by reference identity** on refusal; plus `refusalFor(action, state)` so the pointer path can paint a blocked state **during** a drag
     - No React, no DOM, no dnd-kit types in this module. `announcement` is produced by the **reducer**, so the `aria-live` message is a pure function of the move and unit-testable without a DOM: `"KPI row moved to position 3 of 7"`, and inside a row `"Resource table moved to position 2 of 4 in column 1 of 2"` — exactly one announcement per completed move, because the reducer returns exactly one string
     - `nudge` resolves the container from the block id and is **confined** to it — the top-level sequence, or the one row column the block sits in — refusing at a boundary with the first/last announcement rather than overflowing
@@ -182,7 +182,7 @@ migration.
     - Kills: a nudge computed against a **flattened index**, which teleports a block out of its row column into the top-level sequence — the single most likely implementation and the one a keyboard user hits within a minute; a boundary that silently clamps; a refusal implemented as a silent no-op; an announcer firing on both paths for one move
     - _Requirements: 12.4, 12.5, 12.6, 12.12, 12.13, 12.14, 6.3, 45.1, 45.3, 45.4_
 
-- [ ] 4. Checkpoint — the definition model and the schema
+- [x] 4. Checkpoint — the definition model and the schema
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 5. The compile stage — provenance made structural
@@ -284,7 +284,7 @@ migration.
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 7. Themes, the container image, and the two emitters over one tree
-  - [~] 7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard
+  - [ ] 7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard
     - `agent/themes/editorial.docx`, `corporate.docx`, `technical.docx`, `minimal.docx` — **styles-only** Word packages carrying paragraph, character and table styles and **no content** — committed to the repository as source files and reviewed like code, each defining the `Figure` character style, the `PreviewNotice` paragraph style, and every paragraph and table style the declared block types reference
     - `render/themes.py` loading a theme by preset name, asserting the referenced style union is present, and exposing `--assert-build` as a module entry point
     - `agent/tests/test_themes.py` — the Theme_Guard, shipping **with** the documents: each of the four declares `Figure`; each declares every name in the union of paragraph and table style names referenced by the declared block types; each contains **zero non-whitespace text characters** in body, headers and footers; the directory contains exactly the four required file names and every file opens as a readable document package, reported as **distinct** from a missing-style failure
@@ -292,20 +292,20 @@ migration.
     - A theme document missing a referenced style at run time is the terminal `RENDER_FAILED` naming the theme and every missing style, writing no artifact and leaving the snapshot unmodified
     - _Requirements: 7.4, 7.7, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.8, 20.5_
 
-  - [~] 7.2 Extend the Dockerfile — LibreOffice, arm64 fonts, a pre-warmed profile and the build assertions
+  - [ ] 7.2 Extend the Dockerfile — LibreOffice, arm64 fonts, a pre-warmed profile and the build assertions
     - `apt-get install --no-install-recommends libreoffice-writer libreoffice-core` plus arm64 builds of the fonts the four themes reference (`fonts-dejavu-core`, `fonts-liberation2`), cleaning the apt lists
     - `ENV LANG=C.UTF-8 LO_PROFILE=/opt/libreoffice-profile`, then **pre-warm the profile at build time** with one real headless conversion using `--norestore` and `-env:UserInstallation=file://$LO_PROFILE`, asserting a non-empty output and cleaning the scratch files, and chown the profile to the runtime user so LibreOffice can take its lock files. A cold profile makes the first conversion of a container's life slow and occasionally fail outright, which reads as a flaky render rather than as a cold start
     - Build-time assertions that abort the build and publish nothing: `python -m reporting_agent.render.themes --assert-build`; `test "$(uname -m)" = "aarch64"`; the profile directory present and non-empty; and the AST numeric-leaf guard from task 5.4, so an image cannot carry an AST that admits a bare number
     - Every image build line in `agent/README.md` names `--platform linux/arm64`
     - _Requirements: 8.7, 23.2, 23.5, 23.10_
 
-  - [~] 7.3 Append the categorical palette and add the shared palette module
+  - [ ] 7.3 Append the categorical palette and add the shared palette module
     - Append the `--cat-1` … `--cat-5` and `--cat-other` block plus the `@theme inline` colour mappings and the `.dark` overrides — **including the reversal of the preset's sequential `--chart-*` ramp for dark surfaces** — to the end of `app/app/globals.css`. Additive only: change no existing token value and reformat nothing, because those values carry the preset's identity
     - `app/components/charts/palette.ts` exporting the categorical tokens keyed by **stable key** (metric key for a metric series, resource id for a resource series) with **no index-based assignment**, the five-series cap with a `--cat-other` aggregate, and the encoding → palette selection; `agent/src/reporting_agent/render/chartstyle.py` holds the same values so the document and the app agree
     - A test over the palette asserting every categorical token reaches ≥3:1 against both `--background` and `--card` in light and dark, that adjacent categorical tokens stay distinguishable under simulated deuteranopia, protanopia and tritanopia, and that `--destructive` appears in neither the categorical nor the sequential set. `--cat-4` ochre against `--cat-5` green is the pair most at risk; if it fails, separate them by lightness rather than adding a sixth hue
     - _Requirements: 22.7, 22.8, 22.12, 22.15_
 
-  - [~] 7.4 Implement `render/docx.py` — the DOCX emitter
+  - [ ] 7.4 Implement `render/docx.py` — the DOCX emitter
     - Walk the compiled AST **once** with `python-docx` against the theme the pinned version's preset names, reading the AST as its only source of content; use no document-templating library and accept no user-supplied `.docx`
     - Emit **every figure as exactly one run carrying the theme's `Figure` character style**, holding that figure's `formatted` string in full and unaltered and **no other character**, at every position the AST places one — prose paragraph, heading, data-table cell, cover field and chart companion cell — which is what lets token extraction locate every figure without re-parsing prose
     - Apply each paragraph and table style by the name the theme declares and define **no inline formatting** that duplicates a style the theme already declares; a missing style is `RENDER_FAILED` naming the theme and **every** missing style rather than the first, with no partial artifact object
@@ -316,7 +316,7 @@ migration.
     - Write the completed document as **one** artifact object after every block is emitted, with at most one emission attempt per run, so a partially emitted document is never an artifact
     - _Requirements: 7.4, 7.5, 7.6, 7.9, 20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7, 20.8, 20.9, 20.10, 20.11, 20.12_
 
-  - [~] 7.5 Implement `render/anchors.py` — the two structural contracts the verifier depends on
+  - [ ] 7.5 Implement `render/anchors.py` — the two structural contracts the verifier depends on
     - `write_data_table_caption(table, identity)` writing `w:tblPr/w:tblCaption` **exactly once** as a non-empty string of ≤255 characters equal to the identity recorded in the ledger for that table; `write_layout_table(table)` writing **no caption, no header row and no row key**
     - The asymmetry is the design: the table-verification pass enumerates tables **carrying a caption**, so a layout table is excluded by construction rather than by inspecting borders or counting cells
     - A data table nested inside a layout cell still carries **its own** caption, so a data-bearing child of a `row` block is checked while its container is skipped; a data table carrying zero figures still records its identity in the ledger with **zero anchors**, so the verifier resolves it and reports no unexpected-table finding
@@ -325,7 +325,7 @@ migration.
     - Derive every table identity from that table node's **AST path alone**, never from emission order or elapsed time, and assert uniqueness within one rendered document
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6, 21.8, 21.9, 21.10, 21.11_
 
-  - [~] 7.6 Implement `render/charts.py` and `render/chartstyle.py`
+  - [ ] 7.6 Implement `render/charts.py` and `render/chartstyle.py`
     - For every chart node emit **exactly one** static image and **exactly one** companion data table carrying every plotted point of every plotted series as a figure whose cell text is the ledger's `formatted` string, applying **no sampling, no thinning and no re-rounding** of the plotted set
     - Emit the companion table as a data table whose `w:tblCaption` is the `cht:<path>` identity, in body order **immediately after** its image with no other block between them, and write that same identity into the image's alternative text, so the verifier pairs image with table **by identity rather than by proximity** and the table is checked by the anchored-equality pass
     - Compute the chart data hash as SHA-256 over the ordered plotted contributions — series stable key, x key, and the ledger's decimal string, in plotted order — and record it both on the chart node and in the sidecar beside the embedded image
@@ -337,7 +337,7 @@ migration.
     - `chartstyle.py`: Agg backend, one frozen `rcParams` block, a font shipped in the image and named explicitly rather than resolved by fallback, PNG metadata suppressed, fixed dpi and figure size — with a byte-equality test over two renders of one chart node, which is what keeps determinism honest across a dependency bump
     - _Requirements: 22.1, 22.2, 22.3, 22.6, 22.7, 22.8, 22.9, 22.10, 22.11, 22.12, 22.13, 22.14, 22.15_
 
-  - [~] 7.7 Implement `render/pdf.py` — conversion from the produced DOCX only
+  - [ ] 7.7 Implement `render/pdf.py` — conversion from the produced DOCX only
     - Convert the **exact byte content** of the `.docx` rendered for that run; render no `.pdf` from the AST, the ledger, the HTML emitter's output or the snapshot, so the delivered pair cannot disagree
     - `soffice --headless --norestore -env:UserInstallation=file://<pre-warmed profile> --convert-to pdf --outdir …`, using the **build-time profile as-is** and creating none at run time, in the container only and through no network conversion service
     - Assert `LANG == "C.UTF-8"` **before** the process starts and refuse otherwise with `PDF_CONVERSION_FAILED` stating the required value was not in effect — a comma-decimal locale rewrites every numeral and the ledger's strings stop being locatable
@@ -347,7 +347,7 @@ migration.
     - Unit tests against a faked subprocess: `LANG` refused before the process starts, `--norestore` present, the pre-warmed profile path used, exactly one attempt, the limit applied to the first conversion. Plus **one real conversion in the built image**, once per suite, asserting a readable page count and extractable text, because a faked subprocess cannot tell us LibreOffice works
     - _Requirements: 23.1, 23.3, 23.4, 23.6, 23.7, 23.8, 23.9_
 
-  - [~] 7.8 Implement `render/html.py` — the second emitter over the same tree
+  - [ ] 7.8 Implement `render/html.py` — the second emitter over the same tree
     - Emit by walking the **same AST instance** the DOCX emitter walks, compiling no second AST, emitting blocks in that AST's order, and holding **no** block ordering rule, column arrangement rule or layout definition of its own, so no third layout definition exists in the product
     - Emit each figure's `formatted` string exactly as the Formatter produced it — no rounding, no locale substitution, no unit transformation — together with `data-snapshot-path` and, for an estimate, `data-estimator-label` as attributes, composing no estimator label and emitting no figure lacking those attributes, so the provenance reveal **reads** them rather than deriving them
     - Every figure in the monospace face with tabular fixed-advance numerals, and **no numeral animation and no count-up**
@@ -356,11 +356,11 @@ migration.
     - A node type it cannot emit produces **no partial rendering**, reports an error naming that node type, and records **no verification finding** and leaves the run's verification status unchanged — the verifier reads the `.docx` alone and the in-app rendering is never a verification input
     - _Requirements: 14.1, 14.3, 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7, 24.8_
 
-- [~] 8. Checkpoint — a document renders, in both emitters
+- [ ] 8. Checkpoint — a document renders, in both emitters
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Verification — the delivery gate
-  - [~] 9.1 Implement `verify/findings.py` — the finding vocabulary and the result document
+  - [ ] 9.1 Implement `verify/findings.py` — the finding vocabulary and the result document
     - The sixteen **blocking** finding types — `unmatched_prose_token`, `table_anchor_missing`, `table_anchor_unexpected`, `table_cell_mismatch`, `table_column_unresolved`, `table_row_unresolved`, `duplicate_table_anchor`, `table_rows_absent`, `ledger_entry_unrendered`, `chart_table_missing`, `chart_hash_mismatch`, `replay_hash_mismatch`, `coverage_resource_absent`, `pdf_figure_missing`, `scope_unverified`, `empty_scope` — and the four **advisory** types `archive_incomplete`, `drift_observed`, `prose_review_finding`, `fidelity_not_comparable`
     - Each finding carries its **`severity` on the finding itself** rather than derived by a reader, plus the locating fields the criterion recording it declares — AST path, block id, table identity with row and column key, surviving substring with its paragraph location, expected and observed strings verbatim
     - `VerificationResult` carrying `attempt_id`, `status` (pass | fail), `figure_count`, the four digests, the `counts` block every pass contributes to, the replay outcome, the drift descriptor and the ordered finding list; recording **every** blocking finding observed rather than stopping at the first, up to the first 1,000 in document order plus the total observed count
@@ -368,7 +368,7 @@ migration.
     - Assert the Python result document parses cleanly against `app/lib/verifications/result.ts` over a fixture corpus, since Python writes it and zod reads it
     - _Requirements: 25.5, 25.6, 25.8, 36.3, 39.10, 43.7, 43.10_
 
-  - [~] 9.2 Implement `verify/tokens.py` — reading the document the way Word stores it
+  - [ ] 9.2 Implement `verify/tokens.py` — reading the document the way Word stores it
     - `paragraph_texts(document)` iterating `document.element.body.iter(qn("w:p"))` at **every depth of nesting**, plus every header and footer part, recording for each extracted paragraph which part it came from
     - Read through that iteration and **never** through `document.paragraphs` or `document.tables`: both enumerate only direct children of the body, so a paragraph inside a table cell, a nested table, a text box or a content control is invisible to them — and a verifier that extracts nothing from a chart's companion table nested in a `row` block's layout table finds no unmatched token, records no finding, and **passes the document**. That failure is silent, total and indistinguishable from success
     - `data_tables(document)` returning every `w:tbl` carrying a **non-blank** `w:tblPr/w:tblCaption` with its document ordinal, treating a present-but-whitespace caption as absent so an empty caption can smuggle a table neither into nor out of the data pass
@@ -379,7 +379,7 @@ migration.
     - Extend `agent/tests/test_boundaries.py`: **no module under `verify/` may reference `.paragraphs` or `.tables` on a `python-docx` document**
     - _Requirements: 26.1, 26.2, 26.3, 26.4, 26.5, 26.6, 26.7, 26.8, 26.9, 26.10, 33.5_
 
-  - [~] 9.3 Implement `verify/masking.py` and `verify/allowlist.py` — five ordered stages
+  - [ ] 9.3 Implement `verify/masking.py` and `verify/allowlist.py` — five ordered stages
     - The paragraph is a mutable character buffer and a matched span is **overwritten** with `MASK_CHAR = "\u0007"`, which carries no decimal digit and is not `\w`; every later stage runs against the overwritten buffer, so no stage re-reads or re-matches text an earlier stage consumed and the five stages produce one identical output for one input. Overwriting rather than deleting keeps offsets stable, so a finding's location still points at the right paragraph and a figure inside punctuation masks cleanly
     - Stage 1 — every occurrence of every ledger `formatted` string by exact equality, **longest first** by character count with ties broken by ascending code-point sequence, so a shorter figure that is a substring of a longer one cannot mask part of it and leave a digit-bearing fragment behind, and so the ordering is identical on every run over the same ledger
     - Stage 2 — identifiers, `[A-Za-z_][\w.\-]*[0-9][\w.\-]*`, leftmost-longest and non-overlapping, because a figure never begins with a letter
@@ -391,7 +391,7 @@ migration.
     - Apply the stages to every paragraph the extractor returned irrespective of which block authored it, including paragraphs inside data tables, layout tables, headers and footers
     - _Requirements: 19.4, 19.6, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.7, 28.8, 28.9, 28.10, 28.11, 28.12, 28.13_
 
-  - [~] 9.4 Property test — token extraction and prose masking
+  - [ ] 9.4 Property test — token extraction and prose masking
     - **Property 2: Token extraction and prose masking**
     - **Validates: Requirements 26.1, 26.3, 26.6, 26.7, 26.8, 26.9, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.9, 28.11, 29.1, 19.3, 19.4, 33.5, 33.6, 45.1**
     - `hypothesis` over documents of 1–5,000 paragraphs and 0–500 data tables; each `formatted` string split across 1–5 consecutive `w:t` runs at random boundaries; paragraphs nested inside data tables, layout tables, headers and footers; prose seeded with stage-2 identifiers, GUIDs, Azure resource ids, IPv4/IPv6/CIDR, dates, timestamps, ISO 8601 durations and allowlist strings; a ledger containing one `formatted` string that is a **proper substring** of another; and, for the negative half, one injected numeric absent from both the ledger and the allowlist
@@ -400,7 +400,7 @@ migration.
     - Kills: per-run tokenization, which produces three spurious survivors; reading `document.paragraphs` / `document.tables`, which extracts nothing from a nested companion table and passes every document silently; masking in ledger insertion order, so `12.4%` consumes part of `112.4%` and the leftover `11` survives; a later stage re-reading a span an earlier stage consumed
     - _Requirements: 19.3, 19.4, 26.1, 26.3, 26.6, 26.7, 26.8, 26.9, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.9, 28.11, 29.1, 33.5, 33.6, 45.1, 45.3, 45.4_
 
-  - [~] 9.5 Implement `verify/anchors.py` — anchored cell equality — with Property 3
+  - [ ] 9.5 Implement `verify/anchors.py` — anchored cell equality — with Property 3
     - Resolve in the order **table, then column, then row**: the one data table whose caption identity is character-for-character equal to the anchor's table id; within it, the one column whose **header text** equals the anchor's column key; within it, the one row whose **row key** equals the anchor's row key; the cell is their intersection. Zero or more than one match at any step is its own finding — `table_anchor_missing`, `table_column_unresolved` (naming the match count), `table_row_unresolved` — because a column key resolving to two columns has no single cell to compare
     - Then assert the resolved cell's **concatenated** text equals the anchor's `formatted` string **character for character**, with no trimming beyond the extraction's own, no whitespace normalization, no case folding, no unit stripping and **no re-parsing of either side as a number**
     - Assert **exact equality of the resolved cell** and **never containment anywhere** in the document, the table or the cell: transpose two columns across every data row and every `formatted` string is still present — attached to the wrong things — so containment reports a clean pass on a report in which every VM's average and peak are swapped, which is exactly the class of error that survives review by looking reasonable
@@ -414,7 +414,7 @@ migration.
     - Declared example: a two-column table whose `Avg CPU` and `Max CPU` values are transposed across every row, asserting **both** that the anchored pass fails **and** that a containment check over the same document records zero discrepancies
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6, 21.7, 21.8, 21.9, 27.1, 27.2, 27.3, 27.4, 27.5, 27.6, 27.7, 27.8, 27.9, 27.10, 27.11, 27.12, 27.13, 27.14, 45.1, 45.3, 45.4_
 
-  - [~] 9.6 Implement `verify/charts.py` — an image tied to the numbers beside it
+  - [ ] 9.6 Implement `verify/charts.py` — an image tied to the numbers beside it
     - Pair each chart's embedded image with its companion data table by the `cht:<path>` identity — the identity written into the image's alternative text and the table's caption — **not by proximity** — and check that companion table through the anchored-equality pass
     - Recompute the chart data hash **from the ledger**, one contribution per plotted point carrying series stable key, x key and the ledger's decimal string, ordered by plotted series and plotted point order, and draw **no contribution** from the sidecar or the image, because a digest recomputed from the artifact it checks proves nothing
     - Both gates required: the table gate alone passes a document whose embedded image is stale, and the hash gate alone passes a document whose companion table carries a value the ledger never emitted
@@ -422,7 +422,7 @@ migration.
     - Check **every** chart node rather than stopping at the first with a finding, and record the count of chart nodes checked, the count of hashes matched, and the identity of every chart carrying a blocking finding
     - _Requirements: 22.3, 22.4, 22.5, 30.1, 30.2, 30.3, 30.4, 30.5, 30.6, 30.7_
 
-  - [~] 9.7 Implement `verify/coverage.py` — the gate that stops a clean empty report
+  - [ ] 9.7 Implement `verify/coverage.py` — the gate that stops a clean empty report
     - `scope_verified` **false, absent or unrecorded** ⇒ `scope_unverified`, fail. The gate **fails closed on a missing value**: subscription-scope read is unproven unless the preflight proved it
     - Every resource id of the run's union scope must be present in the snapshot's resource set; each absence is one `coverage_resource_absent` naming that identifier. A union that cannot be resolved at all is **also** `coverage_resource_absent` naming the rule, failing closed rather than reporting complete coverage
     - A verification against a snapshot whose resource set is empty is `empty_scope`, fail, so re-verifying a stored empty snapshot fails rather than passing
@@ -432,7 +432,7 @@ migration.
     - Unit tests: `scope_verified` false, absent and unrecorded all three failing; an unresolvable union; a snapshot with zero resources
     - _Requirements: 32.1, 32.2, 32.4, 32.5, 32.6, 32.7, 32.8_
 
-  - [~] 9.8 Implement `verify/pdf.py` — the fidelity gate
+  - [ ] 9.8 Implement `verify/pdf.py` — the fidelity gate
     - For every ledger entry, assert a **located** occurrence of that entry's `formatted` string in the normalized PDF text, where located means bounded at each end by the text's start, its end, or a character that is neither a digit, nor the decimal separator, nor the grouping separator — so `12.4` appearing only inside `112.45` counts as absent
     - Apply the same whitespace normalization to both sides; each absence is one `pdf_figure_missing` naming the AST path, the `formatted` string and the `snapshot_path`, recorded for **every** entry lacking an occurrence rather than stopping at the first
     - Identify the checked `.pdf` by asserting its SHA-256 equals the recorded `pdf_sha256`, so the gate cannot be satisfied by an independently rendered file, one emitted from the AST, or one emitted from the ledger
@@ -440,7 +440,7 @@ migration.
     - A `.pdf` from which **zero** text characters extract while the ledger holds ≥1 entry is `PDF_CONVERSION_FAILED` with **both** downloads withheld and the snapshot, ledger and `.docx` left unmodified — a PDF carrying no extractable text is a conversion that failed without failing
     - _Requirements: 33.1, 33.2, 33.3, 33.4, 33.6, 33.7_
 
-  - [~] 9.9 Implement `verify/replay.py`, its purity guard and Property 4
+  - [ ] 9.9 Implement `verify/replay.py`, its purity guard and Property 4
     - `replay(archived, *, plan) -> ReplayOutcome` re-running the **same pure aggregation** the Snapshot_Builder ran, canonicalizing and hashing the recomputed snapshot **through the same code path**, and asserting a byte-for-byte equal `snapshot_id`
     - Zero Azure API calls and **zero network requests of any kind**; the archived objects arrive **from the caller** as an iterable rather than being fetched, and only modules that make no network request are imported
     - Fold each archived object **exactly once** in the order the archive sequence records, derive every folded value from that object's raw points alone and from no accumulator, aggregate or digest read out of the stored snapshot, and discard each object's decoded points once folded so no more than one object's points are held at a time
@@ -455,7 +455,7 @@ migration.
     - Kills: a replay that reads the stored `snapshot_id` and returns it — the mutation cannot change a digest that was never recomputed; one iterating a `set` on the path, which the two-process case exposes; one that double-folds or skips an object; one that fetches its own objects
     - _Requirements: 9.13, 31.1, 31.2, 31.3, 31.4, 31.5, 31.6, 31.7, 31.8, 31.9, 45.1, 45.3, 45.4_
 
-  - [~] 9.10 Implement `verify/drift.py`, `verify/ports.py` and Property 5
+  - [ ] 9.10 Implement `verify/drift.py`, `verify/ports.py` and Property 5
     - `ports.py` declaring `MetricRequeryPort`, because `verify/` may not import an Azure SDK and the bounded sample is the one place verification touches Azure at all — which is what lets the entire verification suite run without a subscription
     - Selection is **pure and separate** from the re-query: a function over the snapshot, the resource ids the document names, and the seed, making no network request and importing no Azure client
     - Three tiers in precedence order — every resource the document names that the snapshot carries; then the 10 resources with the highest recorded maximum for the report's primary metric; then 10% of the snapshot's resources rounded up, drawn pseudo-randomly from the seed — each resource admitted at most once, admission stopping at **25 distinct** resources, and no resource selected that is absent from the snapshot. The primary metric is the metric the pinned version's selection names first for the resource type carrying the most resources in the union scope
@@ -470,7 +470,7 @@ migration.
     - Kills: a selector whose sample grows with the snapshot; one ignoring the seed; one whose truncation depends on dictionary or set iteration order; one re-querying during selection
     - _Requirements: 25.7, 34.1, 34.2, 34.3, 34.4, 34.5, 34.6, 34.7, 34.8, 34.9, 34.10, 45.1, 45.3, 45.4_
 
-  - [~] 9.11 Implement `verify/verifier.py` — the orchestrator and bidirectional completeness
+  - [ ] 9.11 Implement `verify/verifier.py` — the orchestrator and bidirectional completeness
     - `verify(*, docx_bytes, pdf_bytes, ledger, ast, snapshot, pinned, run, archived, requery)` — `archived` is an iterable the **caller** already fetched, and `requery` is a port, both structural rather than convenient
     - Evaluate every gate of requirements 26 through 33 **before** any `report_file` event, against the rendered `.docx` whose digest was recorded and against the snapshot the run's `snapshot_id` names
     - **Forward completeness**: every extracted numeric token resolves, where resolving means it was a data-cell value the anchored pass matched or a numeric-bearing substring a masking stage consumed, and every extracted token goes through one of the two so none is excluded from both
@@ -482,7 +482,7 @@ migration.
     - `verify_report` re-verification reads the stored `.docx`, `.pdf` and ledger and the snapshot the run names, fetches no fresh snapshot, runs no collection, recompiles the **pinned** version rather than the template's current one, and asserts the recompiled ledger is byte-identical to the stored one; an absent, unreadable or digest-mismatched stored input sets that attempt's status to fail with `VERIFICATION_FAILED` naming the affected input, reconstructs nothing, and modifies no earlier row
     - _Requirements: 25.1, 25.2, 25.5, 25.6, 25.7, 25.8, 25.10, 25.11, 27.13, 29.1, 29.2, 29.3, 29.4, 29.5, 29.6, 29.7, 29.8, 30.7, 32.6, 33.4, 36.4, 36.5, 36.8, 9.13_
 
-  - [~] 9.12 Implement `narrate/summary.py` and `narrate/review.py`
+  - [ ] 9.12 Implement `narrate/summary.py` and `narrate/review.py`
     - `summary.py` generates `executive_summary` prose from exactly the permitted context: each ledger figure as its `formatted` string with that figure's unit, statistic, resource id, window, fidelity tier and estimator label; the compiled aggregate table; and the `collection_log` gap counts grouped by type. It receives **no raw metric series** — no per-timestamp value and no numeric absent from the ledger — through a single-shot Bedrock Converse call with **no tool list**
     - Persist the generated prose as `reports/<runId>/prose.json` and pass it **into** subsequent compilations of that run, so a compile is a pure function of (template version, snapshot, prose bundle): a model call inside the compile would make the AST digest non-identical across two compilations and would make a re-verification's byte-identical recompiled ledger depend on a model's determinism
     - `review.py` — the advisory Prose_Reviewer — receives exactly two inputs, the model-authored prose nodes and the aggregate table of rendered `formatted` strings, and no raw series, no `collection_log` entry and no archived response; records at most 25 advisory `prose_review_finding` entries carrying the reviewed node's AST path and the observation text, carrying no numeric absent from both the ledger and the allowlist; writes nothing; applies nothing automatically; is bounded at 60 seconds after which the outcome is recorded as not completed with no finding of any other type, no further attempt, and no change to either status
@@ -491,7 +491,7 @@ migration.
     - Req 19.7's enumeration test asserts the runtime exposes **zero** operations to a model that return a per-timestamp value or accept a number reaching a figure position — an assertion over an **empty set**, which is the strongest form it can take, and the reason no tool registry exists here
     - _Requirements: 19.1, 19.2, 19.3, 19.5, 19.7, 19.8, 35.1, 35.2, 35.3, 35.4, 35.5, 35.6, 35.7, 35.8_
 
-  - [~] 9.13 Property test — the ledger and the AST agree in both directions
+  - [ ] 9.13 Property test — the ledger and the AST agree in both directions
     - **Property 6: The ledger and the document AST agree in both directions**
     - **Validates: Requirements 17.1, 17.3, 17.7, 15.2, 15.4, 15.7, 15.10, 15.11, 16.1, 29.2, 29.6, 3.7, 45.1**
     - `hypothesis` over definitions across all sixteen block types, 1–200 blocks, rows at one level with 2–3 columns and 0–8 children, per-block overrides including some matching nothing and some carrying top-N; snapshots of 0–300 resources across 1–5 types with statistics, day buckets, derived values, percentiles carrying estimators and `collection_log` entries; number formats and design settings from Property 1's space
@@ -500,11 +500,11 @@ migration.
     - Kills: a compiler building the ledger by walking the finished tree, which fails the identity test and fails digest equality the moment the walk visits a hash-ordered container; one omitting an empty block; one deriving a path from emission order; one accepting a `Decimal` in a cell
     - _Requirements: 3.7, 15.2, 15.4, 15.7, 15.10, 15.11, 16.1, 17.1, 17.3, 17.7, 29.2, 29.6, 45.1, 45.3, 45.4_
 
-- [~] 10. Checkpoint — the verifier gates
+- [ ] 10. Checkpoint — the verifier gates
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. The pipeline, the commands, the events and the extended state machine
-  - [~] 11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload
+  - [ ] 11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload
     - `run_generate_report(*, payload, context, steps, artifact_bucket, aws_region, progress)` composing over task 1.2's `run_collection(...)` rather than replacing it, one phase at a time, and deferring the `PARTIAL_COVERAGE` raise to the end of the whole run so a run with gaps still completes and its non-terminal event arrives before `done`
     - Phases and their steps: `collecting` → `collect_inventory` / `collect_metrics`; `compiling` → `compile_figures` emitting `progress` over blocks compiled plus `delta` and `chart`; `rendering` → `render_document` emitting `progress` over blocks emitted; `verifying` → `verify_document` emitting `verification`; then `upload_artifact` emitting two `report_file` events
     - Assert **before any Azure collection call**, at claim, that the theme document the pinned version's preset names is present in the image and declares `Figure`, failing with `RENDER_FAILED` naming the theme — so the failure surfaces before minutes of collection work are spent
@@ -514,14 +514,14 @@ migration.
     - Open and close every step through the foundation's `StepTracker`, so `progress.id` still references an open step, `done` never decreases, and a phase that ends by raising still gets its `phase: "end"` before `done`
     - _Requirements: 3.3, 3.9, 5.4, 8.9, 25.1, 32.3, 41.1, 41.3, 41.4, 41.7, 42.1_
 
-  - [~] 11.2 Route `verify_report` and `render_preview`, and write the invoke contract
+  - [ ] 11.2 Route `verify_report` and `render_preview`, and write the invoke contract
     - Add `COMMAND_VERIFY_REPORT` and `COMMAND_RENDER_PREVIEW` to `main.py`'s `COMMAND_HANDLERS`, both deterministic with any `prompt` ignored; leave `compare_runs` **declared and unrouted**, because comparison is a block compiled inside a run and a standalone comparison screen is out of scope
     - `verify_report` re-verifies a stored report from its pinned version and pinned snapshot; `render_preview` compiles a definition carried **inline** rather than a stored version id, renders it through the real `python-docx → LibreOffice → PDF` path, writes to `<actor_id>/previews/<previewId>/preview.pdf`, and emits **no** `report_file` event
     - The preview `.docx` carries a per-page notice emitted against each theme's `PreviewNotice` paragraph style, so the artifact says what it is even after it leaves the app; the verifier runs over a preview and its status is reported as information but **does not gate** it, because a draft template must be previewable for layout reasons before its figures verify
     - Create `agent/AGENTCORE_INTEGRATION.md` as the authoritative invoke contract: the unchanged twelve-field `context`, `generate_report` extended with `template_version_id` and the union `scope`, `verify_report`, `render_preview`, and `compare_runs` recorded as declared and unrouted; add the `#[[file:agent/AGENTCORE_INTEGRATION.md]]` inclusion to the workspace steering document in the same change so the two cannot drift
     - _Requirements: 14.5, 14.6, 36.4_
 
-  - [~] 11.3 Emit the four declared event types and assert the ordering contract
+  - [ ] 11.3 Emit the four declared event types and assert the ordering contract
     - `verification` — **exactly one** per invocation, carrying the status, the figure count, every blocking and advisory finding with its type and location, the `snapshot_id`, the replay outcome with both digests, the drift descriptor and the counts, and carrying the **same values written to the store**, so a client that received no event renders the identical panel from the stored result
     - `report_file` — one per artifact carrying key, bucket, kind and byte count, and **no presigned URL and no content**; emitted only after a `verification` carrying `pass` earlier in that same invocation, never for a failing verification, and never in an invocation that emitted no `verification`
     - `chart` — the structured spec with each plotted value as a decimal string, the `encoding` taken **from the emitting block's declaration rather than the series count**, the chart data hash and a ledger reference per plotted figure
@@ -531,13 +531,13 @@ migration.
     - Unit tests with the foundation's fake clock: `snapshot_ready` before any `verification`; `report_file` only after a pass; nothing after `done`; a step left open by a raising render phase still closed before `done`; heartbeats at least every 30 seconds through a silent 600-second verify phase
     - _Requirements: 25.9, 42.1, 42.2, 42.3, 42.4, 42.5, 42.6, 42.7, 42.8, 42.11_
 
-  - [~] 11.4 Write the report artifacts under the actor prefix and scrub before writing
+  - [ ] 11.4 Write the report artifacts under the actor prefix and scrub before writing
     - Write, per run, `reports/<runId>/report.docx`, `report.pdf`, `ledger.json`, `ast.json`, `prose.json`, `verification-<attemptId>.json` and `charts/<chartId>.png` with its `.sidecar.json`, every object **private**, tagged with the owning actor id, with the actor id as the **first** key segment and `reports` as the second, and no public read on any of them
     - Serialize the ledger once with entries ordered by AST path and RFC 8785-canonicalized, and record its digest on the verification result, so a later re-verification reads the same ledger the render used
     - Apply the redaction scrub to the verification result and to **every finding message**, including every quoted service error, before writing and before emitting, and truncate every quoted document excerpt to 200 characters; a registered secret found in a result, a finding message or a quoted error is replaced with the fixed marker while the finding is retained, and no unredacted copy is written or emitted
     - _Requirements: 17.6, 22.3, 36.3, 43.1, 43.7, 43.10_
 
-  - [~] 11.5 Drive the three phases, extend the reaper, and add the verification callback
+  - [ ] 11.5 Drive the three phases, extend the reaper, and add the verification callback
     - `app/lib/runs/state.ts`: extend `DRIVEN` with `compiling → rendering|failed`, `rendering → verifying|failed`, `verifying → completed|failed`, keeping `collecting → completed` because a snapshot-only invocation is still a legal run shape and removing it would break foundation tests; add `PHASE_DEADLINE_SECONDS` of `compiling: 300`, `rendering: 600`, `verifying: 600`
     - `verifying → completed` carries a precondition beyond the table: the endpoint reads a `report_verifications` row for that run with `status` `pass` **in the same transaction** as the update, so no ordering exists in which a run reports success before its proof is stored
     - Extend `POST /api/internal/runs/[runId]/progress` to accept the new transitions, setting `phase_deadline` to the write instant plus that phase's budget and `updated_at` to that instant, rejecting a transition on a terminal row and a transition absent from the table; `PDF_CONVERSION_FAILED` arrives from the `rendering` status and **no status is added** for PDF conversion
@@ -546,24 +546,24 @@ migration.
     - The agent's `Progress_Reporter` sends the compile, render and verify transitions fire-and-forget, abandoning the send after 5 seconds, continuing the phase whatever the outcome, and failing no run because a transition did not land
     - _Requirements: 25.2, 36.1, 41.1, 41.2, 41.3, 41.4, 41.5, 41.6, 41.7, 41.8, 41.9, 41.10_
 
-  - [~] 11.6 Integration tests for the extended machine, the reaper and the relay's reconstruction
+  - [ ] 11.6 Integration tests for the extended machine, the reaper and the relay's reconstruction
     - Against real Postgres: the extended transition table over **all** `(current, target)` pairs including every terminal row rejecting every target; `verifying → completed` refused when no passing verification row exists and accepted when one does; the sweep naming the expired phase from the pre-update `status` for each of the three new phases; `(run_id, attempt_id)` making a retried verification callback idempotent; a `PDF_CONVERSION_FAILED` transition arriving from `rendering` and adding no status value
     - The relay carries **no** document-phase state that cannot be reconstructed from the run row plus the stored verification result, and its stream closing during compile, render or verify causes no change to the run's outcome
     - After a 120-second event gap on a non-terminal run, the client opens a new stream within 5 seconds, reconstructs the compile / render / verify state from the row and the stored result **before** rendering, and requests no event replay
     - _Requirements: 41.1, 41.5, 41.8, 41.9, 42.12, 42.13, 36.7_
 
-- [~] 12. Checkpoint — a full run reaches `completed` behind a passing verification
+- [ ] 12. Checkpoint — a full run reaches `completed` behind a passing verification
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. The wizard, the composer and the report surfaces
-  - [~] 13.1 Implement the template routes and server actions
+  - [ ] 13.1 Implement the template routes and server actions
     - `POST /api/templates` (create + `version` 1), `GET /api/templates` (list, scoped by `user_id`), `GET /api/templates/[id]` (draft + current version, **not found** on another user's row), `PATCH /api/templates/[id]` (writes `draft_definition`, inserts no version row), `POST /api/templates/[id]` (validate, canonicalize, insert `max+1`, or return the existing version when the digest is unchanged), `DELETE /api/templates/[id]` (versions a run pinned survive by FK), and `GET /api/templates/catalog` serving the **Metric_Catalog's** selectable items so step 4 reads one catalog rather than a list held in `app/`
     - Every handler on the Node runtime, typing params as `RouteContext<'/api/templates/[id]'>` and **awaiting** them, and parsing every input — path params and search params included — with a **named zod schema** at the boundary; no `as SomeType` on a body, ever; `Cache-Control: no-store` on the handlers that must not be cached
     - `lib/actions/templates.ts`: `createTemplate`, `saveDraft`, `publishTemplateVersion`, `renameTemplate`, `deleteTemplate` as thin wrappers over the store; `lib/runs/input.ts` gains `templateId` and the enqueue resolves the **highest** version at insert, rejecting with "the template has no saved version" when none resolves and rejecting a subscription that is not `active` or whose `scope_verified` is false with an error attributing the cause to that subscription while leaving the template selectable for every other active subscription
     - Reject at enqueue, before inserting any row: a resolved period of zero local days, a span outside 1–31, an end after the local day preceding the current local date, and a pinned version whose period specification is unrecognized — retaining the consultant's selections for correction
     - _Requirements: 1.4, 1.5, 1.8, 1.9, 2.2, 4.3, 4.6, 4.7, 4.10, 4.11, 5.6, 9.2, 9.5, 9.6, 9.7, 10.7, 11.4_
 
-  - [~] 13.2 Build the wizard shell and the seven steps
+  - [ ] 13.2 Build the wizard shell and the seven steps
     - `app/app/(app)/templates/page.tsx` listing `TemplateView` with the three starters present from account creation, version number and digest in mono, and a "New template" pill; `app/app/(app)/templates/[id]/edit/page.tsx` as a server component loading the draft and rendering `wizard-shell.tsx` as the **only** `"use client"` boundary owning state
     - Exactly seven steps in fixed order — identity, scope rules, period, metrics, blocks, design, preview — with the current position and the total of seven displayed on **every** step
     - Backward navigation to any already-reached step always allowed and resetting nothing; forward navigation past a failing step refused **on that step** with every failing field path named and every entered value on every step retained; a step transition or an explicit save writes the draft and inserts **no** version row, whether or not step 7 was reached and whether or not the definition yet carries a block
@@ -573,7 +573,7 @@ migration.
     - **No control anywhere in the wizard uploads a document.** Extend `app/test/boundaries.static.test.ts` in this task: no component under `components/templates/` renders an `input[type=file]` for a document MIME type, and no route accepts a `.docx` body
     - _Requirements: 4.1, 4.2, 5.6, 7.2, 11.1, 11.2, 11.3, 11.4, 11.5, 11.6, 11.7, 11.8, 11.9, 11.10_
 
-  - [~] 13.3 Build the block composer — palette, canvas, inspector
+  - [ ] 13.3 Build the block composer — palette, canvas, inspector
     - `block-palette.tsx` grouping the blocks as Structure · Data · Narrative · Record, each a `rounded-lg` card with a Phosphor icon and one line describing **what that block emits** rather than what it is called, every entry keyboard-focusable; `Enter` or `Space` appends to the end of the top-level sequence, selects the appended block and **moves focus to it**, so a keyboard user's next reorder acts on what was just inserted
     - `block-canvas.tsx` rendering a **real DOM-ordered list** whose order equals the order the document emits, with each row's children in column order, so reading order matches document order; `block-canvas-item.tsx` is both a dnd-kit draggable/droppable **and** a keyboard command target, and both paths dispatch the identical action into `lib/templates/composer.ts`
     - Keyboard model, which is the primary path rather than a fallback: `Mod`+`ArrowUp`/`ArrowDown` nudges one position within the block's own container; `Mod`+`ArrowLeft`/`ArrowRight` promotes out of or demotes into the adjacent row column; `Delete`/`Backspace` removes the selected block; the row's explicit 2/3 control is focusable. **dnd-kit's keyboard sensor is not used** — Req 12.4 describes a one-position command rather than a lift-move-drop gesture with a pixel delta, and bare arrows during a lift are the pattern that breaks with a screen reader running, because the screen reader consumes them for its own navigation
@@ -584,7 +584,7 @@ migration.
     - Three panes reachable from the keyboard in the order palette, canvas, inspector, with a visible `--ring` on the focused element and no pane trapping focus; every drop target's accessible name carries its 1-based insertion position, its container's total, and, inside a row, that row's column number and column count
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
 
-  - [~] 13.4 Build the style preset picker and its real thumbnails
+  - [ ] 13.4 Build the style preset picker and its real thumbnails
     - A build-time step in the agent image producing `agent/themes/thumbnails/<preset>.png` plus `<preset>.json` carrying `{theme_sha256, generated_by}`, via the **real** render path over a fixed sample definition that exercises a heading style, body prose and a data table, rendered with a **null context** so the page carries no figure a snapshot did not produce; the images are committed beside the themes and served from `app/public/theme-thumbnails/`
     - `style-preset-picker.tsx` presents the four presets as a **2×2 grid of selectable cards**, each carrying its name and its rendered page image at the page's own aspect ratio and a rendered width of at least 240 CSS pixels, with exactly one preset selected at every instant, and offers **no name-only control in place of the grid** — a theme is a visual decision and a name gives a consultant nothing to decide with
     - Compare each image's recorded `theme_sha256` against the digest the app was built with; a mismatch or a missing image renders the card with its name, its text alternative and an explicit "page image unavailable" statement, still selectable, and substitutes no select
@@ -592,7 +592,7 @@ migration.
     - Selection is a `--ring` plus a `--primary` check, exposed programmatically to assistive technology and conveyed through no colour difference alone; arrow keys move focus within the grid with a visible `--ring` and a keyboard confirmation selects; the design tuning controls sit **below** the grid
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7, 13.8_
 
-  - [~] 13.5 Build the paper preview and the real-preview path
+  - [ ] 13.5 Build the paper preview and the real-preview path
     - `paper-preview.tsx` emits from the **same AST** the DOCX emitter emits from, through the HTML emitter, holding no layout definition of its own
     - The preview label is **permanent**: rendered on every render, visible whenever any part of the canvas is, behind no hover, focus or disclosure, with **no dismiss control**, surviving scrolling and every re-render. Beside it, in visible text, the three divergences named explicitly — **pagination, table column widths and font metrics** — and the statement that the rendered `.pdf` is the delivered result
     - **No page number, no page count and no page-position indicator**, the only permitted page marker being one representing a `page_break` block the definition declares, carrying no number — implying pagination the HTML emitter cannot determine is worse than omitting it, because a wrong page count is a promise the document will break
@@ -601,7 +601,7 @@ migration.
     - No completed run for the selected subscription disables the action with that stated reason, starts no render and renders nothing from fabricated or placeholder data; every further activation while one is in flight is ignored; a failure or a 180-second lapse names the stage that failed as compilation, `.docx` rendering or `.pdf` conversion, presents no `.pdf`, and leaves the canvas and its label unchanged
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8, 14.9, 14.10_
 
-  - [~] 13.6 Build the reports list, the report detail surface and the provenance reveal
+  - [ ] 13.6 Build the reports list, the report detail surface and the provenance reveal
     - `/reports` carrying per run the `status`, template name, pinned version number, **masked** subscription id, the resolved period as that run's local start and end dates, and the verification status as exactly pass, fail or absent — every connected-subscription field sourced **solely** from the browser-safe projection, so no tenant id, client id or secret ciphertext reaches the browser; newest first, 50 per page, with a next-page control while unpresented runs remain
     - `/reports/[runId]`: snapshot provenance with the `snapshot_id` truncated to its leading 12 characters beside a copy control yielding the **complete** digest, the collection window's start and end in the run's timezone with the **resolved UTC offset displayed alongside**, the grain, the resource count and the gap count, with the digest, offset and counts in the monospace face
     - Gap list grouped by `gap_type` with per-group counts naming every affected resource, in **mist neutral tokens rather than `--destructive`**, because a gap is neutral information; a zero-gap run renders an explicit "no gaps recorded" row and **omits no section**, because an absent section is indistinguishable from a list that failed to load. Fidelity badges per resource where tiers differ, with the tooltip explaining what each tier does and does not support, `baseline` in mist neutrals
@@ -615,7 +615,7 @@ migration.
     - Restrict every read of a run, template, version and verification result to the signed-in user's rows, comparing before presenting any field, and resolve a mismatch as not found indistinguishably from an id that exists for no row
     - _Requirements: 4.9, 9.8, 9.9, 18.8, 32.9, 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8, 37.9, 37.10, 38.1, 38.2, 38.3, 38.4, 38.5, 38.6, 38.7, 38.8_
 
-  - [~] 13.7 Build the verification panel as an audit certificate
+  - [ ] 13.7 Build the verification panel as an audit certificate
     - `verification-panel.tsx` presents the status, the `figure_count` and the three digests, each digest in mono with tabular figures beside a copy control yielding its **complete recorded string**
     - A **pass** presents the status word, the figure count and the snapshot digest as one statement — *1,480 figures · every figure traced to snapshot `9f2c…` · verified* — styled in mist neutrals with no `--destructive` and no assertive alert presentation. Success is quiet
     - A **fail** presents the count of blocking findings and lists **every** one with its declared type and the locating fields the recording criterion declares — AST path, table identity with row and column key, surviving substring with its paragraph location, expected and observed strings verbatim — states plainly that the report was **not delivered**, and applies `--destructive` to that state. Failure is loud and specific
@@ -626,7 +626,7 @@ migration.
     - A run with no verification result, or one whose status is neither pass nor fail, presents that the report is not verified with no pass statement and no digest presented as proven, in mist neutrals, and no download control
     - _Requirements: 39.1, 39.2, 39.3, 39.4, 39.5, 39.6, 39.7, 39.8, 39.9, 39.10_
 
-  - [~] 13.8 Gate the download, extend the artifact-key predicate, and add Property 12
+  - [ ] 13.8 Gate the download, extend the artifact-key predicate, and add Property 12
     - `download-card.tsx` presents exactly one control for the recorded `.docx` key and one for the recorded `.pdf` key **only** while the run's `status` is `completed` and its stored verification status is `pass`, minting each presigned URL server-side **at activation** rather than at surface render, and presenting the control **only once that URL is available** rather than on receipt of a `report_file` event alone
     - On activation, and **before any storage call**, assert the run's owning user id equals the signed-in user's id, the key's actor prefix equals that same id, and the verification status recorded in the store is `pass`; any assertion failing resolves as not found with no URL minted, no storage call and no indication of whether the artifact exists
     - Expiry ≤300 seconds, a fresh URL per activation, **no** URL persisted in any table, event, log line or message and none placed in a cacheable, server-rendered or browser-safe payload; a key not among the run's recorded keys resolves as not found with no storage call and no field disclosed; a failed mint or an absent object states that the artifact is unavailable, changes neither the row nor the verification, and keeps the control available
@@ -638,14 +638,14 @@ migration.
     - Kills: `key.startsWith(actorId)`, which authorizes `alice-evil/...` for `alice`; `key.startsWith(actorId + "/")`, which still admits any second segment; a case-folding comparison
     - _Requirements: 25.3, 25.4, 40.1, 40.2, 40.3, 40.4, 40.5, 40.6, 40.7, 42.9, 43.2, 43.3, 43.8, 45.1, 45.3, 45.4_
 
-  - [~] 13.9 Build the in-app charts and the delta table
+  - [ ] 13.9 Build the in-app charts and the delta table
     - `components/charts/themed-chart.tsx` with `categorical.ts`, `sequential.ts` over `palette.ts`: render a `chart` event **client-side from the structured spec**, parsing each decimal string **for layout geometry only**, taking every displayed value label from the `formatted` value its ledger reference resolves to, and requesting **no image and no presigned URL**
     - Select the palette from the spec's `encoding` and never from the series count; assign colour by stable key so one metric and one resource keep one colour across every chart and the delta table of one report; direct labels on every series, marker and dash on lines, value labels on bars and heatmap cells, nothing distinguished by colour alone; expose the underlying figures as a table as each chart's text alternative
     - `delta-table.tsx` for `comparison_delta`: the categorical palette, **direction glyphs plus a signed magnitude in one colour** rather than hue encoding good or bad, mono tabular numerals, both runs' snapshot ids in the header, and rows whose fidelity tiers differ between runs marked **not comparable** rather than shown as a delta
     - `--destructive` on no series, no delta, no gridline and no utilization band
     - _Requirements: 16.8, 22.7, 22.8, 22.10, 22.11, 22.12, 42.6, 42.10_
 
-  - [~] 13.10 RTL tests for the composer and the report surfaces
+  - [ ] 13.10 RTL tests for the composer and the report surfaces
     - Composer: three panes in tab order with no focus trap; palette entries describing what a block **emits**; `Enter` on a palette entry appending, selecting and focusing; the drop indicator as a 2px rule that shifts nothing; a row column refusing a dragged row with a blocked cursor and a visible hint and an unchanged order; the same refusal announced for a keyboard attempt; selection as a `--ring` with no fill; the inherited default rendered above the override; the `aria-live` region announcing exactly once per move; and a boundary nudge announcing first-or-last with no move
     - Report surfaces: the permanent preview label surviving scroll and re-render and offering no dismiss; no page number for any document; the three named divergences in visible text; the provenance reveal on hover **and** on focus with identical content, dismissed by pointer-out, blur and `Escape`, and exposed as an accessible description; `--destructive` absent from the gap list, the fidelity badges, the advisory region and every delta; an unrecognized finding type still presented and counted; a discarded `report_file` arriving without a passing `verification` presenting no control and surfacing the ordering-violation state; and no numeral animating while a run is in progress
     - `pnpm lint`, `pnpm typecheck` and `pnpm test` clean
@@ -662,48 +662,48 @@ migration.
     run, no presigned URL minted for any key of that run, and no route, action or control of the
     web app returning one. None may be skipped or marked as an expected failure.
 
-  - [~] 14.1 N1 — one digit changed
+  - [ ] 14.1 N1 — one digit changed
     - Fixture: a rendered `.docx` from a definition carrying at least one table figure **and** at least one prose figure, with its ledger and anchor set, asserted passing first
     - Mutation: replace exactly **one digit character** of exactly one figure's rendered `formatted` string with a different digit such that the mutated string equals no ledger `formatted` value, leaving the ledger, the anchor set and every other rendered character untouched. Run once for the table figure and once for the prose figure
     - Assert status `fail`; `table_cell_mismatch` naming the table identity, row key, column key and the expected and observed strings verbatim for the table figure; `unmatched_prose_token` naming the surviving mutated substring with its block identifier and paragraph ordinal for the prose figure; `report_runs.status` `failed` with `error_code` `VERIFICATION_FAILED`; and no download control
     - Proves the smallest possible corruption is caught, in **both** the anchored pass and the masking pass
     - _Requirements: 44.2, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.2 N2 — two table columns transposed
+  - [ ] 14.2 N2 — two table columns transposed
     - Fixture: a rendered `.docx` containing a data table of ≥2 columns and ≥2 data rows whose transposed values differ pairwise, asserted passing first
     - Mutation: swap the cell text of two columns across **every** data row, leaving the ledger unchanged and leaving every transposed value present somewhere in the document
     - Assert status `fail` with one `table_cell_mismatch` per anchor whose resolved cell text changed. **And additionally** assert that a containment check — each ledger `formatted` string appears somewhere in the same document — records **zero** discrepancies
     - That second assertion is the point of the test: it fails against a verifier checking token containment instead of anchored cell equality — the implementation that looks correct and passes a document in which every VM's average and peak are swapped
     - _Requirements: 44.3, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.3 N3 — a block that rendered zero rows, and its twin that must pass
+  - [ ] 14.3 N3 — a block that rendered zero rows, and its twin that must pass
     - Fixtures: two definitions over one snapshot. **(a)** a data block whose resolved scope contains ≥1 resource. **(b)** a block whose resolved scope contains **zero** resources while every other block of that pinned version renders ≥1 data row. Both asserted passing first
     - Mutation: in (a), emit that block's data table with its `w:tblCaption` identity, **zero data rows** and no no-resources-matched row. (b) is **not mutated** — it is rendered as the compiler emits it
     - Assert (a): status `fail` with `table_rows_absent` naming the table identity, the scope's resource count and the observed row count; `VERIFICATION_FAILED`; no download. Assert (b): status **`pass`**, zero `table_rows_absent`, zero blocking findings, the explicit no-resources-matched row present in the document, and a `report_file` event emitted
     - One test in two halves on purpose: without (b), a verifier could satisfy (a) by failing every empty table, and a legitimately empty scope would become an undeliverable report
     - _Requirements: 44.4, 44.5, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.4 N4 — a chart data hash mismatch
+  - [ ] 14.4 N4 — a chart data hash mismatch
     - Fixture: a rendered `.docx` containing a chart with its embedded image, its sidecar, its companion data table and its ledger entries, asserted passing first
     - Mutation: alter the chart data hash recorded in the **sidecar** to a value differing from the hash recomputed from the plotted decimal strings in plotted order, leaving those strings, the companion table and the ledger unchanged
     - Assert status `fail` with `chart_hash_mismatch` naming the chart node's AST path, the recomputed hash and the observed hash; `VERIFICATION_FAILED`; no download
     - Proves the recomputation draws nothing from the artifact it checks — a verifier that read the sidecar and compared it to itself would pass this
     - _Requirements: 44.6, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.5 N5 — a PDF converted under a comma-decimal locale
+  - [ ] 14.5 N5 — a PDF converted under a comma-decimal locale
     - Fixture: a rendered `.docx` whose ledger carries ≥1 figure with a non-zero fractional-digit count, asserted verifying passing first
     - Mutation: convert to `.pdf` with `LANG` set to a locale whose decimal separator is a comma, bypassing the `render/pdf.py` guard that would refuse it, so the conversion **succeeds** and rewrites every numeral
     - Assert status `fail` with `pdf_figure_missing` naming ≥1 ledger entry whose `formatted` string carries a decimal separator together with its AST path and its string; `report_runs.error_code` **`VERIFICATION_FAILED`, not `PDF_CONVERSION_FAILED`**; and no download control
     - The expected code is the subtle part: nothing about the conversion *failed*, so only the fidelity gate can catch it — which is what demonstrates that the pinned `LANG=C.UTF-8` is load-bearing rather than incidental
     - _Requirements: 44.7, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.6 N6 — an expired secret producing an empty scope
+  - [ ] 14.6 N6 — an expired secret producing an empty scope
     - Fixture: a run against a connected subscription whose client secret is expired such that the union of the template default and every block `scope_override` resolves to zero resources. **No mutation — the expiry is the condition**
     - Assert a terminal code of `EMPTY_SCOPE` or `AUTH_EXPIRED`; **no snapshot written**, no document compiled, no document rendered, no report artifact written; `report_runs.status` `failed` carrying that code; no download control; and **no verification result carrying a status of pass** for that run
     - That last assertion is the important half. It proves the failure mode most likely to ship a wrong artifact: zero resources → zero figures → zero *unverifiable* figures → a clean pass on every other gate → a fully verified, empty, worthless report
     - _Requirements: 44.8, 44.12, 44.14, 44.15_
 
-  - [~] 14.7 The remaining blocking finding types, one test each
+  - [ ] 14.7 The remaining blocking finding types, one test each
     - Constructed the same way, with the same two preconditions and the same three assertions:
       `replay_hash_mismatch` — mutate exactly one decimal string of exactly one archived raw response of a stored run, leaving the stored `snapshot_id`, the archive sequence and the object count unchanged, asserting both digests are reported and the run reports `REPLAY_MISMATCH`;
       `ledger_entry_unrendered` — remove exactly one entry's rendered text while that entry remains in the ledger and every other entry remains rendered, asserting the finding names its AST path;
@@ -711,26 +711,26 @@ migration.
       plus `table_anchor_missing`, `table_anchor_unexpected`, `table_column_unresolved`, `table_row_unresolved`, `duplicate_table_anchor`, `chart_table_missing`, `coverage_resource_absent` and `empty_scope`
     - _Requirements: 44.1, 44.9, 44.10, 44.11, 44.12, 44.13, 44.14, 44.15_
 
-  - [~] 14.8 The enumeration meta-test over all sixteen blocking types
+  - [ ] 14.8 The enumeration meta-test over all sixteen blocking types
     - A meta-test enumerating the **sixteen** blocking finding types the glossary declares, collecting the types every negative test declares as expected, and **failing if any declared type is asserted by zero tests** — so a blocking type added in a later change fails the suite rather than being declared and never exercised
     - Assert additionally that no negative test in this section is skipped, marked as an expected failure, or excluded from the suite that runs before a change in this spec is committed, because a gate whose negative test does not run is a gate that has never been observed failing
     - _Requirements: 44.1, 44.12, 44.14, 44.15_
 
 - [ ] 15. Final guards, property hygiene, the regression gate and end-to-end verification
-  - [~] 15.1 Complete the static boundary guards in both halves
+  - [ ] 15.1 Complete the static boundary guards in both halves
     - `agent/tests/test_boundaries.py`, consolidated and asserted complete: the SDK boundary scan covering `compile/`, `render/`, `verify/`, `compare/` and `narrate/` — no module outside `azure/` imports a package whose **first dotted segment** is exactly `azure`; the replay-purity closure walk; no `.paragraphs` / `.tables` on a `python-docx` document under `verify/`; `formatted` assigned in exactly one module with `compile/format.py` the only importer of the quantization helper and no arithmetic on a figure's `value` under `render/` or `verify/`; no Bedrock client outside `narrate/`; and `unicodedata.normalize` on no hash path
     - `app/test/boundaries.static.test.ts`: `lib/templates/store.ts` and `lib/verifications/store.ts` begin with `import "server-only"`; every new streaming or long-running handler exports `runtime = "nodejs"`; the artifact-key predicate admits exactly `snapshots` and `reports`; no component under `components/templates/` renders a document file input and no route accepts a `.docx` body; no import of `docxtpl`-equivalent templating and no arithmetic over a ledger `value` under `components/reports/` — including no `decimal.js` import and no `Number()` over a ledger value, because `app/` computes no figure
     - Assert each guard's own completeness: a scanned directory that is absent or yields zero source files **fails** the guard, so it can never pass by scanning nothing
     - `app/test/migrations.static.test.ts` passes unchanged over this spec's three tables, one column and six appended enum values — which is the point of having written it in the foundation
     - _Requirements: 11.6, 18.1, 18.2, 19.2, 20.2, 26.2, 31.7, 35.5, 43.2, 43.3, 9.10, 41.6_
 
-  - [~] 15.2 Extend the property-hygiene guards and run the foundation regression gate
+  - [ ] 15.2 Extend the property-hygiene guards and run the foundation regression gate
     - Extend `app/test/property-hygiene.static.test.ts` and `agent/tests/test_property_hygiene.py` with two assertions each: the **set of properties collected equals the set this spec declares** — Properties 1–7 agent-side under `hypothesis`, Properties 8–12 web-side under `fast-check` — so a property added to the design and never registered, or registered and never run, fails the suite; and each property **records** its framework, its accepted-example count, its precondition rejection fraction and its seed in the suite's own output, so the thresholds are observable rather than assumed
     - Keep the existing assertions in force: no property skipped, none marked as an expected failure, none declaring fewer than 100 runs or examples, none suppressing `HealthCheck.filter_too_much` or `HealthCheck.data_too_large`, none whose generation is exhausted before 100 accepted, and none rejecting more than 20% of generated cases through a precondition; every fixed counterexample retained as an explicitly declared `@example` or case running **in addition to** the 100-case minimum rather than counting toward it
     - **The regression gate**: run the foundation's **Property 1** (count-weighted averaging and exact min/max roll-up) and **Property 6** (local-day bucketing at the `Asia/Jakarta` UTC+07:00 offset) in this spec's suite at ≥100 accepted examples each, with their generators, assertions and declared examples **unmodified** — the compile and verify stages consume the values those two protect, so a regression there produces a document that verifies perfectly against a wrong number, or silently re-attributes every daily figure. If either is absent, does not execute, or fails, fail this spec's suite, report which one, and record no passing result for this requirement
     - _Requirements: 45.1, 45.2, 45.3, 45.4, 45.5, 45.6, 45.7, 45.8, 45.9_
 
-  - [~] 15.3 Wire and verify one full report run end to end
+  - [ ] 15.3 Wire and verify one full report run end to end
     - Drive one `generate_report` through the faked Azure ports, the in-memory object store, a real Postgres schema and a real LibreOffice in the built image: enqueue pins `template_version_id` and inserts `queued`; a tick sweeps, claims with `SKIP LOCKED`, gates on subscription state, and invokes; the runtime asserts the theme before any Azure call, collects, passes the union gate, writes the snapshot once, compiles the AST and the ledger, renders `.docx` then `.pdf`, verifies every gate, uploads four artifacts **after** the pass, emits `snapshot_ready` → `verification` → two `report_file` → `done`, and posts each phase transition plus the verification callback; the row advances `collecting → compiling → rendering → verifying → completed` and `completed` is written only with a stored passing verification
     - Assert the ordering contract at the source: `snapshot_ready` before any `verification`; every `report_file` after a `verification` carrying `pass`; nothing after `done`; a step left open by a raising phase closed before `done`; and consecutive events no more than 30 seconds apart through the document phases
     - Assert the delivery gate from the browser's side: exactly two download controls for the `completed` + `pass` run, each minting a fresh short-lived URL at activation, and no route, action or control returning one for a run whose verification is fail or absent
@@ -739,7 +739,7 @@ migration.
     - Confirm `pnpm lint`, `pnpm typecheck`, `pnpm test` and, in `agent/`, `.venv/bin/pytest` and `.venv/bin/ruff check .` are all clean
     - _Requirements: 25.1, 25.2, 25.9, 41.1, 42.1, 42.3, 42.4, 42.5, 42.12, 42.13, 43.1, 43.7, 40.1, 40.4, 45.6_
 
-- [~] 16. Final checkpoint
+- [ ] 16. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

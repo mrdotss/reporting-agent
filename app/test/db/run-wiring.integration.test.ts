@@ -1001,7 +1001,11 @@ describe("Requirements 15.6, 15.7 — no secret survives the walk", () => {
     const serializedView = JSON.stringify(
       // The browser-facing projection of the same row, so the scan covers the shape
       // that actually crosses to a client rather than only the row behind it.
-      toRunView((await findOwnedRun(userId, runId))!)
+      toRunView((await findOwnedRun(userId, runId))!, {
+        templateName: null,
+        templateVersion: null,
+        verificationStatus: null,
+      })
     )
     const serializedLogs = logLines.join("\n")
 

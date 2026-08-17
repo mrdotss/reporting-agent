@@ -1,5 +1,12 @@
 import { z } from "zod"
 
+import {
+  inclusiveLocalDaySpan,
+  isRealCalendarDate,
+  isSupportedTimeZone,
+  localDateIn,
+} from "@/lib/templates/period"
+
 /**
  * The named boundary schemas for the run routes (Requirements 7.7, 37.1, 37.10).
  *
@@ -236,89 +243,40 @@ export const runQuerySchema = z.object({}).strict()
 export type PeriodProblem =
   "malformed" | "inverted" | "too_long" | "ends_in_future"
 
-/** Milliseconds in one day — used only on the UTC-noon proxy below. */
-const MS_PER_DAY = 86_400_000
-
 /**
- * Is this a calendar date that exists?
+ * The calendar and zone primitives are **one implementation**, in
+ * `lib/templates/period.ts`.
  *
- * `2026-02-31` matches the regex and names no day. Checked by round-tripping
- * through `Date.UTC`, which normalizes an out-of-range day into the following
- * month — so a value that does not survive the round trip is not a date.
+ * They used to be three: a private `isRealCalendarDate` and an exported
+ * `localDaySpan` here, a second private pair in `lib/templates/definition.ts`,
+ * and — once the Period_Resolver landed — a third set it needed for all six of
+ * Requirement 4.4's rules. Three copies of local-day arithmetic is three chances
+ * for one of them to grow a fix the others do not, and the day two of them
+ * disagree is the day the run form accepts a period the enqueue refuses.
+ *
+ * The replacements are strictly stronger rather than merely shared.
+ * `isRealCalendarDate` now checks the month's real length instead of
+ * round-tripping through `Date.UTC`, which mapped a year below 0100 onto
+ * 1900-plus-that-year and so refused every date in the first century; and the day
+ * count is exact integer civil arithmetic rather than a UTC-noon millisecond
+ * proxy.
+ *
+ * What did **not** move is the *policy* below. Foundation Requirement 37.10 lets
+ * a submitted period end **today**; templates-spec Requirement 4.5 lets a
+ * *resolved* period end no later than **yesterday**, because the current local
+ * day is incomplete and a partial trailing day would understate every daily
+ * figure derived from it. Those are two different rules about two different
+ * inputs, so {@link checkPeriod} stays here and `resolvePeriod` stays there, and
+ * neither borrows the other's ceiling.
+ *
+ * Re-exported under the names this module has always exported, so the run form,
+ * the enqueue action and `input.test.ts` are untouched.
  */
-function isRealCalendarDate(value: string): boolean {
-  const [year, month, day] = value.split("-").map(Number)
-
-  const at = new Date(Date.UTC(year, month - 1, day))
-
-  return (
-    at.getUTCFullYear() === year &&
-    at.getUTCMonth() === month - 1 &&
-    at.getUTCDate() === day
-  )
-}
-
-/**
- * The count of local days from `start` to `end` inclusive.
- *
- * Computed at **UTC noon** rather than UTC midnight. The two dates are local
- * calendar dates and the arithmetic here is a pure day count between them, so the
- * frame is arbitrary — but midnight sits exactly on a boundary, and noon is 12
- * hours from either edge, which keeps a day count from ever being off by one
- * because of a leap second or a `Date` implementation detail at the boundary.
- *
- * Pure and exported for its own test: the inclusive count is where an off-by-one
- * would let a 32-day period through, and 31 is the number the collector's memory
- * budget was measured against.
- */
-export function localDaySpan(start: string, end: string): number {
-  const [startYear, startMonth, startDay] = start.split("-").map(Number)
-  const [endYear, endMonth, endDay] = end.split("-").map(Number)
-
-  const startAt = Date.UTC(startYear, startMonth - 1, startDay, 12)
-  const endAt = Date.UTC(endYear, endMonth - 1, endDay, 12)
-
-  return Math.round((endAt - startAt) / MS_PER_DAY) + 1
-}
-
-/**
- * Is `timezone` a zone this runtime can resolve?
- *
- * `Intl.DateTimeFormat` throws a `RangeError` for an unknown zone, which is the
- * platform telling us its own tzdata does not have it. Catching that is a real
- * check rather than a shape check: a zone the runtime cannot resolve is a zone the
- * collector cannot bucket local days in, so accepting it would produce a run whose
- * every daily figure is silently in the wrong frame.
- */
-export function isSupportedTimeZone(timezone: string): boolean {
-  try {
-    new Intl.DateTimeFormat("en-US", { timeZone: timezone }).format(new Date())
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * The current calendar date in `timezone`, as `YYYY-MM-DD`.
- *
- * `en-CA` because its short date format **is** ISO 8601 — `2026-08-15` — so the
- * formatted output needs no reassembly and no per-part padding. `formatToParts`
- * plus manual joining is the alternative, and it is three more lines in which to
- * get a single-digit month wrong.
- *
- * Pure with respect to its arguments: `now` is a parameter, so the boundary — a
- * period ending "today" in Asia/Jakarta while it is still yesterday in UTC — is
- * assertable at an instant a test picks.
- */
-export function localDateIn(timezone: string, now: Date): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: timezone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(now)
-}
+export {
+  isSupportedTimeZone,
+  localDateIn,
+  inclusiveLocalDaySpan as localDaySpan,
+} from "@/lib/templates/period"
 
 /**
  * Why this period may not be collected, or `null` (Requirement 37.10).
@@ -358,7 +316,9 @@ export function checkPeriod(
 
   if (!isSupportedTimeZone(period.timezone)) return "malformed"
 
-  const days = localDaySpan(period.periodStart, period.periodEnd)
+  // `inclusiveLocalDaySpan` rather than the `localDaySpan` alias this module
+  // re-exports: an `export … from` clause creates no local binding.
+  const days = inclusiveLocalDaySpan(period.periodStart, period.periodEnd)
 
   // `days < MIN_PERIOD_DAYS` and "start after end" are one condition, because
   // MIN_PERIOD_DAYS is 1 — see {@link PeriodProblem}.

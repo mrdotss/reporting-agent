@@ -55,6 +55,9 @@ function view(over: Partial<RunView> = {}): RunView {
     artifactKeys: [],
     createdAt: "2026-08-15T09:50:00.000Z",
     updatedAt: "2026-08-15T10:00:00.000Z",
+    templateName: null,
+    templateVersion: null,
+    verificationStatus: null,
     ...over,
   }
 }

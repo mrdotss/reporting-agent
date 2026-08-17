@@ -14,6 +14,13 @@ import {
   unique,
 } from "drizzle-orm/pg-core"
 
+import type {
+  DriftSample,
+  Finding,
+  ReplayOutcome,
+  VerificationCounts,
+} from "@/lib/verifications/result"
+
 /**
  * The single source of truth for the Postgres schema (Requirement 9.4).
  *
@@ -793,13 +800,13 @@ export const reportVerifications = pgTable(
      * payload and the emitted event stay one shape instead of three that can
      * drift.
      */
-    replay: jsonb("replay").notNull(),
+    replay: jsonb("replay").$type<ReplayOutcome>().notNull(),
 
     /** `{n, method, seed}` — Requirement 34.3. */
-    driftSample: jsonb("drift_sample").notNull(),
+    driftSample: jsonb("drift_sample").$type<DriftSample>().notNull(),
 
     /** The ordered blocking-and-advisory finding list — Requirement 25.8. */
-    findings: jsonb("findings").notNull(),
+    findings: jsonb("findings").$type<Finding[]>().notNull(),
 
     /**
      * The non-negative counts every pass contributes — entries checked,
@@ -808,7 +815,7 @@ export const reportVerifications = pgTable(
      * than one column per pass because passes are added over the life of
      * this spec and a counts column per pass is a migration per pass.
      */
-    counts: jsonb("counts").notNull(),
+    counts: jsonb("counts").$type<VerificationCounts>().notNull(),
 
     /**
      * The verification-result artifact's own S3 key — the **pointer** the

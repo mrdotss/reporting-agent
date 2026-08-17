@@ -8,13 +8,23 @@ import {
   maskSubscriptionId,
   snapshotArtifactKey,
   toConnectedSubscriptionView,
+  toFindingView,
   toRunView,
+  toTemplateVersionView,
+  toTemplateView,
+  toVerificationView,
+  type RunViewExtras,
+  type TemplateViewCurrentVersion,
 } from "@/lib/db/views"
 import type {
   ConnectedSubscription,
   ReportRun,
+  ReportTemplate,
+  ReportTemplateVersion,
+  ReportVerification,
   RunStatus,
 } from "@/lib/db/schema"
+import type { Finding } from "@/lib/verifications/result"
 
 /**
  * The Projection_Guard for `ConnectedSubscriptionView` (Requirements 10.1
@@ -489,6 +499,35 @@ const RUN_ID = "run-0001"
 const SNAPSHOT_ID = "c" + "0".repeat(62) + "e"
 
 /**
+ * The `RunViewExtras` fixtures (Requirement 43.4): one for a run whose pinned
+ * template resolved and whose latest verification passed, one for the same
+ * template pin with a failing verification, and one for a run with neither —
+ * the honest shape of every run this spec's own callers produce today (see
+ * `app/api/runs/route.ts`), and also the honest shape of a foundation-era row
+ * that pins no template version at all.
+ */
+const TEMPLATE_NAME = "Monthly utilization"
+const TEMPLATE_VERSION = 3
+
+const RUN_VIEW_EXTRAS_PASS: RunViewExtras = {
+  templateName: TEMPLATE_NAME,
+  templateVersion: TEMPLATE_VERSION,
+  verificationStatus: "pass",
+}
+
+const RUN_VIEW_EXTRAS_FAIL: RunViewExtras = {
+  templateName: TEMPLATE_NAME,
+  templateVersion: TEMPLATE_VERSION,
+  verificationStatus: "fail",
+}
+
+const RUN_VIEW_EXTRAS_UNRESOLVED: RunViewExtras = {
+  templateName: null,
+  templateVersion: null,
+  verificationStatus: null,
+}
+
+/**
  * Typed as the inferred row, so adding a column to `report_runs` breaks this
  * fixture at `pnpm typecheck` and forces the reviewed decision Requirement 37.11
  * is after — rather than letting the new column arrive with no verdict on
@@ -550,7 +589,7 @@ function completedReportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
   })
 }
 
-/** Requirement 37.5 — the fourteen keys, sorted, spelled out. */
+/** Requirements 37.5, 43.4 — the seventeen keys (was fourteen), sorted, spelled out. */
 const RUN_VIEW_KEYS = [
   "artifactKeys",
   "connectedSubscriptionId",
@@ -564,8 +603,11 @@ const RUN_VIEW_KEYS = [
   "resourceCount",
   "snapshotId",
   "status",
+  "templateName",
+  "templateVersion",
   "timezone",
   "updatedAt",
+  "verificationStatus",
 ]
 
 /**
@@ -651,9 +693,9 @@ const idLike = fc.string({
 
 // --- The projection ---------------------------------------------------------
 
-describe("toRunView — Requirements 37.5, 37.6", () => {
-  test("carries the fourteen values the browser is allowed to see", () => {
-    const view = toRunView(reportRunRow())
+describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
+  test("carries the seventeen values the browser is allowed to see", () => {
+    const view = toRunView(reportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED)
 
     expect(view).toEqual({
       id: RUN_ID,
@@ -670,11 +712,14 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
       artifactKeys: [],
       createdAt: "2026-08-01T03:00:00.000Z",
       updatedAt: "2026-08-01T03:07:30.000Z",
+      templateName: null,
+      templateVersion: null,
+      verificationStatus: null,
     })
   })
 
   test("carries a completed run's counts, snapshot id and artifact key", () => {
-    const view = toRunView(completedReportRunRow())
+    const view = toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS)
 
     expect(view).toEqual({
       id: RUN_ID,
@@ -691,6 +736,9 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
       artifactKeys: [EXPECTED_SNAPSHOT_KEY],
       createdAt: "2026-08-01T03:00:00.000Z",
       updatedAt: "2026-08-01T03:07:30.000Z",
+      templateName: TEMPLATE_NAME,
+      templateVersion: TEMPLATE_VERSION,
+      verificationStatus: "pass",
     })
   })
 
@@ -707,7 +755,8 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
         progressCurrent: null,
         progressTotal: null,
         progressLabel: null,
-      })
+      }),
+      RUN_VIEW_EXTRAS_UNRESOLVED
     )
 
     expect(view.status).toBe("failed")
@@ -723,7 +772,8 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
     // UTC midnight would render the previous day the first time it was formatted
     // in a westward zone.
     const view = toRunView(
-      reportRunRow({ periodStart: "2026-07-01", periodEnd: "2026-07-31" })
+      reportRunRow({ periodStart: "2026-07-01", periodEnd: "2026-07-31" }),
+      RUN_VIEW_EXTRAS_UNRESOLVED
     )
 
     expect(view.periodStart).toBe("2026-07-01")
@@ -736,7 +786,7 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
     // survives a server component's props intact and becomes a string through a
     // route handler's `JSON.stringify`, so the declared type would be right on
     // one path and wrong on the other.
-    const view = toRunView(reportRunRow())
+    const view = toRunView(reportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED)
 
     for (const value of [view.createdAt, view.updatedAt]) {
       expect(typeof value).toBe("string")
@@ -757,17 +807,38 @@ describe("toRunView — Requirements 37.5, 37.6", () => {
           status === "failed"
             ? { status, errorCode: "TIMEOUT", errorMessage: "reaped" }
             : { status }
-        )
+        ),
+        RUN_VIEW_EXTRAS_UNRESOLVED
       )
 
       expect(view.status).toBe(status)
     }
   })
+
+  test("carries a failed run's template pin and verification status independently of its own status", () => {
+    // `templateName`, `templateVersion` and `verificationStatus` describe a
+    // different row (or two) than `report_runs` itself, so they are not tied
+    // to this row's own `status` the way `artifactKeys`' snapshot half is —
+    // a `failed` run can still name the template it was pinned to and the
+    // verification attempt that failed it.
+    const view = toRunView(
+      reportRunRow({
+        status: "failed",
+        errorCode: "VERIFICATION_FAILED",
+        errorMessage: "The rendered document did not match the snapshot.",
+      }),
+      RUN_VIEW_EXTRAS_FAIL
+    )
+
+    expect(view.templateName).toBe(TEMPLATE_NAME)
+    expect(view.templateVersion).toBe(TEMPLATE_VERSION)
+    expect(view.verificationStatus).toBe("fail")
+  })
 })
 
 // --- artifactKeys -----------------------------------------------------------
 
-describe("artifactKeys — Requirement 37.5", () => {
+describe("artifactKeys — Requirements 37.5, 40.4", () => {
   test("the status sweep covers all eight run_status values", () => {
     // Non-vacuity for the two sweeps below.
     expect(ALL_RUN_STATUSES).toHaveLength(8)
@@ -783,14 +854,15 @@ describe("artifactKeys — Requirement 37.5", () => {
         status === "failed"
           ? { status, errorCode: "TIMEOUT", errorMessage: "reaped" }
           : { status }
-      )
+      ),
+      RUN_VIEW_EXTRAS_PASS
     )
 
     expect(view.artifactKeys).toEqual([])
   })
 
   test("completed names exactly the snapshot key, computed from the two ids", () => {
-    const view = toRunView(completedReportRunRow())
+    const view = toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED)
 
     expect(view.artifactKeys).toEqual([EXPECTED_SNAPSHOT_KEY])
     expect(view.artifactKeys[0]).toBe(snapshotArtifactKey(RUN_USER_ID, RUN_ID))
@@ -799,9 +871,10 @@ describe("artifactKeys — Requirement 37.5", () => {
   test("the key's first segment is the actor id and its second is snapshots", () => {
     // What download authorization compares against: an exact first-segment
     // match, not a `startsWith`, so the layout has to hold segment by segment.
-    const segments = toRunView(completedReportRunRow()).artifactKeys[0].split(
-      "/"
-    )
+    const segments = toRunView(
+      completedReportRunRow(),
+      RUN_VIEW_EXTRAS_UNRESOLVED
+    ).artifactKeys[0].split("/")
 
     expect(segments).toEqual([
       RUN_USER_ID,
@@ -815,7 +888,8 @@ describe("artifactKeys — Requirement 37.5", () => {
     // Requirement 37.5 — keys only. A presigned URL is short-lived and minted
     // per request, so one embedded here would be a stored credential and a stale
     // one by the time it was used.
-    for (const key of toRunView(completedReportRunRow()).artifactKeys) {
+    for (const key of toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS)
+      .artifactKeys) {
       expect(key).not.toContain("://")
       expect(key).not.toContain("?")
       expect(key).not.toContain("X-Amz-")
@@ -826,17 +900,47 @@ describe("artifactKeys — Requirement 37.5", () => {
   test("the key is derived from the ids, not from snapshot_id", () => {
     // The object lives at that path whatever its content hash turns out to be,
     // so the key must not vary with `snapshot_id`.
-    const withHash = toRunView(completedReportRunRow())
-    const withoutHash = toRunView(completedReportRunRow({ snapshotId: null }))
+    const withHash = toRunView(
+      completedReportRunRow(),
+      RUN_VIEW_EXTRAS_UNRESOLVED
+    )
+    const withoutHash = toRunView(
+      completedReportRunRow({ snapshotId: null }),
+      RUN_VIEW_EXTRAS_UNRESOLVED
+    )
 
     expect(withoutHash.artifactKeys).toEqual(withHash.artifactKeys)
     expect(withHash.artifactKeys[0]).not.toContain(SNAPSHOT_ID)
+  })
+
+  test("Requirement 40.4 — the snapshot key names an object regardless of verification status", () => {
+    // The snapshot is written during collection, well before a document
+    // exists to verify — see `toRunView`'s docstring on why the snapshot half
+    // of this gate stays keyed on `row.status` alone, never on
+    // `verificationStatus`. A `completed` snapshot-only run still names its
+    // snapshot whether its verification passed, failed, or does not exist.
+    //
+    // This also pins today's honest absence of a second, composed gate: no
+    // `.docx` or `.pdf` key template exists before the render tasks write
+    // those objects (task 13.8), so every branch below yields the identical
+    // array — the snapshot key alone. This assertion is meant to start
+    // failing the day task 13.8 composes a report-key builder into this
+    // array; that is the gate landing, not a regression.
+    for (const extras of [
+      RUN_VIEW_EXTRAS_PASS,
+      RUN_VIEW_EXTRAS_FAIL,
+      RUN_VIEW_EXTRAS_UNRESOLVED,
+    ]) {
+      const view = toRunView(completedReportRunRow(), extras)
+
+      expect(view.artifactKeys).toEqual([EXPECTED_SNAPSHOT_KEY])
+    }
   })
 })
 
 // --- The guard --------------------------------------------------------------
 
-describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
+describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11, 43.4, 43.6", () => {
   test("the fixture assigns a distinct non-empty value to the three named columns", () => {
     // Requirement 37.11, asserted before anything relies on it. Every check
     // below is "this value is absent from the projection", and a check like that
@@ -857,24 +961,33 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
     expect(row.progressTotal).toBe(PROGRESS_TOTAL)
   })
 
-  test("the projected key set is exactly the fourteen reviewed keys", () => {
-    // Requirement 37.11. Hard-coded above, so a newly added `report_runs` column
-    // cannot reach the browser without an explicit change to that list.
-    expect(Object.keys(toRunView(reportRunRow())).sort()).toEqual(RUN_VIEW_KEYS)
+  test("the projected key set is exactly the seventeen reviewed keys, as a set equality", () => {
+    // Requirements 37.11, 43.4. Hard-coded above, so a newly added
+    // `report_runs` column — or a newly added `RunViewExtras` field — cannot
+    // reach the browser without an explicit change to that list. A set
+    // equality rather than a containment check, per Requirement 43.4: `.sort()`
+    // plus `toEqual` fails on an extra key exactly as it fails on a missing one.
+    expect(
+      Object.keys(toRunView(reportRunRow(), RUN_VIEW_EXTRAS_PASS)).sort()
+    ).toEqual(RUN_VIEW_KEYS)
   })
 
-  test("the key set is closed across every status, terminal or not", () => {
+  test("the key set is closed across every status, terminal or not, and both extras branches", () => {
     // A completed row carries three fewer values and one more artifact key. The
-    // shape does not move.
+    // shape does not move, and neither does it move between a resolved and an
+    // unresolved `RunViewExtras` (Requirement 43.4's set-equality assertion,
+    // repeated over both `RunView` branches this task adds).
     for (const view of [
-      toRunView(reportRunRow()),
-      toRunView(completedReportRunRow()),
+      toRunView(reportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED),
+      toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS),
+      toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_FAIL),
       toRunView(
         reportRunRow({
           status: "failed",
           errorCode: "AUTH_EXPIRED",
           errorMessage: "The client secret expired.",
-        })
+        }),
+        RUN_VIEW_EXTRAS_UNRESOLVED
       ),
     ]) {
       expect(Object.keys(view).sort()).toEqual(RUN_VIEW_KEYS)
@@ -888,7 +1001,7 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
       // alike, on a non-terminal row (where all three progress columns carry
       // values) and on a completed one.
       for (const row of [reportRunRow(), completedReportRunRow()]) {
-        const view = toRunView(row)
+        const view = toRunView(row, RUN_VIEW_EXTRAS_PASS)
 
         expect(Object.keys(view)).not.toContain(key)
         expect(JSON.stringify(view)).not.toContain(`"${key}"`)
@@ -902,10 +1015,32 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
       // Requirement 37.7 for `progress_token_hash`, and the same check for every
       // other column Requirement 37.6 drops.
       for (const row of [reportRunRow(), completedReportRunRow()]) {
-        expect(JSON.stringify(toRunView(row))).not.toContain(value)
+        expect(
+          JSON.stringify(toRunView(row, RUN_VIEW_EXTRAS_PASS))
+        ).not.toContain(value)
       }
     }
   )
+
+  test("Requirement 43.4 — no progress_token_hash, claimed_by or dedupe_key value on either branch", () => {
+    // Requirement 43.4's own three named values, restated as a serialization
+    // check independent of the key-name check above: a projection built by
+    // spreading the row and then deleting keys would fail this even while
+    // passing the key-name check, if a value leaked through some other field.
+    for (const row of [reportRunRow(), completedReportRunRow()]) {
+      for (const extras of [
+        RUN_VIEW_EXTRAS_PASS,
+        RUN_VIEW_EXTRAS_FAIL,
+        RUN_VIEW_EXTRAS_UNRESOLVED,
+      ]) {
+        const serialized = JSON.stringify(toRunView(row, extras))
+
+        expect(serialized).not.toContain(PROGRESS_TOKEN_HASH)
+        expect(serialized).not.toContain(CLAIMED_BY)
+        expect(serialized).not.toContain(DEDUPE_KEY)
+      }
+    }
+  })
 
   test("user_id reaches the serialization only inside artifactKeys", () => {
     // The deliberate exposure, asserted precisely rather than waved at.
@@ -916,7 +1051,7 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
     // discloses nothing to its recipient either: every `report_runs` read is
     // scoped by `user_id`, so the only browser holding this view is already that
     // user. What must hold is the narrow fact: nowhere else.
-    const completed = toRunView(completedReportRunRow())
+    const completed = toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS)
 
     expect(JSON.stringify(completed)).toContain(RUN_USER_ID)
     expect(completed.artifactKeys[0]).toContain(RUN_USER_ID)
@@ -942,7 +1077,8 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
           status === "failed"
             ? { status, errorCode: "TIMEOUT", errorMessage: "reaped" }
             : { status }
-        )
+        ),
+        RUN_VIEW_EXTRAS_PASS
       )
 
       expect(JSON.stringify(view)).not.toContain(RUN_USER_ID)
@@ -957,7 +1093,12 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
         idLike,
         fc.option(fc.integer({ min: 0, max: 100_000 }), { nil: null }),
         fc.option(fc.integer({ min: 0, max: 100_000 }), { nil: null }),
-        (status, userId, id, resourceCount, gapCount) => {
+        fc.constantFrom<RunViewExtras>(
+          RUN_VIEW_EXTRAS_PASS,
+          RUN_VIEW_EXTRAS_FAIL,
+          RUN_VIEW_EXTRAS_UNRESOLVED
+        ),
+        (status, userId, id, resourceCount, gapCount, extras) => {
           const failed = status === "failed"
           const view = toRunView(
             reportRunRow({
@@ -968,11 +1109,13 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
               gapCount,
               errorCode: failed ? "THROTTLED" : null,
               errorMessage: failed ? "Azure rate limits exhausted." : null,
-            })
+            }),
+            extras
           )
           const serialized = JSON.stringify(view)
 
-          // The shape is closed whatever the row holds.
+          // The shape is closed whatever the row holds and whatever extras
+          // this run resolved (Requirement 43.4).
           expect(Object.keys(view).sort()).toEqual(RUN_VIEW_KEYS)
 
           // Requirement 37.7, over generated rows rather than the one fixture.
@@ -983,8 +1126,10 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
           expect(serialized).not.toContain(PROGRESS_LABEL)
 
           // `artifactKeys` names the snapshot exactly when the run completed,
-          // and names a key rather than a URL. The template is spelled out here
-          // rather than imported, for the same reason the key set is.
+          // regardless of `extras.verificationStatus` — see the docstring on
+          // `toRunView` for why the snapshot half of this gate stays keyed on
+          // `status` alone. The template is spelled out here rather than
+          // imported, for the same reason the key set is.
           expect(view.artifactKeys).toEqual(
             status === "completed"
               ? [`${userId}/snapshots/${id}/snapshot.json`]
@@ -994,8 +1139,647 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11", () => {
             expect(key).not.toContain("://")
             expect(key).not.toContain("?")
           }
+
+          // Extras pass straight through: this function does not narrow or
+          // re-derive them, and the guard treats them as browser-safe by
+          // construction (they name no secret column of any table).
+          expect(view.templateName).toBe(extras.templateName)
+          expect(view.templateVersion).toBe(extras.templateVersion)
+          expect(view.verificationStatus).toBe(extras.verificationStatus)
         }
       )
     )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// TemplateView
+// ---------------------------------------------------------------------------
+
+/**
+ * The Projection_Guard for `TemplateView` (Requirements 43.4, 43.6, 43.9).
+ *
+ * `report_templates` carries no secret of its own, so this guard's job is
+ * narrower than the two above: it closes the *shape* (Requirement 43.9's "one
+ * browser-safe projection per table, no other shape") rather than keeping a
+ * credential out. The one exception is `userId`, dropped here for the same
+ * "the signed-in user already knows who they are" reason `RunView` drops it
+ * as a key — and, unlike `RunView`, `TemplateView` has no positional key that
+ * needs it, so it is absent from the serialization entirely rather than
+ * appearing in one narrow, deliberate place.
+ */
+
+// --- Fixture ----------------------------------------------------------------
+
+const TEMPLATE_USER_ID = "user-tmpl-3c91"
+const TEMPLATE_ID = "tmpl-0001"
+const TEMPLATE_VERSION_ID = "tmplver-0001"
+
+/** A definition digest: 64 lowercase hex, distinct from every other fixture digest. */
+const TEMPLATE_VERSION_SHA = "1" + "0".repeat(62) + "9"
+
+/**
+ * Typed as the inferred row, so adding a column to `report_templates` breaks
+ * this fixture at `pnpm typecheck` and forces the reviewed decision
+ * Requirement 43.9 is after.
+ *
+ * Defaults to a template with a current version and no draft. The
+ * no-version and has-draft shapes are overridden per test.
+ */
+function reportTemplateRow(
+  overrides: Partial<ReportTemplate> = {}
+): ReportTemplate {
+  return {
+    id: TEMPLATE_ID,
+    userId: TEMPLATE_USER_ID,
+    name: "Monthly utilization",
+    description: "CPU, memory, disk and network for every VM in scope.",
+    currentVersionId: TEMPLATE_VERSION_ID,
+    draftDefinition: null,
+    seededStarterKey: null,
+    createdAt: new Date("2026-05-01T00:00:00.000Z"),
+    updatedAt: new Date("2026-05-02T00:00:00.000Z"),
+    ...overrides,
+  }
+}
+
+const TEMPLATE_CURRENT_VERSION: TemplateViewCurrentVersion = {
+  version: 3,
+  definitionSha256: TEMPLATE_VERSION_SHA,
+}
+
+/** Requirement 43.9 — the eight keys, sorted, spelled out. */
+const TEMPLATE_VIEW_KEYS = [
+  "createdAt",
+  "currentVersion",
+  "currentVersionSha256",
+  "description",
+  "hasDraft",
+  "id",
+  "name",
+  "updatedAt",
+]
+
+/** Omitted under both spellings, matching the convention above. */
+const TEMPLATE_FORBIDDEN_KEYS = [
+  "user_id",
+  "userId",
+  "current_version_id",
+  "currentVersionId",
+  "draft_definition",
+  "draftDefinition",
+  "seeded_starter_key",
+  "seededStarterKey",
+]
+
+// --- The projection ---------------------------------------------------------
+
+describe("toTemplateView — Requirement 43.9", () => {
+  test("carries the eight values the browser is allowed to see, with a current version", () => {
+    const view = toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
+
+    expect(view).toEqual({
+      id: TEMPLATE_ID,
+      name: "Monthly utilization",
+      description: "CPU, memory, disk and network for every VM in scope.",
+      currentVersion: 3,
+      currentVersionSha256: TEMPLATE_VERSION_SHA,
+      hasDraft: false,
+      createdAt: "2026-05-01T00:00:00.000Z",
+      updatedAt: "2026-05-02T00:00:00.000Z",
+    })
+  })
+
+  test("a template with no version yet carries null for both version fields", () => {
+    // Before step 7 of the wizard completes: `currentVersionId` is null on the
+    // row, and the caller correspondingly resolves no version to pass in.
+    const view = toTemplateView(
+      reportTemplateRow({ currentVersionId: null }),
+      null
+    )
+
+    expect(view.currentVersion).toBeNull()
+    expect(view.currentVersionSha256).toBeNull()
+  })
+
+  test("hasDraft reflects only whether draft_definition is non-null, never its content", () => {
+    const withDraft = toTemplateView(
+      reportTemplateRow({ draftDefinition: { blocks: ["kpi_row"] } }),
+      TEMPLATE_CURRENT_VERSION
+    )
+    const withoutDraft = toTemplateView(
+      reportTemplateRow({ draftDefinition: null }),
+      TEMPLATE_CURRENT_VERSION
+    )
+
+    expect(withDraft.hasDraft).toBe(true)
+    expect(withoutDraft.hasDraft).toBe(false)
+    expect(JSON.stringify(withDraft)).not.toContain("kpi_row")
+  })
+
+  test("serializes createdAt and updatedAt as ISO 8601 instants in UTC", () => {
+    const view = toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
+
+    for (const value of [view.createdAt, view.updatedAt]) {
+      expect(typeof value).toBe("string")
+      expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+    }
+  })
+})
+
+// --- The guard --------------------------------------------------------------
+
+describe("Projection_Guard — TemplateView, Requirements 43.4, 43.6, 43.9", () => {
+  test("the projected key set is exactly the eight reviewed keys, as a set equality", () => {
+    expect(
+      Object.keys(
+        toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
+      ).sort()
+    ).toEqual(TEMPLATE_VIEW_KEYS)
+  })
+
+  test("the key set is closed whether or not a version or a draft exists", () => {
+    for (const view of [
+      toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION),
+      toTemplateView(reportTemplateRow({ currentVersionId: null }), null),
+      toTemplateView(
+        reportTemplateRow({ draftDefinition: { blocks: [] } }),
+        TEMPLATE_CURRENT_VERSION
+      ),
+    ]) {
+      expect(Object.keys(view).sort()).toEqual(TEMPLATE_VIEW_KEYS)
+    }
+  })
+
+  test.each(TEMPLATE_FORBIDDEN_KEYS)(
+    "%s appears in neither the key set nor the serialization",
+    (key) => {
+      const view = toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
+
+      expect(Object.keys(view)).not.toContain(key)
+      expect(JSON.stringify(view)).not.toContain(`"${key}"`)
+    }
+  )
+
+  test("the serialization contains no user_id value and no unmasked subscription id", () => {
+    // Requirement 43.6, restated for this projection: `report_templates`
+    // carries a `user_id` and nothing else this spec treats as secret, so the
+    // narrow claim here is that neither `TEMPLATE_USER_ID` nor the reused
+    // `REALISTIC_SUBSCRIPTION_ID` fixture (a value this table has no column
+    // for at all) ever appears — a template row and a subscription row share
+    // no field, and this test is what makes that structural fact explicit.
+    const serialized = JSON.stringify(
+      toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
+    )
+
+    expect(serialized).not.toContain(TEMPLATE_USER_ID)
+    expect(serialized).not.toContain(REALISTIC_SUBSCRIPTION_ID)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// TemplateVersionView
+// ---------------------------------------------------------------------------
+
+/**
+ * The Projection_Guard for `TemplateVersionView` (Requirement 43.5).
+ */
+
+// --- Fixture ----------------------------------------------------------------
+
+/** A definition jsonb blob distinctive enough to prove absence rather than truncation. */
+const TEMPLATE_VERSION_DEFINITION_MARKER =
+  "fixture-definition-marker-block-tree"
+
+function reportTemplateVersionRow(
+  overrides: Partial<ReportTemplateVersion> = {}
+): ReportTemplateVersion {
+  return {
+    id: TEMPLATE_VERSION_ID,
+    templateId: TEMPLATE_ID,
+    version: 3,
+    definition: { marker: TEMPLATE_VERSION_DEFINITION_MARKER, blocks: [] },
+    definitionSha256: TEMPLATE_VERSION_SHA,
+    createdAt: new Date("2026-06-15T09:00:00.000Z"),
+    ...overrides,
+  }
+}
+
+/** Requirement 43.5 — the four keys, sorted, spelled out. */
+const TEMPLATE_VERSION_VIEW_KEYS = [
+  "createdAt",
+  "definitionSha256",
+  "id",
+  "version",
+]
+
+/**
+ * Requirement 43.5's "excluding every field of a connected subscription" —
+ * every `ConnectedSubscriptionView`-relevant column name, under both
+ * spellings, reused rather than restated so the two guards cannot silently
+ * diverge on what "a connected subscription's field" means.
+ */
+const TEMPLATE_VERSION_FORBIDDEN_KEYS = [
+  "template_id",
+  "templateId",
+  "definition",
+  ...FORBIDDEN_KEYS,
+]
+
+// --- The projection ---------------------------------------------------------
+
+describe("toTemplateVersionView — Requirement 43.5", () => {
+  test("carries the four values the browser is allowed to see", () => {
+    const view = toTemplateVersionView(reportTemplateVersionRow())
+
+    expect(view).toEqual({
+      id: TEMPLATE_VERSION_ID,
+      version: 3,
+      definitionSha256: TEMPLATE_VERSION_SHA,
+      createdAt: "2026-06-15T09:00:00.000Z",
+    })
+  })
+
+  test("serializes createdAt as an ISO 8601 instant in UTC", () => {
+    const view = toTemplateVersionView(reportTemplateVersionRow())
+
+    expect(typeof view.createdAt).toBe("string")
+    expect(view.createdAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+    )
+  })
+})
+
+// --- The guard --------------------------------------------------------------
+
+describe("Projection_Guard — TemplateVersionView, Requirements 43.4, 43.5, 43.6", () => {
+  test("the projected key set is exactly the four reviewed keys, as a set equality", () => {
+    expect(
+      Object.keys(toTemplateVersionView(reportTemplateVersionRow())).sort()
+    ).toEqual(TEMPLATE_VERSION_VIEW_KEYS)
+  })
+
+  test.each(TEMPLATE_VERSION_FORBIDDEN_KEYS)(
+    "%s appears in neither the key set nor the serialization",
+    (key) => {
+      const view = toTemplateVersionView(reportTemplateVersionRow())
+
+      expect(Object.keys(view)).not.toContain(key)
+      expect(JSON.stringify(view)).not.toContain(`"${key}"`)
+    }
+  )
+
+  test("carries no field of a connected subscription, and the definition blob does not survive", () => {
+    // Requirement 43.5, stated positively: a version row has no relationship
+    // to a subscription at all, so every secret fixture this file defines for
+    // `connected_subscriptions` is asserted absent — trivially true, and
+    // asserted anyway because the interesting claim is about the shape this
+    // projection is *capable* of carrying, not about today's data. The
+    // definition marker proves the jsonb blob itself is dropped rather than
+    // merely unlabelled.
+    const serialized = JSON.stringify(
+      toTemplateVersionView(reportTemplateVersionRow())
+    )
+
+    expect(serialized).not.toContain(TENANT_ID)
+    expect(serialized).not.toContain(CLIENT_ID)
+    expect(serialized).not.toContain(CLIENT_SECRET_ENC)
+    expect(serialized).not.toContain(WORKSPACE_ID)
+    expect(serialized).not.toContain(REALISTIC_SUBSCRIPTION_ID)
+    expect(serialized).not.toContain(TEMPLATE_VERSION_DEFINITION_MARKER)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// FindingView / ReplayView / DriftSampleView / VerificationView
+// ---------------------------------------------------------------------------
+
+/**
+ * The Projection_Guard for `VerificationView` (Requirements 36.1, 43.4, 43.6,
+ * 43.9).
+ */
+
+// --- Fixture ----------------------------------------------------------------
+
+const VERIFICATION_ID = "verif-0001"
+const VERIFICATION_RUN_ID = "run-verif-0001"
+const VERIFICATION_ATTEMPT_ID = "ver_attempt_0001"
+const VERIFICATION_TEMPLATE_VERSION_ID = "tmplver-verif-0001"
+const VERIFICATION_ARTIFACT_KEY =
+  "user-verif-0001/reports/run-verif-0001/verification-ver_attempt_0001.json"
+
+const SNAPSHOT_SHA = "2" + "0".repeat(62) + "a"
+const DOCX_SHA = "3" + "0".repeat(62) + "b"
+const PDF_SHA = "4" + "0".repeat(62) + "c"
+
+const BLOCKING_FINDING: Finding = {
+  type: "table_cell_mismatch",
+  severity: "blocking",
+  table_id: "tbl-vm-utilization",
+  row_key: "prod-web-01",
+  column_key: "Average CPU",
+  expected: "68.4%",
+  observed: "68.5%",
+}
+
+const ADVISORY_FINDING: Finding = {
+  type: "drift_observed",
+  severity: "advisory",
+  resource_id: "prod-web-01",
+  message: "A bounded drift sample observed a changed value.",
+}
+
+function reportVerificationRow(
+  overrides: Partial<ReportVerification> = {}
+): ReportVerification {
+  return {
+    id: VERIFICATION_ID,
+    runId: VERIFICATION_RUN_ID,
+    attemptId: VERIFICATION_ATTEMPT_ID,
+    templateVersionId: VERIFICATION_TEMPLATE_VERSION_ID,
+    status: "fail",
+    figureCount: 1480,
+    snapshotSha256: SNAPSHOT_SHA,
+    docxSha256: DOCX_SHA,
+    pdfSha256: PDF_SHA,
+    replay: {
+      possible: true,
+      recomputed_sha256: SNAPSHOT_SHA,
+      stored_sha256: SNAPSHOT_SHA,
+      objects_folded: 87,
+      objects_named: 87,
+    },
+    driftSample: {
+      n: 25,
+      method: "document_named+top10_max+10pct",
+      seed: "a3f9",
+      not_requeried: [],
+    },
+    findings: [BLOCKING_FINDING, ADVISORY_FINDING],
+    counts: { ledger_entries_checked: 1480, ledger_entries_unrendered: 1 },
+    artifactKey: VERIFICATION_ARTIFACT_KEY,
+    createdAt: new Date("2026-08-01T04:00:00.000Z"),
+    ...overrides,
+  }
+}
+
+/** Requirement 43.9 — the twelve keys, sorted, spelled out. */
+const VERIFICATION_VIEW_KEYS = [
+  "advisoryFindings",
+  "blockingFindings",
+  "counts",
+  "createdAt",
+  "docxSha256",
+  "driftSample",
+  "figureCount",
+  "id",
+  "pdfSha256",
+  "replay",
+  "snapshotSha256",
+  "status",
+]
+
+/** Omitted under both spellings — see `toVerificationView`'s docstring for why each. */
+const VERIFICATION_FORBIDDEN_KEYS = [
+  "run_id",
+  "runId",
+  "attempt_id",
+  "attemptId",
+  "template_version_id",
+  "templateVersionId",
+  "artifact_key",
+  "artifactKey",
+  "findings",
+]
+
+// --- toFindingView -----------------------------------------------------------
+
+describe("toFindingView — Requirement 43.9", () => {
+  test("carries a blocking finding's type, severity and every locating field it declares", () => {
+    const view = toFindingView(BLOCKING_FINDING)
+
+    expect(view).toEqual({
+      type: "table_cell_mismatch",
+      severity: "blocking",
+      tableId: "tbl-vm-utilization",
+      rowKey: "prod-web-01",
+      columnKey: "Average CPU",
+      expected: "68.4%",
+      observed: "68.5%",
+    })
+  })
+
+  test("carries an advisory finding's type, severity and message, and no unset field", () => {
+    const view = toFindingView(ADVISORY_FINDING)
+
+    expect(view).toEqual({
+      type: "drift_observed",
+      severity: "advisory",
+      resourceId: "prod-web-01",
+      message: "A bounded drift sample observed a changed value.",
+    })
+    expect(view).not.toHaveProperty("tableId")
+    expect(view).not.toHaveProperty("astPath")
+  })
+
+  test("presents a finding type the view has never been taught about, under its recorded classification", () => {
+    // Requirement 39.10's forward-compatibility rule, at the shape level:
+    // `findingSchema` already validates `type` as an open string (see
+    // `lib/verifications/result.ts`), and this mirror must not narrow it back
+    // to a closed set on the way to the browser.
+    const unknownFinding: Finding = {
+      type: "a_type_this_module_has_never_seen",
+      severity: "blocking",
+      block_id: "blk-9",
+    }
+
+    const view = toFindingView(unknownFinding)
+
+    expect(view.type).toBe("a_type_this_module_has_never_seen")
+    expect(view.severity).toBe("blocking")
+    expect(view.blockId).toBe("blk-9")
+  })
+})
+
+// --- toVerificationView -------------------------------------------------------
+
+describe("toVerificationView — Requirements 36.1, 43.9", () => {
+  test("carries the twelve values the browser is allowed to see", () => {
+    const view = toVerificationView(reportVerificationRow())
+
+    expect(view).toEqual({
+      id: VERIFICATION_ID,
+      status: "fail",
+      figureCount: 1480,
+      snapshotSha256: SNAPSHOT_SHA,
+      docxSha256: DOCX_SHA,
+      pdfSha256: PDF_SHA,
+      replay: {
+        possible: true,
+        recomputedSha256: SNAPSHOT_SHA,
+        storedSha256: SNAPSHOT_SHA,
+        objectsFolded: 87,
+        objectsNamed: 87,
+      },
+      driftSample: {
+        n: 25,
+        method: "document_named+top10_max+10pct",
+        seed: "a3f9",
+        notRequeried: [],
+      },
+      blockingFindings: [toFindingView(BLOCKING_FINDING)],
+      advisoryFindings: [toFindingView(ADVISORY_FINDING)],
+      counts: { ledger_entries_checked: 1480, ledger_entries_unrendered: 1 },
+      createdAt: "2026-08-01T04:00:00.000Z",
+    })
+  })
+
+  test("partitions findings by severity rather than passing one mixed list through", () => {
+    const view = toVerificationView(
+      reportVerificationRow({
+        findings: [
+          BLOCKING_FINDING,
+          ADVISORY_FINDING,
+          { ...BLOCKING_FINDING, table_id: "tbl-second" },
+        ],
+      })
+    )
+
+    expect(view.blockingFindings).toHaveLength(2)
+    expect(view.advisoryFindings).toHaveLength(1)
+    expect(view.advisoryFindings[0].type).toBe("drift_observed")
+  })
+
+  test("presents replay-not-possible without inventing a digest", () => {
+    const view = toVerificationView(
+      reportVerificationRow({
+        replay: { possible: false, objects_folded: 0, objects_named: 12 },
+      })
+    )
+
+    expect(view.replay.possible).toBe(false)
+    expect(view.replay).not.toHaveProperty("recomputedSha256")
+    expect(view.replay).not.toHaveProperty("storedSha256")
+  })
+
+  test("projects both verification statuses without narrowing them", () => {
+    for (const status of ["pass", "fail"] as const) {
+      const view = toVerificationView(reportVerificationRow({ status }))
+
+      expect(view.status).toBe(status)
+    }
+  })
+
+  test("serializes createdAt as an ISO 8601 instant in UTC", () => {
+    const view = toVerificationView(reportVerificationRow())
+
+    expect(typeof view.createdAt).toBe("string")
+    expect(view.createdAt).toMatch(
+      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+    )
+  })
+})
+
+// --- The guard --------------------------------------------------------------
+
+describe("Projection_Guard — VerificationView, Requirements 36.1, 43.4, 43.6, 43.9", () => {
+  test("the fixture assigns a distinct non-empty value to every dropped identifier", () => {
+    // The same non-vacuity discipline as every guard above: these four values
+    // are asserted absent below, so they must first be real and distinct.
+    const row = reportVerificationRow()
+    const dropped = [
+      row.runId,
+      row.attemptId,
+      row.templateVersionId,
+      row.artifactKey,
+    ]
+
+    for (const value of dropped) {
+      expect(value).toBeTruthy()
+      expect(typeof value).toBe("string")
+    }
+    expect(new Set(dropped).size).toBe(dropped.length)
+  })
+
+  test("the projected key set is exactly the twelve reviewed keys, as a set equality", () => {
+    expect(
+      Object.keys(toVerificationView(reportVerificationRow())).sort()
+    ).toEqual(VERIFICATION_VIEW_KEYS)
+  })
+
+  test("the key set is closed across both statuses and a replay-not-possible row", () => {
+    for (const view of [
+      toVerificationView(reportVerificationRow({ status: "pass" })),
+      toVerificationView(reportVerificationRow({ status: "fail" })),
+      toVerificationView(
+        reportVerificationRow({
+          replay: { possible: false, objects_folded: 0, objects_named: 0 },
+          findings: [],
+        })
+      ),
+    ]) {
+      expect(Object.keys(view).sort()).toEqual(VERIFICATION_VIEW_KEYS)
+    }
+  })
+
+  test.each(VERIFICATION_FORBIDDEN_KEYS)(
+    "%s appears in neither the key set nor the serialization",
+    (key) => {
+      const view = toVerificationView(reportVerificationRow())
+
+      expect(Object.keys(view)).not.toContain(key)
+      expect(JSON.stringify(view)).not.toContain(`"${key}"`)
+    }
+  )
+
+  test.each([
+    { column: "run_id", value: VERIFICATION_RUN_ID },
+    { column: "attempt_id", value: VERIFICATION_ATTEMPT_ID },
+    { column: "template_version_id", value: VERIFICATION_TEMPLATE_VERSION_ID },
+    { column: "artifact_key", value: VERIFICATION_ARTIFACT_KEY },
+  ])("the serialization contains no $column value", ({ value }) => {
+    expect(
+      JSON.stringify(toVerificationView(reportVerificationRow()))
+    ).not.toContain(value)
+  })
+
+  test("Requirement 43.6 — the serialization carries no progress_token_hash, client-secret ciphertext or unmasked subscription id", () => {
+    // `report_verifications` has no relationship to `connected_subscriptions`
+    // or `report_runs`' progress machinery at all, so — as with
+    // `TemplateVersionView` above — this is the structural claim made
+    // explicit: every secret fixture this file defines for those two tables
+    // is asserted absent from a verification-result projection too.
+    const serialized = JSON.stringify(
+      toVerificationView(reportVerificationRow())
+    )
+
+    expect(serialized).not.toContain(PROGRESS_TOKEN_HASH)
+    expect(serialized).not.toContain(TENANT_ID)
+    expect(serialized).not.toContain(CLIENT_ID)
+    expect(serialized).not.toContain(CLIENT_SECRET_ENC)
+    expect(serialized).not.toContain(REALISTIC_SUBSCRIPTION_ID)
+  })
+
+  test("no unbounded excerpt survives past truncation the agent already performed", () => {
+    // Requirement 43.7 puts the 200-character truncation on the agent, before
+    // the artifact is ever written — this projection has nothing to truncate.
+    // What this guard can assert is narrower and still real: a finding
+    // message at the agent's own declared bound passes through character for
+    // character, unmodified by this module.
+    const boundedMessage = "x".repeat(200)
+    const view = toVerificationView(
+      reportVerificationRow({
+        findings: [
+          {
+            type: "prose_review_finding",
+            severity: "advisory",
+            message: boundedMessage,
+          },
+        ],
+      })
+    )
+
+    expect(view.advisoryFindings[0].message).toBe(boundedMessage)
+    expect(view.advisoryFindings[0].message).toHaveLength(200)
   })
 })

@@ -1,5 +1,10 @@
 {
-  "pbtResults": {},
+  "pbtResults": {
+    "3.4 Implement `lib/templates/version.ts` and its digest property": {
+      "status": "passed",
+      "lastRunTimestamp": 1786942125914
+    }
+  },
   "executionHistory": {
     "1.1 Move `OWNER_TAG_KEY` and `owner_tags` into the pure storage base": [
       {
@@ -168,6 +173,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786893194300
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786900540322
       }
     ],
     "2.6 Integration tests for versioning, verification append and the partial CHECK": [
@@ -175,6 +185,16 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883159784
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786900558235
+      },
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786900989685
       }
     ],
     "3.1 Declare the block-type set and the per-type config schemas, and guard the declarations": [
@@ -192,6 +212,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786888873841
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901149578
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901174789
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786927272240
       }
     ],
     "3.2 Implement `lib/templates/definition.ts` — the zod definition schema": [
@@ -199,6 +234,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883160255
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901150085
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786927279242
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786937079839
       }
     ],
     "3.3 Property test — definition validation is total and reports every violation": [
@@ -206,6 +256,26 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883160477
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901150599
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786937103798
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786938240338
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786940781668
       }
     ],
     "3.4 Implement `lib/templates/version.ts` and its digest property": [
@@ -213,6 +283,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883160676
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901151427
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786940789273
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786942854899
       }
     ],
     "3.5 Implement `lib/templates/period.ts` — the Period_Resolver — and its property": [
@@ -220,6 +305,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883160893
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901151765
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786942870126
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786945084836
       }
     ],
     "3.6 Ship the three starter templates and seed them at account creation": [
@@ -227,6 +327,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883161104
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901152398
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786945093031
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786947713135
       }
     ],
     "3.7 Implement `lib/templates/composer.ts` — the pure reducer — and its property": [
@@ -234,6 +349,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883161324
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901152882
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786947728058
+      },
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786949671538
       }
     ],
     "4. Checkpoint — the definition model and the schema": [
@@ -241,6 +371,21 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883161560
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901153416
+      },
+      {
+        "executionId": "ba802e37-e8d8-48b1-a271-54a4bfc22916",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786949971497
+      },
+      {
+        "executionId": "ba802e37-e8d8-48b1-a271-54a4bfc22916",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786950136205
       }
     ],
     "5.1 Implement `compile/definition.py` — the mirrored validator": [
@@ -248,6 +393,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883161706
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901154120
       }
     ],
     "5.2 Ship the shared fixture corpus and the Mirror_Guard's behavioural half": [
@@ -255,6 +405,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883161896
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901154672
       }
     ],
     "5.3 Implement `compile/snapshot_view.py` — the only source of a value": [
@@ -262,6 +417,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883162121
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901155645
       }
     ],
     "5.4 Implement `compile/ast.py` and ship the AST numeric-leaf guard with it": [
@@ -269,6 +429,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883162250
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901155958
       }
     ],
     "5.5 Implement `compile/figures.py` — the ledger and the cursor, in one task with the AST": [
@@ -276,6 +441,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883162500
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901156564
       }
     ],
     "5.6 Implement `compile/format.py` and `compile/estimators.py`, with Property 1": [
@@ -283,6 +453,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883162742
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901157405
       }
     ],
     "5.7 Implement `compile/scope.py` — the Scope_Resolver — with Property 7": [
@@ -290,6 +465,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883162965
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901157685
       }
     ],
     "5.8 Implement `compile/blocks/` — one module per declared block type": [
@@ -297,6 +477,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883163210
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901158397
       }
     ],
     "5.9 Implement `compare/delta.py` — the Delta_Compiler": [
@@ -304,6 +489,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883163347
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901158752
       }
     ],
     "5.10 Unit tests for block compilation and the compile refusals": [
@@ -311,6 +501,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883163568
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901159375
       }
     ],
     "6. Checkpoint — a snapshot compiles to an AST and a ledger": [
@@ -318,6 +513,11 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883163708
+      },
+      {
+        "executionId": "b6189f49-6d7f-42a7-b8e5-e07d8c1ed072",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786901160016
       }
     ],
     "7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard": [
@@ -682,6 +882,20 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883180410
+      }
+    ],
+    "2. Postgres schema, the three stores and the browser-safe projections": [
+      {
+        "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786900990016
+      }
+    ],
+    "3. The definition model, its mirror, and the pure web-side modules": [
+      {
+        "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
+        "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
+        "timestamp": 1786949672004
       }
     ]
   }

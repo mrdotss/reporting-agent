@@ -78,10 +78,60 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
   "lib/crypto.property.test.ts": 11,
   "lib/aws/redact.property.test.ts": 5,
   "lib/subscriptions/azure-artifacts.property.test.ts": 8,
+  // Property 8 (definition validation). Zero, on purpose and not as an
+  // oversight: design.md's Property 8 declares no examples — unlike Properties
+  // 5, 6, 7 and 9, whose tables carry a "Declared examples" row — because its
+  // inputs are whole generated definitions plus an injected defect set, and a
+  // hand-written tuple of the two reads as noise rather than as a retained
+  // counterexample. The named cases the property's kills list calls for live in
+  // that module as ordinary `test()` cases instead, where a fixed readable
+  // fixture states each one far better. Raise this the day a *generated*
+  // counterexample is worth pinning.
+  "lib/templates/definition.property.test.ts": 0,
+  // Property 11 (the definition digest). Six, shared by all four of that
+  // module's properties and counted once: design.md's Property 11 table carries
+  // no "Declared examples" row, but the task text names the character classes
+  // the generator must reach — astral-plane, an NFC/NFD pair, a case-differing
+  // pair, a JSON-escaping string, an empty object and an empty array — and each
+  // is worth retaining as a fixed case as well as being a guaranteed
+  // constituent of every generated value.
+  "lib/templates/version.property.test.ts": 6,
+  // Property 9 (period resolution). Twenty, across three arrays — one per
+  // property, because the three properties take different argument shapes and a
+  // shared array would not typecheck against any two of them.
+  //
+  // Thirteen for the six resolution rules: the three design.md's table declares,
+  // the DST case that kills a millisecond-arithmetic resolver, both date-line
+  // directions, both non-whole-hour offsets, and the four bound edges. Four for
+  // the same-local-day identity, two of which straddle a DST transition inside a
+  // single local day. Three for the process-`TZ` invariance.
+  //
+  // The fourth case the task text names — "the result is unchanged when the
+  // process `TZ` is set to three different zones" — is a declared case *and* a
+  // named `test()`, deliberately. It manipulates process state, so the property
+  // that carries it needs a `try`/`finally` and a separate assertion that the
+  // reassignment takes effect at all; a tuple in an `examples` array cannot say
+  // either of those things, and an invariance check that silently runs under one
+  // unchanged zone is worse than none.
+  "lib/templates/period.property.test.ts": 20,
+  // Property 10 (the composer reducer). Six, in one array shared by the
+  // single-action property: the first and last block of the top-level sequence,
+  // the first and last of a row column, a `row` moved into a row column, and
+  // the only block in a column. design.md's Property 10 table names four
+  // groups; the first two are two cases each, so six is the count actually
+  // declared. Each is a boundary a flattened-index or clamping nudge looks
+  // correct on, which is exactly why they are pinned rather than left to the
+  // generator to rediscover.
+  //
+  // The sequence property carries none: its input is a state plus an action
+  // *recipe* list whose selectors resolve against the state as it changes, and
+  // a hand-written recipe tuple names nothing a reader can recognise. The named
+  // boundaries live in the single-action property, where the action is concrete.
+  "lib/templates/composer.property.test.ts": 6,
 }
 
 /** Recorded from the tree, so deleting a whole entry above is caught too. */
-const MINIMUM_DECLARED_CASES_TOTAL = 24
+const MINIMUM_DECLARED_CASES_TOTAL = 56
 
 /**
  * Requirement 42.7 — modifiers that stop a property from running or accept its

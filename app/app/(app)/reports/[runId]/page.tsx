@@ -7,7 +7,7 @@ import { RunProgress } from "@/components/reports/run-progress"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { requireSession } from "@/lib/auth/guard"
-import { toRunView } from "@/lib/db/views"
+import { toRunView, UNRESOLVED_RUN_VIEW_EXTRAS } from "@/lib/db/views"
 import { loadRunGaps, loadRunProvenance } from "@/lib/runs/gaps"
 import { periodLine } from "@/lib/runs/presentation"
 import { findOwnedRun } from "@/lib/runs/state"
@@ -76,7 +76,11 @@ export default async function RunPage({ params }: RunPageProps) {
   const run = await findOwnedRun(user.id, runId)
   if (run === undefined) notFound()
 
-  const view = toRunView(run)
+  // Requirement 37.1's template name, pinned version and verification status
+  // are not resolved by this page yet: `run.templateVersionId` is `null`
+  // until task 13.1, and no run reaches `verifying` until task 11.5. See
+  // `UNRESOLVED_RUN_VIEW_EXTRAS`'s docstring.
+  const view = toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
 
   const [gaps, provenance] = await Promise.all([
     loadRunGaps(run),

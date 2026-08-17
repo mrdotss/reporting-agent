@@ -11,7 +11,11 @@ import {
   unprocessable,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
-import { toRunView, type RunView } from "@/lib/db/views"
+import {
+  toRunView,
+  UNRESOLVED_RUN_VIEW_EXTRAS,
+  type RunView,
+} from "@/lib/db/views"
 import { runCreateInputSchema } from "@/lib/runs/input"
 import { listOwnedRuns } from "@/lib/runs/state"
 
@@ -83,7 +87,7 @@ export async function POST(request: Request): Promise<Response> {
     // else's prefix.
     const { run, deduplicated } = await enqueueRun(user.id, parsed.data)
 
-    const view = toRunView(run)
+    const view = toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
 
     return json(deduplicated ? 200 : 201, {
       run: view,
@@ -137,7 +141,15 @@ export async function GET(): Promise<Response> {
   if (user === null) return unauthorized()
 
   try {
-    const runs = (await listOwnedRuns(user.id)).map(toRunView)
+    // Requirement 37.1 needs the template name, pinned version and verification
+    // status per run for the reports list. No caller in this codebase can resolve
+    // any of the three yet — `enqueueRun` does not set `template_version_id`
+    // until task 13.1, and nothing reaches `verifying` until task 11.5 — so this
+    // handler passes the honest `null` for all three (`UNRESOLVED_RUN_VIEW_EXTRAS`)
+    // rather than the join task 13.6's route handler will add once those two land.
+    const runs = (await listOwnedRuns(user.id)).map((run) =>
+      toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
+    )
 
     return json(200, { runs } satisfies ListResponseBody)
   } catch (thrown) {

@@ -132,6 +132,7 @@ import { FAILED_THRESHOLD, WINDOW_MINUTES } from "@/lib/auth/lockout"
 import { hashPassword } from "@/lib/auth/password"
 import { SESSION_COOKIE, createSession } from "@/lib/auth/session"
 import * as schema from "@/lib/db/schema"
+import { STARTER_KEYS, STARTER_TEMPLATE_COUNT } from "@/lib/templates/starters"
 import { FakeCookieStore, redirectTarget } from "@/test/next-doubles"
 
 // --- Constants --------------------------------------------------------------
@@ -351,6 +352,40 @@ async function seedAttempts(
   }
 }
 
+/** The `seeded_starter_key` values one user holds (Requirement 10.2). */
+async function starterKeysFor(userId: string): Promise<readonly string[]> {
+  const result = await db.query<{ seeded_starter_key: string }>(
+    `SELECT seeded_starter_key FROM report_templates
+      WHERE user_id = $1 AND seeded_starter_key IS NOT NULL
+      ORDER BY seeded_starter_key`,
+    [userId]
+  )
+  return result.rows.map(({ seeded_starter_key: key }) => key)
+}
+
+/** One row per seeded starter version, joined to the template that pins it. */
+async function starterVersionsFor(userId: string): Promise<
+  readonly {
+    readonly version_id: string
+    readonly version: number
+    readonly current_version_id: string | null
+  }[]
+> {
+  const result = await db.query<{
+    version_id: string
+    version: number
+    current_version_id: string | null
+  }>(
+    `SELECT v.id AS version_id, v.version, t.current_version_id
+       FROM report_template_versions v
+       JOIN report_templates t ON t.id = v.template_id
+      WHERE t.user_id = $1 AND t.seeded_starter_key IS NOT NULL
+      ORDER BY t.seeded_starter_key`,
+    [userId]
+  )
+  return result.rows
+}
+
 /** Mint a session through the production path, as a browser would then hold it. */
 async function presentSessionFor(userId: string): Promise<string> {
   await createSession(userId)
@@ -495,6 +530,98 @@ describe("registerAction", () => {
 
       // The second submission took the pre-`SELECT` path, so it cost no hash.
       expect(argon2Calls.hash).toBe(1)
+    },
+    ARGON2_TIMEOUT_MS
+  )
+
+  test(
+    "Requirement 10.2 — registration seeds the three starter templates",
+    async () => {
+      // Account creation is the **only** place starters are seeded, so this is
+      // the wiring assertion: three templates, three version-1 rows, each
+      // template pointing at its own version.
+      const normalized = "seeded.on.register@example.com"
+
+      const target = await redirectTarget(
+        registerAction(undefined, credentials(normalized, NEW_PASSWORD))
+      )
+
+      expect(target).toBe(DASHBOARD)
+
+      const [account] = await usersWithNormalized(normalized)
+      expect(account).toBeDefined()
+
+      const templates = await starterKeysFor(account.id)
+      expect([...templates].sort()).toEqual([...STARTER_KEYS].sort())
+
+      const versions = await starterVersionsFor(account.id)
+      expect(versions).toHaveLength(STARTER_TEMPLATE_COUNT)
+      expect(versions.map(({ version }) => version)).toEqual(
+        Array.from({ length: STARTER_TEMPLATE_COUNT }, () => 1)
+      )
+      for (const row of versions) {
+        expect(row.current_version_id).toBe(row.version_id)
+      }
+    },
+    ARGON2_TIMEOUT_MS
+  )
+
+  test(
+    "Requirement 10.6 — a seeding failure does not fail the registration",
+    async () => {
+      // The binding constraint of the wiring: the user row and the session must
+      // survive, the visitor must still land on the dashboard, and no partially
+      // inserted starter may remain — so the account is usable and the wizard is
+      // reachable, which is what "leaves that user able to author a template"
+      // means in practice.
+      const logged = vi.spyOn(console, "error").mockImplementation(() => {})
+      const normalized = "starters.failed@example.com"
+
+      try {
+        // Forced from inside the database, on the **third** starter, so two are
+        // already inserted when it raises. Anything other than zero rows below
+        // would mean the three do not share one transaction.
+        await db.query(
+          `CREATE OR REPLACE FUNCTION fail_on_starter() RETURNS trigger AS $$
+           BEGIN RAISE EXCEPTION 'forced mid-seed failure'; END $$ LANGUAGE plpgsql`
+        )
+        await db.query(
+          `CREATE TRIGGER fail_on_starter_trg BEFORE INSERT ON report_templates
+             FOR EACH ROW EXECUTE FUNCTION fail_on_starter()`
+        )
+
+        const target = await redirectTarget(
+          registerAction(undefined, credentials(normalized, NEW_PASSWORD))
+        )
+
+        // The registration completed. A seeding failure that propagated would
+        // have replaced this redirect with an error page — and would have left
+        // the account created but unreachable, since the `users` insert had
+        // already committed.
+        expect(target).toBe(DASHBOARD)
+
+        const [account] = await usersWithNormalized(normalized)
+        expect(account).toBeDefined()
+        expect(await sessionIdsFor(account.id)).toHaveLength(1)
+
+        // Requirement 10.6 — nothing partially inserted.
+        expect(await starterKeysFor(account.id)).toEqual([])
+        expect(await starterVersionsFor(account.id)).toEqual([])
+
+        // The failure is stated server-side, which is the signal the
+        // `/templates` surface reads the row against — see `lib/templates/seed.ts`.
+        expect(
+          logged.mock.calls.some((call) =>
+            String(call[0]).includes("[starters]")
+          )
+        ).toBe(true)
+      } finally {
+        await db.query(
+          `DROP TRIGGER IF EXISTS fail_on_starter_trg ON report_templates`
+        )
+        await db.query(`DROP FUNCTION IF EXISTS fail_on_starter()`)
+        logged.mockRestore()
+      }
     },
     ARGON2_TIMEOUT_MS
   )
