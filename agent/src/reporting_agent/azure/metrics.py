@@ -104,6 +104,9 @@ __all__ = [
     "GroupKey",
     "MetricsCollector",
     "classify_metric_error_code",
+    "fold_batch_response",
+    "fold_fallback_response",
+    "fold_resource_metrics",
     "parse_retry_after",
     "plan_batches",
 ]
@@ -322,7 +325,93 @@ def _entries_by_resource_id(values: Sequence[Mapping[str, object]]) -> dict[str,
     return result
 
 
-def _fold_resource_metrics(
+def fold_batch_response(
+    *,
+    body: Mapping[str, object],
+    resource_ids: Sequence[str],
+    metric_names: Sequence[str],
+    accumulators: Mapping[tuple[str, str], MetricAccumulator],
+) -> list[GapRecord]:
+    """Fold one **batch** response body, resource by requested resource.
+
+    Iterating `resource_ids` rather than the response's own `values` array is what turns a
+    resource the response silently omitted into a recorded
+    `resource_absent_from_response` gap rather than into nothing at all (Req 29.5). The
+    lookup is case-folded because Azure does not preserve the casing of a resource id it
+    was handed.
+
+    Public, and separate from the archiving and HTTP around it, so `verify/replay.py`
+    folds an archived response through **this** function rather than through a second
+    reading of the same body shape (Req 31.1). Nothing here touches a client: the body is
+    plain data, already in memory, from a live response or from the archive alike.
+    """
+    raw_values = body.get("values")
+    values = (
+        [value for value in raw_values if isinstance(value, Mapping)]
+        if isinstance(raw_values, list)
+        else []
+    )
+    by_resource_id = _entries_by_resource_id(values)
+
+    gaps: list[GapRecord] = []
+    for resource_id in resource_ids:
+        entry = by_resource_id.get(resource_id.casefold())
+        if entry is None:
+            gaps.append(
+                record_gap(
+                    GAP_TYPE_RESOURCE_ABSENT_FROM_RESPONSE,
+                    resource_id,
+                    None,
+                    f"resource {resource_id!r} was requested in this batch but "
+                    f"is absent from the response's values array; no value is "
+                    f"folded for it.",
+                )
+            )
+            continue
+
+        raw_metric_entries = entry.get("value")
+        gaps.extend(
+            fold_resource_metrics(
+                resource_id=resource_id,
+                entries=(
+                    [e for e in raw_metric_entries if isinstance(e, Mapping)]
+                    if isinstance(raw_metric_entries, list)
+                    else []
+                ),
+                requested_metric_names=metric_names,
+                accumulators=accumulators,
+            )
+        )
+    return gaps
+
+
+def fold_fallback_response(
+    *,
+    body: Mapping[str, object],
+    resource_id: str,
+    metric_names: Sequence[str],
+    accumulators: Mapping[tuple[str, str], MetricAccumulator],
+) -> list[GapRecord]:
+    """Fold one **per-resource ARM fallback** response body.
+
+    The shape differs from a batch's by one level — `value` at the top rather than inside a
+    `values` entry — and the resource id comes from the request rather than from the body,
+    which is why the archive records `resource_ids` alongside every object.
+    """
+    raw_entries = body.get("value")
+    return fold_resource_metrics(
+        resource_id=resource_id,
+        entries=(
+            [entry for entry in raw_entries if isinstance(entry, Mapping)]
+            if isinstance(raw_entries, list)
+            else []
+        ),
+        requested_metric_names=metric_names,
+        accumulators=accumulators,
+    )
+
+
+def fold_resource_metrics(
     *,
     resource_id: str,
     entries: Sequence[Mapping[str, object]],
@@ -332,6 +421,12 @@ def _fold_resource_metrics(
     """Fold one resource's answered metrics into `accumulators`, in place, returning
     every gap this resource's entries produced (Req 23.13, 27.8, 29.1-29.4, 29.6, 29.7,
     29.8).
+
+    Public rather than private because `verify/replay.py` calls it: Req 31.1 requires a
+    replay to re-run **the same** aggregation, and a private twin in `verify/` would make
+    a replay mismatch mean "the two folds disagree" rather than "the aggregation is not
+    deterministic". This function reaches no client and no credential — the response body
+    arrives as plain data — so importing it costs the replay-purity guard nothing.
 
     `entries` is the resource's own `value` array — the shape is identical whether it
     came from a batch response's per-resource entry or a per-resource fallback
@@ -871,41 +966,14 @@ class MetricsCollector:
         )
         gaps.extend(archive_result.gaps)
 
-        body = response.body if isinstance(response.body, Mapping) else {}
-        raw_values = body.get("values")
-        values = [v for v in raw_values if isinstance(v, Mapping)] if isinstance(raw_values, list) else []
-        by_resource_id = _entries_by_resource_id(values)
-
-        for resource_id in resource_ids:
-            entry = by_resource_id.get(resource_id.casefold())
-            if entry is None:
-                gaps.append(
-                    record_gap(
-                        GAP_TYPE_RESOURCE_ABSENT_FROM_RESPONSE,
-                        resource_id,
-                        None,
-                        f"resource {resource_id!r} was requested in this batch but "
-                        f"is absent from the response's values array; no value is "
-                        f"folded for it.",
-                    )
-                )
-                continue
-
-            raw_metric_entries = entry.get("value")
-            metric_entries = (
-                [e for e in raw_metric_entries if isinstance(e, Mapping)]
-                if isinstance(raw_metric_entries, list)
-                else []
+        gaps.extend(
+            fold_batch_response(
+                body=response.body if isinstance(response.body, Mapping) else {},
+                resource_ids=resource_ids,
+                metric_names=metric_names,
+                accumulators=accumulators,
             )
-            gaps.extend(
-                _fold_resource_metrics(
-                    resource_id=resource_id,
-                    entries=metric_entries,
-                    requested_metric_names=metric_names,
-                    accumulators=accumulators,
-                )
-            )
-
+        )
         return gaps
 
     async def _handle_fallback(
@@ -944,18 +1012,11 @@ class MetricsCollector:
             )
             gaps.extend(archive_result.gaps)
 
-            body = response.body if isinstance(response.body, Mapping) else {}
-            raw_entries = body.get("value")
-            entries = (
-                [e for e in raw_entries if isinstance(e, Mapping)]
-                if isinstance(raw_entries, list)
-                else []
-            )
             gaps.extend(
-                _fold_resource_metrics(
+                fold_fallback_response(
+                    body=response.body if isinstance(response.body, Mapping) else {},
                     resource_id=resource_id,
-                    entries=entries,
-                    requested_metric_names=metric_names,
+                    metric_names=metric_names,
                     accumulators=accumulators,
                 )
             )

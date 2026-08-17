@@ -98,6 +98,10 @@ SNAPSHOT_PATH_MODULES = frozenset(
         "collect/archive.py",
         "collect/snapshot.py",
         "collect/log.py",
+        # Extracted from `azure/provider.py` so `verify/replay.py` runs the same
+        # finalize the collector ran (Req 31.1). It turns accumulators into statistics,
+        # so it is squarely on the snapshot path.
+        "collect/finalize.py",
     }
 )
 
@@ -641,3 +645,184 @@ def test_the_scan_permits_local_names_and_the_sanctioned_reader(
 ) -> None:
     module = _write(tmp_path, "permitted.py", source)
     assert not _object_model_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 5 — replay's purity is a build-time property (Req 31.2, 31.7)
+# --------------------------------------------------------------------------- #
+#
+# `verify/replay.py` re-runs the aggregation to prove the snapshot is reproducible. If it
+# could reach the network, a "replay" could quietly re-collect and then agree with itself,
+# and the artifact would prove nothing. Checking for that at run time is not possible —
+# the absence of a call is not observable — so it is checked here, over the transitive
+# **first-party** import closure, which is where a socket would have to come from.
+#
+# `reporting_agent.azure.metrics` is deliberately on that closure and is not an SDK
+# import: it is first-party code that parses a response body already in memory, and Req
+# 31.1 requires replay to fold through it rather than through a second implementation. The
+# rule distinguishes the two by import root, so the day someone adds `from azure.core...`
+# to that module this guard fails rather than replay opening a socket.
+
+REPLAY_ENTRY_POINT = "verify/replay.py"
+
+FORBIDDEN_ON_REPLAY_CLOSURE: frozenset[str] = frozenset(
+    {"azure", "boto3", "httpx", "reporting_agent.storage.s3"}
+)
+"""The four Req 31.7 names. The first three are import roots; the fourth is an exact
+first-party module, because `storage/base.py` is a protocol and pure — it is the S3
+implementation that reaches boto3."""
+
+FIRST_PARTY_ROOT = "reporting_agent"
+
+
+def _module_path(dotted: str, root: Path = SRC_ROOT) -> Path | None:
+    """The file a first-party dotted module names, or `None` if it is not one."""
+    if dotted.split(".", 1)[0] != FIRST_PARTY_ROOT:
+        return None
+    relative = Path(*dotted.split(".")[1:])
+    for candidate in (root / relative.with_suffix(".py"), root / relative / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _first_party_closure(entry: Path, root: Path = SRC_ROOT) -> dict[Path, list[Import]]:
+    """Every first-party module reachable from `entry`, mapped to its own imports.
+
+    A breadth-first walk over `ast`-parsed imports rather than a runtime
+    `importlib` walk, deliberately: importing the closure to inspect it would execute every
+    module in it, which for a guard against network access is the wrong order of events.
+    Nested and function-local imports are included, because `_imports` walks the whole tree
+    — a lazy `import boto3` inside a function is still boto3 on the closure.
+    """
+    seen: dict[Path, list[Import]] = {}
+    queue = [entry]
+    while queue:
+        path = queue.pop()
+        resolved = path.resolve()
+        if resolved in {p.resolve() for p in seen}:
+            continue
+        imports = _imports(_parse(path))
+        seen[path] = imports
+        for imp in imports:
+            for dotted in _candidate_sources(imp):
+                found = _module_path(dotted, root)
+                if found is not None and found.resolve() not in {
+                    p.resolve() for p in seen
+                }:
+                    queue.append(found)
+    return seen
+
+
+def _candidate_sources(imp: Import) -> tuple[str, ...]:
+    """The dotted names one import could name.
+
+    `from reporting_agent.verify import findings` names both `reporting_agent.verify` and
+    `reporting_agent.verify.findings`, and only the second is the module that matters. Both
+    are tried and whichever resolves to a file is followed.
+    """
+    if imp.source is None:
+        return ()
+    return (f"{imp.source}.{imp.name}", imp.source)
+
+
+def _replay_closure_offenders(root: Path = SRC_ROOT) -> list[str]:
+    entry = root / REPLAY_ENTRY_POINT
+    offenders: list[str] = []
+    for path, imports in sorted(_first_party_closure(entry, root).items()):
+        for imp in imports:
+            source = imp.source
+            if source is None:
+                continue
+            if (
+                _first_segment(source) in FORBIDDEN_ON_REPLAY_CLOSURE
+                or source in FORBIDDEN_ON_REPLAY_CLOSURE
+                or f"{source}.{imp.name}" in FORBIDDEN_ON_REPLAY_CLOSURE
+            ):
+                offenders.append(f"{_label(path)}:{imp.lineno} {source} -> {imp.name}")
+    return offenders
+
+
+def test_the_replay_closure_is_walked_and_is_not_trivially_small() -> None:
+    """Guard the guard. A closure walk that resolved nothing would pass rule 5 silently.
+
+    The named modules are the ones Req 31.1 requires replay to share with the collector —
+    if any of them left the closure, replay would have grown its own copy of the
+    aggregation and a mismatch would stop meaning what it means.
+    """
+    closure = {
+        _label(path) for path in _first_party_closure(SRC_ROOT / REPLAY_ENTRY_POINT)
+    }
+
+    assert len(closure) > 10, sorted(closure)
+    for required in (
+        "src/reporting_agent/verify/replay.py",
+        "src/reporting_agent/azure/metrics.py",
+        "src/reporting_agent/collect/finalize.py",
+        "src/reporting_agent/collect/snapshot.py",
+        "src/reporting_agent/collect/accumulate.py",
+    ):
+        assert required in closure, sorted(closure)
+
+
+def test_no_module_on_the_replay_closure_reaches_the_network() -> None:
+    """Req 31.7 — the rule itself."""
+    offenders = _replay_closure_offenders()
+
+    assert not offenders, (
+        "these modules are reachable from verify/replay.py and import a network client, "
+        "so a replay could re-collect rather than recompute: " + "; ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import boto3",
+        "import httpx",
+        "from azure.identity import ClientSecretCredential",
+        "from reporting_agent.storage.s3 import S3ObjectStore",
+        "def fetch():\n    import boto3\n    return boto3",
+    ],
+)
+def test_the_replay_closure_scan_detects_a_network_client(
+    source: str, tmp_path: Path
+) -> None:
+    """Mutation-tested, like every other rule here: the guard is only worth its green if
+    it has been seen to go red. The reached module is a *transitive* one, so this also
+    proves the walk follows edges rather than only reading the entry point."""
+    root = tmp_path / "src" / "reporting_agent"
+    _write(root, "__init__.py", "")
+    _write(root, "verify/__init__.py", "")
+    _write(root, "verify/replay.py", "from reporting_agent.collect.pure import fold\n")
+    _write(root, "collect/__init__.py", "")
+    _write(root, "collect/pure.py", source + "\n\ndef fold():\n    pass\n")
+
+    assert _replay_closure_offenders(root), source
+
+
+def test_the_replay_closure_scan_permits_the_first_party_azure_package(
+    tmp_path: Path,
+) -> None:
+    """`reporting_agent.azure.metrics` is not `azure.metrics`, and the rule must not
+    confuse them — confusing them would force replay to grow a second fold, which is the
+    outcome Req 31.1 exists to prevent."""
+    root = tmp_path / "src" / "reporting_agent"
+    _write(root, "__init__.py", "")
+    _write(root, "verify/__init__.py", "")
+    _write(
+        root,
+        "verify/replay.py",
+        "from reporting_agent.azure.metrics import fold_batch_response\n",
+    )
+    _write(root, "azure/__init__.py", "")
+    _write(
+        root,
+        "azure/metrics.py",
+        "from reporting_agent.storage.base import ObjectStore\n\n"
+        "def fold_batch_response():\n    pass\n",
+    )
+    _write(root, "storage/__init__.py", "")
+    _write(root, "storage/base.py", "class ObjectStore:\n    pass\n")
+
+    assert not _replay_closure_offenders(root)

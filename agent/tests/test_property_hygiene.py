@@ -111,6 +111,10 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # and a four-column permutation carrying its headers, which is the case a positional
     # implementation gets backwards.
     "test_anchors_property.py": 5,
+    # Property 4's one declared case: the minimal archive — one object, one resource, one
+    # metric, one well-formed interval — pinned on the mutation property so a failure
+    # there is readable rather than a shrink over a 24-object archive.
+    "test_replay_property.py": 1,
     # Property 1's seven declared examples: 0, 0.000001, -0.5, 9007199254740993, 0.1,
     # 0.30000000000000004, and a number format whose decimal separator is `,` and
     # grouping separator is `.` — the last of which kills a formatter hard-coding
@@ -128,7 +132,7 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 103
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 104
 
 
 # --------------------------------------------------------------------------- #

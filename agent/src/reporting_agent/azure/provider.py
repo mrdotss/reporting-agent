@@ -89,29 +89,24 @@ from reporting_agent.azure.skus import (
     SkuCatalog,
 )
 from reporting_agent.catalog.loader import (
-    DerivedEntry,
     LoadedCatalog,
     MetricEntry,
     ResourceTypeCatalog,
     load_catalog,
 )
 from reporting_agent.collect.accumulate import (
-    AccumulatorResult,
     MetricAccumulator,
-    derive_statistic,
     new_accumulator,
 )
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.buckets import BASE_GRAIN, FALLBACK_GRAIN
+from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import GAP_TYPE_METRIC_NOT_EMITTED, record_gap
 from reporting_agent.collect.snapshot import (
     SkuCapacity as SnapshotSkuCapacity,
 )
 from reporting_agent.collect.snapshot import (
     StatisticEntry,
-    derived_statistics,
-    exact_statistics,
-    percentile_statistics,
 )
 from reporting_agent.providers.base import (
     GUEST_STATUS_EMPTY,
@@ -782,77 +777,26 @@ class AzureProvider:
     ) -> tuple[list[StatisticEntry], list[GapRecord]]:
         """One resource's finalized statistics, exact then percentile then derived.
 
-        A pair with no result emits nothing and carries whatever gap
-        `MetricAccumulator.finalize` recorded — `no_samples` for a pair that folded
-        nothing, and deliberately nothing at all for an excluded resource, whose
-        `deallocated` or `power_state_unknown` gap already says why (Req 27.9, 20.6).
+        The sequence itself lives in `collect/finalize.py` and is called from here rather
+        than written here, because `verify/replay.py` has to run **the same** code (Req
+        31.1) — a second implementation would make a replay mismatch mean "the two
+        implementations disagree" rather than "the aggregation is not deterministic".
 
-        Derived statistics are computed **only** when at least one source metric
-        produced a result. Without that guard, a deallocated resource — which folds
-        nothing by construction — would still reach `derive_statistic`, whose first act
-        is to check the SKU capacities, and would collect a `sku_capability_missing`
-        gap on top of the `deallocated` gap that already explains it: one fact, two
-        classifications, and the second one wrong.
+        What stays here is the one provider-specific step: reading this cloud's capacity
+        object into the capability values the catalog's derivations bind to.
         """
-        resource_id = resource["resource_id"]
-        fidelity_tier = resource.get("fidelity_tier") or self.fidelity_tier
-        entries: list[StatisticEntry] = []
-        gaps: list[GapRecord] = []
-        results: dict[str, AccumulatorResult | None] = {}
-
-        for name in selected:
-            accumulator = accumulators.get((resource_id, name))
-            if accumulator is None:  # pragma: no cover - built for every pair above
-                continue
-            result, gap = accumulator.finalize(resource_id, name)
-            if gap is not None:
-                gaps.append(gap)
-            results[name] = result
-            if result is None:
-                continue
-
-            metric = declared[name]
-            entries.extend(
-                exact_statistics(
-                    result, metric=metric, fidelity_tier=fidelity_tier, grain=grain
-                )
-            )
-            if accumulator.sketch is not None and metric.percentiles:
-                entries.extend(
-                    percentile_statistics(
-                        accumulator.sketch,
-                        metric=metric,
-                        fidelity_tier=fidelity_tier,
-                        grain=grain,
-                    )
-                )
-
-        if not any(result is not None for result in results.values()):
-            return entries, gaps
-
-        capability_values = _sku_capability_values(
-            resource_catalog.sku_capabilities, capacity
+        return finalize_resource(
+            resource_id=resource["resource_id"],
+            fidelity_tier=resource.get("fidelity_tier") or self.fidelity_tier,
+            grain=grain,
+            declared=declared,
+            selected=selected,
+            accumulators=accumulators,
+            derived_entries=resource_catalog.derived,
+            sku_capability_values=_sku_capability_values(
+                resource_catalog.sku_capabilities, capacity
+            ),
         )
-        for derived_entry in resource_catalog.derived:
-            values, derived_gaps = derive_statistic(
-                derived_entry,
-                resource_id=resource_id,
-                metric_results=results,
-                sku_capability_values=capability_values,
-            )
-            gaps.extend(derived_gaps)
-            if not values:
-                continue
-            entries.extend(
-                derived_statistics(
-                    values,
-                    entry=derived_entry,
-                    fidelity_tier=fidelity_tier,
-                    sample_count=_derived_sample_count(derived_entry, results),
-                )
-            )
-
-        return entries, gaps
 
     # --- capabilities (Req 18.6) -----------------------------------------------------
 
@@ -1237,27 +1181,6 @@ def _sku_capability_values(
         if name in values:
             values[name] = read(capacity)
     return values
-
-
-def _derived_sample_count(
-    entry: DerivedEntry, results: Mapping[str, AccumulatorResult | None]
-) -> int:
-    """The sample count a derived value reports: its first metric source's own count.
-
-    A derived value is computed from statistics that were each computed over some
-    number of samples; the first metric source's count is the honest figure for "how
-    much data is behind this number", and it is the same source
-    `collect/snapshot.py`'s `_derived_estimator` reads the estimator from, so the two
-    describe the same input. `0` for a derivation with no metric source at all, which
-    the catalog does not declare today.
-    """
-    for source in entry.sources:
-        if source.kind != "metric":
-            continue
-        result = results.get(source.name)
-        if result is not None:
-            return int(result.sample_count)
-    return 0
 
 
 # --- assembly -------------------------------------------------------------------------

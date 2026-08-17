@@ -440,7 +440,7 @@ migration.
     - A `.pdf` from which **zero** text characters extract while the ledger holds ≥1 entry is `PDF_CONVERSION_FAILED` with **both** downloads withheld and the snapshot, ledger and `.docx` left unmodified — a PDF carrying no extractable text is a conversion that failed without failing
     - _Requirements: 33.1, 33.2, 33.3, 33.4, 33.6, 33.7_
 
-  - [ ] 9.9 Implement `verify/replay.py`, its purity guard and Property 4
+  - [x] 9.9 Implement `verify/replay.py`, its purity guard and Property 4
     - `replay(archived, *, plan) -> ReplayOutcome` re-running the **same pure aggregation** the Snapshot_Builder ran, canonicalizing and hashing the recomputed snapshot **through the same code path**, and asserting a byte-for-byte equal `snapshot_id`
     - Zero Azure API calls and **zero network requests of any kind**; the archived objects arrive **from the caller** as an iterable rather than being fetched, and only modules that make no network request are imported
     - Fold each archived object **exactly once** in the order the archive sequence records, derive every folded value from that object's raw points alone and from no accumulator, aggregate or digest read out of the stored snapshot, and discard each object's decoded points once folded so no more than one object's points are held at a time
