@@ -455,7 +455,7 @@ migration.
     - Kills: a replay that reads the stored `snapshot_id` and returns it — the mutation cannot change a digest that was never recomputed; one iterating a `set` on the path, which the two-process case exposes; one that double-folds or skips an object; one that fetches its own objects
     - _Requirements: 9.13, 31.1, 31.2, 31.3, 31.4, 31.5, 31.6, 31.7, 31.8, 31.9, 45.1, 45.3, 45.4_
 
-  - [ ] 9.10 Implement `verify/drift.py`, `verify/ports.py` and Property 5
+  - [x] 9.10 Implement `verify/drift.py`, `verify/ports.py` and Property 5
     - `ports.py` declaring `MetricRequeryPort`, because `verify/` may not import an Azure SDK and the bounded sample is the one place verification touches Azure at all — which is what lets the entire verification suite run without a subscription
     - Selection is **pure and separate** from the re-query: a function over the snapshot, the resource ids the document names, and the seed, making no network request and importing no Azure client
     - Three tiers in precedence order — every resource the document names that the snapshot carries; then the 10 resources with the highest recorded maximum for the report's primary metric; then 10% of the snapshot's resources rounded up, drawn pseudo-randomly from the seed — each resource admitted at most once, admission stopping at **25 distinct** resources, and no resource selected that is absent from the snapshot. The primary metric is the metric the pinned version's selection names first for the resource type carrying the most resources in the union scope
