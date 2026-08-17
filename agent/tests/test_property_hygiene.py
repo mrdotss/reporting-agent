@@ -120,6 +120,11 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # and the degenerate empty snapshot — plus 400 again on the two-seed property, which is
     # the one a selector ignoring the seed fails.
     "test_drift_property.py": 4,
+    # Property 6's four declared cases: the 60-block definition pinned on the three
+    # compile-only properties, so the scale clause runs deterministically rather than
+    # being generated into occasionally, and Req 3.7's named case — every block's scope
+    # matching nothing while the union matches one resource.
+    "test_ledger_property.py": 4,
     # Property 1's seven declared examples: 0, 0.000001, -0.5, 9007199254740993, 0.1,
     # 0.30000000000000004, and a number format whose decimal separator is `,` and
     # grouping separator is `.` — the last of which kills a formatter hard-coding
@@ -137,7 +142,7 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 108
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 112
 
 
 # --------------------------------------------------------------------------- #

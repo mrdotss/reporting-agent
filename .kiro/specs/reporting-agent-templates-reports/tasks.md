@@ -359,7 +359,7 @@ migration.
 - [x] 8. Checkpoint — a document renders, in both emitters
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 9. Verification — the delivery gate
+- [x] 9. Verification — the delivery gate
   - [x] 9.1 Implement `verify/findings.py` — the finding vocabulary and the result document
     - The sixteen **blocking** finding types — `unmatched_prose_token`, `table_anchor_missing`, `table_anchor_unexpected`, `table_cell_mismatch`, `table_column_unresolved`, `table_row_unresolved`, `duplicate_table_anchor`, `table_rows_absent`, `ledger_entry_unrendered`, `chart_table_missing`, `chart_hash_mismatch`, `replay_hash_mismatch`, `coverage_resource_absent`, `pdf_figure_missing`, `scope_unverified`, `empty_scope` — and the four **advisory** types `archive_incomplete`, `drift_observed`, `prose_review_finding`, `fidelity_not_comparable`
     - Each finding carries its **`severity` on the finding itself** rather than derived by a reader, plus the locating fields the criterion recording it declares — AST path, block id, table identity with row and column key, surviving substring with its paragraph location, expected and observed strings verbatim
@@ -491,7 +491,7 @@ migration.
     - Req 19.7's enumeration test asserts the runtime exposes **zero** operations to a model that return a per-timestamp value or accept a number reaching a figure position — an assertion over an **empty set**, which is the strongest form it can take, and the reason no tool registry exists here
     - _Requirements: 19.1, 19.2, 19.3, 19.5, 19.7, 19.8, 35.1, 35.2, 35.3, 35.4, 35.5, 35.6, 35.7, 35.8_
 
-  - [ ] 9.13 Property test — the ledger and the AST agree in both directions
+  - [x] 9.13 Property test — the ledger and the AST agree in both directions
     - **Property 6: The ledger and the document AST agree in both directions**
     - **Validates: Requirements 17.1, 17.3, 17.7, 15.2, 15.4, 15.7, 15.10, 15.11, 16.1, 29.2, 29.6, 3.7, 45.1**
     - `hypothesis` over definitions across all sixteen block types, 1–200 blocks, rows at one level with 2–3 columns and 0–8 children, per-block overrides including some matching nothing and some carrying top-N; snapshots of 0–300 resources across 1–5 types with statistics, day buckets, derived values, percentiles carrying estimators and `collection_log` entries; number formats and design settings from Property 1's space
