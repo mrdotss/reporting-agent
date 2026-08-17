@@ -1,0 +1,133 @@
+{
+  "attempt_id": "ver_01JTESTATTEMPT",
+  "counts": {
+    "advisory_findings_observed": 4,
+    "blocking_findings_observed": 16,
+    "ledger_entries_checked": 1480,
+    "numeric_tokens_extracted": 1655
+  },
+  "docx_sha256": "4e1a111111111111111111111111111111111111111111111111111111111111",
+  "drift_sample": {
+    "method": "document_named+top10_max+10pct",
+    "n": 25,
+    "not_requeried": [],
+    "seed": "a3f9000000000000000000000000000000000000000000000000000000000000"
+  },
+  "figure_count": 1480,
+  "findings": [
+    {
+      "message": "declared-type coverage for unmatched_prose_token",
+      "severity": "blocking",
+      "type": "unmatched_prose_token"
+    },
+    {
+      "message": "declared-type coverage for table_anchor_missing",
+      "severity": "blocking",
+      "type": "table_anchor_missing"
+    },
+    {
+      "message": "declared-type coverage for table_anchor_unexpected",
+      "severity": "blocking",
+      "type": "table_anchor_unexpected"
+    },
+    {
+      "message": "declared-type coverage for table_cell_mismatch",
+      "severity": "blocking",
+      "type": "table_cell_mismatch"
+    },
+    {
+      "message": "declared-type coverage for table_column_unresolved",
+      "severity": "blocking",
+      "type": "table_column_unresolved"
+    },
+    {
+      "message": "declared-type coverage for table_row_unresolved",
+      "severity": "blocking",
+      "type": "table_row_unresolved"
+    },
+    {
+      "message": "declared-type coverage for duplicate_table_anchor",
+      "severity": "blocking",
+      "type": "duplicate_table_anchor"
+    },
+    {
+      "message": "declared-type coverage for table_rows_absent",
+      "severity": "blocking",
+      "type": "table_rows_absent"
+    },
+    {
+      "message": "declared-type coverage for ledger_entry_unrendered",
+      "severity": "blocking",
+      "type": "ledger_entry_unrendered"
+    },
+    {
+      "message": "declared-type coverage for chart_table_missing",
+      "severity": "blocking",
+      "type": "chart_table_missing"
+    },
+    {
+      "message": "declared-type coverage for chart_hash_mismatch",
+      "severity": "blocking",
+      "type": "chart_hash_mismatch"
+    },
+    {
+      "message": "declared-type coverage for replay_hash_mismatch",
+      "severity": "blocking",
+      "type": "replay_hash_mismatch"
+    },
+    {
+      "message": "declared-type coverage for coverage_resource_absent",
+      "severity": "blocking",
+      "type": "coverage_resource_absent"
+    },
+    {
+      "message": "declared-type coverage for pdf_figure_missing",
+      "severity": "blocking",
+      "type": "pdf_figure_missing"
+    },
+    {
+      "message": "declared-type coverage for scope_unverified",
+      "severity": "blocking",
+      "type": "scope_unverified"
+    },
+    {
+      "message": "declared-type coverage for empty_scope",
+      "severity": "blocking",
+      "type": "empty_scope"
+    },
+    {
+      "message": "declared-type coverage for archive_incomplete",
+      "severity": "advisory",
+      "type": "archive_incomplete"
+    },
+    {
+      "message": "declared-type coverage for drift_observed",
+      "severity": "advisory",
+      "type": "drift_observed"
+    },
+    {
+      "message": "declared-type coverage for prose_review_finding",
+      "severity": "advisory",
+      "type": "prose_review_finding"
+    },
+    {
+      "message": "declared-type coverage for fidelity_not_comparable",
+      "severity": "advisory",
+      "type": "fidelity_not_comparable"
+    }
+  ],
+  "ledger_sha256": "2d55333333333333333333333333333333333333333333333333333333333333",
+  "pdf_sha256": "b7c0222222222222222222222222222222222222222222222222222222222222",
+  "replay": {
+    "objects_folded": 87,
+    "objects_named": 87,
+    "possible": true,
+    "recomputed_sha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+    "stored_sha256": "9f2c000000000000000000000000000000000000000000000000000000000000"
+  },
+  "run_id": "run_01JTESTRUN",
+  "schema_version": 1,
+  "snapshot_sha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+  "status": "fail",
+  "template_version_id": "tv_01JTESTVERSION"
+}

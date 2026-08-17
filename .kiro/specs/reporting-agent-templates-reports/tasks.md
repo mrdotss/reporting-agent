@@ -360,7 +360,7 @@ migration.
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Verification — the delivery gate
-  - [ ] 9.1 Implement `verify/findings.py` — the finding vocabulary and the result document
+  - [x] 9.1 Implement `verify/findings.py` — the finding vocabulary and the result document
     - The sixteen **blocking** finding types — `unmatched_prose_token`, `table_anchor_missing`, `table_anchor_unexpected`, `table_cell_mismatch`, `table_column_unresolved`, `table_row_unresolved`, `duplicate_table_anchor`, `table_rows_absent`, `ledger_entry_unrendered`, `chart_table_missing`, `chart_hash_mismatch`, `replay_hash_mismatch`, `coverage_resource_absent`, `pdf_figure_missing`, `scope_unverified`, `empty_scope` — and the four **advisory** types `archive_incomplete`, `drift_observed`, `prose_review_finding`, `fidelity_not_comparable`
     - Each finding carries its **`severity` on the finding itself** rather than derived by a reader, plus the locating fields the criterion recording it declares — AST path, block id, table identity with row and column key, surviving substring with its paragraph location, expected and observed strings verbatim
     - `VerificationResult` carrying `attempt_id`, `status` (pass | fail), `figure_count`, the four digests, the `counts` block every pass contributes to, the replay outcome, the drift descriptor and the ordered finding list; recording **every** blocking finding observed rather than stopping at the first, up to the first 1,000 in document order plus the total observed count

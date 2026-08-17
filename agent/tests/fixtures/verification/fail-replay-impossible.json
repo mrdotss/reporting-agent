@@ -1,0 +1,36 @@
+{
+  "attempt_id": "ver_01JTESTATTEMPT",
+  "counts": {
+    "advisory_findings_observed": 0,
+    "blocking_findings_observed": 1,
+    "ledger_entries_checked": 1480,
+    "numeric_tokens_extracted": 1655
+  },
+  "docx_sha256": "4e1a111111111111111111111111111111111111111111111111111111111111",
+  "drift_sample": {
+    "method": "document_named+top10_max+10pct",
+    "n": 25,
+    "not_requeried": [],
+    "seed": "a3f9000000000000000000000000000000000000000000000000000000000000"
+  },
+  "figure_count": 1480,
+  "findings": [
+    {
+      "message": "archive incomplete, replay skipped",
+      "severity": "blocking",
+      "type": "replay_hash_mismatch"
+    }
+  ],
+  "ledger_sha256": "2d55333333333333333333333333333333333333333333333333333333333333",
+  "pdf_sha256": "b7c0222222222222222222222222222222222222222222222222222222222222",
+  "replay": {
+    "objects_folded": 0,
+    "objects_named": 87,
+    "possible": false
+  },
+  "run_id": "run_01JTESTRUN",
+  "schema_version": 1,
+  "snapshot_sha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+  "status": "fail",
+  "template_version_id": "tv_01JTESTVERSION"
+}
