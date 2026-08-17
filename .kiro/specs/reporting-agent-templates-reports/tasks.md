@@ -470,7 +470,7 @@ migration.
     - Kills: a selector whose sample grows with the snapshot; one ignoring the seed; one whose truncation depends on dictionary or set iteration order; one re-querying during selection
     - _Requirements: 25.7, 34.1, 34.2, 34.3, 34.4, 34.5, 34.6, 34.7, 34.8, 34.9, 34.10, 45.1, 45.3, 45.4_
 
-  - [ ] 9.11 Implement `verify/verifier.py` — the orchestrator and bidirectional completeness
+  - [x] 9.11 Implement `verify/verifier.py` — the orchestrator and bidirectional completeness
     - `verify(*, docx_bytes, pdf_bytes, ledger, ast, snapshot, pinned, run, archived, requery)` — `archived` is an iterable the **caller** already fetched, and `requery` is a port, both structural rather than convenient
     - Evaluate every gate of requirements 26 through 33 **before** any `report_file` event, against the rendered `.docx` whose digest was recorded and against the snapshot the run's `snapshot_id` names
     - **Forward completeness**: every extracted numeric token resolves, where resolving means it was a data-cell value the anchored pass matched or a numeric-bearing substring a masking stage consumed, and every extracted token goes through one of the two so none is excluded from both
