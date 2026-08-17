@@ -34,6 +34,13 @@ it as "the concatenated text of that row's cell in one designated key column", w
 the verifier can actually read back out of the `.docx`. `Row.key` is the compiler's internal
 stable key — a resource id — and the first column shows a resource *name*. Recording the id
 as the anchor's row key would record something the verifier cannot find in the document.
+
+**And the anchor's column key is the header text, not `Column.key`, for the same reason.**
+Req 27.1 resolves a column by "the one column whose header text is character-for-character
+equal to the anchor's column key", so the two names have to be the same string. They are not
+interchangeable: a chart's companion table declares `Column(key="value", header="Value")`, so
+recording `Column.key` would record a string that appears nowhere in the emitted grid and
+every chart figure would fail as `table_column_unresolved` on a correct document.
 """
 
 from __future__ import annotations
@@ -255,6 +262,10 @@ def record_figure_anchor(
     figure inside the table (`BlockCursor.anchor_table`); this completes the triple with the
     row and column, which only the renderer knows because only the renderer walks the
     emitted grid.
+
+    Both `row_key` and `column_key` are **strings the document carries** — the key column's
+    emitted text and the column's header text — because those are the two the verifier can
+    resolve against a `.docx`. See this module's docstring.
     """
     ledger.record_anchor(
         path,

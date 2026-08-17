@@ -416,7 +416,12 @@ class _Emitter:
                     cell.figure.path,
                     identity,
                     row_key=row_key,
-                    column_key=column.key,
+                    # The **header text**, not `column.key`, for exactly the reason
+                    # `document_row_key` records emitted text rather than `Row.key`: Req 27.1
+                    # resolves a column by the header the document carries, and a chart's
+                    # companion table has `key="value"` under the header `"Value"`. Recording
+                    # the key would record a string the verifier cannot find.
+                    column_key=column.header,
                 )
             elif isinstance(cell, TextCell):
                 self._set_cell_text(docx_cell, cell.text, style=notice_style)

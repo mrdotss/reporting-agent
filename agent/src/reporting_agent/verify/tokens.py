@@ -63,6 +63,7 @@ __all__ = [
     "paragraph_texts",
     "read_pdf_text",
     "table_caption",
+    "table_grid",
 ]
 
 PART_BODY: Final[str] = "body"
@@ -74,6 +75,8 @@ _W_TBL: Final[str] = qn("w:tbl")
 _W_T: Final[str] = qn("w:t")
 _W_TAB: Final[str] = qn("w:tab")
 _W_BR: Final[str] = qn("w:br")
+_W_TR: Final[str] = qn("w:tr")
+_W_TC: Final[str] = qn("w:tc")
 _W_TBLPR: Final[str] = qn("w:tblPr")
 _W_TBLCAPTION: Final[str] = qn("w:tblCaption")
 _W_VAL: Final[str] = qn("w:val")
@@ -178,6 +181,57 @@ def paragraph_text(paragraph_element: object) -> str:
         elif tag in (_W_TAB, _W_BR):
             pieces.append(" ")
     return "".join(pieces).strip()
+
+
+def _text_outside_nested_tables(element: object) -> str:
+    """Concatenate `element`'s text the way :func:`paragraph_text` does, but **stop at a
+    nested `w:tbl`**.
+
+    Everything else in this module descends at every depth, and for prose that is exactly
+    right. For a table cell it is not, and the difference is the difference between a false
+    finding and a true one: a `w:tbl` inside a cell is a table in its own right, carrying its
+    own caption, its own anchors and its own row keys. Folding its text into the enclosing
+    cell would make that cell's text — the row key, or the value compared against a
+    `formatted` string — a concatenation belonging to two tables, and the outer table would
+    fail on a document that is correct.
+
+    Nothing escapes checking by being skipped here. The nested table is extracted as its own
+    grid, and every paragraph inside it is extracted by :func:`paragraph_texts` for the prose
+    pass, so its content goes through both passes exactly once.
+    """
+    pieces: list[str] = []
+
+    def walk(node: object) -> None:
+        for child in node:  # type: ignore[attr-defined]
+            tag = child.tag
+            if tag == _W_TBL:
+                continue
+            if tag == _W_T:
+                if child.text:
+                    pieces.append(child.text)
+            elif tag in (_W_TAB, _W_BR):
+                pieces.append(" ")
+            walk(child)
+
+    walk(element)
+    return "".join(pieces).strip()
+
+
+def table_grid(table_element: object) -> tuple[tuple[str, ...], ...]:
+    """One data table's cells as concatenated text, row by row (Req 26.4).
+
+    **Direct children only** — `w:tr` children of this `w:tbl`, then `w:tc` children of that
+    row — where every other walk in this module descends at every depth. Same argument as
+    :func:`_text_outside_nested_tables`: `iter()` would splice a nested table's rows into
+    this table's row list, and the verifier would resolve a row key against a grid whose
+    shape belongs to two tables.
+    """
+    rows: list[tuple[str, ...]] = []
+    for row in table_element.findall(_W_TR):  # type: ignore[attr-defined]
+        rows.append(
+            tuple(_text_outside_nested_tables(cell) for cell in row.findall(_W_TC))
+        )
+    return tuple(rows)
 
 
 def _enclosing_caption(paragraph_element: object, captions: dict[object, str]) -> str | None:

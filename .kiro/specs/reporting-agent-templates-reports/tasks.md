@@ -400,7 +400,7 @@ migration.
     - Kills: per-run tokenization, which produces three spurious survivors; reading `document.paragraphs` / `document.tables`, which extracts nothing from a nested companion table and passes every document silently; masking in ledger insertion order, so `12.4%` consumes part of `112.4%` and the leftover `11` survives; a later stage re-reading a span an earlier stage consumed
     - _Requirements: 19.3, 19.4, 26.1, 26.3, 26.6, 26.7, 26.8, 26.9, 28.1, 28.2, 28.3, 28.4, 28.5, 28.6, 28.9, 28.11, 29.1, 33.5, 33.6, 45.1, 45.3, 45.4_
 
-  - [ ] 9.5 Implement `verify/anchors.py` — anchored cell equality — with Property 3
+  - [x] 9.5 Implement `verify/anchors.py` — anchored cell equality — with Property 3
     - Resolve in the order **table, then column, then row**: the one data table whose caption identity is character-for-character equal to the anchor's table id; within it, the one column whose **header text** equals the anchor's column key; within it, the one row whose **row key** equals the anchor's row key; the cell is their intersection. Zero or more than one match at any step is its own finding — `table_anchor_missing`, `table_column_unresolved` (naming the match count), `table_row_unresolved` — because a column key resolving to two columns has no single cell to compare
     - Then assert the resolved cell's **concatenated** text equals the anchor's `formatted` string **character for character**, with no trimming beyond the extraction's own, no whitespace normalization, no case folding, no unit stripping and **no re-parsing of either side as a number**
     - Assert **exact equality of the resolved cell** and **never containment anywhere** in the document, the table or the cell: transpose two columns across every data row and every `formatted` string is still present — attached to the wrong things — so containment reports a clean pass on a report in which every VM's average and peak are swapped, which is exactly the class of error that survives review by looking reasonable
@@ -414,7 +414,7 @@ migration.
     - Declared example: a two-column table whose `Avg CPU` and `Max CPU` values are transposed across every row, asserting **both** that the anchored pass fails **and** that a containment check over the same document records zero discrepancies
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6, 21.7, 21.8, 21.9, 27.1, 27.2, 27.3, 27.4, 27.5, 27.6, 27.7, 27.8, 27.9, 27.10, 27.11, 27.12, 27.13, 27.14, 45.1, 45.3, 45.4_
 
-  - [ ] 9.6 Implement `verify/charts.py` — an image tied to the numbers beside it
+  - [x] 9.6 Implement `verify/charts.py` — an image tied to the numbers beside it
     - Pair each chart's embedded image with its companion data table by the `cht:<path>` identity — the identity written into the image's alternative text and the table's caption — **not by proximity** — and check that companion table through the anchored-equality pass
     - Recompute the chart data hash **from the ledger**, one contribution per plotted point carrying series stable key, x key and the ledger's decimal string, ordered by plotted series and plotted point order, and draw **no contribution** from the sidecar or the image, because a digest recomputed from the artifact it checks proves nothing
     - Both gates required: the table gate alone passes a document whose embedded image is stale, and the hash gate alone passes a document whose companion table carries a value the ledger never emitted
