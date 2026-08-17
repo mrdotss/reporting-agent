@@ -546,3 +546,98 @@ def test_the_scan_permits_decimal_normalize_and_prose_about_normalization(
 ) -> None:
     module = _write(tmp_path, "permitted.py", source)
     assert not _normalization_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Req 26.2 — the object-model readers are banned under verify/
+# --------------------------------------------------------------------------- #
+
+VERIFY_PACKAGE = SRC_ROOT / "verify"
+
+# `document.paragraphs` and `document.tables` enumerate only the DIRECT CHILDREN of the
+# body element. A paragraph inside a table cell, a nested table, a text box or a content
+# control is invisible to them — and this product emits a `row` block as a layout table
+# with a chart's companion table nested inside it, so the blind spot covers real
+# figures on a real document. A verifier reading through those collections extracts
+# nothing, finds no unmatched token, records no finding, and PASSES the document. The
+# failure is silent, total and indistinguishable from success, which is why it is worth
+# a static guard rather than a code-review convention.
+DOCX_OBJECT_MODEL_COLLECTIONS = ("paragraphs", "tables")
+
+
+def _object_model_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every ATTRIBUTE access named `paragraphs` or `tables`.
+
+    Attribute access only, deliberately narrower than `_identifier_offenders`: a local
+    list named `tables` is an `ast.Name` and is perfectly legitimate — `tokens.py`
+    builds one — while `document.tables` is an `ast.Attribute` and is the thing banned.
+    Matching names too would fail a correct module for choosing an obvious variable
+    name, and a guard that cries wolf gets suppressed.
+
+    The receiver is not type-checked, so the rule is blunt: under `verify/`, nothing
+    reads either attribute off anything. There is no legitimate use in this package,
+    and a blunt rule needs no type inference to stay honest.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr in DOCX_OBJECT_MODEL_COLLECTIONS
+            ):
+                receiver = _dotted(node.value) or "<expr>"
+                offenders.append(
+                    f"{_label(path)}:{node.lineno} {receiver}.{node.attr}"
+                )
+    return offenders
+
+
+def test_the_verify_package_is_scanned_and_is_not_empty() -> None:
+    """Non-vacuity first: an absent package and an empty one are the same hole."""
+    assert VERIFY_PACKAGE.is_dir(), VERIFY_PACKAGE
+    assert _source_modules(VERIFY_PACKAGE), f"no modules under {VERIFY_PACKAGE}"
+
+
+def test_no_verify_module_reads_the_docx_object_model_collections() -> None:
+    """Req 26.2 — `body.iter(qn("w:p"))` is the only reader."""
+    offenders = _object_model_offenders(_source_modules(VERIFY_PACKAGE))
+    assert not offenders, (
+        "verify/ must read through document.element.body.iter(qn('w:p')), never "
+        "document.paragraphs or document.tables: " + "; ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "for p in document.paragraphs: pass",
+        "for t in document.tables: pass",
+        "texts = [p.text for p in doc.paragraphs]",
+        "count = len(self._document.tables)",
+        "first = document.tables[0].rows",
+    ],
+)
+def test_the_scan_detects_an_object_model_read(source: str, tmp_path: Path) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert len(_object_model_offenders([module])) == 1, source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A local list named `tables` is an ast.Name, not an attribute read.
+        "tables = []\ntables.append(1)",
+        "paragraphs: list[str] = []\nparagraphs.extend(['a'])",
+        # The sanctioned reader.
+        "for element in document.element.body.iter(qn('w:p')): pass",
+        # Prose explaining the ban must not fail the guard.
+        '"""document.paragraphs enumerates only direct children of the body."""\n',
+        "# never document.tables — it misses a nested table\n",
+    ],
+)
+def test_the_scan_permits_local_names_and_the_sanctioned_reader(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _object_model_offenders([module]), source

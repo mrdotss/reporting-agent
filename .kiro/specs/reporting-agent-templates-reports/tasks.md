@@ -368,7 +368,7 @@ migration.
     - Assert the Python result document parses cleanly against `app/lib/verifications/result.ts` over a fixture corpus, since Python writes it and zod reads it
     - _Requirements: 25.5, 25.6, 25.8, 36.3, 39.10, 43.7, 43.10_
 
-  - [ ] 9.2 Implement `verify/tokens.py` — reading the document the way Word stores it
+  - [x] 9.2 Implement `verify/tokens.py` — reading the document the way Word stores it
     - `paragraph_texts(document)` iterating `document.element.body.iter(qn("w:p"))` at **every depth of nesting**, plus every header and footer part, recording for each extracted paragraph which part it came from
     - Read through that iteration and **never** through `document.paragraphs` or `document.tables`: both enumerate only direct children of the body, so a paragraph inside a table cell, a nested table, a text box or a content control is invisible to them — and a verifier that extracts nothing from a chart's companion table nested in a `row` block's layout table finds no unmatched token, records no finding, and **passes the document**. That failure is silent, total and indistinguishable from success
     - `data_tables(document)` returning every `w:tbl` carrying a **non-blank** `w:tblPr/w:tblCaption` with its document ordinal, treating a present-but-whitespace caption as absent so an empty caption can smuggle a table neither into nor out of the data pass
