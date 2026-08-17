@@ -1,0 +1,222 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "subtitle": "July 2026"
+      },
+      "id": "b-cover",
+      "type": "cover"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Utilization"
+      },
+      "id": "b-heading",
+      "type": "heading"
+    },
+    {
+      "config": {},
+      "id": "b-summary",
+      "type": "executive_summary"
+    },
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "b-kpi",
+      "type": "kpi_row"
+    },
+    {
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "b-resources",
+      "type": "resource_table"
+    },
+    {
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ],
+        "order_by": {
+          "metric": "Percentage CPU",
+          "statistic": "avg"
+        },
+        "order_by_direction": "descending"
+      },
+      "id": "b-topn",
+      "type": "top_n_table"
+    },
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "b-timeseries",
+      "type": "timeseries_chart"
+    },
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "b-distribution",
+      "type": "distribution_chart"
+    },
+    {
+      "config": {
+        "capacity_metric": {
+          "sku_capability": "vCPUsAvailable"
+        },
+        "usage_metric": {
+          "metric": "Percentage CPU",
+          "statistic": "avg"
+        }
+      },
+      "id": "b-capacity",
+      "type": "capacity_vs_usage"
+    },
+    {
+      "config": {
+        "caption": "Coverage"
+      },
+      "id": "b-gaps",
+      "type": "gaps_and_coverage"
+    },
+    {
+      "config": {
+        "run_a": "run-2026-06",
+        "run_b": "run-2026-07"
+      },
+      "id": "b-delta",
+      "type": "comparison_delta"
+    },
+    {
+      "config": {},
+      "id": "b-verification",
+      "type": "verification_record"
+    },
+    {
+      "config": {
+        "text": "Prose carrying no figure."
+      },
+      "id": "b-prose",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "b-break",
+      "type": "page_break"
+    },
+    {
+      "columns": [
+        [
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "b-row-kpi",
+            "type": "kpi_row"
+          }
+        ],
+        [
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "b-row-chart",
+            "type": "timeseries_chart"
+          }
+        ]
+      ],
+      "id": "b-row",
+      "type": "row"
+    },
+    {
+      "config": {},
+      "id": "b-methodology",
+      "type": "appendix_methodology"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "Every declared block type"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

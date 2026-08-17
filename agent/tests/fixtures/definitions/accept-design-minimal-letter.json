@@ -1,0 +1,60 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "text": "No cover page."
+      },
+      "id": "prose",
+      "type": "rich_text"
+    }
+  ],
+  "design": {
+    "accent_color": "#0a7ea4",
+    "cover_page": false,
+    "density": "compact",
+    "logo": "logos/acme.png",
+    "number_format": {
+      "decimal_places": 0,
+      "group_thousands": false
+    },
+    "page_size": "Letter",
+    "preset": "minimal",
+    "table_style": "bordered"
+  },
+  "identity": {
+    "name": "Minimal preset on Letter"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

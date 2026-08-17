@@ -1,0 +1,67 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "kpi",
+      "type": "kpi_row"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "Resource id in a scope field"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [
+      "/subscriptions/8f7c2b91-4d3e-4a55-9c10-2b6de4f0a731/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/prod-sql-01"
+    ],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

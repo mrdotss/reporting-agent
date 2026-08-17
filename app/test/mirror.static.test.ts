@@ -1,10 +1,16 @@
-import { existsSync, readFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { describe, expect, test } from "vitest"
 
 import { BLOCK_CONFIG, BLOCK_TYPES } from "@/lib/templates/blocks"
+import {
+  collectDefinitionIssues,
+  type FieldIssue,
+} from "@/lib/templates/definition"
+import { definitionSha256 } from "@/lib/templates/version"
 
 /**
  * The block-definition mirror guard — declaration half (Requirements 2.5, 2.6).
@@ -36,11 +42,15 @@ import { BLOCK_CONFIG, BLOCK_TYPES } from "@/lib/templates/blocks"
  * matching delimiters, which is exactly the same reduction the sentinel
  * convention already relies on.
  *
- * This is the **declaration half** of `Mirror_Guard`. The **behavioural**
- * half — the shared fixture corpus run through both the `Template_Validator`
- * and the `Block_Compiler` with matching verdicts and matching offender paths
- * (Req 2.11) — is a later task (5.2); declaration equality is necessary and not
- * sufficient, and this file asserts only the necessary half.
+ * The **behavioural** half follows below: the shared fixture corpus in
+ * `agent/tests/fixtures/definitions/`, run through both the
+ * `Template_Validator` and the `Block_Compiler`, with matching verdicts,
+ * matching offender locations and matching canonical digests (Requirements
+ * 2.6, 2.11, 9.4). Declaration equality is necessary and not sufficient: a
+ * definition the app can *save* and the compiler cannot *compile* turns a
+ * save-time validation error into a failed run minutes later, after inventory
+ * and metrics have already been spent — and two `BLOCK_CONFIG` literals that
+ * agree say nothing about that.
  */
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -183,7 +193,9 @@ function findKeyedBlock(
   close: "}" | "]"
 ): string | undefined {
   const escapedOpen = open === "{" ? "\\{" : "\\["
-  const pattern = new RegExp(`(?:"${key}"|'${key}')\\s*:\\s*${escapedOpen}|\\b${key}\\s*:\\s*${escapedOpen}`)
+  const pattern = new RegExp(
+    `(?:"${key}"|'${key}')\\s*:\\s*${escapedOpen}|\\b${key}\\s*:\\s*${escapedOpen}`
+  )
   const match = pattern.exec(text)
   if (match === null) return undefined
 
@@ -324,9 +336,7 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
         missing.push(`${typeName}: absent from app/lib/templates/blocks.ts`)
       }
       if (pyConfigs.get(typeName) === undefined) {
-        missing.push(
-          `${typeName}: absent from agent/.../compile/definition.py`
-        )
+        missing.push(`${typeName}: absent from agent/.../compile/definition.py`)
       }
     }
 
@@ -420,5 +430,407 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
     }
 
     expect(mismatches).toEqual([])
+  })
+})
+
+// ===========================================================================
+// Mirror_Guard — behavioural half (Requirements 2.6, 2.11, 1.3, 9.4)
+// ===========================================================================
+
+/**
+ * The one corpus directory, read across the monorepo path — **never a copy**.
+ *
+ * Two copies is how this guard comes to compare each half against itself: the
+ * web copy drifts, the agent copy does not, both suites stay green, and the
+ * disagreement they exist to catch is the one thing neither of them sees. So
+ * the fixtures live once, under `agent/tests/`, and this file reaches for them.
+ */
+const CORPUS_ROOT = path.join(
+  repoRoot,
+  "agent",
+  "tests",
+  "fixtures",
+  "definitions"
+)
+const CORPUS_MANIFEST = path.join(CORPUS_ROOT, "manifest.json")
+
+/**
+ * The agent-side entry point this suite spawns, and the interpreter it runs
+ * under.
+ *
+ * **This is a real coupling and it is deliberate.** Requirement 2.6 is about two
+ * *implementations* agreeing, and the only way to assert that is to run both. A
+ * manifest comparison alone would let both halves drift the same way; a
+ * head-to-head comparison would not. `agent/.venv` is the documented development
+ * environment for the other half of this monorepo (see `agent/README.md`), and
+ * the agent's own suite needs it regardless, so requiring it here adds no setup
+ * that was not already required to work on this repository.
+ *
+ * When it is absent the tests below **fail loudly with instructions** rather
+ * than skipping. A skipped mirror guard is indistinguishable from a passing one
+ * in a summary line, and this is the guard whose whole job is to notice
+ * something nobody is looking at.
+ */
+const AGENT_ROOT = path.join(repoRoot, "agent")
+const AGENT_PYTHON = path.join(AGENT_ROOT, ".venv", "bin", "python")
+const AGENT_CORPUS_SCRIPT = path.join(
+  AGENT_ROOT,
+  "tests",
+  "definition_corpus.py"
+)
+
+/** Requirement 2.11 — the corpus floor. */
+const MINIMUM_CORPUS_SIZE = 20
+
+type ValidationMode = "draft" | "run"
+type Verdict = "accept" | "reject"
+
+type OffenderRecord = {
+  readonly block_id: string | null
+  readonly path: readonly (string | number)[]
+}
+
+type ManifestEntry = {
+  readonly file: string
+  readonly mode: ValidationMode
+  readonly verdict: Verdict
+  readonly definition_sha256: string
+  readonly offenders: readonly OffenderRecord[]
+}
+
+type AgentVerdict = {
+  readonly file: string
+  readonly mode: ValidationMode
+  readonly verdict: Verdict
+  readonly definition_sha256: string
+  readonly offenders: readonly OffenderRecord[]
+}
+
+/**
+ * A `(blockId, path)` pair rendered as one comparable string.
+ *
+ * Comparison is over **sets of locations**, not lists of messages. Two
+ * languages producing byte-identical prose is a coincidence to maintain rather
+ * than a property worth asserting, and one location legitimately carries two
+ * messages — an absent `schema_version` is both a missing required key and a
+ * non-integer — so a list of messages would not even be the same length on one
+ * side as the count of distinct locations.
+ */
+function offenderKey(
+  blockId: string | null,
+  fieldPath: readonly (string | number)[]
+): string {
+  return `${blockId ?? "<none>"} @ ${fieldPath.map((segment) => String(segment)).join(".") || "<root>"}`
+}
+
+function locationSet(offenders: readonly OffenderRecord[]): Set<string> {
+  return new Set(
+    offenders.map((offender) => offenderKey(offender.block_id, offender.path))
+  )
+}
+
+function readManifest(): readonly ManifestEntry[] {
+  expect(
+    existsSync(CORPUS_MANIFEST),
+    `the shared corpus manifest is missing: ${path.relative(repoRoot, CORPUS_MANIFEST)}`
+  ).toBe(true)
+
+  const raw: unknown = JSON.parse(readFileSync(CORPUS_MANIFEST, "utf8"))
+  expect(raw, "manifest.json must be an object").toBeTypeOf("object")
+
+  const { manifest_version: manifestVersion, fixtures } = raw as {
+    manifest_version?: unknown
+    fixtures?: unknown
+  }
+  expect(manifestVersion, "manifest_version").toBe(1)
+  expect(
+    Array.isArray(fixtures),
+    "manifest.json must declare a `fixtures` array"
+  ).toBe(true)
+
+  return fixtures as readonly ManifestEntry[]
+}
+
+const manifest = readManifest()
+
+function readFixture(file: string): unknown {
+  const absolute = path.join(CORPUS_ROOT, file)
+  expect(
+    existsSync(absolute),
+    `manifest.json declares ${file}, which is not in the corpus directory`
+  ).toBe(true)
+  return JSON.parse(readFileSync(absolute, "utf8"))
+}
+
+/**
+ * Whether `path[index]` addresses a **block** rather than any other array
+ * element.
+ *
+ * A block sits at exactly two kinds of position in the layout grammar
+ * (Requirement 6.2): `blocks[i]`, and `blocks[i].columns[c][j]` for a row's
+ * child. `columns[c]` itself is a *column*, not a block, which is why the
+ * numeric-segment test alone is not enough — it would attribute a row's issue
+ * to its own column array.
+ */
+function isBlockPosition(
+  fieldPath: readonly (string | number)[],
+  index: number
+): boolean {
+  if (typeof fieldPath[index] !== "number") return false
+  if (index === 1 && fieldPath[0] === "blocks") return true
+  return (
+    typeof fieldPath[index - 1] === "number" &&
+    fieldPath[index - 2] === "columns"
+  )
+}
+
+/**
+ * The `id` of the innermost block a field path passes through, or `null`.
+ *
+ * This is the web half's independent derivation of what the agent half
+ * *tracks during its walk*. Deriving it here rather than reading it from the
+ * agent's answer is what keeps the block-id comparison a real assertion: a
+ * Python walk that attributed an issue to the wrong enclosing block would
+ * disagree with this function rather than agreeing with itself.
+ *
+ * `null` for a path outside `blocks` entirely, and `null` for a block whose own
+ * `id` is not a valid id — an id that failed its bound cannot identify
+ * anything, so naming it would be inventing a name. That matches the agent's
+ * rule exactly, and `reject-block-id-too-long.json` is the fixture that pins it.
+ */
+function deriveBlockId(
+  definition: unknown,
+  fieldPath: readonly (string | number)[]
+): string | null {
+  let node: unknown = definition
+  let blockId: string | null = null
+
+  for (let index = 0; index < fieldPath.length; index += 1) {
+    const segment = fieldPath[index]
+    if (node === null || typeof node !== "object") return blockId
+    node = (node as Record<string | number, unknown>)[segment as never]
+
+    if (
+      isBlockPosition(fieldPath, index) &&
+      node !== null &&
+      typeof node === "object"
+    ) {
+      const candidate = (node as { id?: unknown }).id
+      blockId =
+        typeof candidate === "string" &&
+        candidate.length >= 1 &&
+        candidate.length <= 64
+          ? candidate
+          : null
+    }
+  }
+
+  return blockId
+}
+
+/** The web half's verdict for one fixture, in the same shape the agent emits. */
+function webVerdict(entry: ManifestEntry, definition: unknown): AgentVerdict {
+  const issues: readonly FieldIssue[] = collectDefinitionIssues(definition, {
+    mode: entry.mode,
+  })
+
+  const byKey = new Map<string, OffenderRecord>()
+  for (const issue of issues) {
+    const blockId = deriveBlockId(definition, issue.path)
+    const key = offenderKey(blockId, issue.path)
+    if (!byKey.has(key)) byKey.set(key, { block_id: blockId, path: issue.path })
+  }
+
+  return {
+    file: entry.file,
+    mode: entry.mode,
+    verdict: issues.length > 0 ? "reject" : "accept",
+    definition_sha256: definitionSha256(definition as never),
+    offenders: [...byKey.values()],
+  }
+}
+
+/**
+ * The agent half's verdicts for the whole corpus, from one subprocess.
+ *
+ * One spawn for the whole corpus rather than one per fixture: the interpreter
+ * start-up dominates, and there is nothing per-fixture about the process
+ * boundary.
+ */
+function readAgentVerdicts(): ReadonlyMap<string, AgentVerdict> {
+  const instructions =
+    "The behavioural half of the mirror guard runs the agent's own validator, so it " +
+    "needs the agent's development environment. From `agent/`: `uv sync` (see " +
+    "agent/README.md). This test fails rather than skipping on purpose — a skipped " +
+    "mirror guard reads exactly like a passing one."
+
+  expect(
+    existsSync(AGENT_PYTHON),
+    `${path.relative(repoRoot, AGENT_PYTHON)} is missing. ${instructions}`
+  ).toBe(true)
+  expect(
+    existsSync(AGENT_CORPUS_SCRIPT),
+    `${path.relative(repoRoot, AGENT_CORPUS_SCRIPT)} is missing`
+  ).toBe(true)
+
+  const result = spawnSync(AGENT_PYTHON, [AGENT_CORPUS_SCRIPT], {
+    cwd: AGENT_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, PYTHONPATH: path.join(AGENT_ROOT, "src") },
+    maxBuffer: 32 * 1024 * 1024,
+  })
+
+  expect(
+    result.status,
+    `the agent corpus reader exited ${result.status}.\nstderr:\n${result.stderr}`
+  ).toBe(0)
+
+  const payload = JSON.parse(result.stdout) as {
+    manifest_version: number
+    fixtures: readonly AgentVerdict[]
+  }
+  expect(payload.manifest_version).toBe(1)
+
+  return new Map(payload.fixtures.map((verdict) => [verdict.file, verdict]))
+}
+
+const agentVerdicts = readAgentVerdicts()
+
+/** Every block `type` in a definition's block tree, including a row's children. */
+function blockTypesIn(definition: unknown): Set<string> {
+  const found = new Set<string>()
+
+  const walk = (blocks: unknown): void => {
+    if (!Array.isArray(blocks)) return
+    for (const block of blocks) {
+      if (block === null || typeof block !== "object") continue
+      const { type, columns } = block as { type?: unknown; columns?: unknown }
+      if (typeof type === "string") found.add(type)
+      if (Array.isArray(columns)) for (const column of columns) walk(column)
+    }
+  }
+
+  if (definition !== null && typeof definition === "object") {
+    walk((definition as { blocks?: unknown }).blocks)
+  }
+  return found
+}
+
+describe("Requirement 2.11 — the shared corpus is one directory, and it is covered", () => {
+  test("the corpus directory holds the manifest and nothing undeclared", () => {
+    expect(existsSync(CORPUS_ROOT), CORPUS_ROOT).toBe(true)
+
+    const onDisk = readdirSync(CORPUS_ROOT)
+      .filter((name) => name.endsWith(".json") && name !== "manifest.json")
+      .sort()
+    const declared = manifest.map((entry) => entry.file).sort()
+
+    // Both directions: an undeclared fixture is a file neither half checks, and a
+    // declared-but-absent one is a manifest entry pointing at nothing.
+    expect(declared).toEqual(onDisk)
+  })
+
+  test("the corpus meets its size floor and carries both verdicts", () => {
+    expect(manifest.length).toBeGreaterThanOrEqual(MINIMUM_CORPUS_SIZE)
+    expect(new Set(manifest.map((entry) => entry.verdict))).toEqual(
+      new Set(["accept", "reject"])
+    )
+  })
+
+  test("the corpus exercises both validation modes", () => {
+    // Zero blocks is a valid draft and an invalid run (Requirement 6.8) — the one
+    // rule that differs between the modes, so both must appear.
+    expect(new Set(manifest.map((entry) => entry.mode))).toEqual(
+      new Set(["draft", "run"])
+    )
+  })
+
+  test("every declared block type appears in at least one fixture", () => {
+    const covered = new Set<string>()
+    for (const entry of manifest) {
+      for (const type of blockTypesIn(readFixture(entry.file)))
+        covered.add(type)
+    }
+
+    const missing = BLOCK_TYPES.filter((type) => !covered.has(type))
+    expect(
+      missing,
+      "a declared block type appearing in no fixture is a type the two halves are " +
+        "never compared on"
+    ).toEqual([])
+  })
+
+  test("the agent half reported a verdict for every declared fixture", () => {
+    expect([...agentVerdicts.keys()].sort()).toEqual(
+      manifest.map((entry) => entry.file).sort()
+    )
+  })
+})
+
+describe("Requirement 2.6 — both validators reach the same verdict on every fixture", () => {
+  for (const entry of manifest) {
+    const definition = readFixture(entry.file)
+    const web = webVerdict(entry, definition)
+    const agent = agentVerdicts.get(entry.file)
+
+    describe(entry.file, () => {
+      test("the Template_Validator matches the manifest's verdict", () => {
+        expect(
+          web.verdict,
+          `web offenders: ${[...locationSet(web.offenders)].join(" | ")}`
+        ).toBe(entry.verdict)
+      })
+
+      test("the Template_Validator and the Block_Compiler agree on accept-or-reject", () => {
+        expect(agent, `no agent verdict for ${entry.file}`).toBeDefined()
+        expect(agent?.mode).toBe(entry.mode)
+        expect(agent?.verdict).toBe(web.verdict)
+      })
+
+      test("both halves name the same offending block ids and field paths", () => {
+        const webLocations = locationSet(web.offenders)
+        const agentLocations = locationSet(agent?.offenders ?? [])
+        const declaredLocations = locationSet(entry.offenders)
+
+        // Three-way, in one assertion per direction, so a failure names every
+        // differing location rather than the first one found.
+        expect([...webLocations].sort()).toEqual([...declaredLocations].sort())
+        expect([...agentLocations].sort()).toEqual(
+          [...declaredLocations].sort()
+        )
+        expect([...webLocations].sort()).toEqual([...agentLocations].sort())
+      })
+
+      test("both halves compute the same definition_sha256", () => {
+        // Property 11's cross-language half (Requirement 9.4): RFC 8785 canonical
+        // form, SHA-256, 64 lowercase hexadecimal characters, computed
+        // independently in TypeScript and in Python over the identical bytes on
+        // disk. A key-ordering or escaping disagreement between the two
+        // canonicalizers shows up here as a mismatch on every fixture at once.
+        expect(web.definition_sha256).toMatch(/^[0-9a-f]{64}$/)
+        expect(web.definition_sha256).toBe(entry.definition_sha256)
+        expect(agent?.definition_sha256).toBe(web.definition_sha256)
+      })
+    })
+  }
+})
+
+describe("Requirement 2.7 — one pass reports every violation", () => {
+  test("the six-defect fixture reports all six locations in one response", () => {
+    // The fixture that kills a validator returning only its first error: an
+    // undeclared top-level key, a `schema_version` above the supported maximum, an
+    // undeclared block type, a `rich_text` binding a snapshot path, a row nested in
+    // a row, and a duplicate id inside a row column — six independent defects, six
+    // distinct locations, one response.
+    const file = "reject-six-simultaneous-defects.json"
+    const entry = manifest.find((candidate) => candidate.file === file)
+    expect(entry, `${file} is missing from the corpus`).toBeDefined()
+
+    const definition = readFixture(file)
+    const web = webVerdict(entry as ManifestEntry, definition)
+
+    expect(web.verdict).toBe("reject")
+    expect(locationSet(web.offenders).size).toBe(6)
+    expect(locationSet(agentVerdicts.get(file)?.offenders ?? []).size).toBe(6)
   })
 })

@@ -1,0 +1,259 @@
+{
+  "blocks": [
+    {
+      "columns": [
+        [
+          {
+            "config": {},
+            "id": "col1-0",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-1",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-2",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-3",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-4",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-5",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-6",
+            "type": "page_break"
+          },
+          {
+            "config": {},
+            "id": "col1-7",
+            "type": "page_break"
+          }
+        ],
+        [
+          {
+            "config": {
+              "text": "Child 0."
+            },
+            "id": "col2-0",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 1."
+            },
+            "id": "col2-1",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 2."
+            },
+            "id": "col2-2",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 3."
+            },
+            "id": "col2-3",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 4."
+            },
+            "id": "col2-4",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 5."
+            },
+            "id": "col2-5",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 6."
+            },
+            "id": "col2-6",
+            "type": "rich_text"
+          },
+          {
+            "config": {
+              "text": "Child 7."
+            },
+            "id": "col2-7",
+            "type": "rich_text"
+          }
+        ],
+        [
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-0",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-1",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-2",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-3",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-4",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-5",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-6",
+            "type": "kpi_row"
+          },
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "col3-7",
+            "type": "kpi_row"
+          }
+        ]
+      ],
+      "id": "iiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiii",
+      "type": "row"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "description": "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+    "name": "NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+    "report_title": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

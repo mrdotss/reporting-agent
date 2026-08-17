@@ -1,0 +1,543 @@
+{
+  "manifest_version": 1,
+  "fixtures": [
+    {
+      "file": "accept-block-scope-overrides.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "cb81e0b0f541cabeea47579a5cca49691cebb524fe03a566fe85b615bdb68190",
+      "offenders": []
+    },
+    {
+      "file": "accept-bounds-at-maximum.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "2040ca8b77b931cb91abcb378016532940bdc315869a6ed17e619d8de2e0096f",
+      "offenders": []
+    },
+    {
+      "file": "accept-custom-period-31-days.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "6f8a59ba02e642f0b643b0af48e88ef79e1fbd7a69f91d296ed0c43e25b9a5a8",
+      "offenders": []
+    },
+    {
+      "file": "accept-custom-period-single-day.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "02ac125325722b9ecfb5076a2897f699fcbdb667d800a04e99163eeaa3b8d01f",
+      "offenders": []
+    },
+    {
+      "file": "accept-design-minimal-letter.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "4062cfba5cb9f78be92e72b2ebadcb7ea78e9bcd6a8affc51a58f30cd1fb8e7f",
+      "offenders": []
+    },
+    {
+      "file": "accept-draft-zero-blocks.json",
+      "mode": "draft",
+      "verdict": "accept",
+      "definition_sha256": "0eeb739f5a451f58d8857cb9026df4fce332ea5204768b8c848788741363ae5b",
+      "offenders": []
+    },
+    {
+      "file": "accept-every-block-type.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "236efcaec0fec1b6996d9f8fd438a181bb46baec6bb4e1f83235b4e385541abf",
+      "offenders": []
+    },
+    {
+      "file": "accept-full-scope-dimensions.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "90a54405d16de2e7736db15a5e8af0b70c4f49b99b7159982e1fdc8927ba30e7",
+      "offenders": []
+    },
+    {
+      "file": "accept-identity-with-report-title.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "d5c79f7b7001df5813ae036bbd86c1c677437489f0c0f296dddaaf902a654674",
+      "offenders": []
+    },
+    {
+      "file": "accept-minimal-single-heading.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "6b94c118f6c35df081c5ade54b856557578ae7891af64de393f7a5438ee8f4ca",
+      "offenders": []
+    },
+    {
+      "file": "accept-percentile-metric-selection.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "eaae86d6ec0daeb2f3afb5515b1a7dbf84a0cce1fc267faff8ebb12d3e779510",
+      "offenders": []
+    },
+    {
+      "file": "accept-row-three-columns.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "9e7d2251159cea6449e802e1ded49719075527223bc715317a53b2424d161276",
+      "offenders": []
+    },
+    {
+      "file": "reject-block-carries-absolute-position.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "1365d0ab500cccb11b70a4f4abf3fe2d05eda81f5b5d20adb5dbc10bb5bb1ef4",
+      "offenders": [
+        {
+          "block_id": "floating",
+          "path": [
+            "blocks",
+            0,
+            "position"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-block-id-too-long.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "4a97ed84e567d000191c3b4d50ead519d4a4a7188ef62a591fe759eb4a5643ac",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "blocks",
+            0,
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-config-carries-page-number.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "a4a62e43e4f00143dbc1e137fbe81890ba295af977ace68477515ab753b454a9",
+      "offenders": [
+        {
+          "block_id": "pinned",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "page_number"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-custom-period-inverted.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "02173e984a04a3aacf59726afbe7d3ad6305ba00bdc886071985be8829aa9748",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "period"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-custom-period-too-long.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "9a6979bf682b2d75c705e62373883ae62cce5a24e166f4ab53abd24bc4eab91c",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "period"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-decimal-places-above-bound.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "d1494f50e39123f4ee8e4e5e785e4d2a2db683c8a51a2c127eaa5aa2b9eb71c1",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "design",
+            "number_format",
+            "decimal_places"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-design-preset-unknown.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "6cb2ba43d829219b7b786f56a857657d76ca97ef733e76a6493714f041dfdffa",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "design",
+            "preset"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-duplicate-id-inside-row-column.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "6d84f0661fe5cea9b636c542dbec89a2bab9a43862e12052e98c1a10313e4965",
+      "offenders": [
+        {
+          "block_id": "kpi-1",
+          "path": [
+            "blocks",
+            1,
+            "columns",
+            0,
+            0,
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-metric-item-as-bare-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "d7f02c40e2bcb64cfd08ca1cb03ff3aa947ff3e5827383e65ee0454ccc2edcac",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "metrics",
+            "Microsoft.Compute/virtualMachines",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-missing-required-config-field.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "a65c4b634659cd0ca4049ab6ad567497c06f971606b786d48a7f7cb7c501f248",
+      "offenders": [
+        {
+          "block_id": "kpi",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "metrics"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-missing-schema-version.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "ae7d6d212dfd9cbe0a52e42a63fbb265087ddda8836a7a065f904011a815273a",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "schema_version"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-percentile-without-estimator.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "292881232c566f3ba64f6f77fbc90913161fa29173965d1a308329073c8740fe",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "metrics",
+            "Microsoft.Compute/virtualMachines",
+            0,
+            "estimator"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-rich-text-binds-a-metric.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "f725b173184984e72ba121aae44ad19cc58cdd5cb436cebceb5c4afee3af6fe6",
+      "offenders": [
+        {
+          "block_id": "prose",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "metric"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-row-nested-in-row.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "0176765555ceac58e6780b248c1a5d16a9642aad20cf4332e1f1787ff9aba004",
+      "offenders": [
+        {
+          "block_id": "inner-row",
+          "path": [
+            "blocks",
+            0,
+            "columns",
+            0,
+            0,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-row-with-one-column.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "c03d3ca7887a66c80d3e727df5e61d780ea920b3aa975fb82d70004e26d83822",
+      "offenders": [
+        {
+          "block_id": "row-1",
+          "path": [
+            "blocks",
+            0,
+            "columns"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-schema-version-above-supported.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "8609613b4d7933e906896906f476c3b1dc605c51b8fecd4640da5741edbb892f",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "schema_version"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-schema-version-as-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "c5d1bb53ed434bebb4e037fba09adca5e6abdbf0a40c51f56df652d33a4930d2",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "schema_version"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-schema-version-zero.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "0aef589f1f0cc8ddad122d9cfc50df08963a8a0632a98d63169785bf8b008eca",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "schema_version"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-scope-carries-resource-id.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "bfea1797d13c130ed5a2dc7f636e800f3e55750a0b066ccbc1aba722cd1fdb3c",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "scope",
+            "resource_groups",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-six-simultaneous-defects.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "d0b250b1060c1fd41c961982a9b83d816c848ee1e7297f555361354daf198210",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "layout"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "schema_version"
+          ]
+        },
+        {
+          "block_id": "bogus",
+          "path": [
+            "blocks",
+            1,
+            "type"
+          ]
+        },
+        {
+          "block_id": "dupe",
+          "path": [
+            "blocks",
+            3,
+            "columns",
+            1,
+            0,
+            "id"
+          ]
+        },
+        {
+          "block_id": "prose",
+          "path": [
+            "blocks",
+            2,
+            "config",
+            "snapshot_path"
+          ]
+        },
+        {
+          "block_id": "row-y",
+          "path": [
+            "blocks",
+            3,
+            "columns",
+            0,
+            0,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-tag-value-carries-subscription-guid.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "7e7554e7ac83fda291fe1578824fb12046f23fa2098e9ef70e112bbd1b9e4f60",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "scope",
+            "tag_filters",
+            0,
+            "value"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-top-n-without-a-metric.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "32c78d3b979019f8384775c87bc284cf26a1e1bee6c401cf96ef28f733aecbe7",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "scope",
+            "top_n",
+            "metric"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-undeclared-block-type.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "0b15a577d76feaf44f62e31a3ab18bc8da9f3884ae1a9dd513cc4cbacbdd8bbd",
+      "offenders": [
+        {
+          "block_id": "pie",
+          "path": [
+            "blocks",
+            0,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-undeclared-config-field.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "b54ce1ee61c2122ea4693c9205650f935f453dc56c9bef7a5839f794e15099a2",
+      "offenders": [
+        {
+          "block_id": "kpi",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "colour"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-undeclared-top-level-key.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "5e7c2d193b1acaa22a19155e72bb8f2d3643b5c081e92602873b109905c5ff17",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "theme"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-zero-blocks-for-a-run.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "dcbe0eb5c6d4ce67dc322909144691b077c5a07db7412976df4cc0e8c62fb0bb",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "blocks"
+          ]
+        }
+      ]
+    }
+  ]
+}

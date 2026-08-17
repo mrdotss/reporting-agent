@@ -1,0 +1,65 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "kpi",
+      "type": "kpi_row"
+    }
+  ],
+  "design": {
+    "accent_color": "#0a7ea4",
+    "cover_page": true,
+    "density": "relaxed",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 4,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "technical",
+    "table_style": "banded"
+  },
+  "identity": {
+    "name": "Decimal places above the bound"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

@@ -57,6 +57,18 @@ assert not hasattr(q, 'MetricsClient'), 'azure-monitor-query exports MetricsClie
 assert not hasattr(q, 'MetricsQueryClient'), 'azure-monitor-query exports MetricsQueryClient: pin is below 2; no pinned package exports that name'; \
 print('azure monitor split ok')"
 
+# Fail the BUILD if the document AST admits a bare number (Req 15.1-15.7).
+#
+# The same invariant tests/test_ast_guard.py asserts, run here as well, because
+# .dockerignore excludes tests/ — a guard that only ran in the suite could not
+# stop an image from carrying an AST in which a quantity can appear without
+# provenance. It reads the annotations of every dataclass in compile/ast.py and
+# requires that Figure is the only one mentioning a numeric type, that every
+# figure-admitting field carries one of six declared spellings, that Inline and
+# Cell are unions over exactly their declared members, and that every node is
+# frozen and slotted. No arithmetic, no I/O — a few hundred microseconds.
+RUN python -m reporting_agent.compile.ast --assert-build
+
 EXPOSE 8080
 
 CMD ["python", "-m", "reporting_agent.main"]

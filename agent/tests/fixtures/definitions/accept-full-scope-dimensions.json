@@ -1,0 +1,82 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "resources",
+      "type": "resource_table"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "Every scope dimension populated"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [
+      "rg-prod",
+      "rg-shared"
+    ],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines",
+      "Microsoft.Storage/storageAccounts"
+    ],
+    "sort": "ascending",
+    "tag_filters": [
+      {
+        "key": "env",
+        "value": "prod"
+      },
+      {
+        "key": "cost-centre",
+        "value": ""
+      }
+    ],
+    "top_n": {
+      "count": 25,
+      "metric": "Percentage CPU",
+      "statistic": "max"
+    }
+  }
+}

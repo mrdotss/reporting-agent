@@ -1,0 +1,96 @@
+{
+  "blocks": [
+    {
+      "columns": [
+        [
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "c1",
+            "type": "kpi_row"
+          }
+        ],
+        [
+          {
+            "config": {
+              "metrics": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "id": "c2",
+            "type": "kpi_row"
+          }
+        ],
+        [
+          {
+            "config": {
+              "text": "Third column."
+            },
+            "id": "c3",
+            "type": "rich_text"
+          }
+        ]
+      ],
+      "id": "row-3",
+      "type": "row"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "Three-column row"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

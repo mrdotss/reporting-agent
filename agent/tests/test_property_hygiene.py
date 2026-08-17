@@ -92,12 +92,24 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # single-sample near-edge defect (see the block above the examples in that file).
     "test_sketch_property.py": 26,
     "test_snapshot_property.py": 5,
+    # Property 1's seven declared examples: 0, 0.000001, -0.5, 9007199254740993, 0.1,
+    # 0.30000000000000004, and a number format whose decimal separator is `,` and
+    # grouping separator is `.` — the last of which kills a formatter hard-coding
+    # separators, and 0.30000000000000004 a formatter round-tripping through a binary
+    # float. Either would fail verification on a report that is correct.
+    "test_format_property.py": 7,
+    # Property 7's three declared cases — a top-N metric missing for half the matched
+    # resources, tag filters differing from the resource's tags only by the value's case
+    # (no match) and only by the key's case (match) — plus the missing-metric case reused
+    # on the permutation-invariance property, where an implementation that ordered by
+    # arrival would show up as a different ranking for the same snapshot.
+    "test_scope_property.py": 4,
 }
 
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 87
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 98
 
 
 # --------------------------------------------------------------------------- #
