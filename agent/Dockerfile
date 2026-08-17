@@ -9,9 +9,9 @@
 #
 #   docker buildx build --platform linux/arm64 -t <ecr>/reporting-agent:<tag> --push .
 #
-# LibreOffice, the theme fonts and a pre-warmed LibreOffice profile are NOT
-# installed here. They belong to the render spec; adding them now would bake a
-# several-hundred-megabyte layer for code that does not exist yet.
+# The image carries LibreOffice, the fonts the four themes name, and a LibreOffice
+# user profile warmed at BUILD time. The PDF is converted from the produced .docx
+# rather than rendered independently, so Word and PDF cannot disagree (Req 23.1).
 
 # Python is pinned, not ranged: one snapshot has to hash identically across two
 # operating-system processes, and a minor-version difference is a difference in
@@ -21,7 +21,38 @@ FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:${PYTHON_VERSIO
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PORT=8080
 
+# LANG is load-bearing, not cosmetic (Req 23.3). A comma-decimal locale rewrites
+# every numeral LibreOffice lays out, so `12,345.60` becomes `12.345,60` in the PDF
+# and the ledger's `formatted` strings stop being locatable — the PDF pass then
+# reports pdf_figure_missing and withholds a document that is entirely correct.
+# render/pdf.py asserts this value before it starts the process rather than trusting
+# the image, because an override at run time is just as fatal as a wrong default.
+#
+# LO_PROFILE is the profile warmed below and used as-is at run time (Req 23.5).
+ENV LANG=C.UTF-8 LO_PROFILE=/opt/libreoffice-profile
+
 WORKDIR /app
+
+# --- LibreOffice and the theme fonts (Req 23.2) -------------------------------
+#
+# Ahead of the pip layers on purpose: this is the largest and least frequently
+# changed layer in the image, so a dependency bump must not reinstall it.
+#
+# `libreoffice-writer` + `libreoffice-core` and nothing else — no Calc, no Impress,
+# no JRE. docx -> pdf needs the Writer import filter and the PDF export filter;
+# --no-install-recommends is what keeps the rest of the suite out.
+#
+# The two font packages are not optional decoration: every face named in
+# render/themes.py's THEME_SPECS comes from them (Liberation Sans/Serif,
+# DejaVu Sans/Sans Mono). A theme naming a font the container lacks renders through
+# LibreOffice's substitution, which changes line breaking and therefore pagination —
+# so the delivered PDF would paginate differently from the one that was reviewed.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libreoffice-writer \
+      libreoffice-core \
+      fonts-dejavu-core \
+      fonts-liberation2 \
+ && rm -rf /var/lib/apt/lists/*
 
 # The committed, fully pinned, hashed closure — the runtime closure only, so
 # pytest and hypothesis never ship. --require-hashes is what makes two builds of
@@ -33,6 +64,16 @@ RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 # pyproject's pythonpath = ["src"] reproduces for the test suite. One import
 # path, two environments.
 COPY src/reporting_agent/ ./reporting_agent/
+
+# The four styles-only theme documents (Req 8.1). They are code — versioned, reviewed
+# and asserted below — not user content, and there is no upload path that could supply
+# them at run time.
+#
+# /app/themes is what render/themes.py's theme_directory() resolves to here: the
+# package's parent holds `themes/` in the image, while in a checkout the package sits
+# one level deeper under src/. That function keys off the checkout marker rather than
+# probing, so the two layouts do not depend on which directory happens to exist.
+COPY themes/ ./themes/
 
 # Fail the BUILD, not a deployed run, if the three-package Azure Monitor pin is
 # wrong (Req 17.5, 17.6, 17.10).
@@ -68,6 +109,70 @@ print('azure monitor split ok')"
 # Cell are unions over exactly their declared members, and that every node is
 # frozen and slotted. No arithmetic, no I/O — a few hundred microseconds.
 RUN python -m reporting_agent.compile.ast --assert-build
+
+# Fail the BUILD if any of the four themes is missing a style the compiled blocks
+# reference, carries content, or cannot be opened (Req 8.7).
+#
+# Runs here rather than only in tests/test_themes.py because .dockerignore excludes
+# tests/ — and because this is the assertion that stops an image from producing a
+# document with unstyled figures, which is a defect a reader sees and a verifier does
+# not. Reports every (theme, style) pair missing across all four documents in one run,
+# so one fix pass clears the build.
+RUN python -m reporting_agent.render.themes --assert-build
+
+# --- Pre-warm the LibreOffice user profile (Req 23.5) -------------------------
+#
+# A cold profile makes the first conversion of a container's life slow and
+# occasionally fail outright. That reads as a flaky render rather than as a cold
+# start, and Req 23.9 applies the same 300s limit and the same single attempt to that
+# first conversion as to every later one — so there is no retry to hide behind.
+#
+# The warm-up converts a document built through the REAL path: a theme opened by
+# python-docx, one paragraph added, saved, then converted by soffice. Warming with a
+# .txt would exercise LibreOffice's plain-text import filter, which is not the filter
+# a run uses; this warms the Writer .docx import and the PDF export filter, which are.
+# It also proves at build time that python-docx and LibreOffice can hand a file
+# between them at all.
+RUN mkdir -p "$LO_PROFILE" /tmp/warm \
+ && python -c "\
+from reporting_agent.render.themes import load_theme; \
+d = load_theme('editorial'); \
+d.add_paragraph('warm', style='Body Text'); \
+d.save('/tmp/warm/warm.docx'); \
+print('warm-up document built')" \
+ && soffice --headless --norestore \
+      -env:UserInstallation="file://$LO_PROFILE" \
+      --convert-to pdf --outdir /tmp/warm /tmp/warm/warm.docx \
+ && test -s /tmp/warm/warm.pdf \
+ && rm -rf /tmp/warm
+
+# The profile is USED at run time, not copied (render/pdf.py), so whichever uid the
+# runtime hands us has to be able to take LibreOffice's lock files inside it.
+#
+# Rather than pick a USER this image does not otherwise need, the profile gets the
+# arbitrary-uid treatment: group 0, with group permissions mirroring the owner's. A
+# process running as root, as a named user, or as an unnamed uid injected by the
+# platform is in group 0 either way, so all three can lock it. A plain `chown` to one
+# named user would work for that one uid and fail for every other, which is the
+# failure mode this avoids rather than relocates.
+RUN chgrp -R 0 "$LO_PROFILE" && chmod -R g=u "$LO_PROFILE"
+
+# --- The build refuses to publish an image that cannot render (Req 8.7, 23.10) -
+#
+# Architecture and profile, asserted last so a failure here is about the image rather
+# than about the code. `uname -m` is aarch64 under --platform linux/arm64 whether the
+# host is arm64 natively or emulating, which is exactly the mistake being guarded: a
+# build that silently produced x86 would fail at runtime launch, not at build.
+RUN set -eu; \
+    test "$(uname -m)" = "aarch64" \
+      || { echo "architecture is $(uname -m), not aarch64: build with --platform linux/arm64" >&2; exit 1; }; \
+    command -v soffice >/dev/null \
+      || { echo "soffice is not on PATH: LibreOffice is absent from the image" >&2; exit 1; }; \
+    test -d "$LO_PROFILE" \
+      || { echo "$LO_PROFILE is absent: the LibreOffice profile was never warmed" >&2; exit 1; }; \
+    test -n "$(ls -A "$LO_PROFILE")" \
+      || { echo "$LO_PROFILE is empty: the warm-up conversion did not populate it" >&2; exit 1; }; \
+    echo "image assertions ok: aarch64, soffice present, profile warmed"
 
 EXPOSE 8080
 

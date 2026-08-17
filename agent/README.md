@@ -187,9 +187,43 @@ docker manifest inspect \
 # .manifests[].platform -> { "architecture": "arm64", "os": "linux" }
 ```
 
-LibreOffice, the theme fonts and a pre-warmed LibreOffice profile are **not** in this
-image. They belong to the render spec; adding them now would bake a
-several-hundred-megabyte layer for code that does not exist.
+### What the build asserts before it will publish anything
+
+Four assertions, each failing the build rather than a deployed run:
+
+| assertion | catches |
+|---|---|
+| the three-package Azure Monitor split imports | a pin that fails at import in a way that reads like a version problem |
+| `python -m reporting_agent.compile.ast --assert-build` | an AST in which a quantity can appear without provenance |
+| `python -m reporting_agent.render.themes --assert-build` | a theme missing a referenced style, carrying content, or unopenable |
+| `uname -m` is `aarch64`, `soffice` on `PATH`, `$LO_PROFILE` non-empty | an x86 image, absent LibreOffice, or a profile that was never warmed |
+
+The first three run in the suite as well (`tests/test_dependency_pins.py`,
+`tests/test_ast_guard.py`, `tests/test_themes.py`). They are repeated at build time
+because `.dockerignore` excludes `tests/`, so a guard that only ran in the suite could
+not stop a bad image from being published.
+
+### LibreOffice, the fonts, and the pre-warmed profile
+
+The image installs `libreoffice-writer` and `libreoffice-core` — no Calc, no Impress,
+no JRE — plus `fonts-dejavu-core` and `fonts-liberation2`, which supply every face the
+four themes name. A theme naming a font the container lacks renders through
+LibreOffice's substitution, which changes line breaking and therefore pagination, so
+the font list and `render/themes.py`'s `THEME_SPECS` are one decision in two files.
+
+`LANG=C.UTF-8` is load-bearing. A comma-decimal locale rewrites every numeral
+LibreOffice lays out, so the ledger's `formatted` strings stop being locatable in the
+PDF and a correct document fails its own verification. `render/pdf.py` asserts the
+value before starting the process rather than trusting the image.
+
+The LibreOffice user profile is warmed at `$LO_PROFILE` **at build time** by converting
+a document built through the real path — a theme opened with `python-docx`, saved, then
+converted with `soffice`. A cold profile makes the first conversion of a container's
+life slow and occasionally fail outright, and the same 300-second limit and single
+attempt apply to that first conversion as to every later one, so there is no retry to
+hide behind. The profile is used as-is at run time and never re-created; it carries
+group `0` with group permissions mirroring the owner's, so whichever uid the runtime
+supplies can take LibreOffice's lock files inside it.
 
 ## Deploying to AgentCore Runtime
 

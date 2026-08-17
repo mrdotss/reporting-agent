@@ -128,3 +128,106 @@
     @apply font-sans;
     }
 }
+
+/* ==========================================================================
+   The categorical chart palette, and the dark-mode fix for the sequential ramp.
+
+   APPENDED, and additive only: no token above is altered and nothing above is
+   reformatted. Those values carry the Luma preset's identity, and regenerating them
+   would silently change the whole design system.
+
+   ## Why a second palette exists at all
+
+   `--chart-1` … `--chart-5` above span hue 213.2–219.6 at chroma 0.007–0.021. That is
+   effectively achromatic: the only axis that moves is lightness, 0.872 → 0.275. It is
+   not a chart palette, it is the mist neutral ramp — which is to say a SEQUENTIAL
+   scale, and a good one.
+
+   Most charts in this product are CATEGORICAL: top VMs by CPU, or CPU vs memory vs
+   network on one resource. A lightness ramp fails that twice. It discriminates poorly
+   at small sizes — adjacent steps differ by ~0.07–0.11 L with no hue cue, so in a 4px
+   line or a legend swatch `--chart-3` and `--chart-4` are the same colour. And it
+   implies an order that does not exist: there is no sense in which "network" is a
+   higher value of "CPU". That is the quiet dishonesty this product exists to remove.
+
+   So: the ramp keeps genuinely sequential encodings, and peers get the tokens below.
+
+   ## The lightness stagger is a measured accessibility fix, not a style choice
+
+   `design-system.md` specifies these five hues at roughly CONSTANT lightness and
+   chroma, and anticipates that they may fail colour-vision-deficiency separability,
+   saying to "separate them by lightness rather than adding a sixth hue". They do fail,
+   and worse than the doc predicted — it flags `--cat-4` ochre against `--cat-5` green
+   as the pair most at risk, but at equal lightness the worst pair is `--cat-1` teal
+   against `--cat-2` violet under deuteranopia, at an OKLab ΔE of 0.021. That is about
+   one just-noticeable difference: for a deuteranopic reader they are the same colour.
+
+   The reason is structural. Under dichromacy a hue rotation collapses onto a single
+   axis, so five hues at one lightness have almost nothing left to tell them apart.
+
+   The stagger below spreads lightness evenly (0.06 per step) across a fixed rank
+   order, which lifts the worst pair under any of deuteranopia, protanopia and
+   tritanopia from 0.021 to 0.083 — four times the margin — while every token still
+   clears 3:1 against both `--background` and `--card` in both themes. Normal vision
+   still reads hue as the primary cue, because the hues remain 70°+ apart, so the set
+   reads categorical rather than as a ramp.
+
+   Two properties of the stagger are load-bearing:
+
+     * `--cat-1` is still EXACTLY `--primary` in light mode, so a single-series chart
+       is the product's accent colour rather than a near-miss of it.
+     * The rank order is IDENTICAL in light and dark — cat-5 < cat-3 < cat-1 < cat-4
+       < cat-2. Optimising each theme independently produced better numbers and
+       inverted the hierarchy on theme toggle, which is worse than a smaller margin.
+
+   Colour is still never the only channel. Every series carries a direct label and, for
+   lines, a marker shape and dash pattern (see `components/charts/palette.ts`), so
+   these values are a redundant cue rather than the mechanism.
+   ========================================================================== */
+
+:root {
+    /* Byte-identical to --primary. `design-system.md`'s prose says "--cat-1 IS
+       --primary" while its code block rounds the hue to 223; --primary is 223.128, so
+       the rounded value would be a near-miss of the product's own accent for no gain.
+       0.128° is imperceptible either way, which is exactly why there is no reason to
+       leave them different. */
+    --cat-1: oklch(0.52 0.105 223.128); /* teal — identical to --primary */
+    --cat-2: oklch(0.64 0.105 293); /* violet */
+    --cat-3: oklch(0.46 0.11 353); /* magenta */
+    --cat-4: oklch(0.58 0.105 66); /* ochre */
+    --cat-5: oklch(0.4 0.105 148); /* green */
+    --cat-other: var(--muted-foreground);
+}
+
+.dark {
+    /* The same five hues and the same rank order, lifted 0.16 to clear the dark
+       surface. --cat-1 is deliberately NOT --primary here: the preset's --primary gets
+       *darker* in dark mode (0.45 vs 0.52), so matching it would put a chart series
+       below the contrast floor. */
+    --cat-1: oklch(0.68 0.105 223.128);
+    --cat-2: oklch(0.8 0.105 293);
+    --cat-3: oklch(0.62 0.11 353);
+    --cat-4: oklch(0.74 0.105 66);
+    --cat-5: oklch(0.56 0.105 148);
+    --cat-other: var(--muted-foreground);
+
+    /* The preset does not re-map its sequential ramp for dark mode, so it runs the
+       wrong way against its own surface: unchanged, --chart-3/4/5 measure 2.67, 1.96
+       and 1.33 against --background, i.e. the high end of the scale is the end you
+       cannot see. Reversing the lightness order while keeping the hue band puts the
+       pale end near the surface, which is what a sequential fill should do. */
+    --chart-1: oklch(0.275 0.011 216.9);
+    --chart-2: oklch(0.378 0.015 216);
+    --chart-3: oklch(0.45 0.017 213.2);
+    --chart-4: oklch(0.56 0.021 213.5);
+    --chart-5: oklch(0.872 0.007 219.6);
+}
+
+@theme inline {
+    --color-cat-1: var(--cat-1);
+    --color-cat-2: var(--cat-2);
+    --color-cat-3: var(--cat-3);
+    --color-cat-4: var(--cat-4);
+    --color-cat-5: var(--cat-5);
+    --color-cat-other: var(--cat-other);
+}

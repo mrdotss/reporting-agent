@@ -201,30 +201,40 @@ supplementary categorical palette for everything else.**
   sits near the surface and the high end reads bright. General rule either way:
   *for strokes, skip whichever end of the ramp sits nearest the surface.*
 
-### Categorical palette — the specification
-Derived from the preset's teal primary by **rotating hue while holding lightness
-and chroma roughly constant**, so multi-series charts still read as the same
-product. `--cat-1` **is** `--primary`.
+### Categorical palette — five hues on a lightness ladder
+
+Derived from the preset's teal primary by **rotating hue**, and spread across an
+**even lightness ladder** so the set survives colour-vision deficiency. `--cat-1`
+**is** `--primary` in light mode, byte for byte.
+
+> **`app/app/globals.css` is the source of truth.** The block below is transcribed
+> from it. `app/components/charts/palette.ts` and
+> `agent/src/reporting_agent/render/chartstyle.py` hold the same values, and
+> `agent/tests/test_chartstyle.py` reads all three and asserts they agree — so a
+> change made in one place and not the others fails the suite rather than shipping
+> as a chart whose colour differs between the app and the delivered document.
 
 ```css
-/* Append to app/app/globals.css. ADDITIVE — do not alter the preset tokens. */
+/* Appended to app/app/globals.css. ADDITIVE — do not alter the preset tokens. */
 :root {
-  --cat-1: oklch(0.52 0.105 223);   /* teal — identical to --primary */
-  --cat-2: oklch(0.53 0.105 293);   /* violet */
-  --cat-3: oklch(0.52 0.110 353);   /* magenta */
-  --cat-4: oklch(0.58 0.105 66);    /* ochre — L lifted; the yellow family reads
-                                       too dark at 0.52 */
-  --cat-5: oklch(0.54 0.105 148);   /* green */
+  --cat-1: oklch(0.52 0.105 223.128); /* teal — identical to --primary */
+  --cat-2: oklch(0.64 0.105 293);     /* violet */
+  --cat-3: oklch(0.46 0.11 353);      /* magenta */
+  --cat-4: oklch(0.58 0.105 66);      /* ochre */
+  --cat-5: oklch(0.4 0.105 148);      /* green */
   --cat-other: var(--muted-foreground);
 }
 
 .dark {
-  /* Same hues, lightness raised to clear the dark surface. */
-  --cat-1: oklch(0.68 0.105 223);
-  --cat-2: oklch(0.69 0.105 293);
-  --cat-3: oklch(0.68 0.110 353);
+  /* The same five hues and the same rank order, lifted 0.16 to clear the dark
+     surface. --cat-1 is deliberately NOT --primary here: the preset's --primary
+     gets *darker* in dark mode (0.45 vs 0.52), so matching it would put a chart
+     series below the 3:1 contrast floor. */
+  --cat-1: oklch(0.68 0.105 223.128);
+  --cat-2: oklch(0.8 0.105 293);
+  --cat-3: oklch(0.62 0.11 353);
   --cat-4: oklch(0.74 0.105 66);
-  --cat-5: oklch(0.70 0.105 148);
+  --cat-5: oklch(0.56 0.105 148);
   --cat-other: var(--muted-foreground);
 
   /* Reverse the preset's sequential ramp for dark surfaces (see above). */
@@ -245,10 +255,64 @@ product. `--cat-1` **is** `--primary`.
 }
 ```
 
-**Five is the cap, deliberately.** A single-lightness, single-chroma hue ring
-supports about five reliably separable hues at ~70° spacing; past that you must
-start modulating lightness, at which point you have reinvented the ramp and lost
-categorical parity. So:
+#### Do not restore equal lightness. It was measured, and it failed.
+
+This document originally specified these five hues at **roughly constant
+lightness** — `--cat-1` 0.52, `--cat-2` 0.53, `--cat-3` 0.52, `--cat-5` 0.54 — on
+the reasoning that holding L and C constant keeps multi-series charts reading as
+one product. That reasoning is sound aesthetically and **wrong perceptually**, and
+the numbers are not close:
+
+| pair (light mode) | simulation | equal lightness | shipped ladder |
+|---|---|---|---|
+| `--cat-1` teal vs `--cat-2` violet | deuteranopia | **ΔE 0.021** | 0.118 |
+| `--cat-4` ochre vs `--cat-5` green | protanopia | ΔE 0.033 | 0.127 |
+| `--cat-3` magenta vs `--cat-5` green | deuteranopia | ΔE 0.057 | **0.083** |
+| worst of all 10 pairs × 3 simulations × **both themes** | — | **0.020** | **0.083** |
+
+Measured as OKLab ΔE after a Machado et al. (2009) severity-1.0 dichromacy
+simulation. About **one just-noticeable difference is 0.02**, so at equal lightness
+`--cat-1` and `--cat-2` are *the same colour* to a deuteranopic reader comparing two
+series. Note also that the pair this document predicted would be worst — ochre
+against green — is only the second worst; teal against violet is the one that fails
+hardest, and no amount of looking at the swatches reveals that.
+
+The shipped ladder's own worst case is `--cat-3` against `--cat-5` under
+deuteranopia at 0.083 — four times the equal-lightness worst, and the number the
+0.06 floor in the test suite sits below on purpose: the floor is the line a future
+edit must not cross, not a restatement of today's measurement.
+
+**The cause is structural, not a bad choice of hues.** Under dichromacy a hue
+rotation collapses onto a single axis. Five hues distinguished *only* by hue
+therefore have almost nothing left to tell them apart, whatever the hues are — so
+there is no equal-lightness five-hue set that passes. The fix is the one this
+document already sanctions two sections down: *"if it fails, separate them by
+lightness rather than adding a sixth hue."*
+
+Two properties of the ladder are load-bearing and must survive any future edit:
+
+- **Even 0.06 steps**, so the stagger reads as deliberate rather than arbitrary.
+- **One rank order in both themes** — `--cat-5` < `--cat-3` < `--cat-1` < `--cat-4`
+  < `--cat-2`. Optimising each theme independently produced *better* CVD margins and
+  **inverted the visual hierarchy on theme toggle**, so the same series was the
+  lightest in one theme and among the darkest in the other. That was rejected: a
+  smaller margin is better than a hierarchy that flips.
+
+It still reads categorical to normal vision, which is what the equal-lightness rule
+was protecting: the closest two hues sit **60° apart** (the test floor is 55°), so hue
+remains the cue a normal-sighted reader sees first, and colour is a **redundant**
+channel anyway — every series also carries a direct label, and every line a marker
+shape and a dash pattern.
+
+`app/test/palette.static.test.ts` recomputes all of the above from the OKLCH values
+on every run, asserts every pair clears a 0.06 floor, and **includes the
+equal-lightness set as a negative case** so its failure is a standing test rather
+than a paragraph. Changing these values without moving those numbers is not
+possible.
+
+**Five is still the cap, and now for a second reason.** A hue ring supports about
+five reliably separable hues at ~70° spacing; past that lightness has to move — and
+lightness is already spent, on the ladder above. So:
 
 - **More than five series → aggregate.** Top 4 + `--cat-other` ("Other"), or switch
   to **small multiples**. This is better dataviz regardless of palette, and it
@@ -257,10 +321,6 @@ categorical parity. So:
   `--cat-1` in every chart in the report; a resource must keep its colour between
   the chart and the delta table. Colour that shifts between two views of the same
   data is worse than no colour.
-
-> These values are the **specified starting point**, not a verified pass. Before
-> first use, run the checks below. `--cat-4` at the lifted lightness is the most
-> likely to need adjusting in light mode.
 
 ### Non-negotiables for every chart
 - **Never rely on colour alone.** Every series carries a **direct label** at the
@@ -279,9 +339,15 @@ categorical parity. So:
   light **and** dark. Target ≥3:1 against the surface for graphical objects
   (WCAG 1.4.11), and ≥4.5:1 for any inline value text.
 - **Check colour-vision deficiency.** Simulate deuteranopia, protanopia and
-  tritanopia; confirm **adjacent** categorical hues stay distinguishable. `--cat-4`
-  ochre vs `--cat-5` green is the pair most at risk under red-green deficiency —
-  if it fails, separate them by lightness rather than adding a sixth hue.
+  tritanopia over **all ten pairs**, not only adjacent ones: colour is assigned by
+  stable key, so any two of the five can co-occur in one chart. `--cat-4` ochre vs
+  `--cat-5` green was expected to be the pair most at risk under red-green
+  deficiency and measurement disagreed — teal vs violet fails hardest at equal
+  lightness, and the shipped ladder's worst pair is magenta vs green. **This check
+  has been run and the palette was changed because of it** (see the categorical
+  palette section); `app/test/palette.static.test.ts` re-runs it on every commit
+  against a 0.06 ΔE floor, so it is a standing gate rather than a pre-flight step
+  somebody has to remember.
 - Axis labels, gridlines and ticks come from `--muted-foreground` / `--border`.
   Gridlines never compete with data.
 - Chart titles in `font-heading`; all numerals in `font-mono`, tabular.

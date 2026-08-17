@@ -75,6 +75,7 @@ from reporting_agent.compile.snapshot_view import (
 from reporting_agent.errors import CompileFailedError
 
 __all__ = [
+    "CAPTION_STYLE",
     "EMPTY_SCOPE_TEXT",
     "LAYOUT_TABLE_STYLE",
     "MAX_CHART_POINTS",
@@ -82,6 +83,8 @@ __all__ = [
     "MAX_HEADING_LEVEL",
     "MAX_TABLE_ROWS",
     "NON_CATALOG_ESTIMATORS",
+    "NOTICE_COLUMN_HEADER",
+    "NOTICE_STYLE",
     "NOT_COMPARABLE_TEXT",
     "NO_GAPS_TEXT",
     "OMITTED_ROW_LABEL",
@@ -172,6 +175,32 @@ complete."""
 
 EMPTY_SCOPE_TEXT: Final[str] = "No resources matched this scope"
 NO_GAPS_TEXT: Final[str] = "No gaps recorded for this collection"
+
+CAPTION_STYLE: Final[str] = "Caption"
+"""The paragraph style a table's or chart's caption takes.
+
+Declared here rather than as a literal in `render/docx.py` for the reason this module's
+docstring gives about the style vocabulary: the Theme_Guard reads these constants, and a
+name only the renderer knows is a name a theme can forget to declare."""
+
+NOTICE_STYLE: Final[str] = "Notice"
+"""The paragraph style the explicit no-data rows take.
+
+A `caption` travels as `Table.caption` and a notice row as a `TextCell`, so neither carries
+a style in the AST — both are applied by the renderer. See `render/themes.py`'s
+`RENDERER_APPLIED_STYLES`."""
+
+NOTICE_COLUMN_HEADER: Final[str] = "Scope"
+"""The header of the single column an empty-scope table carries.
+
+Non-empty because Req 21.4 requires **every** data-table column header to be a non-empty
+string the verifier can resolve a column by, and an empty-scope table is an ordinary data
+table that happens to carry zero figures (Req 21.11) rather than a special kind of node.
+
+Leaving it blank would have forced the renderer or the verifier to special-case a table by
+inspecting its contents, which is exactly the guessing the caption contract exists to
+avoid — and a one-column table with a blank header row also just looks broken in a
+delivered document."""
 OMITTED_ROW_LABEL: Final[str] = (
     "Not every matched resource is listed above; this table is capped. "
     "Resources in the subscription:"
@@ -700,7 +729,7 @@ def empty_scope_table(cursor: BlockCursor, style: str, caption: str | None) -> T
     return Table(
         path=cursor.path,
         style=style,
-        columns=(Column(key="notice", header=""),),
+        columns=(Column(key="notice", header=NOTICE_COLUMN_HEADER),),
         rows=(
             Row(
                 path=row_cursor.path,

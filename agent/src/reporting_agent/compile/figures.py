@@ -152,6 +152,7 @@ class FigureLedger:
 
     _entries: dict[FigurePath, Figure] = field(default_factory=dict)
     _anchors: dict[FigurePath, TableAnchor] = field(default_factory=dict)
+    _tables: dict[str, FigurePath] = field(default_factory=dict)
 
     def __getitem__(self, path: FigurePath | str) -> Figure:
         try:
@@ -211,6 +212,38 @@ class FigureLedger:
 
     def anchors(self) -> Mapping[FigurePath, TableAnchor]:
         return MappingProxyType(self._anchors)
+
+    def register_table(self, path: FigurePath, anchor_id: str) -> None:
+        """Record that a data table or chart with this identity exists (Req 21.6, 21.11).
+
+        Separate from :meth:`record_anchor` because the two answer different questions,
+        and one of them has no figure to hang off:
+
+        * `record_anchor` says "this **figure** sits in that table at that row and column".
+        * This says "that **table** exists and is a data table", which has to be recordable
+          for a table carrying **zero** figures. A `gaps_and_coverage` block over an empty
+          log, or any block whose scope matched nothing, emits exactly that. Without this
+          the verifier would find a captioned table in the document, fail to resolve its
+          identity against the ledger, and report `table_anchor_unexpected` for a table the
+          compiler emitted deliberately and correctly.
+
+        A duplicate identity is a `COMPILE_FAILED` rather than a silent overwrite: Req 21.6
+        requires identities unique within one rendered document, and two tables sharing one
+        would make every anchor under it ambiguous. Since an identity is derived from the
+        AST path alone, a collision means two nodes claim one path — which the ledger's own
+        key set would also have caught, but not with a message naming the table.
+        """
+        existing = self._tables.get(anchor_id)
+        if existing is not None and existing != path:
+            raise CompileFailedError(
+                f"table identity {anchor_id!r} is claimed by both {existing!r} and "
+                f"{path!r}; an identity is derived from the AST path and addresses one node"
+            )
+        self._tables[anchor_id] = path
+
+    def table_identities(self) -> Mapping[str, FigurePath]:
+        """Every data-table and chart identity this render emitted, by anchor id."""
+        return MappingProxyType(self._tables)
 
     def formatted_values(self) -> tuple[str, ...]:
         """Every distinct `formatted` string, **longest first**.
@@ -505,6 +538,7 @@ class BlockCursor:
         in step.
         """
         anchor_id = table_id(path)
+        self.ledger.register_table(path, anchor_id)
         prefix = f"{path}."
         for candidate in self.ledger.paths():
             if str(candidate).startswith(prefix):
@@ -516,6 +550,7 @@ class BlockCursor:
     def anchor_chart(self, path: FigurePath) -> str:
         """As :meth:`anchor_table`, for a chart."""
         anchor_id = chart_id(path)
+        self.ledger.register_table(path, anchor_id)
         prefix = f"{path}."
         for candidate in self.ledger.paths():
             if str(candidate).startswith(prefix):

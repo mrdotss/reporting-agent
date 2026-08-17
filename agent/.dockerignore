@@ -1,4 +1,4 @@
-# The image needs requirements.lock and src/reporting_agent/ and nothing else.
+# The image needs requirements.lock, src/reporting_agent/ and themes/ — and nothing else.
 # Without this, a local .venv ships ~190 MB of context to the daemon on every build.
 .venv/
 venv/

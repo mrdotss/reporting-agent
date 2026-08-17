@@ -5,3 +5,12 @@ node_modules/
 coverage/
 pnpm-lock.yaml
 .pnpm-store/
+
+# app/globals.css carries the shadcn preset's identity. `pnpm format` only targets
+# **/*.{ts,tsx} so it never reaches this file, but a `prettier --write` naming it
+# explicitly reindents all ~120 preset token lines from 4 spaces to 2 — which is the
+# "reformatting the existing token values" the design-system steering rules out, and it
+# buries an additive change in a whole-file diff no reviewer can read.
+#
+# Additive edits (appending a new token block) are expected. Reformatting is not.
+app/globals.css

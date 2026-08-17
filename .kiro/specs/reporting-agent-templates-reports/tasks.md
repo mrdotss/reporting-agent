@@ -185,21 +185,21 @@ migration.
 - [x] 4. Checkpoint — the definition model and the schema
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 5. The compile stage — provenance made structural
-  - [ ] 5.1 Implement `compile/definition.py` — the mirrored validator
+- [x] 5. The compile stage — provenance made structural
+  - [x] 5.1 Implement `compile/definition.py` — the mirrored validator
     - The definition model and validation on the agent side, holding the sentinel-delimited declarations task 3.1 created, and reaching the **same verdict** as `lib/templates/definition.ts` for every rule: the seven required keys, undeclared keys and block types rejected by name, the layout grammar, one level of nesting, duplicate ids across row children, `rich_text` binding nothing, the absence of any positioning field, the size and count bounds, and `schema_version` bounds with no default applied
     - Reject a block whose `type` is absent from the declared set, naming the rejected type and that block's position, and **neither ignore nor drop it**
     - Report **every** violation with the offending block `id` and field path; a pinned version failing validation at compile time raises the terminal `TEMPLATE_INVALID` naming every failing path, renders no document and writes no artifact
     - _Requirements: 2.3, 2.5, 2.6, 2.8, 2.9, 2.10, 3.10, 6.1, 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.8, 6.9, 6.10, 6.11_
 
-  - [ ] 5.2 Ship the shared fixture corpus and the Mirror_Guard's behavioural half
+  - [x] 5.2 Ship the shared fixture corpus and the Mirror_Guard's behavioural half
     - `agent/tests/fixtures/definitions/` holding **at least 20 fixtures** covering every declared block type at least once, with both accepted and rejected cases, plus a manifest declaring each fixture's expected verdict and, for a rejection, the expected offending block `id` and field path. Rejected fixtures include one carrying a fully qualified Azure resource id in a scope field, one nesting a row in a row, one with a duplicate id inside a row column, and one omitting `schema_version`
     - Extend `app/test/mirror.static.test.ts` to run **every fixture through both** the Template_Validator and the Block_Compiler and fail unless both reach the same accept-or-reject outcome and name the same offending block `id` and field path, plus a corpus size and coverage check (≥20 fixtures, every declared block type present, both verdicts present)
     - Assert in the same test that the app's `definition_sha256` equals the agent's canonical digest for every fixture, closing Property 11's cross-language half
     - One corpus directory read by both halves across the monorepo path, **never a copy**, because two copies is how the guard comes to compare each half against itself. Declaration equality is necessary and not sufficient: a definition the app can save and the compiler cannot compile turns a save-time validation error into a failed run minutes later, after inventory and metrics have already been spent
     - _Requirements: 2.6, 2.11, 1.3, 9.4_
 
-  - [ ] 5.3 Implement `compile/snapshot_view.py` — the only source of a value
+  - [x] 5.3 Implement `compile/snapshot_view.py` — the only source of a value
     - `SnapshotValue` as a frozen slotted dataclass carrying `value: Decimal`, `unit`, `statistic`, `estimator`, `fidelity_tier`, `scale`, `metric`, `resource_id`, `window`, `pointer`, `estimated`, `derived_from` and `formula`
     - `SnapshotView` built by walking the snapshot document **once** and recording, for every statistic object, the RFC 6901 JSON Pointer of its `value` field — so `pointer` is **derived from the value's position** and there is no constructor accepting a pointer from outside the walk
     - `resources()`, `stat()`, `day_stat()`, `count(CountKind)` for resource / gap / per-tier counts, and `resolve(pointer)` for the AST's re-resolution check
@@ -207,7 +207,7 @@ migration.
     - Unit tests: a pointer resolving to exactly one value whose decimal string equals the parsed value; a `stat()` miss returning `None` rather than raising; the view rejecting mutation
     - _Requirements: 15.5, 15.11, 16.4, 18.5_
 
-  - [ ] 5.4 Implement `compile/ast.py` and ship the AST numeric-leaf guard with it
+  - [x] 5.4 Implement `compile/ast.py` and ship the AST numeric-leaf guard with it
     - `DecimalString` as a `NewType` over `str` — a `NewType` rather than a bare `str` so the static guard can tell a quantity from prose by the annotation alone — constrained to an optional leading `-`, digits, at most one `.` followed by digits, admitting no exponent, no leading `+`, no thousands separator, no surrounding whitespace, no empty string and no non-finite designation
     - `Figure` as the **only** node declaring a field that carries a quantity: `path`, `value`, `unit`, `snapshot_path`, `formatted`, `fidelity_tier`, `statistic`, `metric?`, `resource_id?`, `window?`, `estimator?`, `estimator_label?`, `derived_from`, `formula?`. `__post_init__` validates every field naming that node's `path`; `__setattr__` raises `FigureImmutableError`
     - `Text`, `Inline = Text | Figure`, `FigureCell` / `TextCell` / `EmptyCell`, `Cell` as their union, `Table` (identity, ordered column headers each with a column key, ordered rows each with a row key and ordered cells, keys unique within the table), `Paragraph` over `Inline`, `Chart`, `LayoutRow`, `PageBreak` — every node `frozen=True, slots=True`
@@ -218,7 +218,7 @@ migration.
     - Unit tests: a `Decimal`, an `int`, a bare `str` and a `float` in a figure position each raising with the node path and offending type; an assignment to a constructed `Figure` field raising; a `snapshot_path` resolving to nothing, to two values, and to a value whose decimal string differs
     - _Requirements: 15.1, 15.2, 15.3, 15.4, 15.5, 15.6, 15.7, 15.9, 15.10, 15.11, 15.12, 15.13, 21.9, 22.2_
 
-  - [ ] 5.5 Implement `compile/figures.py` — the ledger and the cursor, in one task with the AST
+  - [x] 5.5 Implement `compile/figures.py` — the ledger and the cursor, in one task with the AST
     - `FigureLedger` as `_entries: dict[FigurePath, Figure]` whose values **are** the objects the AST holds, plus `_anchors: dict[FigurePath, TableAnchor]` recorded onto the existing entry rather than into a separate collection; `__getitem__`, `formatted_values()` ordered longest-first for masking stage 1, `anchors()`, `serialize()` (entries by path, RFC 8785) and `digest()`
     - `BlockCursor` minting paths via `child(field, ordinal)` and exposing `figure(snapshot_value, *, number_format)` as **the only figure factory**: it mints the path, calls `format.format_figure(...)`, constructs the `Figure`, and inserts it into the ledger **in one step**, so the entry is created during the traversal that creates the node and the ledger's value is that same object
     - The factory takes a `SnapshotValue` — which carries its own JSON Pointer — and nothing else, which is what makes a `Figure` unconstructible from a number that did not come out of `SnapshotView`; there is consequently **no operation anywhere in the package** that accepts a numeric produced by a language model, supplied in a template definition, or computed from model-authored text, and places it in a figure position
@@ -229,7 +229,7 @@ migration.
     - **The figure-factory call count**: a counter on `BlockCursor.figure` asserts the count equals the ledger's entry count and the AST's figure-node count, so a second-pass implementation shows up as a count mismatch rather than as a code review
     - _Requirements: 15.8, 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.8, 17.9, 17.10, 17.11_
 
-  - [ ] 5.6 Implement `compile/format.py` and `compile/estimators.py`, with Property 1
+  - [x] 5.6 Implement `compile/format.py` and `compile/estimators.py`, with Property 1
     - `format_figure(value, *, unit, catalog_scale, number_format, estimator_label, path) -> str` as **the only operation in the runtime** that turns a figure's value into a display string
     - Display scale is `max(number_format.decimal_places, catalog_scale)` — the catalog scale is a **floor** a style preference may not cut into, because precision is a property of the measurement rather than of a template's taste; the setting adds zeros where it asks for more and is ignored where it asks for less, while the grouping flag and both separators apply unconditionally
     - `Decimal` throughout with **no float** constructed anywhere on the path; quantization half away from zero, one rounding mode for every value, unit and number format; separators from the template's number format; the unit's presentation from the catalog inside the string, so a consumer appending its own unit would break the exact-equality comparison the verifier performs
@@ -242,7 +242,7 @@ migration.
     - Declared examples: `0`, `0.000001`, `-0.5`, `9007199254740993`, `0.1`, `0.30000000000000004`, and a number format whose decimal separator is `,` and grouping separator is `.` — which kills a formatter round-tripping through a binary float and one hard-coding separators, either of which would fail verification on a report that is correct
     - _Requirements: 7.3, 7.9, 18.1, 18.2, 18.3, 18.4, 18.5, 18.6, 18.7, 18.9, 18.10, 18.11, 45.1, 45.3, 45.4_
 
-  - [ ] 5.7 Implement `compile/scope.py` — the Scope_Resolver — with Property 7
+  - [x] 5.7 Implement `compile/scope.py` — the Scope_Resolver — with Property 7
     - `resolve(scope: ScopeRules, view: SnapshotView) -> tuple[ResourceView, ...]` whose whole signature is the requirement: a snapshot view and a scope specification, **no client, no network, no clock**
     - Matching requires every populated dimension satisfied, treats multiple entries within a dimension as any-of, treats an empty dimension as unconstrained, and compares resource types and tag **keys** case-insensitively while comparing tag **values** case-sensitively — an Azure tag value is user data, and folding its case would silently merge `env=Prod` with `env=prod`
     - Top-N in four explicit steps: partition matched resources into those the snapshot has a value for at the named `(metric, statistic)` and those it does not; sort the first by that value in the scope's direction defaulting to `descending`, breaking ties by resource id ascending in **Unicode code-point order**; append the second ordered by resource id **after** every ranked resource, so a missing metric value can never reorder the ranked ones; take the first N, retaining everything when the matched count is below N
@@ -255,7 +255,7 @@ migration.
     - Kills: a resolver whose output depends on response arrival order; one treating a missing metric value as zero, which sorts those resources into the ranked order and silently changes which ten appear in a "Top 10 by CPU" table; one folding tag-value case; one raising on an empty match, which would turn an ordinary empty block into a failed run; a pipeline requesting only the template default, whose override resources are then absent from the snapshot and fail the coverage gate on a correct run
     - _Requirements: 3.3, 3.4, 3.5, 3.6, 3.7, 3.8, 3.11, 3.12, 5.4, 45.1, 45.3, 45.4_
 
-  - [ ] 5.8 Implement `compile/blocks/` — one module per declared block type
+  - [x] 5.8 Implement `compile/blocks/` — one module per declared block type
     - Every numeric quantity in a `kpi_row`, `resource_table`, `top_n_table`, `capacity_vs_usage`, `timeseries_chart`, `distribution_chart` or `comparison_delta` emitted as a **figure node**, and no numeric quantity in those blocks emitted as a text node
     - `resource_table` / `top_n_table`: one row per resource in resolved-scope order up to 500, plus a final row stating the omitted count **as a figure**, so a truncated table states its own truncation rather than presenting a partial list as complete
     - `gaps_and_coverage`: `collection_log` entries grouped by `gap_type` ascending in code-point order and within each group by resource id ascending, each group naming affected resources with its count as a figure, emitted as recorded rather than as an absence of data, and an explicit "no gaps recorded" row where the log is empty
@@ -268,23 +268,23 @@ migration.
     - A block with a non-empty scope that cannot compile raises `COMPILE_FAILED` naming its `id` and `type`, emitting no partial AST and writing no artifact
     - _Requirements: 3.7, 3.8, 7.5, 16.1, 16.2, 16.3, 16.4, 16.5, 16.6, 16.9, 16.10, 16.11, 16.12, 16.13, 16.14, 19.1, 19.3_
 
-  - [ ] 5.9 Implement `compare/delta.py` — the Delta_Compiler
+  - [x] 5.9 Implement `compare/delta.py` — the Delta_Compiler
     - `comparison_delta` compiled from the snapshots pinned by the two completed runs its config names, each delta emitted as a figure whose value is the later run's minus the earlier run's, both `snapshot_id` values emitted in the block, and **no Azure call**
     - A resource whose `fidelity_tier` differs between the two snapshots emits a row marked **not comparable** with no delta figure and records the advisory `fidelity_not_comparable`; a resource present in one snapshot and absent from the other emits a row naming the snapshot it is absent from, with no delta figure, and is **not omitted**
     - _Requirements: 16.7, 16.8, 16.15_
 
-  - [ ] 5.10 Unit tests for block compilation and the compile refusals
+  - [x] 5.10 Unit tests for block compilation and the compile refusals
     - A `resource_table` at 501 resources asserting the 500-row cap plus the omitted-count figure; a `gaps_and_coverage` over an empty log asserting the explicit no-gaps row; a `verification_record` asserting it carries no status, count or finding; a `comparison_delta` whose resource has differing tiers across the two snapshots asserting `fidelity_not_comparable` and no delta figure; and one whose resource is present in one snapshot only
     - Formatter refusals surfacing as `COMPILE_FAILED` with the AST path: a metric with no catalog scale, and a value that is neither `Decimal` nor a decimal string
     - A definition whose every block's scope matches nothing while the union matches one resource, asserting **every** block is present in the tree with its explicit row and zero figures
     - `.venv/bin/pytest` and `.venv/bin/ruff check .` clean
     - _Requirements: 15.4, 16.2, 16.3, 16.5, 16.8, 16.11, 16.15, 18.9, 18.11_
 
-- [ ] 6. Checkpoint — a snapshot compiles to an AST and a ledger
+- [x] 6. Checkpoint — a snapshot compiles to an AST and a ledger
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 7. Themes, the container image, and the two emitters over one tree
-  - [ ] 7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard
+- [x] 7. Themes, the container image, and the two emitters over one tree
+  - [x] 7.1 Author the four theme documents, `render/themes.py` and the Theme_Guard
     - `agent/themes/editorial.docx`, `corporate.docx`, `technical.docx`, `minimal.docx` — **styles-only** Word packages carrying paragraph, character and table styles and **no content** — committed to the repository as source files and reviewed like code, each defining the `Figure` character style, the `PreviewNotice` paragraph style, and every paragraph and table style the declared block types reference
     - `render/themes.py` loading a theme by preset name, asserting the referenced style union is present, and exposing `--assert-build` as a module entry point
     - `agent/tests/test_themes.py` — the Theme_Guard, shipping **with** the documents: each of the four declares `Figure`; each declares every name in the union of paragraph and table style names referenced by the declared block types; each contains **zero non-whitespace text characters** in body, headers and footers; the directory contains exactly the four required file names and every file opens as a readable document package, reported as **distinct** from a missing-style failure
@@ -292,20 +292,20 @@ migration.
     - A theme document missing a referenced style at run time is the terminal `RENDER_FAILED` naming the theme and every missing style, writing no artifact and leaving the snapshot unmodified
     - _Requirements: 7.4, 7.7, 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.8, 20.5_
 
-  - [ ] 7.2 Extend the Dockerfile — LibreOffice, arm64 fonts, a pre-warmed profile and the build assertions
+  - [x] 7.2 Extend the Dockerfile — LibreOffice, arm64 fonts, a pre-warmed profile and the build assertions
     - `apt-get install --no-install-recommends libreoffice-writer libreoffice-core` plus arm64 builds of the fonts the four themes reference (`fonts-dejavu-core`, `fonts-liberation2`), cleaning the apt lists
     - `ENV LANG=C.UTF-8 LO_PROFILE=/opt/libreoffice-profile`, then **pre-warm the profile at build time** with one real headless conversion using `--norestore` and `-env:UserInstallation=file://$LO_PROFILE`, asserting a non-empty output and cleaning the scratch files, and chown the profile to the runtime user so LibreOffice can take its lock files. A cold profile makes the first conversion of a container's life slow and occasionally fail outright, which reads as a flaky render rather than as a cold start
     - Build-time assertions that abort the build and publish nothing: `python -m reporting_agent.render.themes --assert-build`; `test "$(uname -m)" = "aarch64"`; the profile directory present and non-empty; and the AST numeric-leaf guard from task 5.4, so an image cannot carry an AST that admits a bare number
     - Every image build line in `agent/README.md` names `--platform linux/arm64`
     - _Requirements: 8.7, 23.2, 23.5, 23.10_
 
-  - [ ] 7.3 Append the categorical palette and add the shared palette module
+  - [x] 7.3 Append the categorical palette and add the shared palette module
     - Append the `--cat-1` … `--cat-5` and `--cat-other` block plus the `@theme inline` colour mappings and the `.dark` overrides — **including the reversal of the preset's sequential `--chart-*` ramp for dark surfaces** — to the end of `app/app/globals.css`. Additive only: change no existing token value and reformat nothing, because those values carry the preset's identity
     - `app/components/charts/palette.ts` exporting the categorical tokens keyed by **stable key** (metric key for a metric series, resource id for a resource series) with **no index-based assignment**, the five-series cap with a `--cat-other` aggregate, and the encoding → palette selection; `agent/src/reporting_agent/render/chartstyle.py` holds the same values so the document and the app agree
     - A test over the palette asserting every categorical token reaches ≥3:1 against both `--background` and `--card` in light and dark, that adjacent categorical tokens stay distinguishable under simulated deuteranopia, protanopia and tritanopia, and that `--destructive` appears in neither the categorical nor the sequential set. `--cat-4` ochre against `--cat-5` green is the pair most at risk; if it fails, separate them by lightness rather than adding a sixth hue
     - _Requirements: 22.7, 22.8, 22.12, 22.15_
 
-  - [ ] 7.4 Implement `render/docx.py` — the DOCX emitter
+  - [x] 7.4 Implement `render/docx.py` — the DOCX emitter
     - Walk the compiled AST **once** with `python-docx` against the theme the pinned version's preset names, reading the AST as its only source of content; use no document-templating library and accept no user-supplied `.docx`
     - Emit **every figure as exactly one run carrying the theme's `Figure` character style**, holding that figure's `formatted` string in full and unaltered and **no other character**, at every position the AST places one — prose paragraph, heading, data-table cell, cover field and chart companion cell — which is what lets token extraction locate every figure without re-parsing prose
     - Apply each paragraph and table style by the name the theme declares and define **no inline formatting** that duplicates a style the theme already declares; a missing style is `RENDER_FAILED` naming the theme and **every** missing style rather than the first, with no partial artifact object
@@ -316,7 +316,7 @@ migration.
     - Write the completed document as **one** artifact object after every block is emitted, with at most one emission attempt per run, so a partially emitted document is never an artifact
     - _Requirements: 7.4, 7.5, 7.6, 7.9, 20.1, 20.2, 20.3, 20.4, 20.5, 20.6, 20.7, 20.8, 20.9, 20.10, 20.11, 20.12_
 
-  - [ ] 7.5 Implement `render/anchors.py` — the two structural contracts the verifier depends on
+  - [x] 7.5 Implement `render/anchors.py` — the two structural contracts the verifier depends on
     - `write_data_table_caption(table, identity)` writing `w:tblPr/w:tblCaption` **exactly once** as a non-empty string of ≤255 characters equal to the identity recorded in the ledger for that table; `write_layout_table(table)` writing **no caption, no header row and no row key**
     - The asymmetry is the design: the table-verification pass enumerates tables **carrying a caption**, so a layout table is excluded by construction rather than by inspecting borders or counting cells
     - A data table nested inside a layout cell still carries **its own** caption, so a data-bearing child of a `row` block is checked while its container is skipped; a data table carrying zero figures still records its identity in the ledger with **zero anchors**, so the verifier resolves it and reports no unexpected-table finding
@@ -325,7 +325,7 @@ migration.
     - Derive every table identity from that table node's **AST path alone**, never from emission order or elapsed time, and assert uniqueness within one rendered document
     - _Requirements: 21.1, 21.2, 21.3, 21.4, 21.5, 21.6, 21.8, 21.9, 21.10, 21.11_
 
-  - [ ] 7.6 Implement `render/charts.py` and `render/chartstyle.py`
+  - [x] 7.6 Implement `render/charts.py` and `render/chartstyle.py`
     - For every chart node emit **exactly one** static image and **exactly one** companion data table carrying every plotted point of every plotted series as a figure whose cell text is the ledger's `formatted` string, applying **no sampling, no thinning and no re-rounding** of the plotted set
     - Emit the companion table as a data table whose `w:tblCaption` is the `cht:<path>` identity, in body order **immediately after** its image with no other block between them, and write that same identity into the image's alternative text, so the verifier pairs image with table **by identity rather than by proximity** and the table is checked by the anchored-equality pass
     - Compute the chart data hash as SHA-256 over the ordered plotted contributions — series stable key, x key, and the ledger's decimal string, in plotted order — and record it both on the chart node and in the sidecar beside the embedded image
@@ -337,7 +337,7 @@ migration.
     - `chartstyle.py`: Agg backend, one frozen `rcParams` block, a font shipped in the image and named explicitly rather than resolved by fallback, PNG metadata suppressed, fixed dpi and figure size — with a byte-equality test over two renders of one chart node, which is what keeps determinism honest across a dependency bump
     - _Requirements: 22.1, 22.2, 22.3, 22.6, 22.7, 22.8, 22.9, 22.10, 22.11, 22.12, 22.13, 22.14, 22.15_
 
-  - [ ] 7.7 Implement `render/pdf.py` — conversion from the produced DOCX only
+  - [x] 7.7 Implement `render/pdf.py` — conversion from the produced DOCX only
     - Convert the **exact byte content** of the `.docx` rendered for that run; render no `.pdf` from the AST, the ledger, the HTML emitter's output or the snapshot, so the delivered pair cannot disagree
     - `soffice --headless --norestore -env:UserInstallation=file://<pre-warmed profile> --convert-to pdf --outdir …`, using the **build-time profile as-is** and creating none at run time, in the container only and through no network conversion service
     - Assert `LANG == "C.UTF-8"` **before** the process starts and refuse otherwise with `PDF_CONVERSION_FAILED` stating the required value was not in effect — a comma-decimal locale rewrites every numeral and the ledger's strings stop being locatable
@@ -347,7 +347,7 @@ migration.
     - Unit tests against a faked subprocess: `LANG` refused before the process starts, `--norestore` present, the pre-warmed profile path used, exactly one attempt, the limit applied to the first conversion. Plus **one real conversion in the built image**, once per suite, asserting a readable page count and extractable text, because a faked subprocess cannot tell us LibreOffice works
     - _Requirements: 23.1, 23.3, 23.4, 23.6, 23.7, 23.8, 23.9_
 
-  - [ ] 7.8 Implement `render/html.py` — the second emitter over the same tree
+  - [x] 7.8 Implement `render/html.py` — the second emitter over the same tree
     - Emit by walking the **same AST instance** the DOCX emitter walks, compiling no second AST, emitting blocks in that AST's order, and holding **no** block ordering rule, column arrangement rule or layout definition of its own, so no third layout definition exists in the product
     - Emit each figure's `formatted` string exactly as the Formatter produced it — no rounding, no locale substitution, no unit transformation — together with `data-snapshot-path` and, for an estimate, `data-estimator-label` as attributes, composing no estimator label and emitting no figure lacking those attributes, so the provenance reveal **reads** them rather than deriving them
     - Every figure in the monospace face with tabular fixed-advance numerals, and **no numeral animation and no count-up**
@@ -356,7 +356,7 @@ migration.
     - A node type it cannot emit produces **no partial rendering**, reports an error naming that node type, and records **no verification finding** and leaves the run's verification status unchanged — the verifier reads the `.docx` alone and the in-app rendering is never a verification input
     - _Requirements: 14.1, 14.3, 24.1, 24.2, 24.3, 24.4, 24.5, 24.6, 24.7, 24.8_
 
-- [ ] 8. Checkpoint — a document renders, in both emitters
+- [x] 8. Checkpoint — a document renders, in both emitters
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 9. Verification — the delivery gate
