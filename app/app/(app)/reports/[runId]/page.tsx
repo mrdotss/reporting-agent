@@ -3,16 +3,24 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
+import { PaperRender } from "@/components/reports/paper-render"
 import { RunProgress } from "@/components/reports/run-progress"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
+import { VerificationPanel } from "@/components/reports/verification-panel"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { requireSession } from "@/lib/auth/guard"
-import { toRunView, UNRESOLVED_RUN_VIEW_EXTRAS } from "@/lib/db/views"
+import { toRunView, toVerificationView } from "@/lib/db/views"
+import {
+  loadRunDocumentHtml,
+  readPinnedVersion,
+  resolveRunExtras,
+} from "@/lib/runs/detail"
 import { loadRunGaps, loadRunProvenance } from "@/lib/runs/gaps"
 import { periodLine } from "@/lib/runs/presentation"
 import { findOwnedRun } from "@/lib/runs/state"
 import { resolveSubscriptionState } from "@/lib/subscriptions/state"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
+import { latestForRun } from "@/lib/verifications/store"
 
 /**
  * `/reports/[runId]` — one run's detail (Requirements 36.7, 36.10, 36.11, 40.4).
@@ -76,16 +84,22 @@ export default async function RunPage({ params }: RunPageProps) {
   const run = await findOwnedRun(user.id, runId)
   if (run === undefined) notFound()
 
-  // Requirement 37.1's template name, pinned version and verification status
-  // are not resolved by this page yet: `run.templateVersionId` is `null`
-  // until task 13.1, and no run reaches `verifying` until task 11.5. See
-  // `UNRESOLVED_RUN_VIEW_EXTRAS`'s docstring.
-  const view = toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
+  // Requirements 9.9, 37.1 — the pinned template's name and version number, and
+  // the stored verification's status. Resolved through `template_version_id`, so
+  // an archived report is presented against the version it was rendered from
+  // even where a higher-numbered one exists.
+  const view = toRunView(run, await resolveRunExtras(run))
 
-  const [gaps, provenance] = await Promise.all([
-    loadRunGaps(run),
-    loadRunProvenance(run),
-  ])
+  const [gaps, provenance, documentHtml, verification, pinned] =
+    await Promise.all([
+      loadRunGaps(run),
+      loadRunProvenance(run),
+      loadRunDocumentHtml(run),
+      latestForRun(run.id),
+      run.templateVersionId === null
+        ? Promise.resolve(null)
+        : readPinnedVersion(run.templateVersionId),
+    ])
 
   // The subscription may have been removed since the run — `report_runs` rows are audit
   // artifacts and outlive the connection they targeted — so this read is allowed to come
@@ -155,8 +169,70 @@ export default async function RunPage({ params }: RunPageProps) {
           </p>
 
           <SnapshotProvenance run={view} provenance={provenance} />
+
+          {/*
+            Requirements 4.9, 9.9 — the pinned version and its digest, beside the
+            period **specification** the version declared and the dates it
+            resolved to. A reader has to be able to tell the rule from the dates:
+            "last full month" and "2026-07-01 to 2026-07-31" are different facts,
+            and showing only the second makes a template look like it stores a
+            date range.
+          */}
+          {pinned === null ? null : (
+            <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
+              <div className="flex flex-col">
+                <dt className="text-xs text-muted-foreground">Template</dt>
+                <dd>{pinned.templateName}</dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-xs text-muted-foreground">
+                  Version rendered from
+                </dt>
+                <dd className="font-mono tabular-nums">{pinned.version}</dd>
+              </div>
+              <div className="flex flex-col">
+                <dt className="text-xs text-muted-foreground">
+                  Definition digest
+                </dt>
+                <dd className="font-mono text-xs">
+                  {pinned.definitionSha256.slice(0, 12)}
+                </dd>
+              </div>
+            </dl>
+          )}
         </section>
       ) : null}
+
+      {/*
+        Requirement 39 — the audit certificate. Rendered for every terminal run,
+        including one with no verification: 39.8 has the panel state that the
+        report is not verified rather than the page omitting the section, because
+        an absent section is indistinguishable from one that failed to load.
+      */}
+      {run.status === "completed" || run.status === "failed" ? (
+        <VerificationPanel
+          verification={
+            verification.latest === undefined
+              ? null
+              : toVerificationView(verification.latest)
+          }
+        />
+      ) : null}
+
+      {/*
+        Requirement 38 — the reading view, with provenance on every figure.
+        Rendered only where the emitted document is available; a run whose
+        artifact is absent still shows everything above.
+      */}
+      {documentHtml === null ? null : (
+        <section className="flex flex-col gap-3">
+          <h2 className="font-heading text-sm font-medium tracking-tight">
+            The report
+          </h2>
+
+          <PaperRender html={documentHtml} />
+        </section>
+      )}
     </div>
   )
 }

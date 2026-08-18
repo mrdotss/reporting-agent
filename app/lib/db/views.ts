@@ -264,17 +264,21 @@ export type RunViewExtras = {
 }
 
 /**
- * The `RunViewExtras` every caller in this codebase passes today, because no
- * caller can yet resolve any of the three fields — see {@link RunViewExtras}'s
- * docstring. A single exported constant rather than each call site writing
- * its own `{ templateName: null, ... }` literal, so the day task 13.1 or task
- * 11.5 gives a caller a real value to resolve, replacing this constant with
- * an actual join at that one call site is a visible, reviewable diff rather
- * than one of several structurally-identical object literals scattered
- * across route handlers and pages that a reviewer has to notice and update in
- * step.
+ * All three fields absent — the honest answer for a run that genuinely has none.
+ *
+ * This constant used to be `NO_RUN_VIEW_EXTRAS`, passed by **every**
+ * caller because none could resolve any of the three: `template_version_id` was
+ * null until task 13.1 and nothing reached `verifying` until task 11.5. Both
+ * landed, `lib/runs/detail.ts` performs the join, and every caller now passes a
+ * resolved value.
+ *
+ * What is left is the fallback: a foundation-era run pinned to no version, or a
+ * row whose extras the batch resolver did not return. Renamed rather than
+ * deleted, because `?? NO_RUN_VIEW_EXTRAS` at a call site says "this row has none" where
+ * `?? UNRESOLVED_...` would say "nobody has taught this page to look yet",
+ * which stopped being true.
  */
-export const UNRESOLVED_RUN_VIEW_EXTRAS: RunViewExtras = Object.freeze({
+export const NO_RUN_VIEW_EXTRAS: RunViewExtras = Object.freeze({
   templateName: null,
   templateVersion: null,
   verificationStatus: null,

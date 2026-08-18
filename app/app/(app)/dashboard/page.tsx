@@ -12,9 +12,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { requireSession } from "@/lib/auth/guard"
+import { resolveRunExtrasBatch } from "@/lib/runs/detail"
 import {
+  NO_RUN_VIEW_EXTRAS,
   toRunView,
-  UNRESOLVED_RUN_VIEW_EXTRAS,
   type ConnectedSubscriptionView,
 } from "@/lib/db/views"
 import { RUN_STATUS_PRESENTATION } from "@/lib/runs/presentation"
@@ -157,7 +158,10 @@ export default async function DashboardPage() {
   // same clock and two rows cannot disagree about whether the same day has passed.
   const now = new Date()
 
-  const views = runs.map((run) => toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS))
+  const dashboardExtras = await resolveRunExtrasBatch(runs)
+  const views = runs.map((run) =>
+    toRunView(run, dashboardExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
+  )
 
   const inFlight = views.filter(
     (run) => RUN_STATUS_PRESENTATION[run.status].inFlight

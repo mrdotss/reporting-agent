@@ -601,7 +601,7 @@ migration.
     - No completed run for the selected subscription disables the action with that stated reason, starts no render and renders nothing from fabricated or placeholder data; every further activation while one is in flight is ignored; a failure or a 180-second lapse names the stage that failed as compilation, `.docx` rendering or `.pdf` conversion, presents no `.pdf`, and leaves the canvas and its label unchanged
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 14.8, 14.9, 14.10_
 
-  - [ ] 13.6 Build the reports list, the report detail surface and the provenance reveal
+  - [x] 13.6 Build the reports list, the report detail surface and the provenance reveal
     - `/reports` carrying per run the `status`, template name, pinned version number, **masked** subscription id, the resolved period as that run's local start and end dates, and the verification status as exactly pass, fail or absent — every connected-subscription field sourced **solely** from the browser-safe projection, so no tenant id, client id or secret ciphertext reaches the browser; newest first, 50 per page, with a next-page control while unpresented runs remain
     - `/reports/[runId]`: snapshot provenance with the `snapshot_id` truncated to its leading 12 characters beside a copy control yielding the **complete** digest, the collection window's start and end in the run's timezone with the **resolved UTC offset displayed alongside**, the grain, the resource count and the gap count, with the digest, offset and counts in the monospace face
     - Gap list grouped by `gap_type` with per-group counts naming every affected resource, in **mist neutral tokens rather than `--destructive`**, because a gap is neutral information; a zero-gap run renders an explicit "no gaps recorded" row and **omits no section**, because an absent section is indistinguishable from a list that failed to load. Fidelity badges per resource where tiers differ, with the tooltip explaining what each tier does and does not support, `baseline` in mist neutrals
@@ -615,7 +615,7 @@ migration.
     - Restrict every read of a run, template, version and verification result to the signed-in user's rows, comparing before presenting any field, and resolve a mismatch as not found indistinguishably from an id that exists for no row
     - _Requirements: 4.9, 9.8, 9.9, 18.8, 32.9, 37.1, 37.2, 37.3, 37.4, 37.5, 37.6, 37.7, 37.8, 37.9, 37.10, 38.1, 38.2, 38.3, 38.4, 38.5, 38.6, 38.7, 38.8_
 
-  - [ ] 13.7 Build the verification panel as an audit certificate
+  - [x] 13.7 Build the verification panel as an audit certificate
     - `verification-panel.tsx` presents the status, the `figure_count` and the three digests, each digest in mono with tabular figures beside a copy control yielding its **complete recorded string**
     - A **pass** presents the status word, the figure count and the snapshot digest as one statement — *1,480 figures · every figure traced to snapshot `9f2c…` · verified* — styled in mist neutrals with no `--destructive` and no assertive alert presentation. Success is quiet
     - A **fail** presents the count of blocking findings and lists **every** one with its declared type and the locating fields the recording criterion declares — AST path, table identity with row and column key, surviving substring with its paragraph location, expected and observed strings verbatim — states plainly that the report was **not delivered**, and applies `--destructive` to that state. Failure is loud and specific

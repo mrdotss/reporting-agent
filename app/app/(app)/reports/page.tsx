@@ -4,10 +4,11 @@ import { RunForm } from "@/components/reports/run-form"
 import { RunList } from "@/components/reports/run-list"
 import { requireSession } from "@/lib/auth/guard"
 import {
+  NO_RUN_VIEW_EXTRAS,
   toRunView,
   toTemplateView,
-  UNRESOLVED_RUN_VIEW_EXTRAS,
 } from "@/lib/db/views"
+import { resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersion } from "@/lib/templates/store"
@@ -59,6 +60,10 @@ export default async function ReportsPage() {
     )
   )
 
+  // Requirement 37.1 — the template name, the pinned version and the
+  // verification status, per run, in two queries rather than two per row.
+  const runExtras = await resolveRunExtrasBatch(runs)
+
   const now = new Date()
 
   return (
@@ -94,7 +99,9 @@ export default async function ReportsPage() {
         </h2>
 
         <RunList
-          runs={runs.map((run) => toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS))}
+          runs={runs.map((run) =>
+            toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
+          )}
           subscriptions={subscriptions}
         />
       </section>

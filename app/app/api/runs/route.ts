@@ -12,11 +12,12 @@ import {
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
 import {
+  NO_RUN_VIEW_EXTRAS,
   toRunView,
-  UNRESOLVED_RUN_VIEW_EXTRAS,
   type RunView,
 } from "@/lib/db/views"
 import { runCreateInputSchema } from "@/lib/runs/input"
+import { resolveRunExtras, resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"
 
 /**
@@ -87,7 +88,11 @@ export async function POST(request: Request): Promise<Response> {
     // else's prefix.
     const { run, deduplicated } = await enqueueRun(user.id, parsed.data)
 
-    const view = toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
+    // Resolvable now: the enqueue pins a version (Requirement 9.6), so a
+    // freshly inserted run already knows its template and its number. The
+    // verification is `null`, honestly — nothing has verified a run that was
+    // created a millisecond ago.
+    const view = toRunView(run, await resolveRunExtras(run))
 
     return json(deduplicated ? 200 : 201, {
       run: view,
@@ -154,14 +159,14 @@ export async function GET(): Promise<Response> {
   if (user === null) return unauthorized()
 
   try {
-    // Requirement 37.1 needs the template name, pinned version and verification
-    // status per run for the reports list. No caller in this codebase can resolve
-    // any of the three yet — `enqueueRun` does not set `template_version_id`
-    // until task 13.1, and nothing reaches `verifying` until task 11.5 — so this
-    // handler passes the honest `null` for all three (`UNRESOLVED_RUN_VIEW_EXTRAS`)
-    // rather than the join task 13.6's route handler will add once those two land.
-    const runs = (await listOwnedRuns(user.id)).map((run) =>
-      toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS)
+    // Requirement 37.1 — the template name, the pinned version and the
+    // verification status per run. This is the join `NO_RUN_VIEW_EXTRAS`
+    // said would replace it once tasks 13.1 and 11.5 landed; both have.
+    const rows = await listOwnedRuns(user.id)
+    const extras = await resolveRunExtrasBatch(rows)
+
+    const runs = rows.map((run) =>
+      toRunView(run, extras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
     )
 
     return json(200, { runs } satisfies ListResponseBody)

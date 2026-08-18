@@ -9,11 +9,11 @@ import {
 import { requireSessionForApi } from "@/lib/auth/guard"
 import {
   toRunView,
-  UNRESOLVED_RUN_VIEW_EXTRAS,
   type RunView,
 } from "@/lib/db/views"
 import { loadRunGaps, type RunGap } from "@/lib/runs/gaps"
 import { runIdParamSchema, runQuerySchema } from "@/lib/runs/input"
+import { resolveRunExtras } from "@/lib/runs/detail"
 import { findOwnedRun } from "@/lib/runs/state"
 
 /**
@@ -97,12 +97,12 @@ export async function GET(
     // status this detail surface presents alongside the row. No caller can
     // resolve any of the three yet: `run.templateVersionId` is `null` until
     // task 13.1 teaches the enqueue path to set it, and no run reaches
-    // `verifying` until task 11.5 lands, so `UNRESOLVED_RUN_VIEW_EXTRAS` is
+    // `verifying` until task 11.5 lands, so `NO_RUN_VIEW_EXTRAS` is
     // the honest present state, not a placeholder — task 13.6's route
     // handler is what replaces this with the real `report_template_versions`
     // / `report_templates` / `report_verifications` reads.
     return json(200, {
-      run: toRunView(run, UNRESOLVED_RUN_VIEW_EXTRAS),
+      run: toRunView(run, await resolveRunExtras(run)),
       gaps,
     } satisfies RunResponseBody)
   } catch (thrown) {
