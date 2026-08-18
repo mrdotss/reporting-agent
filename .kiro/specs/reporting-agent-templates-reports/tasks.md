@@ -563,7 +563,7 @@ migration.
     - Reject at enqueue, before inserting any row: a resolved period of zero local days, a span outside 1–31, an end after the local day preceding the current local date, and a pinned version whose period specification is unrecognized — retaining the consultant's selections for correction
     - _Requirements: 1.4, 1.5, 1.8, 1.9, 2.2, 4.3, 4.6, 4.7, 4.10, 4.11, 5.6, 9.2, 9.5, 9.6, 9.7, 10.7, 11.4_
 
-  - [ ] 13.2 Build the wizard shell and the seven steps
+  - [x] 13.2 Build the wizard shell and the seven steps
     - `app/app/(app)/templates/page.tsx` listing `TemplateView` with the three starters present from account creation, version number and digest in mono, and a "New template" pill; `app/app/(app)/templates/[id]/edit/page.tsx` as a server component loading the draft and rendering `wizard-shell.tsx` as the **only** `"use client"` boundary owning state
     - Exactly seven steps in fixed order — identity, scope rules, period, metrics, blocks, design, preview — with the current position and the total of seven displayed on **every** step
     - Backward navigation to any already-reached step always allowed and resetting nothing; forward navigation past a failing step refused **on that step** with every failing field path named and every entered value on every step retained; a step transition or an explicit save writes the draft and inserts **no** version row, whether or not step 7 was reached and whether or not the definition yet carries a block

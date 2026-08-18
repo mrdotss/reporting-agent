@@ -1330,3 +1330,111 @@ describe("Requirements 6.8, 6.9 — the preset's identity is unchanged", () => {
     expect(source).toContain("--radius-lg: var(--radius);")
   })
 })
+
+// --- Requirement 11.6 — no document upload exists in this product ----------
+
+/**
+ * The wizard directory, swept whole rather than by named file, so a component
+ * added tomorrow is covered without an edit here.
+ */
+const TEMPLATE_COMPONENT_DIRECTORY = "components/templates"
+
+/**
+ * A file input, in the three spellings JSX can produce: the lowercase intrinsic
+ * element, a `type` prop set to `"file"`, and the `accept` attribute that only
+ * ever appears on one.
+ *
+ * Matched as source text rather than by rendering, deliberately. A render test
+ * asserts what one component tree produced for one set of props; this asserts
+ * that the *capability* is absent from the directory, which is the claim
+ * Requirement 11.6 actually makes — "no control that uploads a document"
+ * includes one behind a feature flag, one on a branch of a conditional, and one
+ * a future prop would reveal.
+ */
+const FILE_INPUT_PATTERNS: readonly RegExp[] = [
+  /type\s*=\s*["'{]?\s*["']file["']/,
+  /<input[^>]*\btype\s*=\s*{?\s*["']file["']/,
+  /\baccept\s*=\s*["'{]/,
+]
+
+/**
+ * The document MIME types a template upload would name.
+ *
+ * `.docx`'s full type is spelled by joining, so this constant does not itself
+ * contain the literal a scan would flag — the same trick `RUNTIME_ARN_LITERAL`
+ * uses above, and for the same reason: a guard that contains the thing it
+ * forbids cannot be grepped for cleanly.
+ *
+ * **Bare extensions are deliberately not here.** `.docx` and `.pdf` appear
+ * throughout this codebase as prose — the renderer emits a `.docx`, the
+ * delivered artifact is a `.pdf` — and a scan that flagged them would fail on a
+ * docstring explaining why there is no upload. The extension case is covered
+ * anyway and covered better: {@link FILE_INPUT_PATTERNS} forbids the `accept`
+ * attribute outright, and an extension filter has nowhere else to live.
+ */
+const DOCUMENT_MIME_FRAGMENTS: readonly string[] = [
+  ["application/vnd.openxmlformats-officedocument", "wordprocessingml.document"].join("."),
+  "application/msword",
+]
+
+describe("Requirement 11.6 — the wizard offers no document upload", () => {
+  test("the template component directory is not empty", () => {
+    // Requirement 6.11's discipline applied here: a sweep that passes because it
+    // swept nothing is not a passing sweep. This whole describe is worthless the
+    // day the directory is renamed and nobody notices.
+    expect(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY).length).toBeGreaterThan(
+      0
+    )
+  })
+
+  test.each(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY))(
+    "%s renders no file input",
+    (relativePath) => {
+      const source = readFileSync(path.join(projectRoot, relativePath), "utf8")
+
+      for (const pattern of FILE_INPUT_PATTERNS) {
+        expect(
+          pattern.test(source),
+          `${relativePath} matches ${pattern} — a template is a composed ` +
+            `definition, and there is no document-upload path in this product`
+        ).toBe(false)
+      }
+    }
+  )
+
+  test.each(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY))(
+    "%s names no document MIME type or extension",
+    (relativePath) => {
+      const source = readFileSync(path.join(projectRoot, relativePath), "utf8")
+
+      for (const fragment of DOCUMENT_MIME_FRAGMENTS) {
+        expect(
+          source.includes(fragment),
+          `${relativePath} names ${fragment}`
+        ).toBe(false)
+      }
+    }
+  )
+
+  test("no route accepts a document body", () => {
+    // The other half of the same claim. A wizard with no file input and a route
+    // that would accept a `.docx` is one `curl` away from being an upload path,
+    // and the requirement is about the product rather than about the UI.
+    for (const relativePath of listSourceFiles("app/api")) {
+      const source = readFileSync(path.join(projectRoot, relativePath), "utf8")
+
+      for (const fragment of DOCUMENT_MIME_FRAGMENTS) {
+        expect(
+          source.includes(fragment),
+          `${relativePath} names ${fragment}`
+        ).toBe(false)
+      }
+
+      expect(
+        /formData\s*\(/.test(source),
+        `${relativePath} reads a multipart body; every route in this product ` +
+          `takes JSON parsed by a named zod schema`
+      ).toBe(false)
+    }
+  })
+})

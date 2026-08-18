@@ -8,6 +8,7 @@ import {
   GaugeIcon,
   type Icon,
   PlugsConnectedIcon,
+  StackIcon,
   ShieldCheckIcon,
 } from "@phosphor-icons/react"
 
@@ -59,13 +60,15 @@ type NavItem = {
  * The rail's routes, in the order the work happens: connect a subscription,
  * produce a report, watch it land on the dashboard.
  *
- * These are the design's planned routes for this spec. `/dashboard`,
- * `/subscriptions` and `/reports` are built by later tasks, so they resolve to a
- * 404 until then — the shell is what lands first, on purpose.
+ * `/templates` sits between subscriptions and reports because that is the order
+ * the work happens in: connect a customer, compose what to say about them, run
+ * it. A consultant who has just connected a subscription and wants a report next
+ * finds the step in between where they would look for it.
  */
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: GaugeIcon },
   { href: "/subscriptions", label: "Subscriptions", icon: PlugsConnectedIcon },
+  { href: "/templates", label: "Templates", icon: StackIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
 ]
 
