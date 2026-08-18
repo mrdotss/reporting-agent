@@ -6,7 +6,7 @@ import { sql } from "drizzle-orm"
 
 import { getDb } from "@/lib/db"
 import type { RunScope, RunStatus } from "@/lib/db/schema"
-import { PHASE_DEADLINE_SECONDS } from "@/lib/runs/state"
+import { isTerminalStatus, PHASE_DEADLINE_SECONDS } from "@/lib/runs/state"
 
 /**
  * The reaper's two statements and its bearer comparison (Requirement 39).
@@ -112,8 +112,24 @@ export const SWEEP_LIMIT = 100
  */
 export const CLAIM_LIMIT = 10
 
-/** The statuses the deadline sweep considers (Requirement 39.7). */
-const SWEEPABLE: readonly RunStatus[] = ["queued", "claimed", "collecting"]
+/**
+ * The statuses the deadline sweep considers (Requirements 39.7, 41.5).
+ *
+ * **Derived, not restated.** Every non-terminal status carries a budget in
+ * {@link PHASE_DEADLINE_SECONDS}, and a status with a budget and no sweep is a
+ * row that can sit past its deadline forever — which is the exact failure this
+ * sweep exists to prevent, reintroduced by a list somebody forgot to extend when
+ * the document phases landed. Deriving it means the two cannot disagree.
+ *
+ * Sorted so the emitted `IN (…)` list is stable across processes; a statement
+ * whose text depends on object iteration order is a statement whose query plan
+ * cache key does.
+ */
+export const SWEEPABLE: readonly RunStatus[] = Object.freeze(
+  (Object.keys(PHASE_DEADLINE_SECONDS) as RunStatus[])
+    .filter((status) => !isTerminalStatus(status))
+    .sort()
+)
 
 // --- The deadline sweep -----------------------------------------------------
 

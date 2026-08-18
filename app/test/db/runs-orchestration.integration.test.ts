@@ -42,7 +42,18 @@ const db = withScratchSchema(import.meta.url)
 
 // --- Fixtures ---------------------------------------------------------------
 
-const SWEEPABLE = ["queued", "claimed", "collecting"] as const
+// Restated rather than imported: this file speaks to real Postgres through raw SQL
+// and asserts what the *statement* does, so importing the module's own list would
+// let a wrong list agree with itself. Sorted, matching what `claim.ts` derives from
+// `PHASE_DEADLINE_SECONDS`.
+const SWEEPABLE = [
+  "claimed",
+  "collecting",
+  "compiling",
+  "queued",
+  "rendering",
+  "verifying",
+] as const
 
 const SWEEP_LIMIT = 100
 const CLAIM_LIMIT = 10

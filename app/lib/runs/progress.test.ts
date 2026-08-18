@@ -102,11 +102,15 @@ describe("the schema's accepted phases mirror the agent's", () => {
     }
   })
 
-  test("the undriven phases are refused", () => {
+  test("the three document phases are accepted", () => {
+    // They were refused while nothing drove them. The report pipeline drives all
+    // three, and the schema and `DRIVEN` are one fact: a phase the table admits
+    // and the schema refuses is a transition that can never land, which the
+    // reaper then reports as a `TIMEOUT` on a healthy run.
     for (const phase of ["compiling", "rendering", "verifying"]) {
       expect(
         progressCallbackSchema.safeParse({ run_id: RUN_ID, phase }).success
-      ).toBe(false)
+      ).toBe(true)
     }
   })
 })
@@ -325,15 +329,22 @@ describe("Requirement 38.10 — only reachable targets", () => {
     expect(decision.ok).toBe(false)
   })
 
-  test("the undriven phases are unreachable from every driven status", () => {
-    // Requirement 36.2. Asserted against the table rather than through the
-    // decision, because the schema refuses these before a decision is reached —
-    // and the property is about the table.
-    for (const targets of Object.values(DRIVEN)) {
-      for (const undriven of ["compiling", "rendering", "verifying"] as const) {
-        expect(targets).not.toContain(undriven)
-      }
-    }
+  test("the document phases are reachable in exactly one order", () => {
+    // Requirement 41.1. Each is reachable from precisely its predecessor, so a
+    // callback cannot skip a phase — `collecting → verifying` would leave a run
+    // reporting a verification of a document nothing rendered.
+    expect(DRIVEN.collecting).toEqual(["compiling", "completed", "failed"])
+    expect(DRIVEN.compiling).toEqual(["rendering", "failed"])
+    expect(DRIVEN.rendering).toEqual(["verifying", "failed"])
+    expect(DRIVEN.verifying).toEqual(["completed", "failed"])
+
+    // `collecting → completed` survives: a snapshot-only invocation is still a
+    // legal run shape and the foundation's tests describe it.
+    expect(DRIVEN.collecting).toContain("completed")
+
+    // And the terminal rows still admit nothing at all.
+    expect(DRIVEN.completed).toEqual([])
+    expect(DRIVEN.failed).toEqual([])
   })
 })
 

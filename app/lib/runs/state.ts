@@ -73,11 +73,19 @@ export const DRIVEN: Readonly<Record<RunStatus, readonly RunStatus[]>> =
   Object.freeze({
     queued: Object.freeze(["claimed", "failed"] as const),
     claimed: Object.freeze(["collecting", "failed"] as const),
-    collecting: Object.freeze(["completed", "failed"] as const),
-    // Defined, undriven, unreachable (Requirement 36.2).
-    compiling: Object.freeze([] as const),
-    rendering: Object.freeze([] as const),
-    verifying: Object.freeze([] as const),
+    // `collecting → completed` stays alongside the new `collecting → compiling`
+    // edge, because a snapshot-only invocation is still a legal run shape and
+    // the foundation's own tests describe it. Removing it would break them for
+    // no gain: a run that produced a snapshot and no document did complete.
+    collecting: Object.freeze(["compiling", "completed", "failed"] as const),
+    compiling: Object.freeze(["rendering", "failed"] as const),
+    rendering: Object.freeze(["verifying", "failed"] as const),
+    // `verifying → completed` is the one transition with a precondition beyond
+    // this table: the endpoint reads a `report_verifications` row for the run
+    // with `status` `pass` **in the same transaction** as the update, so no
+    // ordering exists in which a run reports success before its proof is stored
+    // (Requirement 41.1). A table cannot express that, so the endpoint does.
+    verifying: Object.freeze(["completed", "failed"] as const),
     // Terminal: every subsequent transition is rejected (Requirement 38.8).
     completed: Object.freeze([] as const),
     failed: Object.freeze([] as const),
@@ -170,10 +178,15 @@ export const AGENT_ERROR_CODES: ReadonlySet<RunErrorCode> = Object.freeze(
  * | `queued` | 900 | the reaper runs at most every 60 seconds, so this tolerates 14 consecutive missed ticks (Requirement 39.12) before a queued run is failed |
  * | `claimed` | 300 | claimed-but-not-collecting means the container never started; five minutes covers a cold start on an arm64 image |
  * | `collecting` | 1800 | the 8-to-12-minute p99 run duration plus at least 900 seconds of headroom, so an ordinary slow month is not reaped mid-flight |
+ * | `compiling` | 300 | pure computation over a snapshot already in memory; five minutes is generous for 200 blocks |
+ * | `rendering` | 600 | LibreOffice conversion is bounded at 300 seconds on its own, and the emit precedes it |
+ * | `verifying` | 600 | the verifier reads the whole document twice, and replay re-runs the aggregation over the raw archive |
  *
- * The undriven phases are absent rather than mapped to `null`: a status with no
- * budget here is a status this spec does not enter, and
- * {@link phaseDeadlineFor} returning `null` for it is the honest answer.
+ * Every non-terminal status now carries a budget, so a row can no longer sit in
+ * a phase the reaper has no deadline for. The two terminal statuses are absent
+ * on purpose — {@link phaseDeadlineFor} returns `null` for them, which is
+ * Requirement 38.12's "clear `phase_deadline`": a finished run must never be
+ * swept.
  */
 export const PHASE_DEADLINE_SECONDS: Readonly<
   Partial<Record<RunStatus, number>>
@@ -181,6 +194,9 @@ export const PHASE_DEADLINE_SECONDS: Readonly<
   queued: 900,
   claimed: 300,
   collecting: 1800,
+  compiling: 300,
+  rendering: 600,
+  verifying: 600,
 })
 
 /**

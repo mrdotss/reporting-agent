@@ -37,14 +37,25 @@ import { runErrorCode, type ReportRun, type RunStatus } from "@/lib/db/schema"
  * The phases the **agent** may present.
  *
  * `queued` and `claimed` are absent because the reaper owns them: an agent
- * presenting `claimed` is claiming to have done the claiming. `compiling`,
- * `rendering` and `verifying` are absent because this spec does not drive them
- * (Requirement 36.2) — a callback naming one would be refused by the transition
- * table anyway, and refusing it at the schema says so with a field path.
+ * presenting `claimed` is claiming to have done the claiming. `TIMEOUT`'s
+ * transition is likewise the reaper's — by the time a deadline elapses the run's
+ * container may already be gone.
+ *
+ * `compiling`, `rendering` and `verifying` joined the set when {@link DRIVEN}
+ * gained their edges. The two declarations are one fact: a phase the table does
+ * not admit is a request guaranteed to be refused, so presenting it would spend a
+ * round trip to be told no.
  *
  * Mirrors `AGENT_PHASES` in `agent/src/reporting_agent/progress.py`.
  */
-export const AGENT_PHASES = ["collecting", "completed", "failed"] as const
+export const AGENT_PHASES = [
+  "collecting",
+  "compiling",
+  "rendering",
+  "verifying",
+  "completed",
+  "failed",
+] as const
 
 export type AgentPhase = (typeof AGENT_PHASES)[number]
 
