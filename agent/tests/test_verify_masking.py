@@ -10,7 +10,13 @@ two resources whose averages happen to share a suffix. Longest-first is the fix 
 
 from __future__ import annotations
 
+import io
+import json
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Final
 
 import pytest
@@ -21,6 +27,7 @@ import snapshot_factory as sf
 from reporting_agent.errors import VerificationFailedError
 from reporting_agent.render.anchors import write_data_table_caption, write_layout_table
 from reporting_agent.verify.allowlist import (
+    declared_method_phrases,
     derive_allowlist,
     null_context_snapshot,
     numeric_strings_in,
@@ -360,6 +367,56 @@ def test_the_derived_allowlist_is_identical_on_two_runs() -> None:
     assert derive_allowlist(definition, snapshot) == derive_allowlist(definition, snapshot)
 
 
+def test_a_comparison_delta_definition_can_derive_an_allowlist() -> None:
+    """A `comparison_delta` block must not make a template unverifiable.
+
+    Regression. `derive_allowlist` compiles the definition with a **null context**, and
+    `compile/blocks/comparison.py` refuses when no comparison source is configured —
+    correctly, because a delta that silently rendered one run's numbers would look like a
+    delta of zero. With no source supplied, that refusal became a `VerificationFailedError`,
+    so every report containing a comparison block was withheld **permanently**: the document
+    rendered fine, only the gate rejected it, and the message blamed the allowlist rather
+    than naming the block.
+
+    The null context now answers both run ids with the null view, which is the same
+    treatment every other block gets. It contributes the block's chrome and **no figure**,
+    because a view with no resources resolves no value to subtract — asserted here as well
+    as by `derive_allowlist`'s own `figure_count` guard, so the reason this is safe is
+    written down rather than inferred.
+    """
+    definition = df.definition(
+        [
+            df.block("h", "heading", {"text": "Month on month", "level": 2}),
+            df.block(
+                "d",
+                "comparison_delta",
+                {"run_a": "run-a", "run_b": "run-b", "caption": "Delta"},
+            ),
+        ]
+    )
+    # No exception is the assertion: before the fix this raised VerificationFailedError.
+    allowlist = derive_allowlist(definition, sf.two_vm_snapshot())
+    assert isinstance(allowlist, frozenset)
+
+
+def test_the_null_comparison_answers_every_run_with_the_null_view() -> None:
+    """The null source is a null *context*, not a stub that could smuggle data in.
+
+    One view for every run id, and it is the view built from the emptied snapshot — so both
+    operands of every delta are the same resource-free view and no subtraction has anything
+    to work with.
+    """
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.verify.allowlist import _NullComparison
+
+    view = build_snapshot_view(null_context_snapshot(sf.two_vm_snapshot()))
+    source = _NullComparison(view)
+    assert source.snapshot_for("run-a") is view
+    assert source.snapshot_for("run-b") is view
+    assert source.snapshot_for("anything-at-all") is view
+    assert view.resources == ()
+
+
 def test_a_failed_null_context_render_fails_the_verification() -> None:
     """Req 28.11 — no allowlist, no prose pass, and a failure rather than a default.
 
@@ -378,6 +435,315 @@ def test_a_failed_null_context_render_fails_the_verification() -> None:
 def test_a_malformed_snapshot_fails_the_derivation_rather_than_returning_nothing() -> None:
     with pytest.raises(VerificationFailedError, match="null-context render"):
         derive_allowlist(_compilable_definition(), {"snapshot_id": "only-this-field"})
+
+
+# --- Bug B: derived cardinalities in the null context (Req 16.3, 16.4, 28.11) ---------------
+#
+# `verification_record` and `gaps_and_coverage` (and `executive_summary`, indirectly) emit the
+# resource count, the gap count, per-tier counts and the archived-object count as `Figure`s
+# addressed under the reserved `$counts` namespace. A null context has no resources and no
+# gaps, but it still HAS a resource count and a gap count — zero of each — and those are
+# legitimate figures with real, re-resolvable provenance. The pre-fix `derive_allowlist`
+# treated any figure surviving the null render as proof a block invented a number, which made
+# every template carrying one of these three block types permanently unverifiable — including,
+# as it turned out, all three shipped starters.
+
+
+def _cardinality_definition() -> dict:
+    """A definition using the three block types Bug B actually broke."""
+    return df.definition(
+        blocks=[
+            df.block("h-1", "heading", {"text": "Coverage", "level": 1}),
+            df.block("gaps-1", "gaps_and_coverage"),
+            df.block("rec-1", "verification_record"),
+        ]
+    )
+
+
+def test_a_definition_with_verification_record_and_gaps_and_coverage_derives_an_allowlist() -> (
+    None
+):
+    """Regression for Bug B. Before the fix this raised on the null context's own resource
+    count, gap count and archived-object count — all legitimate zeros with real provenance."""
+    allowlist = derive_allowlist(_cardinality_definition(), sf.two_vm_snapshot())
+    assert isinstance(allowlist, frozenset)
+
+
+@pytest.mark.parametrize(
+    "starter_key",
+    ["monthly_utilization", "capacity_planning", "executive_summary"],
+)
+def test_every_shipped_starter_derives_an_allowlist(starter_key: str) -> None:
+    """The severity check: all three starters carry `verification_record`,
+    `executive_summary` and/or `gaps_and_coverage`, so all three failed `derive_allowlist`
+    before the fix — meaning every report produced from a starter template would have been
+    withheld by verification, permanently, on the primary product path.
+
+    Reads `app/lib/templates/starters.ts`' own definitions via the JSON mirror any change to
+    that file must keep in sync (see `test_starters_mirror.py` if present, or the builder's own
+    cross-language guard) — not a hand-copied approximation of them, so this test fails the day
+    a starter's real shape stops matching what is asserted here.
+    """
+    definition = _load_starter_definition(starter_key)
+    allowlist = derive_allowlist(definition, sf.two_vm_snapshot())
+    assert isinstance(allowlist, frozenset)
+
+
+def _load_starter_definition(starter_key: str) -> dict:
+    """One starter's `TemplateDefinition`, read straight out of the TypeScript source via
+    Node, rather than a Python re-transcription that could silently drift from it.
+
+    `app/lib/templates/starters.ts` is the one place the three starters are defined; the app's
+    own template validator and this test both have to agree on what it contains, or a change on
+    one side could pass its own suite while breaking the other. `pnpm exec tsx` is already a dev
+    dependency of `app/`, so no new tool is introduced to read it.
+    """
+    import subprocess
+
+    app_root = Path(__file__).resolve().parents[2] / "app"
+    script = (
+        "import { STARTER_TEMPLATES } from './lib/templates/starters';"
+        "process.stdout.write(JSON.stringify("
+        "Object.fromEntries(STARTER_TEMPLATES.map(t => [t.seededStarterKey, t.definition]))"
+        "));"
+    )
+    result = subprocess.run(
+        ["pnpm", "exec", "tsx", "-e", script],
+        cwd=app_root,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=60,
+    )
+    starters = json.loads(result.stdout)
+    return starters[starter_key]
+
+
+@contextmanager
+def _stubbed_compile_producing_one_figure(
+    *, snapshot_path: str, formatted: str, value: str
+) -> Iterator[None]:
+    """Patch `compile_document` and `render_document` so `derive_allowlist` sees a
+    `CompiledDocument` carrying exactly one figure at `snapshot_path`, and nothing else.
+
+    A null context has no resources for any real block to source an ordinary measurement
+    from — that is the whole point of the guard under test — so there is no way to reach
+    these branches through the compiler itself. `derive_allowlist` only reads
+    `compiled.document` (passed straight through to the stubbed `render_document`),
+    `compiled.figure_count`, `compiled.ledger.entries` and `outcome.docx_bytes`, so
+    stubbing those two functions exercises precisely the branch under test without
+    fighting `Figure`'s own provenance re-resolution for a path it was never meant to hold.
+    """
+    figure = SimpleNamespace(snapshot_path=snapshot_path, formatted=formatted, value=value)
+    compiled = SimpleNamespace(
+        document=None,
+        figure_count=1,
+        ledger=SimpleNamespace(entries={"synthetic:0": figure}),
+    )
+    outcome = SimpleNamespace(docx_bytes=_minimal_docx_bytes())
+
+    import reporting_agent.compile.blocks as compile_blocks_module
+    import reporting_agent.render.docx as render_docx_module
+
+    original_compile_document = compile_blocks_module.compile_document
+    original_render_document = render_docx_module.render_document
+    compile_blocks_module.compile_document = lambda *_a, **_k: compiled  # type: ignore[assignment]
+    render_docx_module.render_document = lambda *_a, **_k: outcome  # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        compile_blocks_module.compile_document = original_compile_document  # type: ignore[assignment]
+        render_docx_module.render_document = original_render_document  # type: ignore[assignment]
+
+
+def test_a_non_cardinality_figure_in_the_null_context_still_fails() -> None:
+    """The narrowed assertion is not a blanket exemption. A block sourcing an ordinary
+    measurement from outside the snapshot — the shape a block that ignored the empty
+    resource list would produce — must still fail derivation: only a figure under
+    `$counts/...` gets the pass, and only at zero."""
+    with _stubbed_compile_producing_one_figure(
+        snapshot_path="/resources/0/statistics/0/value", formatted="12.4%", value="12.4"
+    ), pytest.raises(VerificationFailedError, match="sourcing a number from outside"):
+        derive_allowlist(_cardinality_definition(), sf.two_vm_snapshot())
+
+
+def test_a_non_zero_cardinality_figure_in_the_null_context_still_fails() -> None:
+    """The other half of the narrowing: a `$counts/...` figure is only permitted **at zero**.
+    A non-zero one — the shape `raw_archive.object_count` took before `null_context_snapshot`
+    was taught to clear it — must still fail, because it is real data that would otherwise be
+    admitted into the allowlist as static chrome."""
+    with _stubbed_compile_producing_one_figure(
+        snapshot_path="/$counts/raw_archive/objects/count", formatted="4.0", value="4"
+    ), pytest.raises(VerificationFailedError, match="non-zero cardinality"):
+        derive_allowlist(_cardinality_definition(), sf.two_vm_snapshot())
+
+
+def test_a_cardinality_figures_formatted_string_is_never_in_the_returned_allowlist() -> None:
+    """Even a correct zero must not be admitted as chrome. `"0"` and `"0.0"` are still
+    provenance-carrying figures, and letting one into the allowlist would make the masking
+    pass blind to whether a zero elsewhere in the document is chrome or an actual
+    zero-valued measurement."""
+    allowlist = derive_allowlist(_cardinality_definition(), sf.two_vm_snapshot())
+    assert "0" not in allowlist
+    assert "0.0" not in allowlist
+    # Zero-padded variants the formatter might plausibly emit are checked too, defensively.
+    assert not any(re.fullmatch(r"0+(\.0+)?", s) for s in allowlist)
+
+
+# --- Bug C: chrome whose shape depends on whether data exists (Req 16.6, 28.11) -------------
+#
+# The null-context render is a source of truth about chrome only while every block emits the
+# same headings, captions and prose with two hundred resources as with none — differing only
+# in the figures, which are absent there by construction. `appendix_methodology` is the one
+# deliberate exception: it emits a methodology sentence only for a method the REAL ledger used,
+# so a resource-free render emits none of them, and `0-100` — static prose from the declared
+# sketch vocabulary, belonging to no figure — never reached the allowlist. Every report whose
+# data produced an estimated percentile was withheld with a spurious `unmatched_prose_token`.
+#
+# `declared_method_phrases()` closes that by enumerating the vocabulary from the constants
+# instead of observing it from a run. The two tests below are the class-level guards: the first
+# pins the vocabulary into the allowlist, and the second fails on ANY future block that grows
+# the same data-dependence.
+
+
+def _chrome_tokens(definition: dict, view: object) -> frozenset[str]:
+    """Every numeric token a real render leaves after its own ledger strings are masked.
+
+    Masking with the ledger and an **empty** allowlist is what isolates chrome: whatever still
+    carries a digit once every figure is masked out is, by definition, not a figure.
+    """
+    from reporting_agent.compile.blocks import compile_document
+    from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.render.docx import render_document
+
+    class _Comparison:
+        def snapshot_for(self, run_id: str) -> object:
+            return view
+
+    compiled = compile_document(
+        definition, view=view, comparison_source=_Comparison()
+    )
+    outcome = render_document(
+        compiled.document,
+        ledger=compiled.ledger,
+        design=DesignSettings.from_plain(definition.get("design")),
+    )
+    document = Document(io.BytesIO(outcome.docx_bytes))
+    order = masking_order(compiled.ledger.formatted_values())
+
+    found: set[str] = set()
+    for paragraph in paragraph_texts(document):
+        masked = mask_paragraph(paragraph.text, ledger_strings=order, allowlist=())
+        for match in re.finditer(r"\S+", masked):
+            if re.search(r"\d", match.group()):
+                found.add(paragraph.text[match.start() : match.end()])
+    return frozenset(found)
+
+
+def test_the_declared_method_phrase_vocabulary_is_exactly_what_the_constants_describe() -> None:
+    """Non-vacuity for the guard below: enumerate the cross-product and count it.
+
+    Twenty phrases — 2 sketch kinds x 4 grains x 1 folded statistic, plus 10 exact/compare and
+    2 declared estimators — contributing exactly two numeric tokens between them. Asserted so a
+    vocabulary that silently collapsed to nothing could not make the next test pass trivially.
+    """
+    from reporting_agent.compile.estimators import (
+        COMPARE_ESTIMATORS,
+        DECLARED_GRAIN_PHRASES,
+        DECLARED_METHOD_PHRASES,
+        DECLARED_SKETCH_KINDS,
+        EXACT_ESTIMATORS,
+        FOLDED_STATISTIC_PHRASES,
+    )
+
+    expected = (
+        len(DECLARED_SKETCH_KINDS) * len(DECLARED_GRAIN_PHRASES) * len(FOLDED_STATISTIC_PHRASES)
+        + len(EXACT_ESTIMATORS | COMPARE_ESTIMATORS)
+        + len(DECLARED_METHOD_PHRASES)
+    )
+    phrases = declared_method_phrases()
+
+    assert len(phrases) == expected
+    assert len(set(phrases)) == len(phrases), "a phrase is declared twice"
+    assert numeric_strings_in(phrases) == frozenset({"0-100", "15-minute"})
+
+
+def test_every_declared_method_phrase_token_reaches_the_derived_allowlist() -> None:
+    """The vocabulary is unioned in unconditionally, for every definition.
+
+    Pins a new sketch kind or grain phrase: adding one to `compile/estimators.py` whose prose
+    carries a numeral, without it reaching the allowlist, fails here rather than withholding
+    the first report whose data happened to use it.
+
+    Asserted against a definition carrying **no** `appendix_methodology` block at all, because
+    unconditional is the property under test — the allowlist must not depend on which blocks
+    this template chose or on what the run measured.
+    """
+    definition = df.definition(blocks=[df.block("h", "heading", {"text": "Plain", "level": 1})])
+    allowlist = derive_allowlist(definition, sf.two_vm_snapshot())
+
+    for token in numeric_strings_in(declared_method_phrases()):
+        assert token in allowlist, token
+
+
+def test_no_blocks_numeric_chrome_depends_on_whether_data_exists() -> None:
+    """The class-level guard, over a document exercising every declared block type.
+
+    Real-data chrome must be a subset of null-context chrome plus the declared vocabulary. A
+    block that emits a numeric-bearing string only when data exists fails here — which is the
+    class Bug C belongs to, rather than the single instance of it.
+
+    The `p95` metric is deliberately in the definition's selection: the every-block-type corpus
+    fixture carries no percentile at all, so its estimators are only
+    `exact_count_weighted`, `sku_declared_capacity`, `snapshot_cardinality` and
+    `derived_run_difference` — no sketch, hence no `0-100` phrase, hence a document that passes
+    verification while leaving Bug C completely invisible. That blind spot is why this test
+    supplies its own percentile rather than trusting the corpus.
+    """
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+    corpus = Path(__file__).resolve().parent / "fixtures" / "definitions"
+    definition = json.loads(
+        (corpus / "accept-every-block-type.json").read_text(encoding="utf-8")
+    )
+    # Add an estimated percentile so `appendix_methodology` has a sketch method to describe.
+    definition["metrics"] = {
+        resource_type: [*entries, dict(df.CPU_P95)]
+        for resource_type, entries in definition["metrics"].items()
+    }
+    definition["blocks"] = [
+        *definition["blocks"],
+        df.block("guard-p95", "resource_table", {"columns": [df.CPU_P95]}),
+    ]
+
+    snapshot = sf.two_vm_snapshot()
+    real = _chrome_tokens(definition, build_snapshot_view(snapshot))
+    null = _chrome_tokens(definition, build_snapshot_view(null_context_snapshot(snapshot)))
+    vocabulary = numeric_strings_in(declared_method_phrases())
+
+    # Non-vacuity: the percentile really did reach the document, so the subset assertion is
+    # being made about a render that exercises the data-dependent path.
+    assert "0-100" in real, "the appendix did not describe a sketch method; guard is vacuous"
+
+    unexplained = real - null - vocabulary
+    assert not unexplained, (
+        "these numeric chrome strings appear in a real-data render but neither in the "
+        "null-context render nor in the declared method-phrase vocabulary, so the derived "
+        f"allowlist cannot admit them and a correct report would be withheld: "
+        f"{sorted(unexplained)}"
+    )
+
+
+def _minimal_docx_bytes() -> bytes:
+    """A throwaway one-paragraph `.docx`, for tests that stub out the render stage and only
+    need `_open_bytes` to have something openable."""
+    from docx import Document as DocxDocument
+
+    document = DocxDocument()
+    document.add_paragraph("Coverage")
+    buffer = io.BytesIO()
+    document.save(buffer)
+    return buffer.getvalue()
 
 
 def test_numeric_strings_in_admits_exactly_what_stage_five_can_mask() -> None:

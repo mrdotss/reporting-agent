@@ -500,11 +500,11 @@ migration.
     - Kills: a compiler building the ledger by walking the finished tree, which fails the identity test and fails digest equality the moment the walk visits a hash-ordered container; one omitting an empty block; one deriving a path from emission order; one accepting a `Decimal` in a cell
     - _Requirements: 3.7, 15.2, 15.4, 15.7, 15.10, 15.11, 16.1, 17.1, 17.3, 17.7, 29.2, 29.6, 45.1, 45.3, 45.4_
 
-- [ ] 10. Checkpoint — the verifier gates
+- [x] 10. Checkpoint — the verifier gates
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 11. The pipeline, the commands, the events and the extended state machine
-  - [ ] 11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload
+  - [x] 11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload
     - `run_generate_report(*, payload, context, steps, artifact_bucket, aws_region, progress)` composing over task 1.2's `run_collection(...)` rather than replacing it, one phase at a time, and deferring the `PARTIAL_COVERAGE` raise to the end of the whole run so a run with gaps still completes and its non-terminal event arrives before `done`
     - Phases and their steps: `collecting` → `collect_inventory` / `collect_metrics`; `compiling` → `compile_figures` emitting `progress` over blocks compiled plus `delta` and `chart`; `rendering` → `render_document` emitting `progress` over blocks emitted; `verifying` → `verify_document` emitting `verification`; then `upload_artifact` emitting two `report_file` events
     - Assert **before any Azure collection call**, at claim, that the theme document the pinned version's preset names is present in the image and declares `Figure`, failing with `RENDER_FAILED` naming the theme — so the failure surfaces before minutes of collection work are spent
@@ -531,7 +531,7 @@ migration.
     - Unit tests with the foundation's fake clock: `snapshot_ready` before any `verification`; `report_file` only after a pass; nothing after `done`; a step left open by a raising render phase still closed before `done`; heartbeats at least every 30 seconds through a silent 600-second verify phase
     - _Requirements: 25.9, 42.1, 42.2, 42.3, 42.4, 42.5, 42.6, 42.7, 42.8, 42.11_
 
-  - [ ] 11.4 Write the report artifacts under the actor prefix and scrub before writing
+  - [x] 11.4 Write the report artifacts under the actor prefix and scrub before writing
     - Write, per run, `reports/<runId>/report.docx`, `report.pdf`, `ledger.json`, `ast.json`, `prose.json`, `verification-<attemptId>.json` and `charts/<chartId>.png` with its `.sidecar.json`, every object **private**, tagged with the owning actor id, with the actor id as the **first** key segment and `reports` as the second, and no public read on any of them
     - Serialize the ledger once with entries ordered by AST path and RFC 8785-canonicalized, and record its digest on the verification result, so a later re-verification reads the same ledger the render used
     - Apply the redaction scrub to the verification result and to **every finding message**, including every quoted service error, before writing and before emitting, and truncate every quoted document excerpt to 200 characters; a registered secret found in a result, a finding message or a quoted error is replaced with the fixed marker while the finding is retained, and no unredacted copy is written or emitted

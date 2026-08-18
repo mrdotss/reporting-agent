@@ -121,6 +121,12 @@ class S3ObjectStore:
     async def get_json(self, key: str) -> dict[str, JsonValue]:
         return await asyncio.to_thread(self._get_json, key)
 
+    async def get_bytes(self, key: str) -> bytes:
+        return await asyncio.to_thread(self._get_bytes, key)
+
+    async def list_keys(self, prefix: str) -> tuple[str, ...]:
+        return await asyncio.to_thread(self._list_keys, prefix)
+
     # --- the synchronous bodies, each run in a worker thread -----------------------
 
     def _put(
@@ -166,6 +172,39 @@ class S3ObjectStore:
                 return False
             raise
         return True
+
+    def _get_bytes(self, key: str) -> bytes:
+        try:
+            response = self.client.get_object(Bucket=self.bucket, Key=key)
+        except ClientError as exc:
+            if _is_not_found(exc):
+                raise ObjectNotFoundError(key) from exc
+            raise
+        return response["Body"].read()
+
+    def _list_keys(self, prefix: str) -> tuple[str, ...]:
+        """Every key under `prefix`, paged to exhaustion and sorted.
+
+        Sorted here rather than trusted from the response. S3 does return keys in
+        ascending UTF-8 order within a page, but a caller relying on that across a
+        continuation boundary is relying on a detail no other implementation of this
+        protocol owes it — and the one caller is replay's fold order, where "close enough"
+        is a non-deterministic digest.
+        """
+        keys: list[str] = []
+        token: str | None = None
+        while True:
+            params: dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+            if token is not None:
+                params["ContinuationToken"] = token
+            page = self.client.list_objects_v2(**params)
+            keys.extend(str(item["Key"]) for item in page.get("Contents") or [])
+            if not page.get("IsTruncated"):
+                break
+            token = page.get("NextContinuationToken")
+            if not token:  # pragma: no cover - truncated with no token is a broken API
+                break
+        return tuple(sorted(keys))
 
     def _get_json(self, key: str) -> dict[str, JsonValue]:
         try:

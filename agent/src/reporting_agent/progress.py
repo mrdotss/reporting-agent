@@ -60,6 +60,7 @@ from reporting_agent.redaction import presence_marker, register_secrets, scrub, 
 
 __all__ = [
     "AGENT_PHASES",
+    "DOCUMENT_PHASES",
     "PROGRESS_MAX_ATTEMPTS",
     "PROGRESS_THROTTLE_S",
     "PROGRESS_TIMEOUT_S",
@@ -89,14 +90,26 @@ TOKEN_HEADER: Final[str] = "X-Rpt-Progress-Token"
 
 TERMINAL_PHASES: Final[frozenset[str]] = frozenset({"completed", "failed"})
 
-AGENT_PHASES: Final[frozenset[str]] = frozenset({"collecting"}) | TERMINAL_PHASES
+DOCUMENT_PHASES: Final[frozenset[str]] = frozenset(
+    {"compiling", "rendering", "verifying"}
+)
+"""The three phases the document pipeline drives (Req 41.3).
+
+Added when their transitions landed in `lib/runs/state.ts`'s `DRIVEN` table. Presenting a
+phase the endpoint's table does not admit spends a request to be refused, so this set and
+that table are two spellings of one fact — and the integration tests in task 11.6 assert
+over all `(current, target)` pairs, which is what keeps them one fact rather than two.
+"""
+
+AGENT_PHASES: Final[frozenset[str]] = (
+    frozenset({"collecting"}) | DOCUMENT_PHASES | TERMINAL_PHASES
+)
 """The phases the **agent** may present, matching `progressCallbackSchema`'s enum.
 
 `queued` and `claimed` are absent because the Reaper owns them — an agent presenting
-`claimed` is claiming to have done the claiming. `compiling`, `rendering` and
-`verifying` belong to the specs that add those phases; presenting one now would be
-rejected by the endpoint's transition table, so it is dropped here instead of spending a
-request to be refused.
+`claimed` is claiming to have done the claiming. `TIMEOUT` is likewise the Reaper's: the
+agent may already be gone when a deadline elapses, so a transition carrying it is a request
+guaranteed to be refused (Req 41.5).
 """
 
 # The codes the agent may present on a `failed` transition. `TIMEOUT` and

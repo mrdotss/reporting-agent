@@ -435,20 +435,85 @@ def test_an_unexpected_exception_is_logged_in_full_and_summarised_in_the_event(
     assert "a bug nobody anticipated" in caplog.text
 
 
-@pytest.mark.parametrize("kind", ["verification", "report_file"])
-def test_the_router_refuses_an_event_this_spec_has_no_emitter_for(kind: str) -> None:
-    """Req 14.11 — and it refuses it *inside* its own error handling, so the client still
-    gets a terminal event instead of a truncated stream."""
+def test_the_router_refuses_a_report_file_with_no_passing_verification() -> None:
+    """Req 25.9, 42.3 — and it refuses it *inside* its own error handling, so the client
+    still gets a terminal event instead of a truncated stream.
+
+    The document phases gave `verification` and `report_file` emitters, so the old rule —
+    this runtime emits neither — no longer holds. What replaces it is stronger: the
+    artifacts are uploaded only behind a passing gate, and the router refuses to relay a
+    `report_file` that arrived any other way. A client-side check would protect one client;
+    this protects the contract.
+    """
     events = drain(
         run_invocation(
             parse_invocation(payload()),
-            handlers={COMMAND_GENERATE_REPORT: handler_yielding({"type": kind})},
+            handlers={
+                COMMAND_GENERATE_REPORT: handler_yielding({"type": "report_file"})
+            },
         )
     )
 
     assert one(events, "error")["code"] == CODE_INTERNAL_ERROR
     assert one(events, "done")["status"] == "failed"
-    assert kind not in types_of(events)
+    assert "report_file" not in types_of(events)
+
+
+def test_the_router_refuses_a_report_file_behind_a_failing_verification() -> None:
+    """The near miss: a `verification` did arrive, and it said `fail`."""
+    events = drain(
+        run_invocation(
+            parse_invocation(payload()),
+            handlers={
+                COMMAND_GENERATE_REPORT: handler_yielding(
+                    {"type": "verification", "status": "fail"},
+                    {"type": "report_file", "key": "a/reports/r/report.pdf"},
+                )
+            },
+        )
+    )
+
+    assert "verification" in types_of(events)
+    assert "report_file" not in types_of(events)
+    assert one(events, "error")["code"] == CODE_INTERNAL_ERROR
+
+
+def test_the_router_relays_a_report_file_behind_a_passing_verification() -> None:
+    """Non-vacuity: the rule must admit the legitimate case, or it is a ban rather than an
+    ordering."""
+    events = drain(
+        run_invocation(
+            parse_invocation(payload()),
+            handlers={
+                COMMAND_GENERATE_REPORT: handler_yielding(
+                    {"type": "verification", "status": "pass"},
+                    {"type": "report_file", "key": "a/reports/r/report.pdf"},
+                )
+            },
+        )
+    )
+
+    assert types_of(events).count("report_file") == 1
+    assert one(events, "done")["status"] == "completed"
+
+
+def test_the_router_refuses_a_second_verification() -> None:
+    """Req 42.2 — exactly one per invocation. Two would leave a client with two panels for
+    one run and no rule for which is the record."""
+    events = drain(
+        run_invocation(
+            parse_invocation(payload()),
+            handlers={
+                COMMAND_GENERATE_REPORT: handler_yielding(
+                    {"type": "verification", "status": "pass"},
+                    {"type": "verification", "status": "fail"},
+                )
+            },
+        )
+    )
+
+    assert types_of(events).count("verification") == 1
+    assert one(events, "error")["code"] == CODE_INTERNAL_ERROR
 
 
 def test_a_handler_may_not_emit_its_own_done() -> None:
@@ -678,18 +743,19 @@ def test_emit_accepts_every_type_this_runtime_emits(kind: str) -> None:
     assert emit({"type": kind})["type"] == kind
 
 
-@pytest.mark.parametrize(
-    "kind", sorted(set(EVENT_TYPES) - EMITTED_BY_FOUNDATION)
-)
-def test_emit_refuses_a_declared_type_with_no_emitter_here(kind: str) -> None:
-    """Req 14.11 — `verification` and `report_file` above all.
+@pytest.mark.parametrize("kind", sorted(EVENT_TYPES))
+def test_emit_accepts_every_declared_type_now_that_every_one_has_an_emitter(
+    kind: str,
+) -> None:
+    """Req 14.11, as it now stands.
 
-    A runtime that emits neither cannot violate the ordering guarantee that a
-    `report_file` never arrives without a passing `verification` before it, and `delta`
-    cannot arrive from a runtime with no model in it.
+    `emit` was the gate that refused `verification`, `report_file`, `chart` and `delta`
+    while nothing produced them. The document phases produce all four, so the gate moved:
+    `emit` still refuses an *undeclared* type, and the **ordering** screen in the router is
+    what keeps a `report_file` from arriving without a passing `verification` before it.
+    Two different guarantees; only the second one was ever the interesting one.
     """
-    with pytest.raises(EmissionError):
-        emit({"type": kind})
+    assert emit({"type": kind})["type"] == kind
 
 
 @pytest.mark.parametrize(

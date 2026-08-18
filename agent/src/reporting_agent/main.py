@@ -76,6 +76,7 @@ from reporting_agent.errors import (
 )
 from reporting_agent.events import (
     EMITTED_BY_FOUNDATION,
+    EMITTED_BY_REPORT_PIPELINE,
     EVENT_TYPES,
     TERMINAL_EVENT_TYPE,
     TOOL_COLLECT_INVENTORY,
@@ -239,8 +240,9 @@ class EmissionError(RuntimeError):
     """An event was offered to :func:`emit` that may not be emitted.
 
     Raised for a non-mapping, for a missing or undeclared `type` (Req 14.15), and for a
-    declared type outside `EMITTED_BY_FOUNDATION` — which is how `verification` and
-    `report_file` are refused (Req 14.11).
+    declared type with no emitter, and — since the document phases landed — for a
+    `report_file` offered before a `verification` carrying `pass`, or a second
+    `verification` in one invocation (Req 42.2, 42.3).
     """
 
 
@@ -298,13 +300,9 @@ def emit(event: object) -> Event:
             f"{', '.join(EVENT_TYPES)}"
         )
 
-    if kind not in EMITTED_BY_FOUNDATION:
+    if kind not in EMITTED_BY_REPORT_PIPELINE:  # pragma: no cover - equals EVENT_TYPES
         raise EmissionError(
-            f"{kind!r} is declared but is not emitted by this spec's runtime "
-            f"(Req 14.11). `verification` and `report_file` in particular have no "
-            f"emitter here, because no document is produced: the ordering guarantee that "
-            f"a `report_file` never arrives without a passing `verification` cannot be "
-            f"violated by a runtime that emits neither."
+            f"{kind!r} is declared but has no emitter in this runtime (Req 14.11)."
         )
 
     # Req 15.8 — one scrub, on the way out, at every depth (Req 15.3).
@@ -852,10 +850,13 @@ async def handle_preflight(
 async def handle_generate_report(
     invocation: Invocation, steps: StepTracker
 ) -> AsyncIterator[Event]:
-    """Run the collection pipeline: inventory, metrics, gates, snapshot (Req 14.2, 14.3).
+    """Run the report pipeline: collect, compile, render, verify, upload (Req 14.2, 14.3).
 
-    Everything about *how* a run is collected lives in `collect/pipeline.py`; this handler
-    is the wiring. It hands the pipeline the parsed payload and context, this invocation's
+    Everything about *how* a run is produced lives in `report_pipeline.py`; this handler is
+    the wiring. A payload carrying **no pinned definition** is a snapshot-only run and the
+    pipeline delegates it back to `collect/pipeline.py` unchanged — that shape is still
+    legal, the state machine keeps `collecting → completed` for it, and the foundation's
+    tests describe it. It hands the pipeline the parsed payload and context, this invocation's
     step tracker — so every `tool` and `progress` event still passes through the invariants
     :class:`StepTracker` owns (Req 14.7, 14.8) — its progress reporter, and the artifact
     bucket from the configuration read once at process start (Req 14.12).
@@ -874,7 +875,7 @@ async def handle_generate_report(
     `collect/pipeline` a cycle, since the pipeline reaches this module's step vocabulary
     through a structural protocol precisely to avoid importing it back.
     """
-    from reporting_agent.collect.pipeline import run_generate_report
+    from reporting_agent.report_pipeline import run_generate_report
 
     async for event in run_generate_report(
         payload=invocation.payload,
@@ -940,8 +941,14 @@ async def run_invocation(
             return
 
         seen_snapshot = False
+        ordering = _Ordering()
         async for event in handler(invocation, steps):
             kind = _screen(event)
+            # Req 25.9, 42.2, 42.3 — checked here rather than trusted from the pipeline,
+            # because the client's own rule (discard a `report_file` with no passing
+            # `verification` before it) protects one client, and this protects the
+            # contract.
+            ordering.screen(kind, event)
 
             if kind == TERMINAL_EVENT_TYPE:
                 # `done` belongs to the tail below, which is the only thing that may end
@@ -1045,12 +1052,49 @@ def _screen(event: object) -> str:
     kind = event.get("type")
     if not is_declared_event_type(kind):
         raise EmissionError(f"{kind!r} is not a declared event type (Req 14.15).")
-    if kind not in EMITTED_BY_FOUNDATION:
-        raise EmissionError(
-            f"{kind!r} has no emitter in this spec's runtime (Req 14.11); "
-            f"`verification` and `report_file` in particular are never emitted here."
-        )
+    if kind not in EMITTED_BY_REPORT_PIPELINE:  # pragma: no cover - the two sets are equal
+        raise EmissionError(f"{kind!r} has no emitter in this runtime (Req 14.11).")
     return str(kind)
+
+
+class _Ordering:
+    """The two orderings Req 25.9 and Req 42.3 make guarantees about, enforced at the one
+    point every event passes through.
+
+    **`report_file` may not precede a `verification` carrying `pass`.** The relay's client
+    is required to discard a `report_file` it never saw a passing verification for
+    (Req 25.4), and that rule is only worth having if the source cannot violate it: a
+    client-side check protects one client, while this protects the contract. A run that
+    offered a `report_file` early is a defect in the pipeline, not in the customer's data,
+    so it fails the invocation loudly rather than quietly dropping the event and delivering
+    a report nobody proved.
+
+    **Exactly one `verification` per invocation** (Req 42.2). A second would leave a client
+    with two panels for one run and no rule for which is the record.
+    """
+
+    __slots__ = ("passed", "seen_verification")
+
+    def __init__(self) -> None:
+        self.seen_verification = False
+        self.passed = False
+
+    def screen(self, kind: str, event: Mapping[str, Any]) -> None:
+        if kind == "verification":
+            if self.seen_verification:
+                raise EmissionError(
+                    "a second `verification` was offered for this invocation; exactly one "
+                    "is emitted (Req 42.2)."
+                )
+            self.seen_verification = True
+            self.passed = event.get("status") == "pass"
+            return
+        if kind == "report_file" and not self.passed:
+            raise EmissionError(
+                "a `report_file` was offered before a `verification` carrying `pass` "
+                "(Req 42.3). The artifacts are uploaded only after the gate passes, so "
+                "reaching here means the pipeline emitted out of order."
+            )
 
 
 def _completion_fields(event: Mapping[str, Any]) -> dict[str, Any]:
@@ -1170,7 +1214,11 @@ assert not INVOCATION_ERROR_CODES & APP_WRITTEN_CODES, (
 )
 assert {STATUS_COMPLETED, STATUS_FAILED} == TERMINAL_PHASES
 assert STATUS_COMPLETED in AGENT_PHASES and STATUS_FAILED in AGENT_PHASES
+# The foundation's snapshot-only runtime still emits neither, and the ordering screen is
+# what permits them now: a `report_file` reaches the wire only behind a passing
+# `verification`, checked at the one point every event passes through.
 assert not {"verification", "report_file"} & EMITTED_BY_FOUNDATION, EMITTED_BY_FOUNDATION
+assert EMITTED_BY_FOUNDATION < EMITTED_BY_REPORT_PIPELINE, EMITTED_BY_REPORT_PIPELINE
 assert SESSION_ID_MIN_LENGTH <= len(derive_session_id("actor")) <= SESSION_ID_MAX_LENGTH
 
 if __name__ == "__main__":  # pragma: no cover - the container entrypoint

@@ -110,6 +110,23 @@ class InMemoryObjectStore:
             )
             return True
 
+    async def get_bytes(self, key: str) -> bytes:
+        with self._lock:
+            stored = self._objects.get(key)
+        if stored is None:
+            raise ObjectNotFoundError(key)
+        return stored.body
+
+    async def list_keys(self, prefix: str) -> tuple[str, ...]:
+        """Ascending lexical order, matching the protocol's contract.
+
+        The one caller is replay's fold order, and the archive's keys embed a zero-padded
+        sequence — so lexical order *is* fold order, and a fake returning insertion order
+        would let a replay pass here and go non-deterministic against S3.
+        """
+        with self._lock:
+            return tuple(sorted(key for key in self._objects if key.startswith(prefix)))
+
     async def get_json(self, key: str) -> dict[str, JsonValue]:
         with self._lock:
             stored = self._objects.get(key)

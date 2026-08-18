@@ -94,8 +94,18 @@ def test_the_protocol_offers_no_delete_or_update_operation() -> None:
     }
 
     # Req 34.6: there is no update path and nothing that deletes a written snapshot, so
-    # the protocol exposes nothing to call.
-    assert declared == {"put_bytes", "put_bytes_if_absent", "get_json"}
+    # the protocol exposes nothing to call. An exact set rather than a containment check,
+    # which is why widening it is a reviewed edit — `get_bytes` and `list_keys` were added
+    # for the report pipeline, which must hand `verify/replay.py` the archived objects it
+    # is forbidden to fetch itself (Req 31.2). Both are reads.
+    assert declared == {
+        "put_bytes",
+        "put_bytes_if_absent",
+        "get_json",
+        "get_bytes",
+        "list_keys",
+    }
+    assert not {name for name in declared if "delete" in name or "update" in name}
 
 
 def test_a_bucket_name_is_required() -> None:

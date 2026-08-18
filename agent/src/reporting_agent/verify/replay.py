@@ -63,6 +63,7 @@ from reporting_agent.collect.log import (
     GAP_TYPE_INTERVAL_COUNTS_MISSING,
     GAP_TYPE_INTERVAL_MALFORMED,
     GAP_TYPE_METRIC_ERROR,
+    GAP_TYPE_METRIC_NOT_EMITTED,
     GAP_TYPE_NO_SAMPLES,
     GAP_TYPE_PERMISSION_DENIED,
     GAP_TYPE_POWER_STATE_UNKNOWN,
@@ -463,8 +464,14 @@ def plan_from_snapshot(
     # snapshot recorded, because it is handed straight back to `build_snapshot` and a
     # re-cased `requested_scope` key would change the digest all by itself.
     folded = {key.casefold(): value for key, value in metrics_by_type.items()}
+    not_requested = _not_requested_by_resource(document)
     plan_resources = tuple(
-        _replay_resource(raw, catalog=catalog, metrics_by_type=folded)
+        _replay_resource(
+            raw,
+            catalog=catalog,
+            metrics_by_type=folded,
+            not_requested=not_requested.get(str(raw.get("resource_id") or ""), frozenset()),
+        )
         for raw in resources
     )
     carried = tuple(
@@ -494,11 +501,39 @@ def plan_from_snapshot(
     )
 
 
+def _not_requested_by_resource(
+    document: Mapping[str, object],
+) -> dict[str, frozenset[str]]:
+    """Per resource, the metrics the collector never asked Azure for.
+
+    The definitions probe narrows the requested set per `(type, region)`: a metric the
+    platform does not emit for that resource type in that region is recorded as
+    `metric_not_emitted` — "no value is requested and none is recorded" — and **no
+    accumulator is created for it**.
+
+    Replay has to reproduce that narrowing, and this is the only record of it. A replay that
+    built an accumulator for every metric the requested scope names would finalize six empty
+    ones, produce six `no_samples` gaps the original run never had, and report
+    `replay_hash_mismatch` on a perfectly reproducible snapshot. Which is exactly what the
+    first version of this function did, and what a full-pipeline run found.
+    """
+    excluded: dict[str, set[str]] = {}
+    for gap in _as_mappings(document.get("gaps")):
+        if str(gap.get("gap_type", "")) != GAP_TYPE_METRIC_NOT_EMITTED:
+            continue
+        resource_id = gap.get("resource_id")
+        metric = gap.get("metric")
+        if isinstance(resource_id, str) and isinstance(metric, str):
+            excluded.setdefault(resource_id, set()).add(metric)
+    return {key: frozenset(value) for key, value in excluded.items()}
+
+
 def _replay_resource(
     raw: Mapping[str, object],
     *,
     catalog: LoadedCatalog,
     metrics_by_type: Mapping[str, tuple[str, ...]],
+    not_requested: frozenset[str] = frozenset(),
 ) -> ReplayResource:
     resource_type = str(raw.get("resource_type") or "")
     entry = catalog.for_resource_type(resource_type)
@@ -540,7 +575,9 @@ def _replay_resource(
         # Intersected with what the catalog declares, in the requested order, so a metric
         # the requested scope names but the catalog no longer carries is skipped rather
         # than raising a `KeyError` inside the finalize.
-        selected=tuple(name for name in requested if name in declared),
+        selected=tuple(
+            name for name in requested if name in declared and name not in not_requested
+        ),
         derived_entries=tuple(entry.derived if entry else ()),
         sku_capability_values=_capability_values(
             entry.sku_capabilities if entry else (), sku

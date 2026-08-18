@@ -50,6 +50,7 @@ __all__ = [
     "ProseGenerator",
     "build_messages",
     "generate",
+    "prose_generator",
 ]
 
 logger = logging.getLogger(__name__)
@@ -180,3 +181,30 @@ def _text_of(response: Mapping[str, Any]) -> str:
         if isinstance(block, Mapping) and isinstance(block.get("text"), str)
     ]
     return "".join(pieces).strip()
+
+
+def prose_generator(model_id: str, *, region: str | None = None) -> ProseGenerator | None:
+    """A generator over the configured Bedrock model, or `None` where none is reachable.
+
+    `None` rather than a raise, and the distinction matters: a report with no narrative is a
+    complete report — the summary block still renders its compiler-placed figures — whereas
+    a raise here would withhold a document whose every figure verifies over a decoration.
+
+    The client is built **here** and nowhere else. `tests/test_boundaries.py` asserts that no
+    module outside `narrate/` reaches a Bedrock client, which is what makes "audit the model
+    call sites" a directory listing rather than a search of the whole tree.
+    """
+    if not model_id:
+        return None
+    try:
+        import boto3
+
+        client = boto3.client("bedrock-runtime", region_name=region)
+    except Exception as exc:
+        logger.warning(
+            "no Bedrock client could be built for the prose model (%s); this run's "
+            "executive summary renders its figures with no narrative",
+            type(exc).__name__,
+        )
+        return None
+    return ProseGenerator(client=client, model_id=model_id)

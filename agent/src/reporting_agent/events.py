@@ -64,6 +64,23 @@ HEARTBEAT_EVENT_TYPE: Final[str] = "heartbeat"
 TOOL_COLLECT_INVENTORY: Final[str] = "collect_inventory"
 TOOL_COLLECT_METRICS: Final[str] = "collect_metrics"
 
+# The four the document phases drive. Same reasoning: two modules consume each name —
+# `report_pipeline.py`, which opens the step, and the timeline that renders it — and a step
+# name spelled twice is a step the UI renders as two different things.
+TOOL_COMPILE_FIGURES: Final[str] = "compile_figures"
+TOOL_RENDER_DOCUMENT: Final[str] = "render_document"
+TOOL_VERIFY_DOCUMENT: Final[str] = "verify_document"
+TOOL_UPLOAD_ARTIFACT: Final[str] = "upload_artifact"
+
+# Every type the **document** pipeline emits (Req 42.1). All ten, because this spec adds the
+# four the foundation deliberately left unemitted — and it adds emitters, not vocabulary, so
+# `EVENT_TYPES` and `app/lib/events.ts` are untouched and the cross-language mirror guard
+# never has to be renegotiated. Outside the sentinels, like every other non-vocabulary name
+# here: the guard reads every quoted string between them.
+EMITTED_BY_REPORT_PIPELINE: Final[frozenset[str]] = frozenset(EVENT_TYPES)
+
+PROGRESS_UNIT_BLOCKS: Final[str] = "blocks"
+
 
 def is_declared_event_type(value: object) -> bool:
     """Is `value` one of the declared event types (Req 14.15)?"""
@@ -78,3 +95,5 @@ assert len(set(EVENT_TYPES)) == len(EVENT_TYPES), EVENT_TYPES
 assert TERMINAL_EVENT_TYPE in EMITTED_BY_FOUNDATION, TERMINAL_EVENT_TYPE
 assert HEARTBEAT_EVENT_TYPE in EMITTED_BY_FOUNDATION, HEARTBEAT_EVENT_TYPE
 assert HEARTBEAT_EVENT_TYPE != TERMINAL_EVENT_TYPE
+assert EMITTED_BY_FOUNDATION < EMITTED_BY_REPORT_PIPELINE, EMITTED_BY_REPORT_PIPELINE
+assert EMITTED_BY_REPORT_PIPELINE == frozenset(EVENT_TYPES), EMITTED_BY_REPORT_PIPELINE

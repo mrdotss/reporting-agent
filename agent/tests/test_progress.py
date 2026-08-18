@@ -505,16 +505,45 @@ def test_the_terminal_callback_is_sent_irrespective_of_the_limit():
 
 
 def test_a_phase_the_agent_may_not_present_is_not_sent():
+    """`queued` and `claimed` belong to the Reaper — an agent presenting `claimed` is
+    claiming to have done the claiming — and `TIMEOUT`'s phase likewise.
+
+    `compiling`, `rendering` and `verifying` were here too until the document pipeline
+    landed and `lib/runs/state.ts` gained their transitions. They are now sent, which the
+    test below asserts, so this one keeps only the phases that remain the app's.
+    """
     transport = FakeTransport()
 
     async def scenario() -> None:
         target = reporter(transport)
-        await _report_and_drain(target, "claimed")
-        await _report_and_drain(target, "compiling")
+        for phase in ("queued", "claimed", "not_a_phase"):
+            await _report_and_drain(target, phase)
 
     asyncio.run(scenario())
 
     assert transport.calls == []
+
+
+def test_every_document_phase_is_presented():
+    """Req 41.10 — the agent drives `compiling`, `rendering` and `verifying`.
+
+    Non-vacuity for the refusal above: a reporter that dropped everything would satisfy it
+    while failing every run's transitions and leaving the Reaper to time each one out.
+    """
+    transport = FakeTransport()
+
+    async def scenario() -> None:
+        target = reporter(transport)
+        for phase in ("compiling", "rendering", "verifying"):
+            await _report_and_drain(target, phase)
+
+    asyncio.run(scenario())
+
+    assert [call["body"]["phase"] for call in transport.calls] == [
+        "compiling",
+        "rendering",
+        "verifying",
+    ]
 
 
 def test_report_routes_a_terminal_phase_through_the_awaited_path():
@@ -584,7 +613,14 @@ def test_the_declared_constants_match_the_contract():
     assert PROGRESS_THROTTLE_S == 5.0
     assert TOKEN_HEADER == "X-Rpt-Progress-Token"
     assert TERMINAL_PHASES == {"completed", "failed"}
-    assert AGENT_PHASES == {"collecting", "completed", "failed"}
+    assert AGENT_PHASES == {
+        "collecting",
+        "compiling",
+        "rendering",
+        "verifying",
+        "completed",
+        "failed",
+    }
 
 
 def test_the_transport_timeout_is_passed_through():

@@ -420,10 +420,16 @@ def test_the_throttle_admits_at_most_one_progress_callback_per_five_seconds() ->
 def test_the_phase_transition_is_sent_at_the_instant_it_occurs() -> None:
     _, transport, _ = _run_collecting_phase()
 
-    # `collecting` is the only non-terminal phase the agent may present, so entering it
-    # is the only non-terminal transition there is to exempt — and the terminal callback
-    # below covers the other half of Req 38.15's two positive guards.
-    assert AGENT_PHASES - TERMINAL_PHASES == {"collecting"}
+    # `collecting` is the first non-terminal phase the agent presents; the document
+    # pipeline added three more. Entering any of them is a transition and is exempt from
+    # the throttle — the terminal callback below covers the other half of Req 38.15's two
+    # positive guards.
+    assert AGENT_PHASES - TERMINAL_PHASES == {
+        "collecting",
+        "compiling",
+        "rendering",
+        "verifying",
+    }
 
     first = transport.calls[0]
     assert first["body"]["phase"] == "collecting"

@@ -122,3 +122,27 @@ class ObjectStore(Protocol):
         Raises `ObjectNotFoundError` if the key holds nothing.
         """
         ...
+
+    async def get_bytes(self, key: str) -> bytes:
+        """The raw bytes at `key`, unparsed.
+
+        Distinct from :meth:`get_json` because the raw archive is gzip, not JSON, and
+        because the reader that needs it — `verify/replay.py`'s caller — must hand replay
+        the bytes as they were written. Parsing and re-serializing anywhere on that path
+        would make a replay prove something about this process's JSON encoder rather than
+        about the collector's aggregation.
+
+        Raises `ObjectNotFoundError` if the key holds nothing.
+        """
+        ...
+
+    async def list_keys(self, prefix: str) -> tuple[str, ...]:
+        """Every key under `prefix`, in ascending lexical order.
+
+        Ascending order is the contract, not an implementation detail: the raw archive's
+        keys embed a zero-padded per-run sequence (`<seq:06d>-…`), so lexical order **is**
+        fold order, and Req 31.4 requires each archived object folded once in the order
+        the sequence records. A store returning them in arrival order would make a replay
+        non-deterministic in exactly the way replay exists to disprove.
+        """
+        ...
