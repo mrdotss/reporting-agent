@@ -584,7 +584,7 @@ migration.
     - Three panes reachable from the keyboard in the order palette, canvas, inspector, with a visible `--ring` on the focused element and no pane trapping focus; every drop target's accessible name carries its 1-based insertion position, its container's total, and, inside a row, that row's column number and column count
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 12.11, 12.12, 12.13, 12.14_
 
-  - [ ] 13.4 Build the style preset picker and its real thumbnails
+  - [x] 13.4 Build the style preset picker and its real thumbnails
     - A build-time step in the agent image producing `agent/themes/thumbnails/<preset>.png` plus `<preset>.json` carrying `{theme_sha256, generated_by}`, via the **real** render path over a fixed sample definition that exercises a heading style, body prose and a data table, rendered with a **null context** so the page carries no figure a snapshot did not produce; the images are committed beside the themes and served from `app/public/theme-thumbnails/`
     - `style-preset-picker.tsx` presents the four presets as a **2×2 grid of selectable cards**, each carrying its name and its rendered page image at the page's own aspect ratio and a rendered width of at least 240 CSS pixels, with exactly one preset selected at every instant, and offers **no name-only control in place of the grid** — a theme is a visual decision and a name gives a consultant nothing to decide with
     - Compare each image's recorded `theme_sha256` against the digest the app was built with; a mismatch or a missing image renders the card with its name, its text alternative and an explicit "page image unavailable" statement, still selectable, and substitutes no select

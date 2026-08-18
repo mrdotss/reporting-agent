@@ -2,6 +2,7 @@
 
 import { useId } from "react"
 
+import { StylePresetPicker } from "@/components/templates/style-preset-picker"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -11,29 +12,21 @@ import {
   MIN_DECIMAL_PLACES,
   PAGE_SIZE_VALUES,
   TABLE_STYLE_VALUES,
+  type DesignPreset,
   type DesignSpec,
   type TemplateDefinition,
 } from "@/lib/templates/definition"
+import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 /**
  * Step 6 — design (Requirements 7.1, 7.2, 11.1).
  *
- * ## What is here and what is task 13.4's
+ * ## The grid above, the tuning below
  *
- * The **tuning controls** — accent, density, table style, number format, cover
- * page, logo, page size — are here. The **preset picker** is not: Requirement
- * 13.1 requires the four themes as a 2×2 grid of real rendered page images, and
- * building those images is a step in the agent's image (task 13.4). This step
- * renders the tuning below where that grid mounts, which is the order
- * `design-system.md` specifies, so 13.4 slots a component in rather than
- * rearranging the step.
- *
- * The preset itself is still editable here, as a temporary radio group. That is
- * deliberate rather than an oversight to be embarrassed about: without it a
- * consultant on this step could not change the theme at all until 13.4 lands, and
- * a step that shows a setting it cannot change is worse than a plain control.
- * Requirement 13.2 forbids offering "no name-only control **in place of** the
- * grid" — the grid replaces this, and 13.4 is where that happens.
+ * Requirement 13.5 puts the design tuning controls **below** the preset grid, and
+ * the order is the order of the decision: a consultant picks the theme by looking
+ * at four pages, then adjusts what the theme left tunable. Reversing it would ask
+ * them to set an accent colour before seeing what it will sit on.
  *
  * ## Every value is one of a closed set, read from the schema
  *
@@ -52,9 +45,16 @@ const DENSITY_SUMMARY: Readonly<Record<(typeof DENSITY_VALUES)[number], string>>
 export function StepDesign({
   definition,
   onChange,
+  thumbnails,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
+  /**
+   * Resolved on the server, because deciding whether an image is current means
+   * hashing a theme document on disk (Requirement 13.2). The verdict crosses to
+   * the browser; the digests do not.
+   */
+  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const accentId = useId()
   const decimalsId = useId()
@@ -68,33 +68,11 @@ export function StepDesign({
 
   return (
     <div className="flex flex-col gap-5">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-sm font-medium">Style preset</legend>
-
-        <p className="mb-1 max-w-prose text-xs text-muted-foreground">
-          Shown as names for now. The four themes appear here as real rendered
-          page images once the thumbnail build step lands — a theme is a visual
-          decision, and a list of words gives you nothing to decide with.
-        </p>
-
-        {(["editorial", "corporate", "technical", "minimal"] as const).map(
-          (preset) => (
-            <label
-              key={preset}
-              className="flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
-            >
-              <input
-                type="radio"
-                name="design-preset"
-                value={preset}
-                checked={design.preset === preset}
-                onChange={() => set({ preset })}
-              />
-              <span className="capitalize">{preset}</span>
-            </label>
-          )
-        )}
-      </fieldset>
+      <StylePresetPicker
+        selected={design.preset}
+        thumbnails={thumbnails}
+        onSelect={(preset: DesignPreset) => set({ preset })}
+      />
 
       <Field>
         <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>

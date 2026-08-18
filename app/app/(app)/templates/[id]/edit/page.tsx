@@ -5,6 +5,7 @@ import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
 import { getTemplate, readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
 /**
@@ -58,6 +59,7 @@ export default async function EditTemplatePage({ params }: PageProps) {
       template={toTemplateView(loaded.template, loaded.version)}
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
+      thumbnails={themeThumbnails()}
     />
   )
 }

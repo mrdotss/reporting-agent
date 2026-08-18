@@ -22,6 +22,7 @@ import type {
   MetricCatalogSnapshot,
   TemplateDefinition,
 } from "@/lib/templates/definition"
+import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 import { EMPTY_DRAFT } from "@/lib/templates/draft"
 import {
   canAdvance,
@@ -104,11 +105,14 @@ export function WizardShell({
   template,
   initialDefinition,
   catalog,
+  thumbnails,
 }: Readonly<{
   template: TemplateView
   /** The persisted draft, or the latest version's definition, or `null`. */
   initialDefinition: unknown
   catalog: MetricCatalogSnapshot
+  /** Resolved on the server — see `StepDesign`'s own note. */
+  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const router = useRouter()
 
@@ -249,7 +253,14 @@ export function WizardShell({
     }
   }, [problems, publish.kind, router, template.id])
 
-  const stepBody = renderStep({ step, definition, setDefinition, catalog, problems })
+  const stepBody = renderStep({
+    step,
+    definition,
+    setDefinition,
+    catalog,
+    thumbnails,
+    problems,
+  })
 
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
@@ -484,12 +495,14 @@ function renderStep({
   definition,
   setDefinition,
   catalog,
+  thumbnails,
   problems,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
   setDefinition: (next: TemplateDefinition) => void
   catalog: MetricCatalogSnapshot
+  thumbnails: readonly ThemeThumbnail[]
   problems: ReturnType<typeof completionProblems>
 }>) {
   switch (step.id) {
@@ -510,7 +523,13 @@ function renderStep({
     case "blocks":
       return <StepBlocks definition={definition} onChange={setDefinition} />
     case "design":
-      return <StepDesign definition={definition} onChange={setDefinition} />
+      return (
+        <StepDesign
+          definition={definition}
+          onChange={setDefinition}
+          thumbnails={thumbnails}
+        />
+      )
     case "preview":
       return <StepPreview definition={definition} problems={problems} />
   }
