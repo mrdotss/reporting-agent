@@ -102,6 +102,18 @@
  * as a bare key) never appears without both `estimator` and `fidelity_tier`
  * present (Requirements 5.7, 5.8).
  *
+ * Requirement 5.9 — every resource type a scope can contain has a metric
+ * selection — is checked in the shape walk too, by
+ * {@link validateEveryScopedTypeIsSelected}, and **only half of it can be**.
+ * When the scope names resource types it is a pure cross-field comparison
+ * between `scope`/`scope_override` and `metrics`, needing no catalog, so it
+ * belongs here where the both-halves-agree guarantee is free. What stays
+ * outside any validator is a scope naming **no** resource types: an empty
+ * dimension is unconstrained (Requirements 3.1, 3.12), so which types it can
+ * contain is a fact about the subscription rather than the definition, and no
+ * save-time or enqueue-time check can see it. The collector records that case
+ * as a `metric_not_selected` gap instead.
+ *
  * The catalog-*membership* checks — is this metric/derived statistic
  * actually declared for this resource type, does a derived statistic's
  * formula have every source metric and SKU capability it needs — are
@@ -1469,6 +1481,131 @@ function validateCanonicalByteSize(raw: unknown, issues: IssueSink): void {
   }
 }
 
+// --- Requirement 5.9: every scoped resource type carries a selection --------
+
+/**
+ * One resource type named by a scope, with the field path that named it.
+ */
+type ScopedType = {
+  readonly path: readonly (string | number)[]
+  readonly resourceType: string
+}
+
+/**
+ * Requirement 5.9 — a resource type a scope can contain, with no metric
+ * selected for it.
+ *
+ * A **cross-field** check on the definition alone: every resource type named
+ * in the template default `scope` or in any block `scope_override` needs an
+ * entry in `metrics`. No catalog, no snapshot, no subscription — which is why
+ * it lives here, in the shape walk where Requirement 2.6's both-halves-agree
+ * guarantee applies for free, rather than in
+ * {@link validateMetricSelectionAgainstCatalog}, which is app-only and
+ * catalog-dependent.
+ *
+ * Mirrors `_validate_every_scoped_type_is_selected` in
+ * `agent/src/reporting_agent/compile/definition.py`, path for path.
+ *
+ * **Compared case-insensitively** (Requirement 3.12). Azure resource type
+ * names are case-insensitive and Resource Graph lowercases `type` in its
+ * response body, so a `metrics` key of `microsoft.compute/virtualmachines`
+ * selects for a scope naming `Microsoft.Compute/virtualMachines`. An exact
+ * comparison would reject a correct definition — and specifically the one any
+ * inventory-seeded wizard affordance produces.
+ *
+ * ## Only in `run` mode, which is the requirement rather than a relaxation
+ *
+ * Requirement 5.9 rejects a save that **persists a version row**. A draft
+ * persists none — it is written to `report_templates.draft_definition` — and
+ * the wizard reaches scope (step 2) two steps before metrics (step 4), so
+ * enforcing this against a draft would refuse to save the ordinary
+ * half-authored template between those two steps. Publishing is where the
+ * definition has to be complete, and that is `run` mode: the same mode that
+ * rejects zero blocks, for the same reason.
+ *
+ * ## What no validator can see
+ *
+ * A scope naming **no** resource types is unconstrained (Requirement 3.1
+ * permits zero, 3.12 makes an empty dimension match everything), so which
+ * types it can contain is a fact about the subscription rather than about the
+ * definition. That case is recorded at collection time as a
+ * `metric_not_selected` gap instead — never a `TEMPLATE_INVALID`, because a
+ * subscription-agnostic template (Requirement 1) meeting a type it did not
+ * select is an ordinary pairing rather than a broken template.
+ */
+function validateEveryScopedTypeIsSelected(
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+  mode: "draft" | "run"
+): void {
+  if (mode !== "run") return
+
+  const { metrics } = raw
+  if (!isPlainObject(metrics)) {
+    // Its shape is already an issue; a second one derived from it would be noise.
+    return
+  }
+
+  const selected = new Set(
+    Object.keys(metrics).map((resourceType) => resourceType.toLowerCase())
+  )
+
+  for (const { path, resourceType } of scopedResourceTypes(raw)) {
+    if (selected.has(resourceType.toLowerCase())) continue
+    addIssue(
+      issues,
+      path,
+      `No metric or derived statistic is selected for "${resourceType}", which this ` +
+        `scope can contain. Every resource type a scope names needs an entry in ` +
+        `\`metrics\`, or the report would collect nothing for it.`
+    )
+  }
+}
+
+/**
+ * Every resource type named by a scope, with its field path.
+ *
+ * Reads defensively at every level and contributes nothing for a malformed
+ * scope: the shape validators above have already reported it, and inventing a
+ * resource type out of a non-string would report a second issue about the
+ * first one's symptom.
+ */
+function scopedResourceTypes(raw: Record<string, unknown>): ScopedType[] {
+  const found: ScopedType[] = []
+
+  const addScope = (scope: unknown, path: readonly (string | number)[]): void => {
+    if (!isPlainObject(scope)) return
+    const types = scope.resource_types
+    if (!Array.isArray(types)) return
+    types.forEach((entry, index) => {
+      if (isNonEmptyString(entry)) {
+        found.push({ path: [...path, "resource_types", index], resourceType: entry })
+      }
+    })
+  }
+
+  const walkBlocks = (blocks: unknown, path: readonly (string | number)[]): void => {
+    if (!Array.isArray(blocks)) return
+    blocks.forEach((block, index) => {
+      if (!isPlainObject(block)) return
+      const blockPath = [...path, index]
+      if ("scope_override" in block) {
+        addScope(block.scope_override, [...blockPath, "scope_override"])
+      }
+      const { columns } = block
+      if (Array.isArray(columns)) {
+        columns.forEach((column, columnIndex) => {
+          walkBlocks(column, [...blockPath, "columns", columnIndex])
+        })
+      }
+    })
+  }
+
+  addScope(raw.scope, ["scope"])
+  walkBlocks(raw.blocks, ["blocks"])
+  return found
+}
+
 /**
  * The full validation walk over an `unknown` candidate, in one pass
  * (Requirements 2.7, 6.11).
@@ -1515,6 +1652,7 @@ export function collectDefinitionIssues(
   validateBlocks(raw.blocks, ["blocks"], issues, mode)
   validateDesign(raw.design, ["design"], issues)
   validateCanonicalByteSize(raw, issues)
+  validateEveryScopedTypeIsSelected(raw, issues, mode)
 
   return issues
 }

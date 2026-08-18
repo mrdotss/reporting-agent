@@ -21,6 +21,8 @@ it would make every wording improvement a two-file change with no gain in safety
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from definition_corpus import (
@@ -35,6 +37,7 @@ from reporting_agent.compile.definition import (
     BLOCK_TYPES,
     assert_valid_pinned_definition,
     canonical_digest,
+    collect_definition_issues,
     format_path,
 )
 from reporting_agent.errors import ErrorCode, TemplateInvalidError
@@ -236,3 +239,90 @@ def test_the_pinned_version_gate_defaults_to_run_mode() -> None:
     assert draft.verdict == "accept"
     with pytest.raises(TemplateInvalidError):
         assert_valid_pinned_definition(draft.document)
+
+
+# --------------------------------------------------------------------------- #
+# Req 5.9 — every scoped resource type carries a metric selection
+# --------------------------------------------------------------------------- #
+#
+# The corpus covers this rule cross-language through
+# `reject-scoped-type-with-no-metric-selection.json`, which is the half that matters most:
+# it proves both validators name the same three offending paths, including the two
+# case-variant spellings that must **not** offend. These are the named cases for the parts
+# a fixture cannot express — the mode gating, and the unconstrained empty dimension.
+
+
+def _vm_only_definition() -> dict[str, object]:
+    """An accepted run-mode fixture, as the base to break."""
+    entry = next(
+        item
+        for item in CORPUS
+        if item.file == "accept-minimal-single-heading.json" and item.mode == "run"
+    )
+    return json.loads(json.dumps(entry.document))
+
+
+def test_a_scoped_type_with_no_metric_selection_is_rejected_at_its_own_path() -> None:
+    """Req 5.9 — reported where the scope names the type, not at `metrics`.
+
+    Naming the location is the difference between an author fixing one field and an author
+    hunting through eight blocks for whichever one introduced the type.
+    """
+    definition = _vm_only_definition()
+    scope = definition["scope"]
+    assert isinstance(scope, dict)
+    scope["resource_types"] = [
+        "Microsoft.Compute/virtualMachines",
+        "Microsoft.Storage/storageAccounts",
+    ]
+
+    issues = collect_definition_issues(definition, mode="run")
+
+    assert [format_path(issue.path) for issue in issues] == ["scope.resource_types.1"]
+    assert "Microsoft.Storage/storageAccounts" in issues[0].message
+
+
+def test_the_scoped_type_comparison_folds_case() -> None:
+    """Req 3.12. Resource Graph lowercases `type`, so a `metrics` map seeded from observed
+    inventory carries lowercase keys while the scope carries the catalog's spelling. An
+    exact comparison would reject a definition that is entirely correct."""
+    definition = _vm_only_definition()
+    scope = definition["scope"]
+    assert isinstance(scope, dict)
+    scope["resource_types"] = ["MICROSOFT.COMPUTE/VIRTUALMACHINES"]
+    definition["metrics"] = {
+        "microsoft.compute/virtualmachines": [
+            {"metric": "Percentage CPU", "statistic": "avg"}
+        ]
+    }
+
+    assert collect_definition_issues(definition, mode="run") == []
+
+
+def test_a_draft_may_carry_a_scoped_type_with_no_selection_yet() -> None:
+    """Req 5.9 rejects a save that persists a **version** row. A draft persists none, and
+    the wizard reaches scope at step 2 and metrics at step 4 — so enforcing this against a
+    draft would refuse to save the ordinary half-authored template between those steps."""
+    definition = _vm_only_definition()
+    scope = definition["scope"]
+    assert isinstance(scope, dict)
+    scope["resource_types"] = [
+        "Microsoft.Compute/virtualMachines",
+        "Microsoft.Storage/storageAccounts",
+    ]
+
+    assert collect_definition_issues(definition, mode="draft") == []
+    with pytest.raises(TemplateInvalidError):
+        assert_valid_pinned_definition(definition)
+
+
+def test_a_scope_naming_no_resource_type_is_not_an_issue() -> None:
+    """Req 3.1 and 3.12 — an empty dimension is unconstrained, so which types it can
+    contain is a fact about the subscription rather than about the definition. No validator
+    can see it; the collector records a `metric_not_selected` gap instead."""
+    definition = _vm_only_definition()
+    scope = definition["scope"]
+    assert isinstance(scope, dict)
+    scope["resource_types"] = []
+
+    assert collect_definition_issues(definition, mode="run") == []

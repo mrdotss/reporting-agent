@@ -47,6 +47,12 @@
         "derived": "memory_used_pct",
         "statistic": "avg"
       }
+    ],
+    "Microsoft.Storage/storageAccounts": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      }
     ]
   },
   "period": {

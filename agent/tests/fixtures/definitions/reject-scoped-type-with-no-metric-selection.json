@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "name": "Scoped types with no metric selection"
+  },
+  "scope": {
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines",
+      "Microsoft.Storage/storageAccounts"
+    ],
+    "tag_filters": [],
+    "resource_groups": [],
+    "top_n": null,
+    "sort": null
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "metrics": {
+    "microsoft.compute/virtualmachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "blocks": [
+    {
+      "id": "resources",
+      "type": "resource_table",
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sql-servers",
+      "type": "resource_table",
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "scope_override": {
+        "resource_types": ["Microsoft.Sql/servers"],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      }
+    },
+    {
+      "id": "side-by-side",
+      "type": "row",
+      "columns": [
+        [
+          {
+            "id": "web-tier",
+            "type": "resource_table",
+            "config": {
+              "columns": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "scope_override": {
+              "resource_types": ["Microsoft.Web/sites"],
+              "tag_filters": [],
+              "resource_groups": [],
+              "top_n": null,
+              "sort": null
+            }
+          }
+        ],
+        [
+          {
+            "id": "vm-tier",
+            "type": "resource_table",
+            "config": {
+              "columns": [
+                {
+                  "metric": "Percentage CPU",
+                  "statistic": "avg"
+                }
+              ]
+            },
+            "scope_override": {
+              "resource_types": ["MICROSOFT.COMPUTE/VIRTUALMACHINES"],
+              "tag_filters": [],
+              "resource_groups": [],
+              "top_n": null,
+              "sort": null
+            }
+          }
+        ]
+      ]
+    }
+  ],
+  "design": {
+    "preset": "editorial",
+    "accent_color": "oklch(0.52 0.105 223)",
+    "density": "normal",
+    "table_style": "hairline",
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "cover_page": true,
+    "logo": null,
+    "page_size": "A4"
+  }
+}

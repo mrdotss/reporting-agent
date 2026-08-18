@@ -66,7 +66,7 @@ EARS requirements below name in the `THE <system> SHALL` position.
     `interval_counts_missing` · `interval_malformed` · `no_samples` · `sku_unknown` ·
     `sku_capability_missing` · `definitions_unavailable` · `percentile_unsupported_unit` ·
     `response_too_large` · `region_unreachable` · `archive_write_failed` ·
-    `catalog_entry_invalid` · `instance_name_collapsed`
+    `catalog_entry_invalid` · `instance_name_collapsed` · `metric_not_selected`
 - **gap** — one typed `collection_log` entry. Neutral information, not a failure.
 - **error code** — the value carried in `report_runs.error_code` and in an `error` event's
   `code`. The codes this spec defines are:
@@ -1071,6 +1071,21 @@ resource count, so that oversized-response failures stop looking random.
     THE Metrics_Collector SHALL split that request by metric name, and IF a single-metric
     request also fails with a response-too-large indication, THEN THE Metrics_Collector SHALL
     record a `response_too_large` gap and SHALL record no zero value for that resource.
+15. IF a resource in the inventory has a resource type for which the caller requested no metric
+    at all, THEN THE Metrics_Collector SHALL record a `metric_not_selected` gap carrying that
+    resource's id and its resource type, SHALL issue no metrics request for that resource, and
+    SHALL record no zero value for it.
+16. THE Metrics_Collector SHALL record a `metric_not_selected` gap distinct from a
+    `metric_not_emitted` gap and from a `no_samples` gap, because the three name three
+    different causes: nothing was asked for, Azure emits nothing for this SKU, and the samples
+    came back empty. Only the first is a decision the caller made.
+
+    Without this gap the case leaves **no trace at all**. An unrequested metric builds no
+    accumulator, so it produces no `no_samples` gap, no per-resource error and no absent-from-
+    response gap — the resource is simply present in the snapshot carrying no statistics. The
+    coverage gate asserts presence and passes, `assert_some_statistic` is satisfied by any
+    other resource that did collect, and the run completes as a fully verified report holding
+    resources with no figures and nothing anywhere saying why.
 
 #### Requirement 24: Regional data-plane endpoints
 

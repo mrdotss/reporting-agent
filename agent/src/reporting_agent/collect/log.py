@@ -3,7 +3,7 @@
 **A gap is recorded, never zero-filled** (Req 29.3, 29.4). `deallocated`,
 `metric_not_emitted` and `permission_denied` are three completely different facts that
 a zero-filling collector would render identically as "0% CPU" — the partition of
-19 declared `gap_type` values below is the point, not an implementation detail, and it
+20 declared `gap_type` values below is the point, not an implementation detail, and it
 is fixed by the requirements glossary rather than inferred from whatever a caller
 happens to pass. This module is the single place that partition is declared and the
 single place a caller builds one entry, so a typo in a `gap_type` string fails at the
@@ -48,6 +48,7 @@ __all__ = [
     "GAP_TYPE_INTERVAL_MALFORMED",
     "GAP_TYPE_METRIC_ERROR",
     "GAP_TYPE_METRIC_NOT_EMITTED",
+    "GAP_TYPE_METRIC_NOT_SELECTED",
     "GAP_TYPE_NO_SAMPLES",
     "GAP_TYPE_PERCENTILE_UNSUPPORTED_UNIT",
     "GAP_TYPE_PERMISSION_DENIED",
@@ -64,7 +65,7 @@ __all__ = [
 
 # --- the declared gap_type partition (requirements.md glossary; Req 29.2, 29.7) ------
 #
-# 19 values, one `Final[str]` each rather than a `StrEnum`. `catalog/loader.py`
+# 20 values, one `Final[str]` each rather than a `StrEnum`. `catalog/loader.py`
 # already set this precedent for `CATALOG_ENTRY_INVALID_GAP_TYPE` — a bare string
 # constant, not an enum member — and a `GapRecord` is a `TypedDict` whose `gap_type`
 # field is a plain `str` (Req 18.3: only str, bool, int, Decimal, None, list, dict
@@ -93,6 +94,21 @@ GAP_TYPE_ARCHIVE_WRITE_FAILED: Final[str] = "archive_write_failed"
 GAP_TYPE_CATALOG_ENTRY_INVALID: Final[str] = CATALOG_ENTRY_INVALID_GAP_TYPE
 GAP_TYPE_INSTANCE_NAME_COLLAPSED: Final[str] = "instance_name_collapsed"
 
+# Req 23.15, 23.16 — the caller requested no metric at all for this resource's type.
+#
+# Distinct from `metric_not_emitted` (Azure emits nothing for this SKU) and from
+# `no_samples` (the samples came back empty), because the three name three different
+# causes and only this one is a decision the caller made. It is the trace for the case
+# Req 5.9's validator cannot see: a scope naming **no** resource types is unconstrained,
+# so a subscription-agnostic template pointed at a subscription holding a type it did not
+# select is an ordinary pairing rather than a broken template — but without this gap it
+# leaves no trace of any kind. An unrequested metric builds no accumulator, so there is no
+# `no_samples` gap, no per-resource error and no absent-from-response gap; the resource is
+# simply present in the snapshot carrying no statistics, the coverage gate asserts presence
+# and passes, and the run completes as a fully verified report holding resources with no
+# figures and nothing anywhere saying why.
+GAP_TYPE_METRIC_NOT_SELECTED: Final[str] = "metric_not_selected"
+
 DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
     {
         GAP_TYPE_DEALLOCATED,
@@ -114,14 +130,15 @@ DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
         GAP_TYPE_ARCHIVE_WRITE_FAILED,
         GAP_TYPE_CATALOG_ENTRY_INVALID,
         GAP_TYPE_INSTANCE_NAME_COLLAPSED,
+        GAP_TYPE_METRIC_NOT_SELECTED,
     }
 )
 
-assert len(DECLARED_GAP_TYPES) == 19
+assert len(DECLARED_GAP_TYPES) == 20
 
 
 class GapTypeError(ValueError):
-    """`gap_type` is not one of the 19 declared values.
+    """`gap_type` is not one of the 20 declared values.
 
     Carries the offending value so a caller building a message does not have to
     re-parse `str(exc)`.
@@ -146,7 +163,7 @@ def record_gap(
     The single gate every gap-recording call site passes through (Req 29.2). Raises
     rather than returning a malformed entry:
 
-    * `GapTypeError` if `gap_type` is not one of the 19 declared values — a typo here
+    * `GapTypeError` if `gap_type` is not one of the 20 declared values — a typo here
       is exactly the "unrecognised classification" Req 29.7 refuses to drop, so it
       must not reach the snapshot as an ad hoc string either.
     * `ValueError` if `resource_id` or `message` is empty or not a string. Every gap

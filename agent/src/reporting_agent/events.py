@@ -77,7 +77,25 @@ TOOL_UPLOAD_ARTIFACT: Final[str] = "upload_artifact"
 # `EVENT_TYPES` and `app/lib/events.ts` are untouched and the cross-language mirror guard
 # never has to be renegotiated. Outside the sentinels, like every other non-vocabulary name
 # here: the guard reads every quoted string between them.
-EMITTED_BY_REPORT_PIPELINE: Final[frozenset[str]] = frozenset(EVENT_TYPES)
+#
+# **Named rather than derived from `EVENT_TYPES`.** `frozenset(EVENT_TYPES)` would make the
+# equality assertion below a tautology, and an eleventh vocabulary type would then be
+# silently claimed as emitted by a pipeline that has no emitter for it. Spelled out, the
+# assertion is the question "did you write the emitter?" asked at import.
+EMITTED_BY_REPORT_PIPELINE: Final[frozenset[str]] = frozenset(
+    {
+        "delta",
+        "tool",
+        "progress",
+        "heartbeat",
+        "snapshot_ready",
+        "chart",
+        "verification",
+        "report_file",
+        "error",
+        "done",
+    }
+)
 
 PROGRESS_UNIT_BLOCKS: Final[str] = "blocks"
 

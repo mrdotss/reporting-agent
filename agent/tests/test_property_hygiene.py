@@ -137,12 +137,17 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # on the permutation-invariance property, where an implementation that ordered by
     # arrival would show up as a different ranking for the same snapshot.
     "test_scope_property.py": 4,
+    # The two cases the Req 5.4 narrowing's case-sensitivity defect was found with: the
+    # lowercase respelling Resource Graph actually returns, and a swapped-case one that
+    # disagrees with the catalog in both directions at once. Both on the fixture carrying
+    # block scope overrides, so the scope union is assembled from more than one place.
+    "test_metric_narrowing_property.py": 2,
 }
 
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 112
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 114
 
 
 # --------------------------------------------------------------------------- #

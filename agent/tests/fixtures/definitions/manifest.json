@@ -5,7 +5,7 @@
       "file": "accept-block-scope-overrides.json",
       "mode": "run",
       "verdict": "accept",
-      "definition_sha256": "cb81e0b0f541cabeea47579a5cca49691cebb524fe03a566fe85b615bdb68190",
+      "definition_sha256": "47bd4ae5f2db1a3a16a6168cc51623f97dc04f51f88f503e1f0a7397a4c85396",
       "offenders": []
     },
     {
@@ -54,7 +54,7 @@
       "file": "accept-full-scope-dimensions.json",
       "mode": "run",
       "verdict": "accept",
-      "definition_sha256": "90a54405d16de2e7736db15a5e8af0b70c4f49b99b7159982e1fdc8927ba30e7",
+      "definition_sha256": "5582c207d54f379dc278f028cb2db0f0f9285e647205b6c90c5f4951578dd6a3",
       "offenders": []
     },
     {
@@ -381,6 +381,45 @@
           "path": [
             "scope",
             "resource_groups",
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-scoped-type-with-no-metric-selection.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "381499fe8f1c9fb77cfe08290d54d9ed44aaf9d50562586f08c8ef7d554647bf",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "scope",
+            "resource_types",
+            1
+          ]
+        },
+        {
+          "block_id": "sql-servers",
+          "path": [
+            "blocks",
+            1,
+            "scope_override",
+            "resource_types",
+            0
+          ]
+        },
+        {
+          "block_id": "web-tier",
+          "path": [
+            "blocks",
+            2,
+            "columns",
+            0,
+            0,
+            "scope_override",
+            "resource_types",
             0
           ]
         }

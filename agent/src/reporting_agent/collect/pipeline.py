@@ -118,6 +118,7 @@ from reporting_agent.collect.buckets import (
 from reporting_agent.collect.log import (
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
     GAP_TYPE_METRIC_ERROR,
+    GAP_TYPE_METRIC_NOT_SELECTED,
     GAP_TYPE_NO_SAMPLES,
     record_gap,
 )
@@ -1070,6 +1071,7 @@ async def run_collection(
     provider: Provider | None = None,
     object_store: ObjectStore | None = None,
     catalog: LoadedCatalog | None = None,
+    metric_selection: Mapping[str, Sequence[str]] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> AsyncIterator[Event]:
     """Collect one run into an immutable snapshot, yielding its non-terminal events.
@@ -1090,6 +1092,11 @@ async def run_collection(
     built once at start (Req 14.12); nothing here reads an environment variable. `provider`,
     `object_store` and `catalog` are injectable so the whole pipeline runs against the fake
     Azure ports and an in-memory store, with no SDK, no credential and no subscription.
+
+    `metric_selection` is Req 5.4's narrowing — per resource type, the platform metric names
+    the pinned template version selected, already expanded from its derived statistics and
+    already carrying every top-N ranking metric. It is `None` for a snapshot-only run, which
+    has no pinned version to narrow by; see :func:`_requested_metrics`.
     """
     plan = resolve_run_plan(payload, context)
     loaded = catalog if catalog is not None else load_catalog()
@@ -1107,6 +1114,7 @@ async def run_collection(
             provider=provider,
             store=store,
             catalog=loaded,
+            metric_selection=metric_selection,
             steps=steps,
             progress=progress,
             now=now,
@@ -1124,6 +1132,7 @@ async def run_collection(
             provider=built,
             store=store,
             catalog=loaded,
+            metric_selection=metric_selection,
             steps=steps,
             progress=progress,
             now=now,
@@ -1145,6 +1154,7 @@ async def _drive(
     provider: Provider,
     store: ObjectStore,
     catalog: LoadedCatalog,
+    metric_selection: Mapping[str, Sequence[str]] | None,
     steps: StepEvents,
     progress: ProgressReporter | None,
     now: Callable[[], datetime],
@@ -1182,7 +1192,8 @@ async def _drive(
     # --- the empty-scope gate, before anything is requested or written (Req 33.5) ----
     assert_scope_not_empty(plan, resources)
 
-    metrics_by_resource_type = _requested_metrics(active, plan.scope)
+    metrics_by_resource_type = _requested_metrics(active, plan.scope, metric_selection)
+    gaps.extend(_metric_not_selected_gaps(resources, metrics_by_resource_type))
     await _report(progress, PHASE_COLLECTING, current=0, total=total, label="Metrics")
 
     # --- metrics (Req 14.7, 14.8, 23.x-30.x) -----------------------------------------
@@ -1349,7 +1360,70 @@ def _resource_snapshots(
     return built
 
 
-def _requested_metrics(provider: Provider, scope: ScopeSpec) -> dict[str, list[str]]:
+def _metric_not_selected_gaps(
+    resources: Sequence[ResourceRecord],
+    metrics_by_resource_type: Mapping[str, Sequence[str]],
+) -> list[GapRecord]:
+    """Req 23.15, 23.16 — one gap per resource whose type had no metric requested.
+
+    **The case exists because no validator can see it.** Req 5.9 rejects a saved version
+    whose scope *names* a resource type with no metric selection, but a scope naming **no**
+    resource types is unconstrained (Req 3.1, 3.12): which types it can contain is a fact
+    about the subscription, not about the definition. A subscription-agnostic template
+    pointed at a subscription holding a type it did not select is an ordinary pairing rather
+    than a broken template, so the run continues — but it must not continue *silently*.
+
+    Without this gap the case leaves no trace of any kind. An unrequested metric builds no
+    accumulator, so there is no `no_samples` gap, no per-resource error and no
+    `resource_absent_from_response` gap. The resource is simply present in the snapshot
+    carrying no statistics; `verify/coverage.py` asserts presence and passes;
+    `assert_some_statistic` is satisfied by any other resource that did collect. The run
+    completes as a fully verified report holding resources with no figures and nothing
+    anywhere saying why — which is the one failure this product cannot afford.
+
+    Distinct from `metric_not_emitted` and `no_samples` on purpose (Req 23.16): those two say
+    Azure emits nothing for this SKU and the samples came back empty. This one says nobody
+    asked. Only the third is a decision the caller made, and only the third is fixed by
+    editing the template rather than by installing an agent in the guest.
+
+    Resource type comparison folds case (Req 3.12), for the reason it folds everywhere else
+    on this path: `metrics_by_resource_type` is keyed by the catalog's spelling and a
+    Resource Graph inventory row carries Azure's lowercase one, so an exact comparison would
+    record this gap for **every** resource on a run that requested everything correctly.
+
+    One gap per resource rather than one per resource type, because `collection_log` is
+    per-resource by definition — the glossary's "the affected `resource_id`" — and the gap
+    list is what the report's gap surface groups and counts.
+    """
+    requested = {
+        resource_type.casefold()
+        for resource_type, names in metrics_by_resource_type.items()
+        if names
+    }
+
+    gaps: list[GapRecord] = []
+    for resource in resources:
+        resource_type = resource["resource_type"]
+        if resource_type.casefold() in requested:
+            continue
+        gaps.append(
+            record_gap(
+                GAP_TYPE_METRIC_NOT_SELECTED,
+                resource["resource_id"],
+                None,
+                f"no metric was requested for resource type {resource_type!r}, so nothing "
+                f"was collected for this resource; the pinned template version selected no "
+                f"metric for that type",
+            )
+        )
+    return gaps
+
+
+def _requested_metrics(
+    provider: Provider,
+    scope: ScopeSpec,
+    selection: Mapping[str, Sequence[str]] | None = None,
+) -> dict[str, list[str]]:
     """The metric names to request per resource type, from `capabilities()` (Req 18.6).
 
     Narrowed to the scope's requested resource types when it names any, and to everything
@@ -1361,14 +1435,56 @@ def _requested_metrics(provider: Provider, scope: ScopeSpec) -> dict[str, list[s
     **No platform metric for in-guest disk free space is requested** (Req 31.5), and that
     needs no filter here: the Metric_Catalog declares none, because Azure emits none, so
     there is no name in this map that could be one.
+
+    `selection` is Req 5.4's second narrowing, and the two compose in one direction only:
+    the result is the **intersection** of what the provider can collect and what the pinned
+    template version asked for, so a report neither requests a metric the provider cannot
+    produce nor one the template did not select. `None` — a snapshot-only run, which has no
+    pinned version to ask — leaves the capability set unnarrowed.
+
+    A resource type present in the scope and absent from `selection` requests **nothing**,
+    because "exactly the union of the pinned version's metric selections for that resource
+    type" is empty for it. Requesting everything instead would be the one reading of
+    Req 5.4 the requirement explicitly forbids ("SHALL request no metric outside that
+    union"), and it is also how a template that asked for one CPU figure ends up paying for
+    every disk and network counter the type emits.
+
+    **Every resource-type comparison here folds case** (Req 3.12), and all three of them
+    would otherwise fail closed to an empty request. Azure resource type names are
+    case-insensitive and Resource Graph lowercases `type` in its response body, so three
+    spellings of one type meet in this function: the scope's, the capability map's (the
+    catalog's) and `selection`'s (the definition's). An exact comparison between any two of
+    them turns a spelling difference into a resource type with no metrics — a run that
+    collects nothing for a type it was asked about, with nothing anywhere saying why. The
+    keys of the returned map are the **capability map's** spelling, which is the catalog's,
+    so nothing downstream inherits Azure's casing from here.
     """
     available = provider.capabilities()["metrics"]
     requested = [name for name in scope["resource_types"] if name] or list(available)
-    return {
-        resource_type: sorted(available[resource_type])
-        for resource_type in requested
-        if resource_type in available
-    }
+    available_by_fold = {name.casefold(): name for name in available}
+
+    # Folded keys **union** rather than overwrite, and that is not defensive tidying: the
+    # definition's `metrics` key and its scope's `resource_types` entry are two independent
+    # spellings of one type, and `union_scope` folds a top-N ranking metric into the scope's
+    # spelling. So one type legitimately arrives here under two keys, and last-one-wins would
+    # drop either the selection or the ranking metric depending on iteration order.
+    selection_by_fold: dict[str, set[str]] | None = None
+    if selection is not None:
+        selection_by_fold = {}
+        for resource_type, names in selection.items():
+            selection_by_fold.setdefault(resource_type.casefold(), set()).update(names)
+
+    narrowed: dict[str, list[str]] = {}
+    for resource_type in requested:
+        folded = resource_type.casefold()
+        declared = available_by_fold.get(folded)
+        if declared is None:
+            continue
+        names = set(available[declared])
+        if selection_by_fold is not None:
+            names &= set(selection_by_fold.get(folded, ()))
+        narrowed[declared] = sorted(names)
+    return narrowed
 
 
 def _utc_offset_text(plan: RunPlan) -> str:

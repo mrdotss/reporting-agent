@@ -39,7 +39,11 @@ from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_port
 from reporting_agent.catalog.loader import load_catalog
 from reporting_agent.collect.buckets import day_buckets, resolve_window
 from reporting_agent.collect.pipeline import sku_from_plain, statistic_from_plain
-from reporting_agent.collect.snapshot import ResourceSnapshot, build_snapshot
+from reporting_agent.collect.snapshot import (
+    ResourceSnapshot,
+    build_snapshot,
+    content_hash,
+)
 from reporting_agent.providers.base import CollectRequest, ScopeSpec
 from reporting_agent.verify.findings import (
     FINDING_ARCHIVE_INCOMPLETE,
@@ -447,8 +451,69 @@ def test_the_recomputed_gap_types_are_the_ones_the_fold_and_finalize_produce() -
         "archive_write_failed",
         "instance_name_collapsed",
         "percentile_unsupported_unit",
+        # Req 23.15. Named here because it is the one that most looks like a metrics gap
+        # and is not: it comes from the collector's *request planning*, before any response
+        # exists, and replay re-runs the fold and the finalize but never the planning.
+        "metric_not_selected",
     ):
         assert carried not in RECOMPUTED_GAP_TYPES, carried
+
+
+def test_a_carried_over_metric_not_selected_gap_survives_replay_exactly_once(
+    collection,
+) -> None:
+    """Req 23.15 with Req 31.x — the gap is carried over, and carried over **once**.
+
+    The failure this pins is specific and expensive: add `metric_not_selected` to
+    `RECOMPUTED_GAP_TYPES` and it is stripped from the stored log and then re-produced by a
+    recomputation that never planned a request — so it either vanishes or appears twice, the
+    `collection_log` changes, the digest changes, and every affected run fails the replay
+    gate as a mismatch while being entirely correct.
+
+    Driven by planting the gap in a real stored snapshot and replaying it, rather than by
+    asserting set membership, because membership is already asserted above and would not
+    catch a second code path that filtered the log by a different rule.
+    """
+    planted = json.loads(json.dumps(collection.document))
+    gap = {
+        "gap_type": "metric_not_selected",
+        "resource_id": str(planted["resources"][0]["resource_id"]),
+        "metric": None,
+        "message": (
+            "no metric was requested for resource type "
+            "'Microsoft.Storage/storageAccounts', so nothing was collected for this "
+            "resource; the pinned template version selected no metric for that type"
+        ),
+    }
+    planted["gaps"] = sorted(
+        [*planted["gaps"], gap],
+        key=lambda entry: (
+            str(entry["gap_type"]),
+            str(entry["resource_id"]),
+            str(entry["metric"] or ""),
+        ),
+    )
+    # A hand-edited document is a new document, so its digest is recomputed the way the
+    # builder would have. The assertions below are about the replay's treatment of the gap,
+    # not about whether an edited snapshot still matches the digest it arrived with.
+    planted["content_hash"] = ""
+    planted["content_hash"] = content_hash(planted)
+    planted["snapshot_id"] = planted["content_hash"]
+
+    result = replay(
+        collection.archived(),
+        plan=plan_from_snapshot(planted, catalog=collection.catalog),
+    )
+
+    assert result.findings == (), result.findings
+    assert result.outcome["recomputed_sha256"] == planted["snapshot_id"]
+    assert result.document is not None
+    carried = [
+        entry
+        for entry in result.document["gaps"]  # type: ignore[index]
+        if entry["gap_type"] == "metric_not_selected"
+    ]
+    assert carried == [gap], carried
 
 
 # --------------------------------------------------------------------------- #

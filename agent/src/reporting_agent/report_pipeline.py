@@ -14,7 +14,7 @@ process is about to die.
 
 ## Three refusals that happen before any Azure call
 
-Both are ordering decisions with a cost measured in minutes of somebody else's money.
+All three are ordering decisions with a cost measured in minutes of somebody else's money.
 
 **The theme is asserted at claim** (Req 8.9). A pinned version naming a preset whose theme is
 missing from the image, or whose theme no longer declares the `Figure` character style, fails
@@ -30,6 +30,15 @@ because it is the single most likely way this product could ship a confidently w
 artifact: an expired secret or an over-narrow role yields zero resources → zero figures →
 zero *unverifiable* figures → a clean pass on every other gate → a fully verified, empty,
 worthless report.
+
+## The run asks for exactly what the template selected
+
+`requested_metric_union` narrows the collection to the pinned version's metric selection
+(Req 5.4) — expanded from its derived statistics, widened by every top-N ranking metric, and
+keyed against the union of the template default and every block override. The collector then
+intersects that with what the provider says it can collect, so a run requests neither a
+metric Azure does not emit nor one the template did not ask for. A template selecting one CPU
+figure does not pay for every disk and network counter the resource type emits.
 
 ## Partial coverage is raised last
 
@@ -59,6 +68,7 @@ from reporting_agent.artifacts import (
     write_report_artifacts,
     write_verification_result,
 )
+from reporting_agent.catalog.loader import LoadedCatalog, load_catalog
 from reporting_agent.collect.pipeline import (
     CollectionOutcome,
     CollectionSink,
@@ -88,6 +98,7 @@ __all__ = [
     "PHASE_RENDERING",
     "PHASE_VERIFYING",
     "ReportOutcome",
+    "requested_metric_union",
     "run_generate_report",
 ]
 
@@ -168,6 +179,11 @@ async def run_generate_report(
     _assert_theme_present(definition)
 
     # --- collecting -------------------------------------------------------------------
+    #
+    # Req 5.4 — the catalog is loaded here rather than left to `run_collection`, because the
+    # metric narrowing needs it and loading it twice for one run would be two chances to
+    # read two different catalogs.
+    catalog = collection_kwargs.pop("catalog", None) or load_catalog()
     collection = CollectionSink()
     async for event in run_collection(
         payload=payload,
@@ -178,6 +194,8 @@ async def run_generate_report(
         progress=progress,
         now=now,
         sink=collection,
+        catalog=catalog,
+        metric_selection=requested_metric_union(definition, catalog),
         **collection_kwargs,
     ):
         yield event
@@ -246,6 +264,120 @@ def _assert_theme_present(definition: Mapping[str, PlainData]) -> None:
             f"collection started ({type(exc).__name__}); failing here rather than after "
             f"a full collection"
         ) from exc
+
+
+# --------------------------------------------------------------------------- #
+# What the run asks Azure for (Req 5.4)
+# --------------------------------------------------------------------------- #
+
+
+def requested_metric_union(
+    definition: Mapping[str, PlainData], catalog: LoadedCatalog
+) -> dict[str, tuple[str, ...]]:
+    """Req 5.4 — per resource type, exactly the platform metrics the pinned version selected.
+
+    Three things are folded in, and each is the answer to a way this could be wrong:
+
+    * **The selection itself.** A `metric` item names a platform metric directly. A
+      `derived` item names a statistic that Azure does not emit — `memory_used_pct` is
+      computed from `Available Memory Bytes` and a SKU capacity — so it is expanded to the
+      catalog's declared `kind == "metric"` sources. Requesting the derived id itself would
+      request a metric that does not exist; requesting only what the items literally say
+      would leave every derived figure with no input.
+    * **Every top-N ranking metric**, folded by :func:`union_scope`. A ranking is resolved
+      against the snapshot, so a snapshot that does not carry the metric it ranks by cannot
+      resolve it — and the block would render its empty-scope row on a run that collected
+      perfectly.
+    * **The union of the template default and every block override**, so the resource types
+      the metric map is keyed against are the ones the run actually collects.
+
+    Unknown resource types and unknown item shapes are passed through as-is rather than
+    rejected: `_assert_compilable` has already run, so anything unrecognized here is either
+    a resource type the provider will drop for having no capability entry, or a name the
+    intersection in `collect/pipeline.py` will drop for the same reason. This function
+    narrows; it is not a second validator.
+
+    **The returned keys are the catalog's spelling** for every type the catalog declares
+    (Req 3.12). Without that normalization one type comes back under two keys — the
+    definition's `metrics` spelling and its scope's, which `union_scope` uses when folding in
+    a top-N ranking metric — and a caller reading the map by key would see the selection
+    under one and the ranking metric under the other. Types the catalog does not declare keep
+    their own spelling; there is no authority to normalize them against.
+    """
+    from reporting_agent.compile.scope import scope_rules_from_plain, union_scope
+
+    selected: dict[str, set[str]] = {}
+    raw_metrics = definition.get("metrics")
+    if isinstance(raw_metrics, Mapping):
+        for resource_type, items in raw_metrics.items():
+            if not isinstance(resource_type, str):
+                continue
+            if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+                continue
+            names = selected.setdefault(resource_type, set())
+            for item in items:
+                if not isinstance(item, Mapping):
+                    continue
+                metric = item.get("metric")
+                if isinstance(metric, str) and metric:
+                    names.add(metric)
+                    continue
+                derived = item.get("derived")
+                if isinstance(derived, str) and derived:
+                    names.update(_derived_source_metrics(catalog, resource_type, derived))
+
+    scopes = [scope_rules_from_plain(definition.get("scope"), at="scope")]
+    blocks = definition.get("blocks")
+    if isinstance(blocks, Sequence) and not isinstance(blocks, (str, bytes)):
+        for ordinal, block in enumerate(blocks):
+            if not isinstance(block, Mapping):
+                continue
+            override = block.get("scope_override")
+            if override is None:
+                continue
+            scopes.append(
+                scope_rules_from_plain(override, at=f"blocks.{ordinal}.scope_override")
+            )
+
+    requested = union_scope(
+        scopes, metrics_by_resource_type=selected
+    ).metrics_by_resource_type
+
+    canonical: dict[str, set[str]] = {}
+    for resource_type, names in requested.items():
+        entry = catalog.for_resource_type(resource_type)
+        key = entry.resource_type if entry is not None else resource_type
+        canonical.setdefault(key, set()).update(names)
+    return {key: tuple(sorted(names)) for key, names in sorted(canonical.items())}
+
+
+def _derived_source_metrics(
+    catalog: LoadedCatalog, resource_type: str, statistic_id: str
+) -> tuple[str, ...]:
+    """The platform metric names one derived statistic's formula consumes.
+
+    `kind == "sku_capability"` sources are excluded on purpose: a SKU capability comes from
+    `azure-mgmt-compute`'s SKU listing, not from the metrics endpoint, so naming one here
+    would put a value in a metrics request that the metrics endpoint has never heard of.
+
+    Resolved through :meth:`LoadedCatalog.for_resource_type` rather than by scanning
+    `catalog.resource_types` here, because that method **folds case** and a hand-rolled scan
+    does not. Azure resource type names are case-insensitive and Resource Graph lowercases
+    `type` in its response body, so a definition whose `metrics` key is
+    `microsoft.compute/virtualmachines` — the spelling any inventory-seeded wizard
+    affordance will produce — would find nothing against a catalog declaring
+    `Microsoft.Compute/virtualMachines`. Failing closed to `()` here is the worst available
+    outcome: the derived statistic's source metric is silently dropped from the request and
+    the figure it feeds has no input, with nothing anywhere naming a spelling mismatch.
+    """
+    entry = catalog.for_resource_type(resource_type)
+    if entry is None:
+        return ()
+    for derived in entry.derived:
+        if derived.statistic_id != statistic_id:
+            continue
+        return tuple(source.name for source in derived.sources if source.kind == "metric")
+    return ()
 
 
 # --------------------------------------------------------------------------- #

@@ -27,11 +27,14 @@ import {
  * so the legal edges are declared **once**, as data, and every writer consults
  * the same declaration. {@link DRIVEN} is that declaration.
  *
- * `compiling`, `rendering` and `verifying` appear in it with **empty** target
- * lists, and no other status names them (Requirement 36.2). They are defined,
- * undriven and unreachable — the pipeline in this spec stops at the snapshot.
- * Declaring them anyway is what keeps the enum and the table one design rather
- * than two migrations.
+ * `compiling`, `rendering` and `verifying` are driven here now — the document
+ * pipeline advances through all three. They were declared with empty target
+ * lists before this spec existed, which is what let the enum and the table stay
+ * one design rather than becoming two migrations: gaining the edges took no
+ * schema change at all.
+ *
+ * One of those edges carries a precondition the table cannot express, and
+ * {@link applyVerifiedCompletion} is where it lives rather than here.
  *
  * ## Why every helper takes a user id
  *

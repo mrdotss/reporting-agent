@@ -263,10 +263,18 @@ def test_a_definition_naming_no_metric_for_the_busiest_type_has_no_primary_metri
     view,
 ) -> None:
     """Failing closed on a definition that cannot answer the question, rather than picking
-    a metric from a different resource type and spot-checking the wrong thing."""
+    a metric from a different resource type and spot-checking the wrong thing.
+
+    `validate=False` because Req 5.9 now rejects exactly this definition at save time — its
+    scope names virtual machines and its `metrics` selects only for storage accounts — and
+    that is the point of driving it here anyway. `primary_metric` is pure and reachable from
+    a re-verification of a version pinned before the rule existed, so it has to fail closed
+    on its own rather than inherit the validator's refusal.
+    """
     definition = df.definition(
         [df.block("res", "resource_table", {"columns": [df.CPU_AVG]})],
         metrics={"Microsoft.Storage/storageAccounts": [df.CPU_AVG]},
+        validate=False,
     )
 
     assert primary_metric(view, definition) is None

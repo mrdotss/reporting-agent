@@ -75,6 +75,14 @@ block override would re-query overlapping resource sets; sending the narrowest w
 a block's own override unsatisfiable. Top-N counts and sort directions are dropped when
 forming it because a ranking is resolved against the snapshot, not against the request.
 
+**The metric narrowing is the runtime's job, not the app's**, and `scope` carries no metric
+list for that reason. The runtime reads the inline `definition`'s `metrics` selection,
+expands each `derived` item to the source metrics the catalog declares for it, folds in every
+top-N ranking metric, and intersects the result with what the provider can collect — so a run
+requests exactly what the pinned version selected and nothing outside it (Req 5.4). The app
+sending a metric list would be a second place the same union is computed, and the two would
+eventually disagree about a derived statistic's sources.
+
 ### `verify_report`
 
 ```jsonc

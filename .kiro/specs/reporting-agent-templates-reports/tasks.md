@@ -552,7 +552,7 @@ migration.
     - After a 120-second event gap on a non-terminal run, the client opens a new stream within 5 seconds, reconstructs the compile / render / verify state from the row and the stored result **before** rendering, and requests no event replay
     - _Requirements: 41.1, 41.5, 41.8, 41.9, 42.12, 42.13, 36.7_
 
-- [ ] 12. Checkpoint — a full run reaches `completed` behind a passing verification
+- [x] 12. Checkpoint — a full run reaches `completed` behind a passing verification
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. The wizard, the composer and the report surfaces

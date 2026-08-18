@@ -737,6 +737,28 @@ function buildValidCase(draw: DefinitionDraw): ValidCase {
     return `blk-${String(counter).padStart(4, "0")}`
   }
 
+  // Requirement 5.9 — a resource type a scope names needs an entry in `metrics`.
+  // `scopeArb` and `metricsArb` are drawn independently, so the coupling is applied
+  // here: every scope's `resource_types` is narrowed to the types this draw's metric
+  // selection actually covers.
+  //
+  // Narrowing rather than widening, and folded case, for two separate reasons. A
+  // widened `metrics` would have to name a resource type the CATALOG snapshot above
+  // does not declare, which the catalog layer then rejects — and the generator-validity
+  // test asserts that layer returns nothing. Folding matches the validator (Requirement
+  // 3.12); comparing exactly here would silently drop every drawn type and leave the
+  // scope dimension unexercised, which is a generator that passes by generating less.
+  const selectedTypes = new Set(
+    Object.keys(draw.metrics).map((resourceType) => resourceType.toLowerCase())
+  )
+  const selectable = (scope: MutableScope): MutableScope => ({
+    ...scope,
+    resource_types: scope.resource_types.filter(
+      (entry) =>
+        typeof entry === "string" && selectedTypes.has(entry.toLowerCase())
+    ),
+  })
+
   const leaf = (leafDraw: LeafDraw): MutableBlock => {
     const block: MutableBlock = {
       id: nextId(),
@@ -744,7 +766,7 @@ function buildValidCase(draw: DefinitionDraw): ValidCase {
       config: configFor(leafDraw.type, leafDraw.seed, leafDraw.optionalMask),
     }
     if (leafDraw.scopeOverride !== null)
-      block.scope_override = leafDraw.scopeOverride
+      block.scope_override = selectable(leafDraw.scopeOverride)
     return block
   }
 
@@ -783,7 +805,7 @@ function buildValidCase(draw: DefinitionDraw): ValidCase {
   const definition: MutableDefinition = {
     schema_version: 1,
     identity,
-    scope: draw.scope,
+    scope: selectable(draw.scope),
     period: draw.period,
     metrics: draw.metrics,
     blocks,

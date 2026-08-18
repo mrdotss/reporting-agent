@@ -71,6 +71,17 @@ const GAP_TYPE_COPY: Readonly<
       "No metrics endpoint answered for this region and the per-resource " +
       "fallback did not succeed either.",
   },
+  // The only gap in this map whose cause is a decision the consultant made, and the
+  // note says so, because it is the only one they can fix by editing a template
+  // rather than by changing the subscription or installing an agent in the guest.
+  metric_not_selected: {
+    label: "No metric selected",
+    note:
+      "The template selected no metric for this resource's type, so nothing " +
+      "was requested for it. The resource appears in the report with no " +
+      "figures. Add a metric for that resource type to the template, or " +
+      "narrow the scope so the type is not collected at all.",
+  },
 })
 
 /** Group gaps by type, preserving the snapshot's order within each group. */

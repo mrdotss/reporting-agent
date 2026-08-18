@@ -1087,7 +1087,33 @@ def test_an_undeclared_page_size_is_refused() -> None:
         )
 
 
+def header_texts(payload: bytes) -> list[str]:
+    """Every `w:t` value in every header part of the package.
+
+    A header part is what makes a notice **per-page**: Word repeats it on every page of the
+    section it belongs to. Read as its own part rather than through `all_text`, which walks
+    `word/document.xml`'s body and by construction cannot see a header at all.
+    """
+    from lxml import etree
+
+    found: list[str] = []
+    with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+        for name in archive.namelist():
+            if not name.startswith("word/header"):
+                continue
+            root = etree.fromstring(archive.read(name))
+            found.extend(node.text or "" for node in root.iter(f"{W}t"))
+    return found
+
+
 def test_preview_mode_emits_the_notice_and_normal_mode_does_not() -> None:
+    """The notice is per-page, which means it is in the header and not in the body.
+
+    Both halves matter. In the header, Word repeats it on every page, so page seven of a
+    forwarded preview says what it is as loudly as page one. Out of the body, it shifts no
+    block — a notice that changed the pagination would be changing the thing the preview
+    exists to show.
+    """
     compiled, _ = render([df.block("p", "rich_text", {"text": "Body."})])
     preview = D.render_document(
         compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True
@@ -1095,8 +1121,69 @@ def test_preview_mode_emits_the_notice_and_normal_mode_does_not() -> None:
     plain = D.render_document(
         compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=False
     )
-    assert D.PREVIEW_NOTICE_TEXT in all_text(preview.docx_bytes)
+
+    assert D.PREVIEW_NOTICE_TEXT in header_texts(preview.docx_bytes)
+    assert D.PREVIEW_NOTICE_TEXT not in all_text(preview.docx_bytes)
+    assert D.PREVIEW_NOTICE_TEXT not in header_texts(plain.docx_bytes)
     assert D.PREVIEW_NOTICE_TEXT not in all_text(plain.docx_bytes)
+
+
+def test_the_preview_notice_reaches_every_page_including_the_first() -> None:
+    """A theme that set `different_first_page_header_footer` would otherwise make page one —
+    the cover, the page most likely to be screenshotted — the one page with no notice.
+
+    Asserted by writing **both** headers when the flag is set rather than by clearing the
+    flag. Clearing it would reach page one too, and would do it by overriding a theme
+    decision: a preset that suppresses its cover-page header would then preview a page 1
+    layout the real render does not produce, which is the one thing a preview must not do.
+    """
+    from docx import Document as open_docx
+
+    compiled, _ = render([df.block("p", "rich_text", {"text": "Body."})])
+    preview = D.render_document(
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True
+    )
+
+    document = open_docx(io.BytesIO(preview.docx_bytes))
+    for section in document.sections:
+        assert section.header.is_linked_to_previous is False
+        assert D.PREVIEW_NOTICE_TEXT in [p.text for p in section.header.paragraphs]
+        if section.different_first_page_header_footer:
+            assert D.PREVIEW_NOTICE_TEXT in [
+                p.text for p in section.first_page_header.paragraphs
+            ]
+
+
+def test_the_preview_does_not_override_the_themes_first_page_header_setting() -> None:
+    """The flag a preview must not decide for the theme.
+
+    Every preset ships `False` today, so this reads as a tautology and is not: it is the
+    assertion that fails if somebody reintroduces `different_first_page_header_footer = False`
+    to reach page one the easy way. The preview would then differ from the real render for any
+    future preset that suppresses its cover-page header.
+    """
+    from docx import Document as open_docx
+
+    compiled, _ = render([df.block("p", "rich_text", {"text": "Body."})])
+    for preset in ("editorial", "corporate", "technical", "minimal"):
+        design = DesignSettings(preset=preset)
+
+        preview = D.render_document(
+            compiled.document, ledger=compiled.ledger, design=design, preview=True
+        )
+        plain = D.render_document(
+            compiled.document, ledger=compiled.ledger, design=design, preview=False
+        )
+
+        previewed = [
+            section.different_first_page_header_footer
+            for section in open_docx(io.BytesIO(preview.docx_bytes)).sections
+        ]
+        rendered = [
+            section.different_first_page_header_footer
+            for section in open_docx(io.BytesIO(plain.docx_bytes)).sections
+        ]
+        assert previewed == rendered, preset
 
 
 @pytest.mark.parametrize("preset", ["editorial", "corporate", "technical", "minimal"])

@@ -599,10 +599,7 @@ def render_document(
     )
 
     if preview:
-        notice = document.add_paragraph(
-            style=emitter.style(PREVIEW_NOTICE_STYLE, at="the preview notice")
-        )
-        notice.add_run(PREVIEW_NOTICE_TEXT)
+        _emit_preview_notice(document, emitter)
 
     for ordinal, block in enumerate(compiled.blocks):
         try:
@@ -648,6 +645,45 @@ def _apply_page_size(document: DocxDocument, design: DesignSettings) -> None:
     for section in document.sections:
         section.page_width = Twips(width)
         section.page_height = Twips(height)
+
+
+def _emit_preview_notice(document: DocxDocument, emitter: _Emitter) -> None:
+    """Put the preview notice in every section's header, so it lands on **every page**.
+
+    A leading body paragraph would say it once, on page one, and a preview PDF is a thing
+    people excerpt, screenshot and forward. Page seven of a preview has to be as obviously
+    a preview as page one, because the failure this notice exists to prevent is somebody
+    acting on an unverified figure — and nobody scrolls back to page one to check.
+
+    A header rather than a body paragraph for a second reason: the preview exists to show
+    what the layout will do, and a paragraph inserted at the top of the body shifts every
+    block below it. The notice would change the pagination it is meant to preview.
+
+    `is_linked_to_previous = False` on each section so the header is that section's own.
+
+    **`different_first_page_header_footer` is left exactly as the theme set it**, and the
+    notice is written into `first_page_header` as well. Forcing the flag to `False` would put
+    the notice on page one, which is the goal — but by overriding a theme decision, and a
+    preset that suppresses its own cover-page header would then render a preview whose page 1
+    layout differs from the real render. That is precisely the class of problem the pagination
+    argument above is about: a preview must not change the layout it exists to preview. All
+    four themes currently carry `False` with empty single-paragraph headers, so writing both
+    is a no-op today and stays correct for a theme that does not.
+    """
+    style = emitter.style(PREVIEW_NOTICE_STYLE, at="the preview notice")
+    for section in document.sections:
+        headers = [section.header]
+        if section.different_first_page_header_footer:
+            headers.append(section.first_page_header)
+        for header in headers:
+            header.is_linked_to_previous = False
+            paragraph = (
+                header.paragraphs[0] if header.paragraphs else header.add_paragraph()
+            )
+            for run in list(paragraph.runs):
+                run._element.getparent().remove(run._element)
+            paragraph.style = style
+            paragraph.add_run(PREVIEW_NOTICE_TEXT)
 
 
 def _fix_timestamps(document: DocxDocument) -> None:

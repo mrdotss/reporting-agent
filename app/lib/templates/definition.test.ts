@@ -1039,6 +1039,149 @@ describe("Requirement 6.8 — zero blocks is a valid draft and an invalid run", 
   })
 })
 
+// --- Requirement 5.9 — every scoped resource type carries a selection --------
+
+describe("Requirement 5.9 — a scoped resource type with no metric selected", () => {
+  const STORAGE = "Microsoft.Storage/storageAccounts"
+
+  test("run mode rejects a default scope naming a type absent from metrics", () => {
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues(
+      {
+        ...definition,
+        scope: {
+          ...definition.scope,
+          resource_types: ["Microsoft.Compute/virtualMachines", STORAGE],
+        },
+      },
+      { mode: "run" }
+    )
+
+    expect(pathsOf(issues)).toEqual(["scope.resource_types.1"])
+    expect(issues[0]?.message).toContain(STORAGE)
+  })
+
+  test("run mode rejects a block scope_override naming a type absent from metrics", () => {
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues(
+      {
+        ...definition,
+        blocks: [
+          ...definition.blocks,
+          {
+            id: "storage-table",
+            type: "resource_table",
+            config: { columns: [{ metric: "Percentage CPU", statistic: "avg" }] },
+            scope_override: {
+              resource_types: [STORAGE],
+              tag_filters: [],
+              resource_groups: [],
+              top_n: null,
+              sort: null,
+            },
+          },
+        ],
+      },
+      { mode: "run" }
+    )
+
+    expect(pathsOf(issues)).toEqual(["blocks.2.scope_override.resource_types.0"])
+  })
+
+  test("a row child's scope_override is reached too", () => {
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues(
+      {
+        ...definition,
+        blocks: [
+          {
+            id: "row-1",
+            type: "row",
+            columns: [
+              [
+                {
+                  id: "storage-child",
+                  type: "resource_table",
+                  config: { columns: [{ metric: "Percentage CPU", statistic: "avg" }] },
+                  scope_override: {
+                    resource_types: [STORAGE],
+                    tag_filters: [],
+                    resource_groups: [],
+                    top_n: null,
+                    sort: null,
+                  },
+                },
+              ],
+              [{ id: "prose", type: "rich_text", config: { text: "Static." } }],
+            ],
+          },
+        ],
+      },
+      { mode: "run" }
+    )
+
+    expect(pathsOf(issues)).toEqual([
+      "blocks.0.columns.0.0.scope_override.resource_types.0",
+    ])
+  })
+
+  test("the comparison folds case, in both directions (Requirement 3.12)", () => {
+    // Resource Graph lowercases `type` in its response body, so a `metrics` map seeded
+    // from observed inventory carries lowercase keys while the scope carries the
+    // catalog's spelling. An exact comparison would reject a definition that is
+    // entirely correct — and specifically the one the wizard will produce.
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues(
+      {
+        ...definition,
+        scope: {
+          ...definition.scope,
+          resource_types: ["MICROSOFT.COMPUTE/VIRTUALMACHINES"],
+        },
+        metrics: {
+          "microsoft.compute/virtualmachines": [
+            { metric: "Percentage CPU", statistic: "avg" },
+          ],
+        },
+      },
+      { mode: "run" }
+    )
+
+    expect(issues).toEqual([])
+  })
+
+  test("draft mode accepts it, because a draft persists no version row", () => {
+    // The wizard reaches scope at step 2 and metrics at step 4, so enforcing this
+    // against a draft would refuse to save the ordinary half-authored template between
+    // those two steps. Requirement 5.9 rejects a save that persists a *version*.
+    const definition = validDefinition()
+    const candidate = {
+      ...definition,
+      scope: {
+        ...definition.scope,
+        resource_types: ["Microsoft.Compute/virtualMachines", STORAGE],
+      },
+    }
+
+    expect(collectDefinitionIssues(candidate)).toEqual([])
+    expect(templateDefinitionSchema.safeParse(candidate).success).toBe(true)
+    expect(templateDefinitionForRunSchema.safeParse(candidate).success).toBe(false)
+  })
+
+  test("a scope naming no resource type is unconstrained, and not an issue", () => {
+    // Requirements 3.1 and 3.12 — an empty dimension matches everything, so which types
+    // it can contain is a fact about the subscription rather than about the definition.
+    // No validator can see it; the collector records a `metric_not_selected` gap instead.
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues(
+      { ...definition, scope: { ...definition.scope, resource_types: [] } },
+      { mode: "run" }
+    )
+
+    expect(issues).toEqual([])
+  })
+})
+
 // --- Requirement 7.1, 7.2 — design schema -----------------------------------
 
 describe("Requirement 7.1 — design preset, exactly four case-sensitive values", () => {

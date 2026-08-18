@@ -64,7 +64,7 @@ the other rejects, which is exactly the failure Req 2.6 exists to prevent.
 
 ## Layering: this module validates SHAPE
 
-Metric_Catalog membership (Req 5.2, 5.3, 5.5, 5.9) is not checked here, matching
+Metric_Catalog **membership** (Req 5.2, 5.3, 5.5) is not checked here, matching
 the web half exactly — its `validateMetricSelectionAgainstCatalog` is a
 separately composed function taking the catalog as a parameter. What *is* checked
 here is every shape-level fact: entries are objects rather than bare strings, so
@@ -72,6 +72,20 @@ a percentile entry has somewhere to carry its estimator label and fidelity tier,
 and a percentile-shaped statistic without both is rejected (Req 5.7, 5.8). The
 compile pipeline composes the catalog check separately, with the
 :class:`~reporting_agent.catalog.loader.LoadedCatalog` it already holds.
+
+**Req 5.9 is checked here, and only half of it can be.** "Every resource type a
+scope can contain has a metric selection" needs no catalog and no snapshot *when
+the scope names resource types* — it is then a cross-field comparison between
+`scope`/`scope_override` and `metrics`, so it belongs in this pass where Req 2.6's
+both-halves-agree guarantee applies for free. See
+:func:`_validate_every_scoped_type_is_selected`. What stays outside any validator
+is the case where a scope names **no** resource types: an empty dimension is
+unconstrained (Req 3.1, 3.12), so which types it can contain is a fact about the
+subscription rather than about the definition, and no save-time or enqueue-time
+check can see it. That case surfaces at collection time as a
+`metric_not_selected` gap instead — recorded, never silent, and never a
+`TEMPLATE_INVALID`, because a subscription-agnostic template (Req 1) meeting a
+type it did not select is an ordinary pairing rather than a broken template.
 """
 
 from __future__ import annotations
@@ -1452,6 +1466,123 @@ def _validate_canonical_byte_size(raw: object, walk: _Walk) -> None:
         )
 
 
+# --- Req 5.9: every scoped resource type carries a metric selection -----------------
+
+
+def _validate_every_scoped_type_is_selected(
+    raw: dict[str, object], walk: _Walk, mode: str
+) -> None:
+    """Req 5.9 — a resource type a scope can contain, with no metric selected for it.
+
+    A **cross-field** check on the definition alone: every resource type named in the
+    template default `scope` or in any block `scope_override` needs an entry in `metrics`.
+    No catalog, no snapshot, no subscription — which is why it belongs in this module's
+    shape pass, where Req 2.6's both-halves-agree guarantee applies for free, rather than
+    beside the catalog-membership checks.
+
+    **Compared case-insensitively** (Req 3.12). Azure resource type names are
+    case-insensitive and Resource Graph lowercases `type` in its response body, so a
+    `metrics` key of `microsoft.compute/virtualmachines` selects for a scope naming
+    `Microsoft.Compute/virtualMachines`. An exact comparison here would reject a
+    definition that is entirely correct — and it would reject exactly the definition an
+    inventory-seeded wizard affordance produces.
+
+    ## Only in `run` mode, and that is the requirement rather than a relaxation
+
+    Req 5.9 rejects **a save that persists a version row**. A draft persists none: it is
+    written to `report_templates.draft_definition`, and the wizard reaches scope (step 2)
+    two steps before metrics (step 4), so enforcing this against a draft would refuse to
+    save the ordinary half-authored template between those two steps. Publishing a version
+    is where the definition has to be complete, and that is `run` mode — the same mode that
+    rejects zero blocks, for the same reason.
+
+    ## What it deliberately cannot see
+
+    A scope naming **no** resource types is unconstrained (Req 3.1 permits zero, Req 3.12
+    makes an empty dimension match everything), so which types it can contain is a fact
+    about the subscription rather than about the definition. No save-time or enqueue-time
+    check can decide it, and `TEMPLATE_INVALID` would be the wrong verdict anyway: a
+    subscription-agnostic template (Req 1) pointed at a subscription holding a type it did
+    not select is an ordinary pairing, not a broken template. That case is recorded at
+    collection time as a `metric_not_selected` gap instead — see `collect/log.py`.
+
+    The issue is reported **at the scope location naming the type**, once per location,
+    carrying that location's block id when it is an override. Reporting it at `metrics`
+    would name the type in the message and leave the author hunting for which of eight
+    blocks introduced it.
+    """
+    if mode != "run":
+        return
+
+    metrics = raw.get("metrics")
+    if not _is_plain_object(metrics):
+        # Its shape is already an issue; a second one derived from it would be noise.
+        return
+
+    selected = {
+        resource_type.casefold()
+        for resource_type in metrics
+        if isinstance(resource_type, str)
+    }
+
+    for path, block_id, resource_type in _scoped_resource_types(raw):
+        if resource_type.casefold() in selected:
+            continue
+        walk.add(
+            path,
+            f'No metric or derived statistic is selected for "{resource_type}", which '
+            f"this scope can contain. Every resource type a scope names needs an entry "
+            f"in `metrics`, or the report would collect nothing for it.",
+            block_id,
+        )
+
+
+def _scoped_resource_types(
+    raw: dict[str, object],
+) -> list[tuple[Path, str | None, str]]:
+    """Every resource type named by a scope, with its field path and owning block id.
+
+    Reads defensively at every level and contributes nothing for a malformed scope: the
+    shape validators above have already reported it, and inventing a resource type out of a
+    non-string would report a second issue about the first one's symptom.
+    """
+    found: list[tuple[Path, str | None, str]] = []
+
+    def add_scope(scope: object, path: Path, block_id: str | None) -> None:
+        if not _is_plain_object(scope):
+            return
+        types = scope.get("resource_types")
+        if not _is_json_array(types):
+            return
+        for index, entry in enumerate(types):
+            if _is_non_empty_string(entry):
+                found.append(((*path, "resource_types", index), block_id, entry))
+
+    def walk_blocks(blocks: object, path: Path) -> None:
+        if not _is_json_array(blocks):
+            return
+        for index, block in enumerate(blocks):
+            if not _is_plain_object(block):
+                continue
+            block_path = (*path, index)
+            raw_id = block.get("id")
+            block_id = raw_id if isinstance(raw_id, str) else None
+            if "scope_override" in block:
+                add_scope(
+                    block["scope_override"],
+                    (*block_path, "scope_override"),
+                    block_id,
+                )
+            columns = block.get("columns")
+            if _is_json_array(columns):
+                for column_index, column in enumerate(columns):
+                    walk_blocks(column, (*block_path, "columns", column_index))
+
+    add_scope(raw.get("scope"), ("scope",), None)
+    walk_blocks(raw.get("blocks"), ("blocks",))
+    return found
+
+
 # --- the pass -----------------------------------------------------------------------
 
 
@@ -1494,6 +1625,7 @@ def collect_definition_issues(raw: object, *, mode: str = "draft") -> list[Field
     _validate_blocks(raw.get("blocks"), ("blocks",), walk, mode)
     _validate_design(raw.get("design"), ("design",), walk)
     _validate_canonical_byte_size(raw, walk)
+    _validate_every_scoped_type_is_selected(raw, walk, mode)
 
     return walk.issues
 

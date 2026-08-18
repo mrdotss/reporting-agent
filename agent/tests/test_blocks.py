@@ -379,7 +379,15 @@ def test_an_empty_scope_block_keeps_its_caption_and_its_position() -> None:
 
 def test_an_empty_scope_block_reports_no_error_and_records_no_gap() -> None:
     """An empty result is not a failure: a report can legitimately ask for Storage Accounts in a
-    subscription with none."""
+    subscription with none.
+
+    The definition selects a metric for `Microsoft.Sql/servers` even though the snapshot holds
+    none, because Req 5.9 requires every scoped resource type to carry a metric selection. That
+    is the honest shape of this case rather than a concession to the validator: Req 3.7 is
+    about a scope the *subscription* did not satisfy, and a definition that never selected
+    anything for the type would be an author mistake rather than an empty subscription. The
+    block still resolves to nothing, which is the thing under test.
+    """
     view = view_of(resources=[sf.vm(resource_id="/vm/a", name="a")], gaps=[])
     document = compile_document(
         df.definition(
@@ -391,7 +399,7 @@ def test_an_empty_scope_block_reports_no_error_and_records_no_gap() -> None:
                     scope_override=df.scope(resource_types=["Microsoft.Sql/servers"]),
                 )
             ],
-            metrics={VM: [df.CPU_AVG]},
+            metrics={VM: [df.CPU_AVG], "Microsoft.Sql/servers": [df.CPU_AVG]},
         ),
         view=view,
     )

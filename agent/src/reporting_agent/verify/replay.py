@@ -115,6 +115,13 @@ and could not re-run, so it is carried over unchanged. Getting this partition wr
 most likely way a correct replay reports a mismatch: carry a recomputed type over and it
 appears twice; drop a carried-over type and it vanishes. Both change the `collection_log` and
 therefore the digest.
+
+`metric_not_selected` (Req 23.15) is **carried over**, and it is worth naming because it looks
+like a metrics gap and is not. It is produced by the collector's *request planning* — before
+any response exists, from the pinned version's metric selection — and replay re-runs the fold
+and the finalize, never the planning. Adding it to the set above would make it appear twice in
+every replayed `collection_log`, changing the digest and failing the replay gate on every
+affected run: a correct report reported as a mismatch.
 """
 
 

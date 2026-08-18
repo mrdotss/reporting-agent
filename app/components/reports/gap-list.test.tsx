@@ -120,6 +120,34 @@ describe("gaps are grouped by gap_type", () => {
     expect(group?.textContent).toMatch(/emits no metrics/)
   })
 
+  test("a metric_not_selected group is labelled and says what to change", () => {
+    // Without an entry in the presentation map this group renders with the raw
+    // `metric_not_selected` string as its heading and no note at all — and this is the
+    // one gap type whose cause is a decision the consultant made, so it is the one where
+    // an explanation actually leads to a fix. Every other type points at the
+    // subscription, the SKU or the guest.
+    render(
+      <GapList
+        gaps={[
+          gap({
+            gapType: "metric_not_selected",
+            resourceId: "/subscriptions/s/providers/Microsoft.Sql/servers/sql-01",
+            metric: null,
+            message:
+              "no metric was requested for resource type 'Microsoft.Sql/servers'",
+          }),
+        ]}
+      />
+    )
+
+    const group = document.querySelector('[data-slot="gap-group"]')
+
+    expect(group?.getAttribute("data-gap-type")).toBe("metric_not_selected")
+    expect(group?.textContent).toContain("No metric selected")
+    expect(group?.textContent).not.toContain("metric_not_selected")
+    expect(group?.textContent).toMatch(/Add a metric for that resource type/)
+  })
+
   test("each gap names its resource, and its metric when it has one", () => {
     render(
       <GapList

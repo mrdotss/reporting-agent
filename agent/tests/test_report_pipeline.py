@@ -196,6 +196,11 @@ class Pipeline:
         self.outcome = ReportOutcome()
         self.catalog = load_catalog()
         self.definition = overrides.pop("definition", definition())
+        # Held so a scenario can assert what was *asked for*, not only what came back — the
+        # fake's canned batch response is the same whatever the request names.
+        self.provider_metrics = FakeMetricsPort(
+            batch_responses=[batch()], fallback_responses=[]
+        )
         self.provider = provider_over_ports(
             inventory_port=FakeInventoryPort([inventory()]),
             sku_port=FakeSkuPort(
@@ -208,7 +213,7 @@ class Pipeline:
             definitions_port=FakeDefinitionsPort(
                 [raw({"value": [{"name": {"value": CPU}}, {"name": {"value": MEMORY}}]})]
             ),
-            metrics_port=FakeMetricsPort(batch_responses=[batch()], fallback_responses=[]),
+            metrics_port=self.provider_metrics,
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,
@@ -491,6 +496,190 @@ def test_an_uncompilable_pinned_definition_fails_before_collection() -> None:
     assert isinstance(error, TemplateInvalidError)
     assert events == []
     assert pipeline.store.keys() == ()
+
+
+# --------------------------------------------------------------------------- #
+# What the run asks Azure for (Req 5.4)
+# --------------------------------------------------------------------------- #
+
+
+def test_the_run_requests_only_the_metrics_the_pinned_version_selected() -> None:
+    """Req 5.4 — exactly the pinned version's selection, and nothing outside it.
+
+    Asserted at the port, because this is a claim about the request rather than about the
+    snapshot: a pipeline that asked for every metric the type emits and then compiled only
+    the selected ones would produce an identical document, an identical ledger and an
+    identical verification — and would have spent the customer's quota on figures nobody
+    asked for. The fake's canned response carries both CPU and memory whatever is asked, so
+    a narrowing that did not happen is invisible anywhere else.
+    """
+    pipeline = Pipeline()
+    pipeline.definition = definition(metrics={RESOURCE_TYPE: [df.CPU_AVG, df.CPU_MAX]})
+
+    _, error = pipeline.run()
+
+    assert isinstance(error, PartialCoverageError)
+    requested = {
+        name for call in pipeline.provider_metrics.batch_calls for name in call["metric_names"]
+    }
+    assert requested == {CPU}, requested
+    assert MEMORY not in requested, "memory was not selected, so it must not be requested"
+
+
+def test_a_derived_selection_requests_the_source_metrics_azure_actually_emits() -> None:
+    """Req 5.4 with Req 32.1. `memory_used_pct` is not a metric Azure emits — it is computed
+    from `Available Memory Bytes` and a SKU capacity — so a selection naming it has to reach
+    the port as its declared metric source. Requesting the derived id itself would ask for a
+    name the metrics endpoint has never heard of; requesting nothing would leave every
+    derived figure with no input.
+    """
+    pipeline = Pipeline()
+    pipeline.definition = definition(
+        metrics={RESOURCE_TYPE: [df.CPU_AVG, df.MEMORY_USED_PCT_AVG]}
+    )
+
+    pipeline.run()
+
+    requested = {
+        name for call in pipeline.provider_metrics.batch_calls for name in call["metric_names"]
+    }
+    assert requested == {CPU, MEMORY}, requested
+    assert "memory_used_pct" not in requested
+
+
+def test_a_top_n_ranking_metric_is_folded_into_the_request() -> None:
+    """A ranking is resolved against the snapshot, so a snapshot missing the metric it ranks
+    by cannot resolve it — and the block would render its empty-scope row on a run that
+    collected perfectly. The fold happens even though no block config names the metric."""
+    from reporting_agent.report_pipeline import requested_metric_union
+
+    union = requested_metric_union(
+        definition(
+            metrics={RESOURCE_TYPE: [df.CPU_AVG]},
+            blocks=[
+                df.block(
+                    "top",
+                    "top_n_table",
+                    {"columns": [df.CPU_AVG], "order_by": df.CPU_AVG},
+                    scope_override=df.scope(
+                        top_n={"count": 5, "metric": MEMORY, "statistic": "avg"}
+                    ),
+                )
+            ],
+        ),
+        load_catalog(),
+    )
+
+    assert set(union[RESOURCE_TYPE]) == {CPU, MEMORY}, union
+
+
+# --------------------------------------------------------------------------- #
+# The narrowing folds case (Req 3.12) — three spellings meet in one request
+# --------------------------------------------------------------------------- #
+#
+# Azure resource type names are case-insensitive and Resource Graph lowercases `type` in
+# its response body, so `Microsoft.Compute/virtualMachines` and
+# `microsoft.compute/virtualmachines` name one type. Three independent spellings reach the
+# request: the definition's `metrics` key, its scope's `resource_types` entry, and the
+# catalog's own declaration. Every pair of them is compared somewhere in the narrowing, and
+# an exact comparison anywhere fails **closed** — a type with no metrics rather than a
+# spelling mismatch, which is precisely the failure `LoadedCatalog.for_resource_type`
+# documents itself as existing to prevent.
+#
+# These are negative tests. The suite passed with the defect present, because a narrowing
+# that requests nothing still renders, still verifies and still completes.
+
+LOWER_TYPE: Final[str] = RESOURCE_TYPE.lower()
+
+
+def test_a_lowercased_metrics_key_still_resolves_a_derived_statistics_sources() -> None:
+    """The row Task 12's narrowing broke: a definition whose `metrics` key is Resource
+    Graph's lowercase spelling. Before the narrowing it collected every capability metric;
+    with an exact-case catalog lookup it collects **none**, and two failures stack — the
+    derived statistic's source metric is dropped by `_derived_source_metrics` returning `()`,
+    then the intersection empties whatever was left.
+
+    Any Task 13 affordance that seeds `metrics` from observed inventory produces exactly this
+    definition, because lowercase is the casing Resource Graph returns.
+    """
+    from reporting_agent.report_pipeline import requested_metric_union
+
+    union = requested_metric_union(
+        definition(
+            metrics={LOWER_TYPE: [df.CPU_AVG, df.MEMORY_USED_PCT_AVG]},
+            template_scope=df.scope(resource_types=[RESOURCE_TYPE]),
+        ),
+        load_catalog(),
+    )
+
+    requested = {name for names in union.values() for name in names}
+    assert MEMORY in requested, (
+        "the derived statistic's source metric was dropped: the catalog lookup did not "
+        f"fold case. union={union}"
+    )
+    assert requested == {CPU, MEMORY}, union
+
+
+def test_requested_metrics_folds_case_across_the_selection_and_the_capability_map() -> None:
+    """`_requested_metrics`' own two comparisons, at the point the request is built.
+
+    Driven directly rather than through a run, because the interesting input is a
+    *disagreement* between three spellings and a full run only exercises whichever pair the
+    fixture happens to spell alike.
+    """
+    from reporting_agent.collect.pipeline import _requested_metrics
+
+    class Capabilities:
+        def capabilities(self) -> dict[str, Any]:
+            return {"metrics": {RESOURCE_TYPE: [CPU, MEMORY]}}
+
+    provider = Capabilities()
+
+    # The selection is lowercase, the scope is the catalog's spelling.
+    narrowed = _requested_metrics(
+        provider,  # type: ignore[arg-type]
+        {"resource_types": [RESOURCE_TYPE]},  # type: ignore[typeddict-item]
+        {LOWER_TYPE: [CPU]},
+    )
+    assert narrowed == {RESOURCE_TYPE: [CPU]}, narrowed
+
+    # The scope is lowercase, the selection is the catalog's spelling. The pre-existing
+    # `resource_type not in available` comparison is the one that failed here.
+    narrowed = _requested_metrics(
+        provider,  # type: ignore[arg-type]
+        {"resource_types": [LOWER_TYPE]},  # type: ignore[typeddict-item]
+        {RESOURCE_TYPE: [CPU]},
+    )
+    assert narrowed == {RESOURCE_TYPE: [CPU]}, narrowed
+
+    # Both lowercase. The returned key is still the capability map's spelling, so nothing
+    # downstream inherits Azure's casing from this function.
+    narrowed = _requested_metrics(
+        provider,  # type: ignore[arg-type]
+        {"resource_types": [LOWER_TYPE]},  # type: ignore[typeddict-item]
+        {LOWER_TYPE: [CPU, MEMORY]},
+    )
+    assert narrowed == {RESOURCE_TYPE: sorted([CPU, MEMORY])}, narrowed
+
+
+def test_two_case_variant_selection_keys_union_rather_than_overwrite() -> None:
+    """One type under two keys is not a contrived input: `union_scope` folds a top-N ranking
+    metric into the *scope's* spelling while the selection is keyed by the definition's, so a
+    definition mixing the two arrives here with both. Last-one-wins would drop either the
+    selection or the ranking metric depending on dict order."""
+    from reporting_agent.collect.pipeline import _requested_metrics
+
+    class Capabilities:
+        def capabilities(self) -> dict[str, Any]:
+            return {"metrics": {RESOURCE_TYPE: [CPU, MEMORY]}}
+
+    narrowed = _requested_metrics(
+        Capabilities(),  # type: ignore[arg-type]
+        {"resource_types": [RESOURCE_TYPE]},  # type: ignore[typeddict-item]
+        {RESOURCE_TYPE: [CPU], LOWER_TYPE: [MEMORY]},
+    )
+
+    assert narrowed == {RESOURCE_TYPE: sorted([CPU, MEMORY])}, narrowed
 
 
 # --------------------------------------------------------------------------- #

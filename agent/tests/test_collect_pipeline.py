@@ -67,6 +67,7 @@ from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
     GAP_TYPE_METRIC_ERROR,
+    GAP_TYPE_METRIC_NOT_SELECTED,
     GAP_TYPE_NO_SAMPLES,
     GAP_TYPE_REGION_UNREACHABLE,
 )
@@ -74,6 +75,7 @@ from reporting_agent.collect.pipeline import (
     COLLAPSED_INSTANCE_NAME,
     FIDELITY_BASELINE,
     FIDELITY_ENHANCED,
+    _metric_not_selected_gaps,
     assert_some_location_reachable,
     distinct_resource_ids,
     resolve_run_plan,
@@ -1833,3 +1835,148 @@ def test_the_gates_are_mutually_exclusive_and_ordered(
     else:
         assert one(events, "snapshot_ready")["resource_count"] == len(shape.locations)
         assert snapshot_key(ACTOR_ID, RUN_ID) in harness.store.keys()
+
+
+# --------------------------------------------------------------------------- #
+# Req 23.15, 23.16 — `metric_not_selected`, the gap for the case no validator sees
+# --------------------------------------------------------------------------- #
+#
+# Req 5.9 rejects a saved version whose scope *names* a resource type with no metric
+# selection. It cannot reject the case where the scope names **no** resource types: an empty
+# dimension is unconstrained (Req 3.1, 3.12), so which types the subscription holds is not a
+# fact about the definition. A subscription-agnostic template pointed at a subscription
+# holding a type it did not select is an ordinary pairing, so the run continues — but it must
+# not continue silently.
+#
+# The reason this needs its own gap at all: an unrequested metric builds **no accumulator**,
+# so the case leaves no trace of any other kind. No `no_samples` gap, no per-resource error,
+# no `resource_absent_from_response`. The resource is present in the snapshot carrying no
+# statistics, `verify/coverage.py` asserts presence and passes, and `assert_some_statistic` is
+# satisfied by whichever resources did collect. The run completes as a fully verified report
+# holding resources with no figures and nothing anywhere saying why.
+
+
+SQL_TYPE = "Microsoft.Sql/servers"
+
+
+def _record(resource_id_text: str, resource_type: str) -> ResourceRecord:
+    return ResourceRecord(
+        resource_id=resource_id_text,
+        name=resource_id_text.rsplit("/", 1)[-1],
+        resource_type=resource_type,
+        location=LOCATION,
+        resource_group="rg-prod-sea",
+        tags={},
+        sku_name=SKU_NAME,
+        power_state_raw="PowerState/running",
+        power_state="running",
+        fidelity_tier=FIDELITY_BASELINE,
+    )
+
+
+def test_a_resource_whose_type_had_no_metric_requested_gets_a_typed_gap() -> None:
+    """The partial case, which is the one that ships a wrong report.
+
+    `assert_some_statistic` uses `any(...)`, so it fires only when **every** resource across
+    **every** metric came back empty. A run where the virtual machines collect and one
+    unselected type does not sails through it — which is exactly why the gap has to be
+    recorded at request-planning time rather than inferred from an empty accumulator later.
+    """
+    gaps = _metric_not_selected_gaps(
+        [
+            _record(resource_id("prod-web-01"), RESOURCE_TYPE),
+            _record("/subscriptions/s/rg/providers/Microsoft.Sql/servers/sql-01", SQL_TYPE),
+        ],
+        {RESOURCE_TYPE: [CPU]},
+    )
+
+    assert [gap["resource_id"] for gap in gaps] == [
+        "/subscriptions/s/rg/providers/Microsoft.Sql/servers/sql-01"
+    ]
+    assert gaps[0]["gap_type"] == GAP_TYPE_METRIC_NOT_SELECTED
+    assert gaps[0]["metric"] is None, "a resource-level gap, not a per-metric one"
+    assert SQL_TYPE in gaps[0]["message"], "the message names the type nobody selected"
+
+
+def test_a_resource_type_requested_with_an_empty_metric_list_still_gets_the_gap() -> None:
+    """The shape `_requested_metrics` actually produces.
+
+    When a selection narrows a type to nothing the key survives with an empty list, so a
+    membership test on the keys alone would find the type "requested" and record nothing —
+    leaving the resource with no metrics and no gap, which is the whole failure.
+    """
+    gaps = _metric_not_selected_gaps(
+        [_record(resource_id("prod-web-01"), RESOURCE_TYPE)],
+        {RESOURCE_TYPE: []},
+    )
+
+    assert len(gaps) == 1
+    assert gaps[0]["gap_type"] == GAP_TYPE_METRIC_NOT_SELECTED
+
+
+def test_no_gap_is_recorded_when_the_type_differs_only_by_case() -> None:
+    """Req 3.12. `metrics_by_resource_type` is keyed by the catalog's spelling and a Resource
+    Graph inventory row carries Azure's lowercase one, so an exact comparison would record
+    this gap for **every** resource on a run that requested everything correctly — turning a
+    gap that means "nobody asked" into noise on every report."""
+    gaps = _metric_not_selected_gaps(
+        [_record(resource_id("prod-web-01"), WIRE_TYPE)],
+        {RESOURCE_TYPE: [CPU]},
+    )
+
+    assert gaps == []
+
+
+def test_the_gap_reaches_the_snapshot_and_is_counted() -> None:
+    """End to end, and this is the **partial** case — the one that ships a wrong report.
+
+    One virtual machine, which collects, plus one resource of a type the Metric_Catalog does
+    not declare, which therefore has no metric requested for it. Note that this reaches the
+    gap with no template narrowing at all: an inventory row whose type the catalog does not
+    cover has always been unrequested, so the case predates the Req 5.4 narrowing and was
+    equally silent before it.
+
+    The run **completes** — `assert_some_statistic` is satisfied by the machine that did
+    collect — so the snapshot is written and carries a resource with no statistics. Before
+    this gap that resource was indistinguishable from one that was measured and found idle.
+    """
+    sql_id = (
+        f"/subscriptions/{SUBSCRIPTION}/resourceGroups/rg-prod-sea"
+        f"/providers/Microsoft.Sql/servers/sql-01"
+    )
+    sql_row = {
+        **inventory_row("sql-01"),
+        "id": sql_id,
+        "type": "microsoft.sql/servers",
+        "sku": "",
+    }
+    harness = Harness(
+        inventory=[inventory_page([inventory_row("prod-web-01"), sql_row])],
+        skus=[sku_listing()],
+        definitions=[definitions_response(*DECLARED_METRICS)],
+        batches=[batch_response([WEB_01])],
+        payload_body=payload(resource_types=[]),
+    )
+
+    events, error = harness.run_capturing()
+
+    assert isinstance(error, PartialCoverageError), error
+    ready = one(events, "snapshot_ready")
+    announced = ready["gaps"]
+    assert isinstance(announced, list)
+
+    recorded = [
+        gap for gap in announced if gap["gap_type"] == GAP_TYPE_METRIC_NOT_SELECTED
+    ]
+    assert [gap["resource_id"] for gap in recorded] == [sql_id], announced
+
+    document = snapshot_of(harness)
+    stored = [
+        gap for gap in document["gaps"] if gap["gap_type"] == GAP_TYPE_METRIC_NOT_SELECTED
+    ]
+    assert [gap["resource_id"] for gap in stored] == [sql_id]
+
+    # The point of the gap: the resource is in the snapshot, carries no statistics, and now
+    # says why. Presence is all `verify/coverage.py` asserts, so without the gap this row
+    # passes every gate while meaning nothing.
+    assert statistics_of(document, sql_id) == []
