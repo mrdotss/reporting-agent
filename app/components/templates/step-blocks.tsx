@@ -1,38 +1,36 @@
 "use client"
 
-import { BlockCanvas } from "@/components/templates/block-canvas"
+import { BlockComposer } from "@/components/templates/block-composer"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 
 /**
- * Step 5 — block composition (Requirement 11.1).
+ * Step 5 — block composition (Requirements 11.1, 12).
  *
- * A thin frame around the composer. The three-pane builder Requirement 12
- * specifies — palette, canvas, inspector, with the keyboard as the primary
- * reorder path — is task 13.3's, and this step is where it mounts. Until then
- * this renders the existing `block-canvas` in read-only form so step 5 exists,
- * carries the definition's current blocks, and is navigable, rather than being a
- * gap in a seven-step sequence Requirement 11.1 says has seven steps.
+ * A thin frame around {@link BlockComposer}, which owns the three panes and
+ * every action. This step's own contribution is the sentence below the
+ * composer, and it is there for one reason: a definition with zero blocks is a
+ * **valid draft** (Requirement 11.4) and an **invalid version** (Requirement
+ * 11.10), and a consultant looking at an empty canvas has no way to know which
+ * of those they are in.
  *
- * What it must already be right about is the **draft rule**: a definition with
- * zero blocks is a valid draft (Requirement 11.4) and an invalid completion
- * (Requirement 11.10). Neither judgement is made here — `lib/templates/wizard.ts`
- * makes both — so this step shows the count and says what it means without
- * styling an empty document as an error.
+ * Neither judgement is made here — `lib/templates/wizard.ts` makes both — so an
+ * empty document is described rather than styled as an error.
  */
 export function StepBlocks({
   definition,
+  onChange,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
 }>) {
   return (
     <div className="flex flex-col gap-3">
-      <BlockCanvas blocks={definition.blocks} />
+      <BlockComposer definition={definition} onChange={onChange} />
 
       <p className="max-w-prose text-xs text-muted-foreground">
         {definition.blocks.length === 0
           ? "This document is empty. A draft may be saved empty; a version may not — a report needs at least one block."
-          : `${definition.blocks.length} block${definition.blocks.length === 1 ? "" : "s"}, in the order the document emits them.`}
+          : `${definition.blocks.length} top-level block${definition.blocks.length === 1 ? "" : "s"}.`}
       </p>
     </div>
   )

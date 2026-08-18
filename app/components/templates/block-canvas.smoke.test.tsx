@@ -1,6 +1,9 @@
 import { StrictMode } from "react"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, render } from "@testing-library/react"
+import { DragDropProvider, PointerSensor } from "@dnd-kit/react"
+
+import type { TemplateBlock } from "@/lib/templates/definition"
 
 import { BlockCanvas } from "./block-canvas"
 
@@ -37,6 +40,31 @@ import { BlockCanvas } from "./block-canvas"
 
 afterEach(cleanup)
 
+/**
+ * The canvas with the props this smoke test does not exercise held constant.
+ *
+ * The canvas is a droppable consumer now, so it has to be mounted inside the
+ * provider that supplies the manager — which is also what makes the StrictMode
+ * assertions below still about the thing they were written for: the provider's
+ * own lifecycle. `PointerSensor` alone, matching `block-composer.tsx`; see its
+ * docstring for why the keyboard sensor is deliberately absent.
+ */
+function Canvas({ blocks }: Readonly<{ blocks: readonly TemplateBlock[] }>) {
+  return (
+    <DragDropProvider sensors={[PointerSensor]}>
+      <BlockCanvas
+        blocks={blocks}
+        selectedBlockId={null}
+        focusBlockId={null}
+        drag={null}
+        onSelect={() => {}}
+        onCommand={() => {}}
+        onSplitRow={() => {}}
+      />
+    </DragDropProvider>
+  )
+}
+
 /** Fails the calling test if React wrote anything to `console.error`/`warn`. */
 function expectQuietConsole(run: () => void): void {
   const error = vi.spyOn(console, "error").mockImplementation(() => {})
@@ -63,14 +91,20 @@ describe("Requirement 12.13 — the drag primitive survives StrictMode", () => {
     expectQuietConsole(() => {
       container = render(
         <StrictMode>
-          <BlockCanvas blocks={[]} />
+          <Canvas blocks={[]} />
         </StrictMode>
       ).container
     })
 
     const lists = container.querySelectorAll("ol[data-slot='block-canvas']")
     expect(lists).toHaveLength(1)
+    // Requirement 12.6 — the list holds blocks and nothing else, so an empty
+    // canvas is an empty list. The insertion point a drag would aim at is a
+    // sibling of the list, not an item in it.
     expect(lists[0].querySelectorAll("li")).toHaveLength(0)
+    expect(
+      container.querySelectorAll("[data-slot='drop-target']")
+    ).toHaveLength(1)
   })
 
   test("blocks render in the order given, one list item each", () => {
@@ -79,11 +113,11 @@ describe("Requirement 12.13 — the drag primitive survives StrictMode", () => {
     // wrong order is a document that emits them in the wrong order.
     const { container } = render(
       <StrictMode>
-        <BlockCanvas
+        <Canvas
           blocks={[
-            { id: "b1", type: "cover" },
-            { id: "b2", type: "kpi_row" },
-            { id: "b3", type: "resource_table" },
+            { id: "b1", type: "cover", config: {} },
+            { id: "b2", type: "kpi_row", config: {} },
+            { id: "b3", type: "resource_table", config: {} },
           ]}
         />
       </StrictMode>
@@ -103,14 +137,14 @@ describe("Requirement 12.13 — the drag primitive survives StrictMode", () => {
     expectQuietConsole(() => {
       const first = render(
         <StrictMode>
-          <BlockCanvas blocks={[]} />
+          <Canvas blocks={[]} />
         </StrictMode>
       )
       first.unmount()
 
       const second = render(
         <StrictMode>
-          <BlockCanvas blocks={[]} />
+          <Canvas blocks={[]} />
         </StrictMode>
       )
       expect(
