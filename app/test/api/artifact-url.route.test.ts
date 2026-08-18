@@ -67,6 +67,34 @@ vi.mock("@/lib/aws/s3", async (importOriginal) => {
   }
 })
 
+/**
+ * The verification gate (Requirement 40.2), faked and **switchable**.
+ *
+ * Requirement 40.2 makes a passing verification one of the four assertions the
+ * route performs before any storage call, so every case in this file now runs
+ * against a stated verification status rather than against an implicit one. The
+ * default is `pass`, so the pre-existing cases still assert what they were
+ * written to assert; the cases below that set it to something else are the new
+ * ones.
+ */
+vi.mock("@/lib/verifications/store", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/verifications/store")>()
+
+  return {
+    ...original,
+    readLatestVerificationStatus: async (runId: string) => {
+      verifications.reads.push(runId)
+      return verifications.status
+    },
+  }
+})
+
+const verifications: {
+  status: "pass" | "fail" | null
+  reads: string[]
+} = { status: "pass", reads: [] }
+
 const { GET } = await import("@/app/api/artifact-url/route")
 
 // --- Fixtures ---------------------------------------------------------------
@@ -111,6 +139,11 @@ function row(over: Partial<ReportRun> = {}): ReportRun {
   }
 }
 
+/** A report artifact key for the fixture run. */
+function reportKey(leaf: string): string {
+  return `${USER.id}/reports/${RUN_ID}/${leaf}`
+}
+
 function request(key: string): Request {
   return new Request(
     `https://app.test/api/artifact-url?key=${encodeURIComponent(key)}`
@@ -123,6 +156,11 @@ beforeEach(() => {
   runs.reads = []
   s3.presigns = 0
   s3.keys = []
+  // Requirement 40.2 — every case runs against a stated verification status.
+  // `pass` by default, so a case that does not set it is asserting something
+  // other than the gate.
+  verifications.status = "pass"
+  verifications.reads = []
 
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
@@ -277,6 +315,84 @@ describe("Requirement 7.7 — the query is parsed at the boundary", () => {
     )
 
     expect(response.status).toBe(400)
+    expect(s3.presigns).toBe(0)
+  })
+})
+
+// --- Requirement 40.2, 40.5 — the two checks task 13.8 added ----------------
+
+describe("Requirement 40.2 — a download needs a passing verification", () => {
+  test("a run whose verification failed mints nothing", async () => {
+    // The gate the whole product turns on. `completed` says the pipeline
+    // finished; only the verification says the document was *proven*, and a
+    // download depends on the second.
+    verifications.status = "fail"
+
+    const response = await GET(request(reportKey("report.pdf")))
+
+    expect(response.status).toBe(404)
+    expect(s3.presigns).toBe(0)
+  })
+
+  test("a run with no verification at all mints nothing", async () => {
+    verifications.status = null
+
+    const response = await GET(request(reportKey("report.pdf")))
+
+    expect(response.status).toBe(404)
+    expect(s3.presigns).toBe(0)
+  })
+
+  test("the refusal is byte-identical to every other not-found", async () => {
+    // Requirement 40.6 — "disclose no indication of whether the named artifact
+    // exists". A distinguishable body would let a caller tell "unverified" from
+    // "not yours", and the first is a fact about a real report of theirs.
+    verifications.status = "fail"
+    const unverified = await GET(request(reportKey("report.pdf")))
+
+    verifications.status = "pass"
+    const foreign = await GET(request("mallory/reports/run-1/report.pdf"))
+
+    expect(await unverified.text()).toBe(await foreign.text())
+    expect(unverified.status).toBe(foreign.status)
+  })
+})
+
+describe("Requirement 40.5 — only a key the run recorded", () => {
+  test("a well-formed key the run never wrote mints nothing", async () => {
+    // Right prefix, right run, right shape — and a leaf the pipeline does not
+    // write. Without this check the route is a bucket probe for anybody holding
+    // one valid run, answering "does this object exist" through latency.
+    verifications.status = "pass"
+
+    const response = await GET(request(reportKey("invented.json")))
+
+    expect(response.status).toBe(404)
+    expect(s3.presigns).toBe(0)
+  })
+
+  test("the two recorded report artifacts are served", async () => {
+    verifications.status = "pass"
+
+    for (const leaf of ["report.docx", "report.pdf"]) {
+      s3.presigns = 0
+      const response = await GET(request(reportKey(leaf)))
+
+      expect(response.status, leaf).toBe(200)
+      expect(s3.presigns, leaf).toBe(1)
+    }
+  })
+
+  test("the verification is read only after the cheap checks", async () => {
+    // Ordering, asserted: a foreign key must cost neither a database read of the
+    // verification nor a storage call. Checking the expensive thing first would
+    // make a probe measurable.
+    verifications.status = "pass"
+    verifications.reads.length = 0
+
+    await GET(request("mallory/reports/run-1/report.pdf"))
+
+    expect(verifications.reads).toEqual([])
     expect(s3.presigns).toBe(0)
   })
 })

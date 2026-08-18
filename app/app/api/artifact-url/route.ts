@@ -13,7 +13,9 @@ import {
   presignArtifact,
 } from "@/lib/aws/s3"
 import { artifactUrlQuerySchema } from "@/lib/runs/input"
+import { recordedArtifactKeys } from "@/lib/runs/artifacts"
 import { findOwnedRun } from "@/lib/runs/state"
+import { readLatestVerificationStatus } from "@/lib/verifications/store"
 
 /**
  * `GET /api/artifact-url` — mint a short-lived presigned download
@@ -23,9 +25,9 @@ import { findOwnedRun } from "@/lib/runs/state"
  * ownership check opens a Postgres connection, neither of which runs on the edge
  * runtime.
  *
- * ## Two authorization checks, and neither implies the other
+ * ## Four authorization checks, and none implies another
  *
- * Requirement 37.8 requires **both**, and they are genuinely independent:
+ * Requirements 37.8 and 40.2 require all of them, and they are independent:
  *
  *  1. **The key's `actor_id` prefix equals the signed-in user's id.** An exact segment
  *     match through `keyBelongsToActor`, not a `startsWith` — for `alice` a prefix
@@ -33,6 +35,15 @@ import { findOwnedRun } from "@/lib/runs/state"
  *     Requirement 37.12 exists to rule out.
  *  2. **The run named by the key is this user's.** Read scoped by `user_id`, so
  *     another user's run matches no row.
+ *  3. **The key is one of the keys recorded on that run's row** (Requirement
+ *     40.5). A well-formed key under my own prefix, for a run of mine, naming an
+ *     object the run never wrote is still not a download this route may mint —
+ *     it would be a probe of the bucket through a route that has already proved
+ *     two things about the caller.
+ *  4. **The run's stored verification status is `pass`** (Requirement 40.2). The
+ *     gate the whole product turns on: an unverified document must not be
+ *     downloadable, and the check lives here rather than only in the UI because
+ *     a control that is not rendered is not a control that cannot be reached.
  *
  * Check 1 alone is insufficient because a key can carry a well-formed actor prefix for
  * a run that was never this user's — a run id guessed, or one from a deleted
@@ -102,6 +113,23 @@ export async function GET(request: Request): Promise<Response> {
     // object that does not exist would hand the browser a link to a 404 it cannot
     // explain. `completed` is the only status under which the snapshot exists.
     if (run.status !== "completed") return notFound()
+
+    // Check 3 — Requirement 40.5. The recorded set, not a shape test: a key
+    // this run never wrote resolves as not found with no storage call and no
+    // indication of whether the object exists.
+    if (!recordedArtifactKeys(run).has(key)) return notFound()
+
+    // Check 4 — Requirement 40.2. Read from the Verification_Store rather than
+    // from anything on the run row, because the row's `status` says the pipeline
+    // finished and only the verification says the document was *proven*. The two
+    // are different facts and the second is the one a download depends on.
+    //
+    // Unscoped by `userId` on purpose: `findOwnedRun` above already resolved this
+    // run under the `AND user_id` predicate, and re-deriving ownership here would
+    // pay a query to re-prove it — see the store's own note.
+    if ((await readLatestVerificationStatus(parsed.runId)) !== "pass") {
+      return notFound()
+    }
 
     const { url, expiresIn } = await presignArtifact(user.id, key)
 

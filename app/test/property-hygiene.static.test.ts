@@ -77,6 +77,12 @@ const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".next"])
 const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
   "lib/crypto.property.test.ts": 11,
   "lib/aws/redact.property.test.ts": 5,
+  // Property 12. Four declared cases: the three the task names, plus
+  // `Alice/reports/…` — which mutation-testing showed the other three miss. A
+  // case-folding **actor** comparison survived all of them, because each
+  // differed in the segment or in the prefix rather than in the id's case
+  // alone.
+  "lib/aws/s3.property.test.ts": 4,
   "lib/subscriptions/azure-artifacts.property.test.ts": 8,
   // Property 8 (definition validation). Zero, on purpose and not as an
   // oversight: design.md's Property 8 declares no examples — unlike Properties

@@ -626,7 +626,7 @@ migration.
     - A run with no verification result, or one whose status is neither pass nor fail, presents that the report is not verified with no pass statement and no digest presented as proven, in mist neutrals, and no download control
     - _Requirements: 39.1, 39.2, 39.3, 39.4, 39.5, 39.6, 39.7, 39.8, 39.9, 39.10_
 
-  - [ ] 13.8 Gate the download, extend the artifact-key predicate, and add Property 12
+  - [x] 13.8 Gate the download, extend the artifact-key predicate, and add Property 12
     - `download-card.tsx` presents exactly one control for the recorded `.docx` key and one for the recorded `.pdf` key **only** while the run's `status` is `completed` and its stored verification status is `pass`, minting each presigned URL server-side **at activation** rather than at surface render, and presenting the control **only once that URL is available** rather than on receipt of a `report_file` event alone
     - On activation, and **before any storage call**, assert the run's owning user id equals the signed-in user's id, the key's actor prefix equals that same id, and the verification status recorded in the store is `pass`; any assertion failing resolves as not found with no URL minted, no storage call and no indication of whether the artifact exists
     - Expiry ≤300 seconds, a fresh URL per activation, **no** URL persisted in any table, event, log line or message and none placed in a cacheable, server-rendered or browser-safe payload; a key not among the run's recorded keys resolves as not found with no storage call and no field disclosed; a failed mint or an absent object states that the artifact is unavailable, changes neither the row nor the verification, and keeps the control available

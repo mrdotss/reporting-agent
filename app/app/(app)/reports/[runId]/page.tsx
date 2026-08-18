@@ -3,6 +3,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
+import { DownloadCard } from "@/components/reports/download-card"
 import { PaperRender } from "@/components/reports/paper-render"
 import { RunProgress } from "@/components/reports/run-progress"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
@@ -217,6 +218,17 @@ export default async function RunPage({ params }: RunPageProps) {
               : toVerificationView(verification.latest)
           }
         />
+      ) : null}
+
+      {/*
+        Requirement 40.1 — exactly one control per recorded artifact, and only
+        while the run is `completed` **and** its stored verification passed.
+        40.4's "present no download control" is this condition being false, so
+        the gate is one expression rather than a prop the card has to honour.
+      */}
+      {run.status === "completed" &&
+      verification.latest?.status === "pass" ? (
+        <DownloadCard artifactKeys={view.artifactKeys} />
       ) : null}
 
       {/*
