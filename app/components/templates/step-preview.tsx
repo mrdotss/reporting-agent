@@ -2,21 +2,26 @@
 
 import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react"
 
+import { PaperPreview } from "@/components/templates/paper-preview"
+import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { blockCount, type CompletionProblem } from "@/lib/templates/wizard"
 
 /**
  * Step 7 — preview and completion (Requirements 11.1, 11.5, 11.10).
  *
- * ## What is here and what is task 13.5's
+ * ## Three things, in this order
  *
- * The **paper preview** — the HTML emitter running over the same AST the `.docx`
- * emitter uses, with its permanent preview label and the three named divergences
- * — is Requirement 14 and task 13.5's. So is the real-preview path that runs the
- * true `python-docx → LibreOffice → PDF` pipeline against a completed run's
- * snapshot.
+ * The **completion summary** first, because a consultant arriving here wants one
+ * question answered: can I save this? Then the **paper canvas** with its
+ * permanent label, then the **real preview**.
  *
- * What this step owns, and owns now, is **completion**: Requirement 11.10's
+ * The order is deliberate. The canvas approximates and says so; the real preview
+ * is the only surface permitted to state that its output is what the consultant
+ * will receive (Requirement 14.6). Putting the approximation first and the truth
+ * second means a consultant who stops reading half way has seen the caveat.
+ *
+ * The part with a wrong answer that costs something is **completion**: Requirement 11.10's
  * refusal, naming each failing step and each failing field path, and stating the
  * block rule where the count is zero. That is the part with a wrong answer that
  * costs something — a wizard that refused a save without saying which of seven
@@ -32,9 +37,26 @@ import { blockCount, type CompletionProblem } from "@/lib/templates/wizard"
 export function StepPreview({
   definition,
   problems,
+  templateId,
+  previewHtml,
+  selectedSubscriptionId,
+  hasCompletedRun,
 }: Readonly<{
   definition: TemplateDefinition
   problems: readonly CompletionProblem[]
+  templateId: string
+  /**
+   * The `Html_Emitter`'s output for the last real preview of this template, or
+   * `null`.
+   *
+   * Emitted by the agent (Requirement 14.1) rather than composed here, so no
+   * third layout definition exists. `null` until a real preview has been
+   * rendered at least once — the canvas then says what it is waiting for rather
+   * than inventing a page.
+   */
+  previewHtml: string | null
+  selectedSubscriptionId: string | null
+  hasCompletedRun: boolean
 }>) {
   const blocks = blockCount(definition)
   const ready = problems.length === 0
@@ -150,12 +172,21 @@ export function StepPreview({
         </div>
       </dl>
 
-      <p className="max-w-prose text-xs text-muted-foreground">
-        A paper preview of the composed document appears here once the HTML
-        emitter is wired to this step. It will be an approximation: pagination,
-        table column widths and font metrics are decided by Word, and the
-        rendered <code>.pdf</code> is the delivered result.
-      </p>
+      <PaperPreview
+        html={previewHtml}
+        emptyReason={
+          blocks === 0
+            ? "Nothing to preview yet. Compose at least one block on step 5."
+            : "Render a real preview below and the composed page appears here."
+        }
+      />
+
+      <RealPreviewPanel
+        templateId={templateId}
+        definition={definition}
+        selectedSubscriptionId={selectedSubscriptionId}
+        hasCompletedRun={hasCompletedRun}
+      />
     </div>
   )
 }

@@ -39,6 +39,19 @@ import { requireEnv } from "@/lib/env"
 export const COMMAND_GENERATE_REPORT = "generate_report"
 export const COMMAND_PREFLIGHT = "preflight"
 
+/**
+ * A layout preview of a definition the consultant has **not saved**
+ * (Requirement 14.5).
+ *
+ * The definition travels inline rather than as a stored version id, and that is
+ * the whole point: the wizard previews what is on screen, and a preview of a
+ * saved version would be a preview of something else. It also means a preview
+ * creates no version — Requirement 11.4 keeps a draft out of
+ * `report_template_versions`, and a "preview" that quietly published one to have
+ * an id to send would defeat it.
+ */
+export const COMMAND_RENDER_PREVIEW = "render_preview"
+
 /** The default report timezone (Requirement 41.5). The customer is UTC+07:00. */
 export const DEFAULT_TIMEZONE = "Asia/Jakarta"
 
@@ -106,6 +119,30 @@ export interface AgentInvokeContext {
 }
 
 /**
+ * The context a **preview** invocation carries, and it is deliberately tiny.
+ *
+ * A preview renders a stored snapshot. It issues no Azure request, so it needs
+ * no `client_secret`, no `tenant_id` and no `client_id`; it writes no run state,
+ * so it needs no `progress_url` and no `progress_token`. Every one of those is a
+ * secret, and the cheapest way to guarantee a code path cannot leak one is for
+ * the path to never receive it.
+ *
+ * Expressed as its own type rather than as `Partial<AgentInvokeContext>` so the
+ * absence is a decision the type records rather than a set of fields somebody
+ * forgot. Requirement 41.5 closes the full context at twelve fields; this closes
+ * the preview context at two, and the guard in `test/boundaries.static.test.ts`
+ * that asserts no secret crosses a browser boundary has one less path to walk.
+ *
+ * `run_id` carries the **preview id**. The runtime's step events want an id and
+ * this is the one that identifies the work; no `report_runs` row exists for it,
+ * which is exactly right — a preview is not a run.
+ */
+export interface PreviewInvokeContext {
+  actor_id: string
+  run_id: string
+}
+
+/**
  * The deterministic commands this spec's runtime accepts, and **nothing else**.
  *
  * There is no `prompt` member and no `prompt` field on either variant
@@ -125,6 +162,24 @@ export type InvokeCommand =
       scope: RunScope
     }
   | { command: typeof COMMAND_PREFLIGHT }
+  | {
+      command: typeof COMMAND_RENDER_PREVIEW
+      /** Minted per activation; the key the runtime writes under. */
+      preview_id: string
+      /** A **completed** run the actor owns, whose snapshot supplies the figures. */
+      snapshot_run_id: string
+      /**
+       * The composed definition, inline.
+       *
+       * `unknown` rather than a typed definition: this is a draft mid-authoring,
+       * so it is exactly the shape the validator has *not* yet accepted. The
+       * runtime validates it (`_assert_compilable`) and fails the preview if it
+       * cannot compile, which is the right place for that verdict — the app
+       * would otherwise hold a second copy of a rule the mirror guard already
+       * covers twice.
+       */
+      definition: unknown
+    }
 
 /**
  * `RPT_RUNTIME_ARN` is unset or empty (Requirement 41.2).
@@ -211,7 +266,7 @@ export function resolveRuntimeArn(): string {
  */
 export function buildInvokePayload(
   command: InvokeCommand,
-  context: AgentInvokeContext
+  context: AgentInvokeContext | PreviewInvokeContext
 ): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({ ...command, context }))
 }
@@ -235,7 +290,7 @@ export function buildInvokePayload(
  */
 export async function invokeAgentRuntime(a: {
   sessionId: string
-  context: AgentInvokeContext
+  context: AgentInvokeContext | PreviewInvokeContext
   command: InvokeCommand
 }): Promise<AsyncIterable<Uint8Array>> {
   // Before the client, so an unconfigured deployment makes no SDK call at all

@@ -592,7 +592,7 @@ migration.
     - Selection is a `--ring` plus a `--primary` check, exposed programmatically to assistive technology and conveyed through no colour difference alone; arrow keys move focus within the grid with a visible `--ring` and a keyboard confirmation selects; the design tuning controls sit **below** the grid
     - _Requirements: 13.1, 13.2, 13.3, 13.4, 13.5, 13.6, 13.7, 13.8_
 
-  - [ ] 13.5 Build the paper preview and the real-preview path
+  - [x] 13.5 Build the paper preview and the real-preview path
     - `paper-preview.tsx` emits from the **same AST** the DOCX emitter emits from, through the HTML emitter, holding no layout definition of its own
     - The preview label is **permanent**: rendered on every render, visible whenever any part of the canvas is, behind no hover, focus or disclosure, with **no dismiss control**, surviving scrolling and every re-render. Beside it, in visible text, the three divergences named explicitly — **pagination, table column widths and font metrics** — and the statement that the rendered `.pdf` is the delivered result
     - **No page number, no page count and no page-position indicator**, the only permitted page marker being one representing a `page_break` block the definition declares, carrying no number — implying pagination the HTML emitter cannot determine is worse than omitting it, because a wrong page count is a promise the document will break

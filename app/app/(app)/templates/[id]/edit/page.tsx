@@ -5,7 +5,9 @@ import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
+import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { getTemplate, readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
 /**
@@ -54,12 +56,28 @@ export default async function EditTemplatePage({ params }: PageProps) {
   // nothing to do with ownership.
   const loaded = await loadTemplate(user.id, id)
 
+  // Requirement 14.7 — resolved here so step 7's action is disabled *with the
+  // reason* rather than enabled and then failing. The first active subscription
+  // is the default the panel previews against; a chooser for it belongs with the
+  // panel, and until then defaulting is better than refusing to offer a preview
+  // to a consultant who has exactly one customer connected.
+  const subscriptions = await listConnectedSubscriptions(user.id)
+  const previewSubscription =
+    subscriptions.find((entry) => entry.status === "active") ?? null
+
+  const snapshotRun =
+    previewSubscription === null
+      ? null
+      : await mostRecentSnapshotRun(user.id, previewSubscription.id)
+
   return (
     <WizardShell
       template={toTemplateView(loaded.template, loaded.version)}
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
       thumbnails={themeThumbnails()}
+      previewSubscriptionId={previewSubscription?.id ?? null}
+      hasCompletedRun={snapshotRun !== null}
     />
   )
 }

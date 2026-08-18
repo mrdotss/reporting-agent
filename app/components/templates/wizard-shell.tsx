@@ -106,6 +106,8 @@ export function WizardShell({
   initialDefinition,
   catalog,
   thumbnails,
+  previewSubscriptionId,
+  hasCompletedRun,
 }: Readonly<{
   template: TemplateView
   /** The persisted draft, or the latest version's definition, or `null`. */
@@ -113,6 +115,16 @@ export function WizardShell({
   catalog: MetricCatalogSnapshot
   /** Resolved on the server — see `StepDesign`'s own note. */
   thumbnails: readonly ThemeThumbnail[]
+  /**
+   * The subscription a real preview renders against, and whether one can be
+   * rendered at all (Requirements 14.5, 14.7).
+   *
+   * Both resolved on the server: "is there a completed run for this
+   * subscription" is a query, and Requirement 14.7 wants the action disabled
+   * with the reason *before* a consultant presses it rather than after it fails.
+   */
+  previewSubscriptionId: string | null
+  hasCompletedRun: boolean
 }>) {
   const router = useRouter()
 
@@ -260,6 +272,9 @@ export function WizardShell({
     catalog,
     thumbnails,
     problems,
+    templateId: template.id,
+    previewSubscriptionId,
+    hasCompletedRun,
   })
 
   return (
@@ -497,6 +512,9 @@ function renderStep({
   catalog,
   thumbnails,
   problems,
+  templateId,
+  previewSubscriptionId,
+  hasCompletedRun,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
@@ -504,6 +522,9 @@ function renderStep({
   catalog: MetricCatalogSnapshot
   thumbnails: readonly ThemeThumbnail[]
   problems: ReturnType<typeof completionProblems>
+  templateId: string
+  previewSubscriptionId: string | null
+  hasCompletedRun: boolean
 }>) {
   switch (step.id) {
     case "identity":
@@ -531,6 +552,19 @@ function renderStep({
         />
       )
     case "preview":
-      return <StepPreview definition={definition} problems={problems} />
+      return (
+        <StepPreview
+          definition={definition}
+          problems={problems}
+          templateId={templateId}
+          // Requirement 14.1 — the canvas shows the `Html_Emitter`'s output, and
+          // that output exists only once a real preview has produced it. `null`
+          // until then, and the canvas says what it is waiting for rather than
+          // rendering a page this component composed.
+          previewHtml={null}
+          selectedSubscriptionId={previewSubscriptionId}
+          hasCompletedRun={hasCompletedRun}
+        />
+      )
   }
 }

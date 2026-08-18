@@ -1,6 +1,10 @@
 import "server-only"
 
-import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3"
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
 
 import { requireEnv } from "@/lib/env"
@@ -252,4 +256,95 @@ export async function getSnapshotJson(key: string): Promise<unknown> {
   }
 
   return JSON.parse(await response.Body.transformToString("utf-8")) as unknown
+}
+
+// --- Previews ---------------------------------------------------------------
+
+/**
+ * The second segment a preview lives under, and the reason there is a separate
+ * function below rather than a widened {@link DOWNLOADABLE_SEGMENTS}.
+ *
+ * `previews` is deliberately **not** in that set (Requirement 43.3), so
+ * {@link parseArtifactKey} returns `null` for a preview key and
+ * {@link presignArtifact} refuses it. That is the property that makes "a preview
+ * is not a report" structural: the report download path cannot serve one however
+ * the caller asks, because the key does not parse in the function that path uses.
+ *
+ * The cost of that property is this module needing a second minting function,
+ * and it is worth paying. The alternative — one function with a flag — is one
+ * function a future caller passes the wrong flag to.
+ */
+export const ARTIFACT_SEGMENT_PREVIEWS = "previews"
+
+/** `<actorId>/previews/<previewId>/preview.pdf`, matching `artifacts.py#preview_key`. */
+export function previewKey(actorId: string, previewId: string): string {
+  return `${actorId}/${ARTIFACT_SEGMENT_PREVIEWS}/${previewId}/preview.pdf`
+}
+
+/** `<actorId>/previews/<previewId>/preview.html`, matching `preview_html_key`. */
+export function previewHtmlKey(actorId: string, previewId: string): string {
+  return `${actorId}/${ARTIFACT_SEGMENT_PREVIEWS}/${previewId}/preview.html`
+}
+
+/**
+ * Whether `key` is a preview belonging to `actorId`.
+ *
+ * The same **exact segment equality** {@link keyBelongsToActor} applies, and for
+ * the same reason: `startsWith(actorId)` would authorize `alice-evil/...` for
+ * `alice`, and `startsWith(actorId + "/")` would still admit any second segment.
+ * Written out rather than delegated, because delegating would mean widening the
+ * predicate the report path uses — which is the one thing this split exists to
+ * prevent.
+ */
+export function previewBelongsToActor(actorId: string, key: string): boolean {
+  const segments = key.split("/")
+
+  return (
+    actorId.length > 0 &&
+    segments.length === 4 &&
+    segments[0] === actorId &&
+    segments[1] === ARTIFACT_SEGMENT_PREVIEWS &&
+    (segments[2] ?? "").length > 0 &&
+    (segments[3] === "preview.pdf" || segments[3] === "preview.html")
+  )
+}
+
+/**
+ * A presigned URL for one preview object.
+ *
+ * Expiry is the same {@link MAX_PRESIGN_SECONDS} ceiling every other minted URL
+ * uses. A preview is more ephemeral than a report, not less, so a longer window
+ * would be a credential outliving the thing it points at.
+ */
+export async function presignPreview(
+  actorId: string,
+  key: string
+): Promise<{ url: string; expiresIn: number }> {
+  if (!previewBelongsToActor(actorId, key)) {
+    throw new ArtifactAccessError(
+      "The requested preview key does not belong to the signed-in user, so no " +
+        "presigned URL was minted. Resolve this as not found."
+    )
+  }
+
+  const url = await getSignedUrl(
+    getS3Client(),
+    new GetObjectCommand({
+      Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+      Key: key,
+    }),
+    { expiresIn: MAX_PRESIGN_SECONDS }
+  )
+
+  return { url, expiresIn: MAX_PRESIGN_SECONDS }
+}
+
+/** Delete one object. Used only by the superseded-preview cleanup. */
+export async function deleteObject(key: string): Promise<void> {
+  await getS3Client().send(
+    new DeleteObjectCommand({
+      Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+      Key: key,
+    })
+  )
 }

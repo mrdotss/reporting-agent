@@ -162,3 +162,55 @@ export type TemplatePublishInput = z.output<typeof templatePublishInputSchema>
  * to a caller that asked for a filtered one is worse than refusing.
  */
 export const templateQuerySchema = z.object({}).strict()
+
+/**
+ * 180 seconds, from Requirement 14.9.
+ *
+ * Declared here rather than beside the route's other preview helpers because
+ * **both halves read it**: the route enforces the deadline and the panel names
+ * it while a render is in flight. `lib/templates/preview.ts` carries
+ * `import "server-only"` — correctly, it opens a database connection — so a
+ * client component importing the budget from there would be a build error.
+ *
+ * One constant, so a preview cannot time out at 180s in one place and 175s in
+ * the other, which is the shape of bug where the UI says "still working" over a
+ * request that was abandoned.
+ */
+export const PREVIEW_BUDGET_MS = 180_000
+
+/**
+ * `POST /api/templates/[id]/preview` — the real preview (Requirement 14.5).
+ *
+ * `definition` is the composed draft, inline and unvalidated here for the reason
+ * the module docstring gives: the validator is mirrored in two places already,
+ * and the runtime refuses a definition it cannot compile with a stage this route
+ * reports. A third zod copy would be a third verdict.
+ *
+ * `supersedes` is the previous preview's id, sent by the panel so the app can
+ * delete the object it replaced. Optional, because the first activation of a
+ * session supersedes nothing — and bounded, because it becomes a path segment.
+ */
+export const previewRequestSchema = z
+  .object({
+    connectedSubscriptionId: z
+      .string({ error: "Choose a connected subscription to preview against." })
+      .trim()
+      .min(1, { error: "Choose a connected subscription to preview against." })
+      .max(TEMPLATE_ID_PARAM_MAX_LENGTH),
+    definition: z.unknown(),
+    supersedes: z
+      .string()
+      .trim()
+      .min(1)
+      .max(TEMPLATE_ID_PARAM_MAX_LENGTH)
+      // A path segment, so anything that could climb out of the prefix is
+      // refused here rather than trusted to `previewBelongsToActor` — which
+      // would catch it, and should not be the only thing that does.
+      .regex(/^[A-Za-z0-9_-]+$/, {
+        error: "A preview id is letters, digits, hyphens and underscores.",
+      })
+      .optional(),
+  })
+  .strict()
+
+export type PreviewRequest = z.output<typeof previewRequestSchema>
