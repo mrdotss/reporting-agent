@@ -1,0 +1,531 @@
+{
+  "note": "The shared scope-union corpus (Requirement 3.3). Read by agent/tests/test_scope_union_mirror.py and by app/lib/templates/scope-union.mirror.test.ts, which assert that compile/scope.py#union_scope and lib/templates/scope-union.ts#unionScope produce this same answer for every case. Expected values were generated from the Python implementation and are committed, so a change to either half fails one of the two suites rather than both drifting together. top_n and sort appear in the inputs and never in the expectations: Requirement 3.3 has the union ignore both.",
+  "cases": [
+    {
+      "name": "default only, one type",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "two populated type dimensions union and sort",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Storage/storageAccounts"
+        ],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines",
+          "Microsoft.Storage/storageAccounts"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "one unconstrained scope makes the union unconstrained",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [],
+          "tag_filters": [],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "resource groups union",
+      "scope": {
+        "resource_types": [],
+        "tag_filters": [],
+        "resource_groups": [
+          "rg-a"
+        ],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [],
+          "tag_filters": [],
+          "resource_groups": [
+            "rg-b"
+          ],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [],
+        "resource_groups": [
+          "rg-a",
+          "rg-b"
+        ],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "resource groups: empty wins",
+      "scope": {
+        "resource_types": [],
+        "tag_filters": [],
+        "resource_groups": [
+          "rg-a"
+        ],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [],
+          "tag_filters": [],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "duplicate types collapse",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "one identical tag pair survives",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "env",
+              "value": "prod"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {
+          "env": "prod"
+        }
+      }
+    },
+    {
+      "name": "different tag keys produce no filter",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "tier",
+              "value": "web"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "different tag values produce no filter",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "env",
+              "value": "staging"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "two filters in a scope produce no filter",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "prod"
+          },
+          {
+            "key": "tier",
+            "value": "web"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "env",
+              "value": "prod"
+            },
+            {
+              "key": "tier",
+              "value": "web"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "one scope without tag filters unfilters the union",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "tag keys fold case",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "ENV",
+            "value": "prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "env",
+              "value": "prod"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {
+          "ENV": "prod"
+        }
+      }
+    },
+    {
+      "name": "tag values honour case",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [
+          {
+            "key": "env",
+            "value": "Prod"
+          }
+        ],
+        "resource_groups": [],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [
+            {
+              "key": "env",
+              "value": "prod"
+            }
+          ],
+          "resource_groups": [],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "a ranking narrows nothing",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [],
+        "resource_groups": [],
+        "top_n": {
+          "count": 10,
+          "metric": "Percentage CPU",
+          "statistic": "avg"
+        },
+        "sort": "descending"
+      },
+      "overrides": [],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": {}
+      }
+    },
+    {
+      "name": "three scopes, mixed dimensions",
+      "scope": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "tag_filters": [],
+        "resource_groups": [
+          "rg-a"
+        ],
+        "top_n": null,
+        "sort": null
+      },
+      "overrides": [
+        {
+          "resource_types": [
+            "Microsoft.Storage/storageAccounts"
+          ],
+          "tag_filters": [],
+          "resource_groups": [
+            "rg-b"
+          ],
+          "top_n": null,
+          "sort": null
+        },
+        {
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "tag_filters": [],
+          "resource_groups": [
+            "rg-a",
+            "rg-c"
+          ],
+          "top_n": null,
+          "sort": null
+        }
+      ],
+      "expected": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines",
+          "Microsoft.Storage/storageAccounts"
+        ],
+        "resource_groups": [
+          "rg-a",
+          "rg-b",
+          "rg-c"
+        ],
+        "tag_filters": {}
+      }
+    }
+  ]
+}

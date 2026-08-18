@@ -12,6 +12,8 @@ import {
 } from "vitest"
 
 import type { AgentInvokeContext, InvokeCommand } from "@/lib/aws/agentcore"
+import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { definitionSha256 } from "@/lib/templates/version"
 import { withScratchSchema } from "@/test/db/scratch-schema"
 
 /**
@@ -194,13 +196,36 @@ const CRON_SECRET = "0123456789abcdef0123456789abcdef"
 const APP_BASE_URL = "https://app.test"
 const ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64")
 
-/** A period entirely in the past, so `checkPeriod` accepts it against real `now`. */
+/**
+ * A period entirely in the past, so the resolver accepts it against real `now`.
+ *
+ * Carried by the fixture template as a `custom` specification rather than
+ * submitted: the enqueue resolves the **pinned version's** period (Requirement
+ * 4.3), so this constant is what the definition declares and what the row should
+ * therefore end up holding. Fixed dates rather than `last_full_month` because
+ * this suite asserts the exact window the invoke payload carries, and a relative
+ * rule would move it every month.
+ */
 const PERIOD = { start: "2026-07-01", end: "2026-07-31" } as const
 
 const SCOPE = {
   resource_types: ["Microsoft.Compute/virtualMachines"],
   resource_groups: [],
   tag_filters: {},
+} as const
+
+/**
+ * The pinned definition: a real starter, with the fixed window above as a
+ * `custom` period.
+ *
+ * A starter rather than a hand-built object, so this fixture cannot drift into a
+ * definition the validator would refuse — `catalog.test.ts` asserts every starter
+ * validates, and this inherits that. Only the period is replaced, because a
+ * relative rule would move the asserted window every month.
+ */
+const FIXTURE_DEFINITION = {
+  ...STARTER_TEMPLATES[0]!.definition,
+  period: { kind: "custom", start: PERIOD.start, end: PERIOD.end },
 } as const
 
 const SNAPSHOT_ID = "a3f9".repeat(16)
@@ -219,6 +244,7 @@ const SNAPSHOT_GAP = {
 
 let userId: string
 let subscriptionId: string
+let templateId: string
 /** Every `console.warn` / `console.error` line this walk produced. */
 let logLines: string[]
 
@@ -287,6 +313,7 @@ beforeEach(async () => {
 
   userId = `user-${randomUUID()}`
   subscriptionId = `sub-${randomUUID()}`
+  templateId = `tpl-${randomUUID()}`
   guard.user = { id: userId, email: "ada@example.com" }
 
   await db.query(
@@ -313,6 +340,35 @@ beforeEach(async () => {
       encryptSecret(AZURE.clientSecret),
     ]
   )
+
+  // The pinned template version this run resolves its period and its scope from
+  // (Requirements 3.3, 4.3, 9.6). A real starter definition with its period
+  // replaced by the fixed `custom` window above, so the definition is one the
+  // validator accepts and the resolved window is the one this suite asserts.
+  await db.query(
+    `INSERT INTO report_templates (id, user_id, name, description)
+     VALUES ($1, $2, 'Wiring fixture', '')`,
+    [templateId, userId]
+  )
+
+  await db.query(
+    `INSERT INTO report_template_versions
+       (id, template_id, version, definition, definition_sha256)
+     VALUES ($1, $2, 1, $3, $4)`,
+    [
+      `ver-${randomUUID()}`,
+      templateId,
+      JSON.stringify(FIXTURE_DEFINITION),
+      definitionSha256(FIXTURE_DEFINITION),
+    ]
+  )
+
+  await db.query(
+    `UPDATE report_templates SET current_version_id =
+       (SELECT id FROM report_template_versions WHERE template_id = $1)
+     WHERE id = $1`,
+    [templateId]
+  )
 })
 
 afterEach(() => {
@@ -324,14 +380,8 @@ afterEach(() => {
 async function enqueue(): Promise<string> {
   const { run } = await enqueueRun(userId, {
     connectedSubscriptionId: subscriptionId,
-    periodStart: PERIOD.start,
-    periodEnd: PERIOD.end,
+    templateId,
     timezone: "Asia/Jakarta",
-    scope: {
-      resource_types: [...SCOPE.resource_types],
-      resource_groups: [...SCOPE.resource_groups],
-      tag_filters: { ...SCOPE.tag_filters },
-    },
   })
 
   return run.id

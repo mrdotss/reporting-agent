@@ -556,7 +556,7 @@ migration.
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 13. The wizard, the composer and the report surfaces
-  - [ ] 13.1 Implement the template routes and server actions
+  - [x] 13.1 Implement the template routes and server actions
     - `POST /api/templates` (create + `version` 1), `GET /api/templates` (list, scoped by `user_id`), `GET /api/templates/[id]` (draft + current version, **not found** on another user's row), `PATCH /api/templates/[id]` (writes `draft_definition`, inserts no version row), `POST /api/templates/[id]` (validate, canonicalize, insert `max+1`, or return the existing version when the digest is unchanged), `DELETE /api/templates/[id]` (versions a run pinned survive by FK), and `GET /api/templates/catalog` serving the **Metric_Catalog's** selectable items so step 4 reads one catalog rather than a list held in `app/`
     - Every handler on the Node runtime, typing params as `RouteContext<'/api/templates/[id]'>` and **awaiting** them, and parsing every input — path params and search params included — with a **named zod schema** at the boundary; no `as SomeType` on a body, ever; `Cache-Control: no-store` on the handlers that must not be cached
     - `lib/actions/templates.ts`: `createTemplate`, `saveDraft`, `publishTemplateVersion`, `renameTemplate`, `deleteTemplate` as thin wrappers over the store; `lib/runs/input.ts` gains `templateId` and the enqueue resolves the **highest** version at insert, rejecting with "the template has no saved version" when none resolves and rejecting a subscription that is not `active` or whose `scope_verified` is false with an error attributing the cause to that subscription while leaving the template selectable for every other active subscription

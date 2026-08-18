@@ -6,14 +6,11 @@ import { PlayIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
-import type { ConnectedSubscriptionView, RunView } from "@/lib/db/views"
-import {
-  MAX_PERIOD_DAYS,
-  MIN_PERIOD_DAYS,
-  checkPeriod,
-  localDateIn,
-} from "@/lib/runs/input"
+import type {
+  ConnectedSubscriptionView,
+  RunView,
+  TemplateView,
+} from "@/lib/db/views"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 
 /**
@@ -30,17 +27,19 @@ import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
  * (Requirement 37.4): form-triggered and chat-triggered runs both arrive at that action,
  * through that route.
  *
- * ## The form validates, and the server decides
+ * ## The form chooses a template; it does not choose a period or a scope
  *
- * The period rules — 1 to 31 local days, ending at or before today **in the run's own
- * zone** — are checked here with the *same* pure `checkPeriod` the action uses, so the
- * hint a consultant reads and the rejection the server would send cannot disagree. That
- * is the point of the shared module rather than a duplicated rule: a form with its own
- * arithmetic is how a field hint and a route come to describe different months.
+ * Both used to be fields here, and both moved into the pinned template version
+ * (Requirements 3.3, 4.3). A template stores the period as a **rule** —
+ * `last_full_month`, `mtd` — that the enqueue resolves fresh at its own instant,
+ * which is what makes a scheduled monthly report correct next month with no
+ * edit; and it stores the scope as the union of its default and every block
+ * override, which is what makes a block scoped to storage accounts actually
+ * collect one.
  *
- * The client check is a **courtesy**, not a gate. The action re-runs it against its own
- * instant, because the browser's clock is not authoritative and a form left open across
- * midnight would otherwise submit a period that has not finished.
+ * A form that still asked for either would be a second assertion about a fact
+ * the definition already states, and the two would disagree the first time a
+ * consultant added a block with a `scope_override`.
  *
  * ## The composer is disabled with a reason, never silently
  *
@@ -50,9 +49,6 @@ import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
  * option is disabled here **and says why**. A control that did nothing when clicked reads
  * as a bug, and the consultant would try it repeatedly.
  */
-
-/** The default scope: virtual machines, which is what this spec collects. */
-const DEFAULT_RESOURCE_TYPE = "Microsoft.Compute/virtualMachines"
 
 /** The customer's zone, and the default the invoke context carries. */
 const DEFAULT_TIMEZONE = "Asia/Jakarta"
@@ -78,9 +74,21 @@ function blockedReason(
 
 export function RunForm({
   subscriptions,
+  templates,
   nowIso,
 }: Readonly<{
   subscriptions: readonly ConnectedSubscriptionView[]
+  /**
+   * Every template this user owns, with each one's highest saved version.
+   *
+   * A template carrying `currentVersion === null` has never completed step 7 of
+   * the wizard, so there is no definition to pin and the enqueue would refuse it
+   * (Requirement 9.6). It is offered **disabled with that reason** rather than
+   * filtered out, the same treatment a blocked subscription gets and for the same
+   * reason: a template a consultant just created and cannot find reads as a bug,
+   * and "finish it in the wizard" is a thing they can act on.
+   */
+  templates: readonly TemplateView[]
   /**
    * One instant, fixed by the server for this render.
    *
@@ -102,14 +110,16 @@ export function RunForm({
   const [connectedSubscriptionId, setConnectedSubscriptionId] = useState(
     selectable[0]?.id ?? ""
   )
-  const [periodStart, setPeriodStart] = useState("")
-  const [periodEnd, setPeriodEnd] = useState("")
+  const runnable = templates.filter(
+    (template) => template.currentVersion !== null
+  )
+
+  const [templateId, setTemplateId] = useState(runnable[0]?.id ?? "")
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const subscriptionFieldId = useId()
-  const startFieldId = useId()
-  const endFieldId = useId()
+  const templateFieldId = useId()
 
   /**
    * The report timezone.
@@ -123,13 +133,9 @@ export function RunForm({
    */
   const timezone = DEFAULT_TIMEZONE
 
-  /** Today in the run's zone, so the date inputs cannot offer a future day. */
-  const latestDate = localDateIn(timezone, now)
-
-  const periodProblem =
-    periodStart === "" || periodEnd === ""
-      ? null
-      : checkPeriod({ periodStart, periodEnd, timezone }, now)
+  const selectedTemplate = templates.find(
+    (template) => template.id === templateId
+  )
 
   const submit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -145,10 +151,8 @@ export function RunForm({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             connectedSubscriptionId,
-            periodStart,
-            periodEnd,
+            templateId,
             timezone,
-            scope: { resource_types: [DEFAULT_RESOURCE_TYPE] },
           }),
         })
 
@@ -175,14 +179,7 @@ export function RunForm({
         setSubmitting(false)
       }
     },
-    [
-      connectedSubscriptionId,
-      periodEnd,
-      periodStart,
-      router,
-      submitting,
-      timezone,
-    ]
+    [connectedSubscriptionId, router, submitting, templateId, timezone]
   )
 
   if (subscriptions.length === 0) {
@@ -200,9 +197,8 @@ export function RunForm({
   const canSubmit =
     !submitting &&
     connectedSubscriptionId !== "" &&
-    periodStart !== "" &&
-    periodEnd !== "" &&
-    periodProblem === null
+    templateId !== "" &&
+    selectedTemplate?.currentVersion != null
 
   return (
     <form
@@ -253,55 +249,71 @@ export function RunForm({
         ) : null}
       </Field>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field>
-          <FieldLabel htmlFor={startFieldId}>First day</FieldLabel>
-          <Input
-            id={startFieldId}
-            type="date"
-            value={periodStart}
-            max={latestDate}
-            onChange={(event) => setPeriodStart(event.target.value)}
-          />
-        </Field>
+      <Field>
+        <FieldLabel htmlFor={templateFieldId}>Template</FieldLabel>
 
-        <Field>
-          <FieldLabel htmlFor={endFieldId}>Last day</FieldLabel>
-          <Input
-            id={endFieldId}
-            type="date"
-            value={periodEnd}
-            max={latestDate}
-            onChange={(event) => setPeriodEnd(event.target.value)}
-          />
-        </Field>
-      </div>
+        <select
+          id={templateFieldId}
+          value={templateId}
+          onChange={(event) => setTemplateId(event.target.value)}
+          className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+        >
+          {templates.map((template) => (
+            <option
+              key={template.id}
+              value={template.id}
+              disabled={template.currentVersion === null}
+            >
+              {template.name}
+              {template.currentVersion === null
+                ? " (unavailable: no saved version yet)"
+                : ` — version ${template.currentVersion}`}
+            </option>
+          ))}
+        </select>
+
+        {templates.length === 0 ? (
+          <FieldDescription>
+            You have no templates. The three starters are created with your
+            account; if none is listed, author one in the wizard.
+          </FieldDescription>
+        ) : runnable.length === 0 ? (
+          <FieldDescription>
+            None of your templates has a saved version yet. A template gets its
+            first version when the wizard&rsquo;s last step completes.
+          </FieldDescription>
+        ) : null}
+      </Field>
+
+      {selectedTemplate?.currentVersionSha256 == null ? null : (
+        <p
+          data-slot="run-form-pinned-version"
+          className="text-xs text-muted-foreground"
+        >
+          {/*
+            The digest of the definition this run would pin, so a consultant who
+            just saved can confirm the version they are about to run is the one
+            they were looking at. Truncated for the line and shown in the mono
+            face, the same treatment every other digest in the app gets.
+          */}
+          Pins version {selectedTemplate.currentVersion} ·{" "}
+          <span className="font-mono">
+            {selectedTemplate.currentVersionSha256.slice(0, 12)}
+          </span>
+        </p>
+      )}
 
       <FieldDescription>
         {/*
-          The accepted range, stated as Requirement 37.10 requires — and stated in terms
-          of *local* days in the report's zone, because that is what the collector buckets
-          by and what "July" means in this product.
+          The period is the template's, not this form's, and it resolves at the
+          moment the run is enqueued rather than now (Requirement 4.3). Saying so
+          is what stops a consultant looking for the date fields that used to be
+          here.
         */}
-        {MIN_PERIOD_DAYS} to {MAX_PERIOD_DAYS} local days in {timezone}, ending
-        at or before {latestDate}. A period is local: &ldquo;July 2026&rdquo;
-        means July in that zone, not July in UTC.
+        The collection window comes from the template&rsquo;s own period rule and
+        resolves when the run is enqueued, in {timezone}. A period is local:
+        &ldquo;July 2026&rdquo; means July in that zone, not July in UTC.
       </FieldDescription>
-
-      {periodProblem === null ? null : (
-        <p
-          data-slot="run-form-period-problem"
-          className="text-sm text-destructive"
-        >
-          {periodProblem === "inverted"
-            ? "The first day is after the last day."
-            : periodProblem === "too_long"
-              ? `That period is longer than ${MAX_PERIOD_DAYS} local days.`
-              : periodProblem === "ends_in_future"
-                ? "That period ends after today in the report's timezone, so part of it has not happened yet."
-                : "That is not a calendar period this server can resolve."}
-        </p>
-      )}
 
       {error === null ? null : (
         <p

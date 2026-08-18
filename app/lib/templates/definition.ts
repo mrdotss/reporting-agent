@@ -1728,6 +1728,40 @@ export type MetricCatalogEntry = {
    */
   readonly requiredSourceMetrics?: readonly string[]
   readonly requiredSkuCapabilities?: readonly string[]
+
+  // --- Presentation facts (Requirement 5.6) ---------------------------------
+  //
+  // Optional, and validation reads none of them: they exist so the wizard can
+  // present what the catalog declares about an item rather than a list held in
+  // the Web_App. `lib/templates/catalog.ts` populates every one; a fixture in a
+  // validator test populates none, which is why they are optional rather than
+  // required.
+  //
+  // **Whether a statistic is exact or estimated is not a field here.** It is
+  // membership in `percentiles`: a statistic keyed there came from a bounded
+  // sketch and is an estimate, and every other statistic this entry declares
+  // rolls up exactly. A separate boolean would be a second place to say the same
+  // thing, and the two would eventually disagree about `p95`.
+
+  /** The catalog's fractional-digit scale for this item's values. */
+  readonly scale?: number
+  /** e.g. `percent`, `bytes`, `count_per_second`. */
+  readonly unit?: string
+  /** `percentage` or `magnitude` — which sketch a percentile of this item folds into. */
+  readonly unitFamily?: string
+  /**
+   * `baseline` for a platform metric or a statistic derived from one;
+   * `enhanced` for an item needing Azure Monitor Agent, a Data Collection Rule
+   * and Log Analytics. The wizard offers an `enhanced` item disabled, with the
+   * reason, rather than omitting it.
+   */
+  readonly fidelityTier?: string
+  /** A short qualifier the catalog attaches, e.g. `NIC-level bytes`. */
+  readonly label?: string
+  /** `host_observed` for a derived statistic the host computes about a guest. */
+  readonly observation?: string
+  /** The catalog's own prose caveat for a derived statistic. */
+  readonly note?: string
 }
 
 export type MetricCatalogResourceType = {

@@ -97,9 +97,22 @@ export async function POST(request: Request): Promise<Response> {
       const { rejection } = thrown
 
       switch (rejection.kind) {
-        case "period":
-          return badRequest(thrown.message, "INVALID_PERIOD")
+        case "resolved_period":
+          // Requirements 4.6, 4.7, 4.11 — the *pinned version's* period
+          // specification does not resolve to a collectable window. A 400 like
+          // the submitted-period case, but the code is the resolver's own, so
+          // the UI can tell "wait until tomorrow" apart from "edit the
+          // template" without parsing prose.
+          return badRequest(thrown.message, rejection.code.toUpperCase())
 
+        case "template_unversioned":
+          // 422: the request is well-formed and understood, and the *answer* is
+          // that this template cannot run yet. The same shape as an inactive
+          // subscription, and for the same reason — the fix is on another
+          // screen, not in this form.
+          return unprocessable(thrown.message, "TEMPLATE_UNVERSIONED")
+
+        case "template_not_found":
         case "subscription_not_found":
           // Requirement 9.8 — the same answer for an id that does not exist as
           // for one that is somebody else's. A 404 rather than a 403, because

@@ -100,6 +100,31 @@ export class TemplateVersionNotFoundError extends Error {
  * turn a rare race into an unbounded loop on the one path a user is waiting
  * on.
  */
+/**
+ * The template carries a version that a run or a verification result pins, so
+ * deleting it would destroy an audit artifact (Requirements 9.3, 9.8).
+ *
+ * Requirement 9.8 says editing a template leaves an archived report exactly as
+ * delivered. Deleting one has to hold the same line a fortiori: a report whose
+ * pinned definition had been removed could still be downloaded, and nothing
+ * could then say what template produced it or what its figures were selected
+ * from — which is the whole of what makes it an audit artifact rather than a
+ * PDF.
+ *
+ * Raised from a **foreign-key violation the database reported**, never from an
+ * application pre-check. See {@link PINNED_VERSION_CONSTRAINTS}.
+ */
+export class TemplatePinnedByRunError extends Error {
+  constructor() {
+    super(
+      "That template has produced at least one report, so its versions are " +
+        "pinned and it cannot be deleted. An archived report stays readable " +
+        "against the exact definition it was rendered from."
+    )
+    this.name = "TemplatePinnedByRunError"
+  }
+}
+
 export class TemplateVersionSequencingError extends Error {
   constructor() {
     super(
@@ -125,6 +150,27 @@ const UNIQUE_VIOLATION = "23505"
  */
 const VERSION_SEQUENCE_CONSTRAINT =
   "report_template_versions_template_id_version_uq"
+
+/** Postgres `foreign_key_violation`. */
+const FOREIGN_KEY_VIOLATION = "23503"
+
+/**
+ * The two foreign keys that make a pinned version undeletable, as
+ * `lib/db/migrations/0003_flaky_zzzax.sql` names them.
+ *
+ * A run pins `template_version_id` and a verification result pins it too, and
+ * neither FK declares `ON DELETE`, so both default to `NO ACTION`. That default
+ * is what {@link deleteTemplate} relies on: it does not ask whether a version is
+ * pinned, it attempts the delete and lets the database refuse. A pre-`SELECT`
+ * would be a second opinion that can be stale by the time the `DELETE` runs —
+ * a run enqueued in the microsecond between the two would be pinned to a version
+ * that had just been deleted, and there is no FK left to catch it because the
+ * check replaced it.
+ */
+const PINNED_VERSION_CONSTRAINTS: readonly string[] = [
+  "report_runs_template_version_id_report_template_versions_id_fk",
+  "report_verifications_template_version_id_report_template_versions_id_fk",
+]
 
 /** The two fields read off a node-postgres error; neither carries a value. */
 const driverErrorSchema = z.object({
@@ -184,6 +230,17 @@ function isVersionSequenceConflict(thrown: unknown): boolean {
   return (
     error?.code === UNIQUE_VIOLATION &&
     error.constraint === VERSION_SEQUENCE_CONSTRAINT
+  )
+}
+
+/** A version of this template is pinned by a run or a verification result. */
+function isPinnedVersionViolation(thrown: unknown): boolean {
+  const error = driverError(thrown)
+
+  return (
+    error?.code === FOREIGN_KEY_VIOLATION &&
+    error.constraint !== undefined &&
+    PINNED_VERSION_CONSTRAINTS.includes(error.constraint)
   )
 }
 
@@ -359,6 +416,109 @@ export async function saveDraft(
   if (row === undefined) throw new TemplateNotFoundError()
 
   return row
+}
+
+// --- Rename and delete ------------------------------------------------------
+
+/**
+ * Change a template's name, and nothing else (Requirement 10.7).
+ *
+ * A rename touches no version row, so an archived report's pinned definition —
+ * which carries its own `identity.name` — is unaffected. The two are allowed to
+ * disagree, and that is correct rather than a bug to reconcile: the report says
+ * what the template was called when it was rendered, and the list says what it
+ * is called now.
+ *
+ * Applies to a seeded starter exactly as to any other template (Requirement
+ * 10.7). `seeded_starter_key` is deliberately left alone, so a renamed starter
+ * stays the row the seeder's `ON CONFLICT` will decline to recreate.
+ */
+export async function renameTemplate(
+  userId: string,
+  id: string,
+  name: string
+): Promise<ReportTemplate> {
+  let rows: ReportTemplate[]
+
+  try {
+    rows = await getDb()
+      .update(reportTemplates)
+      .set({ name })
+      .where(
+        and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId))
+      )
+      .returning()
+  } catch (thrown) {
+    throw redactedWriteError("renaming a template", thrown)
+  }
+
+  const [row] = rows
+  if (row === undefined) throw new TemplateNotFoundError()
+
+  return row
+}
+
+/**
+ * Delete a template and every version no run pinned (Requirements 9.3, 10.7).
+ *
+ * ## Why this is allowed to delete a version row at all
+ *
+ * Requirement 9.3 forbids exposing an operation that **modifies or deletes a
+ * version**, and that is about mutating history: no caller may edit version 3,
+ * and no caller may remove version 3 while the template it belongs to lives on.
+ * Removing a template *and everything it ever was* is a different operation, and
+ * Requirement 10.7 requires it to work for a starter exactly as for any other
+ * template. There is still no exported function here that reaches a single
+ * version row to delete it.
+ *
+ * ## What stops it destroying an audit artifact
+ *
+ * Nothing in this function. The `DELETE` against `report_template_versions` is
+ * attempted unconditionally, and the two foreign keys in
+ * {@link PINNED_VERSION_CONSTRAINTS} refuse it if any version is pinned — the
+ * whole transaction rolls back and {@link TemplatePinnedByRunError} is thrown.
+ * A template that produced a report cannot be deleted, and the database is what
+ * decides that rather than a `SELECT` this function could race.
+ *
+ * ## The three statements, in this order
+ *
+ * `current_version_id` is a self-referencing FK from the template to one of its
+ * own versions, so it is nulled **first** — otherwise the version delete would
+ * violate a constraint pointing back at the row being kept. Then the versions,
+ * then the template. All three in one transaction, so a template whose versions
+ * were removed cannot survive a failure of the last statement as a row with no
+ * history.
+ */
+export async function deleteTemplate(userId: string, id: string): Promise<void> {
+  const template = await readOwnedTemplate(userId, id)
+  if (template === undefined) throw new TemplateNotFoundError()
+
+  try {
+    await getDb().transaction(async (tx) => {
+      await tx
+        .update(reportTemplates)
+        .set({ currentVersionId: null })
+        .where(eq(reportTemplates.id, id))
+
+      await tx
+        .delete(reportTemplateVersions)
+        .where(eq(reportTemplateVersions.templateId, id))
+
+      // Scoped again inside the transaction rather than trusting the read
+      // above: the ownership proof and the write are two statements, and the
+      // predicate is what makes the write itself unable to touch another
+      // user's row.
+      await tx
+        .delete(reportTemplates)
+        .where(
+          and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId))
+        )
+    })
+  } catch (thrown) {
+    if (isPinnedVersionViolation(thrown)) throw new TemplatePinnedByRunError()
+
+    throw redactedWriteError("deleting a template", thrown)
+  }
 }
 
 // --- Versions ----------------------------------------------------------

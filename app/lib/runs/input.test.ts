@@ -1,23 +1,25 @@
 import { describe, expect, test } from "vitest"
 
 import {
-  MAX_PERIOD_DAYS,
-  checkPeriod,
   isSupportedTimeZone,
   localDateIn,
   localDaySpan,
   runCreateInputSchema,
   runIdParamSchema,
-  runScopeSchema,
 } from "@/lib/runs/input"
 
 /**
- * The run boundary schemas and the pure period check (Requirements 7.7, 37.10).
+ * The run boundary schemas, and the calendar primitives they re-export
+ * (Requirement 7.7).
  *
- * The period check is where a plausible implementation is silently wrong, so each
- * case below is chosen to fail on a specific wrong implementation: a UTC comparison
- * for the future check, an exclusive day count for the length check, and a
- * regex-only validation for `2026-02-31`.
+ * Each case is chosen to fail on a specific wrong implementation: a UTC comparison
+ * for `localDateIn`, and an exclusive day count for `localDaySpan`.
+ *
+ * The `checkPeriod` and `runScopeSchema` suites that used to sit between them are
+ * gone with the surfaces they tested — task 13.1 moved the period and the scope
+ * into the pinned template version, so no submission carries either. What they
+ * asserted is covered more strictly by `lib/templates/period.ts`'s own suite and
+ * its property tests, and newly by `test/db/enqueue-pinning.integration.test.ts`.
  */
 
 const JAKARTA = "Asia/Jakarta"
@@ -81,199 +83,13 @@ describe("localDateIn — the run's own zone decides 'today'", () => {
   })
 })
 
-describe("Requirement 37.10 — checkPeriod", () => {
-  /** Comfortably after every period below, in every zone. */
-  const NOW = new Date("2026-08-15T12:00:00Z")
-
-  test("a full month in the past is accepted", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-01",
-          periodEnd: "2026-07-31",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBeNull()
-  })
-
-  test("a single day is accepted", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-15",
-          periodEnd: "2026-07-15",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBeNull()
-  })
-
-  test("an inverted range is refused", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-31",
-          periodEnd: "2026-07-01",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBe("inverted")
-  })
-
-  test(`exactly ${MAX_PERIOD_DAYS} days is accepted and one more is refused`, () => {
-    // The boundary, from both sides. An off-by-one here is how a 32-day window
-    // reaches a collector sized for 31.
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-01",
-          periodEnd: "2026-07-31",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBeNull()
-
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-01",
-          periodEnd: "2026-08-01",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBe("too_long")
-  })
-
-  test("a date that matches the format but names no day is refused", () => {
-    // The case a regex-only validation admits. `2026-02-31` would otherwise reach
-    // the collector as a window ending on a day that does not exist.
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-02-01",
-          periodEnd: "2026-02-31",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBe("malformed")
-
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2027-02-29",
-          periodEnd: "2027-02-29",
-          timezone: JAKARTA,
-        },
-        NOW
-      )
-    ).toBe("malformed")
-  })
-
-  test("an unresolvable timezone is refused", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-07-01",
-          periodEnd: "2026-07-31",
-          timezone: "Mars/Olympus_Mons",
-        },
-        NOW
-      )
-    ).toBe("malformed")
-  })
-
-  test("a period ending tomorrow is refused", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-08-16",
-          periodEnd: "2026-08-16",
-          timezone: JAKARTA,
-        },
-        new Date("2026-08-15T12:00:00Z")
-      )
-    ).toBe("ends_in_future")
-  })
-
-  test("the future check is made in the run's zone, not in UTC", () => {
-    // 2026-08-15T18:00Z is already 2026-08-16 in Jakarta, so a report ending
-    // 2026-08-16 is ending *today* there and is accepted — while the same
-    // submission at the same instant in UTC ends tomorrow and is refused. A UTC
-    // comparison would refuse both, which is the naive implementation this kills.
-    const at = new Date("2026-08-15T18:00:00Z")
-    const period = { periodStart: "2026-08-16", periodEnd: "2026-08-16" }
-
-    expect(checkPeriod({ ...period, timezone: JAKARTA }, at)).toBeNull()
-    expect(checkPeriod({ ...period, timezone: "UTC" }, at)).toBe(
-      "ends_in_future"
-    )
-  })
-
-  test("a period ending today in the run's zone is accepted", () => {
-    expect(
-      checkPeriod(
-        {
-          periodStart: "2026-08-01",
-          periodEnd: "2026-08-15",
-          timezone: JAKARTA,
-        },
-        new Date("2026-08-15T06:00:00Z")
-      )
-    ).toBeNull()
-  })
-})
-
-describe("Requirement 7.7 — runScopeSchema", () => {
-  test("resource types are required and non-empty", () => {
-    expect(runScopeSchema.safeParse({ resource_types: [] }).success).toBe(false)
-    expect(runScopeSchema.safeParse({}).success).toBe(false)
-  })
-
-  test("groups and tags default to empty, so the persisted shape is complete", () => {
-    // Every stored `scope` carries all three keys whether the body named them or
-    // not, so the compiler that later reads one never meets an absent field.
-    const parsed = runScopeSchema.parse({ resource_types: ["A"] })
-
-    expect(parsed).toEqual({
-      resource_types: ["A"],
-      resource_groups: [],
-      tag_filters: {},
-    })
-  })
-
-  test("entries are trimmed and a blank entry is refused", () => {
-    expect(
-      runScopeSchema.parse({ resource_types: ["  A  "] }).resource_types
-    ).toEqual(["A"])
-
-    expect(runScopeSchema.safeParse({ resource_types: ["   "] }).success).toBe(
-      false
-    )
-  })
-
-  test("an unrecognized key is a rejection, not something dropped", () => {
-    // `.strict()`. A body carrying `top_n` expresses an expectation this spec does
-    // not honour, and answering it with an unfiltered run would look like the
-    // filter had been applied.
-    expect(
-      runScopeSchema.safeParse({ resource_types: ["A"], top_n: 10 }).success
-    ).toBe(false)
-  })
-})
-
 describe("Requirement 7.7 — runCreateInputSchema", () => {
+  // The whole accepted body since task 13.1: the period and the scope come
+  // from the pinned template version (Requirements 3.3, 4.3), so neither is a
+  // field here and `.strict()` refuses both.
   const BODY = {
     connectedSubscriptionId: "sub-row-1",
-    periodStart: "2026-07-01",
-    periodEnd: "2026-07-31",
-    scope: { resource_types: ["Microsoft.Compute/virtualMachines"] },
+    templateId: "tpl-row-1",
   }
 
   test("timezone defaults to Asia/Jakarta", () => {
@@ -283,14 +99,28 @@ describe("Requirement 7.7 — runCreateInputSchema", () => {
     expect(runCreateInputSchema.parse(BODY).timezone).toBe(JAKARTA)
   })
 
-  test("a loose date is refused", () => {
-    for (const periodStart of [
-      "2026-7-1",
-      "07/01/2026",
-      "2026-07-01T00:00:00Z",
+  test("a template id is required", () => {
+    expect(
+      runCreateInputSchema.safeParse({
+        connectedSubscriptionId: BODY.connectedSubscriptionId,
+      }).success
+    ).toBe(false)
+    expect(
+      runCreateInputSchema.safeParse({ ...BODY, templateId: "   " }).success
+    ).toBe(false)
+  })
+
+  test("a submitted period or scope is refused outright", () => {
+    // Not ignored — refused. `.strict()` is what turns "this field moved into
+    // the template" into a rejection a caller can see, rather than a value
+    // silently dropped while the run collects something else.
+    for (const extra of [
+      { periodStart: "2026-07-01" },
+      { periodEnd: "2026-07-31" },
+      { scope: { resource_types: ["Microsoft.Compute/virtualMachines"] } },
     ]) {
       expect(
-        runCreateInputSchema.safeParse({ ...BODY, periodStart }).success
+        runCreateInputSchema.safeParse({ ...BODY, ...extra }).success
       ).toBe(false)
     }
   })

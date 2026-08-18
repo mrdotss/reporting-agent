@@ -1,28 +1,17 @@
 import { z } from "zod"
 
-import {
-  inclusiveLocalDaySpan,
-  isRealCalendarDate,
-  isSupportedTimeZone,
-  localDateIn,
-} from "@/lib/templates/period"
-
 /**
- * The named boundary schemas for the run routes (Requirements 7.7, 37.1, 37.10).
+ * The named boundary schemas for the run routes (Requirements 7.7, 37.1).
  *
  * **Pure, and deliberately not `server-only`.** No I/O, no database, no
  * environment, no secret: a request body in, a parsed value out. The run form is a
- * client leaf, and Requirement 37.10 requires the rejection to *state* the
- * accepted range — so the policy has to be nameable from the browser, or the form
- * re-implements it slightly differently and a field hint and a route come to
- * disagree about the same month.
+ * client leaf, and the bounds it renders come from here so a field hint and a
+ * route cannot describe different rules.
  *
- * It reads no clock. "Ending at or before the current local date" needs both an
- * instant and a zone, and neither belongs in a schema: the zone is a *field of the
- * submission* — so it is not known until the object is parsed — and the instant is
- * the request's. Both are therefore handed to the pure {@link checkPeriod}, which
- * the enqueue calls after `safeParse` succeeds. That split is what makes every
- * boundary case assertable at an instant and a zone a test picks.
+ * It reads no clock, and since task 13.1 it parses no period at all: the window a
+ * run collects is resolved from the **pinned template version** at enqueue
+ * (Requirement 4.3), not submitted. See the note above the re-exports at the foot
+ * of this file for what that removed and why.
  *
  * ## What is deliberately absent
  *
@@ -38,70 +27,6 @@ import {
  * **No `runId`.** The row's id is minted at insert. A caller-chosen id is how two
  * users end up racing for one primary key.
  */
-
-// --- The scope --------------------------------------------------------------
-
-/**
- * An upper bound on each scope list, so a pathological body cannot become an
- * unbounded `jsonb` value and an unbounded `dedupe_key` input.
- *
- * Generous against reality: a report over more than a handful of resource types
- * or a few dozen resource groups is a report over the whole subscription, which is
- * expressed by leaving `resource_groups` empty rather than by listing them all.
- */
-export const MAX_RESOURCE_TYPES = 20
-export const MAX_RESOURCE_GROUPS = 200
-export const MAX_TAG_FILTERS = 50
-
-/** A bound on one entry, so a single string cannot carry a megabyte. */
-const MAX_SCOPE_ENTRY_LENGTH = 400
-
-const scopeEntrySchema = z.string().trim().min(1).max(MAX_SCOPE_ENTRY_LENGTH)
-
-/**
- * The requested collection scope — the shape `report_runs.scope` persists and the
- * shape the invoke payload's `scope` carries (Requirement 41.8).
- *
- * `resource_types` is required and non-empty. There is no "everything" scope in
- * this spec: the collector needs a metric namespace per resource type, and an
- * empty list would mean either "no resources" — which is `EMPTY_SCOPE`, a hard
- * failure — or a silent default this schema would be inventing.
- *
- * `resource_groups` and `tag_filters` default to empty, which is how "the whole
- * subscription" is spelled. Defaulting rather than requiring means the common case
- * is a two-field body, and the persisted shape is still complete: every run's
- * `scope` column carries all three keys whether the submission named them or not,
- * so the compiler that later reads a stored scope never meets an absent field.
- *
- * `.strict()`, like every schema in this module: an unrecognized key is a
- * rejection, not something to drop quietly. A body carrying `top_n` is expressing
- * an expectation this spec does not honour, and answering it with an unfiltered
- * run would look like the filter had been applied.
- */
-export const runScopeSchema = z
-  .object({
-    resource_types: z
-      .array(scopeEntrySchema)
-      .min(1, {
-        error:
-          "Name at least one Azure resource type to collect, for example " +
-          "Microsoft.Compute/virtualMachines.",
-      })
-      .max(MAX_RESOURCE_TYPES),
-    resource_groups: z
-      .array(scopeEntrySchema)
-      .max(MAX_RESOURCE_GROUPS)
-      .default([]),
-    tag_filters: z
-      .record(scopeEntrySchema, z.string().max(MAX_SCOPE_ENTRY_LENGTH))
-      .refine((tags) => Object.keys(tags).length <= MAX_TAG_FILTERS, {
-        error: `At most ${MAX_TAG_FILTERS} tag filters.`,
-      })
-      .default({}),
-  })
-  .strict()
-
-export type RunScopeInput = z.output<typeof runScopeSchema>
 
 // --- The period -------------------------------------------------------------
 
@@ -128,23 +53,6 @@ export const PERIOD_MESSAGE =
   `Choose a period of ${MIN_PERIOD_DAYS} to ${MAX_PERIOD_DAYS} local days ` +
   `whose last day is at or before today in the report's timezone. A period is ` +
   `local: "July 2026" means July in that zone, not July in UTC.`
-
-/** `YYYY-MM-DD`, and nothing looser. */
-const LOCAL_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-
-/**
- * A `YYYY-MM-DD` calendar date.
- *
- * The regex is the whole check, deliberately: this is a **local** calendar date in
- * a zone the submission names, so there is no instant here to validate and
- * `new Date(value)` would materialise one at UTC midnight — which is the exact
- * mistake the `date` column's `mode: "string"` exists to avoid. The date's
- * *calendar* validity (no 31 February) is checked by {@link checkPeriod}, which has
- * the arithmetic in hand anyway.
- */
-const localDateSchema = z
-  .string({ error: PERIOD_MESSAGE })
-  .regex(LOCAL_DATE_PATTERN, { error: PERIOD_MESSAGE })
 
 /**
  * An IANA zone name.
@@ -181,10 +89,25 @@ export const runCreateInputSchema = z
       .trim()
       .min(1, { error: "Choose a connected subscription to report on." })
       .max(RUN_ID_PARAM_MAX_LENGTH),
-    periodStart: localDateSchema,
-    periodEnd: localDateSchema,
+
+    /**
+     * The template to run (Requirement 9.6).
+     *
+     * The **template**, not a version. The enqueue resolves the highest
+     * existing version at insert, so a consultant who saved version 4 an
+     * instant ago gets version 4 rather than whichever number the form was
+     * rendered against. A submitted version id would also be a way to pin a
+     * run to an older definition than the one the wizard is showing, which is
+     * a capability nothing has asked for and which would make "what version
+     * did this report use" a question with two plausible answers.
+     */
+    templateId: z
+      .string({ error: "Choose a template to run." })
+      .trim()
+      .min(1, { error: "Choose a template to run." })
+      .max(RUN_ID_PARAM_MAX_LENGTH),
+
     timezone: timezoneSchema.default("Asia/Jakarta"),
-    scope: runScopeSchema,
   })
   .strict()
 
@@ -230,109 +153,31 @@ export type RunIdParam = z.output<typeof runIdParamSchema>
  */
 export const runQuerySchema = z.object({}).strict()
 
-// --- The period check -------------------------------------------------------
+// --- Calendar and zone primitives --------------------------------------------
 
 /**
- * Why a submitted period was refused, or `null` if it was not.
+ * Re-exported from `lib/templates/period.ts`, under the names this module has
+ * always exported.
  *
- * There is no `too_short` member, and its absence is a consequence of
- * {@link MIN_PERIOD_DAYS} being 1: a span below 1 day is exactly a span whose
- * start is after its end, so "below the minimum" and "inverted" are the same
- * condition and naming it twice would leave one of the two branches unreachable.
- */
-export type PeriodProblem =
-  "malformed" | "inverted" | "too_long" | "ends_in_future"
-
-/**
- * The calendar and zone primitives are **one implementation**, in
- * `lib/templates/period.ts`.
+ * **What used to be here, and why it is gone.** This module carried a
+ * `checkPeriod` implementing foundation Requirement 37.10 over a *submitted*
+ * period, alongside the `localDateSchema` and `runScopeSchema` the run
+ * submission parsed those fields with. Task 13.1 moved the period and the scope
+ * into the pinned template version (Requirements 3.3, 4.3), so no surface
+ * submits either any more and nothing called any of the three.
  *
- * They used to be three: a private `isRealCalendarDate` and an exported
- * `localDaySpan` here, a second private pair in `lib/templates/definition.ts`,
- * and — once the Period_Resolver landed — a third set it needed for all six of
- * Requirement 4.4's rules. Three copies of local-day arithmetic is three chances
- * for one of them to grow a fix the others do not, and the day two of them
- * disagree is the day the run form accepts a period the enqueue refuses.
- *
- * The replacements are strictly stronger rather than merely shared.
- * `isRealCalendarDate` now checks the month's real length instead of
- * round-tripping through `Date.UTC`, which mapped a year below 0100 onto
- * 1900-plus-that-year and so refused every date in the first century; and the day
- * count is exact integer civil arithmetic rather than a UTC-noon millisecond
- * proxy.
- *
- * What did **not** move is the *policy* below. Foundation Requirement 37.10 lets
- * a submitted period end **today**; templates-spec Requirement 4.5 lets a
- * *resolved* period end no later than **yesterday**, because the current local
- * day is incomplete and a partial trailing day would understate every daily
- * figure derived from it. Those are two different rules about two different
- * inputs, so {@link checkPeriod} stays here and `resolvePeriod` stays there, and
- * neither borrows the other's ceiling.
- *
- * Re-exported under the names this module has always exported, so the run form,
- * the enqueue action and `input.test.ts` are untouched.
+ * They are deleted rather than kept for a future caller. `resolvePeriod` covers
+ * the same ground and covers it more strictly — foundation 37.10 permitted a
+ * period ending *today*, Requirement 4.5 does not, because the current local day
+ * is incomplete and a partial trailing day understates every daily figure. Two
+ * period policies where one is reachable is how a field hint and a route come to
+ * describe different months.
  */
 export {
   isSupportedTimeZone,
   localDateIn,
   inclusiveLocalDaySpan as localDaySpan,
 } from "@/lib/templates/period"
-
-/**
- * Why this period may not be collected, or `null` (Requirement 37.10).
- *
- * Pure — the instant and the zone are arguments — and separate from the schema
- * because both of the things it needs are unavailable to a schema: the zone is a
- * *field of the submission*, so it is not known until parsing has succeeded, and
- * the instant is the request's. It runs after `safeParse`, in the enqueue, before
- * any insert.
- *
- * The order of the checks is the order of the answers' usefulness: a malformed
- * date is a different mistake from an inverted range, and an inverted range is a
- * different mistake from a 90-day window. `ends_in_future` is last because it is
- * the only one that depends on the clock, so it is the only one whose verdict can
- * change between two identical submissions.
- *
- * **The future check is against the local date in the run's own zone**, not
- * against UTC. For a customer at UTC+07:00 the local date is ahead of UTC's for
- * seven hours of every day, so a UTC comparison would refuse a report on a day
- * that has already ended locally — and, worse, on the other side of the
- * international date line it would *accept* one that has not started.
- */
-export function checkPeriod(
-  period: {
-    readonly periodStart: string
-    readonly periodEnd: string
-    readonly timezone: string
-  },
-  now: Date
-): PeriodProblem | null {
-  if (
-    !isRealCalendarDate(period.periodStart) ||
-    !isRealCalendarDate(period.periodEnd)
-  ) {
-    return "malformed"
-  }
-
-  if (!isSupportedTimeZone(period.timezone)) return "malformed"
-
-  // `inclusiveLocalDaySpan` rather than the `localDaySpan` alias this module
-  // re-exports: an `export … from` clause creates no local binding.
-  const days = inclusiveLocalDaySpan(period.periodStart, period.periodEnd)
-
-  // `days < MIN_PERIOD_DAYS` and "start after end" are one condition, because
-  // MIN_PERIOD_DAYS is 1 — see {@link PeriodProblem}.
-  if (days < MIN_PERIOD_DAYS) return "inverted"
-  if (days > MAX_PERIOD_DAYS) return "too_long"
-
-  // String comparison is correct for `YYYY-MM-DD`: the format is fixed-width and
-  // big-endian, so lexical order is chronological order.
-  if (period.periodEnd > localDateIn(period.timezone, now)) {
-    return "ends_in_future"
-  }
-
-  return null
-}
 
 // --- The artifact download --------------------------------------------------
 

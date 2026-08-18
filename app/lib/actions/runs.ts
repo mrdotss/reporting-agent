@@ -11,16 +11,23 @@ import {
   reportRuns,
   type ReportRun,
   type RunErrorCode,
+  type RunScope,
 } from "@/lib/db/schema"
 import { toConnectedSubscriptionView } from "@/lib/db/views"
 import { deriveDedupeKey } from "@/lib/runs/dedupe"
+import type { RunCreateInput } from "@/lib/runs/input"
 import {
-  MAX_PERIOD_DAYS,
-  PERIOD_MESSAGE,
-  checkPeriod,
-  type PeriodProblem,
-  type RunCreateInput,
-} from "@/lib/runs/input"
+  resolvePeriod,
+  type PeriodRejectionCode,
+  type PeriodSpec,
+} from "@/lib/templates/period"
+import { unionScope } from "@/lib/templates/scope-union"
+import {
+  readLatestVersion,
+  TemplateNotFoundError,
+} from "@/lib/templates/store"
+
+import type { TemplateDefinition } from "@/lib/templates/definition"
 import {
   deriveProgressToken,
   progressTokenHash,
@@ -87,9 +94,32 @@ import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
  * cannot run" is written once and reached from both paths.
  */
 export type EnqueueRejection =
-  | { readonly kind: "period"; readonly problem: PeriodProblem }
   | { readonly kind: "subscription_not_found" }
   | { readonly kind: "subscription_inactive"; readonly code: RunErrorCode }
+  /** Requirement 1.5 — the template is not this user's, or does not exist. */
+  | { readonly kind: "template_not_found" }
+  /**
+   * Requirement 9.6 — the template exists and carries no version row, so there
+   * is no definition to pin. A distinct case from `template_not_found`, and the
+   * distinction is one the consultant acts on: a template they have never
+   * finished in the wizard needs step 7, not a different template.
+   */
+  | { readonly kind: "template_unversioned" }
+  /**
+   * Requirements 4.6, 4.7, 4.11 — the pinned version's period specification is
+   * unrecognized, or resolves to a window that cannot be collected.
+   *
+   * Carries the resolver's own code rather than one flattened "bad period",
+   * because the outcomes are different corrections:
+   * `unrecognized_period` needs the template edited,
+   * `no_complete_local_day` needs the consultant to wait until tomorrow, and
+   * `exceeds_maximum_days` needs a shorter specification.
+   */
+  | {
+      readonly kind: "resolved_period"
+      readonly code: PeriodRejectionCode
+      readonly message: string
+    }
 
 /**
  * A submission was refused, with **no `report_runs` row inserted and no
@@ -106,21 +136,6 @@ export class EnqueueRejectedError extends Error {
     this.name = "EnqueueRejectedError"
     this.rejection = rejection
   }
-}
-
-/** The copy for each period problem, all of it stating the accepted range. */
-function periodMessage(problem: PeriodProblem): string {
-  const prefix =
-    problem === "malformed"
-      ? "That is not a calendar period in a timezone this server can resolve."
-      : problem === "inverted"
-        ? "The period's first day is after its last day."
-        : problem === "too_long"
-          ? `That period is longer than ${MAX_PERIOD_DAYS} local days.`
-          : "That period ends after today in the report's timezone, so part of " +
-            "it has not happened yet."
-
-  return `${prefix} ${PERIOD_MESSAGE}`
 }
 
 // --- Driver errors ----------------------------------------------------------
@@ -321,27 +336,90 @@ export async function enqueueRun(
     )
   }
 
-  // 3 — the period, in the run's own zone (Requirement 37.10).
-  const problem = checkPeriod(input, now)
-  if (problem !== null) {
+  // 3 — the pinned version: the **highest** existing, as of this read
+  //     (Requirement 9.6). Not `current_version_id`, which is a cached pointer
+  //     that a concurrent save can leave a version behind.
+  let pinned
+  try {
+    pinned = await readLatestVersion(userId, input.templateId)
+  } catch (thrown) {
+    if (thrown instanceof TemplateNotFoundError) {
+      throw new EnqueueRejectedError(
+        { kind: "template_not_found" },
+        "No report template with that id belongs to the signed-in user."
+      )
+    }
+    throw thrown
+  }
+
+  if (pinned === undefined) {
     throw new EnqueueRejectedError(
-      { kind: "period", problem },
-      periodMessage(problem)
+      { kind: "template_unversioned" },
+      "That template has no saved version, so there is no definition to run. " +
+        "Finish the wizard and save it first."
     )
   }
 
-  // 4 — the insert. Derived first, so the values are in hand and the statement is
+  // The stored `definition` is `jsonb`, so its TypeScript type is a promise the
+  // database cannot keep. Both readers below are written to survive a shape they
+  // did not expect: `resolvePeriod` widens its own argument and answers
+  // `unrecognized_period` for anything outside the six kinds (Requirement 4.11),
+  // and `declaredScopes` walks a `blocks` array that may not be one.
+  const definition = pinned.definition as TemplateDefinition
+
+  // 4 — the period, resolved from the pinned specification rather than
+  //     submitted (Requirements 4.3, 4.5, 4.6, 4.7, 4.11). Every run resolves
+  //     afresh at its own enqueue instant, which is what makes a scheduled
+  //     "last full month" template correct next month with no edit.
+  const period = resolvePeriod(
+    definition.period as PeriodSpec,
+    now,
+    input.timezone
+  )
+
+  if (!period.ok) {
+    throw new EnqueueRejectedError(
+      {
+        kind: "resolved_period",
+        code: period.code,
+        message: period.message,
+      },
+      period.message
+    )
+  }
+
+  // 5 — the collection scope, as the union of the definition's template default
+  //     and every block `scope_override` (Requirement 3.3).
+  //
+  //     Derived rather than submitted, because `payload["scope"]` is what the
+  //     collector actually collects: a form-supplied scope and a definition's
+  //     block overrides would be two assertions about one fact, and a block
+  //     scoped outside the submitted set would render its "no resources matched"
+  //     row on a run that every gate called correct.
+  //
+  //     Copied into the column's own mutable shape rather than cast: `RunScope`
+  //     is what the `jsonb` column stores and `UnionScope` is deeply readonly,
+  //     and spreading here is what keeps the derived value unable to be mutated
+  //     by anything downstream of this line.
+  const derived = unionScope(definition)
+  const scope: RunScope = {
+    resource_types: [...derived.resource_types],
+    resource_groups: [...derived.resource_groups],
+    tag_filters: { ...derived.tag_filters },
+  }
+
+  // 6 — the insert. Derived first, so the values are in hand and the statement is
   //     the only awaited operation left (Requirement 37.2).
   const runId = randomUUID()
 
   const dedupeKey = deriveDedupeKey({
     userId,
     connectedSubscriptionId: input.connectedSubscriptionId,
-    periodStart: input.periodStart,
-    periodEnd: input.periodEnd,
+    periodStart: period.start,
+    periodEnd: period.end,
     timezone: input.timezone,
-    resourceTypes: input.scope.resource_types,
-    resourceGroups: input.scope.resource_groups,
+    resourceTypes: scope.resource_types,
+    resourceGroups: scope.resource_groups,
     enqueuedAtMs: now.getTime(),
   })
 
@@ -352,10 +430,14 @@ export async function enqueueRun(
         id: runId,
         userId,
         connectedSubscriptionId: input.connectedSubscriptionId,
-        periodStart: input.periodStart,
-        periodEnd: input.periodEnd,
+        // Requirement 9.6 — the pin, set on every run this action inserts, and
+        // the column `report_runs_template_version_id_ck` requires from the
+        // cutover instant onward.
+        templateVersionId: pinned.id,
+        periodStart: period.start,
+        periodEnd: period.end,
         timezone: input.timezone,
-        scope: input.scope,
+        scope,
         status: "queued",
         dedupeKey,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick

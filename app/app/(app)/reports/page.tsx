@@ -3,9 +3,14 @@ import type { Metadata } from "next"
 import { RunForm } from "@/components/reports/run-form"
 import { RunList } from "@/components/reports/run-list"
 import { requireSession } from "@/lib/auth/guard"
-import { toRunView, UNRESOLVED_RUN_VIEW_EXTRAS } from "@/lib/db/views"
+import {
+  toRunView,
+  toTemplateView,
+  UNRESOLVED_RUN_VIEW_EXTRAS,
+} from "@/lib/db/views"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
+import { listTemplates, readLatestVersion } from "@/lib/templates/store"
 
 /**
  * `/reports` — request a run, and see the ones already requested
@@ -39,10 +44,20 @@ export default async function ReportsPage() {
   // `RunView` and `ConnectedSubscriptionView` cross to the browser, so the unmasked
   // subscription id, the tenant id, the client id, the ciphertext, `progress_token_hash`,
   // `dedupe_key` and the requested scope are absent by construction.
-  const [runs, subscriptions] = await Promise.all([
+  const [runs, subscriptions, templateRows] = await Promise.all([
     listOwnedRuns(user.id),
     listConnectedSubscriptions(user.id),
+    listTemplates(user.id),
   ])
+
+  // The **highest existing** version per template, which is what the enqueue
+  // pins (Requirement 9.6) — not the cached `current_version_id`, so the version
+  // number the form shows is the one a run would actually use.
+  const templates = await Promise.all(
+    templateRows.map(async (row) =>
+      toTemplateView(row, (await readLatestVersion(user.id, row.id)) ?? null)
+    )
+  )
 
   const now = new Date()
 
@@ -54,9 +69,10 @@ export default async function ReportsPage() {
         </h1>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          A run collects CPU, memory, disk and network for every resource in
-          scope over a period you choose, then writes one immutable snapshot.
-          Every figure in the report traces back to a row in that snapshot.
+          A run collects CPU, memory, disk and network for every resource a
+          template scopes, over the period that template&rsquo;s own rule
+          resolves to, then writes one immutable snapshot. Every figure in the
+          report traces back to a row in that snapshot.
         </p>
       </div>
 
@@ -65,7 +81,11 @@ export default async function ReportsPage() {
           Request a report
         </h2>
 
-        <RunForm subscriptions={subscriptions} nowIso={now.toISOString()} />
+        <RunForm
+          subscriptions={subscriptions}
+          templates={templates}
+          nowIso={now.toISOString()}
+        />
       </section>
 
       <section className="flex flex-col gap-3">
