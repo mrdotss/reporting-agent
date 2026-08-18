@@ -20,6 +20,7 @@ import {
   APP_WRITTEN_CODES,
   acceptedTargets,
   applyRunWriteIfStatus,
+  applyVerifiedCompletion,
   phaseDeadlineFor,
   readRunForTokenHolder,
 } from "@/lib/runs/state"
@@ -181,15 +182,29 @@ export async function POST(
   // 6 — The write, guarded on the status that was read. A row the reaper's sweep
   //     failed between step 2 and here matches nothing, so a decision made against
   //     a stale status cannot reopen a terminal row.
-  const written = await applyRunWriteIfStatus(
-    runId,
-    run.status,
-    decision.write,
-    now
-  )
+  //
+  //     `verifying → completed` carries one precondition beyond the table
+  //     (Requirement 41.1): a passing `report_verifications` row for this run,
+  //     read **in the same transaction** as the update. `completed` is the status
+  //     the download control keys off, so a run reaching it before its proof was
+  //     stored would present a download for a document nothing had verified — for
+  //     as long as the verification callback took to arrive, and forever if it
+  //     never did.
+  const needsProof =
+    run.status === "verifying" && decision.write.status === "completed"
+
+  const written = needsProof
+    ? await applyVerifiedCompletion(runId, run.status, decision.write, now)
+    : await applyRunWriteIfStatus(runId, run.status, decision.write, now)
 
   if (written === undefined) {
-    logRefusal(runId, "the row's status changed between the read and the write")
+    logRefusal(
+      runId,
+      needsProof
+        ? "no passing verification is stored for this run, or the row's status " +
+            "changed between the read and the write"
+        : "the row's status changed between the read and the write"
+    )
     return notFound()
   }
 

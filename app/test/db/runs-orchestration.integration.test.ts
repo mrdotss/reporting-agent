@@ -174,7 +174,7 @@ async function insertRun(fixture: RunFixture = {}): Promise<string> {
 const SWEEP_SQL = `
     WITH due AS (
       SELECT id, status FROM report_runs
-       WHERE status IN ('queued', 'claimed', 'collecting')
+       WHERE status IN (${SWEEPABLE.map((s) => `'${s}'`).join(", ")})
          AND phase_deadline IS NOT NULL
          AND phase_deadline < now()
        ORDER BY phase_deadline

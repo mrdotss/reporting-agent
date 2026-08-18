@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest"
 
 import {
+  ARTIFACT_SEGMENT_REPORTS,
   ARTIFACT_SEGMENT_SNAPSHOTS,
+  DOWNLOADABLE_SEGMENTS,
   ArtifactAccessError,
   MAX_PRESIGN_SECONDS,
   keyBelongsToActor,
@@ -42,14 +44,36 @@ describe("parseArtifactKey — the key layout", () => {
 
     expect(parsed).toEqual({
       actorId: ACTOR,
+      kind: "snapshots",
       runId: RUN,
       rest: "snapshot.json",
     })
   })
 
-  test("the second segment is exactly `snapshots`", () => {
+  test("the second segment is exactly `snapshots` or exactly `reports`", () => {
     expect(ARTIFACT_SEGMENT_SNAPSHOTS).toBe("snapshots")
+    expect(ARTIFACT_SEGMENT_REPORTS).toBe("reports")
+    expect([...DOWNLOADABLE_SEGMENTS].sort()).toEqual(["reports", "snapshots"])
     expect(OWN_KEY.split("/")[1]).toBe(ARTIFACT_SEGMENT_SNAPSHOTS)
+
+    expect(parseArtifactKey(`${ACTOR}/reports/${RUN}/report.pdf`)).toEqual({
+      actorId: ACTOR,
+      kind: "reports",
+      runId: RUN,
+      rest: "report.pdf",
+    })
+  })
+
+  test("a preview key is not parseable, so the download path cannot serve one", () => {
+    // Requirement 43.2. `previews` is outside the set deliberately: a preview is
+    // presented inline by a route with its own key template, and keeping it out
+    // of this predicate makes "a preview is not a report" a property of the key
+    // space rather than a rule either route has to remember.
+    expect(DOWNLOADABLE_SEGMENTS.has("previews")).toBe(false)
+    expect(parseArtifactKey(`${ACTOR}/previews/pv-1/preview.pdf`)).toBeNull()
+    expect(
+      keyBelongsToActor(ACTOR, `${ACTOR}/previews/pv-1/preview.pdf`)
+    ).toBe(false)
   })
 
   test("`rest` is the whole remainder, not just a file name", () => {
@@ -57,7 +81,12 @@ describe("parseArtifactKey — the key layout", () => {
     // the remainder has to survive further slashes.
     expect(
       parseArtifactKey(`${ACTOR}/snapshots/${RUN}/raw/0001.json.gz`)
-    ).toEqual({ actorId: ACTOR, runId: RUN, rest: "raw/0001.json.gz" })
+    ).toEqual({
+      actorId: ACTOR,
+      kind: "snapshots",
+      runId: RUN,
+      rest: "raw/0001.json.gz",
+    })
   })
 
   test.each([

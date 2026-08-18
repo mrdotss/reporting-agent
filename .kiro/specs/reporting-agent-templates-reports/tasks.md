@@ -503,7 +503,7 @@ migration.
 - [x] 10. Checkpoint — the verifier gates
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 11. The pipeline, the commands, the events and the extended state machine
+- [x] 11. The pipeline, the commands, the events and the extended state machine
   - [x] 11.1 Implement `report_pipeline.py` — collect → compile → render → verify → upload
     - `run_generate_report(*, payload, context, steps, artifact_bucket, aws_region, progress)` composing over task 1.2's `run_collection(...)` rather than replacing it, one phase at a time, and deferring the `PARTIAL_COVERAGE` raise to the end of the whole run so a run with gaps still completes and its non-terminal event arrives before `done`
     - Phases and their steps: `collecting` → `collect_inventory` / `collect_metrics`; `compiling` → `compile_figures` emitting `progress` over blocks compiled plus `delta` and `chart`; `rendering` → `render_document` emitting `progress` over blocks emitted; `verifying` → `verify_document` emitting `verification`; then `upload_artifact` emitting two `report_file` events
@@ -537,7 +537,7 @@ migration.
     - Apply the redaction scrub to the verification result and to **every finding message**, including every quoted service error, before writing and before emitting, and truncate every quoted document excerpt to 200 characters; a registered secret found in a result, a finding message or a quoted error is replaced with the fixed marker while the finding is retained, and no unredacted copy is written or emitted
     - _Requirements: 17.6, 22.3, 36.3, 43.1, 43.7, 43.10_
 
-  - [ ] 11.5 Drive the three phases, extend the reaper, and add the verification callback
+  - [x] 11.5 Drive the three phases, extend the reaper, and add the verification callback
     - `app/lib/runs/state.ts`: extend `DRIVEN` with `compiling → rendering|failed`, `rendering → verifying|failed`, `verifying → completed|failed`, keeping `collecting → completed` because a snapshot-only invocation is still a legal run shape and removing it would break foundation tests; add `PHASE_DEADLINE_SECONDS` of `compiling: 300`, `rendering: 600`, `verifying: 600`
     - `verifying → completed` carries a precondition beyond the table: the endpoint reads a `report_verifications` row for that run with `status` `pass` **in the same transaction** as the update, so no ordering exists in which a run reports success before its proof is stored
     - Extend `POST /api/internal/runs/[runId]/progress` to accept the new transitions, setting `phase_deadline` to the write instant plus that phase's budget and `updated_at` to that instant, rejecting a transition on a terminal row and a transition absent from the table; `PDF_CONVERSION_FAILED` arrives from the `rendering` status and **no status is added** for PDF conversion
@@ -546,7 +546,7 @@ migration.
     - The agent's `Progress_Reporter` sends the compile, render and verify transitions fire-and-forget, abandoning the send after 5 seconds, continuing the phase whatever the outcome, and failing no run because a transition did not land
     - _Requirements: 25.2, 36.1, 41.1, 41.2, 41.3, 41.4, 41.5, 41.6, 41.7, 41.8, 41.9, 41.10_
 
-  - [ ] 11.6 Integration tests for the extended machine, the reaper and the relay's reconstruction
+  - [x] 11.6 Integration tests for the extended machine, the reaper and the relay's reconstruction
     - Against real Postgres: the extended transition table over **all** `(current, target)` pairs including every terminal row rejecting every target; `verifying → completed` refused when no passing verification row exists and accepted when one does; the sweep naming the expired phase from the pre-update `status` for each of the three new phases; `(run_id, attempt_id)` making a retried verification callback idempotent; a `PDF_CONVERSION_FAILED` transition arriving from `rendering` and adding no status value
     - The relay carries **no** document-phase state that cannot be reconstructed from the run row plus the stored verification result, and its stream closing during compile, render or verify causes no change to the run's outcome
     - After a 120-second event gap on a non-terminal run, the client opens a new stream within 5 seconds, reconstructs the compile / render / verify state from the row and the stored result **before** rendering, and requests no event replay

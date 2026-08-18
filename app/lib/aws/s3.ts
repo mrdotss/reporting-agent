@@ -34,6 +34,23 @@ export const MAX_PRESIGN_SECONDS = 300
 /** The second segment of every artifact key. */
 export const ARTIFACT_SEGMENT_SNAPSHOTS = "snapshots"
 
+/** The report artifacts' second segment — `.docx`, `.pdf`, ledger, AST, prose. */
+export const ARTIFACT_SEGMENT_REPORTS = "reports"
+
+/**
+ * The **only** two second segments a download may name (Requirement 43.2).
+ *
+ * A closed set matched exactly, not a prefix and not a pattern. `previews` is
+ * deliberately outside it: a preview is written under
+ * `<actor>/previews/<previewId>/preview.pdf` and presented inline by a route with
+ * its own key template, so the report download path is *structurally* unable to
+ * serve a preview and the preview path is unable to serve a report. That is a
+ * property of the key space rather than a rule either route has to remember.
+ */
+export const DOWNLOADABLE_SEGMENTS: ReadonlySet<string> = Object.freeze(
+  new Set([ARTIFACT_SEGMENT_SNAPSHOTS, ARTIFACT_SEGMENT_REPORTS])
+)
+
 /** The minimum segment count of `<actor>/snapshots/<run>/<rest>`. */
 const MINIMUM_SEGMENTS = 4
 
@@ -46,6 +63,8 @@ const MINIMUM_SEGMENTS = 4
  */
 export type ParsedArtifactKey = {
   actorId: string
+  /** `snapshots` or `reports` — never anything else; see {@link DOWNLOADABLE_SEGMENTS}. */
+  kind: string
   runId: string
   rest: string
 }
@@ -74,10 +93,12 @@ export class ArtifactAccessError extends Error {
  * compare equal to an empty candidate. Requiring four segments is what makes
  * `alice/snapshots/run-1` — a prefix, not an object — fail to parse.
  *
- * `snapshots` is matched exactly. There is deliberately no case-folding and no
- * normalization: S3 keys are byte strings, `Snapshots/` is a different prefix
- * from `snapshots/`, and accepting both here would authorize against a key the
- * writer never wrote.
+ * The second segment is matched **exactly**, against a closed set of two. There
+ * is deliberately no case-folding and no normalization: S3 keys are byte strings,
+ * `Snapshots/` is a different prefix from `snapshots/`, and accepting both here
+ * would authorize against a key the writer never wrote. `previews` is absent from
+ * that set, which is what makes a preview unreachable through the report download
+ * path however the caller asks.
  */
 export function parseArtifactKey(key: string): ParsedArtifactKey | null {
   if (typeof key !== "string" || key.length === 0) return null
@@ -86,10 +107,11 @@ export function parseArtifactKey(key: string): ParsedArtifactKey | null {
 
   if (segments.length < MINIMUM_SEGMENTS) return null
   if (segments.some((segment) => segment.length === 0)) return null
-  if (segments[1] !== ARTIFACT_SEGMENT_SNAPSHOTS) return null
+  if (!DOWNLOADABLE_SEGMENTS.has(segments[1])) return null
 
   return {
     actorId: segments[0],
+    kind: segments[1],
     runId: segments[2],
     rest: segments.slice(3).join("/"),
   }
@@ -212,7 +234,7 @@ export async function getSnapshotJson(key: string): Promise<unknown> {
   if (parseArtifactKey(key) === null) {
     throw new ArtifactAccessError(
       "The supplied object key is not a well-formed artifact key " +
-        "(<actor_id>/snapshots/<runId>/<rest>), so no object was read."
+        "(<actor_id>/<snapshots|reports>/<runId>/<rest>), so no object was read."
     )
   }
 

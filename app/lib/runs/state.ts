@@ -5,6 +5,7 @@ import { and, desc, eq } from "drizzle-orm"
 import { getDb } from "@/lib/db"
 import {
   reportRuns,
+  reportVerifications,
   runErrorCode,
   type ReportRun,
   type RunErrorCode,
@@ -489,4 +490,65 @@ export async function applyRunWriteIfStatus(
     .returning()
 
   return row
+}
+
+/**
+ * Apply a write **only if** the row's status is still what was read **and** a
+ * passing verification exists for the run (Requirement 41.1).
+ *
+ * The only transition with a precondition beyond {@link DRIVEN}, and the reason
+ * is worth stating plainly: `completed` is the status the download control keys
+ * off. A run that reached it before its proof was stored would present a
+ * download for a document nothing had verified — for however long the
+ * verification callback took to arrive, and forever if it never did.
+ *
+ * ## Why one transaction rather than two statements
+ *
+ * The check and the update run inside `BEGIN … COMMIT`, at Postgres's default
+ * `READ COMMITTED`. That is not belt and braces around a check that would
+ * usually pass: without it there is a real interleaving where the `SELECT` sees
+ * a `pass` row that a concurrent transaction then rolls back, and the `UPDATE`
+ * commits `completed` against a verification that no longer exists. One
+ * transaction makes the two statements atomic with respect to any other writer.
+ *
+ * The status predicate rides along for the reason {@link applyRunWriteIfStatus}
+ * carries it: the reaper's sweep can fail the row between the endpoint's read
+ * and this write, and a decision made against a stale status must not reopen a
+ * terminal row.
+ *
+ * Returns `undefined` for **either** miss, and deliberately does not distinguish
+ * them to the caller. Both mean the same thing to the endpoint — this transition
+ * does not apply — and a caller that could tell "no passing verification" from
+ * "the row moved on" would be a caller tempted to retry one of them.
+ */
+export async function applyVerifiedCompletion(
+  runId: string,
+  expectedStatus: RunStatus,
+  values: RunStateWrite,
+  now: Date
+): Promise<ReportRun | undefined> {
+  return getDb().transaction(async (tx) => {
+    const [proof] = await tx
+      .select({ id: reportVerifications.id })
+      .from(reportVerifications)
+      .where(
+        and(
+          eq(reportVerifications.runId, runId),
+          eq(reportVerifications.status, "pass")
+        )
+      )
+      .limit(1)
+
+    if (proof === undefined) return undefined
+
+    const [row] = await tx
+      .update(reportRuns)
+      .set({ ...values, updatedAt: now })
+      .where(
+        and(eq(reportRuns.id, runId), eq(reportRuns.status, expectedStatus))
+      )
+      .returning()
+
+    return row
+  })
 }

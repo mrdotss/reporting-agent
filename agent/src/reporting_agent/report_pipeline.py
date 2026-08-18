@@ -336,9 +336,21 @@ async def _document_phases(
 
     # Written on both paths (Req 25.10): the panel presents every finding for a run whose
     # document was withheld, and it can only do that from a result the app can read.
-    await write_verification_result(
+    artifact_key, _ = await write_verification_result(
         store, result, actor_id=plan.actor_id, run_id=plan.run_id
     )
+    # Then recorded with the app, as a **pointer** to what was just written — so the
+    # artifact exists before anything names it, on both paths.
+    if progress is not None:
+        await progress.report_verification(
+            attempt_id=str(result["attempt_id"]),
+            status=str(result["status"]),
+            figure_count=int(result["figure_count"]),
+            snapshot_sha256=str(result["snapshot_sha256"]),
+            docx_sha256=str(result["docx_sha256"]),
+            pdf_sha256=str(result["pdf_sha256"]),
+            artifact_key=artifact_key,
+        )
     yield _verification_event(result)
 
     if result["status"] != "pass":

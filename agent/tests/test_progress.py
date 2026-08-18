@@ -665,3 +665,123 @@ def test_the_httpx_transport_posts_json_with_the_header_and_opens_no_socket():
     assert client.posts[0]["headers"][TOKEN_HEADER] == TOKEN
     assert client.posts[0]["json"]["phase"] == "completed"
     assert client.posts[0]["timeout"] == PROGRESS_TIMEOUT_S
+
+
+# --------------------------------------------------------------------------- #
+# Req 41.5 — the verification callback carries a pointer
+# --------------------------------------------------------------------------- #
+
+
+def _verification_reporter(transport):
+    return ProgressReporter(
+        progress_url=f"https://app.test/api/internal/runs/{RUN_ID}/progress",
+        progress_token=TOKEN,
+        run_id=RUN_ID,
+        transport=transport,
+    )
+
+
+def test_the_verification_callback_goes_to_the_sibling_endpoint():
+    """Derived from `progress_url` by replacing its last segment, rather than carried as
+    a thirteenth context field — the two are one endpoint pair, and a context that could
+    name them independently is a context that could name a mismatched pair."""
+    transport = FakeTransport()
+
+    asyncio.run(
+        _verification_reporter(transport).report_verification(
+            attempt_id="att-1",
+            status="pass",
+            figure_count=12,
+            snapshot_sha256="a" * 64,
+            docx_sha256="b" * 64,
+            pdf_sha256="c" * 64,
+            artifact_key="usr_1/reports/run_1/verification-att-1.json",
+        )
+    )
+
+    assert len(transport.calls) == 1
+    assert transport.calls[0]["url"] == (
+        f"https://app.test/api/internal/runs/{RUN_ID}/verification"
+    )
+
+
+def test_the_verification_callback_carries_a_key_and_no_findings():
+    """The whole point of the pointer design. A 1,000-finding list with 200-character
+    excerpts is several hundred kilobytes, and a fire-and-forget POST abandoned after
+    five seconds would fail most reliably on the run carrying the most findings."""
+    transport = FakeTransport()
+
+    asyncio.run(
+        _verification_reporter(transport).report_verification(
+            attempt_id="att-1",
+            status="fail",
+            figure_count=0,
+            snapshot_sha256="a" * 64,
+            docx_sha256="b" * 64,
+            pdf_sha256="c" * 64,
+            artifact_key="usr_1/reports/run_1/verification-att-1.json",
+        )
+    )
+
+    body = transport.calls[0]["body"]
+    assert body["artifact_key"].endswith("verification-att-1.json")
+    assert set(body) == {
+        "run_id",
+        "attempt_id",
+        "status",
+        "figure_count",
+        "snapshot_sha256",
+        "docx_sha256",
+        "pdf_sha256",
+        "artifact_key",
+    }
+    assert "findings" not in body
+    assert "counts" not in body
+    assert TOKEN not in str(body), "the token travels in the header, never in the body"
+
+
+def test_the_verification_callback_never_raises_and_never_fails_the_run():
+    """A verification that did not land leaves the row short of its proof, and
+    `verifying → completed` then refuses — which the reaper resolves as a TIMEOUT.
+
+    Worse than a landed callback, and much better than a run that died trying to report
+    itself.
+    """
+
+    class Broken:
+        async def post_json(self, url, *, body, headers, timeout):
+            raise RuntimeError("the app is down")
+
+    asyncio.run(
+        _verification_reporter(Broken()).report_verification(
+            attempt_id="att-1",
+            status="pass",
+            figure_count=1,
+            snapshot_sha256="a" * 64,
+            docx_sha256="b" * 64,
+            pdf_sha256="c" * 64,
+            artifact_key="usr_1/reports/run_1/verification-att-1.json",
+        )
+    )
+
+
+def test_a_disabled_reporter_sends_no_verification_callback():
+    """A chat prompt carries no run, so there is nothing to record against."""
+    transport = FakeTransport()
+    disabled = ProgressReporter(
+        progress_url=None, progress_token=None, run_id=None, transport=transport
+    )
+
+    asyncio.run(
+        disabled.report_verification(
+            attempt_id="att-1",
+            status="pass",
+            figure_count=1,
+            snapshot_sha256="a" * 64,
+            docx_sha256="b" * 64,
+            pdf_sha256="c" * 64,
+            artifact_key="k",
+        )
+    )
+
+    assert transport.calls == []

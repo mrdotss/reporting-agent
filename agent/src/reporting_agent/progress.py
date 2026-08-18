@@ -256,6 +256,16 @@ class ProgressReporter:
 
         self.enabled: bool = bool(self._url and self._token and self._run_id)
 
+        # The sibling endpoint, derived by replacing `progress_url`'s last segment.
+        # Derived rather than carried as a thirteenth context field because the two are
+        # one endpoint pair, and a context that could name them independently is a
+        # context that could name a mismatched pair.
+        self._verification_url: str = (
+            f"{self._url.rsplit('/', 1)[0]}/verification"
+            if "/" in self._url
+            else ""
+        )
+
         # The phase the row is believed to carry. A `report` naming a different phase is
         # a *transition* and is exempt from the throttle; one naming this phase is an
         # in-phase refresh and is not.
@@ -487,17 +497,65 @@ class ProgressReporter:
 
         return body
 
+    async def report_verification(
+        self,
+        *,
+        attempt_id: str,
+        status: str,
+        figure_count: int,
+        snapshot_sha256: str,
+        docx_sha256: str,
+        pdf_sha256: str,
+        artifact_key: str,
+    ) -> None:
+        """Record this run's verification with the app, fire-and-forget (Req 41.5).
+
+        A **pointer**, not the result. Up to 1,000 findings with 200-character excerpts
+        is several hundred kilobytes, and a fire-and-forget POST abandoned after five
+        seconds would fail most reliably on the run carrying the most findings — exactly
+        backwards. The artifact is written before this is sent, on both the passing and
+        the failing path, so the key always names something readable.
+
+        Sent to the sibling endpoint of `progress_url`, derived by replacing the last
+        path segment. Derived rather than carried as a thirteenth context field because
+        the two are one endpoint pair: a context that could name them independently is a
+        context that could name a mismatched pair.
+
+        Never raises, and never fails the run. A verification that did not land leaves
+        the row short of its proof, and `verifying → completed` then refuses — which the
+        reaper resolves as a `TIMEOUT` on the verifying phase. That is a worse outcome
+        than a landed callback and a much better one than a run that died trying to
+        report itself.
+        """
+        if not self.enabled or not self._verification_url:
+            return
+
+        body = {
+            "run_id": self._run_id,
+            "attempt_id": attempt_id,
+            "status": status,
+            "figure_count": int(figure_count),
+            "snapshot_sha256": snapshot_sha256,
+            "docx_sha256": docx_sha256,
+            "pdf_sha256": pdf_sha256,
+            "artifact_key": artifact_key,
+        }
+        await self._deliver("verification", body, url=self._verification_url)
+
     # --- delivery --------------------------------------------------------------------
 
-    async def _deliver(self, phase: str, body: Mapping[str, Any]) -> None:
+    async def _deliver(
+        self, phase: str, body: Mapping[str, Any], *, url: str | None = None
+    ) -> None:
         """POST `body`, retrying at most once. Never raises (Req 38.3, 38.4)."""
         headers = {TOKEN_HEADER: self._token}
+        target = self._url if url is None else url
 
         for attempt in range(1, PROGRESS_MAX_ATTEMPTS + 1):
             try:
                 status = await asyncio.wait_for(
                     self._transport.post_json(
-                        self._url,
+                        target,
                         body=body,
                         headers=headers,
                         timeout=PROGRESS_TIMEOUT_S,
