@@ -402,6 +402,7 @@ async def _document_phases(
     from reporting_agent.compile.blocks.base import DesignSettings
     from reporting_agent.compile.snapshot_view import build_snapshot_view
     from reporting_agent.render.docx import render_document
+    from reporting_agent.render.html import emit_html
     from reporting_agent.render.pdf import convert_to_pdf
 
     design = DesignSettings.from_plain(definition.get("design"))
@@ -507,6 +508,10 @@ async def _document_phases(
         ledger_bytes=compiled.ledger.serialize(),
         ast=ast_to_plain(compiled.document),
         prose=_prose_bundle(compiled),
+        # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
+        # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
+        # rendering of this report and the delivered `.pdf` cannot describe two.
+        html=emit_html(compiled.document).html,
         chart_sidecars=dict(rendered.chart_sidecars),
     )
     yield steps.end(upload_step["id"])
@@ -1000,11 +1005,16 @@ async def run_render_preview(
     wizard that refused to show a page until every number was provable would be unusable at
     exactly the moment a consultant needs to see the page.
     """
-    from reporting_agent.artifacts import preview_key
+    from reporting_agent.artifacts import (
+        HTML_CONTENT_TYPE,
+        preview_html_key,
+        preview_key,
+    )
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
     from reporting_agent.compile.snapshot_view import build_snapshot_view
     from reporting_agent.render.docx import render_document
+    from reporting_agent.render.html import emit_html
     from reporting_agent.render.pdf import convert_to_pdf
     from reporting_agent.storage.base import owner_tags
 
@@ -1039,12 +1049,27 @@ async def run_render_preview(
         preview=True,
     )
     converted = convert_to_pdf(rendered.docx_bytes)
+    tags = owner_tags(actor_id)
+
     await store.put_bytes(
         preview_key(actor_id, preview_id),
         converted.pdf_bytes,
         content_type="application/pdf",
-        tags=owner_tags(actor_id),
+        tags=tags,
     )
+
+    # Req 14.1 — the paper canvas emits "from the same document AST the Docx_Renderer
+    # emits from ... through the Html_Emitter", and holds no layout definition of its
+    # own. `compiled.document` is that AST, by identity: the object two lines above
+    # produced the `.docx`. Emitting here rather than letting the app walk the tree is
+    # what keeps the number of layout definitions at two.
+    await store.put_bytes(
+        preview_html_key(actor_id, preview_id),
+        emit_html(compiled.document).html.encode("utf-8"),
+        content_type=HTML_CONTENT_TYPE,
+        tags=tags,
+    )
+
     yield steps.end(step["id"])
 
 

@@ -375,7 +375,14 @@ def test_every_declared_artifact_is_written_under_the_actor_prefix(completed) ->
     pipeline, _, _ = completed
     keys = report_objects(pipeline.store)
 
-    for name in ("report.docx", "report.pdf", "ledger.json", "ast.json", "prose.json"):
+    for name in (
+        "report.docx",
+        "report.pdf",
+        "ledger.json",
+        "ast.json",
+        "prose.json",
+        "document.html",
+    ):
         assert f"{ACTOR_ID}/reports/{RUN_ID}/{name}" in keys, name
     assert any("verification-" in key for key in keys)
     assert all(key.split("/")[0] == ACTOR_ID for key in keys)
@@ -401,6 +408,70 @@ def test_the_stored_ledger_is_the_one_the_verification_digests(completed) -> Non
         hashlib.sha256(stored.body).hexdigest()
         == pipeline.outcome.verification["ledger_sha256"]  # type: ignore[index]
     )
+
+
+def test_the_stored_html_is_the_emitter_over_the_same_compilation(completed) -> None:
+    """Req 14.1 — one AST, two emissions, and **no third layout definition**.
+
+    The app has `ast.json`, so it could walk the tree and produce its own markup — and
+    then a heading's markup would be decided in two languages by two people who never
+    compared them. The `Html_Emitter` emits once, in the pipeline, over the same
+    `compiled.document` the `.docx` came from, and the app injects the result.
+
+    Asserted by figure count rather than by markup: the emitter's own suite covers what
+    it produces, and what this file is placed to catch is the two artifacts describing
+    **different compilations** — an HTML rendering emitted from a re-compile, or from a
+    tree assembled after the ledger was closed, would show a consultant a page that is
+    not the page that was delivered.
+    """
+    pipeline, _, _ = completed
+
+    stored = pipeline.store.get(f"{ACTOR_ID}/reports/{RUN_ID}/document.html")
+    assert stored is not None and stored.body
+
+    html = stored.body.decode("utf-8")
+
+    # Every figure the ledger holds appears in the rendering, by its formatted string,
+    # read from the **stored ledger artifact** rather than from an attribute this test
+    # hopes exists. A loop over an empty list passes and proves nothing, which is the
+    # one failure mode a test like this actually has.
+    import json
+
+    ledger = pipeline.store.get(f"{ACTOR_ID}/reports/{RUN_ID}/ledger.json")
+    assert ledger is not None
+
+    document = json.loads(ledger.body.decode("utf-8"))
+    formatted = sorted(
+        {
+            entry["formatted"]
+            for entry in document["entries"].values()
+            if isinstance(entry.get("formatted"), str)
+        }
+    )
+
+    assert formatted, "the fixture run produced no figures, so this asserts nothing"
+
+    for value in formatted:
+        assert value in html, value
+
+
+def test_the_stored_html_carries_no_page_number(completed) -> None:
+    """Req 14.3 — no page number, no page count, no page-position indicator.
+
+    The emitter determines no pagination, and a wrong page count is a promise the
+    document breaks. Checked on the **artifact** rather than only in the emitter's own
+    suite, because this is the byte string the browser will inject.
+    """
+    from reporting_agent.render.html import PAGINATION_FORBIDDEN_ATTRIBUTES
+
+    pipeline, _, _ = completed
+    stored = pipeline.store.get(f"{ACTOR_ID}/reports/{RUN_ID}/document.html")
+    assert stored is not None
+
+    html = stored.body.decode("utf-8")
+
+    for attribute in PAGINATION_FORBIDDEN_ATTRIBUTES:
+        assert attribute not in html, attribute
 
 
 # --------------------------------------------------------------------------- #

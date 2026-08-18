@@ -58,6 +58,7 @@ __all__ = [
     "ARTIFACT_KIND_DOCX",
     "ARTIFACT_KIND_PDF",
     "DOCX_CONTENT_TYPE",
+    "HTML_CONTENT_TYPE",
     "PDF_CONTENT_TYPE",
     "PNG_CONTENT_TYPE",
     "REPORTS_SEGMENT",
@@ -66,6 +67,7 @@ __all__ = [
     "canonical_json",
     "chart_image_key",
     "chart_sidecar_key",
+    "preview_html_key",
     "preview_key",
     "report_prefix",
     "reports_key",
@@ -82,6 +84,15 @@ DOCX_CONTENT_TYPE: Final[str] = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 PDF_CONTENT_TYPE: Final[str] = "application/pdf"
+
+HTML_CONTENT_TYPE: Final[str] = "text/html; charset=utf-8"
+"""The emitted paper rendering.
+
+Written as an artifact rather than regenerated in the browser, and that is Requirement
+14.1's "no third layout definition" made structural: the app has the AST, so it *could*
+walk it and produce its own markup — and then a heading's markup would be decided in two
+places, in two languages, by two people who never compared them. The `Html_Emitter` emits
+once, here, and the app injects what it emitted."""
 PNG_CONTENT_TYPE: Final[str] = "image/png"
 
 ARTIFACT_KIND_DOCX: Final[str] = "docx"
@@ -175,9 +186,23 @@ def preview_key(actor_id: str, preview_id: str) -> str:
     `snapshots` and exactly `reports`, so it cannot serve a preview however the caller asks
     — and the preview route's own key template cannot name a report.
     """
+    return f"{_preview_prefix(actor_id, preview_id)}/preview.pdf"
+
+
+def preview_html_key(actor_id: str, preview_id: str) -> str:
+    """`<actor_id>/previews/<previewId>/preview.html` — the same prefix as the `.pdf`.
+
+    Deliberately under `previews/` rather than beside a report: the paper canvas shows a
+    definition the consultant has not saved, so its rendering is not a report's and must
+    not be reachable through anything that serves one.
+    """
+    return f"{_preview_prefix(actor_id, preview_id)}/preview.html"
+
+
+def _preview_prefix(actor_id: str, preview_id: str) -> str:
     return (
         f"{_segment('actor_id', actor_id)}/{PREVIEWS_SEGMENT}/"
-        f"{_segment('preview_id', preview_id)}/preview.pdf"
+        f"{_segment('preview_id', preview_id)}"
     )
 
 
@@ -242,6 +267,7 @@ async def write_report_artifacts(
     ledger_bytes: bytes,
     ast: object,
     prose: object,
+    html: str,
     chart_images: Mapping[str, bytes] | None = None,
     chart_sidecars: Mapping[str, bytes] | None = None,
 ) -> tuple[ArtifactRef, ...]:
@@ -252,9 +278,14 @@ async def write_report_artifacts(
     here would risk writing bytes whose digest is not the one recorded (Req 17.6).
 
     The returned refs are the `.docx` and the `.pdf` only. The ledger, the AST, the prose,
-    the charts and their sidecars are written because a re-verification and the in-app paper
-    rendering read them, not because anyone downloads them, so no `report_file` event names
-    them.
+    the emitted HTML, the charts and their sidecars are written because a re-verification
+    and the in-app paper rendering read them, not because anyone downloads them, so no
+    `report_file` event names them.
+
+    `html` is the `Html_Emitter`'s output for **this** compilation — the same AST the
+    `.docx` was emitted from. Stored rather than regenerated, so the in-app rendering of an
+    archived report is the markup that was emitted when the report was produced rather than
+    whatever today's emitter would make of the same tree.
     """
     tags = owner_tags(actor_id)
 
@@ -281,6 +312,12 @@ async def write_report_artifacts(
     )
     await write_json_artifact(
         store, reports_key(actor_id, run_id, "prose.json"), prose, actor_id=actor_id
+    )
+    await store.put_bytes(
+        reports_key(actor_id, run_id, "document.html"),
+        html.encode("utf-8"),
+        content_type=HTML_CONTENT_TYPE,
+        tags=tags,
     )
 
     for chart_id, image in sorted((chart_images or {}).items()):
