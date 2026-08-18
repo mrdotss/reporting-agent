@@ -4,10 +4,12 @@ The **reporting runtime** in `agent/` is the app's backend brain and the only pl
 Azure is ever touched. Its authoritative contract — request/response shapes,
 reference route handlers, onboarding — belongs in `agent/AGENTCORE_INTEGRATION.md`.
 
-> `agent/` does not exist yet. When it is created, add
-> `#[[file:agent/AGENTCORE_INTEGRATION.md]]` to this doc so the contract is pulled
-> into context automatically, the way `cold-agent` does it. Until then, this file is
-> the contract, and the two must be reconciled the moment the agent lands.
+#[[file:agent/AGENTCORE_INTEGRATION.md]]
+
+> The inclusion above pulls the authoritative contract into context automatically, the
+> way `cold-agent` does it. **That file is the contract**; this document is the
+> guardrails around it. Where the two disagree, the included file is what the runtime
+> actually does — and the disagreement is a bug in this document.
 
 ## Invocation
 - Call **`InvokeAgentRuntime`** (`@aws-sdk/client-bedrock-agentcore`) from the

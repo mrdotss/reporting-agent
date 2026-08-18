@@ -105,9 +105,12 @@ __all__ = [
     "CODE_MISSING_COMMAND",
     "CODE_UNSUPPORTED_COMMAND",
     "COMMANDS",
+    "COMMAND_COMPARE_RUNS",
     "COMMAND_GENERATE_REPORT",
     "COMMAND_HANDLERS",
     "COMMAND_PREFLIGHT",
+    "COMMAND_RENDER_PREVIEW",
+    "COMMAND_VERIFY_REPORT",
     "CONFIG",
     "FOUNDATION_TOOL_NAMES",
     "INVOCATION_ERROR_CODES",
@@ -146,11 +149,31 @@ Event = dict[str, Any]
 
 COMMAND_GENERATE_REPORT: Final[str] = "generate_report"
 COMMAND_PREFLIGHT: Final[str] = "preflight"
+COMMAND_VERIFY_REPORT: Final[str] = "verify_report"
+COMMAND_RENDER_PREVIEW: Final[str] = "render_preview"
 
-COMMANDS: Final[frozenset[str]] = frozenset({COMMAND_GENERATE_REPORT, COMMAND_PREFLIGHT})
-"""The commands this runtime accepts (Req 14.3). `compare_runs` and `verify_report` belong
-to the specs that add the compile/render/verify pipeline; naming one here would route a
-payload to a pipeline that does not exist."""
+COMMAND_COMPARE_RUNS: Final[str] = "compare_runs"
+"""**Declared and unrouted**, deliberately (Req 14.5).
+
+A comparison is a `comparison_delta` block compiled inside a run, not a standalone
+invocation, and a standalone comparison screen is out of scope. Naming it here rather than
+leaving it out is the honest record: the contract document lists it, so a reader of
+`AGENTCORE_INTEGRATION.md` learns that it exists and is not routed, rather than wondering
+whether its absence is an oversight."""
+
+COMMANDS: Final[frozenset[str]] = frozenset(
+    {
+        COMMAND_GENERATE_REPORT,
+        COMMAND_PREFLIGHT,
+        COMMAND_VERIFY_REPORT,
+        COMMAND_RENDER_PREVIEW,
+    }
+)
+"""The commands this runtime accepts (Req 14.3).
+
+`verify_report` and `render_preview` are **deterministic**: any `prompt` in the payload is
+ignored, because neither has a model in it and a payload field nothing reads is a field a
+caller will eventually expect to matter."""
 
 
 # --- error codes that describe the *invocation*, not the collection -------------------
@@ -888,9 +911,66 @@ async def handle_generate_report(
         yield event
 
 
+async def handle_verify_report(
+    invocation: Invocation, steps: StepTracker
+) -> AsyncIterator[Event]:
+    """Re-verify a stored report from its pinned version and its pinned snapshot (Req 36.4).
+
+    Deterministic: any `prompt` in the payload is ignored. Nothing here asks a model, and
+    the prose it recompiles against is the **stored** bundle — re-asking would make the
+    recompiled ledger depend on a model's determinism, which is exactly what Req 9.13's
+    byte-identical assertion cannot tolerate.
+
+    Fetches no fresh snapshot and runs no collection. Every input is read back from the
+    run's own artifacts, and an absent, unreadable or digest-mismatched one sets this
+    attempt's status to fail naming that input rather than reconstructing anything.
+    """
+    from reporting_agent.report_pipeline import run_verify_report
+
+    async for event in run_verify_report(
+        payload=invocation.payload,
+        context=invocation.context,
+        steps=steps,
+        artifact_bucket=CONFIG.artifact_bucket,
+        aws_region=CONFIG.aws_region,
+        progress=invocation.progress,
+    ):
+        yield event
+
+
+async def handle_render_preview(
+    invocation: Invocation, steps: StepTracker
+) -> AsyncIterator[Event]:
+    """Render a draft definition carried **inline**, for layout (Req 14.6).
+
+    Inline rather than a stored version id, because the whole point is previewing a draft
+    that has not been saved as a version yet.
+
+    Emits **no** `report_file` (Req 14.6). A preview is not a report: it is written under
+    `previews/<previewId>/`, a prefix the report download predicate is structurally unable
+    to serve, and the app presents it inline. The verifier still runs over it and its status
+    is reported as information, but it **does not gate** — a draft template must be
+    previewable for layout reasons before its figures verify, and a wizard that refused to
+    show a page until every number was provable would be unusable at exactly the moment a
+    consultant needs to see the page.
+    """
+    from reporting_agent.report_pipeline import run_render_preview
+
+    async for event in run_render_preview(
+        payload=invocation.payload,
+        context=invocation.context,
+        steps=steps,
+        artifact_bucket=CONFIG.artifact_bucket,
+        aws_region=CONFIG.aws_region,
+    ):
+        yield event
+
+
 COMMAND_HANDLERS: Final[dict[str, CommandHandler]] = {
     COMMAND_GENERATE_REPORT: handle_generate_report,
     COMMAND_PREFLIGHT: handle_preflight,
+    COMMAND_VERIFY_REPORT: handle_verify_report,
+    COMMAND_RENDER_PREVIEW: handle_render_preview,
 }
 
 

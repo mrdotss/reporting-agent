@@ -725,7 +725,9 @@ def test_every_progress_event_that_does_reach_the_wire_names_an_open_step() -> N
     ("body", "expected_code"),
     [
         pytest.param(payload("compare_runs"), CODE_UNSUPPORTED_COMMAND, id="unrecognised"),
-        pytest.param(payload("verify_report"), CODE_UNSUPPORTED_COMMAND, id="not yet routed"),
+        pytest.param(
+            payload("summarise"), CODE_UNSUPPORTED_COMMAND, id="never a command"
+        ),
         pytest.param(payload(include_command=False), CODE_MISSING_COMMAND, id="no command"),
         pytest.param(payload(actor_id=_ABSENT), CODE_INVALID_ACTOR, id="no actor"),
     ],

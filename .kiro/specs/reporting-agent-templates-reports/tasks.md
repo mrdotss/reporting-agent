@@ -514,14 +514,14 @@ migration.
     - Open and close every step through the foundation's `StepTracker`, so `progress.id` still references an open step, `done` never decreases, and a phase that ends by raising still gets its `phase: "end"` before `done`
     - _Requirements: 3.3, 3.9, 5.4, 8.9, 25.1, 32.3, 41.1, 41.3, 41.4, 41.7, 42.1_
 
-  - [ ] 11.2 Route `verify_report` and `render_preview`, and write the invoke contract
+  - [x] 11.2 Route `verify_report` and `render_preview`, and write the invoke contract
     - Add `COMMAND_VERIFY_REPORT` and `COMMAND_RENDER_PREVIEW` to `main.py`'s `COMMAND_HANDLERS`, both deterministic with any `prompt` ignored; leave `compare_runs` **declared and unrouted**, because comparison is a block compiled inside a run and a standalone comparison screen is out of scope
     - `verify_report` re-verifies a stored report from its pinned version and pinned snapshot; `render_preview` compiles a definition carried **inline** rather than a stored version id, renders it through the real `python-docx → LibreOffice → PDF` path, writes to `<actor_id>/previews/<previewId>/preview.pdf`, and emits **no** `report_file` event
     - The preview `.docx` carries a per-page notice emitted against each theme's `PreviewNotice` paragraph style, so the artifact says what it is even after it leaves the app; the verifier runs over a preview and its status is reported as information but **does not gate** it, because a draft template must be previewable for layout reasons before its figures verify
     - Create `agent/AGENTCORE_INTEGRATION.md` as the authoritative invoke contract: the unchanged twelve-field `context`, `generate_report` extended with `template_version_id` and the union `scope`, `verify_report`, `render_preview`, and `compare_runs` recorded as declared and unrouted; add the `#[[file:agent/AGENTCORE_INTEGRATION.md]]` inclusion to the workspace steering document in the same change so the two cannot drift
     - _Requirements: 14.5, 14.6, 36.4_
 
-  - [ ] 11.3 Emit the four declared event types and assert the ordering contract
+  - [x] 11.3 Emit the four declared event types and assert the ordering contract
     - `verification` — **exactly one** per invocation, carrying the status, the figure count, every blocking and advisory finding with its type and location, the `snapshot_id`, the replay outcome with both digests, the drift descriptor and the counts, and carrying the **same values written to the store**, so a client that received no event renders the identical panel from the stored result
     - `report_file` — one per artifact carrying key, bucket, kind and byte count, and **no presigned URL and no content**; emitted only after a `verification` carrying `pass` earlier in that same invocation, never for a failing verification, and never in an invocation that emitted no `verification`
     - `chart` — the structured spec with each plotted value as a decimal string, the `encoding` taken **from the emitting block's declaration rather than the series count**, the chart data hash and a ledger reference per plotted figure

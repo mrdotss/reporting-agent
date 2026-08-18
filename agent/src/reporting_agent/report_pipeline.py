@@ -659,3 +659,275 @@ def _s3_store(bucket: str, region: str | None) -> ObjectStore:
     from reporting_agent.storage.s3 import S3ObjectStore
 
     return S3ObjectStore(bucket, region_name=region)
+
+
+# --------------------------------------------------------------------------- #
+# `verify_report` — re-verify a stored report, fetching no fresh anything
+# --------------------------------------------------------------------------- #
+
+
+async def run_verify_report(
+    *,
+    payload: Mapping[str, PlainData],
+    context: Mapping[str, PlainData],
+    steps: StepEvents,
+    artifact_bucket: str,
+    aws_region: str | None = None,
+    progress: ProgressReporter | None = None,
+    object_store: ObjectStore | None = None,
+) -> AsyncIterator[Event]:
+    """Re-verify one stored report (Req 36.4).
+
+    Reads the stored `.docx`, `.pdf`, ledger, prose and the snapshot the run names.
+    Recompiles the **pinned** version — not the template's current one, which is the whole
+    point: editing a template must never change what an existing report is checked against
+    — and asserts the recompiled ledger is byte-identical to the stored one.
+
+    An absent, unreadable or digest-mismatched stored input sets **this attempt's** status
+    to fail naming that input. It reconstructs nothing and modifies no earlier row: the
+    original verification is a record of what was true then, and a later attempt that
+    rewrote it would destroy the only evidence of the discrepancy it found.
+    """
+    from reporting_agent.artifacts import report_prefix
+    from reporting_agent.compile.blocks import compile_document
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+    del progress
+
+    actor_id = str(context.get("actor_id") or "")
+    run_id = str(context.get("run_id") or "")
+    attempt_id = str(payload.get("attempt_id") or f"{run_id}-reverify")
+    definition = payload.get("definition")
+    if not isinstance(definition, Mapping):
+        raise VerificationFailedError(
+            "verify_report needs the pinned template version's definition; re-verifying "
+            "against the template's current version would check the report against a "
+            "document it was never produced from"
+        )
+
+    store = object_store or _s3_store(artifact_bucket, aws_region)
+    step = steps.start(
+        TOOL_VERIFY_DOCUMENT, label="Re-verifying", status="Reading the stored report"
+    )
+    yield step
+
+    prefix = report_prefix(actor_id, run_id)
+    docx_bytes = await _require_object(store, f"{prefix}report.docx")
+    pdf_bytes = await _require_object(store, f"{prefix}report.pdf")
+    stored_ledger = await _require_object(store, f"{prefix}ledger.json")
+    snapshot = await store.get_json(_snapshot_key(actor_id, run_id))
+    prose = await _optional_json(store, f"{prefix}prose.json")
+
+    view = build_snapshot_view(snapshot)
+    recompiled = compile_document(
+        definition, view=view, prose=_StoredProse(prose), catalog_scales=None
+    )
+    if recompiled.ledger.serialize() != stored_ledger:
+        raise VerificationFailedError(
+            "the ledger recompiled from the pinned version and the stored snapshot is not "
+            "byte-identical to the stored ledger; the two describe different documents and "
+            "no re-verification of this report is meaningful"
+        )
+
+    yield steps.end(step["id"])
+
+    result = await _verify_stored(
+        attempt_id=attempt_id,
+        run_id=run_id,
+        definition=definition,
+        snapshot=snapshot,
+        view=view,
+        compiled=recompiled,
+        docx_bytes=docx_bytes,
+        pdf_bytes=pdf_bytes,
+        store=store,
+        actor_id=actor_id,
+    )
+    await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)
+    yield _verification_event(result)
+
+
+class _StoredProse:
+    """The persisted prose bundle, replayed into a recompile as a `ProseProvider`.
+
+    Req 19.6 — a compile is a pure function of (template version, snapshot, prose bundle).
+    Asking the model again here would make a re-verification's byte-identical ledger depend
+    on a model producing the same words twice, which is not a property models have.
+    """
+
+    __slots__ = ("_blocks",)
+
+    def __init__(self, bundle: Mapping[str, Any] | None) -> None:
+        blocks = (bundle or {}).get("blocks")
+        self._blocks: Mapping[str, str] = blocks if isinstance(blocks, Mapping) else {}
+
+    def narrate(self, request: Any) -> str:
+        return self._blocks.get(request.block_id, "")
+
+
+async def _verify_stored(
+    *,
+    attempt_id: str,
+    run_id: str,
+    definition: Mapping[str, PlainData],
+    snapshot: Mapping[str, Any],
+    view: Any,
+    compiled: Any,
+    docx_bytes: bytes,
+    pdf_bytes: bytes,
+    store: ObjectStore,
+    actor_id: str,
+) -> Mapping[str, Any]:
+    from docx import Document as open_docx
+
+    from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.render.pdf import digest_of
+    from reporting_agent.verify.replay import plan_from_snapshot
+    from reporting_agent.verify.verifier import VerifyInputs, verify
+
+    archived = await _fetch_archive(store, actor_id=actor_id, run_id=run_id)
+    replay_plan = None
+    try:
+        replay_plan = plan_from_snapshot(
+            snapshot, catalog=load_catalog(), objects_named=len(archived)
+        )
+    except Exception as exc:
+        logger.warning(
+            "the replay plan could not be reconstructed on re-verification (%s)",
+            type(exc).__name__,
+        )
+
+    pdf_text, pdf_pages = _pdf_text(pdf_bytes)
+    return await verify(
+        VerifyInputs(
+            attempt_id=attempt_id,
+            run_id=run_id,
+            template_version_id=str(payload_version_id(definition) or run_id),
+            docx_bytes=docx_bytes,
+            pdf_bytes=pdf_bytes,
+            ledger=compiled.ledger,
+            ast=compiled.document,
+            document=open_docx(io.BytesIO(docx_bytes)),
+            snapshot=snapshot,
+            view=view,
+            definition=definition,
+            pdf_text=pdf_text,
+            pdf_pages=pdf_pages,
+            pdf_sha256=digest_of(pdf_bytes),
+            snapshot_sha256=str(snapshot.get("snapshot_id") or ""),
+            archived=archived,
+            replay_plan=replay_plan,
+            requery=None,
+            drift_seed=str(snapshot.get("snapshot_id") or ""),
+        )
+    )
+
+
+def payload_version_id(definition: Mapping[str, PlainData]) -> str | None:
+    identity = definition.get("identity")
+    if isinstance(identity, Mapping):
+        value = identity.get("version_id")
+        return str(value) if isinstance(value, str) else None
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# `render_preview` — a draft, rendered for layout, gating nothing
+# --------------------------------------------------------------------------- #
+
+
+async def run_render_preview(
+    *,
+    payload: Mapping[str, PlainData],
+    context: Mapping[str, PlainData],
+    steps: StepEvents,
+    artifact_bucket: str,
+    aws_region: str | None = None,
+    object_store: ObjectStore | None = None,
+) -> AsyncIterator[Event]:
+    """Compile and render an **inline** definition against a completed run's snapshot.
+
+    Emits **no** `report_file` (Req 14.6), and the key it writes — `previews/<previewId>/`
+    — is one the report download predicate cannot serve, so "a preview is not a report" is
+    a property of the key space rather than a rule the download route has to remember.
+
+    The verifier runs and its status is reported as **information**. It does not gate: a
+    draft template must be previewable for layout reasons before its figures verify, and a
+    wizard that refused to show a page until every number was provable would be unusable at
+    exactly the moment a consultant needs to see the page.
+    """
+    from reporting_agent.artifacts import preview_key
+    from reporting_agent.compile.blocks import compile_document
+    from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.render.docx import render_document
+    from reporting_agent.render.pdf import convert_to_pdf
+    from reporting_agent.storage.base import owner_tags
+
+    actor_id = str(context.get("actor_id") or "")
+    preview_id = str(payload.get("preview_id") or "")
+    definition = payload.get("definition")
+    if not isinstance(definition, Mapping):
+        raise RenderFailedError(
+            "render_preview carries its definition inline; a preview of a stored version "
+            "id would be a preview of something already saved"
+        )
+
+    _assert_compilable(definition)
+    _assert_theme_present(definition)
+
+    store = object_store or _s3_store(artifact_bucket, aws_region)
+    snapshot = await store.get_json(
+        _snapshot_key(actor_id, str(payload.get("snapshot_run_id") or ""))
+    )
+
+    step = steps.start(
+        TOOL_RENDER_DOCUMENT, label="Preview", status="Rendering a draft page"
+    )
+    yield step
+    compiled = compile_document(definition, view=build_snapshot_view(snapshot))
+    # `preview=True` is what puts the per-page notice in against each theme's
+    # `PreviewNotice` style, so the artifact says what it is even after it leaves the app.
+    rendered = render_document(
+        compiled.document,
+        ledger=compiled.ledger,
+        design=DesignSettings.from_plain(definition.get("design")),
+        preview=True,
+    )
+    converted = convert_to_pdf(rendered.docx_bytes)
+    await store.put_bytes(
+        preview_key(actor_id, preview_id),
+        converted.pdf_bytes,
+        content_type="application/pdf",
+        tags=owner_tags(actor_id),
+    )
+    yield steps.end(step["id"])
+
+
+async def _require_object(store: ObjectStore, key: str) -> bytes:
+    """One stored input, or a failed attempt naming it.
+
+    Named, because "the re-verification failed" is not actionable and "the stored `.pdf`
+    for this run is gone" is.
+    """
+    try:
+        return await store.get_bytes(key)
+    except Exception as exc:
+        raise VerificationFailedError(
+            f"the stored input at {key} could not be read ({type(exc).__name__}); this "
+            f"attempt fails naming it, reconstructs nothing, and leaves every earlier "
+            f"verification of this run unmodified"
+        ) from exc
+
+
+async def _optional_json(store: ObjectStore, key: str) -> Mapping[str, Any] | None:
+    try:
+        return await store.get_json(key)
+    except Exception:
+        return None
+
+
+def _snapshot_key(actor_id: str, run_id: str) -> str:
+    from reporting_agent.collect.snapshot import snapshot_key
+
+    return snapshot_key(actor_id, run_id)

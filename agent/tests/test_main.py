@@ -52,9 +52,12 @@ from reporting_agent.main import (
     CODE_INVALID_ACTOR,
     CODE_MISSING_COMMAND,
     CODE_UNSUPPORTED_COMMAND,
+    COMMAND_COMPARE_RUNS,
     COMMAND_GENERATE_REPORT,
     COMMAND_HANDLERS,
     COMMAND_PREFLIGHT,
+    COMMAND_RENDER_PREVIEW,
+    COMMAND_VERIFY_REPORT,
     COMMANDS,
     INVOCATION_ERROR_CODES,
     SESSION_ID_MAX_LENGTH,
@@ -219,10 +222,24 @@ def handler_yielding(*events: Event):
 # --------------------------------------------------------------------------- #
 
 
-def test_the_two_accepted_commands_are_the_routed_ones() -> None:
-    """Req 14.3 — and every accepted command has a handler, so routing cannot dead-end."""
-    assert COMMANDS == {COMMAND_GENERATE_REPORT, COMMAND_PREFLIGHT}
+def test_every_accepted_command_is_routed_and_compare_runs_is_neither() -> None:
+    """Req 14.3, 14.5 — and every accepted command has a handler, so routing cannot
+    dead-end.
+
+    `compare_runs` is **declared and unrouted**, deliberately: a comparison is a
+    `comparison_delta` block compiled inside a run, not a standalone invocation. Naming it
+    and refusing it is the honest record — a reader of `AGENTCORE_INTEGRATION.md` learns
+    that it exists and is not routed, rather than wondering whether its absence is an
+    oversight.
+    """
+    assert COMMANDS == {
+        COMMAND_GENERATE_REPORT,
+        COMMAND_PREFLIGHT,
+        COMMAND_VERIFY_REPORT,
+        COMMAND_RENDER_PREVIEW,
+    }
     assert set(COMMAND_HANDLERS) == COMMANDS
+    assert COMMAND_COMPARE_RUNS not in COMMANDS
 
 
 @pytest.mark.parametrize("command", sorted(COMMANDS))
