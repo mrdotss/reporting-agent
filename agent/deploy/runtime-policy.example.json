@@ -34,6 +34,7 @@
       "Effect": "Allow",
       "Action": [
         "s3:PutObject",
+        "s3:PutObjectTagging",
         "s3:GetObject"
       ],
       "Resource": "arn:aws:s3:::<ARTIFACT_BUCKET>/*"

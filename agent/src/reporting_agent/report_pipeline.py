@@ -879,9 +879,17 @@ def _prose_provider(model_id: str, region: str | None) -> Any | None:
 
 
 def _s3_store(bucket: str, region: str | None) -> ObjectStore:
+    """An `S3ObjectStore` over the run's artifact bucket.
+
+    The twin of `collect.pipeline._s3_store`, and imported locally for the same reason:
+    every test injects `object_store`, so this seam is the one line of the document phases
+    that only production executes. `tests/test_object_store_factories.py` calls it for
+    exactly that reason — the keyword is `region`, boto3's is `region_name`, and nothing
+    else in the suite had ever run this line to notice the difference.
+    """
     from reporting_agent.storage.s3 import S3ObjectStore
 
-    return S3ObjectStore(bucket, region_name=region)
+    return S3ObjectStore(bucket, region=region)
 
 
 # --------------------------------------------------------------------------- #
