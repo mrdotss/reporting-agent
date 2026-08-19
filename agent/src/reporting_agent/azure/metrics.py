@@ -139,6 +139,16 @@ Mirrors `azure/inventory.py`'s own fallback-wait convention for the analogous qu
 case rather than treating an unparseable header as "no wait needed"."""
 
 _RESPONSE_TOO_LARGE_STATUS: Final[int] = 400
+
+_DATA_PLANE_REFUSED_STATUSES: Final[frozenset[int]] = frozenset({401, 403, 404})
+"""Batch statuses meaning "this endpoint will not serve this location", not "this
+request was malformed".
+
+`401`/`403` because the refusal can come from the metrics service's own authorization
+check rather than from the caller's token, and `404` because a route that is absent is
+the same fact a DNS failure carries one layer down. A `400` is deliberately absent: a
+malformed request would succeed on neither path, and falling back would hide it.
+"""
 _RESPONSE_TOO_LARGE_HEADER: Final[str] = "x-ms-error-code"
 _RESPONSE_TOO_LARGE_VALUE: Final[str] = "ResponseTooLarge"
 
@@ -831,11 +841,54 @@ class MetricsCollector:
             )
             return [*first_gaps, *rest_gaps]
 
+        if response.status in _DATA_PLANE_REFUSED_STATUSES:
+            # The data plane answered, and what it said was "not here, not for you".
+            #
+            # Req 24.2 anticipated a region with **no** metrics data-plane host, which
+            # presents as a DNS failure and is already routed to the per-resource ARM
+            # path. This is the other shape: the host exists, resolves, and refuses.
+            #
+            # It is not the caller being unauthorized. Azure's own first-party `Metrics
+            # Monitor API` principal performs a `Microsoft.Authorization/checkAccess`
+            # to authorize a batch request, and where **that** is denied the endpoint
+            # answers 403 for every caller in the subscription — a service principal
+            # holding Reader, and a subscription owner, identically. Observed on a real
+            # subscription, where the ARM per-resource path served the same metrics for
+            # the same window without complaint.
+            #
+            # So the location is memoised fallback-only for the rest of the run and the
+            # request is re-issued down the path that works. Treating it as a gap
+            # instead — which is what this did — turns a collectable subscription into
+            # `NO_STATISTICS` while a working route sits unused.
+            self.region_resolver.mark_fallback_only(location)
+            logger.warning(
+                "the batch metrics endpoint for location %r answered status %d; the "
+                "location is now fallback-only for this run and the request is being "
+                "re-issued per resource against ARM.",
+                location,
+                response.status,
+            )
+            return await self._collect_batch(
+                actor_id=actor_id,
+                run_id=run_id,
+                subscription_id=subscription_id,
+                location=location,
+                resource_type=resource_type,
+                resource_ids=resource_ids,
+                metric_namespace=metric_namespace,
+                metric_names=metric_names,
+                accumulators=accumulators,
+                day_fold=day_fold,
+                grain=grain,
+                window=window,
+                start_time=start_time,
+                end_time=end_time,
+            )
+
         if not response.ok:
-            # A non-2xx, non-429, non-too-large answer is not named by any
-            # requirement in this task's scope. Every resource in this batch is
-            # typed as metric_error rather than silently discarded, per this
-            # module's own no-bare-suppression discipline.
+            # Any other non-2xx — a 400 above all — is this runtime's own fault or a
+            # condition retrying elsewhere cannot fix, so it stays a typed gap rather
+            # than being masked by a fallback that would succeed for the wrong reason.
             return [
                 record_gap(
                     GAP_TYPE_METRIC_ERROR,

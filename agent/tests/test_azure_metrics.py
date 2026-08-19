@@ -13,6 +13,8 @@ import asyncio
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+
 from fakes.azure_ports import FakeMetricsPort, raw_response_from_recorded
 from fakes.object_store import InMemoryObjectStore
 from fixtures import load_response
@@ -565,6 +567,113 @@ def test_a_dns_fallback_response_is_also_archived() -> None:
     result, _ = accs[(WEB_01, "Percentage CPU")].finalize(WEB_01, "Percentage CPU")
     assert result is not None
     assert result.average == Decimal("5.000000")  # 300 / 60
+
+
+# --------------------------------------------------------------------------- #
+# A data plane that answers, and refuses (Req 24.2's other shape)
+# --------------------------------------------------------------------------- #
+#
+# Req 24.2 anticipated a region with **no** metrics data-plane host, which presents as a
+# DNS failure and has been routed to the per-resource ARM path since the foundation. The
+# case below is the one it did not anticipate: the host exists, resolves, and refuses.
+#
+# It happened on a real subscription and cost a whole diagnosis. Azure's own first-party
+# `Metrics Monitor API` principal performs a `Microsoft.Authorization/checkAccess` to
+# authorize a batch request; where that is denied, the endpoint answers 403 to *every*
+# caller — a service principal holding Reader and a subscription owner alike — while the
+# ARM per-resource path serves the same metrics for the same window happily. The run
+# recorded one `metric_error` per resource and ended `NO_STATISTICS` with a working route
+# sitting unused.
+
+
+def _served_fallback(value: float = 300.0) -> RawHttpResponse:
+    return RawHttpResponse(
+        status=200,
+        headers={},
+        body={
+            "value": [
+                {
+                    "name": {"value": "Percentage CPU"},
+                    "errorCode": "Success",
+                    "timeseries": [{"data": [{"total": value, "count": 60}]}],
+                }
+            ]
+        },
+    )
+
+
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_a_refusing_batch_endpoint_falls_back_and_still_collects(status: int) -> None:
+    """The fix, asserted by its outcome: a statistic exists where there was none."""
+    port = FakeMetricsPort(
+        batch_responses=[RawHttpResponse(status=status, headers={}, body={})],
+        fallback_responses=[_served_fallback()],
+    )
+    collector, _writer = new_collector(port)
+
+    gaps, accs = collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+
+    result, _ = accs[(WEB_01, "Percentage CPU")].finalize(WEB_01, "Percentage CPU")
+    assert result is not None, f"status {status} produced no statistic"
+    assert result.average == Decimal("5.000000")
+    # And no gap, because nothing was lost — the location was rerouted, not degraded.
+    assert [g["gap_type"] for g in gaps] == []
+
+
+def test_a_refused_location_stays_fallback_only_for_the_rest_of_the_run() -> None:
+    """Req 24.6's memo, extended to this refusal.
+
+    The second group for the same location must not pay for another 403. Scripted with a
+    **single** batch response: if the collector tried the batch endpoint twice, the fake
+    would run out and raise, so the assertion is that it does not.
+    """
+    port = FakeMetricsPort(
+        batch_responses=[RawHttpResponse(status=403, headers={}, body={})],
+        fallback_responses=[_served_fallback(), _served_fallback(600.0)],
+    )
+    collector, _writer = new_collector(port)
+
+    collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+    _gaps, accs = collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+
+    result, _ = accs[(WEB_01, "Percentage CPU")].finalize(WEB_01, "Percentage CPU")
+    assert result is not None
+    assert result.average == Decimal("10.000000")  # 600 / 60 — the second fallback
+
+
+def test_a_bad_request_stays_a_gap_rather_than_falling_back() -> None:
+    """A 400 is this runtime's own fault and fails on both paths.
+
+    Falling back would hide it — and worse, might succeed for the wrong reason and put a
+    figure in a document that the malformed request was never entitled to. The fallback
+    sequence is deliberately non-empty: if the collector reroutes, it gets a statistic and
+    this fails.
+    """
+    port = FakeMetricsPort(
+        batch_responses=[RawHttpResponse(status=400, headers={}, body={})],
+        fallback_responses=[_served_fallback()],
+    )
+    collector, _writer = new_collector(port)
+
+    gaps, accs = collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+
+    assert [g["gap_type"] for g in gaps] == ["metric_error"]
+    result, _ = accs[(WEB_01, "Percentage CPU")].finalize(WEB_01, "Percentage CPU")
+    assert result is None
+
+
+def test_the_refusal_is_archived_like_any_other_answer() -> None:
+    """Req 26.3 — the fallback responses reach the raw archive, so a replay of a rerouted
+    run folds the same bytes the run folded."""
+    port = FakeMetricsPort(
+        batch_responses=[RawHttpResponse(status=403, headers={}, body={})],
+        fallback_responses=[_served_fallback()],
+    )
+    collector, writer = new_collector(port)
+
+    collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+
+    assert len(writer.store) == 1  # type: ignore[attr-defined]
 
 
 # --------------------------------------------------------------------------- #
