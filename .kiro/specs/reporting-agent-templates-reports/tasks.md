@@ -555,7 +555,7 @@ migration.
 - [x] 12. Checkpoint — a full run reaches `completed` behind a passing verification
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 13. The wizard, the composer and the report surfaces
+- [x] 13. The wizard, the composer and the report surfaces
   - [x] 13.1 Implement the template routes and server actions
     - `POST /api/templates` (create + `version` 1), `GET /api/templates` (list, scoped by `user_id`), `GET /api/templates/[id]` (draft + current version, **not found** on another user's row), `PATCH /api/templates/[id]` (writes `draft_definition`, inserts no version row), `POST /api/templates/[id]` (validate, canonicalize, insert `max+1`, or return the existing version when the digest is unchanged), `DELETE /api/templates/[id]` (versions a run pinned survive by FK), and `GET /api/templates/catalog` serving the **Metric_Catalog's** selectable items so step 4 reads one catalog rather than a list held in `app/`
     - Every handler on the Node runtime, typing params as `RouteContext<'/api/templates/[id]'>` and **awaiting** them, and parsing every input — path params and search params included — with a **named zod schema** at the boundary; no `as SomeType` on a body, ever; `Cache-Control: no-store` on the handlers that must not be cached
@@ -645,7 +645,7 @@ migration.
     - `--destructive` on no series, no delta, no gridline and no utilization band
     - _Requirements: 16.8, 22.7, 22.8, 22.10, 22.11, 22.12, 42.6, 42.10_
 
-  - [ ] 13.10 RTL tests for the composer and the report surfaces
+  - [x] 13.10 RTL tests for the composer and the report surfaces
     - Composer: three panes in tab order with no focus trap; palette entries describing what a block **emits**; `Enter` on a palette entry appending, selecting and focusing; the drop indicator as a 2px rule that shifts nothing; a row column refusing a dragged row with a blocked cursor and a visible hint and an unchanged order; the same refusal announced for a keyboard attempt; selection as a `--ring` with no fill; the inherited default rendered above the override; the `aria-live` region announcing exactly once per move; and a boundary nudge announcing first-or-last with no move
     - Report surfaces: the permanent preview label surviving scroll and re-render and offering no dismiss; no page number for any document; the three named divergences in visible text; the provenance reveal on hover **and** on focus with identical content, dismissed by pointer-out, blur and `Escape`, and exposed as an accessible description; `--destructive` absent from the gap list, the fidelity badges, the advisory region and every delta; an unrecognized finding type still presented and counted; a discarded `report_file` arriving without a passing `verification` presenting no control and surfacing the ordering-violation state; and no numeral animating while a run is in progress
     - `pnpm lint`, `pnpm typecheck` and `pnpm test` clean
