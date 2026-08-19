@@ -167,15 +167,20 @@ def test_every_negative_test_declares_or_deliberately_does_not() -> None:
     """Every test in these modules either declares a blocking set or is one of the named
     exceptions, so a new negative test cannot be added without deciding which it is.
 
-    The exceptions are the three tests that assert a **pass**: N3b's legitimately empty scope
-    and the locale-indifference observation, which exist precisely to stop the failing tests
-    beside them from being satisfiable the wrong way, and N6, whose run ends before a
-    verification result exists at all.
+    The exceptions all assert something other than a blocking finding set: N3b's legitimately
+    empty scope and the locale-indifference observation, which exist precisely to stop the
+    failing tests beside them from being satisfiable the wrong way; N6, whose run ends before
+    a verification result exists at all; and one guard over the prose mutation's *targeting*,
+    which is a claim about the harness rather than about the verifier.
     """
     passing_by_design = {
         "test_n3b_a_legitimately_empty_scope_still_delivers",
         "test_the_conversion_locale_alone_rewrites_nothing_in_this_renderers_output",
         "test_n6_an_expired_secret_yielding_an_empty_scope_writes_nothing",
+        # Asserts where `_replace_prose_text` puts the mutation, not what the verifier
+        # recorded. It exists because that helper targeted the wrong node about one run in
+        # eight — see its docstring — and a declaration here would claim it observes a gate.
+        "test_the_prose_mutation_lands_outside_every_table",
     }
 
     undeclared = sorted(

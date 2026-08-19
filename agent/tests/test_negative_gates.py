@@ -167,6 +167,55 @@ def test_n1_one_changed_digit_in_prose_fails() -> None:
     assert run.code == ErrorCode.VERIFICATION_FAILED.value
 
 
+def test_the_prose_mutation_lands_outside_every_table() -> None:
+    """The helper's own guard, and it exists because the helper was wrong.
+
+    `_replace_prose_text` must rewrite the copy of the figure that sits in a paragraph, not
+    the copy that sits in a data table — the two are different halves of Req 44.2 and a
+    mutation in the wrong one makes the prose test assert the table pass. Its first version
+    picked the node by `id()` against a pre-collected set, which `lxml`'s on-demand proxies
+    make unsound; see the helper's docstring.
+
+    Asserted structurally rather than through the verification, because the verification
+    reported the same *status* either way. Only the finding set differed, and only
+    sometimes.
+    """
+    import io
+
+    from docx import Document as open_docx
+    from docx.oxml.ns import qn
+
+    harness = Negative(
+        resources=TWO_VMS,
+        definition=TABLE_AND_PROSE,
+        prose=StubProse(f"Peak utilization reached {QUOTABLE_FIGURE} on the database tier."),
+    )
+    harness.run()
+
+    mutated = _replace_prose_text(harness.mutated_docx, QUOTABLE_FIGURE, "51.00%")
+    document = open_docx(io.BytesIO(mutated))
+
+    carriers = [
+        node
+        for node in document.element.body.iter(qn("w:t"))
+        if node.text and "51.00%" in node.text
+    ]
+    assert len(carriers) == 1, [node.text for node in carriers]
+    assert not any(
+        ancestor.tag == qn("w:tbl") for ancestor in carriers[0].iterancestors()
+    ), "the mutation landed in a table cell; it belongs in a paragraph"
+
+    # And the table's copy of the figure is untouched, so the anchored pass has nothing to
+    # say about this document.
+    cells = [
+        node.text
+        for table in document.element.body.iter(qn("w:tbl"))
+        for node in table.iter(qn("w:t"))
+    ]
+    assert QUOTABLE_FIGURE in cells
+    assert "51.00%" not in cells
+
+
 # --------------------------------------------------------------------------- #
 # N2 — two table columns transposed (Req 44.3)
 # --------------------------------------------------------------------------- #
@@ -523,20 +572,44 @@ def _containment_discrepancies(run: Negative) -> list[str]:
 
 
 def _replace_prose_text(payload: bytes, before: str, after: str) -> bytes:
-    """Rewrite one occurrence of `before` in a paragraph run."""
+    """Rewrite one occurrence of `before` in a paragraph run **outside** any table.
+
+    Ancestry is tested per node rather than against a pre-collected set of table nodes, and
+    that is a correctness fix rather than a simplification. The first version built
+    ``{id(node) for ...}`` over every ``w:t`` inside a ``w:tbl`` and skipped a node whose
+    ``id()`` was in it — which is unsound, because an `lxml` element is a **proxy created on
+    demand** over the underlying C node. Holding only the integers keeps no reference, so
+    every proxy was collectable the moment the set comprehension moved on, and CPython
+    reuses freed addresses: a later proxy for a *different* node could land on a recorded
+    id. The prose node was then skipped as "tabled", the mutation fell into a table cell
+    instead, and the test recorded `table_cell_mismatch` beside the token it expected.
+
+    It failed about one run in eight, only in a full-suite run, because that is what changes
+    the allocator's reuse pattern. Sixteen hash seeds and every isolated run were green.
+    """
     import io
 
     from docx import Document as open_docx
     from docx.oxml.ns import qn
 
     document = open_docx(io.BytesIO(payload))
-    tabled = {id(node) for table in document.element.body.iter(qn("w:tbl")) for node in table.iter(qn("w:t"))}
     for node in document.element.body.iter(qn("w:t")):
         # Outside a table on purpose. The same figure is in a cell as well, and rewriting
         # that copy would be N1's *table* half wearing the other one's name.
-        if id(node) in tabled:
+        if any(ancestor.tag == qn("w:tbl") for ancestor in node.iterancestors()):
             continue
         if node.text and before in node.text:
+            # A post-condition, re-derived at the point of mutation rather than trusting
+            # the filter above. Not duplication: one selects the node, the other proves
+            # the selection. The `id()` version this replaced skipped the prose node and
+            # fell through to a cell, and an assertion here would have failed on the spot
+            # instead of once in eight full-suite runs.
+            assert not any(
+                ancestor.tag == qn("w:tbl") for ancestor in node.iterancestors()
+            ), (
+                f"the prose mutation targeted a table cell carrying {before!r}; N1's prose "
+                f"half would then be asserting the anchored pass under the other half's name"
+            )
             node.text = node.text.replace(before, after, 1)
             break
     else:  # pragma: no cover - the fixture guarantees the string is present
