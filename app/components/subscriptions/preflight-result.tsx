@@ -106,6 +106,17 @@ export type ConnectHandler = (verified: VerifiedPreflight) => void
 type RejectionGuidance = {
   readonly heading: string
   readonly body: string
+  /**
+   * What to go and change, named per code.
+   *
+   * Separate from `body` because it is the sentence a reader acts on, and because it
+   * was previously **hardcoded to "Fix the role assignment"** for every code. On an
+   * `AUTH_FAILED` — Azure refusing the secret before any permission was evaluated —
+   * that sends someone to re-check an RBAC assignment that was never the problem and
+   * was never even examined. A closing instruction that is right for one code and
+   * wrong for the rest is worse than none, because it reads as the specific advice.
+   */
+  readonly action: string
 }
 
 /**
@@ -131,6 +142,7 @@ const REJECTION_GUIDANCE: Record<string, RejectionGuidance> = {
       "the data to say so. Coverage checks cannot detect what RBAC hides, which " +
       "is why the permissions response is checked directly and why this " +
       "connection is not saved.",
+    action: "Fix the role assignment and test again.",
   },
   AUTH_EXPIRED: {
     heading: "Azure rejected the client secret as expired",
@@ -139,13 +151,21 @@ const REJECTION_GUIDANCE: Record<string, RejectionGuidance> = {
       "was established either way. Issue a new client secret for the same app " +
       "registration, record its expiry, and submit it here. The role assignment " +
       "does not need to be made again.",
+    action: "Issue a new client secret and test again.",
   },
   AUTH_FAILED: {
     heading: "Azure rejected the credential",
     body:
       "The tenant id, client id or client secret was not accepted. This is not " +
       "the same as an expired secret: check that the three values belong to the " +
-      "same app registration and that the secret was copied whole.",
+      "same app registration and that the secret was copied whole. The most " +
+      "common cause is the portal's two adjacent columns: Certificates & secrets " +
+      "lists a Secret ID and a Value, and only the Value authenticates. The Value " +
+      "is shown once, when the secret is created, and is masked on every later " +
+      "visit — so a secret copied after the fact is usually the ID.",
+    action:
+      "Correct the credential and test again. The role assignment was never " +
+      "evaluated, so it does not need to be changed.",
   },
 }
 
@@ -157,6 +177,7 @@ const DEFAULT_GUIDANCE: RejectionGuidance = {
     "service principal needs the Reader role at subscription scope; an " +
     "assignment scoped to a resource group is rejected because it returns one " +
     "group's resources while leaving the report incomplete.",
+  action: "Resolve the reason above and test again.",
 }
 
 function guidanceFor(code: string): RejectionGuidance {
@@ -280,7 +301,7 @@ export function PreflightResult({
             </p>
 
             <p className="text-sm font-medium">
-              Nothing was saved. Fix the role assignment and test again.
+              Nothing was saved. {guidance.action}
             </p>
           </div>
         </div>
