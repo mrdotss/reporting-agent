@@ -1,5 +1,4 @@
 {
-  "agentRuntimeName": "reporting_agent",
   "description": "Verified infrastructure utilization reporting runtime (Azure collector, DOCX/PDF renderer, verifier)",
   "agentRuntimeArtifact": {
     "containerConfiguration": {
@@ -30,5 +29,6 @@
     "RPT_ARTIFACT_BUCKET": "<ARTIFACT_BUCKET>",
     "RPT_PROSE_MODEL_ID": "zai.glm-5",
     "RPT_CA_BUNDLE": "/etc/ssl/private-ca/root.pem"
-  }
+  },
+  "agentRuntimeId": "<RUNTIME_ID>"
 }
