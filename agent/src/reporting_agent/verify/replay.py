@@ -56,7 +56,8 @@ from zoneinfo import ZoneInfo
 from reporting_agent.azure.metrics import fold_batch_response, fold_fallback_response
 from reporting_agent.catalog.loader import DerivedEntry, LoadedCatalog, MetricEntry
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
-from reporting_agent.collect.buckets import Window, resolve_window
+from reporting_agent.collect.buckets import Window, day_buckets, resolve_window
+from reporting_agent.collect.dayfold import DayFold
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
@@ -219,6 +220,11 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
         )
 
     accumulators = _new_accumulators(plan)
+    # Req 35.11's day dimension, recomputed rather than copied. The stored buckets are
+    # what this replay is checking, so reading their statistics back in and re-emitting
+    # them would make a mutated day value reproduce itself — the digest would match a
+    # snapshot nobody can derive from the archive.
+    day_fold = DayFold(tz=plan.tz)
     fold_gaps: list[GapRecord] = []
     folded = 0
 
@@ -236,7 +242,7 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
                 ),
                 ordinal=ordinal,
             )
-        fold_gaps.extend(_fold_object(document, accumulators))
+        fold_gaps.extend(_fold_object(document, accumulators, day_fold))
         folded += 1
         # The decoded points go out of scope here, per object, rather than being collected
         # into a list the loop then aggregates over.
@@ -252,7 +258,7 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
             ),
         )
 
-    recomputed = _assemble(plan, accumulators, fold_gaps)
+    recomputed = _assemble(plan, accumulators, fold_gaps, day_fold)
     digest = str(recomputed["snapshot_id"])
 
     outcome: ReplayOutcome = {
@@ -340,6 +346,7 @@ def _new_accumulators(plan: ReplayPlan) -> dict[tuple[str, str], MetricAccumulat
 def _fold_object(
     document: Mapping[str, object],
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
+    day_fold: DayFold,
 ) -> list[GapRecord]:
     """Fold one archived response, through the collector's own two folds.
 
@@ -370,6 +377,7 @@ def _fold_object(
             resource_ids=resource_ids,
             metric_names=metric_names,
             accumulators=accumulators,
+            day_fold=day_fold,
         )
 
     gaps: list[GapRecord] = []
@@ -380,6 +388,7 @@ def _fold_object(
                 resource_id=resource_id,
                 metric_names=metric_names,
                 accumulators=accumulators,
+                day_fold=day_fold,
             )
         )
     return gaps
@@ -389,10 +398,16 @@ def _assemble(
     plan: ReplayPlan,
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
     fold_gaps: Sequence[GapRecord],
+    day_fold: DayFold,
 ) -> dict[str, object]:
     """Finalize every resource and build the snapshot, through the collector's own path."""
     gaps: list[GapRecord] = [*plan.gaps, *fold_gaps]
     resources: list[ResourceSnapshot] = []
+
+    # The window's day geometry, produced from the plan the same way `collect/pipeline.py`
+    # produces it from the run — not read back from the stored buckets, for the reason the
+    # day fold is not: a hand-edited `local_day` or `slot_count` must change the digest.
+    geometry = day_buckets(plan.window, plan.tz, plan.grain)
 
     for resource in plan.resources:
         entries, finalize_gaps = finalize_resource(
@@ -406,12 +421,26 @@ def _assemble(
             sku_capability_values=resource.sku_capability_values,
         )
         gaps.extend(finalize_gaps)
+        per_day = day_fold.statistics_for(
+            resource.record["resource_id"],
+            declared=resource.declared,
+            selected=resource.selected,
+            fidelity_tier=resource.fidelity_tier,
+            grain=plan.grain,
+        )
         resources.append(
             ResourceSnapshot(
                 record={**resource.record, "fidelity_tier": resource.fidelity_tier},
                 sku=resource.sku,
                 statistics=(*entries, *resource.guest_entries),
-                day_buckets=resource.day_buckets,
+                day_buckets=tuple(
+                    ResourceDayBucket(
+                        local_day=bucket.local_day,
+                        slot_count=bucket.slot_count,
+                        statistics=per_day.get(bucket.local_day.isoformat(), ()),
+                    )
+                    for bucket in geometry
+                ),
             )
         )
 

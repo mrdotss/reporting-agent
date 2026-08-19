@@ -313,6 +313,7 @@ def _run_halving_scenario(
             metric_namespace="microsoft.compute/virtualmachines",
             metric_names=metric_names,
             accumulators=accumulators,
+            day_fold=None,
             grain="PT1H",
             window={"start_utc": "2026-07-01T00:00:00Z", "end_utc": "2026-07-01T01:00:00Z"},
             start_time="2026-07-01T00:00:00Z",

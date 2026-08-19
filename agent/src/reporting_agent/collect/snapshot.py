@@ -210,11 +210,22 @@ logger = logging.getLogger(__name__)
 
 # --- what a reader needs to identify the producer (Req 35.8) -------------------------
 
-SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.0.0"
+SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.1.0"
 """The version of the snapshot *shape* — this module's output contract, distinct from
 the agent's own version and from the catalog's. A later reader tells which producer
 wrote a snapshot from `schema_version` plus `producer`, without consulting the run
-(Req 35.8)."""
+(Req 35.8).
+
+`1.1.0` adds `day_buckets[].statistics` (Req 35.11): the field was declared from the
+start and always written empty, and `collect/dayfold.py` now fills it. A minor bump
+rather than a major one because nothing was removed or re-typed — a `1.0.0` reader
+meets an array where it expected an empty one, which is the case it already handled.
+
+**A snapshot written at `1.0.0` does not replay to a `1.1.0` digest**, and cannot: the
+recomputation now emits day statistics the stored document does not carry. That is
+correct rather than unfortunate — a stored artifact and the code that would produce it
+today genuinely disagree — but it means a re-verification of a pre-bump run reports
+`replay_hash_mismatch`, which is what the version is for."""
 
 
 def _agent_version() -> str:

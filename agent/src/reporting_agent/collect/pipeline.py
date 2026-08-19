@@ -1249,6 +1249,7 @@ async def _drive(
             plan=plan,
             resources=resources,
             statistics=collected["statistics"],
+            day_statistics=collected.get("day_statistics") or {},
             capacities=collected.get("sku_capacities") or {},
             tiers=tiers,
             guest_entries=guest_entries,
@@ -1311,6 +1312,7 @@ def _resource_snapshots(
     plan: RunPlan,
     resources: Sequence[ResourceRecord],
     statistics: Mapping[str, Mapping[str, Mapping[str, StatValue]]],
+    day_statistics: Mapping[str, Mapping[str, Sequence[StatValue]]],
     capacities: Mapping[str, SkuCapacityRecord],
     tiers: Mapping[str, str],
     guest_entries: Mapping[str, tuple[StatisticEntry, ...]],
@@ -1326,16 +1328,17 @@ def _resource_snapshots(
     every one of its values (Req 31.2), from the one mapping `_resolve_fidelity` produced.
 
     Day buckets carry the local day and the slot count that fell inside the window,
-    partial edge days included and never padded (Req 25.11). They carry no per-day
-    statistics: no acceptance criterion in this spec asks for one, and Req 35.5 enumerates
-    the per-resource, per-metric statistics without a day dimension — so the buckets record
-    the window's local-day geometry, which is what the Bucketer is required to retain, and
-    nothing this run did not measure.
+    partial edge days included and never padded (Req 25.11), **and** that day's statistics
+    where the provider folded any (Req 35.11).
+
+    The geometry is the spine and it is produced here, from the window alone, for every
+    resource alike. What the provider contributes is only the values: a day it measured
+    nothing for keeps its bucket with an empty `statistics` array, because a day with no
+    data is still a day of the window and dropping it would make a gap in the data look
+    like a gap in the calendar. That split is also what stops the day dimension from being
+    two derivations of one calendar — see `collect/dayfold.py`.
     """
-    buckets = tuple(
-        ResourceDayBucket(local_day=bucket.local_day, slot_count=bucket.slot_count)
-        for bucket in day_buckets(plan.window, plan.tz, plan.grain)
-    )
+    geometry = day_buckets(plan.window, plan.tz, plan.grain)
 
     built: list[ResourceSnapshot] = []
     for record in resources:
@@ -1347,6 +1350,18 @@ def _resource_snapshots(
             for value in metric_values.values()
         ]
         entries.extend(guest_entries.get(resource_id, ()))
+        per_day = day_statistics.get(resource_id, {})
+        buckets = tuple(
+            ResourceDayBucket(
+                local_day=bucket.local_day,
+                slot_count=bucket.slot_count,
+                statistics=tuple(
+                    statistic_from_plain(value, fidelity_tier=tier)
+                    for value in per_day.get(bucket.local_day.isoformat(), ())
+                ),
+            )
+            for bucket in geometry
+        )
         built.append(
             ResourceSnapshot(
                 record={**record, "fidelity_tier": tier},

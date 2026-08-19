@@ -82,6 +82,7 @@ from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.regions import LocationRequestResult, RegionResolver
 from reporting_agent.collect.accumulate import MetricAccumulator
 from reporting_agent.collect.archive import ArchiveWriter
+from reporting_agent.collect.dayfold import DayFold
 from reporting_agent.collect.log import (
     GAP_TYPE_INTERVAL_COUNTS_MISSING,
     GAP_TYPE_METRIC_ERROR,
@@ -331,6 +332,7 @@ def fold_batch_response(
     resource_ids: Sequence[str],
     metric_names: Sequence[str],
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
+    day_fold: DayFold | None = None,
 ) -> list[GapRecord]:
     """Fold one **batch** response body, resource by requested resource.
 
@@ -380,6 +382,7 @@ def fold_batch_response(
                 ),
                 requested_metric_names=metric_names,
                 accumulators=accumulators,
+                day_fold=day_fold,
             )
         )
     return gaps
@@ -391,6 +394,7 @@ def fold_fallback_response(
     resource_id: str,
     metric_names: Sequence[str],
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
+    day_fold: DayFold | None = None,
 ) -> list[GapRecord]:
     """Fold one **per-resource ARM fallback** response body.
 
@@ -408,6 +412,7 @@ def fold_fallback_response(
         ),
         requested_metric_names=metric_names,
         accumulators=accumulators,
+        day_fold=day_fold,
     )
 
 
@@ -417,6 +422,7 @@ def fold_resource_metrics(
     entries: Sequence[Mapping[str, object]],
     requested_metric_names: Sequence[str],
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
+    day_fold: DayFold | None = None,
 ) -> list[GapRecord]:
     """Fold one resource's answered metrics into `accumulators`, in place, returning
     every gap this resource's entries produced (Req 23.13, 27.8, 29.1-29.4, 29.6, 29.7,
@@ -521,6 +527,22 @@ def fold_resource_metrics(
                 if fold_gap is not None:
                     gaps.append(fold_gap)
 
+                # The same interval, into its local day. Second fold rather than a later
+                # derivation, because a day's average is not recoverable from a window's
+                # and this is the only pass the data point exists in (Req 26.1). Records
+                # no gap of its own — the window fold above has already classified this
+                # interval, and a second entry would double every one of them.
+                if day_fold is not None:
+                    day_fold.fold(
+                        resource_id=resource_id,
+                        metric=metric_name,
+                        timestamp=point.get("timeStamp"),
+                        total=total,
+                        count=count,
+                        minimum=minimum,
+                        maximum=maximum,
+                    )
+
     return gaps
 
 
@@ -565,6 +587,7 @@ class MetricsCollector:
         metric_namespace: str,
         metric_names: Sequence[str],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
+        day_fold: DayFold | None,
         grain: str,
         window: Mapping[str, str],
         start_time: str,
@@ -610,6 +633,7 @@ class MetricsCollector:
                     metric_namespace=metric_namespace,
                     metric_names=tuple(metric_names),
                     accumulators=accumulators,
+                    day_fold=day_fold,
                     grain=grain,
                     window=window,
                     start_time=start_time,
@@ -715,6 +739,7 @@ class MetricsCollector:
         metric_namespace: str,
         metric_names: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
+        day_fold: DayFold | None,
         grain: str,
         window: Mapping[str, str],
         start_time: str,
@@ -740,6 +765,7 @@ class MetricsCollector:
                 resource_type=resource_type,
                 metric_names=metric_names,
                 accumulators=accumulators,
+                day_fold=day_fold,
                 grain=grain,
                 window=window,
                 result=result,
@@ -760,6 +786,7 @@ class MetricsCollector:
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
                     accumulators=accumulators,
+                    day_fold=day_fold,
                     grain=grain,
                     window=window,
                     start_time=start_time,
@@ -779,6 +806,7 @@ class MetricsCollector:
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
                     accumulators=accumulators,
+                    day_fold=day_fold,
                     grain=grain,
                     window=window,
                     start_time=start_time,
@@ -794,6 +822,7 @@ class MetricsCollector:
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
                     accumulators=accumulators,
+                    day_fold=day_fold,
                     grain=grain,
                     window=window,
                     start_time=start_time,
@@ -827,6 +856,7 @@ class MetricsCollector:
             resource_ids=resource_ids,
             metric_names=metric_names,
             accumulators=accumulators,
+            day_fold=day_fold,
             grain=grain,
             window=window,
             response=response,
@@ -844,6 +874,7 @@ class MetricsCollector:
         metric_namespace: str,
         metric_names: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
+        day_fold: DayFold | None,
         grain: str,
         window: Mapping[str, str],
         start_time: str,
@@ -922,6 +953,7 @@ class MetricsCollector:
                     resource_ids=(resource_id,),
                     metric_names=(metric_name,),
                     accumulators=accumulators,
+                    day_fold=day_fold,
                     grain=grain,
                     window=window,
                     response=response,
@@ -943,6 +975,7 @@ class MetricsCollector:
         resource_ids: tuple[str, ...],
         metric_names: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
+        day_fold: DayFold | None,
         grain: str,
         window: Mapping[str, str],
         response: RawHttpResponse,
@@ -972,6 +1005,7 @@ class MetricsCollector:
                 resource_ids=resource_ids,
                 metric_names=metric_names,
                 accumulators=accumulators,
+                day_fold=day_fold,
             )
         )
         return gaps
@@ -986,6 +1020,7 @@ class MetricsCollector:
         resource_type: str,
         metric_names: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
+        day_fold: DayFold | None,
         grain: str,
         window: Mapping[str, str],
         result: LocationRequestResult,
@@ -1018,6 +1053,7 @@ class MetricsCollector:
                     resource_id=resource_id,
                     metric_names=metric_names,
                     accumulators=accumulators,
+                    day_fold=day_fold,
                 )
             )
 

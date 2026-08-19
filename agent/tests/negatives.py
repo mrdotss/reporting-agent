@@ -200,6 +200,8 @@ class Negative:
         | None = None,
         pdf_text: Callable[[str], str] | None = None,
         conversion_locale: str | None = None,
+        days: int = 1,
+        period: Mapping[str, str] | None = None,
         snapshot: Callable[[dict[str, Any]], Mapping[str, Any]] | None = None,
         compiled: Callable[[Any, Any], None] | None = None,
         verified_definition: Callable[[dict[str, Any]], Mapping[str, Any]] | None = None,
@@ -212,6 +214,8 @@ class Negative:
         self._archive = archive
         self._pdf_text = pdf_text
         self._locale = conversion_locale
+        self._days = days
+        self._period = period
         self._snapshot = snapshot
         self._compiled = compiled
         self._verified_definition = verified_definition
@@ -236,6 +240,10 @@ class Negative:
             kwargs["prose"] = self._prose
         if self._resources is not None:
             kwargs["resources"] = list(self._resources)
+        if self._days != 1:
+            kwargs["days"] = self._days
+        if self._period is not None:
+            kwargs["period"] = dict(self._period)
         pipeline = Pipeline(**kwargs)
         if self._definition is not None:
             pipeline.definition = dict(self._definition)

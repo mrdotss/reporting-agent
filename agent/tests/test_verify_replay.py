@@ -246,6 +246,7 @@ class Collection:
             _bucket(bucket) for bucket in day_buckets(window, JAKARTA, "PT1H")
         )
         capacities = collected.get("sku_capacities") or {}
+        day_statistics = collected.get("day_statistics") or {}
         built = [
             ResourceSnapshot(
                 record={**record, "fidelity_tier": FIDELITY_BASELINE},
@@ -260,7 +261,20 @@ class Collection:
                     .values()
                     for value in by_statistic.values()
                 ),
-                day_buckets=buckets,
+                # The day dimension, attached the way `collect/pipeline.py` attaches it:
+                # the geometry above is the spine and the provider supplies only values.
+                # This harness assembles the snapshot locally rather than calling the
+                # pipeline, so the two have to be kept in step by hand — and the day
+                # statistics landing here is what the replay compares against.
+                day_buckets=tuple(
+                    _bucket_with(
+                        bucket,
+                        day_statistics.get(record["resource_id"], {}).get(
+                            bucket.local_day.isoformat(), ()
+                        ),
+                    )
+                    for bucket in buckets
+                ),
             )
             for record in resources
         ]
@@ -306,6 +320,21 @@ def _bucket(bucket: Any):
     from reporting_agent.collect.snapshot import ResourceDayBucket
 
     return ResourceDayBucket(local_day=bucket.local_day, slot_count=bucket.slot_count)
+
+
+def _bucket_with(bucket: Any, values: Any):
+    """One geometry bucket carrying a day's statistics, as `collect/pipeline.py` builds it."""
+    import dataclasses
+
+    from reporting_agent.collect.pipeline import statistic_from_plain
+
+    return dataclasses.replace(
+        bucket,
+        statistics=tuple(
+            statistic_from_plain(value, fidelity_tier=FIDELITY_BASELINE)
+            for value in values
+        ),
+    )
 
 
 def _replace(plan: Any, **overrides: Any):

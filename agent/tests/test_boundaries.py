@@ -102,6 +102,11 @@ SNAPSHOT_PATH_MODULES = frozenset(
         # finalize the collector ran (Req 31.1). It turns accumulators into statistics,
         # so it is squarely on the snapshot path.
         "collect/finalize.py",
+        # The per-local-day fold (Req 35.11). It parses a timestamp and emits decimal
+        # strings into `day_buckets[].statistics`, both of which land inside the hashed
+        # document — and the replay re-runs it, so a normalization here would make a
+        # reproducible snapshot report a mismatch.
+        "collect/dayfold.py",
         # The ledger's canonical form and its digest (Req 17.x). A normalization here
         # would produce a different `ledger_sha256` for one render, which is the same
         # failure the snapshot rule exists to prevent one level up — and a

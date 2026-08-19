@@ -281,6 +281,7 @@ class _CollectResultExtras(TypedDict, total=False):
     sku_capacities: dict[str, SkuCapacityRecord]
     raw_archive: RawArchiveState
     locations: LocationRouting
+    day_statistics: dict[str, dict[str, list[StatValue]]]
 
 
 class CollectResult(_CollectResultExtras):
@@ -302,6 +303,13 @@ class CollectResult(_CollectResultExtras):
       archive during the fold pass.
     * `locations` — Req 24.3/24.5's routing facts, known only to whatever resolved the
       regional endpoints.
+    * `day_statistics` — resource id -> local day -> that day's statistics, for a provider
+      that folds a day dimension alongside the window one. `timeseries_chart` plots one
+      figure per local day and addresses each by `snapshot_path`, so the address has to
+      resolve to something the snapshot carries. Optional because a provider without a
+      per-day fold should report no day values rather than an array of zeros, and because
+      the day *geometry* comes from the run's window either way — a provider that omits
+      this leaves every bucket present with an empty `statistics` array.
 
     All three stay plain data (Req 18.3), so nothing about them widens what crosses this
     boundary; `assert_plain_data` covers them with no change.

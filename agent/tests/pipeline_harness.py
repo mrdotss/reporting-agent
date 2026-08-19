@@ -76,6 +76,7 @@ __all__ = [
     "inventory",
     "load_catalog",
     "metric_entry",
+    "multi_day_batch",
     "raw",
     "report_objects",
     "resource_id",
@@ -233,6 +234,57 @@ def batch(names: Sequence[str] = DEFAULT_RESOURCES) -> RawHttpResponse:
     )
 
 
+def multi_day_batch(
+    names: Sequence[str] = DEFAULT_RESOURCES, *, days: int = 2
+) -> RawHttpResponse:
+    """A batch response carrying one interval per local day, for `days` days.
+
+    A `timeseries_chart` plots one figure per local day, so a single-interval fixture gives
+    it one point and cannot show the axis working. The timestamps are the Jakarta midnights
+    the window's day buckets are built around — 17:00Z is 00:00+07:00 — so each interval
+    lands in a different local day rather than in a different hour of one.
+    """
+    def entry(name: str, index: int, day: int) -> dict[str, Any]:
+        return {
+            "timeStamp": f"2026-06-{30 + day:02d}T17:00:00Z"
+            if day == 0
+            else f"2026-07-{day:02d}T17:00:00Z",
+            "total": 720.0 + 180.0 * index + 60.0 * day,
+            "count": 60,
+            "minimum": 5.0 + index,
+            "maximum": 30.0 + 11.0 * index + day,
+        }
+
+    def metric(name: str, index: int, metric_name: str) -> dict[str, Any]:
+        return {
+            "name": {"value": metric_name},
+            "errorCode": "Success",
+            "timeseries": [
+                {
+                    "metadatavalues": [],
+                    "data": [entry(name, index, day) for day in range(days)],
+                }
+            ],
+        }
+
+    return raw(
+        {
+            "values": [
+                {
+                    "starttime": "2026-06-30T17:00:00Z",
+                    "endtime": f"2026-07-{days:02d}T17:00:00Z",
+                    "interval": "PT1H",
+                    "namespace": WIRE_TYPE,
+                    "resourceregion": LOCATION,
+                    "resourceid": resource_id(name),
+                    "value": [metric(name, index, CPU), metric(name, index, MEMORY)],
+                }
+                for index, name in enumerate(names)
+            ]
+        }
+    )
+
+
 def definition(**overrides: Any) -> dict[str, Any]:
     design = {**DESIGN, **overrides.pop("design", {})}
     blocks = overrides.pop(
@@ -277,10 +329,21 @@ class Pipeline:
         # which is the condition Req 44.8's expired secret produces and the one case where
         # the run must end before a snapshot is ever written.
         self.resources: Sequence[str] = overrides.pop("resources", DEFAULT_RESOURCES)
+        # How many local days the canned response spans. One by default, because most
+        # scenarios only need a figure; a `timeseries_chart` needs an axis.
+        self.days: int = overrides.pop("days", 1)
+        self.period: dict[str, str] = overrides.pop(
+            "period", {"start": "2026-07-01", "end": "2026-07-01"}
+        )
         # Held so a scenario can assert what was *asked for*, not only what came back — the
         # fake's canned batch response is the same whatever the request names.
         self.provider_metrics = FakeMetricsPort(
-            batch_responses=[batch(self.resources)], fallback_responses=[]
+            batch_responses=[
+                batch(self.resources)
+                if self.days == 1
+                else multi_day_batch(self.resources, days=self.days)
+            ],
+            fallback_responses=[],
         )
         self.provider = provider_over_ports(
             inventory_port=FakeInventoryPort([inventory(self.resources)]),
@@ -305,7 +368,7 @@ class Pipeline:
     def payload(self) -> dict[str, Any]:
         return {
             "command": "generate_report",
-            "period": {"start": "2026-07-01", "end": "2026-07-01"},
+            "period": dict(self.period),
             "scope": {
                 "resource_types": [RESOURCE_TYPE],
                 "resource_groups": [],

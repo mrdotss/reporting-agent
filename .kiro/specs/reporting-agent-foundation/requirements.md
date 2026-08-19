@@ -1185,10 +1185,17 @@ and I want the raw responses kept, so that a disputed figure has evidence behind
    response's data points into the Accumulator and the Sketch, and SHALL then discard those
    data points.
 2. THE Metrics_Collector SHALL retain, for each (resource, metric) pair, only that pair's
-   accumulated sum, accumulated count, minimum and maximum together with that pair's Sketch, and
-   SHALL hold no complete series for any resource in memory at any point, because 200 resources
-   at 6 metrics over 31 days at `PT1M` is approximately 268000 points per resource and
-   approximately 6 GB of JSON.
+   accumulated sum, accumulated count, minimum and maximum together with that pair's Sketch,
+   and, for each (resource, metric, local day) triple, only that triple's accumulated sum,
+   accumulated count, minimum and maximum carrying **no** Sketch, and SHALL hold no complete
+   series for any resource in memory at any point, because 200 resources at 6 metrics over 31
+   days at `PT1M` is approximately 268000 points per resource and approximately 6 GB of JSON.
+   The per-local-day accumulators are bounded by the count of local days in the collection
+   window rather than by the count of data points in it — approximately 37000 four-value
+   accumulators for that same shape, and identical in count at `PT1H` and at `PT15M` — so this
+   criterion's memory bound holds at every grain; they carry no Sketch because a percentile
+   over one day's interval means estimates almost nothing and one Sketch per day per pair
+   would be the retention this criterion forbids.
 3. WHEN the Metrics_Collector receives a batch response, THE Archive_Writer SHALL write that
    response to `s3://<RPT_ARTIFACT_BUCKET>/<actor_id>/snapshots/<runId>/raw/` under the run's
    `actor_id` prefix, as a gzip-compressed JSON object whose key ends in `.json.gz`, during
@@ -1607,6 +1614,20 @@ report built from it is reproducible without the run that made it.
     Snapshot_Builder SHALL emit no value for that statistic and SHALL record a `no_samples` gap
     carrying that resource's id and the metric, so that an absent measurement is never
     serialized as zero.
+11. THE Snapshot_Builder SHALL include, for every resource and for every local-day bucket
+    criterion 25.11 declares, that day's per-metric statistics in the same shape criterion 35.5
+    declares for the window's, carrying the `avg`, `minimum` and `maximum` directions and no
+    percentile, and SHALL emit that bucket carrying an empty statistics array where the
+    collection folded no interval into that day rather than omitting the bucket or emitting a
+    zero, because a day with no measurement is still a day of the window and a report cannot
+    distinguish a gap in the data from a gap in the calendar once the bucket is gone. THE
+    Metrics_Collector SHALL fold each interval into its local day during the same pass that
+    folds it into the window accumulators, assigning the day as criterion 25.3 declares, and
+    THE Replay_Verifier SHALL recompute those statistics from the archived responses rather
+    than reading them back from the stored snapshot. This criterion exists because a
+    `timeseries_chart` plots one figure per local day and addresses each by `snapshot_path`
+    (templates spec, criterion 16.14), so a snapshot with no day dimension makes that block
+    unrenderable on every run — which is what it was.
 
 ---
 

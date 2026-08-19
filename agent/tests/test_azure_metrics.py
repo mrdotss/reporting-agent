@@ -94,7 +94,7 @@ def new_accumulators(resource_ids, metric_names):
     }
 
 
-def collect(collector, *, resource_ids, metric_names, accumulators=None):
+def collect(collector, *, resource_ids, metric_names, accumulators=None, day_fold=None):
     accs = accumulators if accumulators is not None else new_accumulators(resource_ids, metric_names)
     gaps = run(
         collector.collect_group(
@@ -107,6 +107,7 @@ def collect(collector, *, resource_ids, metric_names, accumulators=None):
             metric_namespace=NAMESPACE,
             metric_names=metric_names,
             accumulators=accs,
+            day_fold=day_fold,
             grain="PT1H",
             window=WINDOW,
             start_time=START,

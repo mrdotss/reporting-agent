@@ -99,7 +99,12 @@ from reporting_agent.collect.accumulate import (
     new_accumulator,
 )
 from reporting_agent.collect.archive import ArchiveWriter
-from reporting_agent.collect.buckets import BASE_GRAIN, FALLBACK_GRAIN
+from reporting_agent.collect.buckets import (
+    BASE_GRAIN,
+    FALLBACK_GRAIN,
+    resolve_timezone,
+)
+from reporting_agent.collect.dayfold import DayFold
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import GAP_TYPE_METRIC_NOT_EMITTED, record_gap
 from reporting_agent.collect.snapshot import (
@@ -480,22 +485,32 @@ class AzureProvider:
 
         gaps: list[GapRecord] = []
         statistics: dict[str, dict[str, dict[str, StatValue]]] = {}
+        day_statistics: dict[str, dict[str, list[StatValue]]] = {}
         capacities: dict[str, SkuCapacityRecord] = {}
+
+        # One fold for the whole run, across every group. Keyed by resource id, so a
+        # per-group fold would work too — but the timezone belongs to the run and giving
+        # each group its own would be one more place for two of them to differ.
+        day_fold = DayFold(tz=resolve_timezone(request["timezone"]))
 
         for key, group in self._groups(request["resources"]):
             resource_type, location = key
-            group_gaps, group_statistics, group_capacities = await self._collect_group(
-                subscription_id=subscription_id,
-                resource_type=resource_type,
-                location=location,
-                resources=group,
-                requested_metric_names=_requested_for(metrics_by_type, resource_type),
-                grain=grain,
-                window=window,
-                interval_count=interval_count,
+            group_gaps, group_statistics, group_days, group_capacities = (
+                await self._collect_group(
+                    subscription_id=subscription_id,
+                    resource_type=resource_type,
+                    location=location,
+                    resources=group,
+                    requested_metric_names=_requested_for(metrics_by_type, resource_type),
+                    grain=grain,
+                    window=window,
+                    interval_count=interval_count,
+                    day_fold=day_fold,
+                )
             )
             gaps.extend(group_gaps)
             statistics.update(group_statistics)
+            day_statistics.update(group_days)
             capacities.update(group_capacities)
 
         resolver = self.metrics.region_resolver
@@ -504,6 +519,10 @@ class AzureProvider:
         collected = CollectResult(
             statistics=statistics,
             gaps=gaps,
+            # The day dimension `timeseries_chart` addresses by `snapshot_path`. Optional
+            # on the protocol, so a provider with no per-day fold simply omits it and the
+            # snapshot keeps the day geometry with no statistics under it.
+            day_statistics=day_statistics,
             # Req 35.3 — the capacity actually used, per resource. Reported here because
             # nothing downstream of this boundary can ask the SKU catalog itself.
             sku_capacities=capacities,
@@ -552,9 +571,11 @@ class AzureProvider:
         grain: str,
         window: Mapping[str, str],
         interval_count: int,
+        day_fold: DayFold,
     ) -> tuple[
         list[GapRecord],
         dict[str, dict[str, dict[str, StatValue]]],
+        dict[str, dict[str, list[StatValue]]],
         dict[str, SkuCapacityRecord],
     ]:
         """One `(subscription, location, resource_type)` group, start to finish."""
@@ -574,7 +595,7 @@ class AzureProvider:
                 len(resources),
                 location,
             )
-            return gaps, {}, {}
+            return gaps, {}, {}, {}
 
         declared = {metric.name: metric for metric in resource_catalog.metrics}
         resource_ids = tuple(resource["resource_id"] for resource in resources)
@@ -596,7 +617,7 @@ class AzureProvider:
                 location,
                 len(resources),
             )
-            return gaps, {}, {}
+            return gaps, {}, {}, {}
 
         capacities: dict[str, SkuCapacity | None] = {}
         accumulators: dict[tuple[str, str], MetricAccumulator] = {}
@@ -639,6 +660,7 @@ class AzureProvider:
                 metric_namespace=resource_catalog.metric_namespace,
                 metric_names=selected,
                 accumulators=accumulators,
+                day_fold=day_fold,
                 grain=grain,
                 window=window,
                 start_time=window["start_utc"],
@@ -648,8 +670,10 @@ class AzureProvider:
         )
 
         statistics: dict[str, dict[str, dict[str, StatValue]]] = {}
+        days: dict[str, dict[str, list[StatValue]]] = {}
         for resource in resources:
             resource_id = resource["resource_id"]
+            tier = resource.get("fidelity_tier") or self.fidelity_tier
             entries, finalize_gaps = self._finalize_resource(
                 resource=resource,
                 resource_catalog=resource_catalog,
@@ -663,7 +687,24 @@ class AzureProvider:
             if entries:
                 statistics[resource_id] = _statistics_by_metric(entries)
 
-        return gaps, statistics, _capacity_records(capacities)
+            # The day dimension, over the window's own geometry rather than over the days
+            # that happened to carry a value: a day the collection found nothing for is
+            # still a day of the window, and dropping it would make a gap in the data look
+            # like a gap in the calendar.
+            by_day = {
+                local_day: [entry.to_plain_data() for entry in entries]
+                for local_day, entries in day_fold.statistics_for(
+                    resource_id,
+                    declared=declared,
+                    selected=selected,
+                    fidelity_tier=tier,
+                    grain=grain,
+                ).items()
+            }
+            if by_day:
+                days[resource_id] = by_day
+
+        return gaps, statistics, days, _capacity_records(capacities)
 
     async def _select_metric_names(
         self,
