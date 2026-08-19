@@ -651,7 +651,7 @@ migration.
     - `pnpm lint`, `pnpm typecheck` and `pnpm test` clean
     - _Requirements: 12.1, 12.2, 12.3, 12.5, 12.8, 12.9, 12.10, 12.11, 12.12, 12.14, 14.2, 14.3, 14.4, 25.4, 37.5, 38.2, 38.4, 38.7, 39.6, 39.10_
 
-- [ ] 14. The mandatory negative tests — every blocking gate observed failing
+- [x] 14. The mandatory negative tests — every blocking gate observed failing
   - Two preconditions apply to **every** task in this section and are what stop a test passing for
     the wrong reason: the **unmutated fixture is asserted to pass first**, with zero blocking
     findings, before the mutation is applied — without it a broken fixture makes every one of these
@@ -662,48 +662,48 @@ migration.
     run, no presigned URL minted for any key of that run, and no route, action or control of the
     web app returning one. None may be skipped or marked as an expected failure.
 
-  - [ ] 14.1 N1 — one digit changed
+  - [x] 14.1 N1 — one digit changed
     - Fixture: a rendered `.docx` from a definition carrying at least one table figure **and** at least one prose figure, with its ledger and anchor set, asserted passing first
     - Mutation: replace exactly **one digit character** of exactly one figure's rendered `formatted` string with a different digit such that the mutated string equals no ledger `formatted` value, leaving the ledger, the anchor set and every other rendered character untouched. Run once for the table figure and once for the prose figure
     - Assert status `fail`; `table_cell_mismatch` naming the table identity, row key, column key and the expected and observed strings verbatim for the table figure; `unmatched_prose_token` naming the surviving mutated substring with its block identifier and paragraph ordinal for the prose figure; `report_runs.status` `failed` with `error_code` `VERIFICATION_FAILED`; and no download control
     - Proves the smallest possible corruption is caught, in **both** the anchored pass and the masking pass
     - _Requirements: 44.2, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.2 N2 — two table columns transposed
+  - [x] 14.2 N2 — two table columns transposed
     - Fixture: a rendered `.docx` containing a data table of ≥2 columns and ≥2 data rows whose transposed values differ pairwise, asserted passing first
     - Mutation: swap the cell text of two columns across **every** data row, leaving the ledger unchanged and leaving every transposed value present somewhere in the document
     - Assert status `fail` with one `table_cell_mismatch` per anchor whose resolved cell text changed. **And additionally** assert that a containment check — each ledger `formatted` string appears somewhere in the same document — records **zero** discrepancies
     - That second assertion is the point of the test: it fails against a verifier checking token containment instead of anchored cell equality — the implementation that looks correct and passes a document in which every VM's average and peak are swapped
     - _Requirements: 44.3, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.3 N3 — a block that rendered zero rows, and its twin that must pass
+  - [x] 14.3 N3 — a block that rendered zero rows, and its twin that must pass
     - Fixtures: two definitions over one snapshot. **(a)** a data block whose resolved scope contains ≥1 resource. **(b)** a block whose resolved scope contains **zero** resources while every other block of that pinned version renders ≥1 data row. Both asserted passing first
     - Mutation: in (a), emit that block's data table with its `w:tblCaption` identity, **zero data rows** and no no-resources-matched row. (b) is **not mutated** — it is rendered as the compiler emits it
     - Assert (a): status `fail` with `table_rows_absent` naming the table identity, the scope's resource count and the observed row count; `VERIFICATION_FAILED`; no download. Assert (b): status **`pass`**, zero `table_rows_absent`, zero blocking findings, the explicit no-resources-matched row present in the document, and a `report_file` event emitted
     - One test in two halves on purpose: without (b), a verifier could satisfy (a) by failing every empty table, and a legitimately empty scope would become an undeliverable report
     - _Requirements: 44.4, 44.5, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.4 N4 — a chart data hash mismatch
+  - [x] 14.4 N4 — a chart data hash mismatch
     - Fixture: a rendered `.docx` containing a chart with its embedded image, its sidecar, its companion data table and its ledger entries, asserted passing first
     - Mutation: alter the chart data hash recorded in the **sidecar** to a value differing from the hash recomputed from the plotted decimal strings in plotted order, leaving those strings, the companion table and the ledger unchanged
     - Assert status `fail` with `chart_hash_mismatch` naming the chart node's AST path, the recomputed hash and the observed hash; `VERIFICATION_FAILED`; no download
     - Proves the recomputation draws nothing from the artifact it checks — a verifier that read the sidecar and compared it to itself would pass this
     - _Requirements: 44.6, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.5 N5 — a PDF converted under a comma-decimal locale
+  - [x] 14.5 N5 — a PDF converted under a comma-decimal locale
     - Fixture: a rendered `.docx` whose ledger carries ≥1 figure with a non-zero fractional-digit count, asserted verifying passing first
     - Mutation: convert to `.pdf` with `LANG` set to a locale whose decimal separator is a comma, bypassing the `render/pdf.py` guard that would refuse it, so the conversion **succeeds** and rewrites every numeral
     - Assert status `fail` with `pdf_figure_missing` naming ≥1 ledger entry whose `formatted` string carries a decimal separator together with its AST path and its string; `report_runs.error_code` **`VERIFICATION_FAILED`, not `PDF_CONVERSION_FAILED`**; and no download control
     - The expected code is the subtle part: nothing about the conversion *failed*, so only the fidelity gate can catch it — which is what demonstrates that the pinned `LANG=C.UTF-8` is load-bearing rather than incidental
     - _Requirements: 44.7, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.6 N6 — an expired secret producing an empty scope
+  - [x] 14.6 N6 — an expired secret producing an empty scope
     - Fixture: a run against a connected subscription whose client secret is expired such that the union of the template default and every block `scope_override` resolves to zero resources. **No mutation — the expiry is the condition**
     - Assert a terminal code of `EMPTY_SCOPE` or `AUTH_EXPIRED`; **no snapshot written**, no document compiled, no document rendered, no report artifact written; `report_runs.status` `failed` carrying that code; no download control; and **no verification result carrying a status of pass** for that run
     - That last assertion is the important half. It proves the failure mode most likely to ship a wrong artifact: zero resources → zero figures → zero *unverifiable* figures → a clean pass on every other gate → a fully verified, empty, worthless report
     - _Requirements: 44.8, 44.12, 44.14, 44.15_
 
-  - [ ] 14.7 The remaining blocking finding types, one test each
+  - [x] 14.7 The remaining blocking finding types, one test each
     - Constructed the same way, with the same two preconditions and the same three assertions:
       `replay_hash_mismatch` — mutate exactly one decimal string of exactly one archived raw response of a stored run, leaving the stored `snapshot_id`, the archive sequence and the object count unchanged, asserting both digests are reported and the run reports `REPLAY_MISMATCH`;
       `ledger_entry_unrendered` — remove exactly one entry's rendered text while that entry remains in the ledger and every other entry remains rendered, asserting the finding names its AST path;
@@ -711,7 +711,7 @@ migration.
       plus `table_anchor_missing`, `table_anchor_unexpected`, `table_column_unresolved`, `table_row_unresolved`, `duplicate_table_anchor`, `chart_table_missing`, `coverage_resource_absent` and `empty_scope`
     - _Requirements: 44.1, 44.9, 44.10, 44.11, 44.12, 44.13, 44.14, 44.15_
 
-  - [ ] 14.8 The enumeration meta-test over all sixteen blocking types
+  - [x] 14.8 The enumeration meta-test over all sixteen blocking types
     - A meta-test enumerating the **sixteen** blocking finding types the glossary declares, collecting the types every negative test declares as expected, and **failing if any declared type is asserted by zero tests** — so a blocking type added in a later change fails the suite rather than being declared and never exercised
     - Assert additionally that no negative test in this section is skipped, marked as an expected failure, or excluded from the suite that runs before a change in this spec is committed, because a gate whose negative test does not run is a gate that has never been observed failing
     - _Requirements: 44.1, 44.12, 44.14, 44.15_

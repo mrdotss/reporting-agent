@@ -40,7 +40,7 @@ every report containing one narrowly scoped section.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
@@ -53,7 +53,12 @@ from reporting_agent.verify.findings import (
     record_finding,
 )
 
-__all__ = ["CoveragePass", "check_coverage", "union_resource_ids"]
+__all__ = [
+    "CoveragePass",
+    "check_coverage",
+    "table_scope_counts",
+    "union_resource_ids",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,6 +84,74 @@ class UnionUnresolvable(Exception):
     parse converge on one outcome — `coverage_resource_absent` naming the rule — rather than
     on an empty set that reads like complete coverage.
     """
+
+
+def table_scope_counts(
+    definition: Mapping[str, object],
+    *,
+    view: SnapshotView,
+    identities: Iterable[str],
+) -> dict[str, int]:
+    """How many resources each data table's block scope resolved to (Req 27.10).
+
+    Keyed by the table identity the `w:tblCaption` carries, because that is what the anchored
+    pass holds when it needs the answer. `tbl:res:0` and `tbl:res:1` are two tables of one
+    block and therefore share a count.
+
+    **Re-derived here rather than carried over from the compile stage**, and with the same
+    resolver, for the reason :func:`union_resource_ids` gives: a count the compiler handed
+    forward would agree with the document by construction, and this gate exists precisely to
+    catch a document that disagrees with what its own scope resolved to. A block that
+    rendered zero rows would have handed forward a zero.
+
+    A block whose scope cannot be parsed contributes no entry rather than a zero. Zero and
+    absent read identically to :func:`~reporting_agent.verify.anchors.check_tables`, which
+    skips both — and that is the correct fail-open here, because `coverage_resource_absent`
+    already fails the run closed on an underivable scope. Recording a spurious
+    `table_rows_absent` on top would attribute the failure to the wrong gate.
+    """
+    try:
+        default = scope_rules_from_plain(definition.get("scope"), at="scope")
+    except Exception:
+        return {}
+
+    per_block: dict[str, int] = {}
+    blocks = definition.get("blocks")
+    if isinstance(blocks, Sequence) and not isinstance(blocks, (str, bytes)):
+        for ordinal, block in enumerate(blocks):
+            if not isinstance(block, Mapping):
+                continue
+            block_id = block.get("id")
+            if not isinstance(block_id, str) or not block_id:
+                continue
+            override = block.get("scope_override")
+            try:
+                rules = (
+                    default
+                    if override is None
+                    else scope_rules_from_plain(
+                        override, at=f"blocks.{ordinal}.scope_override"
+                    )
+                )
+                per_block[block_id] = len(resolve(rules, view))
+            except Exception:
+                continue
+
+    return {
+        identity: per_block[block]
+        for identity in identities
+        if (block := _block_of(identity)) in per_block
+    }
+
+
+def _block_of(identity: str) -> str:
+    """`tbl:res:0` names the block `res`.
+
+    Restated from `verify/verifier.py` rather than imported, because importing the
+    orchestrator from a pass it runs would make the package's import graph a cycle.
+    """
+    body = identity.split(":", 1)[1] if ":" in identity else identity
+    return body.split(":", 1)[0]
 
 
 def union_resource_ids(

@@ -78,8 +78,10 @@ from reporting_agent.collect.pipeline import (
     run_collection,
 )
 from reporting_agent.errors import (
+    AgentError,
     PartialCoverageError,
     RenderFailedError,
+    ReplayMismatchError,
     VerificationFailedError,
 )
 from reporting_agent.events import (
@@ -92,6 +94,10 @@ from reporting_agent.events import (
 from reporting_agent.progress import ProgressReporter
 from reporting_agent.providers.base import PlainData
 from reporting_agent.storage.base import ObjectStore
+from reporting_agent.verify.findings import (
+    FINDING_REPLAY_HASH_MISMATCH,
+    SEVERITY_BLOCKING,
+)
 
 __all__ = [
     "PHASE_COMPILING",
@@ -487,11 +493,7 @@ async def _document_phases(
     yield _verification_event(result)
 
     if result["status"] != "pass":
-        raise VerificationFailedError(
-            f"the verification recorded "
-            f"{result['counts'].get('blocking_findings_observed', 0)} blocking finding(s); "
-            f"no document is delivered for this run"
-        )
+        raise _terminal_for(result)
 
     # --- upload, after the pass and never before -------------------------------------
     upload_step = steps.start(
@@ -526,6 +528,39 @@ async def _document_phases(
         }
 
 
+def _terminal_for(result: Mapping[str, Any]) -> AgentError:
+    """The terminal code a failing verification reports.
+
+    `REPLAY_MISMATCH` when a replay mismatch is the **only** kind of blocking finding, and
+    `VERIFICATION_FAILED` otherwise. The two codes make different claims and the glossary is
+    explicit about the difference: a replay mismatch says the snapshot is not reproducible
+    from its own archived inputs, while the document may transcribe it perfectly. So a run
+    whose document *also* disagrees with its snapshot has failed at transcription as well,
+    and the narrower code would hide that — the broader one is the true statement.
+
+    Both are terminal, both withhold every artifact, and the verification result carries every
+    finding either way; what the code decides is which failure a reader is sent to first.
+    """
+    blocking = {
+        str(finding["type"])
+        for finding in result["findings"]
+        if finding.get("severity") == SEVERITY_BLOCKING
+    }
+    count = result["counts"].get("blocking_findings_observed", 0)
+
+    if blocking == {FINDING_REPLAY_HASH_MISMATCH}:
+        return ReplayMismatchError(
+            f"re-running the aggregation over this run's archived raw responses produced a "
+            f"snapshot digest differing from the one recorded; the document is not delivered "
+            f"({count} blocking finding(s))"
+        )
+
+    return VerificationFailedError(
+        f"the verification recorded {count} blocking finding(s); no document is delivered "
+        f"for this run"
+    )
+
+
 async def _verify(
     *,
     definition: Mapping[str, PlainData],
@@ -548,6 +583,7 @@ async def _verify(
 
     from reporting_agent.catalog.loader import load_catalog
     from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.verify.coverage import table_scope_counts
     from reporting_agent.verify.replay import plan_from_snapshot
     from reporting_agent.verify.verifier import VerifyInputs, verify
 
@@ -568,6 +604,16 @@ async def _verify(
 
     pdf_text, pdf_pages = _pdf_text(converted.pdf_bytes)
 
+    # Req 27.10's "that block's resolved scope". Without this the anchored pass has no
+    # expectation to compare a row count against, and `table_rows_absent` — one of the
+    # sixteen blocking types — can never fire on a real run however empty a table is.
+    view = build_snapshot_view(collected.document)
+    scope_counts = table_scope_counts(
+        definition,
+        view=view,
+        identities=(anchor.anchor_id for anchor in compiled.ledger.anchors().values()),
+    )
+
     return await verify(
         VerifyInputs(
             attempt_id=f"{plan.run_id}-1",
@@ -582,13 +628,14 @@ async def _verify(
             ast=compiled.document,
             document=open_docx(io.BytesIO(rendered.docx_bytes)),
             snapshot=collected.document,
-            view=build_snapshot_view(collected.document),
+            view=view,
             definition=definition,
             pdf_text=pdf_text,
             pdf_pages=pdf_pages,
             pdf_sha256=converted.pdf_sha256,
             snapshot_sha256=collected.snapshot_id,
             chart_sidecars=dict(rendered.chart_sidecars),
+            scope_counts=scope_counts,
             archived=archived,
             replay_plan=replay_plan,
             requery=None,

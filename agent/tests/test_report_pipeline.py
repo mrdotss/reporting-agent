@@ -18,278 +18,40 @@ The two that carry the module:
 from __future__ import annotations
 
 import asyncio
-import os
-import tempfile
 from pathlib import Path
 from typing import Any, Final
 
 import pytest
 
-BUCKET_NAME = "rpt-artifacts-test"
-
-# `main` reads its configuration at import, so these are set before it is imported — the
-# same bootstrap `test_collect_pipeline.py` uses, and for the same reason.
-os.environ.setdefault("AWS_REGION", "us-east-1")
-os.environ.setdefault("RPT_ARTIFACT_BUCKET", BUCKET_NAME)
-os.environ.setdefault("RPT_PROSE_MODEL_ID", "test.prose-model")
-
-# Req 23.8's `LANG` assertion runs before the conversion process starts, so a developer
-# host whose locale is `en_US.UTF-8` would fail every scenario here on the locale rather
-# than on anything the pipeline did. The container image pins both of these; set at import
-# rather than in a fixture because the module-scoped run below resolves first.
-os.environ["LANG"] = "C.UTF-8"
-os.environ.setdefault("LO_PROFILE", tempfile.mkdtemp(prefix="rpt-lo-profile-"))
-
-import definition_factory as df  # noqa: E402
-from fakes.azure_ports import (  # noqa: E402
-    FakeDefinitionsPort,
-    FakeInventoryPort,
-    FakeMetricsPort,
-    FakeSkuPort,
-    raw_response_from_recorded,
+# Imported first: the harness performs the `os.environ` bootstrap that `reporting_agent.main`
+# reads at import time, so nothing under `reporting_agent` may be imported above it.
+from pipeline_harness import (
+    ACTOR_ID,
+    BUCKET,
+    CPU,
+    MEMORY,
+    RESOURCE_TYPE,
+    RUN_ID,
+    WATCHDOG_S,
+    Pipeline,
+    StubProse,
+    definition,
+    df,
+    load_catalog,
+    report_objects,
+    run_generate_report,
+    types_of,
 )
-from fakes.object_store import InMemoryObjectStore  # noqa: E402
-from fixtures import load_response  # noqa: E402
-from reporting_agent.azure.ports import RawHttpResponse  # noqa: E402
-from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_ports  # noqa: E402
-from reporting_agent.catalog.loader import load_catalog  # noqa: E402
-from reporting_agent.errors import (  # noqa: E402
+from reporting_agent.errors import (
     PartialCoverageError,
     RenderFailedError,
     VerificationFailedError,
 )
-from reporting_agent.main import StepTracker  # noqa: E402
-from reporting_agent.report_pipeline import ReportOutcome, run_generate_report  # noqa: E402
-
-WATCHDOG_S: Final[float] = 300.0
-
-SUBSCRIPTION: Final[str] = "3f2b0000-0000-0000-0000-000000000000"
-RESOURCE_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
-WIRE_TYPE: Final[str] = "microsoft.compute/virtualmachines"
-LOCATION: Final[str] = "southeastasia"
-GROUP: Final[str] = "rg-prod-sea"
-ACTOR_ID: Final[str] = "usr_01HQZX8QW9K7YB4T2C3M5N6P7Q"
-RUN_ID: Final[str] = "run_01HQZX8QW9K7YB4T2C3M5N6P7Q"
-CPU: Final[str] = "Percentage CPU"
-MEMORY: Final[str] = "Available Memory Bytes"
-BUCKET: Final[str] = BUCKET_NAME
-
-WEB_01: Final[str] = (
-    f"/subscriptions/{SUBSCRIPTION}/resourceGroups/{GROUP}"
-    f"/providers/Microsoft.Compute/virtualMachines/prod-web-01"
-)
-
-DESIGN: Final[dict[str, Any]] = {
-    "preset": "editorial",
-    "accent_color": "#1f6f78",
-    "density": "normal",
-    "table_style": "hairline",
-    "number_format": {"decimal_places": 2, "group_thousands": True},
-    "cover_page": False,
-    "logo": None,
-    "page_size": "A4",
-}
-
-
-def raw(body: object, **headers: str) -> RawHttpResponse:
-    return RawHttpResponse(status=200, headers=dict(headers), body=body)
-
-
-def inventory() -> RawHttpResponse:
-    return raw(
-        {
-            "totalRecords": 1,
-            "count": 1,
-            "data": [
-                {
-                    "id": WEB_01,
-                    "name": "prod-web-01",
-                    "type": WIRE_TYPE,
-                    "location": LOCATION,
-                    "resourceGroup": GROUP,
-                    "tags": {"env": "prod"},
-                    "sku": "Standard_D4s_v5",
-                    "powerState": "PowerState/running",
-                }
-            ],
-        },
-        **{"x-ms-user-quota-remaining": "9"},
-    )
-
-
-def metric_entry(name: str) -> dict[str, Any]:
-    return {
-        "name": {"value": name},
-        "errorCode": "Success",
-        "timeseries": [
-            {
-                "metadatavalues": [],
-                "data": [
-                    {
-                        "timeStamp": "2026-06-30T17:00:00Z",
-                        "total": 720.0,
-                        "count": 60,
-                        "minimum": 5.0,
-                        "maximum": 30.0,
-                    }
-                ],
-            }
-        ],
-    }
-
-
-def batch() -> RawHttpResponse:
-    return raw(
-        {
-            "values": [
-                {
-                    "starttime": "2026-06-30T17:00:00Z",
-                    "endtime": "2026-07-01T17:00:00Z",
-                    "interval": "PT1H",
-                    "namespace": WIRE_TYPE,
-                    "resourceregion": LOCATION,
-                    "resourceid": WEB_01,
-                    "value": [metric_entry(CPU), metric_entry(MEMORY)],
-                }
-            ]
-        }
-    )
-
-
-def definition(**overrides: Any) -> dict[str, Any]:
-    design = {**DESIGN, **overrides.pop("design", {})}
-    blocks = overrides.pop(
-        "blocks",
-        [
-            df.block("res", "resource_table", {"columns": [df.CPU_AVG, df.CPU_MAX]}),
-            df.block("gaps", "gaps_and_coverage", {}),
-        ],
-    )
-    return df.definition(blocks, design=design, **overrides)
-
-
-class StubProse:
-    """A `ProseProvider` returning fixed text, so a scenario can choose what the model
-    "wrote".
-
-    A stub rather than a real Bedrock call for the obvious reason and one less obvious one:
-    the assertions here are about what the **verifier** does with model prose, and a real
-    model that happened to behave would make the negative case unreachable.
-    """
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-        self.requests: list[Any] = []
-
-    def narrate(self, request: Any) -> str:
-        self.requests.append(request)
-        return self.text
-
-
-class Pipeline:
-    """One invocation over the production assembly, with only Azure faked."""
-
-    def __init__(self, **overrides: Any) -> None:
-        self.prose: Any | None = overrides.pop("prose", None)
-        self.store = InMemoryObjectStore()
-        self.steps = StepTracker()
-        self.outcome = ReportOutcome()
-        self.catalog = load_catalog()
-        self.definition = overrides.pop("definition", definition())
-        # Held so a scenario can assert what was *asked for*, not only what came back — the
-        # fake's canned batch response is the same whatever the request names.
-        self.provider_metrics = FakeMetricsPort(
-            batch_responses=[batch()], fallback_responses=[]
-        )
-        self.provider = provider_over_ports(
-            inventory_port=FakeInventoryPort([inventory()]),
-            sku_port=FakeSkuPort(
-                [
-                    raw_response_from_recorded(
-                        load_response("azure", "resource_skus_with_vcpus_available")
-                    )
-                ]
-            ),
-            definitions_port=FakeDefinitionsPort(
-                [raw({"value": [{"name": {"value": CPU}}, {"name": {"value": MEMORY}}]})]
-            ),
-            metrics_port=self.provider_metrics,
-            object_store=self.store,
-            actor_id=ACTOR_ID,
-            run_id=RUN_ID,
-            fidelity_tier=FIDELITY_BASELINE,
-            catalog=self.catalog,
-        )
-
-    def payload(self) -> dict[str, Any]:
-        return {
-            "command": "generate_report",
-            "period": {"start": "2026-07-01", "end": "2026-07-01"},
-            "scope": {
-                "resource_types": [RESOURCE_TYPE],
-                "resource_groups": [],
-                "tag_filters": {},
-            },
-            "definition": self.definition,
-            "template_version_id": "tv_01HQZX",
-        }
-
-    def context(self) -> dict[str, Any]:
-        return {
-            "actor_id": ACTOR_ID,
-            "run_id": RUN_ID,
-            "subscription_id": SUBSCRIPTION,
-            "timezone": "Asia/Jakarta",
-            "fidelity_tier": FIDELITY_BASELINE,
-            "log_analytics_workspace_id": None,
-        }
-
-    def run(self) -> tuple[list[dict[str, Any]], Exception | None]:
-        """Drain the pipeline, returning the events **and** how it ended.
-
-        Both, because every gate assertion here is a claim about the events emitted before
-        the raise, and an exception propagating out of the `async for` discards them.
-        """
-        events: list[dict[str, Any]] = []
-
-        async def go() -> None:
-            async for event in run_generate_report(
-                payload=self.payload(),
-                context=self.context(),
-                steps=self.steps,
-                artifact_bucket=BUCKET,
-                outcome=self.outcome,
-                prose=self.prose,
-                provider=self.provider,
-                object_store=self.store,
-                catalog=self.catalog,
-            ):
-                events.append(event)
-
-        try:
-            asyncio.run(asyncio.wait_for(go(), timeout=WATCHDOG_S))
-        except Exception as exc:
-            return events, exc
-        return events, None
-
-
-def types_of(events: list[dict[str, Any]]) -> list[str]:
-    return [event["type"] for event in events]
-
-
-def report_objects(store: InMemoryObjectStore) -> list[str]:
-    return [key for key in store.keys() if "/reports/" in key]
-
-
-# --------------------------------------------------------------------------- #
-# The happy path, all the way through
-# --------------------------------------------------------------------------- #
 
 
 @pytest.fixture(scope="module")
 def completed():
     """One full run, shared — a real LibreOffice conversion is the expensive part."""
-    os.environ.setdefault("LANG", "C.UTF-8")
     pipeline = Pipeline()
     events, error = pipeline.run()
     return pipeline, events, error
