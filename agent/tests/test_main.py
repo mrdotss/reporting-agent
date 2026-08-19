@@ -41,6 +41,8 @@ os.environ.setdefault("RPT_PROSE_MODEL_ID", "test.prose-model")
 from reporting_agent import main  # imported after the environment above, deliberately
 from reporting_agent.errors import (
     APP_WRITTEN_CODES,
+    ROW_ERROR_CODES,
+    RUNTIME_DEFECT_CODE,
     EmptyScopeError,
     ErrorCode,
     PartialCoverageError,
@@ -586,12 +588,7 @@ def test_the_terminal_progress_callback_is_fired_from_the_snapshot_ready_event()
 
 
 def test_a_failed_run_presents_a_row_error_code_only_when_the_row_accepts_one() -> None:
-    """An invocation-level code is dropped from the callback, not presented (Req 38.11).
-
-    The progress endpoint refuses the whole callback on an out-of-set code — including the
-    transition it carries — and losing the transition costs a false `TIMEOUT` on a run
-    whose outcome is already known. So the label goes and the transition lands.
-    """
+    """A collection-phase code is presented as itself (Req 38.11)."""
     collection_transport = RecordingTransport()
 
     async def failing(invocation: Invocation, steps: StepTracker) -> AsyncIterator[Event]:
@@ -608,14 +605,110 @@ def test_a_failed_run_presents_a_row_error_code_only_when_the_row_accepts_one() 
     assert body["phase"] == "failed"
     assert body["error_code"] == ErrorCode.EMPTY_SCOPE.value
 
+
+def test_an_invocation_level_code_is_translated_rather_than_dropped() -> None:
+    """An invocation-level code presents as `INTERNAL_ERROR` (Req 38.11).
+
+    ## What this replaced, and why the old assertion was the bug
+
+    This test previously asserted `"error_code" not in routed` — that the code was
+    *dropped* — on the reasoning that the endpoint refuses an out-of-set code, and that
+    losing the whole callback would cost a false `TIMEOUT`, so the label should go and
+    the transition should land.
+
+    Every clause of that is true except the conclusion. The endpoint **also** refuses a
+    `failed` transition carrying no code at all: `missing_error_code`, Req 38.11's other
+    half, which is the CHECK constraint's precondition. So dropping the code did not
+    trade the label for the transition — it lost both, and bought the exact false
+    `TIMEOUT` the reasoning was trying to avoid.
+
+    It took a live run to notice: an unhandled `TypeError` killed a report nineteen
+    seconds in, the callback was refused twice and abandoned, the row sat in
+    `collecting`, and the Reaper eventually recorded a thirty-minute timeout over it.
+    The suite was green throughout, because this test asserted the broken half of the
+    contradiction and nothing asserted the other half.
+    """
     routing_transport = RecordingTransport()
     unimplemented = invocation_for(COMMAND_GENERATE_REPORT, transport=routing_transport)
     drain(run_invocation(unimplemented))
 
     routed = routing_transport.calls[0]["body"]
     assert routed["phase"] == "failed"
-    assert "error_code" not in routed
+    assert routed["error_code"] == RUNTIME_DEFECT_CODE
     assert routed["error_message"]
+
+
+def test_every_failed_callback_carries_a_code_the_row_accepts() -> None:
+    """The invariant whose absence let the contradiction above survive.
+
+    No test asserted that a `failed` callback *always* carries a presentable code, so
+    the one path that sent none was free to call itself correct. This asserts it over
+    every failure the router can produce — a collection-phase `AgentError`, a wiring
+    defect, and an unhandled exception — rather than over the one case that happened to
+    be noticed.
+
+    `AGENT_ERROR_CODES` is the app's set minus the two the app writes for itself, which
+    is exactly what the endpoint will accept from this process.
+    """
+    agent_presentable = ROW_ERROR_CODES - APP_WRITTEN_CODES
+
+    async def raises_agent_error(
+        invocation: Invocation, steps: StepTracker
+    ) -> AsyncIterator[Event]:
+        yield {"type": "heartbeat", "ts": 1.0}
+        raise EmptyScopeError("zero resources")
+
+    async def raises_wiring_defect(
+        invocation: Invocation, steps: StepTracker
+    ) -> AsyncIterator[Event]:
+        yield {"type": "heartbeat", "ts": 1.0}
+        raise CommandUnimplementedError(COMMAND_GENERATE_REPORT, "99.9")
+
+    async def raises_anything(
+        invocation: Invocation, steps: StepTracker
+    ) -> AsyncIterator[Event]:
+        yield {"type": "heartbeat", "ts": 1.0}
+        raise TypeError("the shape of the live failure this was written for")
+
+    # The expected code is named per case, not merely required to be *some* presentable
+    # one. The first draft of this test asserted only presentability and let a
+    # mis-constructed `CommandUnimplementedError` raise a `TypeError` from its own
+    # constructor instead — so all three cases silently exercised the unhandled-exception
+    # path, and a mutant that broke the translation survived. Naming the code is what
+    # makes a case that stopped testing what it says fail rather than pass by another
+    # route.
+    for label, handler, expected in (
+        ("collection-phase AgentError", raises_agent_error, ErrorCode.EMPTY_SCOPE.value),
+        ("wiring defect", raises_wiring_defect, RUNTIME_DEFECT_CODE),
+        ("unhandled exception", raises_anything, RUNTIME_DEFECT_CODE),
+    ):
+        transport = RecordingTransport()
+        drain(
+            run_invocation(
+                invocation_for(transport=transport),
+                handlers={COMMAND_GENERATE_REPORT: handler},
+            )
+        )
+        body = transport.calls[-1]["body"]
+        assert body["phase"] == "failed", label
+        assert body.get("error_code") in agent_presentable, (
+            f"{label}: a `failed` callback presented {body.get('error_code')!r}, which "
+            f"the progress endpoint refuses — and a refused callback leaves the row in "
+            f"its phase for the Reaper to mistake for a timeout"
+        )
+        assert body["error_code"] == expected, label
+
+    # A rejection from `parse_invocation`, which never enters a handler at all and so
+    # reaches the translation by a different route than any of the three above.
+    rejected_transport = RecordingTransport()
+    drain(
+        run_invocation(
+            invocation_for(command="no_such_command", transport=rejected_transport)
+        )
+    )
+    rejected = rejected_transport.calls[-1]["body"]
+    assert rejected["phase"] == "failed"
+    assert rejected["error_code"] == RUNTIME_DEFECT_CODE
 
 
 def test_an_invocation_with_no_run_row_reports_nothing_and_carries_a_null_run_id() -> None:

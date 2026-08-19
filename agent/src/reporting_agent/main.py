@@ -71,6 +71,8 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp
 from reporting_agent.config import Config
 from reporting_agent.errors import (
     APP_WRITTEN_CODES,
+    ROW_ERROR_CODES,
+    RUNTIME_DEFECT_CODE,
     AgentError,
     ErrorCode,
 )
@@ -189,7 +191,9 @@ CODE_UNSUPPORTED_COMMAND: Final[str] = "UNSUPPORTED_COMMAND"
 CODE_MISSING_COMMAND: Final[str] = "MISSING_COMMAND"
 CODE_INVALID_ACTOR: Final[str] = "INVALID_ACTOR"
 CODE_COMMAND_UNIMPLEMENTED: Final[str] = "COMMAND_UNIMPLEMENTED"
-CODE_INTERNAL_ERROR: Final[str] = "INTERNAL_ERROR"
+CODE_INTERNAL_ERROR: Final[str] = RUNTIME_DEFECT_CODE
+"""Aliased rather than re-spelled: this is the one invocation-level code that is also a
+row code, and two string literals for it is how the two halves come to disagree."""
 
 INVOCATION_ERROR_CODES: Final[frozenset[str]] = frozenset(
     {
@@ -1226,25 +1230,52 @@ async def _report_terminal(
 
 
 def _row_error_code(code: str | None) -> str | None:
-    """The code the run row may carry, or `None`.
+    """The code the run row may carry, or `None` when there is no failure to report.
 
     An invocation-level code (`MISSING_COMMAND`, `INVALID_ACTOR`, …) is not in the set the
-    progress endpoint accepts, so presenting one would have the whole callback refused —
-    and losing the callback costs a false `TIMEOUT` on a run whose outcome is already
-    known. The phase transition matters more than the label, so an unpresentable code is
-    dropped and the transition still lands.
+    progress endpoint accepts on a `failed` transition, so it cannot be presented as
+    itself. It is translated to `INTERNAL_ERROR` rather than dropped.
+
+    ## Dropping it was worse than presenting the wrong one, and not by a little
+
+    The previous version returned `None` here, reasoning that the phase transition
+    mattered more than the label. The reasoning was sound and the conclusion was
+    backwards: the endpoint **refuses a `failed` transition that carries no code**
+    (`missing_error_code`, Req 38.11, which is also the CHECK constraint's
+    precondition). So dropping the code did not preserve the transition at the cost of
+    the label — it lost both. The callback was refused, the row stayed in whatever phase
+    it was in, and the Reaper wrote `TIMEOUT` over it half an hour later.
+
+    That is how an unhandled `TypeError`, which killed a run nineteen seconds in,
+    reported itself to an operator as a run that exceeded its thirty-minute deadline.
+    A wrong terminal state that takes half an hour to appear is worse than no state at
+    all, because it is specific enough to be believed and it points at the wrong thing.
+
+    `INTERNAL_ERROR` is the honest general answer: the runtime failed for a reason that
+    is our defect, not a fact about the subscription. The specific invocation code is
+    still in the `error` event and in the runtime log, which is where it is actionable.
     """
     if code is None:
         return None
-    try:
-        return ErrorCode(code).value
-    except ValueError:
-        logger.info(
-            "error code %r describes the invocation rather than the collection, so it is "
-            "not presented on the terminal callback; the `failed` transition still lands.",
-            code,
+    if code in APP_WRITTEN_CODES:
+        # The app writes these; presenting one is refused as `timeout_reserved` before
+        # the code set is even consulted. Nothing here can have observed one, so this is
+        # a guard against a future caller rather than a reachable branch today.
+        logger.warning(
+            "error code %r is written by the web app and was not presented.", code
         )
-        return None
+        return RUNTIME_DEFECT_CODE
+    if code in ROW_ERROR_CODES:
+        return code
+
+    logger.info(
+        "error code %r describes the invocation rather than the collection, so the "
+        "terminal callback presents %r; the specific code is in this log and in the "
+        "`error` event.",
+        code,
+        RUNTIME_DEFECT_CODE,
+    )
+    return RUNTIME_DEFECT_CODE
 
 
 # --------------------------------------------------------------------------- #

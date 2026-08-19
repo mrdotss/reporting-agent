@@ -1,0 +1,1 @@
+ALTER TYPE "public"."run_error_code" ADD VALUE 'INTERNAL_ERROR';

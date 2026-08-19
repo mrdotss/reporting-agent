@@ -1663,9 +1663,18 @@ container is a recoverable state rather than a permanent one.
 6. THE Run_State_Machine SHALL treat `report_runs` as the authoritative record of run state,
    SHALL constrain `error_code` on a row whose `status` is `failed` to a non-empty value drawn
    from `AUTH_EXPIRED`, `AUTH_FAILED`, `SCOPE_UNVERIFIED`, `SECRET_UNREADABLE`, `EMPTY_SCOPE`,
-   `CATALOG_UNUSABLE`, `NO_STATISTICS`, `REGION_UNREACHABLE`, `THROTTLED` and `TIMEOUT`, and
-   SHALL leave `error_code` empty on a row whose `status` is `completed`, so that a client
-   reconstructs run state from that row rather than from a replayed event stream.
+   `CATALOG_UNUSABLE`, `NO_STATISTICS`, `REGION_UNREACHABLE`, `THROTTLED`, `TIMEOUT` and
+   `INTERNAL_ERROR`, and SHALL leave `error_code` empty on a row whose `status` is `completed`,
+   so that a client reconstructs run state from that row rather than from a replayed event
+   stream.
+6a. WHEN the Agent_Runtime reports a terminal failure carrying an invocation-level code —
+   the codes criterion 14.4 keeps distinct from every collection-phase code — THE
+   Agent_Runtime SHALL present `INTERNAL_ERROR` on the progress callback rather than
+   omitting `error_code`, and SHALL record the specific invocation-level code in the `error`
+   event and in the runtime log, because criterion 38.11 refuses a `failed` transition that
+   carries no code and a refused callback leaves the row in its phase for the Reaper to
+   record as `TIMEOUT` — a run that failed in seconds then reports itself as one that
+   exceeded a thirty-minute deadline, which is a worse answer than none.
 7. THE Web_App SHALL read a run's terminal state from `report_runs.status`,
    `report_runs.error_code` and `report_runs.error_message` in addition to reading events,
    because the `TIMEOUT` code is written by the Reaper with no event to carry it.

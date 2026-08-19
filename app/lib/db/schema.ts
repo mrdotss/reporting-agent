@@ -128,6 +128,13 @@ export const runErrorCode = pgEnum("run_error_code", [
   "PDF_CONVERSION_FAILED",
   "VERIFICATION_FAILED",
   "REPLAY_MISMATCH",
+  // A failure in the runtime rather than in the customer's data. Not a
+  // collection phase and not an app-written code: it is what the five
+  // invocation-level codes present as, because the progress endpoint refuses a
+  // `failed` transition carrying no code at all and the agent used to send
+  // exactly that — losing the transition and letting the Reaper write TIMEOUT
+  // over a run that had already failed in seconds.
+  "INTERNAL_ERROR",
 ])
 
 /**

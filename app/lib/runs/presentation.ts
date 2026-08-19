@@ -302,6 +302,20 @@ export const RUN_FAILURE_PRESENTATION: Readonly<
         "auditable.",
     ],
   },
+  INTERNAL_ERROR: {
+    headline:
+      "The runtime failed for a reason of its own, so no report was produced.",
+    artifactProduced: false,
+    causes: [
+      "This is a fault in this system rather than a problem with the " +
+        "subscription. Nothing about the customer's Azure needs changing, and " +
+        "re-running is unlikely to help until the fault is fixed.",
+      "The specific failure is in the runtime log for this run, which is " +
+        "where it is actionable. It is deliberately not shown here: the " +
+        "message is our own internal detail, and a consultant reading this " +
+        "screen cannot act on a stack frame.",
+    ],
+  },
 })
 
 /** The fallback for a `failed` row whose code the database somehow admitted. */

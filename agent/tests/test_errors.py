@@ -107,13 +107,17 @@ def test_every_code_serializes_as_its_own_string() -> None:
 
 
 def test_row_error_codes_mirror_the_state_machine_set() -> None:
-    # Req 36.6's ten values plus Req 41.2's six, which is exactly the value set of the
-    # app's `run_error_code` enum. `PARTIAL_COVERAGE` is absent because a run with gaps
-    # completes; the two app-written codes are present because the app writes them.
+    # Req 36.6's ten values, Req 41.2's six, and the runtime-defect code, which is
+    # exactly the value set of the app's `run_error_code` enum. `PARTIAL_COVERAGE` is
+    # absent because a run with gaps completes; the two app-written codes are present
+    # because the app writes them.
     #
     # Spelled out rather than derived from `ErrorCode`, deliberately: this is the one
     # assertion that would notice the Postgres enum and this module disagreeing, and a
-    # derived expectation would restate whatever the module happens to declare.
+    # derived expectation would restate whatever the module happens to declare. That is
+    # also why `INTERNAL_ERROR` had to be added here by hand — it is not an `ErrorCode`
+    # member, so no derivation would have produced it, and its absence from the enum
+    # would go unnoticed by every other test in this file.
     assert ROW_ERROR_CODES == {
         "AUTH_EXPIRED",
         "AUTH_FAILED",
@@ -131,6 +135,7 @@ def test_row_error_codes_mirror_the_state_machine_set() -> None:
         "PDF_CONVERSION_FAILED",
         "VERIFICATION_FAILED",
         "REPLAY_MISMATCH",
+        "INTERNAL_ERROR",
     }
     assert "PARTIAL_COVERAGE" not in ROW_ERROR_CODES
 

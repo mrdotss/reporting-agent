@@ -33,6 +33,7 @@ __all__ = [
     "APP_WRITTEN_CODES",
     "NON_TERMINAL_CODES",
     "ROW_ERROR_CODES",
+    "RUNTIME_DEFECT_CODE",
     "TERMINAL_CODES",
     "AgentError",
     "AuthExpiredError",
@@ -112,17 +113,49 @@ NON_TERMINAL_CODES: Final[frozenset[ErrorCode]] = frozenset(
 # because there is no `ErrorCode` member to reference.
 APP_WRITTEN_CODES: Final[frozenset[str]] = frozenset({"TIMEOUT", "SECRET_UNREADABLE"})
 
+RUNTIME_DEFECT_CODE: Final[str] = "INTERNAL_ERROR"
+"""The row code for a failure in this runtime rather than in the customer's data.
+
+Deliberately **not** an `ErrorCode` member. Req 14.4 keeps every invocation-level code
+distinct from every collection-phase code, so that a refused payload can never be read
+as a failed collection, and `main.py` asserts that disjointness at import. This is the
+one invocation-level code that must also reach `report_runs.error_code`, and it gets
+there by being named here as a plain string — the same device `APP_WRITTEN_CODES` uses
+for the same reason.
+
+## Why it has to be writable at all
+
+`main._row_error_code` used to drop a code the row could not accept and send the
+`failed` transition without one, on the stated reasoning that the transition mattered
+more than the label. That reasoning was wrong, and provably so: the progress endpoint
+refuses a `failed` transition carrying no code (`missing_error_code`, Req 38.11, which
+is also the CHECK constraint's precondition). Dropping the code did not save the
+transition — it guaranteed the transition was refused, the row stayed in its phase, and
+the Reaper wrote `TIMEOUT` half an hour later over a run that had already failed in
+seconds. An unhandled `TypeError` in the document phase reported itself to an operator
+as a timeout, which is the single most misleading thing the state machine can say.
+
+So the five invocation-level codes all present as this one. The specific code still
+travels in the `error` event and in the log, where it is actionable; the row records
+the honest general fact, which is that the runtime failed for a reason that is our
+defect rather than anything about the subscription.
+"""
+
 # The set `report_runs.error_code` accepts on a failed row (Req 36.6, extended
-# additively by Req 41.2), which is every agent code except `PARTIAL_COVERAGE` plus the
-# two app-written ones.
+# additively by Req 41.2 and by the runtime-defect code above), which is every agent
+# code except `PARTIAL_COVERAGE`, plus the two app-written ones.
 #
 # `PARTIAL_COVERAGE` is excluded deliberately: a run with gaps completes (Req 29.5).
 # It travels as an `error` event carrying `terminal` false and is **never** a row
 # `error_code`, because a completed run with a recorded, visible gap list is an honest
 # result rather than a failure.
-ROW_ERROR_CODES: Final[frozenset[str]] = frozenset(
-    code.value for code in ErrorCode if code is not ErrorCode.PARTIAL_COVERAGE
-) | APP_WRITTEN_CODES
+ROW_ERROR_CODES: Final[frozenset[str]] = (
+    frozenset(
+        code.value for code in ErrorCode if code is not ErrorCode.PARTIAL_COVERAGE
+    )
+    | APP_WRITTEN_CODES
+    | {RUNTIME_DEFECT_CODE}
+)
 
 
 class AgentError(Exception):
@@ -400,7 +433,16 @@ assert all(
     if code in TERMINAL_CODES
 )
 
-# The foundation's ten (Req 36.6) plus the six document-phase codes (Req 41.2). Stated
-# as a count rather than derived, so appending a member without appending the matching
-# `run_error_code` value fails here instead of at the write that the column refuses.
-assert len(ROW_ERROR_CODES) == 16
+# The foundation's ten (Req 36.6), the six document-phase codes (Req 41.2), and the
+# runtime-defect code. Stated as a count rather than derived, so appending a member
+# without appending the matching `run_error_code` value fails here instead of at the
+# write that the column refuses.
+assert len(ROW_ERROR_CODES) == 17
+
+# The runtime-defect code is a row code but **not** a collection-phase one: Req 14.4
+# keeps the invocation-level codes disjoint from `ErrorCode`, and `main.py` asserts that
+# disjointness. Both facts have to hold at once, so both are checked here — the second
+# is what stops a future edit from "simplifying" this into an `ErrorCode` member and
+# silently making a refused payload indistinguishable from a failed collection.
+assert RUNTIME_DEFECT_CODE in ROW_ERROR_CODES
+assert RUNTIME_DEFECT_CODE not in _CODE_VALUES
