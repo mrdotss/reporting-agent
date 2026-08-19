@@ -78,6 +78,33 @@ const prefixPair = fc
 
 const segment = fc.stringMatching(/^[A-Za-z0-9_.-]{0,12}$/)
 
+/**
+ * An actor id carrying **at least one cased character**, by construction.
+ *
+ * The case property needs an id that recases to something different, and `1234`
+ * recases to itself — asserting a refusal for that would be asserting that an
+ * actor cannot reach its own key. The obvious spelling is `actorId` plus an
+ * `fc.pre(recased !== id)`, and that is what this was.
+ *
+ * It flaked. `actorId` generates from 64 characters of which 12 are uncased, and
+ * fast-check biases hard toward short strings, so the rejection rate sat at
+ * roughly 20% — right on the tolerance, passing or aborting with "too many
+ * pre-condition failures" depending on the seed. One run in eight failed.
+ *
+ * Constructing the guarantee instead of filtering for it takes the rejection
+ * rate to zero, which is also what Requirement 42.6 wants of every property: a
+ * precondition that discards a fifth of its inputs is a property testing rather
+ * less than it claims to. The letter is placed at a generated position rather
+ * than at the front so the cased character is not always the first one.
+ */
+const casedActorId = fc
+  .tuple(
+    fc.stringMatching(/^[A-Za-z0-9_.-]{0,11}$/),
+    fc.constantFrom(..."abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"),
+    fc.stringMatching(/^[A-Za-z0-9_.-]{0,12}$/)
+  )
+  .map(([head, letter, tail]) => `${head}${letter}${tail}`)
+
 describe("Property 12 — the declared examples", () => {
   test("actor `alice` against `alice-evil/reports/r/x`", () => {
     // `startsWith(actorId)` returns true here. Exact segment equality does not.
@@ -132,18 +159,22 @@ describe("Property 12 — no id admits a key under a different first segment", (
   })
 
   test("an actor id differing only in case is never authorized", () => {
-    // The generated form of the declared example above. `fc.pre` skips ids with
-    // no cased character — `1234` recases to itself, and asserting a refusal for
-    // it would be asserting that an actor cannot reach its own key.
+    // The generated form of the declared example above, over `casedActorId` —
+    // see its comment for why this does not filter.
     fc.assert(
       fc.property(
-        actorId,
+        casedActorId,
         fc.constantFrom(...DOWNLOADABLE_SEGMENTS),
         fc.stringMatching(/^[A-Za-z0-9_-]{1,12}$/),
         (id, downloadable, runId) => {
           const recased =
             id === id.toLowerCase() ? id.toUpperCase() : id.toLowerCase()
-          fc.pre(recased !== id)
+
+          // The old precondition, as an assertion. If the generator ever stops
+          // guaranteeing a cased character this fails loudly instead of quietly
+          // skipping — which is the difference between a property that shrank
+          // and a property that reported it.
+          expect(recased).not.toBe(id)
 
           expect(
             keyBelongsToActor(id, `${recased}/${downloadable}/${runId}/leaf`)
