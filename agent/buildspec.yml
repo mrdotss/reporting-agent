@@ -1,0 +1,54 @@
+version: 0.2
+
+# CodeBuild builds the runtime image on a **native arm64** host
+# (`aws/codebuild/amazonlinux2-aarch64-standard:3.0`, `type: ARM_CONTAINER`).
+#
+# Native rather than emulated, and that is the reason this file exists rather than a
+# `docker buildx --platform linux/arm64` on a developer's x86 laptop: the image installs
+# LibreOffice, the theme fonts and a warmed LibreOffice profile, and every one of those
+# steps runs through qemu on an x86 host. The same build is minutes here and the better
+# part of an hour there — and the emulated path additionally needs `binfmt_misc` handlers
+# registered kernel-wide through a privileged container, which is a change to the
+# developer's machine that a build has no business making.
+#
+# `--platform linux/arm64` is still passed explicitly. On this host it is a no-op, and
+# that is the point: the Dockerfile asserts `uname -m` is `aarch64` before it will
+# publish, so a project accidentally moved to an x86 compute type fails the build rather
+# than producing an image AgentCore Runtime refuses to start. A launch failure is the
+# expensive place to discover the architecture is wrong.
+
+env:
+  variables:
+    AWS_REGION: us-east-1
+    ECR_REPOSITORY: reporting-agent
+    IMAGE_TAG: latest
+
+phases:
+  pre_build:
+    commands:
+      - echo "Build context is the repository's agent/ directory."
+      - ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
+      - REGISTRY="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+      - IMAGE_URI="${REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+
+  build:
+    commands:
+      - cd agent
+      # The Dockerfile's own four assertions run here — the Azure Monitor three-package
+      # split, the AST provenance guard, the theme guard, and architecture plus
+      # LibreOffice plus a warmed profile. Each fails the build rather than a deployed
+      # run, which is why this stage is the gate and not a later smoke test.
+      - docker buildx build --platform linux/arm64 -t "$IMAGE_URI" --load .
+      # Confirm what was actually produced before anything is pushed. An x86 image is the
+      # failure this whole file is shaped around.
+      - test "$(docker image inspect "$IMAGE_URI" --format '{{.Architecture}}')" = "arm64"
+      - test "$(docker image inspect "$IMAGE_URI" --format '{{.Os}}')" = "linux"
+
+  post_build:
+    commands:
+      - docker push "$IMAGE_URI"
+      - echo "pushed ${IMAGE_URI}"
+      # The digest, so a runtime can be pinned to this exact image rather than to a tag
+      # that will move under it on the next build.
+      - aws ecr describe-images --repository-name "$ECR_REPOSITORY" --image-ids imageTag="$IMAGE_TAG" --region "$AWS_REGION" --query 'imageDetails[0].imageDigest' --output text

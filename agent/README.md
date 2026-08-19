@@ -225,12 +225,84 @@ hide behind. The profile is used as-is at run time and never re-created; it carr
 group `0` with group permissions mirroring the owner's, so whichever uid the runtime
 supplies can take LibreOffice's lock files inside it.
 
+## Building on CodeBuild instead
+
+The `docker buildx` lines above work, and on an x86 host every one of them runs the
+LibreOffice install, the font install and the profile warm-up through qemu. That is the
+better part of an hour, and it first needs `binfmt_misc` handlers registered kernel-wide
+through a privileged container — a change to the developer's machine that a build has no
+business making.
+
+`buildspec.yml` builds the same image on a **native arm64** CodeBuild host in a fraction
+of the time and touches no local machine. `--platform linux/arm64` is still passed: on
+that host it is a no-op, and that is the point, because the Dockerfile's `uname -m`
+assertion then fails a project accidentally moved to an x86 compute type rather than
+producing an image the runtime refuses to start.
+
+```bash
+aws iam create-role --role-name ReportingAgentCodeBuildRole \
+  --assume-role-policy-document file://deploy/codebuild-trust.json
+aws iam put-role-policy --role-name ReportingAgentCodeBuildRole \
+  --policy-name ReportingAgentCodeBuildPolicy --policy-document file://deploy/codebuild-policy.json
+
+aws codebuild create-project --cli-input-json file://deploy/codebuild-project.json --region "$AWS_REGION"
+aws codebuild start-build --project-name reporting-agent-build --region "$AWS_REGION"
+```
+
+The build role needs `ecr:DescribeImages` as well as the push actions. The buildspec's
+last line reads the pushed digest back so a runtime can be pinned to an exact image
+rather than to a tag that moves under it, and a role carrying only the push actions
+pushes successfully and then fails on that one call.
+
 ## Deploying to AgentCore Runtime
 
 1. Build and push as above — `--platform linux/arm64` on every build line.
-2. Create or update the runtime against the pushed image URI.
+2. Create the execution role, then create or update the runtime against the pushed
+   image URI:
+
+   ```bash
+   aws iam create-role --role-name ReportingAgentRuntimeRole \
+     --assume-role-policy-document file://deploy/runtime-trust.json
+   aws iam put-role-policy --role-name ReportingAgentRuntimeRole \
+     --policy-name ReportingAgentRuntimePolicy --policy-document file://deploy/runtime-policy.json
+
+   aws bedrock-agentcore-control create-agent-runtime \
+     --cli-input-json file://deploy/runtime.json --region "$AWS_REGION"
+   aws bedrock-agentcore-control get-agent-runtime \
+     --agent-runtime-id <RUNTIME_ID> --region "$AWS_REGION"   # wait for READY
+   ```
+
 3. Put the resulting runtime ARN in the app's `RPT_RUNTIME_ARN`. The app reads it from
    `process.env` and never hardcodes it.
+
+`deploy/*.example.json` are the committed templates; the real files beside them carry
+account, bucket and runtime identifiers and are git-ignored.
+
+**`RPT_ARTIFACT_BUCKET` is a bucket name, not a bucket and prefix.** Both halves pass it
+straight into `Bucket=` — `storage/s3.py` and the app's `lib/aws/s3.ts` alike — so a
+value like `my-bucket/my-prefix` fails every S3 call with `InvalidBucketName`. Keys are
+already namespaced `<actor_id>/snapshots/…` and `<actor_id>/reports/…`, so a prefix earns
+nothing the key layout does not already provide.
+
+### Smoke-testing a fresh runtime
+
+```bash
+aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id <RUNTIME_ID> --region "$AWS_REGION"
+```
+
+`READY` says the container started, which is most of what can go wrong with an image.
+To prove the process's own configuration as well, invoke it with a command it does not
+accept:
+
+```python
+dp.invoke_agent_runtime(agentRuntimeArn=ARN, runtimeSessionId="a"*40, payload=json.dumps({"command": "ping"}))
+```
+
+A healthy runtime answers `200` with an SSE `error` event naming `UNSUPPORTED_COMMAND`
+and the four commands it does accept. That single response proves more than it looks
+like: the image is the right architecture, `Config.from_env()` found every variable in
+`REQUIRED_ENV_VARS` — a missing one raises `MissingConfigError` at process start, so the
+runtime would never have reached the router — and the SSE contract is intact.
 
 The runtime's execution role needs `s3:PutObject` on the artifact bucket. The runtime
 reads its own configuration from the environment once at process start; `config.py`

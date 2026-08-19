@@ -1,0 +1,21 @@
+{
+  "agentRuntimeName": "reporting_agent",
+  "description": "Verified infrastructure utilization reporting runtime (Azure collector, DOCX/PDF renderer, verifier)",
+  "agentRuntimeArtifact": {
+    "containerConfiguration": {
+      "containerUri": "<ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/reporting-agent:latest"
+    }
+  },
+  "roleArn": "arn:aws:iam::<ACCOUNT_ID>:role/ReportingAgentRuntimeRole",
+  "networkConfiguration": { "networkMode": "PUBLIC" },
+  "protocolConfiguration": { "serverProtocol": "HTTP" },
+  "lifecycleConfiguration": {
+    "idleRuntimeSessionTimeout": 900,
+    "maxLifetime": 28800
+  },
+  "environmentVariables": {
+    "AWS_REGION": "us-east-1",
+    "RPT_ARTIFACT_BUCKET": "<ARTIFACT_BUCKET>",
+    "RPT_PROSE_MODEL_ID": "zai.glm-5"
+  }
+}

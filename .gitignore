@@ -1,3 +1,17 @@
 # Root project directory
 KIRO*
 /node_*
+# Deploy configs carry real account, bucket and runtime identifiers — keep them local
+# and commit only the placeholder templates (deploy/*.example.json). Same split as
+# ../cold-agent, and for the same reason: the shapes are worth reviewing, the values
+# are not worth publishing.
+agent/deploy/*.json
+!agent/deploy/*.example.json
+
+# The agent half's local environment. `app/.gitignore` has covered `.env*` on its side
+# since the foundation; `agent/` had no equivalent only because no `agent/.env` existed
+# yet. It holds no credential today — the Azure secret and the progress token arrive in
+# the invoke payload's `context`, never in the environment — but a file named `.env` is
+# the wrong thing to leave trackable on that argument.
+agent/.env
+agent/.env.bak.*
