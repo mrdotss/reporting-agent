@@ -75,6 +75,18 @@ COPY src/reporting_agent/ ./reporting_agent/
 # probing, so the two layouts do not depend on which directory happens to exist.
 COPY themes/ ./themes/
 
+# --- the operator's certificate authority, if there is one ---------------------
+#
+# `RPT_CA_BUNDLE` names a PEM of additional trusted roots for the progress callback,
+# and AgentCore Runtime mounts no volumes — so a deployment behind a private CA has
+# to bake the root into the image. Nothing is trusted by having the file here: the
+# runtime reads it only when `RPT_CA_BUNDLE` points at it, and an image built for a
+# deployment with a publicly trusted certificate simply never names it.
+#
+# A CA root is a public certificate. The private key stays on the CA and never
+# appears in a build context.
+COPY deploy/private-ca.pem /etc/ssl/private-ca/root.pem
+
 # Fail the BUILD, not a deployed run, if the three-package Azure Monitor pin is
 # wrong (Req 17.5, 17.6, 17.10).
 #
