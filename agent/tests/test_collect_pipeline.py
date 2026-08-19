@@ -1980,3 +1980,82 @@ def test_the_gap_reaches_the_snapshot_and_is_counted() -> None:
     # says why. Presence is all `verify/coverage.py` asserts, so without the gap this row
     # passes every gate while meaning nothing.
     assert statistics_of(document, sql_id) == []
+
+
+def _plan_for_gap_summary():
+    """A `RunPlan` carrying only what `assert_some_statistic` reads: the subscription."""
+    from types import SimpleNamespace
+
+    return SimpleNamespace(subscription_id="3f2b0000-0000-0000-0000-000000000000")
+
+# --------------------------------------------------------------------------- #
+# Req 33.7 — the failure that must not destroy its own evidence
+# --------------------------------------------------------------------------- #
+
+
+def test_no_statistics_names_the_gap_types_that_explain_it() -> None:
+    """`NO_STATISTICS` is the one terminal error whose diagnosis lives in the
+    `collection_log` — and raising it means no snapshot, so the log is discarded.
+
+    Found on a real subscription: three running VMs, every requested metric emitted by
+    them, real data in Azure for the period, and a terminal error naming only the
+    subscription id. Everything that could have explained it had been recorded and thrown
+    away.
+    """
+    from reporting_agent.collect.pipeline import assert_some_statistic
+    from reporting_agent.errors import NoStatisticsError
+
+    plan = _plan_for_gap_summary()
+    gaps = [
+        {"gap_type": "permission_denied", "resource_id": "/vm/a", "metric": "Percentage CPU", "message": "403"},
+        {"gap_type": "permission_denied", "resource_id": "/vm/b", "metric": "Percentage CPU", "message": "403"},
+        {"gap_type": "metric_not_emitted", "resource_id": "/vm/a", "metric": "Network In Total", "message": "absent"},
+    ]
+
+    with pytest.raises(NoStatisticsError) as raised:
+        assert_some_statistic(plan, {}, gaps)
+
+    message = str(raised.value)
+    assert "permission_denied x2" in message
+    assert "metric_not_emitted x1" in message
+
+
+def test_no_statistics_carries_no_gap_message_text() -> None:
+    """Types and counts only. A gap message can quote a service error, and this string
+    reaches a log line and a `report_runs` row."""
+    from reporting_agent.collect.pipeline import assert_some_statistic
+    from reporting_agent.errors import NoStatisticsError
+
+    with pytest.raises(NoStatisticsError) as raised:
+        assert_some_statistic(
+            _plan_for_gap_summary(),
+            {},
+            [{"gap_type": "permission_denied", "resource_id": "/vm/a",
+              "metric": "Percentage CPU", "message": "SECRET-LOOKING-DETAIL"}],
+        )
+
+    assert "SECRET-LOOKING-DETAIL" not in str(raised.value)
+    assert "/vm/a" not in str(raised.value)
+
+
+def test_no_statistics_says_so_when_there_is_no_gap_either() -> None:
+    """The case that was actually hit: metrics requested, answered, and empty, with
+    nothing recorded. An empty summary must read as a finding rather than as a blank."""
+    from reporting_agent.collect.pipeline import assert_some_statistic
+    from reporting_agent.errors import NoStatisticsError
+
+    with pytest.raises(NoStatisticsError) as raised:
+        assert_some_statistic(_plan_for_gap_summary(), {}, ())
+
+    assert "no gap either" in str(raised.value)
+
+
+def test_a_single_statistic_still_passes_the_gate() -> None:
+    """The gate is unchanged by the summary: one measured value anywhere is enough."""
+    from reporting_agent.collect.pipeline import assert_some_statistic
+
+    assert_some_statistic(
+        _plan_for_gap_summary(),
+        {"/vm/a": {"Percentage CPU": {"avg": {"value": "12.00"}}}},
+        [{"gap_type": "permission_denied", "resource_id": "/vm/b", "metric": None, "message": "403"}],
+    )

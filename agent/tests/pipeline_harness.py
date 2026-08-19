@@ -73,6 +73,7 @@ __all__ = [
     "batch",
     "definition",
     "df",
+    "empty_batch",
     "inventory",
     "load_catalog",
     "metric_entry",
@@ -169,6 +170,7 @@ def metric_entry(
     count: int = 60,
     minimum: float = 5.0,
     maximum: float = 30.0,
+    error_code: str = "Success",
 ) -> dict[str, Any]:
     """One metric of one resource, as the batch endpoint returns it.
 
@@ -179,7 +181,9 @@ def metric_entry(
     """
     return {
         "name": {"value": name},
-        "errorCode": "Success",
+        # Azure returns per-resource and per-metric failures **inside a 200** (Req 29.1),
+        # so a scenario needs to be able to produce one without failing the request.
+        "errorCode": error_code,
         "timeseries": [
             {
                 "metadatavalues": [],
@@ -195,6 +199,23 @@ def metric_entry(
             }
         ],
     }
+
+
+def empty_batch(names: Sequence[str] = DEFAULT_RESOURCES) -> RawHttpResponse:
+    """A 200 carrying no resource at all.
+
+    The shape behind the real incident: the request succeeds and answers for nothing, so
+    every requested resource records `resource_absent_from_response` (Req 29.5) and the
+    run reaches `assert_some_statistic` with an empty statistics map — the one moment when
+    the `collection_log` is the only explanation available.
+
+    A per-metric `errorCode` is **not** enough to reach that state, and finding out why is
+    the useful part: SKU capability values are finalized from the SKU listing rather than
+    from metrics, so a refused metric still leaves a statistic behind and the run ends as
+    `PARTIAL_COVERAGE` instead.
+    """
+    del names
+    return raw({"values": []})
 
 
 def batch(names: Sequence[str] = DEFAULT_RESOURCES) -> RawHttpResponse:
@@ -337,12 +358,21 @@ class Pipeline:
         )
         # Held so a scenario can assert what was *asked for*, not only what came back — the
         # fake's canned batch response is the same whatever the request names.
+        # Overridable, because the port is handed its queue at construction: a scenario
+        # assigning to `provider_metrics.batch_responses` afterwards is too late and the
+        # canned response is used instead — quietly, which is how it looks like the
+        # scenario ran when it did not.
         self.provider_metrics = FakeMetricsPort(
-            batch_responses=[
-                batch(self.resources)
-                if self.days == 1
-                else multi_day_batch(self.resources, days=self.days)
-            ],
+            batch_responses=list(
+                overrides.pop(
+                    "batch_responses",
+                    [
+                        batch(self.resources)
+                        if self.days == 1
+                        else multi_day_batch(self.resources, days=self.days)
+                    ],
+                )
+            ),
             fallback_responses=[],
         )
         self.provider = provider_over_ports(

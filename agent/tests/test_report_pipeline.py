@@ -37,6 +37,7 @@ from pipeline_harness import (
     StubProse,
     definition,
     df,
+    empty_batch,
     load_catalog,
     report_objects,
     run_generate_report,
@@ -550,3 +551,26 @@ def test_a_payload_with_no_pinned_definition_is_a_snapshot_only_run() -> None:
     assert "snapshot_ready" in types_of(events)
     assert "verification" not in types_of(events)
     assert report_objects(pipeline.store) == []
+
+
+def test_no_statistics_carries_the_gap_types_through_the_real_pipeline() -> None:
+    """Req 33.7, over the production path rather than the assertion in isolation.
+
+    The unit tests call `assert_some_statistic` directly, so they cannot notice the **call
+    site** failing to pass the gaps — which is exactly what the original defect was: the
+    gaps existed, were recorded, and were never handed to the error that needed them. A
+    mutant removing the argument survived every direct test and is killed only here.
+
+    Every metric is refused inside a 200, so the run collects nothing and the
+    `collection_log` holds the reason.
+    """
+    pipeline = Pipeline(batch_responses=[empty_batch()])
+
+    _, error = pipeline.run()
+
+    assert type(error).__name__ == "NoStatisticsError", error
+    message = str(error)
+    assert "collection_log this run would have carried" in message
+    # The classified type, not a bare count — the operator acts on the classification.
+    assert "x" in message.split("carried:")[1]
+    assert "no gap either" not in message

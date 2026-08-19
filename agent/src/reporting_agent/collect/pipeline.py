@@ -91,6 +91,7 @@ come from.
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
@@ -535,7 +536,9 @@ def assert_some_location_reachable(
 
 
 def assert_some_statistic(
-    plan: RunPlan, statistics: Mapping[str, Mapping[str, Mapping[str, StatValue]]]
+    plan: RunPlan,
+    statistics: Mapping[str, Mapping[str, Mapping[str, StatValue]]],
+    gaps: Sequence[GapRecord] = (),
 ) -> None:
     """Req 33.7 — at least one resource resolved, and zero statistics across all of them.
 
@@ -544,6 +547,19 @@ def assert_some_statistic(
     which points at a different cause than an empty scope does. A snapshot carrying
     resources and no statistics reaches the same worthless artifact the empty-scope gate
     exists to prevent, so it is refused on the same terms.
+
+    **The gap summary is in the message because this is the one failure that destroys its
+    own evidence.** Every reason a metric produced nothing — a per-resource 403 arriving
+    at HTTP 200, `metric_not_emitted`, `no_samples`, `interval_counts_missing` — is
+    recorded in the `collection_log`, and the `collection_log` lives on the snapshot.
+    Raising here means no snapshot is written, so without this the entire diagnosis is
+    discarded at the moment it becomes most useful and the operator is left with "nothing
+    was collected" and a subscription id.
+
+    Types and counts only, never a message: a gap message can quote a service error, and
+    this string reaches a log line and a `report_runs` row. `sibling
+    assert_all_locations_reachable` already names its locations for the same reason — an
+    unactionable terminal error is a support ticket.
     """
     if any(
         metric_values
@@ -551,11 +567,23 @@ def assert_some_statistic(
         for metric_values in resource_values.values()
     ):
         return
+
+    counted = Counter(
+        str(gap.get("gap_type") or "unclassified") for gap in gaps
+    )
+    detail = (
+        ", ".join(f"{gap_type} x{count}" for gap_type, count in sorted(counted.items()))
+        if counted
+        else "and the collection_log recorded no gap either, so nothing explains the "
+        "absence — the metrics were requested and answered with no data point"
+    )
+
     raise NoStatisticsError(
         f"the collection produced no statistic for any resource or any metric in "
         f"subscription {plan.subscription_id}, although at least one resource resolved "
         f"in scope: no snapshot was written, because a snapshot carrying resources and "
-        f"no statistics is indistinguishable downstream from a measured one."
+        f"no statistics is indistinguishable downstream from a measured one. The "
+        f"collection_log this run would have carried: {detail}."
     )
 
 
@@ -1228,7 +1256,7 @@ async def _drive(
 
     # --- the two remaining gates, in this order (see the module docstring) -----------
     assert_some_location_reachable(plan, collected.get("locations"))
-    assert_some_statistic(plan, collected["statistics"])
+    assert_some_statistic(plan, collected["statistics"], collected.get("gaps") or ())
 
     # --- the snapshot (Req 34.x, 35.x) -----------------------------------------------
     await _report(progress, PHASE_COLLECTING, current=total, total=total, label="Snapshot")
