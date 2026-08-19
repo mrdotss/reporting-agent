@@ -1583,6 +1583,130 @@ def _scoped_resource_types(
     return found
 
 
+def _validate_required_config_is_filled(
+    raw: dict[str, object], walk: _Walk, mode: str
+) -> None:
+    """A required config field that is present but carries nothing (Req 2.8).
+
+    `BLOCK_CONFIG[type]["required"]` is checked for **presence** by
+    `_validate_block_config`, and presence is all a draft can be held to. But a
+    `"metrics": []` is present, so it satisfies that check, passes the wizard's save,
+    passes `assert_valid_pinned_definition` before a single Azure call is made — and
+    then raises `CompileFailedError` inside the block compiler, four minutes of
+    inventory and metrics later. Worse, `_phase_one` stops at the first bad block, so
+    a template with three unfilled blocks costs three full collections to diagnose,
+    one block per run. That is not hypothetical: it is how this check came to exist.
+
+    ## Only in `run` mode, and that is the requirement rather than a relaxation
+
+    The same reasoning as `_validate_every_scoped_type_is_selected` directly above.
+    The composer inserts a block with its config placeholders empty — a `top_n_table`
+    arrives as `{"columns": [], "order_by": ""}` — because the author has not reached
+    the inspector yet. Enforcing this against a draft would refuse to save in the gap
+    between dropping a block on the canvas and configuring it, which is every template
+    that was ever authored. Publishing a version is where the definition has to be
+    complete.
+
+    ## Why the rule is generic rather than per-compiler
+
+    Empty array, empty object, blank string — and nothing about what any particular
+    block wants. `read_capacity_ref` knows which SKU capabilities the snapshot records
+    and `read_metric_refs` knows what a metric reference looks like; restating either
+    here would create a third source of truth to drift from the other two, which is the
+    exact defect this function exists to close. This enforces only the part every one of
+    those compilers' refusals has in common.
+
+    Reported at the field's own path, so the wizard can mark the offending block rather
+    than the author hunting for which of eight blocks is unfilled.
+    """
+    if mode != "run":
+        return
+
+    for path, block_id, block_type, field_name in _empty_required_config_fields(raw):
+        walk.add(
+            path,
+            f'"{block_type}" requires the config field "{field_name}" to carry a '
+            f"value; it is present but empty. A block with no metric has nothing to "
+            f"show, and an empty table reads as an empty scope, which means something "
+            f"else entirely to a reader.",
+            block_id,
+        )
+
+
+def _is_empty_container(value: object) -> bool:
+    """Whether a present config value is a **collection** that selected nothing.
+
+    An empty array is an unfilled multi-select and an empty object is a reference
+    whose sub-fields were never chosen. Both mean the same thing in every block that
+    has one — nothing was picked — which is what lets this be decided without knowing
+    which block is asking.
+
+    ## Strings are deliberately excluded, and that is the whole boundary
+
+    An empty string's meaning is a fact about the individual field, not about
+    emptiness. `heading.text: ""` is a legitimately blank heading and the definition
+    generators emit it as a *valid* case; `comparison_delta.run_a: ""` is genuinely
+    unfinished. Telling those apart needs per-field knowledge, and encoding per-field
+    knowledge here would make this a third authority on block configuration to drift
+    from `BLOCK_CONFIG` and from the block compilers — the exact defect the caller
+    exists to close. So this refuses only what is unambiguous, and a blank string is
+    left to the compiler that knows what its field means.
+
+    `0` and `False` are not empty either: they are values, and a numeric config field
+    legitimately holding zero must not be refused.
+    """
+    return isinstance(value, (list, tuple, dict)) and len(value) == 0
+
+
+def _empty_required_config_fields(
+    raw: dict[str, object],
+) -> list[tuple[Path, str | None, str, str]]:
+    """Every present-but-empty required config field, with its path and owning block.
+
+    Reads defensively at every level and contributes nothing for a malformed block: the
+    shape validators above have already reported it, and a second issue derived from the
+    first one's symptom is noise. An undeclared block type has no config schema to read,
+    so it is skipped here and reported by `_validate_leaf_block`.
+    """
+    found: list[tuple[Path, str | None, str, str]] = []
+
+    def walk_blocks(blocks: object, path: Path) -> None:
+        if not _is_json_array(blocks):
+            return
+        for index, block in enumerate(blocks):
+            if not _is_plain_object(block):
+                continue
+            block_path = (*path, index)
+            raw_id = block.get("id")
+            block_id = raw_id if isinstance(raw_id, str) else None
+
+            block_type = block.get("type")
+            if isinstance(block_type, str) and block_type in _NON_ROW_BLOCK_TYPE_SET:
+                config = block.get("config")
+                if _is_plain_object(config):
+                    required, _optional, _enums = _config_schema(block_type)
+                    for field_name in required:
+                        if field_name in config and _is_empty_container(
+                            config[field_name]
+                        ):
+                            found.append(
+                                (
+                                    (*block_path, "config", field_name),
+                                    block_id,
+                                    block_type,
+                                    field_name,
+                                )
+                            )
+
+            columns = block.get("columns")
+            if _is_json_array(columns):
+                for column_index, column in enumerate(columns):
+                    walk_blocks(column, (*block_path, "columns", column_index))
+
+    walk_blocks(raw.get("blocks"), ("blocks",))
+    return found
+
+
 # --- the pass -----------------------------------------------------------------------
 
 
@@ -1626,6 +1750,7 @@ def collect_definition_issues(raw: object, *, mode: str = "draft") -> list[Field
     _validate_design(raw.get("design"), ("design",), walk)
     _validate_canonical_byte_size(raw, walk)
     _validate_every_scoped_type_is_selected(raw, walk, mode)
+    _validate_required_config_is_filled(raw, walk, mode)
 
     return walk.issues
 

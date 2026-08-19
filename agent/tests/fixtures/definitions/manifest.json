@@ -37,6 +37,13 @@
       "offenders": []
     },
     {
+      "file": "accept-draft-half-configured-block.json",
+      "mode": "draft",
+      "verdict": "accept",
+      "definition_sha256": "1f470bf31d919acd21a896de0960c9a418fc8dca2de5b2361d5ca88ad46613df",
+      "offenders": []
+    },
+    {
       "file": "accept-draft-zero-blocks.json",
       "mode": "draft",
       "verdict": "accept",
@@ -272,6 +279,23 @@
             "Microsoft.Compute/virtualMachines",
             0,
             "estimator"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-required-config-field-present-but-empty.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "76035c798a2f6a08aed3cb3dedde1212f1e3293b49d7452eab05065e5db4638e",
+      "offenders": [
+        {
+          "block_id": "kpi",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "metrics"
           ]
         }
       ]

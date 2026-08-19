@@ -1775,6 +1775,140 @@ function scopedResourceTypes(raw: Record<string, unknown>): ScopedType[] {
   return found
 }
 
+type EmptyRequiredField = {
+  readonly path: readonly (string | number)[]
+  readonly blockType: string
+  readonly fieldName: string
+}
+
+/**
+ * A required config field that is present but carries nothing (Requirement 2.8).
+ *
+ * `BLOCK_CONFIG[type].required` is checked for **presence** by
+ * `validateBlockConfig`, and presence is all a draft can be held to. But a
+ * `"metrics": []` is present, so it satisfies that check, saves cleanly, survives
+ * the pre-collection gate in the agent — and then fails in the block compiler after
+ * the run has already spent four minutes on inventory and metrics. The compiler
+ * stops at the first bad block, so a template with three unfilled blocks costs three
+ * full collections to diagnose, one block per run.
+ *
+ * ## Only in `run` mode, which is the requirement rather than a relaxation
+ *
+ * The same reasoning as `validateEveryScopedTypeIsSelected` above. The composer
+ * inserts a block with its config placeholders empty — a `top_n_table` arrives as
+ * `{ columns: [], order_by: "" }` — because the author has not opened the inspector
+ * yet. Enforcing this against a draft would refuse to save in the gap between
+ * dropping a block on the canvas and configuring it, which is every template that was
+ * ever authored. Publishing a version is where the definition has to be complete.
+ *
+ * Mirrors `_validate_required_config_is_filled` in the agent's
+ * `compile/definition.py`, which Requirement 2.6 obliges to reach the same verdict.
+ */
+function validateRequiredConfigIsFilled(
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+  mode: "draft" | "run"
+): void {
+  if (mode !== "run") return
+
+  for (const { path, blockType, fieldName } of emptyRequiredConfigFields(raw)) {
+    addIssue(
+      issues,
+      path,
+      `"${blockType}" requires the config field "${fieldName}" to carry a value; ` +
+        "it is present but empty. A block with no metric has nothing to show, and " +
+        "an empty table reads as an empty scope, which means something else " +
+        "entirely to a reader."
+    )
+  }
+}
+
+/**
+ * Whether a present config value is a **collection** that selected nothing.
+ *
+ * An empty array is an unfilled multi-select and an empty object is a reference
+ * whose sub-fields were never chosen. Both mean the same thing in every block that
+ * has one — nothing was picked — which is what lets this be decided without knowing
+ * which block is asking.
+ *
+ * ## Strings are deliberately excluded, and that is the whole boundary
+ *
+ * An empty string's meaning is a fact about the individual field, not about
+ * emptiness. `heading.text: ""` is a legitimately blank heading and the definition
+ * generators emit it as a *valid* case; `comparison_delta.run_a: ""` is genuinely
+ * unfinished. Telling those apart needs per-field knowledge, and encoding per-field
+ * knowledge here would make this a third authority on block configuration to drift
+ * from `BLOCK_CONFIG` and from the block compilers — the exact defect the caller
+ * exists to close. So this refuses only what is unambiguous, and a blank string is
+ * left to the compiler that knows what its field means.
+ *
+ * `0` and `false` are not empty either: they are values, and a numeric config field
+ * legitimately holding zero must not be refused.
+ *
+ * Mirrors `_is_empty_container` in the agent's `compile/definition.py`.
+ */
+function isEmptyContainer(value: unknown): boolean {
+  if (Array.isArray(value)) return value.length === 0
+  if (isPlainObject(value)) return Object.keys(value).length === 0
+  return false
+}
+
+/**
+ * Every present-but-empty required config field, with its path and block type.
+ *
+ * Reads defensively at every level and contributes nothing for a malformed block:
+ * the shape validators above have already reported it. An undeclared block type has
+ * no config schema to read, so it is skipped here and reported by the block walk.
+ */
+function emptyRequiredConfigFields(
+  raw: Record<string, unknown>
+): EmptyRequiredField[] {
+  const found: EmptyRequiredField[] = []
+
+  const walkBlocks = (
+    blocks: unknown,
+    path: readonly (string | number)[]
+  ): void => {
+    if (!Array.isArray(blocks)) return
+    blocks.forEach((block, index) => {
+      if (!isPlainObject(block)) return
+      const blockPath = [...path, index]
+
+      const blockType = block.type
+      if (
+        typeof blockType === "string" &&
+        blockType !== "row" &&
+        blockType in BLOCK_CONFIG
+      ) {
+        const { config } = block
+        if (isPlainObject(config)) {
+          for (const fieldName of BLOCK_CONFIG[
+            blockType as Exclude<BlockType, "row">
+          ].required) {
+            if (fieldName in config && isEmptyContainer(config[fieldName])) {
+              found.push({
+                path: [...blockPath, "config", fieldName],
+                blockType,
+                fieldName,
+              })
+            }
+          }
+        }
+      }
+
+      const { columns } = block
+      if (Array.isArray(columns)) {
+        columns.forEach((column, columnIndex) => {
+          walkBlocks(column, [...blockPath, "columns", columnIndex])
+        })
+      }
+    })
+  }
+
+  walkBlocks(raw.blocks, ["blocks"])
+  return found
+}
+
 /**
  * The full validation walk over an `unknown` candidate, in one pass
  * (Requirements 2.7, 6.11).
@@ -1826,6 +1960,7 @@ export function collectDefinitionIssues(
   validateDesign(raw.design, ["design"], issues)
   validateCanonicalByteSize(raw, issues)
   validateEveryScopedTypeIsSelected(raw, issues, mode)
+  validateRequiredConfigIsFilled(raw, issues, mode)
 
   return issues
 }
