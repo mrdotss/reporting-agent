@@ -45,6 +45,17 @@ REQUIRED_ENV_VARS: Final[tuple[str, ...]] = (
     "RPT_PROSE_MODEL_ID",
 )
 
+OPTIONAL_ENV_VARS: Final[tuple[str, ...]] = ("RPT_CA_BUNDLE",)
+"""Variables a deployment **may** set, declared so `agent/.env.example` can document
+them without `_require` refusing a container that leaves them blank.
+
+Kept as its own tuple rather than folded into `REQUIRED_ENV_VARS` because the two carry
+opposite failure modes: a missing required variable must stop the process at start, and a
+missing optional one must change nothing at all. `test_config.py` asserts the example
+file's key set equals `REQUIRED_ENV_VARS + OPTIONAL_ENV_VARS`, so an optional variable is
+still pinned to a declaration — it is not a licence to read arbitrary environment.
+"""
+
 
 class MissingConfigError(RuntimeError):
     """A required variable is absent, empty, or whitespace-only.
@@ -102,7 +113,7 @@ class Config:
     first construction, which is as loud as a failure gets.
     """
 
-    __slots__ = ("artifact_bucket", "aws_region", "prose_model_id")
+    __slots__ = ("artifact_bucket", "aws_region", "ca_bundle", "prose_model_id")
 
     aws_region: str
     """Region for the S3 artifact writes and for every other AWS client."""
@@ -115,6 +126,27 @@ class Config:
     """`RPT_PROSE_MODEL_ID` — the Bedrock model that writes narrative prose, and only
     prose (Req 19.1, 19.2). Required rather than defaulted: a silently substituted model
     id changes the wording of a delivered document without appearing in any diff."""
+
+    ca_bundle: str
+    """`RPT_CA_BUNDLE` — a PEM file of additional trusted roots, or `""` for the default.
+
+    **Optional, and empty means the default trust store**, which is what a public
+    certificate needs and what every deployment gets unless it says otherwise.
+
+    It exists for one deployment shape: the app reachable only on a private network,
+    behind a certificate issued by the operator's own certificate authority. The progress
+    callback is an ordinary HTTPS request, and `httpx` verifies against **certifi**,
+    passing `cafile` explicitly — so `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` are ignored
+    and there is no environment-only way to add a root. Without this the callback fails
+    verification, and because Req 38.4 forbids a callback failure from ending a run, it
+    fails *silently*: a complete, verified report in S3 and a run row that reaps as
+    `TIMEOUT`.
+
+    Widening what the container trusts is a real change, so it is named, opt-in, and
+    carries the path rather than a bare "insecure" switch. There is deliberately **no**
+    option to disable verification: an operator who can supply a CA can supply a bundle,
+    and a `verify=False` flag is the kind of thing that survives into production.
+    """
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
@@ -132,4 +164,7 @@ class Config:
             aws_region=_require(source, "AWS_REGION"),
             artifact_bucket=_require(source, "RPT_ARTIFACT_BUCKET"),
             prose_model_id=_require(source, "RPT_PROSE_MODEL_ID"),
+            # Optional: read directly rather than through `_require`, which exists to
+            # refuse a blank. A blank here *is* the default and must not raise.
+            ca_bundle=(source.get("RPT_CA_BUNDLE") or "").strip(),
         )

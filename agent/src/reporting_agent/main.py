@@ -707,6 +707,9 @@ def parse_invocation(payload: object, request_context: object = None) -> Invocat
         progress_url=_optional_text(context_map.get("progress_url")),
         progress_token=_optional_text(context_map.get("progress_token")),
         run_id=run_id,
+        # From `CONFIG`, not from `os.environ`: `config.py`'s invariant is that the
+        # environment is read exactly once, at import. Empty is the default trust store.
+        ca_bundle=CONFIG.ca_bundle,
     )
 
     # The command is checked before the actor: a payload naming no command, or a command

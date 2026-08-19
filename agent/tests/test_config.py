@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from reporting_agent.config import (
+    OPTIONAL_ENV_VARS,
     REQUIRED_ENV_VARS,
     Config,
     MissingConfigError,
@@ -65,7 +66,12 @@ def test_env_example_declares_exactly_the_required_set_with_placeholders() -> No
         name, _, value = stripped.partition("=")
         declared[name] = value
 
-    assert tuple(declared) == REQUIRED_ENV_VARS
+    # Required **and** optional: the file is the deployment-facing declaration, so a
+    # variable the runtime reads and the file omits is one an operator cannot discover,
+    # and a variable the file declares and the runtime ignores is a lie. Equality in both
+    # directions is what keeps it honest — an optional variable is still pinned to a
+    # declaration rather than being a licence to read arbitrary environment.
+    assert tuple(declared) == REQUIRED_ENV_VARS + OPTIONAL_ENV_VARS
 
     # A placeholder that is itself blank would be a `.env` line with nothing after the
     # `=` once copied — exactly the deployment mistake `_require` exists to reject.

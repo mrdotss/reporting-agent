@@ -284,6 +284,31 @@ value like `my-bucket/my-prefix` fails every S3 call with `InvalidBucketName`. K
 already namespaced `<actor_id>/snapshots/…` and `<actor_id>/reports/…`, so a prefix earns
 nothing the key layout does not already provide.
 
+### A private certificate authority in front of the app
+
+`RPT_APP_BASE_URL` is HTTPS, and the progress callback verifies it. `httpx` builds its
+default context from **certifi** with an explicit `cafile`, which makes `SSL_CERT_FILE`
+and `REQUESTS_CA_BUNDLE` inert — there is no environment-only way to add a root.
+
+For a deployment where the app is reachable only on a private network, behind a
+certificate the operator's own authority issued, mount the PEM and name it:
+
+```
+RPT_CA_BUNDLE=/etc/ssl/private-ca/root.pem
+```
+
+Optional; unset means the default trust store, which is what a publicly trusted
+certificate needs. A path naming no readable file **raises** rather than falling back —
+silently reverting to the default would fail verification on every callback of every run,
+and Req 38.4 swallows callback failures, so the run would reach `TIMEOUT` with a complete
+and verified report already in S3. There is deliberately no switch to disable
+verification.
+
+The alternative, which needs no configuration at all: give the app a name under a domain
+you own and issue a publicly trusted certificate through a DNS-01 challenge. That works
+for a host with no inbound public access, since DNS-01 proves domain control rather than
+reachability, and it leaves the container's trust store untouched.
+
 ### Smoke-testing a fresh runtime
 
 ```bash

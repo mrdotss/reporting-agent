@@ -198,10 +198,21 @@ class HttpxProgressTransport:
     reporter opens no connection pool — a prompt invocation that never reports a phase
     pays nothing. `client` is injectable for the same reason it is elsewhere in this
     package: so a test can exercise the real code path without a socket.
+
+    ## `ca_bundle` and why an environment variable could not do this
+
+    `httpx` builds its default context from **certifi**, passing `cafile` explicitly, so
+    `SSL_CERT_FILE` and `REQUESTS_CA_BUNDLE` have no effect on it. A deployment whose app
+    sits behind a private certificate authority therefore has no way to add a root
+    without passing `verify=` — which is what this does.
+
+    Empty means the default trust store, which is every deployment that terminates with a
+    publicly trusted certificate.
     """
 
-    def __init__(self, client: Any | None = None) -> None:
+    def __init__(self, client: Any | None = None, *, ca_bundle: str = "") -> None:
         self._client = client
+        self._ca_bundle = (ca_bundle or "").strip()
 
     async def post_json(
         self,
@@ -214,12 +225,47 @@ class HttpxProgressTransport:
         if self._client is None:
             import httpx
 
-            self._client = httpx.AsyncClient()
+            # `verify` only when a bundle was configured. Passing `verify=True`
+            # explicitly would be the same as the default, but passing a *path* that
+            # does not exist must not quietly become the default — see `_verify`.
+            self._client = (
+                httpx.AsyncClient(verify=self._verify())
+                if self._ca_bundle
+                else httpx.AsyncClient()
+            )
 
         response = await self._client.post(
             url, json=dict(body), headers=dict(headers), timeout=timeout
         )
         return int(response.status_code)
+
+    def _verify(self) -> Any:
+        """The configured bundle, as an SSL context.
+
+        **Raises if the path does not exist**, and that is the one place in this module
+        that is allowed to. Everywhere else a progress failure is swallowed, because Req
+        38.4 says a run must not die for want of a callback — but a *misconfigured* trust
+        store is not a transient callback failure. Falling back to the default store
+        would mean every callback of every run failing verification, silently, with the
+        run reaping as `TIMEOUT` while a complete report sits in S3. That is the failure
+        this whole option exists to prevent, so it is not one to introduce here.
+
+        The raise is caught by `report`'s own handler and logged, so the run still
+        proceeds — but it names the path, which is the difference between a five-minute
+        fix and an afternoon.
+        """
+        import ssl
+        from pathlib import Path
+
+        if not Path(self._ca_bundle).is_file():
+            raise FileNotFoundError(
+                f"RPT_CA_BUNDLE names {self._ca_bundle!r}, which is not a readable file. "
+                f"The progress callback would fall back to the default trust store and "
+                f"fail verification against a private certificate authority on every "
+                f"attempt of every run"
+            )
+
+        return ssl.create_default_context(cafile=self._ca_bundle)
 
     async def aclose(self) -> None:
         client = self._client
@@ -245,12 +291,17 @@ class ProgressReporter:
         run_id: str | None,
         transport: ProgressTransport | None = None,
         clock: Callable[[], float] = time.monotonic,
+        ca_bundle: str = "",
     ) -> None:
         self._url = (progress_url or "").strip()
         self._token = progress_token or ""
         self._run_id = (run_id or "").strip()
+        # `ca_bundle` reaches the default transport only. An injected transport is a
+        # test's or a caller's own object and is left exactly as given.
         self._transport: ProgressTransport = (
-            transport if transport is not None else HttpxProgressTransport()
+            transport
+            if transport is not None
+            else HttpxProgressTransport(ca_bundle=ca_bundle)
         )
         self._clock = clock
 
