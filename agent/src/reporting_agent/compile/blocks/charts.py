@@ -47,6 +47,7 @@ from reporting_agent.compile.blocks.base import (
     MetricRef,
     caption_of,
     empty_scope_table,
+    no_data_table,
     read_metric_refs,
     resolve_stat,
 )
@@ -127,11 +128,14 @@ def compile_timeseries_chart(
         del ordinal
 
     if not series:
-        # Every planned series was empty: the scope matched resources but the snapshot holds
-        # no day buckets for these metrics. That is a recorded gap, not a chart of zeros.
+        # Every planned series was empty: the scope matched resources and the snapshot holds
+        # no day values for these metrics. That is a recorded gap, not a chart of zeros —
+        # and not "no resources matched this scope" either, which is what this branch used
+        # to say. See `no_data_table`: the filter was right and the data is missing, and a
+        # document that blames the filter is making a claim the snapshot contradicts.
         return BlockOutput(
             nodes=(
-                empty_scope_table(chart_cursor, context.design.table_style_name, caption),
+                no_data_table(chart_cursor, context.design.table_style_name, caption),
             )
         )
 
@@ -169,6 +173,16 @@ def compile_distribution_chart(
     matched = resolve(context.scope_for(block), context.view)
     caption = caption_of(block)
 
+    # Req 3.7, ahead of the metric lookup. Without this guard the two outcomes below
+    # collapse into one, and an empty scope would be reported as missing data — the same
+    # conflation in the opposite direction.
+    if not matched:
+        return BlockOutput(
+            nodes=(
+                empty_scope_table(chart_cursor, context.design.table_style_name, caption),
+            )
+        )
+
     measured: list[tuple[Decimal, str, ResourceView, SnapshotValue]] = []
     for resource in matched:
         value = resolve_stat(context.view, resource, ref)
@@ -176,9 +190,11 @@ def compile_distribution_chart(
             measured.append((value.value, resource.resource_id, resource, value))
 
     if not measured:
+        # The scope matched, and no resource in it carries this metric. Same distinction the
+        # timeseries branch above draws, and the same reason for drawing it.
         return BlockOutput(
             nodes=(
-                empty_scope_table(chart_cursor, context.design.table_style_name, caption),
+                no_data_table(chart_cursor, context.design.table_style_name, caption),
             )
         )
 

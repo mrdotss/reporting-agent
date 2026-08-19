@@ -31,6 +31,7 @@ from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import (
     EMPTY_SCOPE_TEXT,
     MAX_TABLE_ROWS,
+    NO_DATA_TEXT,
     NO_GAPS_TEXT,
     OMITTED_ROW_LABEL,
 )
@@ -609,9 +610,15 @@ def test_a_distribution_chart_sorts_ascending_and_is_sequential() -> None:
     assert [point.x for point in chart.series[0].points] == ["b", "c", "a"]
 
 
-def test_a_chart_whose_metric_no_resource_carries_falls_back_to_the_explicit_row() -> None:
-    """The scope matched resources but the snapshot holds nothing for the metric. That is a
-    recorded gap, not a chart of zeros."""
+def test_a_chart_whose_metric_no_resource_carries_says_so_rather_than_blaming_the_scope() -> None:
+    """The scope matched resources and the snapshot holds nothing for the metric. That is a
+    recorded gap, not a chart of zeros — and not an empty scope either.
+
+    This test used to assert `EMPTY_SCOPE_TEXT` here, which is a **false statement**: the
+    filter selected a resource, and telling the reader it matched nothing sends them to
+    correct a filter that is already correct. It is also unreachable by the verifier, since
+    Req 27.11 exempts the no-resources-matched notice from `table_rows_absent` — so the
+    wrong claim passed every gate. The two facts now have two texts."""
     document = compile_document(
         df.definition(
             [
@@ -627,7 +634,86 @@ def test_a_chart_whose_metric_no_resource_carries_falls_back_to_the_explicit_row
     )
     assert charts_of(document.document) == []
     table = table_named(document.document, "spread")
-    assert table.rows[0].cells[0].text == EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
+    assert table.rows[0].key == "no-data"
+    assert table.rows[0].cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
+    assert table.rows[0].cells[0].text != EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
+
+
+def test_a_timeseries_over_a_snapshot_with_no_day_values_says_so() -> None:
+    """The branch that started this: a matched scope and empty day buckets.
+
+    Reachable in production, and it was reachable silently — the block emitted "No resources
+    matched this scope" over a scope that matched, and no gate could see it. Pinned here
+    with a snapshot whose day buckets carry no statistics, which is what a resource
+    deallocated for the whole window produces.
+    """
+    document = compile_document(
+        df.definition(
+            [df.block("trend", "timeseries_chart", {"metrics": [df.CPU_AVG]})],
+            metrics={VM: [df.CPU_AVG]},
+        ),
+        view=view_of(
+            resources=[sf.vm(resource_id="/vm/a", name="a", day_cpu={})]
+        ),
+    )
+
+    assert charts_of(document.document) == []
+    row = table_named(document.document, "trend").rows[0]
+    assert row.key == "no-data"
+    assert row.cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
+    assert document.figure_count == 0
+
+
+def test_the_two_notice_rows_say_two_different_things() -> None:
+    """An empty scope and missing data are distinct facts, and one chart block reports both.
+
+    Asserted as a pair over one block type, because the failure mode is convergence: the two
+    branches sat behind one helper for a while and the document said "No resources matched
+    this scope" for a scope that matched two. Nothing else in the suite would notice them
+    becoming one string again — the verifier cannot, since a notice row carries no figure to
+    check, and Req 27.11 exempts the empty-scope text from the one gate that looks at row
+    counts.
+    """
+    resources = [sf.vm(resource_id="/vm/a", name="a", tags={"env": "prod"})]
+    config = {"metrics": [{"metric": "Network In Total", "statistic": "avg"}]}
+
+    # The scope matched nothing.
+    empty = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "spread",
+                    "distribution_chart",
+                    config,
+                    scope_override=df.scope(
+                        tag_filters=[{"key": "env", "value": "does-not-exist"}]
+                    ),
+                )
+            ],
+            metrics={VM: [df.CPU_AVG]},
+        ),
+        view=view_of(resources=resources),
+    )
+
+    # The scope matched, and the snapshot carries no value for what the block plots.
+    absent = compile_document(
+        df.definition([df.block("spread", "distribution_chart", config)],
+                      metrics={VM: [df.CPU_AVG]}),
+        view=view_of(resources=resources),
+    )
+
+    empty_row = table_named(empty.document, "spread").rows[0]
+    absent_row = table_named(absent.document, "spread").rows[0]
+
+    assert empty_row.cells[0].text == EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
+    assert absent_row.cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
+    assert EMPTY_SCOPE_TEXT != NO_DATA_TEXT
+    assert empty_row.key != absent_row.key
+
+    # Both carry zero figures and keep the block in the document (Req 3.7, 16.11).
+    for compiled in (empty, absent):
+        assert compiled.figure_count == 0
+        assert len(compiled.document.blocks) == 1
 
 
 # --------------------------------------------------------------------------- #

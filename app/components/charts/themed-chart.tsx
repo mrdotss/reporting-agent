@@ -117,10 +117,17 @@ export function ThemedChart({
 
   // Requirement 3.7's shape, applied to a chart: an empty result is stated
   // rather than drawn as an empty grid, which reads as a chart that failed.
+  //
+  // Defensive, and worded not to guess *why*. A chart figure reaching here has a
+  // spec but no plottable point, and this component cannot tell an empty scope
+  // from absent data — the compiler makes that distinction upstream and emits a
+  // notice table instead of a chart, with its own text for each case. Claiming
+  // one of them here would be the same false statement the compiler was fixed to
+  // stop making.
   if (plotted.length === 0) {
     return (
       <p data-slot="chart-empty" className="text-sm text-muted-foreground">
-        No resources matched this chart&rsquo;s scope, so there is nothing to plot.
+        This chart carries no plottable values.
       </p>
     )
   }

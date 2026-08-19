@@ -86,6 +86,7 @@ __all__ = [
     "NOTICE_COLUMN_HEADER",
     "NOTICE_STYLE",
     "NOT_COMPARABLE_TEXT",
+    "NO_DATA_TEXT",
     "NO_GAPS_TEXT",
     "OMITTED_ROW_LABEL",
     "PARAGRAPH_STYLES",
@@ -105,6 +106,7 @@ __all__ = [
     "empty_cell",
     "empty_scope_table",
     "heading_style",
+    "no_data_table",
     "omitted_row",
     "read_capacity_ref",
     "read_metric_ref",
@@ -174,6 +176,13 @@ document, and a truncated table that did not say so would present a partial list
 complete."""
 
 EMPTY_SCOPE_TEXT: Final[str] = "No resources matched this scope"
+NO_DATA_TEXT: Final[str] = "No values recorded for these resources in this period"
+"""What a block says when its scope matched and the snapshot carries nothing to plot.
+
+Distinct from :data:`EMPTY_SCOPE_TEXT` because the two are distinct facts — see
+:func:`no_data_table`. The verifier matches Req 27.11's exemption on the *empty-scope*
+text alone, so these two strings must never converge.
+"""
 NO_GAPS_TEXT: Final[str] = "No gaps recorded for this collection"
 
 CAPTION_STYLE: Final[str] = "Caption"
@@ -725,6 +734,49 @@ def empty_scope_table(cursor: BlockCursor, style: str, caption: str | None) -> T
     caption, saying plainly that nothing matched. A block that collapsed to nothing is
     indistinguishable from one that was never configured.
     """
+    return _notice_table(
+        cursor, style, caption, key="empty-scope", text=EMPTY_SCOPE_TEXT
+    )
+
+
+def no_data_table(cursor: BlockCursor, style: str, caption: str | None) -> Table:
+    """The row a block emits when its scope matched resources and none of them carry a
+    value for what the block plots.
+
+    **Structurally identical to :func:`empty_scope_table`, and saying something different
+    on purpose.** These are two distinct facts and the document has to be able to tell them
+    apart:
+
+    * *No resources matched this scope* — the filter selected nothing. Req 3.7.
+    * *No values were recorded* — the filter selected resources, and the snapshot carries
+      no measurement for them. A VM deallocated for the whole window, a metric the
+      subscription's tier does not emit, a permission denial recorded as a gap.
+
+    Emitting the first text for the second case is a **false statement in a delivered
+    document**: it tells a reader their filter is wrong when their filter is right and the
+    data is missing. It is also invisible to the verifier by construction, because Req
+    27.11 exempts the no-resources-matched notice from `table_rows_absent` — so the wrong
+    claim travels through every gate untouched.
+
+    Not a `COMPILE_FAILED` (Req 16.12) even though the block's scope is non-empty, because
+    a resource with no values is an ordinary recorded outcome rather than a compilation
+    that could not be performed: the `collection_log` already carries the gap that explains
+    it, and withholding the whole report over one chart would be the wrong trade. What the
+    block owes the reader is an honest row, which is this.
+    """
+    return _notice_table(cursor, style, caption, key="no-data", text=NO_DATA_TEXT)
+
+
+def _notice_table(
+    cursor: BlockCursor, style: str, caption: str | None, *, key: str, text: str
+) -> Table:
+    """A **data** table of one column and one row, styled `Notice`, carrying zero figures.
+
+    A table rather than a paragraph so the block keeps the same document shape it would
+    have had — a reader scanning for the section finds it where it belongs, with its
+    caption, saying plainly what happened. A block that collapsed to nothing is
+    indistinguishable from one that was never configured.
+    """
     row_cursor = cursor.child("rows", 0)
     return Table(
         path=cursor.path,
@@ -733,8 +785,8 @@ def empty_scope_table(cursor: BlockCursor, style: str, caption: str | None) -> T
         rows=(
             Row(
                 path=row_cursor.path,
-                key="empty-scope",
-                cells=(text_cell(row_cursor.child("cells", 0), EMPTY_SCOPE_TEXT),),
+                key=key,
+                cells=(text_cell(row_cursor.child("cells", 0), text),),
             ),
         ),
         caption=caption,
