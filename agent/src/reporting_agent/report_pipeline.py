@@ -102,6 +102,7 @@ from reporting_agent.collect.pipeline import (
 )
 from reporting_agent.errors import (
     AgentError,
+    CompileFailedError,
     PartialCoverageError,
     RenderFailedError,
     ReplayMismatchError,
@@ -235,6 +236,7 @@ async def run_generate_report(
     async for event in _document_phases(
         prose=prose if prose is not None else _prose_provider(prose_model_id, aws_region),
         definition=definition,
+        template_version_id=pinned_version_id(payload, definition),
         plan=plan,
         collected=sink.collection,
         steps=steps,
@@ -418,6 +420,7 @@ async def _document_phases(
     *,
     prose: Any | None,
     definition: Mapping[str, PlainData],
+    template_version_id: str,
     plan: RunPlan,
     collected: CollectionOutcome,
     steps: StepEvents,
@@ -488,6 +491,7 @@ async def _document_phases(
     yield verify_step
     result = await _verify(
         definition=definition,
+        template_version_id=template_version_id,
         plan=plan,
         collected=collected,
         compiled=compiled,
@@ -591,6 +595,7 @@ def _terminal_for(result: Mapping[str, Any]) -> AgentError:
 async def _verify(
     *,
     definition: Mapping[str, PlainData],
+    template_version_id: str,
     plan: RunPlan,
     collected: CollectionOutcome,
     compiled: Any,
@@ -645,10 +650,7 @@ async def _verify(
         VerifyInputs(
             attempt_id=f"{plan.run_id}-1",
             run_id=plan.run_id,
-            template_version_id=str(
-                (definition.get("identity") or {}).get("version_id")  # type: ignore[union-attr]
-                or plan.run_id
-            ),
+            template_version_id=template_version_id,
             docx_bytes=rendered.docx_bytes,
             pdf_bytes=converted.pdf_bytes,
             ledger=compiled.ledger,
@@ -966,6 +968,7 @@ async def run_verify_report(
         attempt_id=attempt_id,
         run_id=run_id,
         definition=definition,
+        template_version_id=pinned_version_id(payload, definition),
         snapshot=snapshot,
         view=view,
         compiled=recompiled,
@@ -1001,6 +1004,7 @@ async def _verify_stored(
     attempt_id: str,
     run_id: str,
     definition: Mapping[str, PlainData],
+    template_version_id: str,
     snapshot: Mapping[str, Any],
     view: Any,
     compiled: Any,
@@ -1033,7 +1037,7 @@ async def _verify_stored(
         VerifyInputs(
             attempt_id=attempt_id,
             run_id=run_id,
-            template_version_id=str(payload_version_id(definition) or run_id),
+            template_version_id=template_version_id,
             docx_bytes=docx_bytes,
             pdf_bytes=pdf_bytes,
             ledger=compiled.ledger,
@@ -1060,6 +1064,48 @@ def payload_version_id(definition: Mapping[str, PlainData]) -> str | None:
         value = identity.get("version_id")
         return str(value) if isinstance(value, str) else None
     return None
+
+
+def pinned_version_id(
+    payload: Mapping[str, PlainData], definition: Mapping[str, PlainData]
+) -> str:
+    """The `report_template_versions.id` a verification result must carry.
+
+    ## Why this is not derived from the definition
+
+    `report_verifications.template_version_id` is a **foreign key**. The only value that
+    satisfies it is the row id the app pinned at enqueue, and the app sends exactly that,
+    at the top level of the invoke payload — `template_version_id`, beside `definition`
+    (`app/lib/aws/agentcore.ts`, and Req 9.6).
+
+    This used to read `definition.identity.version_id` instead and fall back to the
+    **run id**. A wizard-authored definition carries no `version_id` under `identity`
+    (that object holds the name, description and report title), so the fallback was not
+    a fallback — it was the only branch, on every real run. And a run id is not a
+    template version id, so every completed verification failed to insert with a
+    Postgres 23503, the callback answered 500, and the run could not reach `completed`
+    because Req 41.1 requires the stored `pass` row it had just failed to store. A
+    document that passed every gate was withheld on the strength of a foreign key.
+
+    The definition-derived id is kept as a fallback for an **inline** definition, which
+    `render_preview` supplies with no pinned row behind it. When neither is available
+    this raises rather than inventing one: an unusable value here does not degrade the
+    verification, it destroys the record of it, and failing at input assembly is both
+    earlier and honest.
+    """
+    pinned = payload.get("template_version_id")
+    if isinstance(pinned, str) and pinned.strip():
+        return pinned
+
+    inline = payload_version_id(definition)
+    if inline:
+        return inline
+
+    raise CompileFailedError(
+        "this run carries no `template_version_id`: the invoke payload named none and "
+        "the definition's identity declares none. A verification result must carry the "
+        "pinned version's row id, which is the only value its foreign key accepts."
+    )
 
 
 # --------------------------------------------------------------------------- #

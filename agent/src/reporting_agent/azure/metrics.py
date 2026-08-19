@@ -74,7 +74,7 @@ import logging
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from email.utils import parsedate_to_datetime
 from typing import Final
 
@@ -285,8 +285,8 @@ def parse_retry_after(value: str | None, *, now: datetime) -> float | None:
 
 
 def _as_decimal(value: object) -> Decimal | None:
-    """A raw JSON-decoded numeric leaf (`int`, `float`, or already `Decimal`) as a
-    `Decimal`, or `None` for anything else. **Pure.**
+    """A raw JSON-decoded numeric leaf (`int`, `float`, `str`, or already `Decimal`) as
+    a `Decimal`, or `None` for anything else. **Pure.**
 
     `Decimal(str(value))` for a `float` rather than `Decimal(value)` — the same
     reasoning `collect/sketch.py`'s `_quantile_as_decimal` and the Azure SDK's own
@@ -295,13 +295,44 @@ def _as_decimal(value: object) -> Decimal | None:
     nearest binary fraction. A concrete `MetricsPort` backed by the real SDK hands
     back `Decimal` already for these fields (the SDK deserializes them that way), so
     this function is the seam that also accepts the plain `int`/`float` a recorded
-    JSON fixture parses to."""
+    JSON fixture parses to.
+
+    ## A decimal **string** is accepted, and the archive is why
+
+    This is the reader on both sides of `collect/archive.py`. The SDK hands live
+    collection a `Decimal`; the archive serializes that Decimal to its exact digit
+    string (`archive._json_default`, deliberately, so no precision is lost to a float);
+    and `verify/replay.py` re-reads the archive with a plain `json.loads`, which yields
+    that digit string back as a `str`.
+
+    Refusing `str` here made the archive **write-only**. The value survived the round
+    trip perfectly and its only reader then classified it as absent: every interval
+    carrying a fractional total became an `interval_counts_missing` gap on replay, its
+    samples vanished from the count, and the recomputed digest could not match. Observed
+    on the first live run to reach verification — the three metrics whose totals are
+    whole byte counts replayed exactly, and the five with fractional values did not,
+    which is what a type-dependent fault looks like when it is mistaken for a positional
+    one.
+
+    A decimal string is also the canonical numeric form everywhere else in this system
+    (Req 30 stores every snapshot value as one), so accepting it here is not a widening
+    of what a numeric leaf may be — it is this function finally admitting the form the
+    rest of the pipeline already agreed on.
+
+    A `str` that does not parse is still `None`: a malformed body must classify as a
+    gap, not raise mid-fold.
+    """
     if isinstance(value, Decimal):
         return value
     if isinstance(value, bool):
         return None
     if isinstance(value, int | float):
         return Decimal(str(value))
+    if isinstance(value, str):
+        try:
+            return Decimal(value)
+        except InvalidOperation:
+            return None
     return None
 
 
