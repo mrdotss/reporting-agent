@@ -124,14 +124,11 @@ export const templatePatchInputSchema = z
     draftDefinition: z.unknown().optional(),
   })
   .strict()
-  .refine(
-    (body) => body.name !== undefined || "draftDefinition" in body,
-    {
-      error:
-        "Send a name, a draft definition, or both — a patch with neither " +
-        "changes nothing.",
-    }
-  )
+  .refine((body) => body.name !== undefined || "draftDefinition" in body, {
+    error:
+      "Send a name, a draft definition, or both — a patch with neither " +
+      "changes nothing.",
+  })
 
 export type TemplatePatchInput = z.output<typeof templatePatchInputSchema>
 

@@ -1,4 +1,7 @@
-import { CHART_ENCODINGS, type ChartEncoding } from "@/components/charts/palette"
+import {
+  CHART_ENCODINGS,
+  type ChartEncoding,
+} from "@/components/charts/palette"
 
 /**
  * The chart spec, read out of the markup `render/html.py` emits (Requirement
@@ -81,9 +84,9 @@ export function parseChartFigure(figure: Element): ChartSpec | null {
   if (!figure.classList.contains("rpt-chart")) return null
 
   const declared = figure.getAttribute("data-encoding")
-  const encoding: ChartEncoding = (CHART_ENCODINGS as readonly string[]).includes(
-    declared ?? ""
-  )
+  const encoding: ChartEncoding = (
+    CHART_ENCODINGS as readonly string[]
+  ).includes(declared ?? "")
     ? (declared as ChartEncoding)
     : "categorical"
 

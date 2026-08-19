@@ -49,7 +49,9 @@ describe("Requirement 14.2 — the label is permanent", () => {
     // Requirement 14.4 — specifically these three, because they are exactly what
     // Word decides for itself and a browser cannot predict.
     const { container } = render(<PaperRender html={DOCUMENT} />)
-    const text = container.querySelector("[data-slot='preview-label']")!.textContent!
+    const text = container.querySelector(
+      "[data-slot='preview-label']"
+    )!.textContent!
 
     expect(text).toContain("pagination")
     expect(text).toContain("table column widths")
@@ -70,7 +72,9 @@ describe("Requirement 14.3 — no page number, no page count", () => {
 describe("Requirement 14.6 — this surface is not the delivered result", () => {
   test("it points at the .pdf rather than claiming to be it", () => {
     const { container } = render(<PaperRender html={DOCUMENT} />)
-    const text = container.querySelector("[data-slot='preview-label']")!.textContent!
+    const text = container.querySelector(
+      "[data-slot='preview-label']"
+    )!.textContent!
 
     expect(text).toMatch(/delivered result is the/i)
     expect(text).toMatch(/\.pdf/)
@@ -83,7 +87,9 @@ describe("Requirement 38.6 — figures are keyboard reachable in document order"
       <PaperRender html={`${DOCUMENT}<p>and ${FIGURE}</p>`} />
     )
 
-    const focusable = container.querySelectorAll("[aria-describedby][tabindex='0']")
+    const focusable = container.querySelectorAll(
+      "[aria-describedby][tabindex='0']"
+    )
 
     expect(focusable).toHaveLength(2)
   })

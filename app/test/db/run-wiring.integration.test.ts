@@ -692,8 +692,17 @@ describe("Requirements 39.4, 39.6, 41.5 — the tick claims, gates and invokes",
 
     // Requirement 41.8 — a deterministic command, and the type has no `prompt`
     // member, so the pipeline is reachable without a model decision.
+    //
+    // The pinned version travels **with its definition inline**. The runtime reads no
+    // database, and its contract states that a payload carrying no `definition` is a
+    // *snapshot-only* run — so a command naming only the version id would collect a
+    // snapshot and never render, verify or deliver anything, on every run, without
+    // failing. `test/db/report-run-end-to-end.integration.test.ts` walks the
+    // consequence; this asserts the shape.
     expect(command).toEqual({
       command: "generate_report",
+      template_version_id: expect.any(String),
+      definition: FIXTURE_DEFINITION,
       period: PERIOD,
       scope: SCOPE,
     })

@@ -97,7 +97,9 @@ describe("every definition field has a step to show it on", () => {
     ["blocks", "blocks"],
     ["design", "design"],
   ] as const)("a %s issue belongs to the %s step", (field, expected) => {
-    expect(stepForIssue({ path: [field, "nested"], message: "x" })).toBe(expected)
+    expect(stepForIssue({ path: [field, "nested"], message: "x" })).toBe(
+      expected
+    )
   })
 
   test("an unrecognized or empty path falls back to the preview step", () => {
@@ -187,7 +189,10 @@ describe("Requirement 11.8 — reopening resumes rather than restarts", () => {
   })
 
   test("a draft failing step 3 opens on step 3", () => {
-    const broken = { ...(VALID as Record<string, unknown>), period: { kind: "nope" } }
+    const broken = {
+      ...(VALID as Record<string, unknown>),
+      period: { kind: "nope" },
+    }
 
     expect(openingStep(broken).id).toBe("period")
   })

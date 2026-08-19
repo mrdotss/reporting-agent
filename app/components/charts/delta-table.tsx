@@ -1,6 +1,10 @@
 "use client"
 
-import { ArrowDownIcon, ArrowRightIcon, ArrowUpIcon } from "@phosphor-icons/react"
+import {
+  ArrowDownIcon,
+  ArrowRightIcon,
+  ArrowUpIcon,
+} from "@phosphor-icons/react"
 
 /**
  * The comparison delta table (Requirements 22.11, 22.13, 42.10).

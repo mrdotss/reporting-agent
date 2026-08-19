@@ -12,10 +12,7 @@ import {
   unprocessable,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
-import {
-  COMMAND_RENDER_PREVIEW,
-  invokeAgentRuntime,
-} from "@/lib/aws/agentcore"
+import { COMMAND_RENDER_PREVIEW, invokeAgentRuntime } from "@/lib/aws/agentcore"
 import {
   deleteObject,
   presignPreview,
@@ -218,7 +215,10 @@ export async function POST(
 
     if (!outcome.ok) {
       const stage = stageFor(outcome.code)
-      return unprocessable(STAGE_MESSAGE[stage], `PREVIEW_${stage.toUpperCase()}`)
+      return unprocessable(
+        STAGE_MESSAGE[stage],
+        `PREVIEW_${stage.toUpperCase()}`
+      )
     }
 
     const presigned = await presignPreview(user.id, pdfKey)

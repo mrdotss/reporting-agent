@@ -9,10 +9,7 @@ import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import * as store from "@/lib/templates/store"
 import { definitionSha256 } from "@/lib/templates/version"
 
-import type {
-  ReportTemplate,
-  ReportTemplateVersion,
-} from "@/lib/db/schema"
+import type { ReportTemplate, ReportTemplateVersion } from "@/lib/db/schema"
 
 /**
  * The template operations, as thin wrappers over `lib/templates/store.ts`
@@ -83,7 +80,10 @@ export async function renameTemplate(
   return await store.renameTemplate(userId, id, name)
 }
 
-export async function deleteTemplate(userId: string, id: string): Promise<void> {
+export async function deleteTemplate(
+  userId: string,
+  id: string
+): Promise<void> {
   await store.deleteTemplate(userId, id)
 }
 

@@ -177,10 +177,11 @@ export function RealPreviewPanel({
         </h3>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          Runs the true rendering path — <code className="font-mono">python-docx</code>{" "}
-          to LibreOffice to <code className="font-mono">.pdf</code> — against the
-          most recent completed run&rsquo;s snapshot. This is the only place that
-          shows you what the delivered document actually looks like.
+          Runs the true rendering path —{" "}
+          <code className="font-mono">python-docx</code> to LibreOffice to{" "}
+          <code className="font-mono">.pdf</code> — against the most recent
+          completed run&rsquo;s snapshot. This is the only place that shows you
+          what the delivered document actually looks like.
         </p>
       </div>
 

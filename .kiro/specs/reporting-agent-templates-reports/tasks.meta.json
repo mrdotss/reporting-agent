@@ -861,6 +861,16 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883179608
+      },
+      {
+        "executionId": "7264f9ab-07a9-4fb2-8ac7-a83ab7b100e8",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787121351640
+      },
+      {
+        "executionId": "7264f9ab-07a9-4fb2-8ac7-a83ab7b100e8",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787126198635
       }
     ],
     "15.2 Extend the property-hygiene guards and run the foundation regression gate": [
@@ -868,6 +878,16 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883179744
+      },
+      {
+        "executionId": "7264f9ab-07a9-4fb2-8ac7-a83ab7b100e8",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787121360770
+      },
+      {
+        "executionId": "79a3ece0-66d0-42c2-bbb5-9d3611f0ff2a",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787133115437
       }
     ],
     "15.3 Wire and verify one full report run end to end": [
@@ -875,6 +895,16 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883180079
+      },
+      {
+        "executionId": "79a3ece0-66d0-42c2-bbb5-9d3611f0ff2a",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787133123676
+      },
+      {
+        "executionId": "79a3ece0-66d0-42c2-bbb5-9d3611f0ff2a",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787137790165
       }
     ],
     "16. Final checkpoint": [
@@ -882,6 +912,16 @@
         "executionId": "8d1b74fa-b768-4add-bfe8-dc9b2da030ea",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786883180410
+      },
+      {
+        "executionId": "6faee715-e5e9-409a-85cf-8f32b2613dad",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787137894368
+      },
+      {
+        "executionId": "6faee715-e5e9-409a-85cf-8f32b2613dad",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787138750183
       }
     ],
     "2. Postgres schema, the three stores and the browser-safe projections": [
@@ -896,6 +936,13 @@
         "executionId": "a23b30d2-0ef6-4297-aeee-474aa701375e",
         "chatSessionId": "sess_5e100df9-cf1e-4c88-9af9-468346e171f0",
         "timestamp": 1786949672004
+      }
+    ],
+    "15. Final guards, property hygiene, the regression gate and end-to-end verification": [
+      {
+        "executionId": "79a3ece0-66d0-42c2-bbb5-9d3611f0ff2a",
+        "chatSessionId": "sess_f00f11f2-01f6-44f4-bef9-e58fca3ce3c1",
+        "timestamp": 1787137790486
       }
     ]
   }

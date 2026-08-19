@@ -158,8 +158,15 @@
 
 import { z } from "zod"
 
-import { BLOCK_CONFIG, BLOCK_TYPES, type BlockType } from "@/lib/templates/blocks"
-import { canonicalJsonByteLength, type CanonicalizableValue } from "@/lib/templates/canonical-json"
+import {
+  BLOCK_CONFIG,
+  BLOCK_TYPES,
+  type BlockType,
+} from "@/lib/templates/blocks"
+import {
+  canonicalJsonByteLength,
+  type CanonicalizableValue,
+} from "@/lib/templates/canonical-json"
 import {
   MAX_PERIOD_LOCAL_DAYS,
   MIN_PERIOD_LOCAL_DAYS,
@@ -238,7 +245,12 @@ export const SORT_DIRECTIONS = ["descending", "ascending"] as const
 export type SortDirection = (typeof SORT_DIRECTIONS)[number]
 
 /** Requirement 7.1 — exactly four, case-sensitive. */
-export const DESIGN_PRESETS = ["editorial", "corporate", "technical", "minimal"] as const
+export const DESIGN_PRESETS = [
+  "editorial",
+  "corporate",
+  "technical",
+  "minimal",
+] as const
 export type DesignPreset = (typeof DESIGN_PRESETS)[number]
 
 /** Requirement 7.2. */
@@ -295,7 +307,9 @@ export type MetricSelectionItem = {
   readonly fidelity_tier?: string
 }
 
-export type MetricSelection = Readonly<Record<string, readonly MetricSelectionItem[]>>
+export type MetricSelection = Readonly<
+  Record<string, readonly MetricSelectionItem[]>
+>
 
 /** A non-`row` block (Requirement 6.2). */
 export type LeafBlock = {
@@ -370,7 +384,11 @@ export type FieldIssue = {
 /** Mutates `issues` — every validator function below takes the same sink. */
 type IssueSink = FieldIssue[]
 
-function addIssue(sink: IssueSink, path: readonly (string | number)[], message: string): void {
+function addIssue(
+  sink: IssueSink,
+  path: readonly (string | number)[],
+  message: string
+): void {
   sink.push({ path, message })
 }
 
@@ -385,7 +403,11 @@ function isNonEmptyString(value: unknown): value is string {
 }
 
 function isFiniteInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && Number.isFinite(value)
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    Number.isFinite(value)
+  )
 }
 
 function isBoolean(value: unknown): value is boolean {
@@ -459,13 +481,19 @@ function azureIdentifierMessage(path: readonly (string | number)[]): string {
  * Requirement 6.5 asks for, and so the generic unrecognized-field check does
  * not also fire a second, less specific issue for the same key.
  */
-const FORBIDDEN_POSITIONING_FIELD_PATTERNS: readonly { readonly pattern: RegExp; readonly label: string }[] = [
+const FORBIDDEN_POSITIONING_FIELD_PATTERNS: readonly {
+  readonly pattern: RegExp
+  readonly label: string
+}[] = [
   { pattern: /position/i, label: "an absolute position" },
   { pattern: /coordinate/i, label: "a coordinate" },
   { pattern: /^offset/i, label: "an offset" },
   { pattern: /^(x|y)$/i, label: "a coordinate" },
   { pattern: /absolute.*width|width.*absolute/i, label: "an absolute width" },
-  { pattern: /absolute.*height|height.*absolute/i, label: "an absolute height" },
+  {
+    pattern: /absolute.*height|height.*absolute/i,
+    label: "an absolute height",
+  },
   { pattern: /page_?assignment/i, label: "an explicit page assignment" },
   { pattern: /page_?number/i, label: "an explicit page assignment" },
 ] as const
@@ -512,7 +540,10 @@ function validateIdentity(
 
   const { name, description, report_title: reportTitle } = identity
 
-  if (!isNonEmptyString(name) || !stringLengthInRange(name, NAME_MIN_LENGTH, NAME_MAX_LENGTH)) {
+  if (
+    !isNonEmptyString(name) ||
+    !stringLengthInRange(name, NAME_MIN_LENGTH, NAME_MAX_LENGTH)
+  ) {
     addIssue(
       issues,
       [...path, "name"],
@@ -521,7 +552,10 @@ function validateIdentity(
   }
 
   if (description !== undefined) {
-    if (typeof description !== "string" || description.length > DESCRIPTION_MAX_LENGTH) {
+    if (
+      typeof description !== "string" ||
+      description.length > DESCRIPTION_MAX_LENGTH
+    ) {
       addIssue(
         issues,
         [...path, "description"],
@@ -531,7 +565,10 @@ function validateIdentity(
   }
 
   if (reportTitle !== undefined) {
-    if (typeof reportTitle !== "string" || reportTitle.length > REPORT_TITLE_MAX_LENGTH) {
+    if (
+      typeof reportTitle !== "string" ||
+      reportTitle.length > REPORT_TITLE_MAX_LENGTH
+    ) {
       addIssue(
         issues,
         [...path, "report_title"],
@@ -580,9 +617,17 @@ function validateScopeSpec(
     }
   }
 
-  validateResourceTypes(scope.resource_types, [...path, "resource_types"], issues)
+  validateResourceTypes(
+    scope.resource_types,
+    [...path, "resource_types"],
+    issues
+  )
   validateTagFilters(scope.tag_filters, [...path, "tag_filters"], issues)
-  validateResourceGroups(scope.resource_groups, [...path, "resource_groups"], issues)
+  validateResourceGroups(
+    scope.resource_groups,
+    [...path, "resource_groups"],
+    issues
+  )
   validateTopN(scope.top_n, [...path, "top_n"], issues)
   validateSort(scope.sort, [...path, "sort"], issues)
 }
@@ -598,7 +643,11 @@ function validateResourceTypes(
   }
 
   if (value.length > MAX_RESOURCE_TYPES) {
-    addIssue(issues, path, `resource_types accepts at most ${MAX_RESOURCE_TYPES} entries.`)
+    addIssue(
+      issues,
+      path,
+      `resource_types accepts at most ${MAX_RESOURCE_TYPES} entries.`
+    )
   }
 
   value.forEach((entry, index) => {
@@ -631,19 +680,31 @@ function validateTagFilters(
   }
 
   if (value.length > MAX_TAG_FILTERS) {
-    addIssue(issues, path, `tag_filters accepts at most ${MAX_TAG_FILTERS} entries.`)
+    addIssue(
+      issues,
+      path,
+      `tag_filters accepts at most ${MAX_TAG_FILTERS} entries.`
+    )
   }
 
   value.forEach((entry, index) => {
     const entryPath = [...path, index]
     if (!isPlainObject(entry)) {
-      addIssue(issues, entryPath, "Each tag filter must be an object of `key` and `value`.")
+      addIssue(
+        issues,
+        entryPath,
+        "Each tag filter must be an object of `key` and `value`."
+      )
       return
     }
 
     for (const key of Object.keys(entry)) {
       if (key !== "key" && key !== "value") {
-        addIssue(issues, [...entryPath, key], `Unrecognized tag filter field "${key}".`)
+        addIssue(
+          issues,
+          [...entryPath, key],
+          `Unrecognized tag filter field "${key}".`
+        )
       }
     }
 
@@ -659,17 +720,28 @@ function validateTagFilters(
         `A tag filter key must be a string of ${TAG_KEY_MIN_LENGTH} to ${TAG_KEY_MAX_LENGTH} characters.`
       )
     } else if (looksLikeAzureIdentifier(tagKey)) {
-      addIssue(issues, [...entryPath, "key"], azureIdentifierMessage([...entryPath, "key"]))
+      addIssue(
+        issues,
+        [...entryPath, "key"],
+        azureIdentifierMessage([...entryPath, "key"])
+      )
     }
 
-    if (typeof tagValue !== "string" || tagValue.length > TAG_VALUE_MAX_LENGTH) {
+    if (
+      typeof tagValue !== "string" ||
+      tagValue.length > TAG_VALUE_MAX_LENGTH
+    ) {
       addIssue(
         issues,
         [...entryPath, "value"],
         `A tag filter value must be a string of at most ${TAG_VALUE_MAX_LENGTH} characters.`
       )
     } else if (looksLikeAzureIdentifier(tagValue)) {
-      addIssue(issues, [...entryPath, "value"], azureIdentifierMessage([...entryPath, "value"]))
+      addIssue(
+        issues,
+        [...entryPath, "value"],
+        azureIdentifierMessage([...entryPath, "value"])
+      )
     }
   })
 }
@@ -685,14 +757,22 @@ function validateResourceGroups(
   }
 
   if (value.length > MAX_RESOURCE_GROUPS) {
-    addIssue(issues, path, `resource_groups accepts at most ${MAX_RESOURCE_GROUPS} entries.`)
+    addIssue(
+      issues,
+      path,
+      `resource_groups accepts at most ${MAX_RESOURCE_GROUPS} entries.`
+    )
   }
 
   value.forEach((entry, index) => {
     const entryPath = [...path, index]
     if (
       !isNonEmptyString(entry) ||
-      !stringLengthInRange(entry, RESOURCE_GROUP_MIN_LENGTH, RESOURCE_GROUP_MAX_LENGTH)
+      !stringLengthInRange(
+        entry,
+        RESOURCE_GROUP_MIN_LENGTH,
+        RESOURCE_GROUP_MAX_LENGTH
+      )
     ) {
       addIssue(
         issues,
@@ -757,7 +837,10 @@ function validateSort(
   issues: IssueSink
 ): void {
   if (value === null) return
-  if (typeof value !== "string" || !SORT_DIRECTIONS.includes(value as SortDirection)) {
+  if (
+    typeof value !== "string" ||
+    !SORT_DIRECTIONS.includes(value as SortDirection)
+  ) {
     addIssue(
       issues,
       path,
@@ -821,20 +904,24 @@ function validatePeriod(
   const endIsValid = typeof end === "string" && isRealCalendarDate(end)
 
   if (!startIsValid) {
-    addIssue(issues, [...path, "start"], "period.start must be a valid YYYY-MM-DD local date.")
+    addIssue(
+      issues,
+      [...path, "start"],
+      "period.start must be a valid YYYY-MM-DD local date."
+    )
   }
   if (!endIsValid) {
-    addIssue(issues, [...path, "end"], "period.end must be a valid YYYY-MM-DD local date.")
+    addIssue(
+      issues,
+      [...path, "end"],
+      "period.end must be a valid YYYY-MM-DD local date."
+    )
   }
 
   if (startIsValid && endIsValid) {
     const span = inclusiveLocalDaySpan(start, end)
     if (span < MIN_PERIOD_LOCAL_DAYS) {
-      addIssue(
-        issues,
-        path,
-        "period.start must be at or before period.end."
-      )
+      addIssue(issues, path, "period.start must be at or before period.end.")
     } else if (span > MAX_PERIOD_LOCAL_DAYS) {
       addIssue(
         issues,
@@ -872,11 +959,21 @@ function validateMetricItem(
 
   for (const key of Object.keys(item)) {
     if (!METRIC_ITEM_ALLOWED_KEYS.has(key)) {
-      addIssue(issues, [...path, key], `Unrecognized metric selection field "${key}".`)
+      addIssue(
+        issues,
+        [...path, key],
+        `Unrecognized metric selection field "${key}".`
+      )
     }
   }
 
-  const { metric, derived, statistic, estimator, fidelity_tier: fidelityTier } = item
+  const {
+    metric,
+    derived,
+    statistic,
+    estimator,
+    fidelity_tier: fidelityTier,
+  } = item
 
   const hasMetric = metric !== undefined
   const hasDerived = derived !== undefined
@@ -899,11 +996,19 @@ function validateMetricItem(
     addIssue(issues, [...path, "metric"], "metric must be a non-empty string.")
   }
   if (hasDerived && !isNonEmptyString(derived)) {
-    addIssue(issues, [...path, "derived"], "derived must be a non-empty string.")
+    addIssue(
+      issues,
+      [...path, "derived"],
+      "derived must be a non-empty string."
+    )
   }
 
   if (!isNonEmptyString(statistic)) {
-    addIssue(issues, [...path, "statistic"], "statistic must be a non-empty string.")
+    addIssue(
+      issues,
+      [...path, "statistic"],
+      "statistic must be a non-empty string."
+    )
     return
   }
 
@@ -927,7 +1032,11 @@ function validateMetricItem(
     }
   } else {
     if (estimator !== undefined && !isNonEmptyString(estimator)) {
-      addIssue(issues, [...path, "estimator"], "estimator must be a non-empty string when present.")
+      addIssue(
+        issues,
+        [...path, "estimator"],
+        "estimator must be a non-empty string when present."
+      )
     }
     if (fidelityTier !== undefined && !isNonEmptyString(fidelityTier)) {
       addIssue(
@@ -963,7 +1072,11 @@ function validateMetrics(
     const items = metrics[resourceType]
 
     if (!Array.isArray(items)) {
-      addIssue(issues, entryPath, `metrics["${resourceType}"] must be an array.`)
+      addIssue(
+        issues,
+        entryPath,
+        `metrics["${resourceType}"] must be an array.`
+      )
       continue
     }
 
@@ -988,7 +1101,12 @@ function validateMetrics(
 // --- Blocks (Requirements 6.2, 6.3, 6.4, 6.5, 6.6, 6.7, 6.9) -----------------
 
 const NON_ROW_BLOCK_TYPE_SET = new Set<string>(NON_ROW_BLOCK_TYPES)
-const LEAF_BLOCK_ALLOWED_KEYS = new Set(["id", "type", "config", "scope_override"])
+const LEAF_BLOCK_ALLOWED_KEYS = new Set([
+  "id",
+  "type",
+  "config",
+  "scope_override",
+])
 const ROW_BLOCK_ALLOWED_KEYS = new Set(["id", "type", "columns"])
 
 /**
@@ -1060,7 +1178,10 @@ function validateBlockConfig(
       continue
     }
 
-    if (blockType === "rich_text" && RICH_TEXT_FORBIDDEN_BINDING_FIELDS.has(key)) {
+    if (
+      blockType === "rich_text" &&
+      RICH_TEXT_FORBIDDEN_BINDING_FIELDS.has(key)
+    ) {
       addIssue(
         issues,
         [...path, key],
@@ -1078,7 +1199,9 @@ function validateBlockConfig(
       continue
     }
 
-    const enumValues = (schema.enums as Readonly<Record<string, readonly string[]>>)[key]
+    const enumValues = (
+      schema.enums as Readonly<Record<string, readonly string[]>>
+    )[key]
     if (enumValues !== undefined) {
       const value = config[key]
       if (typeof value !== "string" || !enumValues.includes(value)) {
@@ -1176,7 +1299,10 @@ function validateBlock(
   }
 
   const { id } = block
-  if (isNonEmptyString(id) && stringLengthInRange(id, BLOCK_ID_MIN_LENGTH, BLOCK_ID_MAX_LENGTH)) {
+  if (
+    isNonEmptyString(id) &&
+    stringLengthInRange(id, BLOCK_ID_MIN_LENGTH, BLOCK_ID_MAX_LENGTH)
+  ) {
     const occurrences = state.idOccurrences.get(id) ?? []
     if (occurrences.length > 0) {
       addIssue(
@@ -1233,7 +1359,11 @@ function validateRowBlock(
 
   const { columns } = block
   if (!Array.isArray(columns)) {
-    addIssue(issues, [...path, "columns"], "A row's columns must be an array of arrays.")
+    addIssue(
+      issues,
+      [...path, "columns"],
+      "A row's columns must be an array of arrays."
+    )
     return
   }
 
@@ -1326,11 +1456,16 @@ function validateNumberFormat(
   const allowedKeys = new Set(["decimal_places", "group_thousands"])
   for (const key of Object.keys(value)) {
     if (!allowedKeys.has(key)) {
-      addIssue(issues, [...path, key], `Unrecognized number_format field "${key}".`)
+      addIssue(
+        issues,
+        [...path, key],
+        `Unrecognized number_format field "${key}".`
+      )
     }
   }
 
-  const { decimal_places: decimalPlaces, group_thousands: groupThousands } = value
+  const { decimal_places: decimalPlaces, group_thousands: groupThousands } =
+    value
 
   if (
     !isFiniteInteger(decimalPlaces) ||
@@ -1345,7 +1480,11 @@ function validateNumberFormat(
   }
 
   if (!isBoolean(groupThousands)) {
-    addIssue(issues, [...path, "group_thousands"], "group_thousands must be a boolean.")
+    addIssue(
+      issues,
+      [...path, "group_thousands"],
+      "group_thousands must be a boolean."
+    )
   }
 }
 
@@ -1376,8 +1515,15 @@ function validateDesign(
     page_size: pageSize,
   } = design
 
-  if (typeof preset !== "string" || !DESIGN_PRESETS.includes(preset as DesignPreset)) {
-    addIssue(issues, [...path, "preset"], `preset must be one of: ${DESIGN_PRESETS.join(", ")}.`)
+  if (
+    typeof preset !== "string" ||
+    !DESIGN_PRESETS.includes(preset as DesignPreset)
+  ) {
+    addIssue(
+      issues,
+      [...path, "preset"],
+      `preset must be one of: ${DESIGN_PRESETS.join(", ")}.`
+    )
   }
 
   if (
@@ -1391,8 +1537,15 @@ function validateDesign(
     )
   }
 
-  if (typeof density !== "string" || !DENSITY_VALUES.includes(density as Density)) {
-    addIssue(issues, [...path, "density"], `density must be one of: ${DENSITY_VALUES.join(", ")}.`)
+  if (
+    typeof density !== "string" ||
+    !DENSITY_VALUES.includes(density as Density)
+  ) {
+    addIssue(
+      issues,
+      [...path, "density"],
+      `density must be one of: ${DENSITY_VALUES.join(", ")}.`
+    )
   }
 
   if (
@@ -1422,8 +1575,15 @@ function validateDesign(
     }
   }
 
-  if (typeof pageSize !== "string" || !PAGE_SIZE_VALUES.includes(pageSize as PageSize)) {
-    addIssue(issues, [...path, "page_size"], `page_size must be one of: ${PAGE_SIZE_VALUES.join(", ")}.`)
+  if (
+    typeof pageSize !== "string" ||
+    !PAGE_SIZE_VALUES.includes(pageSize as PageSize)
+  ) {
+    addIssue(
+      issues,
+      [...path, "page_size"],
+      `page_size must be one of: ${PAGE_SIZE_VALUES.join(", ")}.`
+    )
   }
 }
 
@@ -1573,18 +1733,27 @@ function validateEveryScopedTypeIsSelected(
 function scopedResourceTypes(raw: Record<string, unknown>): ScopedType[] {
   const found: ScopedType[] = []
 
-  const addScope = (scope: unknown, path: readonly (string | number)[]): void => {
+  const addScope = (
+    scope: unknown,
+    path: readonly (string | number)[]
+  ): void => {
     if (!isPlainObject(scope)) return
     const types = scope.resource_types
     if (!Array.isArray(types)) return
     types.forEach((entry, index) => {
       if (isNonEmptyString(entry)) {
-        found.push({ path: [...path, "resource_types", index], resourceType: entry })
+        found.push({
+          path: [...path, "resource_types", index],
+          resourceType: entry,
+        })
       }
     })
   }
 
-  const walkBlocks = (blocks: unknown, path: readonly (string | number)[]): void => {
+  const walkBlocks = (
+    blocks: unknown,
+    path: readonly (string | number)[]
+  ): void => {
     if (!Array.isArray(blocks)) return
     blocks.forEach((block, index) => {
       if (!isPlainObject(block)) return
@@ -1639,7 +1808,11 @@ export function collectDefinitionIssues(
   }
 
   for (const key of Object.keys(raw)) {
-    if (!TOP_LEVEL_REQUIRED_KEYS.includes(key as (typeof TOP_LEVEL_REQUIRED_KEYS)[number])) {
+    if (
+      !TOP_LEVEL_REQUIRED_KEYS.includes(
+        key as (typeof TOP_LEVEL_REQUIRED_KEYS)[number]
+      )
+    ) {
       addIssue(issues, [key], `Unrecognized top-level key "${key}".`)
     }
   }
@@ -1682,7 +1855,11 @@ export const templateDefinitionSchema: z.ZodType<TemplateDefinition> = z
   .unknown()
   .superRefine((raw, ctx) => {
     for (const issue of collectDefinitionIssues(raw, { mode: "draft" })) {
-      ctx.addIssue({ code: "custom", message: issue.message, path: [...issue.path] })
+      ctx.addIssue({
+        code: "custom",
+        message: issue.message,
+        path: [...issue.path],
+      })
     }
   }) as unknown as z.ZodType<TemplateDefinition>
 
@@ -1695,7 +1872,11 @@ export const templateDefinitionForRunSchema: z.ZodType<TemplateDefinition> = z
   .unknown()
   .superRefine((raw, ctx) => {
     for (const issue of collectDefinitionIssues(raw, { mode: "run" })) {
-      ctx.addIssue({ code: "custom", message: issue.message, path: [...issue.path] })
+      ctx.addIssue({
+        code: "custom",
+        message: issue.message,
+        path: [...issue.path],
+      })
     }
   }) as unknown as z.ZodType<TemplateDefinition>
 
@@ -1720,7 +1901,12 @@ export type MetricCatalogEntry = {
   /** Every statistic this entry declares, including any percentile keys (e.g. `"p95"`). */
   readonly statistics: readonly string[]
   /** For each percentile statistic this entry declares, its estimator label and fidelity tier. */
-  readonly percentiles: Readonly<Record<string, { readonly estimator: string; readonly fidelityTier: string }>>
+  readonly percentiles: Readonly<
+    Record<
+      string,
+      { readonly estimator: string; readonly fidelityTier: string }
+    >
+  >
   /**
    * For `kind: "derived"` only — every source metric name and every SKU
    * capability name the formula consumes (Requirement 5.5). Absent for
@@ -1893,7 +2079,9 @@ export function validateMetricSelectionAgainstCatalog(
 
       if (catalogEntry.kind === "derived") {
         const selectedMetricNames = new Set(
-          items.filter((other) => other.metric !== undefined).map((other) => other.metric)
+          items
+            .filter((other) => other.metric !== undefined)
+            .map((other) => other.metric)
         )
 
         for (const sourceMetric of catalogEntry.requiredSourceMetrics ?? []) {
@@ -1907,8 +2095,11 @@ export function validateMetricSelectionAgainstCatalog(
           }
         }
 
-        for (const skuCapability of catalogEntry.requiredSkuCapabilities ?? []) {
-          if (!resourceTypeCatalog.declaredSkuCapabilities.includes(skuCapability)) {
+        for (const skuCapability of catalogEntry.requiredSkuCapabilities ??
+          []) {
+          if (
+            !resourceTypeCatalog.declaredSkuCapabilities.includes(skuCapability)
+          ) {
             addIssue(
               issues,
               itemPath,

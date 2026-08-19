@@ -131,7 +131,8 @@ describe("gaps are grouped by gap_type", () => {
         gaps={[
           gap({
             gapType: "metric_not_selected",
-            resourceId: "/subscriptions/s/providers/Microsoft.Sql/servers/sql-01",
+            resourceId:
+              "/subscriptions/s/providers/Microsoft.Sql/servers/sql-01",
             metric: null,
             message:
               "no metric was requested for resource type 'Microsoft.Sql/servers'",

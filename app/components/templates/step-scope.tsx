@@ -57,7 +57,9 @@ function formatTagFilters(filters: ScopeSpec["tag_filters"]): string {
  * zero is a legal length, and it means "has this tag at all"). Dropping the entry
  * instead would silently discard something the consultant typed.
  */
-export function parseTagFilters(value: string): { key: string; value: string }[] {
+export function parseTagFilters(
+  value: string
+): { key: string; value: string }[] {
   return value
     .split(",")
     .map((entry) => entry.trim())
@@ -95,12 +97,15 @@ export function StepScope({
         <Input
           id={typesId}
           defaultValue={definition.scope.resource_types.join(", ")}
-          onBlur={(event) => set({ resource_types: parseList(event.target.value) })}
+          onBlur={(event) =>
+            set({ resource_types: parseList(event.target.value) })
+          }
           placeholder="Microsoft.Compute/virtualMachines"
         />
         <FieldDescription>
-          Comma separated, fully qualified. <strong>Leave empty for every
-          type</strong> — an empty dimension imposes no constraint.
+          Comma separated, fully qualified.{" "}
+          <strong>Leave empty for every type</strong> — an empty dimension
+          imposes no constraint.
         </FieldDescription>
       </Field>
 
@@ -109,7 +114,9 @@ export function StepScope({
         <Input
           id={groupsId}
           defaultValue={definition.scope.resource_groups.join(", ")}
-          onBlur={(event) => set({ resource_groups: parseList(event.target.value) })}
+          onBlur={(event) =>
+            set({ resource_groups: parseList(event.target.value) })
+          }
           placeholder="rg-prod-sea, rg-prod-eu"
         />
         <FieldDescription>
@@ -138,8 +145,8 @@ export function StepScope({
       <p className="max-w-prose text-xs text-muted-foreground">
         There is no control here for choosing a named resource, and that is
         deliberate: a template stores rules so the same one runs against every
-        subscription you connect. A block can narrow this default further —
-        that is its scope override, on step 5.
+        subscription you connect. A block can narrow this default further — that
+        is its scope override, on step 5.
       </p>
     </div>
   )

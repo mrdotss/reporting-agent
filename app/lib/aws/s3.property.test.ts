@@ -219,7 +219,10 @@ describe("Property 12 — the second segment is one of exactly two", () => {
             keyBelongsToActor(id, `${id}/${second}/${runId}/x`),
             second
           ).toBe(false)
-          expect(parseArtifactKey(`${id}/${second}/${runId}/x`), second).toBeNull()
+          expect(
+            parseArtifactKey(`${id}/${second}/${runId}/x`),
+            second
+          ).toBeNull()
         }
       ),
       { numRuns: 300, examples: SEGMENT_EXAMPLES }
@@ -231,16 +234,20 @@ describe("Property 12 — the second segment is one of exactly two", () => {
     // this is the segment the product actually writes, so it is the one a future
     // widening would plausibly add.
     fc.assert(
-      fc.property(actorId, fc.stringMatching(/^[A-Za-z0-9_-]{1,12}$/), (id, pv) => {
-        const key = `${id}/${ARTIFACT_SEGMENT_PREVIEWS}/${pv}/preview.pdf`
+      fc.property(
+        actorId,
+        fc.stringMatching(/^[A-Za-z0-9_-]{1,12}$/),
+        (id, pv) => {
+          const key = `${id}/${ARTIFACT_SEGMENT_PREVIEWS}/${pv}/preview.pdf`
 
-        expect(keyBelongsToActor(id, key)).toBe(false)
-        expect(parseArtifactKey(key)).toBeNull()
+          expect(keyBelongsToActor(id, key)).toBe(false)
+          expect(parseArtifactKey(key)).toBeNull()
 
-        // And the preview predicate admits it, so the two key spaces are
-        // genuinely disjoint rather than both closed.
-        expect(previewBelongsToActor(id, key)).toBe(true)
-      }),
+          // And the preview predicate admits it, so the two key spaces are
+          // genuinely disjoint rather than both closed.
+          expect(previewBelongsToActor(id, key)).toBe(true)
+        }
+      ),
       { numRuns: 200 }
     )
   })

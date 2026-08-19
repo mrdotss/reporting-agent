@@ -59,6 +59,21 @@ export default defineConfig({
           environment: "node",
           include: ["lib/**/*.test.ts", "test/**/*.test.ts"],
           setupFiles,
+          /**
+           * Requirements 45.7, 45.8, 45.9 — the property ledger's whole-run
+           * vantage point. `setup` empties the ledger directory before any file
+           * runs; `teardown` prints every property's framework, accepted-case
+           * count, precondition rejection fraction and seed, and fails the run if
+           * a declared property did not execute or missed a threshold.
+           *
+           * On this project rather than at the root: every `.property.test.ts`
+           * module lives under `lib/`, so the node project is the one that runs
+           * them, and a `globalSetup` declared here runs exactly once for exactly
+           * that set. Declaring it on both projects would empty the directory
+           * twice, and the second `setup` would delete the first project's
+           * records.
+           */
+          globalSetup: ["./test/property-ledger.global.ts"],
         },
       },
     ],

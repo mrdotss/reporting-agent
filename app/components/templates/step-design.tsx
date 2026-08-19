@@ -36,7 +36,9 @@ import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
  * file is how a wizard comes to offer a fourth density the compiler refuses.
  */
 
-const DENSITY_SUMMARY: Readonly<Record<(typeof DENSITY_VALUES)[number], string>> = {
+const DENSITY_SUMMARY: Readonly<
+  Record<(typeof DENSITY_VALUES)[number], string>
+> = {
   compact: "Tighter leading and table padding — more rows per page.",
   normal: "The theme's own spacing.",
   relaxed: "More air. Fewer rows per page, easier to read at a glance.",
@@ -203,7 +205,10 @@ export function StepDesign({
             // Empty means "no logo", stored as `null` rather than `""` so the
             // definition has one representation for it and the digest cannot
             // differ between two templates that both have no logo.
-            set({ logo: event.target.value.trim() === "" ? null : event.target.value })
+            set({
+              logo:
+                event.target.value.trim() === "" ? null : event.target.value,
+            })
           }
         />
         <FieldDescription>

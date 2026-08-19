@@ -116,7 +116,9 @@ export function StylePresetPicker({
     // the last card onto the first, which reads as the focus jumping rather than
     // as having reached the end.
     const target =
-      DESIGN_PRESETS[Math.min(DESIGN_PRESETS.length - 1, Math.max(0, index + delta))]
+      DESIGN_PRESETS[
+        Math.min(DESIGN_PRESETS.length - 1, Math.max(0, index + delta))
+      ]
 
     if (target === undefined || target === from) return
 
@@ -126,7 +128,10 @@ export function StylePresetPicker({
     refs.current.get(target)?.focus()
   }
 
-  const handleKey = (event: KeyboardEvent<HTMLButtonElement>, preset: DesignPreset) => {
+  const handleKey = (
+    event: KeyboardEvent<HTMLButtonElement>,
+    preset: DesignPreset
+  ) => {
     if (event.key.startsWith("Arrow")) {
       event.preventDefault()
       move(preset, event.key)

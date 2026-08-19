@@ -98,9 +98,7 @@ beforeEach(async () => {
   // `report_template_versions` cascades from `report_templates` through the FK,
   // but the FK carries no `ON DELETE CASCADE`, so both are truncated together —
   // `users` survives, seeded once above.
-  await db.query(
-    `TRUNCATE report_template_versions, report_templates CASCADE`
-  )
+  await db.query(`TRUNCATE report_template_versions, report_templates CASCADE`)
 })
 
 // --- Helpers -------------------------------------------------------------
@@ -301,7 +299,11 @@ describe("insertVersion", () => {
     const template = await createTemplate(ownerId, { name: "Idempotent" })
     const definition = { schema_version: 1, blocks: ["a"] }
 
-    const first = await insertVersion(ownerId, template.id, versionInput(definition))
+    const first = await insertVersion(
+      ownerId,
+      template.id,
+      versionInput(definition)
+    )
 
     const second = await insertVersion(
       ownerId,
@@ -467,7 +469,9 @@ describe("readLatestVersion", () => {
   test("returns undefined for a template that carries no version yet, without throwing", async () => {
     const template = await createTemplate(ownerId, { name: "No version yet" })
 
-    await expect(readLatestVersion(ownerId, template.id)).resolves.toBeUndefined()
+    await expect(
+      readLatestVersion(ownerId, template.id)
+    ).resolves.toBeUndefined()
   })
 
   test("Requirement 1.5 — another user's id raises TemplateNotFoundError", async () => {

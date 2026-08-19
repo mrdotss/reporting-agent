@@ -149,6 +149,38 @@ export function snapshotArtifactKey(userId: string, runId: string): string {
 }
 
 /**
+ * The two artifacts a consultant may download, as `agent/.../artifacts.py` names
+ * them (Requirement 43.1).
+ *
+ * The ledger, the AST, the prose bundle and the emitted HTML are written under the
+ * same prefix and are deliberately **absent**: they exist for re-verification and for
+ * the in-app reading view, no `report_file` event names them, and no download control
+ * should reach them.
+ */
+export const DOWNLOADABLE_LEAF_NAMES = ["report.docx", "report.pdf"] as const
+
+export type DownloadableLeafName = (typeof DOWNLOADABLE_LEAF_NAMES)[number]
+
+/**
+ * The S3 key of one of a run's report artifacts:
+ * `<actor_id>/reports/<runId>/<leaf>` (Requirement 43.1).
+ *
+ * Beside {@link snapshotArtifactKey} for the reason that function records: this layout
+ * has to agree character for character across the three places that touch it — the
+ * runtime writes it, this projection names it, and download authorization compares
+ * its **first two segments**. `lib/runs/artifacts.ts` re-exports this rather than
+ * declaring a second copy, so there is one template rather than a template and a
+ * lookalike.
+ */
+export function reportArtifactKey(
+  userId: string,
+  runId: string,
+  leaf: DownloadableLeafName
+): string {
+  return `${userId}/reports/${runId}/${leaf}`
+}
+
+/**
  * Requirements 37.5, 43.4 — exactly these **seventeen** keys (was fourteen),
  * and the set is **closed**.
  *
@@ -325,18 +357,19 @@ export const NO_RUN_VIEW_EXTRAS: RunViewExtras = Object.freeze({
  *     and it composes with the snapshot gate rather than replacing it** — this
  *     is Requirement 40.4 implemented in the projection rather than in a
  *     component, so no shape exists in which a browser holds a `.docx` or
- *     `.pdf` key for a run whose document was never proven. `extras` is threaded
- *     through this function specifically so that gate has something to test
- *     today, even though nothing yet composes with it: no task before this one
- *     renders a `.docx` or a `.pdf`, so there is no key template this function
- *     could name without inventing one — and Requirement 43.1's own key layout
- *     (`<actor_id>/reports/<runId>/report.docx`, `.../report.pdf`) is owned by
- *     the render tasks that write those objects, not by this projection.
- *     Task 13.8 is where that composition lands: it adds the two report-key
- *     builders (the `snapshotArtifactKey` pattern, repeated) and extends the
- *     array below with `...(extras.verificationStatus === "pass" ? [...] : [])`
- *     — a second spread beside the one already there, not a rewrite of it. No
- *     placeholder key is fabricated here to stand in for that until it exists.
+ *     `.pdf` key for a run whose document was never proven. The two keys come
+ *     from {@link reportArtifactKey}, declared beside
+ *     {@link snapshotArtifactKey} for the reason that function records: the
+ *     layout has to agree character for character with the runtime that writes
+ *     it and the predicate that authorizes it.
+ *
+ * A note worth keeping, because it explains why this is one expression rather
+ * than a prop some component honours: `DownloadCard` renders one control per
+ * downloadable key it is handed, so a run whose verification failed hands it
+ * none and it renders nothing. The gate is therefore not something a component
+ * can forget — and `app/api/artifact-url/route.ts` re-checks the stored status
+ * anyway, because a control that is not rendered is not a control that cannot
+ * be reached.
  */
 export function toRunView(row: ReportRun, extras: RunViewExtras): RunView {
   return {
@@ -353,7 +386,21 @@ export function toRunView(row: ReportRun, extras: RunViewExtras): RunView {
     snapshotId: row.snapshotId,
     artifactKeys:
       row.status === "completed"
-        ? [snapshotArtifactKey(row.userId, row.id)]
+        ? [
+            snapshotArtifactKey(row.userId, row.id),
+            // Requirement 40.4 implemented in the projection rather than in a
+            // component: the two report keys appear only for a run whose stored
+            // verification **passed**, so no shape exists in which a browser holds a
+            // `.docx` or `.pdf` key for a document that was never proven. The two
+            // gates compose — a `completed` snapshot-only run still shows its
+            // snapshot, because the snapshot is written during collection, long
+            // before there is a document to verify.
+            ...(extras.verificationStatus === "pass"
+              ? DOWNLOADABLE_LEAF_NAMES.map((leaf) =>
+                  reportArtifactKey(row.userId, row.id, leaf)
+                )
+              : []),
+          ]
         : [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

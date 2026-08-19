@@ -73,7 +73,7 @@ describe("Requirement 22.12 — the encoding is read, never inferred", () => {
     // a lightness ramp over peers asserts an order the data does not contain.
     const sequential = figureFrom(
       '<figure class="rpt-chart" data-encoding="sequential" data-unit="percent">' +
-        '<figcaption>Distribution</figcaption>' +
+        "<figcaption>Distribution</figcaption>" +
         '<div class="rpt-series" data-series-key="bucket" data-series-label="b">' +
         '<span class="rpt-point" data-x="0"><span class="rpt-figure">1</span></span>' +
         "</div></figure>"

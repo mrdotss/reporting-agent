@@ -64,7 +64,9 @@ function Marker({
 
   switch (shape) {
     case "square":
-      return <rect x={x - r} y={y - r} width={r * 2} height={r * 2} fill={fill} />
+      return (
+        <rect x={x - r} y={y - r} width={r * 2} height={r * 2} fill={fill} />
+      )
     case "triangle":
       return (
         <polygon

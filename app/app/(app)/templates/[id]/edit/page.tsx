@@ -8,7 +8,11 @@ import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
-import { getTemplate, readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
+import {
+  getTemplate,
+  readLatestVersion,
+  TemplateNotFoundError,
+} from "@/lib/templates/store"
 
 /**
  * `/templates/[id]/edit` — the seven-step wizard (Requirement 11).
@@ -93,7 +97,8 @@ async function loadTemplate(userId: string, id: string) {
       // The draft wins when there is one — it is by definition newer than the
       // last saved version, which is the whole reason it is persisted
       // separately.
-      initialDefinition: template.draftDefinition ?? version?.definition ?? null,
+      initialDefinition:
+        template.draftDefinition ?? version?.definition ?? null,
     }
   } catch (thrown) {
     // Requirement 1.5 — another user's template is not found, and the answer is

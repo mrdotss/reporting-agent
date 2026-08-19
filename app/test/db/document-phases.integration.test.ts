@@ -255,7 +255,11 @@ describe("Requirement 41.1 — the extended transition table", () => {
     // leave a run reporting a verification of a document nothing rendered.
     const runId = await insertRun("collecting")
 
-    const written = await db.query(GUARDED_WRITE, [runId, "compiling", "verifying"])
+    const written = await db.query(GUARDED_WRITE, [
+      runId,
+      "compiling",
+      "verifying",
+    ])
 
     expect(written.rowCount).toBe(0)
     expect(DRIVEN.collecting).not.toContain("verifying")
@@ -334,9 +338,9 @@ describe("Requirement 41.5 — a retried verification callback", () => {
     const attemptId = "att-retried"
 
     await insertVerification(runId, "pass", attemptId)
-    await expect(
-      insertVerification(runId, "pass", attemptId)
-    ).rejects.toThrow(/duplicate key|unique/i)
+    await expect(insertVerification(runId, "pass", attemptId)).rejects.toThrow(
+      /duplicate key|unique/i
+    )
 
     const count = await db.query<{ n: string }>(
       `SELECT count(*)::text AS n FROM report_verifications WHERE run_id = $1`,

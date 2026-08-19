@@ -32,13 +32,7 @@ import {
 export const WIZARD_STEP_COUNT = 7
 
 export type WizardStepId =
-  | "identity"
-  | "scope"
-  | "period"
-  | "metrics"
-  | "blocks"
-  | "design"
-  | "preview"
+  "identity" | "scope" | "period" | "metrics" | "blocks" | "design" | "preview"
 
 export type WizardStep = {
   readonly id: WizardStepId
@@ -239,7 +233,10 @@ export function canAdvance(step: WizardStep, issues: StepIssues): boolean {
  * would trap a consultant on a step they were trying to leave in order to fix the
  * thing that was wrong.
  */
-export function canReturnTo(target: WizardStep, highestReached: number): boolean {
+export function canReturnTo(
+  target: WizardStep,
+  highestReached: number
+): boolean {
   return target.number <= highestReached
 }
 

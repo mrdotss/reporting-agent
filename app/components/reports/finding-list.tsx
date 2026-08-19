@@ -90,7 +90,9 @@ function Finding({
         <dl className="grid grid-cols-1 gap-x-4 gap-y-0.5 text-xs sm:grid-cols-2">
           {located.map((locator) => (
             <div key={String(locator.key)} className="flex gap-2">
-              <dt className="shrink-0 text-muted-foreground">{locator.label}</dt>
+              <dt className="shrink-0 text-muted-foreground">
+                {locator.label}
+              </dt>
               <dd
                 className={[
                   "min-w-0 break-all",

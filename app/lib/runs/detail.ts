@@ -175,7 +175,12 @@ export async function resolveRunExtrasBatch(
         createdAt: reportVerifications.createdAt,
       })
       .from(reportVerifications)
-      .where(inArray(reportVerifications.runId, runs.map((run) => run.id))),
+      .where(
+        inArray(
+          reportVerifications.runId,
+          runs.map((run) => run.id)
+        )
+      ),
   ])
 
   const versions = new Map(versionRows.map((row) => [row.id, row]))

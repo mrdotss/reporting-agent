@@ -69,9 +69,7 @@ function visibleTypes(
 
   const folded = new Set(declared.map((name) => name.toLowerCase()))
 
-  return catalog.filter((entry) =>
-    folded.has(entry.resourceType.toLowerCase())
-  )
+  return catalog.filter((entry) => folded.has(entry.resourceType.toLowerCase()))
 }
 
 export function StepMetrics({
@@ -120,7 +118,10 @@ export function StepMetrics({
       // and for nothing else.
       ...(declared === undefined
         ? {}
-        : { estimator: declared.estimator, fidelity_tier: declared.fidelityTier }),
+        : {
+            estimator: declared.estimator,
+            fidelity_tier: declared.fidelityTier,
+          }),
     }
 
     onChange({
@@ -195,7 +196,8 @@ export function StepMetrics({
 
                   <div className="flex flex-wrap gap-3">
                     {entry.statistics.map((statistic) => {
-                      const estimated = entry.percentiles[statistic] !== undefined
+                      const estimated =
+                        entry.percentiles[statistic] !== undefined
                       const key = entryKey(entry, statistic)
                       const disabled = entry.fidelityTier === "enhanced"
 

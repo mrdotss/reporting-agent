@@ -46,7 +46,7 @@ const CORPUS_DIR = path.resolve(
   "agent",
   "tests",
   "fixtures",
-  "verification",
+  "verification"
 )
 
 /** Every declared type, mirrored from `result.ts`'s documentation arrays. */
@@ -75,7 +75,7 @@ describe("the verification-result corpus exists and is not vacuous", () => {
     expect(
       files.length,
       `no .json files under ${CORPUS_DIR} — run the agent suite ` +
-        `(agent/.venv/bin/pytest tests/test_verify_findings.py) to regenerate it`,
+        `(agent/.venv/bin/pytest tests/test_verify_findings.py) to regenerate it`
     ).toBeGreaterThanOrEqual(9)
   })
 
@@ -83,7 +83,7 @@ describe("the verification-result corpus exists and is not vacuous", () => {
     const seen = new Set<string>()
     for (const name of files) {
       const parsed = verificationResultSchema.parse(
-        JSON.parse(readFileSync(path.join(CORPUS_DIR, name), "utf8")),
+        JSON.parse(readFileSync(path.join(CORPUS_DIR, name), "utf8"))
       )
       for (const finding of parsed.findings) seen.add(finding.type)
     }
@@ -96,9 +96,9 @@ describe("the verification-result corpus exists and is not vacuous", () => {
       files.map(
         (name) =>
           verificationResultSchema.parse(
-            JSON.parse(readFileSync(path.join(CORPUS_DIR, name), "utf8")),
-          ).status,
-      ),
+            JSON.parse(readFileSync(path.join(CORPUS_DIR, name), "utf8"))
+          ).status
+      )
     )
     expect([...statuses].sort()).toEqual(["fail", "pass"])
   })
@@ -106,13 +106,13 @@ describe("the verification-result corpus exists and is not vacuous", () => {
 
 describe.each(files)("%s parses as a verification result", (name) => {
   const raw: unknown = JSON.parse(
-    readFileSync(path.join(CORPUS_DIR, name), "utf8"),
+    readFileSync(path.join(CORPUS_DIR, name), "utf8")
   )
 
   test("verificationResultSchema accepts it", () => {
     const parsed = verificationResultSchema.safeParse(raw)
     expect(
-      parsed.success ? null : JSON.stringify(parsed.error.issues, null, 2),
+      parsed.success ? null : JSON.stringify(parsed.error.issues, null, 2)
     ).toBeNull()
   })
 
@@ -121,7 +121,7 @@ describe.each(files)("%s parses as a verification result", (name) => {
     // in exactly one of the two buckets without a lookup table this side.
     const parsed = verificationResultSchema.parse(raw)
     expect(
-      blockingFindings(parsed).length + advisoryFindings(parsed).length,
+      blockingFindings(parsed).length + advisoryFindings(parsed).length
     ).toBe(parsed.findings.length)
   })
 
@@ -143,10 +143,18 @@ describe.each(files)("%s parses as a verification result", (name) => {
     // failing test rather than as an oversized string nothing rejects.
     const parsed = verificationResultSchema.parse(raw)
     for (const finding of parsed.findings) {
-      for (const field of ["formatted", "expected", "observed", "substring"] as const) {
+      for (const field of [
+        "formatted",
+        "expected",
+        "observed",
+        "substring",
+      ] as const) {
         const value = finding[field]
         if (typeof value === "string") {
-          expect(value.length, `${name}: ${finding.type}.${field}`).toBeLessThanOrEqual(200)
+          expect(
+            value.length,
+            `${name}: ${finding.type}.${field}`
+          ).toBeLessThanOrEqual(200)
         }
       }
       if (typeof finding.message === "string") {

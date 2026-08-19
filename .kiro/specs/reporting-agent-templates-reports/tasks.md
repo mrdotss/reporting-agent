@@ -716,21 +716,21 @@ migration.
     - Assert additionally that no negative test in this section is skipped, marked as an expected failure, or excluded from the suite that runs before a change in this spec is committed, because a gate whose negative test does not run is a gate that has never been observed failing
     - _Requirements: 44.1, 44.12, 44.14, 44.15_
 
-- [ ] 15. Final guards, property hygiene, the regression gate and end-to-end verification
-  - [ ] 15.1 Complete the static boundary guards in both halves
+- [x] 15. Final guards, property hygiene, the regression gate and end-to-end verification
+  - [x] 15.1 Complete the static boundary guards in both halves
     - `agent/tests/test_boundaries.py`, consolidated and asserted complete: the SDK boundary scan covering `compile/`, `render/`, `verify/`, `compare/` and `narrate/` — no module outside `azure/` imports a package whose **first dotted segment** is exactly `azure`; the replay-purity closure walk; no `.paragraphs` / `.tables` on a `python-docx` document under `verify/`; `formatted` assigned in exactly one module with `compile/format.py` the only importer of the quantization helper and no arithmetic on a figure's `value` under `render/` or `verify/`; no Bedrock client outside `narrate/`; and `unicodedata.normalize` on no hash path
     - `app/test/boundaries.static.test.ts`: `lib/templates/store.ts` and `lib/verifications/store.ts` begin with `import "server-only"`; every new streaming or long-running handler exports `runtime = "nodejs"`; the artifact-key predicate admits exactly `snapshots` and `reports`; no component under `components/templates/` renders a document file input and no route accepts a `.docx` body; no import of `docxtpl`-equivalent templating and no arithmetic over a ledger `value` under `components/reports/` — including no `decimal.js` import and no `Number()` over a ledger value, because `app/` computes no figure
     - Assert each guard's own completeness: a scanned directory that is absent or yields zero source files **fails** the guard, so it can never pass by scanning nothing
     - `app/test/migrations.static.test.ts` passes unchanged over this spec's three tables, one column and six appended enum values — which is the point of having written it in the foundation
     - _Requirements: 11.6, 18.1, 18.2, 19.2, 20.2, 26.2, 31.7, 35.5, 43.2, 43.3, 9.10, 41.6_
 
-  - [ ] 15.2 Extend the property-hygiene guards and run the foundation regression gate
+  - [x] 15.2 Extend the property-hygiene guards and run the foundation regression gate
     - Extend `app/test/property-hygiene.static.test.ts` and `agent/tests/test_property_hygiene.py` with two assertions each: the **set of properties collected equals the set this spec declares** — Properties 1–7 agent-side under `hypothesis`, Properties 8–12 web-side under `fast-check` — so a property added to the design and never registered, or registered and never run, fails the suite; and each property **records** its framework, its accepted-example count, its precondition rejection fraction and its seed in the suite's own output, so the thresholds are observable rather than assumed
     - Keep the existing assertions in force: no property skipped, none marked as an expected failure, none declaring fewer than 100 runs or examples, none suppressing `HealthCheck.filter_too_much` or `HealthCheck.data_too_large`, none whose generation is exhausted before 100 accepted, and none rejecting more than 20% of generated cases through a precondition; every fixed counterexample retained as an explicitly declared `@example` or case running **in addition to** the 100-case minimum rather than counting toward it
     - **The regression gate**: run the foundation's **Property 1** (count-weighted averaging and exact min/max roll-up) and **Property 6** (local-day bucketing at the `Asia/Jakarta` UTC+07:00 offset) in this spec's suite at ≥100 accepted examples each, with their generators, assertions and declared examples **unmodified** — the compile and verify stages consume the values those two protect, so a regression there produces a document that verifies perfectly against a wrong number, or silently re-attributes every daily figure. If either is absent, does not execute, or fails, fail this spec's suite, report which one, and record no passing result for this requirement
     - _Requirements: 45.1, 45.2, 45.3, 45.4, 45.5, 45.6, 45.7, 45.8, 45.9_
 
-  - [ ] 15.3 Wire and verify one full report run end to end
+  - [x] 15.3 Wire and verify one full report run end to end
     - Drive one `generate_report` through the faked Azure ports, the in-memory object store, a real Postgres schema and a real LibreOffice in the built image: enqueue pins `template_version_id` and inserts `queued`; a tick sweeps, claims with `SKIP LOCKED`, gates on subscription state, and invokes; the runtime asserts the theme before any Azure call, collects, passes the union gate, writes the snapshot once, compiles the AST and the ledger, renders `.docx` then `.pdf`, verifies every gate, uploads four artifacts **after** the pass, emits `snapshot_ready` → `verification` → two `report_file` → `done`, and posts each phase transition plus the verification callback; the row advances `collecting → compiling → rendering → verifying → completed` and `completed` is written only with a stored passing verification
     - Assert the ordering contract at the source: `snapshot_ready` before any `verification`; every `report_file` after a `verification` carrying `pass`; nothing after `done`; a step left open by a raising phase closed before `done`; and consecutive events no more than 30 seconds apart through the document phases
     - Assert the delivery gate from the browser's side: exactly two download controls for the `completed` + `pass` run, each minting a fresh short-lived URL at activation, and no route, action or control returning one for a run whose verification is fail or absent
@@ -739,7 +739,7 @@ migration.
     - Confirm `pnpm lint`, `pnpm typecheck`, `pnpm test` and, in `agent/`, `.venv/bin/pytest` and `.venv/bin/ruff check .` are all clean
     - _Requirements: 25.1, 25.2, 25.9, 41.1, 42.1, 42.3, 42.4, 42.5, 42.12, 42.13, 43.1, 43.7, 40.1, 40.4, 45.6_
 
-- [ ] 16. Final checkpoint
+- [x] 16. Final checkpoint
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

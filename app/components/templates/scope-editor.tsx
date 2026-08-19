@@ -66,10 +66,7 @@ export function ScopeEditor({
 
   return (
     <div data-slot="scope-editor" className="flex flex-col gap-3">
-      <label
-        htmlFor={toggleId}
-        className="flex items-center gap-2 text-sm"
-      >
+      <label htmlFor={toggleId} className="flex items-center gap-2 text-sm">
         <input
           id={toggleId}
           type="checkbox"

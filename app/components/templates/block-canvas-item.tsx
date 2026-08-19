@@ -4,10 +4,7 @@ import { useEffect, useRef, type KeyboardEvent } from "react"
 import { useDraggable } from "@dnd-kit/react"
 
 import type { TemplateBlock } from "@/lib/templates/definition"
-import {
-  blockTypeLabel,
-  type ContainerRef,
-} from "@/lib/templates/composer"
+import { blockTypeLabel, type ContainerRef } from "@/lib/templates/composer"
 
 /**
  * One block on the canvas: a keyboard command target, and a drag source
@@ -185,7 +182,7 @@ export function BlockCanvasItem({
       <span className="flex items-baseline justify-between gap-2">
         <span>{blockTypeLabel(block.type)}</span>
 
-        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+        <span className="font-mono text-xs text-muted-foreground tabular-nums">
           {position}/{total}
         </span>
       </span>

@@ -87,7 +87,8 @@ export const PALETTE_GROUPS: readonly PaletteGroup[] = [
       {
         type: "cover",
         icon: FileDashedIcon,
-        emits: "A title page carrying the report title, the customer and the window.",
+        emits:
+          "A title page carrying the report title, the customer and the window.",
       },
       {
         type: "heading",
@@ -132,12 +133,14 @@ export const PALETTE_GROUPS: readonly PaletteGroup[] = [
       {
         type: "distribution_chart",
         icon: ChartBarIcon,
-        emits: "How values spread across the window, from the collected sketch.",
+        emits:
+          "How values spread across the window, from the collected sketch.",
       },
       {
         type: "capacity_vs_usage",
         icon: ScalesIcon,
-        emits: "What each resource has against what it used — headroom, in one view.",
+        emits:
+          "What each resource has against what it used — headroom, in one view.",
       },
       {
         type: "comparison_delta",
@@ -152,7 +155,8 @@ export const PALETTE_GROUPS: readonly PaletteGroup[] = [
       {
         type: "executive_summary",
         icon: ArticleIcon,
-        emits: "Written prose about the figures. The model writes this and no number in it.",
+        emits:
+          "Written prose about the figures. The model writes this and no number in it.",
       },
       {
         type: "rich_text",
@@ -167,17 +171,20 @@ export const PALETTE_GROUPS: readonly PaletteGroup[] = [
       {
         type: "gaps_and_coverage",
         icon: WarningDiamondIcon,
-        emits: "What could not be collected, grouped by cause, and what that leaves out.",
+        emits:
+          "What could not be collected, grouped by cause, and what that leaves out.",
       },
       {
         type: "verification_record",
         icon: SealCheckIcon,
-        emits: "The digests and the figure count that prove the document against the snapshot.",
+        emits:
+          "The digests and the figure count that prove the document against the snapshot.",
       },
       {
         type: "appendix_methodology",
         icon: ListChecksIcon,
-        emits: "How each figure was produced — the grain, the aggregation, the estimators.",
+        emits:
+          "How each figure was produced — the grain, the aggregation, the estimators.",
       },
     ],
   },

@@ -90,7 +90,10 @@ function canonicalize(value: CanonicalizableValue, path: string): string {
 
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
-      throw new NotCanonicalizableError("a non-finite number has no canonical form", path)
+      throw new NotCanonicalizableError(
+        "a non-finite number has no canonical form",
+        path
+      )
     }
     if (!Number.isInteger(value)) {
       throw new NotCanonicalizableError(
@@ -110,7 +113,10 @@ function canonicalize(value: CanonicalizableValue, path: string): string {
   if (Array.isArray(value)) {
     const items = value.map((item, index) => {
       if (item === undefined) {
-        throw new NotCanonicalizableError("an array may not contain `undefined`", `${path}[${index}]`)
+        throw new NotCanonicalizableError(
+          "an array may not contain `undefined`",
+          `${path}[${index}]`
+        )
       }
       return canonicalize(item as CanonicalizableValue, `${path}[${index}]`)
     })
@@ -132,7 +138,10 @@ function canonicalize(value: CanonicalizableValue, path: string): string {
     return `{${members.join(",")}}`
   }
 
-  throw new NotCanonicalizableError(`unsupported value type "${typeof value}"`, path)
+  throw new NotCanonicalizableError(
+    `unsupported value type "${typeof value}"`,
+    path
+  )
 }
 
 /**

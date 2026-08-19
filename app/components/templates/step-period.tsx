@@ -5,7 +5,11 @@ import { useId, useMemo } from "react"
 import { Field, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import { PERIOD_KINDS, resolvePeriod, type PeriodKind } from "@/lib/templates/period"
+import {
+  PERIOD_KINDS,
+  resolvePeriod,
+  type PeriodKind,
+} from "@/lib/templates/period"
 
 /**
  * Step 3 — the period (Requirements 4.1, 4.2, 11.7).
@@ -175,9 +179,11 @@ export function StepPeriod({
         {resolved.ok ? (
           <p className="text-sm">
             Right now this resolves to{" "}
-            <span className="font-mono tabular-nums">{resolved.start}</span> through{" "}
+            <span className="font-mono tabular-nums">{resolved.start}</span>{" "}
+            through{" "}
             <span className="font-mono tabular-nums">{resolved.end}</span> —{" "}
-            <span className="font-mono tabular-nums">{resolved.days}</span> local
+            <span className="font-mono tabular-nums">{resolved.days}</span>{" "}
+            local
             {resolved.days === 1 ? " day" : " days"} in {resolved.timeZone} (
             <span className="font-mono">{resolved.utcOffset}</span>).
           </p>
@@ -191,9 +197,9 @@ export function StepPeriod({
           specification must not be mistaken for.
         */}
         <p className="text-xs text-muted-foreground">
-          An illustration, not a stored value. Every run resolves this rule again
-          at the moment it is enqueued, so next month&rsquo;s report needs no
-          edit. Nothing on this line is written into the template.
+          An illustration, not a stored value. Every run resolves this rule
+          again at the moment it is enqueued, so next month&rsquo;s report needs
+          no edit. Nothing on this line is written into the template.
         </p>
       </div>
     </div>

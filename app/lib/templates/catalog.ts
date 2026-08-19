@@ -193,7 +193,9 @@ function exactStatisticsFor(metric: RawMetric): readonly string[] {
 /** Every percentile the metric declares, with its estimator label and tier. */
 function percentilesFor(
   metric: RawMetric
-): Readonly<Record<string, { readonly estimator: string; readonly fidelityTier: string }>> {
+): Readonly<
+  Record<string, { readonly estimator: string; readonly fidelityTier: string }>
+> {
   const estimator = percentileEstimator(metric.unit_family)
   const entries: Record<
     string,
@@ -254,7 +256,9 @@ function derivedEntry(derived: RawDerived): MetricCatalogEntry {
   return {
     kind: "derived",
     name: derived.statistic_id,
-    statistics: EXACT_STATISTICS.filter((statistic) => directions.has(statistic)),
+    statistics: EXACT_STATISTICS.filter((statistic) =>
+      directions.has(statistic)
+    ),
     // A derived statistic is not a percentile, so it declares none — and
     // Requirement 5.8's estimator requirement is keyed on the percentile shape
     // of the statistic name, which none of `avg`/`min`/`max` has.

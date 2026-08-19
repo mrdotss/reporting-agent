@@ -310,8 +310,8 @@ export function RunForm({
           is what stops a consultant looking for the date fields that used to be
           here.
         */}
-        The collection window comes from the template&rsquo;s own period rule and
-        resolves when the run is enqueued, in {timezone}. A period is local:
+        The collection window comes from the template&rsquo;s own period rule
+        and resolves when the run is enqueued, in {timezone}. A period is local:
         &ldquo;July 2026&rdquo; means July in that zone, not July in UTC.
       </FieldDescription>
 

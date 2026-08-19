@@ -25,7 +25,11 @@ import {
 function validDefinition(): TemplateDefinition {
   return {
     schema_version: 1,
-    identity: { name: "Monthly utilization", description: "", report_title: "Monthly report" },
+    identity: {
+      name: "Monthly utilization",
+      description: "",
+      report_title: "Monthly report",
+    },
     scope: {
       resource_types: ["Microsoft.Compute/virtualMachines"],
       tag_filters: [],
@@ -35,10 +39,16 @@ function validDefinition(): TemplateDefinition {
     },
     period: { kind: "last_full_month" },
     metrics: {
-      "Microsoft.Compute/virtualMachines": [{ metric: "Percentage CPU", statistic: "avg" }],
+      "Microsoft.Compute/virtualMachines": [
+        { metric: "Percentage CPU", statistic: "avg" },
+      ],
     },
     blocks: [
-      { id: "heading-1", type: "heading", config: { level: 1, text: "Report" } },
+      {
+        id: "heading-1",
+        type: "heading",
+        config: { level: 1, text: "Report" },
+      },
       { id: "rich-1", type: "rich_text", config: { text: "Static prose." } },
     ],
     design: {
@@ -54,7 +64,9 @@ function validDefinition(): TemplateDefinition {
   }
 }
 
-function pathsOf(issues: readonly { readonly path: readonly (string | number)[] }[]): string[] {
+function pathsOf(
+  issues: readonly { readonly path: readonly (string | number)[] }[]
+): string[] {
   return issues.map((issue) => issue.path.join("."))
 }
 
@@ -85,7 +97,15 @@ describe("Requirement 2.1 — the seven required top-level keys", () => {
   test("every missing key is reported in one pass", () => {
     const issues = collectDefinitionIssues({})
     const paths = pathsOf(issues)
-    for (const key of ["schema_version", "identity", "scope", "period", "metrics", "blocks", "design"]) {
+    for (const key of [
+      "schema_version",
+      "identity",
+      "scope",
+      "period",
+      "metrics",
+      "blocks",
+      "design",
+    ]) {
       expect(paths).toContain(key)
     }
   })
@@ -181,7 +201,9 @@ describe("Requirement 2.10 — name, description and canonical byte-size bounds"
       identity: { ...definition.identity, description: "x".repeat(300_000) },
     }
     const issues = collectDefinitionIssues(oversized)
-    expect(issues.some((issue) => issue.message.includes("canonical form"))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes("canonical form"))
+    ).toBe(true)
   })
 })
 
@@ -194,7 +216,10 @@ describe("Requirement 3.1 — scope bounds", () => {
       ...definition,
       scope: {
         ...definition.scope,
-        resource_types: Array.from({ length: 21 }, (_, i) => `Microsoft.Compute/type${i}`),
+        resource_types: Array.from(
+          { length: 21 },
+          (_, i) => `Microsoft.Compute/type${i}`
+        ),
       },
     })
     expect(pathsOf(issues)).toContain("scope.resource_types")
@@ -206,7 +231,10 @@ describe("Requirement 3.1 — scope bounds", () => {
       ...definition,
       scope: {
         ...definition.scope,
-        tag_filters: Array.from({ length: 11 }, (_, i) => ({ key: `k${i}`, value: "v" })),
+        tag_filters: Array.from({ length: 11 }, (_, i) => ({
+          key: `k${i}`,
+          value: "v",
+        })),
       },
     })
     expect(pathsOf(issues)).toContain("scope.tag_filters")
@@ -261,7 +289,10 @@ describe("Requirement 3.1 — scope bounds", () => {
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      scope: { ...definition.scope, top_n: { count: 10, metric: "Percentage CPU" } },
+      scope: {
+        ...definition.scope,
+        top_n: { count: 10, metric: "Percentage CPU" },
+      },
     })
     expect(pathsOf(issues)).toContain("scope.top_n.statistic")
   })
@@ -337,11 +368,15 @@ describe("Requirement 1.3 — resource id / subscription id / tenant id rejected
   })
 
   test("looksLikeAzureIdentifier detects a bare GUID (subscription or tenant id)", () => {
-    expect(looksLikeAzureIdentifier("11111111-1111-1111-1111-111111111111")).toBe(true)
+    expect(
+      looksLikeAzureIdentifier("11111111-1111-1111-1111-111111111111")
+    ).toBe(true)
   })
 
   test("looksLikeAzureIdentifier accepts an ordinary resource type name", () => {
-    expect(looksLikeAzureIdentifier("Microsoft.Compute/virtualMachines")).toBe(false)
+    expect(looksLikeAzureIdentifier("Microsoft.Compute/virtualMachines")).toBe(
+      false
+    )
   })
 
   test("a resource id in scope.resource_types is named by its exact path", () => {
@@ -377,7 +412,9 @@ describe("Requirement 1.3 — resource id / subscription id / tenant id rejected
       ...definition,
       scope: {
         ...definition.scope,
-        tag_filters: [{ key: "env", value: "22222222-2222-2222-2222-222222222222" }],
+        tag_filters: [
+          { key: "env", value: "22222222-2222-2222-2222-222222222222" },
+        ],
       },
     })
     expect(pathsOf(issues)).toContain("scope.tag_filters.0.value")
@@ -402,43 +439,56 @@ describe("Requirement 1.3 — resource id / subscription id / tenant id rejected
         },
       ],
     })
-    expect(pathsOf(issues)).toContain("blocks.0.scope_override.resource_groups.0")
+    expect(pathsOf(issues)).toContain(
+      "blocks.0.scope_override.resource_groups.0"
+    )
   })
 
   test("the rejection states that a scope is expressed as types/filters/groups, not resources", () => {
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      scope: { ...definition.scope, resource_groups: ["11111111-1111-1111-1111-111111111111"] },
+      scope: {
+        ...definition.scope,
+        resource_groups: ["11111111-1111-1111-1111-111111111111"],
+      },
     })
-    expect(issues[0]?.message).toMatch(/resource types, tag filters and resource groups/)
+    expect(issues[0]?.message).toMatch(
+      /resource types, tag filters and resource groups/
+    )
   })
 })
 
 // --- Requirement 4.1, 4.2 — period ---------------------------------------
 
 describe("Requirement 4.1 — the six case-sensitive period values", () => {
-  test.each([
-    "last_24h",
-    "last_7d",
-    "last_30d",
-    "last_full_month",
-    "mtd",
-  ])("%s is accepted with no start/end", (kind) => {
-    const definition = validDefinition()
-    const issues = collectDefinitionIssues({ ...definition, period: { kind } })
-    expect(issues).toEqual([])
-  })
+  test.each(["last_24h", "last_7d", "last_30d", "last_full_month", "mtd"])(
+    "%s is accepted with no start/end",
+    (kind) => {
+      const definition = validDefinition()
+      const issues = collectDefinitionIssues({
+        ...definition,
+        period: { kind },
+      })
+      expect(issues).toEqual([])
+    }
+  )
 
   test("an unrecognized value is rejected", () => {
     const definition = validDefinition()
-    const issues = collectDefinitionIssues({ ...definition, period: { kind: "last_month" } })
+    const issues = collectDefinitionIssues({
+      ...definition,
+      period: { kind: "last_month" },
+    })
     expect(pathsOf(issues)).toContain("period.kind")
   })
 
   test("case sensitivity: LAST_24H is rejected", () => {
     const definition = validDefinition()
-    const issues = collectDefinitionIssues({ ...definition, period: { kind: "LAST_24H" } })
+    const issues = collectDefinitionIssues({
+      ...definition,
+      period: { kind: "LAST_24H" },
+    })
     expect(pathsOf(issues)).toContain("period.kind")
   })
 
@@ -516,7 +566,9 @@ describe("Requirement 5.1 — metric selection bounds", () => {
     const definition = validDefinition()
     const metrics: Record<string, { metric: string; statistic: string }[]> = {}
     for (let i = 0; i < 26; i += 1) {
-      metrics[`Microsoft.Compute/type${i}`] = [{ metric: "Percentage CPU", statistic: "avg" }]
+      metrics[`Microsoft.Compute/type${i}`] = [
+        { metric: "Percentage CPU", statistic: "avg" },
+      ]
     }
     const issues = collectDefinitionIssues({ ...definition, metrics })
     expect(pathsOf(issues)).toContain("metrics")
@@ -528,17 +580,24 @@ describe("Requirement 5.1 — metric selection bounds", () => {
       ...definition,
       metrics: { "Microsoft.Compute/virtualMachines": [] },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines"
+    )
   })
 
   test("an entry with 41 items is rejected", () => {
     const definition = validDefinition()
-    const items = Array.from({ length: 41 }, () => ({ metric: "Percentage CPU", statistic: "avg" }))
+    const items = Array.from({ length: 41 }, () => ({
+      metric: "Percentage CPU",
+      statistic: "avg",
+    }))
     const issues = collectDefinitionIssues({
       ...definition,
       metrics: { "Microsoft.Compute/virtualMachines": items },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines"
+    )
   })
 
   test("a bare string entry is rejected — entries must be objects", () => {
@@ -547,7 +606,9 @@ describe("Requirement 5.1 — metric selection bounds", () => {
       ...definition,
       metrics: { "Microsoft.Compute/virtualMachines": ["Percentage CPU"] },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0"
+    )
   })
 
   test("an entry naming both metric and derived is rejected", () => {
@@ -556,11 +617,17 @@ describe("Requirement 5.1 — metric selection bounds", () => {
       ...definition,
       metrics: {
         "Microsoft.Compute/virtualMachines": [
-          { metric: "Percentage CPU", derived: "memory_used_pct", statistic: "avg" },
+          {
+            metric: "Percentage CPU",
+            derived: "memory_used_pct",
+            statistic: "avg",
+          },
         ],
       },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0"
+    )
   })
 
   test("an entry naming neither metric nor derived is rejected", () => {
@@ -569,7 +636,9 @@ describe("Requirement 5.1 — metric selection bounds", () => {
       ...definition,
       metrics: { "Microsoft.Compute/virtualMachines": [{ statistic: "avg" }] },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0"
+    )
   })
 })
 
@@ -598,11 +667,17 @@ describe("Requirements 5.7, 5.8 — a percentile entry requires an estimator and
       ...definition,
       metrics: {
         "Microsoft.Compute/virtualMachines": [
-          { metric: "Percentage CPU", statistic: "p95", fidelity_tier: "baseline" },
+          {
+            metric: "Percentage CPU",
+            statistic: "p95",
+            fidelity_tier: "baseline",
+          },
         ],
       },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0.estimator")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0.estimator"
+    )
   })
 
   test("p95 without a fidelity_tier is rejected", () => {
@@ -619,7 +694,9 @@ describe("Requirements 5.7, 5.8 — a percentile entry requires an estimator and
         ],
       },
     })
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0.fidelity_tier")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0.fidelity_tier"
+    )
   })
 
   test("p95 without either field reports both as separate issues", () => {
@@ -627,12 +704,18 @@ describe("Requirements 5.7, 5.8 — a percentile entry requires an estimator and
     const issues = collectDefinitionIssues({
       ...definition,
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Percentage CPU", statistic: "p95" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Percentage CPU", statistic: "p95" },
+        ],
       },
     })
     const paths = pathsOf(issues)
-    expect(paths).toContain("metrics.Microsoft.Compute/virtualMachines.0.estimator")
-    expect(paths).toContain("metrics.Microsoft.Compute/virtualMachines.0.fidelity_tier")
+    expect(paths).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0.estimator"
+    )
+    expect(paths).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0.fidelity_tier"
+    )
   })
 
   test("a non-percentile statistic (avg) needs neither field", () => {
@@ -640,7 +723,9 @@ describe("Requirements 5.7, 5.8 — a percentile entry requires an estimator and
     const issues = collectDefinitionIssues({
       ...definition,
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Percentage CPU", statistic: "avg" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Percentage CPU", statistic: "avg" },
+        ],
       },
     })
     expect(issues).toEqual([])
@@ -654,7 +739,13 @@ describe("Requirement 6.2 — block shape", () => {
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      blocks: [{ id: "a".repeat(65), type: "heading", config: { level: 1, text: "x" } }],
+      blocks: [
+        {
+          id: "a".repeat(65),
+          type: "heading",
+          config: { level: 1, text: "x" },
+        },
+      ],
     })
     expect(pathsOf(issues)).toContain("blocks.0.id")
   })
@@ -663,7 +754,13 @@ describe("Requirement 6.2 — block shape", () => {
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      blocks: [{ id: "a".repeat(64), type: "heading", config: { level: 1, text: "x" } }],
+      blocks: [
+        {
+          id: "a".repeat(64),
+          type: "heading",
+          config: { level: 1, text: "x" },
+        },
+      ],
     })
     expect(issues).toEqual([])
   })
@@ -741,7 +838,9 @@ describe("Requirement 6.3 — at most 200 blocks, counting rows and children", (
     // total = 100 + 1(row) + 50 + 49 = 200
     const definition = validDefinition()
     const issues = collectDefinitionIssues({ ...definition, blocks })
-    expect(issues.some((issue) => issue.message.includes("at most 200 blocks"))).toBe(false)
+    expect(
+      issues.some((issue) => issue.message.includes("at most 200 blocks"))
+    ).toBe(false)
   })
 
   test("201 blocks is rejected", () => {
@@ -752,7 +851,9 @@ describe("Requirement 6.3 — at most 200 blocks, counting rows and children", (
     }))
     const definition = validDefinition()
     const issues = collectDefinitionIssues({ ...definition, blocks: topLevel })
-    expect(issues.some((issue) => issue.message.includes("at most 200 blocks"))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes("at most 200 blocks"))
+    ).toBe(true)
   })
 })
 
@@ -767,10 +868,7 @@ describe("Requirement 6.4 — a row inside a row is rejected at any depth", () =
         {
           id: "outer-row",
           type: "row",
-          columns: [
-            [{ id: "inner-row", type: "row", columns: [[], []] }],
-            [],
-          ],
+          columns: [[{ id: "inner-row", type: "row", columns: [[], []] }], []],
         },
       ],
     })
@@ -790,7 +888,10 @@ describe("Requirement 6.4 — a row inside a row is rejected at any depth", () =
               {
                 id: "mid-row",
                 type: "row",
-                columns: [[{ id: "deep-row", type: "row", columns: [[], []] }], []],
+                columns: [
+                  [{ id: "deep-row", type: "row", columns: [[], []] }],
+                  [],
+                ],
               },
             ],
             [],
@@ -813,11 +914,16 @@ describe("Requirement 6.4 — a row inside a row is rejected at any depth", () =
         {
           id: "outer-row",
           type: "row",
-          columns: [[{ id: "bad-inner-row", type: "row", columns: [[], []] }], []],
+          columns: [
+            [{ id: "bad-inner-row", type: "row", columns: [[], []] }],
+            [],
+          ],
         },
       ],
     })
-    expect(issues.some((issue) => issue.message.includes("bad-inner-row"))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes("bad-inner-row"))
+    ).toBe(true)
   })
 
   test("a row nested with everything else valid still reports only the nesting issue", () => {
@@ -830,7 +936,13 @@ describe("Requirement 6.4 — a row inside a row is rejected at any depth", () =
           type: "row",
           columns: [
             [{ id: "inner-row", type: "row", columns: [[], []] }],
-            [{ id: "ok-heading", type: "heading", config: { level: 1, text: "x" } }],
+            [
+              {
+                id: "ok-heading",
+                type: "heading",
+                config: { level: 1, text: "x" },
+              },
+            ],
           ],
         },
       ],
@@ -846,10 +958,18 @@ describe("Requirement 6.6 — rich_text carries static prose and no figure", () 
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      blocks: [{ id: "rt-1", type: "rich_text", config: { text: "hi", metric: "Percentage CPU" } }],
+      blocks: [
+        {
+          id: "rt-1",
+          type: "rich_text",
+          config: { text: "hi", metric: "Percentage CPU" },
+        },
+      ],
     })
     expect(pathsOf(issues)).toContain("blocks.0.config.metric")
-    expect(issues.some((issue) => issue.message.includes('bind "metric"'))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes('bind "metric"'))
+    ).toBe(true)
   })
 
   test.each(["statistic", "resource_id", "scope", "snapshot_path"])(
@@ -858,7 +978,13 @@ describe("Requirement 6.6 — rich_text carries static prose and no figure", () 
       const definition = validDefinition()
       const issues = collectDefinitionIssues({
         ...definition,
-        blocks: [{ id: "rt-1", type: "rich_text", config: { text: "hi", [field]: "x" } }],
+        blocks: [
+          {
+            id: "rt-1",
+            type: "rich_text",
+            config: { text: "hi", [field]: "x" },
+          },
+        ],
       })
       expect(pathsOf(issues)).toContain(`blocks.0.config.${field}`)
     }
@@ -886,7 +1012,9 @@ describe("Requirement 6.7 — duplicate block id, counting row children", () => 
         { id: "dup", type: "heading", config: { level: 1, text: "b" } },
       ],
     })
-    expect(issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))
+    ).toBe(true)
   })
 
   test("a duplicate between a top-level block and a row child is rejected", () => {
@@ -898,11 +1026,16 @@ describe("Requirement 6.7 — duplicate block id, counting row children", () => 
         {
           id: "row-1",
           type: "row",
-          columns: [[{ id: "dup", type: "heading", config: { level: 1, text: "b" } }], []],
+          columns: [
+            [{ id: "dup", type: "heading", config: { level: 1, text: "b" } }],
+            [],
+          ],
         },
       ],
     })
-    expect(issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))
+    ).toBe(true)
   })
 
   test("a duplicate between two different row columns is rejected", () => {
@@ -920,7 +1053,9 @@ describe("Requirement 6.7 — duplicate block id, counting row children", () => 
         },
       ],
     })
-    expect(issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))).toBe(true)
+    expect(
+      issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))
+    ).toBe(true)
   })
 
   test("distinct ids report no duplicate issue", () => {
@@ -950,14 +1085,23 @@ describe("Requirement 6.5 — absolute position, coordinate, offset, size or pag
     "page_number",
   ])("a block-level field named %s is rejected, naming the field", (field) => {
     const definition = validDefinition()
-    const block = { id: "h1", type: "heading", config: { level: 1, text: "x" }, [field]: 5 }
+    const block = {
+      id: "h1",
+      type: "heading",
+      config: { level: 1, text: "x" },
+      [field]: 5,
+    }
     const issues = collectDefinitionIssues({ ...definition, blocks: [block] })
     expect(pathsOf(issues)).toContain(`blocks.0.${field}`)
   })
 
   test("a config-level positioning field is rejected", () => {
     const definition = validDefinition()
-    const block = { id: "h1", type: "heading", config: { level: 1, text: "x", offset_left: 10 } }
+    const block = {
+      id: "h1",
+      type: "heading",
+      config: { level: 1, text: "x", offset_left: 10 },
+    }
     const issues = collectDefinitionIssues({ ...definition, blocks: [block] })
     expect(pathsOf(issues)).toContain("blocks.0.config.offset_left")
   })
@@ -979,7 +1123,13 @@ describe("Requirement 6.9 — an undeclared block type or config field is reject
     const definition = validDefinition()
     const issues = collectDefinitionIssues({
       ...definition,
-      blocks: [{ id: "h1", type: "heading", config: { level: 1, text: "x", bogus_field: 1 } }],
+      blocks: [
+        {
+          id: "h1",
+          type: "heading",
+          config: { level: 1, text: "x", bogus_field: 1 },
+        },
+      ],
     })
     expect(pathsOf(issues)).toContain("blocks.0.config.bogus_field")
   })
@@ -1003,7 +1153,11 @@ describe("Requirement 6.9 — an undeclared block type or config field is reject
         {
           id: "top-1",
           type: "top_n_table",
-          config: { columns: ["id"], order_by: "cpu", order_by_direction: "sideways" },
+          config: {
+            columns: ["id"],
+            order_by: "cpu",
+            order_by_direction: "sideways",
+          },
         },
       ],
     })
@@ -1022,19 +1176,28 @@ describe("Requirement 6.8 — zero blocks is a valid draft and an invalid run", 
 
   test("run mode rejects zero blocks", () => {
     const definition = validDefinition()
-    const issues = collectDefinitionIssues({ ...definition, blocks: [] }, { mode: "run" })
+    const issues = collectDefinitionIssues(
+      { ...definition, blocks: [] },
+      { mode: "run" }
+    )
     expect(pathsOf(issues)).toContain("blocks")
   })
 
   test("templateDefinitionForRunSchema rejects zero blocks", () => {
     const definition = validDefinition()
-    const result = templateDefinitionForRunSchema.safeParse({ ...definition, blocks: [] })
+    const result = templateDefinitionForRunSchema.safeParse({
+      ...definition,
+      blocks: [],
+    })
     expect(result.success).toBe(false)
   })
 
   test("templateDefinitionSchema (draft) accepts zero blocks", () => {
     const definition = validDefinition()
-    const result = templateDefinitionSchema.safeParse({ ...definition, blocks: [] })
+    const result = templateDefinitionSchema.safeParse({
+      ...definition,
+      blocks: [],
+    })
     expect(result.success).toBe(true)
   })
 })
@@ -1071,7 +1234,9 @@ describe("Requirement 5.9 — a scoped resource type with no metric selected", (
           {
             id: "storage-table",
             type: "resource_table",
-            config: { columns: [{ metric: "Percentage CPU", statistic: "avg" }] },
+            config: {
+              columns: [{ metric: "Percentage CPU", statistic: "avg" }],
+            },
             scope_override: {
               resource_types: [STORAGE],
               tag_filters: [],
@@ -1085,7 +1250,9 @@ describe("Requirement 5.9 — a scoped resource type with no metric selected", (
       { mode: "run" }
     )
 
-    expect(pathsOf(issues)).toEqual(["blocks.2.scope_override.resource_types.0"])
+    expect(pathsOf(issues)).toEqual([
+      "blocks.2.scope_override.resource_types.0",
+    ])
   })
 
   test("a row child's scope_override is reached too", () => {
@@ -1102,7 +1269,9 @@ describe("Requirement 5.9 — a scoped resource type with no metric selected", (
                 {
                   id: "storage-child",
                   type: "resource_table",
-                  config: { columns: [{ metric: "Percentage CPU", statistic: "avg" }] },
+                  config: {
+                    columns: [{ metric: "Percentage CPU", statistic: "avg" }],
+                  },
                   scope_override: {
                     resource_types: [STORAGE],
                     tag_filters: [],
@@ -1165,7 +1334,9 @@ describe("Requirement 5.9 — a scoped resource type with no metric selected", (
 
     expect(collectDefinitionIssues(candidate)).toEqual([])
     expect(templateDefinitionSchema.safeParse(candidate).success).toBe(true)
-    expect(templateDefinitionForRunSchema.safeParse(candidate).success).toBe(false)
+    expect(templateDefinitionForRunSchema.safeParse(candidate).success).toBe(
+      false
+    )
   })
 
   test("a scope naming no resource type is unconstrained, and not an issue", () => {
@@ -1185,14 +1356,17 @@ describe("Requirement 5.9 — a scoped resource type with no metric selected", (
 // --- Requirement 7.1, 7.2 — design schema -----------------------------------
 
 describe("Requirement 7.1 — design preset, exactly four case-sensitive values", () => {
-  test.each(["editorial", "corporate", "technical", "minimal"])("%s is accepted", (preset) => {
-    const definition = validDefinition()
-    const issues = collectDefinitionIssues({
-      ...definition,
-      design: { ...definition.design, preset },
-    })
-    expect(issues).toEqual([])
-  })
+  test.each(["editorial", "corporate", "technical", "minimal"])(
+    "%s is accepted",
+    (preset) => {
+      const definition = validDefinition()
+      const issues = collectDefinitionIssues({
+        ...definition,
+        design: { ...definition.design, preset },
+      })
+      expect(issues).toEqual([])
+    }
+  )
 
   test("a fifth value is rejected", () => {
     const definition = validDefinition()
@@ -1325,9 +1499,11 @@ describe("validation is one pass reporting every violation, not the first", () =
     const paths = result.error.issues.map((issue) => issue.path.join("."))
     expect(paths).toContain("schema_version")
     expect(paths).toContain("design.preset")
-    expect(result.error.issues.some((issue) => issue.message.includes('Duplicate block id "dup"'))).toBe(
-      true
-    )
+    expect(
+      result.error.issues.some((issue) =>
+        issue.message.includes('Duplicate block id "dup"')
+      )
+    ).toBe(true)
     // At least 3 distinct issues in one pass — not just the first one found.
     expect(result.error.issues.length).toBeGreaterThanOrEqual(3)
   })
@@ -1355,7 +1531,10 @@ describe("validateMetricSelectionAgainstCatalog — the catalog-aware layer", ()
           name: "Percentage CPU",
           statistics: ["avg", "min", "max", "p95"],
           percentiles: {
-            p95: { estimator: "histogram_sketch_pt1h_interval_average", fidelityTier: "baseline" },
+            p95: {
+              estimator: "histogram_sketch_pt1h_interval_average",
+              fidelityTier: "baseline",
+            },
           },
         },
         {
@@ -1380,50 +1559,68 @@ describe("validateMetricSelectionAgainstCatalog — the catalog-aware layer", ()
     const definition: TemplateDefinition = {
       ...validDefinition(),
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Percentage CPU", statistic: "avg" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Percentage CPU", statistic: "avg" },
+        ],
       },
     }
-    expect(validateMetricSelectionAgainstCatalog(definition, catalog)).toEqual([])
+    expect(validateMetricSelectionAgainstCatalog(definition, catalog)).toEqual(
+      []
+    )
   })
 
   test("a metric absent from the catalog for that resource type is rejected", () => {
     const definition: TemplateDefinition = {
       ...validDefinition(),
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Not A Real Metric", statistic: "avg" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Not A Real Metric", statistic: "avg" },
+        ],
       },
     }
     const issues = validateMetricSelectionAgainstCatalog(definition, catalog)
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0"
+    )
   })
 
   test("a resource type the catalog declares nothing for is rejected", () => {
     const definition: TemplateDefinition = {
       ...validDefinition(),
       metrics: {
-        "Microsoft.Storage/storageAccounts": [{ metric: "Whatever", statistic: "avg" }],
+        "Microsoft.Storage/storageAccounts": [
+          { metric: "Whatever", statistic: "avg" },
+        ],
       },
     }
     const issues = validateMetricSelectionAgainstCatalog(definition, catalog)
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Storage/storageAccounts")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Storage/storageAccounts"
+    )
   })
 
   test("a statistic the catalog does not declare for that metric is rejected", () => {
     const definition: TemplateDefinition = {
       ...validDefinition(),
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Percentage CPU", statistic: "p50" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Percentage CPU", statistic: "p50" },
+        ],
       },
     }
     const issues = validateMetricSelectionAgainstCatalog(definition, catalog)
-    expect(pathsOf(issues)).toContain("metrics.Microsoft.Compute/virtualMachines.0.statistic")
+    expect(pathsOf(issues)).toContain(
+      "metrics.Microsoft.Compute/virtualMachines.0.statistic"
+    )
   })
 
   test("a derived statistic whose source metric is not also selected is rejected", () => {
     const definition: TemplateDefinition = {
       ...validDefinition(),
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ derived: "memory_used_pct", statistic: "avg" }],
+        "Microsoft.Compute/virtualMachines": [
+          { derived: "memory_used_pct", statistic: "avg" },
+        ],
       },
     }
     const issues = validateMetricSelectionAgainstCatalog(definition, catalog)
@@ -1454,7 +1651,9 @@ describe("validateMetricSelectionAgainstCatalog — the catalog-aware layer", ()
     const result = templateDefinitionSchema.safeParse({
       ...definition,
       metrics: {
-        "Microsoft.Compute/virtualMachines": [{ metric: "Not A Real Metric At All", statistic: "avg" }],
+        "Microsoft.Compute/virtualMachines": [
+          { metric: "Not A Real Metric At All", statistic: "avg" },
+        ],
       },
     })
     expect(result.success).toBe(true)

@@ -7,10 +7,7 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
-import {
-  toRunView,
-  type RunView,
-} from "@/lib/db/views"
+import { toRunView, type RunView } from "@/lib/db/views"
 import { loadRunGaps, type RunGap } from "@/lib/runs/gaps"
 import { runIdParamSchema, runQuerySchema } from "@/lib/runs/input"
 import { resolveRunExtras } from "@/lib/runs/detail"

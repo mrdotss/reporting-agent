@@ -94,7 +94,9 @@ describe("Requirement 38.4 — hover and focus reveal identically", () => {
     fireEvent.focus(figure(container))
 
     expect(
-      container.querySelector("[data-slot='figure-provenance']")?.getAttribute("data-open")
+      container
+        .querySelector("[data-slot='figure-provenance']")
+        ?.getAttribute("data-open")
     ).toBe("true")
   })
 
@@ -137,7 +139,9 @@ describe("Requirement 38.4 — hover and focus reveal identically", () => {
     fireEvent.blur(figure(container))
 
     expect(
-      container.querySelector("[data-slot='figure-provenance']")?.getAttribute("data-open")
+      container
+        .querySelector("[data-slot='figure-provenance']")
+        ?.getAttribute("data-open")
     ).toBe("false")
   })
 
@@ -152,7 +156,9 @@ describe("Requirement 38.4 — hover and focus reveal identically", () => {
     fireEvent.keyDown(document, { key: "Escape" })
 
     expect(
-      container.querySelector("[data-slot='figure-provenance']")?.getAttribute("data-open")
+      container
+        .querySelector("[data-slot='figure-provenance']")
+        ?.getAttribute("data-open")
     ).toBe("false")
     // The point of Escape being separate from blur: a keyboard reader closing
     // the reveal must not lose the position they navigated to.

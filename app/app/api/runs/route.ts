@@ -11,11 +11,7 @@ import {
   unprocessable,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
-import {
-  NO_RUN_VIEW_EXTRAS,
-  toRunView,
-  type RunView,
-} from "@/lib/db/views"
+import { NO_RUN_VIEW_EXTRAS, toRunView, type RunView } from "@/lib/db/views"
 import { runCreateInputSchema } from "@/lib/runs/input"
 import { resolveRunExtras, resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"

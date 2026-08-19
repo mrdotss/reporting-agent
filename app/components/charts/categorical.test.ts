@@ -43,7 +43,11 @@ describe("Requirement 22.11 — colour follows the key, not the position", () =>
     // The guard against the bug this file was rewritten to remove: a private
     // sort-and-index here would disagree with `chartstyle.py`, and the two
     // charts would silently use different colours for one resource.
-    for (const key of ["web-01", "db-01", "Microsoft.Compute/virtualMachines"]) {
+    for (const key of [
+      "web-01",
+      "db-01",
+      "Microsoft.Compute/virtualMachines",
+    ]) {
       expect(styleForKey(key)).toEqual(styleForSlot(slotForKey(key)))
     }
   })
@@ -53,7 +57,9 @@ describe("Requirement 22.8 — never colour alone", () => {
   test("every slot carries a distinct marker and dash as well as a token", () => {
     const styles = CATEGORICAL_TOKENS.map((_, slot) => styleForSlot(slot))
 
-    expect(new Set(styles.map((style) => style.marker)).size).toBe(styles.length)
+    expect(new Set(styles.map((style) => style.marker)).size).toBe(
+      styles.length
+    )
     expect(new Set(styles.map((style) => style.dash)).size).toBe(styles.length)
   })
 

@@ -100,6 +100,11 @@ function claimed(id: string): ClaimedRun {
       resource_groups: [],
       tag_filters: {},
     },
+    // The pinned version the claim now returns. `startRunInvocation` is faked in this
+    // file, so nothing here reads it — it is present because `ClaimedRun` requires it,
+    // and requiring it is the point: a claim that dropped the column would invoke every
+    // run as snapshot-only.
+    templateVersionId: "ver-1",
   }
 }
 

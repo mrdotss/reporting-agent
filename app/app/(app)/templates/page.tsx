@@ -120,7 +120,10 @@ export default async function TemplatesPage() {
       {templates.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-start gap-2">
-            <StackIcon aria-hidden="true" className="size-5 text-muted-foreground" />
+            <StackIcon
+              aria-hidden="true"
+              className="size-5 text-muted-foreground"
+            />
 
             <p className="text-sm text-muted-foreground">
               You have no templates. Three starters are normally created with

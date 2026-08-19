@@ -118,7 +118,8 @@ export async function POST(request: Request): Promise<Response> {
       template: toTemplateView(template, version),
     } satisfies CreateResponseBody)
   } catch (thrown) {
-    if (thrown instanceof TemplateInvalidError) return definitionRejected(thrown)
+    if (thrown instanceof TemplateInvalidError)
+      return definitionRejected(thrown)
 
     console.error(
       `[api/templates] POST failed: ` +

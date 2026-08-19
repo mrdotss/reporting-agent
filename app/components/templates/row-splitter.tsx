@@ -52,7 +52,10 @@ export function RowSplitter({
       aria-label="Row columns"
       className="flex items-center gap-2"
     >
-      <ColumnsIcon aria-hidden="true" className="size-3.5 text-muted-foreground" />
+      <ColumnsIcon
+        aria-hidden="true"
+        className="size-3.5 text-muted-foreground"
+      />
 
       <span className="text-xs text-muted-foreground">Columns</span>
 

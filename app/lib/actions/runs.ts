@@ -22,10 +22,7 @@ import {
   type PeriodSpec,
 } from "@/lib/templates/period"
 import { unionScope } from "@/lib/templates/scope-union"
-import {
-  readLatestVersion,
-  TemplateNotFoundError,
-} from "@/lib/templates/store"
+import { readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import {

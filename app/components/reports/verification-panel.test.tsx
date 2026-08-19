@@ -60,7 +60,12 @@ function view(over: Partial<VerificationView> = {}): VerificationView {
       objectsFolded: 12,
       objectsNamed: 12,
     },
-    driftSample: { n: 25, method: "stratified", seed: "abc123", notRequeried: [] },
+    driftSample: {
+      n: 25,
+      method: "stratified",
+      seed: "abc123",
+      notRequeried: [],
+    },
     blockingFindings: [],
     advisoryFindings: [],
     counts: { blocking: 0, advisory: 0 },
@@ -123,7 +128,13 @@ describe("Requirement 39.3 — failure is loud and specific", () => {
     // Requirement 39.3 names the table identity with its row and column key, and
     // the expected and observed strings. Two bare strings side by side are a
     // puzzle; the labels are what make them legible.
-    for (const value of ["resources", "web-01", "CPU avg", "64.20%", "46.20%"]) {
+    for (const value of [
+      "resources",
+      "web-01",
+      "CPU avg",
+      "64.20%",
+      "46.20%",
+    ]) {
       expect(screen.getByText(value), value).toBeTruthy()
     }
   })
@@ -161,7 +172,9 @@ describe("Requirement 39.10 — an unrecognized finding type is still presented"
       />
     )
 
-    expect(screen.getByText("a_check_this_build_has_never_heard_of")).toBeTruthy()
+    expect(
+      screen.getByText("a_check_this_build_has_never_heard_of")
+    ).toBeTruthy()
     expect(screen.getByText("b3:0.1")).toBeTruthy()
     expect(
       container.querySelector("[data-slot='blocking-findings']")?.children
@@ -175,7 +188,11 @@ describe("Requirement 39.5 — advisory findings are separate and not destructiv
       <VerificationPanel
         verification={view({
           advisoryFindings: [
-            { type: "drift_observed", severity: "advisory", message: "A drift." },
+            {
+              type: "drift_observed",
+              severity: "advisory",
+              message: "A drift.",
+            },
           ],
           counts: { blocking: 0, advisory: 1 },
         })}
@@ -193,7 +210,11 @@ describe("Requirement 39.5 — advisory findings are separate and not destructiv
       <VerificationPanel
         verification={view({
           advisoryFindings: [
-            { type: "drift_observed", severity: "advisory", message: "A drift." },
+            {
+              type: "drift_observed",
+              severity: "advisory",
+              message: "A drift.",
+            },
           ],
           counts: { blocking: 0, advisory: 1 },
         })}

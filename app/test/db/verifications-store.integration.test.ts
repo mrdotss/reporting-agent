@@ -345,9 +345,7 @@ describe("latestForRun", () => {
 
 describe("readLatestVerificationStatus", () => {
   test("undefined when the run carries no verification", async () => {
-    await expect(
-      readLatestVerificationStatus(runId)
-    ).resolves.toBeUndefined()
+    await expect(readLatestVerificationStatus(runId)).resolves.toBeUndefined()
   })
 
   test("returns the latest attempt's status, distinguishing fail from absent", async () => {

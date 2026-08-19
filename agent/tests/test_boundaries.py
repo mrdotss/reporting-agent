@@ -1,6 +1,15 @@
 """Static boundary guards for the agent runtime (Req 18.5, 18.7, 19.7).
 
-Three rules, all asserted with `ast` over `src/reporting_agent/**/*.py`:
+Rules 1 through 10, all asserted with `ast` over `src/reporting_agent/**/*.py`. The three
+below were written before the code they guard; 4 through 9 were appended as the packages
+they cover landed, and each is documented where it is defined rather than restated here.
+Rule 7 has two halves — one display *assignment* and one display *computation* — so it is
+numbered 7 and 7b.
+
+**Rule 10 is the completeness rule**, and it is about the other nine: every directory any
+of them sweeps must exist and yield at least one module, and the declared set must be
+every package in the tree, so no rule here can pass by scanning nothing and no package can
+arrive unswept.
 
 1. **Only `src/reporting_agent/azure/` may import an Azure SDK** (Req 18.5, 18.7).
    The test fails on any import whose **first dotted segment is exactly `azure`** from
@@ -24,18 +33,25 @@ Three rules, all asserted with `ast` over `src/reporting_agent/**/*.py`:
    `unicodedata.normalize` must not appear where the snapshot is built, canonicalized or
    hashed. `rfc8785` does not normalize; neither may we.
 
-**This guard is deliberately written before most of the code it guards.** `azure/` holds
-only `__init__.py` today and `collect/` is likewise near-empty; sections 6, 9 and 11 add
-the SDK modules, the pipeline and the snapshot builder. So the guard must be correct on a
-sparse tree, which has two consequences worth stating because both look like omissions:
+**This guard was deliberately written before most of the code it guards**, which shaped
+two things about it. Both are worth reading, because the first has since been reversed and
+the second has not:
 
-* There is **no "a scanned directory must be non-empty" rule here.** That rule is real,
-  but it belongs to the app-side guard (Req 6.11); applied here it would fail today on a
-  perfectly correct tree.
+* There **used to be no "a scanned directory must be non-empty" rule here**, on the
+  grounds that `azure/` held only `__init__.py` and `collect/` was near-empty, so the rule
+  would have failed on a correct tree. Every package the rules above sweep now exists and
+  holds modules, so that argument has expired and the rule is **rule 10** below, over
+  :data:`GUARDED_PACKAGES` — asserted for the whole set at once and, where a rule filters
+  its own scan further, again inside that rule. A guard that passes by scanning nothing is
+  the failure mode this module is most prone to, and the only reason it was not closed
+  from the start was that the tree could not support it yet.
 * Because a green run over a sparse tree proves little, every predicate is
   **guard-the-guard tested** against synthetic modules written to `tmp_path`: each
-  forbidden spelling must be caught and each canonical one permitted. Those tests are
-  what stop this module from passing vacuously until section 6 lands.
+  forbidden spelling must be caught and each canonical one permitted. That discipline is
+  kept for every rule added since, and it is what makes each rule's green meaningful
+  rather than merely quiet. The `tmp_path` cases deliberately still exercise sparse
+  synthetic trees — the *predicates* must stay correct on a tree with an empty package,
+  even though the *repository* is now required not to have one.
 
 Rules 2 and 3 match **code, not text.** Both identifiers legitimately appear in prose —
 `azure/credential.py` will explain why the ambient credential is absent, and
@@ -396,9 +412,16 @@ def test_the_declared_snapshot_path_stays_honest() -> None:
     """The declaration is explicit, so it needs its own guard against drifting.
 
     Every declared entry lives in one of the two packages that build or hash a
-    content-addressed artifact (absent is fine — a few are not written yet), and every
-    `collect/` module that *does* exist must be declared, so a new one cannot join the
-    snapshot path unclassified and unguarded.
+    content-addressed artifact and **must now exist**, and every `collect/` module that
+    exists must be declared, so a new one cannot join the snapshot path unclassified and
+    unguarded.
+
+    The existence half is the completeness rule (rule 10) applied to a hand-written list
+    rather than to a directory: this scan is `_snapshot_path_modules()`, which silently
+    skips an absent entry, so a renamed module would quietly leave the no-normalization
+    rule while the rule stayed green over the remainder. When the list was written most of
+    it had not been created yet and absence had to be tolerated; all thirteen exist now,
+    so tolerating it buys nothing and costs the rule its reach.
 
     `compile/` is enumerated rather than swept: most of it neither builds nor hashes an
     artifact, and sweeping it would put the ban on modules that have no hash path to
@@ -409,7 +432,17 @@ def test_the_declared_snapshot_path_stays_honest() -> None:
         assert relative.startswith(("collect/", "compile/")), relative
         assert relative.endswith(".py"), relative
         path = SRC_ROOT / relative
-        assert not path.exists() or path.is_file(), path
+        assert path.is_file(), (
+            f"{relative} is declared on the snapshot path and does not exist, so the "
+            "no-normalization rule silently skips it; a renamed module must be renamed "
+            "in SNAPSHOT_PATH_MODULES too"
+        )
+
+    # The scan the rule actually uses sees every declared module, which is the assertion
+    # that ties the list above to the rule below it.
+    assert {
+        p.relative_to(SRC_ROOT).as_posix() for p in _snapshot_path_modules()
+    } == set(SNAPSHOT_PATH_MODULES)
 
     collect_root = SRC_ROOT / "collect"
     existing = {
@@ -923,7 +956,9 @@ def test_no_module_outside_narrate_reaches_a_bedrock_client() -> None:
     The value is not that a stray call would be wrong today — it is that "audit the model
     call sites" is `ls narrate/` rather than a search of the whole tree, permanently.
     """
-    offenders = _bedrock_offenders(_modules_outside(NARRATE_PACKAGE))
+    scanned = _modules_outside(NARRATE_PACKAGE)
+    assert scanned, "the scan matched no modules outside narrate/"
+    offenders = _bedrock_offenders(scanned)
 
     assert not offenders, (
         "these modules outside narrate/ reach a Bedrock client: " + "; ".join(offenders)
@@ -1040,6 +1075,12 @@ def test_a_figures_formatted_string_is_assigned_in_exactly_one_module() -> None:
         if path.relative_to(SRC_ROOT).as_posix() != FORMATTED_OWNER
     ]
 
+    assert scanned, "the scan matched no modules outside the one owner"
+    assert (SRC_ROOT / FORMATTED_OWNER).is_file(), (
+        f"{FORMATTED_OWNER} does not exist, so excluding it excludes nothing and the "
+        "rule below has no owner to be the exception to"
+    )
+
     offenders = _formatted_assignment_offenders(scanned)
 
     assert not offenders, (
@@ -1077,6 +1118,121 @@ def test_the_scan_detects_a_second_display_path(source: str, tmp_path: Path) -> 
 def test_the_scan_permits_reading_a_formatted_string(source: str, tmp_path: Path) -> None:
     module = _write(tmp_path, "permitted.py", source)
     assert not _formatted_assignment_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 7b — the display quantization helper has exactly one importer (Req 18.1, 18.3)
+# --------------------------------------------------------------------------- #
+#
+# Rule 7 bans a second *assignment* of `formatted`. This is the same rule one level down:
+# it bans a second place that could **compute** one. Req 18.3 pins the display rounding
+# mode to half away from zero, which in `decimal`'s vocabulary is `ROUND_HALF_UP`, and
+# `compile/format.py` is the only module that may name it.
+#
+# The mode is what makes this checkable at all, and the reason is worth stating because
+# the codebase looks, at a glance, like it contradicts the rule. There are **two**
+# quantizations here with two jobs, and they use two different modes on purpose:
+#
+#   ROUND_HALF_EVEN  collect/snapshot.py, collect/accumulate.py — decides the bytes a
+#                    content address is taken over. Banker's rounding is the right neutral
+#                    choice for an aggregate, and it must not move.
+#   ROUND_HALF_UP    compile/format.py — decides what a human reads.
+#
+# So a second importer of `ROUND_HALF_UP` is not a stylistic duplicate; it is a second
+# module in a position to turn a value into display digits, and the verifier compares
+# document tokens against `formatted`. Two modules rounding, and one report eventually
+# carries a digit the ledger disagrees with — on a document that was actually correct,
+# which is the failure Req 18.1 exists to make unconstructible.
+#
+# `ROUND_HALF_EVEN` is deliberately **not** guarded: it has two legitimate importers, both
+# on the snapshot path, and a rule with two owners is a list rather than a boundary.
+
+QUANTIZATION_HELPER = "ROUND_HALF_UP"
+QUANTIZATION_OWNER = FORMATTED_OWNER.replace("figures.py", "format.py")
+"""Derived from rule 7's owner rather than written out, so the pair reads as one decision:
+`compile/figures.py` is the only module that *assigns* a display string and
+`compile/format.py` is the only module that can *compute* one."""
+
+
+def test_only_the_formatter_imports_the_display_quantization_helper() -> None:
+    """Req 18.1, 18.3 — one rounding mode, in one module, for every value and unit."""
+    owner = SRC_ROOT / QUANTIZATION_OWNER
+    assert owner.is_file(), owner
+
+    scanned = [path for path in _source_modules(SRC_ROOT) if path != owner]
+    assert scanned, "the scan matched no modules outside the formatter"
+
+    offenders = _identifier_offenders(scanned, QUANTIZATION_HELPER)
+
+    assert not offenders, (
+        f"only {QUANTIZATION_OWNER} may name {QUANTIZATION_HELPER}: it is the display "
+        "rounding mode Req 18.3 pins, and a second module naming it is a second path "
+        "from a value to display digits — which fails verification on a report that is "
+        "correct:\n  " + "\n  ".join(offenders)
+    )
+
+    assert _identifier_offenders([owner], QUANTIZATION_HELPER), (
+        f"{QUANTIZATION_OWNER} must actually use {QUANTIZATION_HELPER}, or this rule "
+        "guards nothing"
+    )
+
+
+def test_the_snapshot_paths_own_rounding_mode_is_untouched_by_that_rule() -> None:
+    """The half worth asserting: the *other* mode is still where it belongs.
+
+    Without this, `ROUND_HALF_UP` could be made unique by rewriting the formatter to use
+    banker's rounding — every rule in this module would stay green and every displayed
+    figure would round differently from the day before.
+    """
+    snapshot_mode = "ROUND_HALF_EVEN"
+
+    users = {
+        path.relative_to(SRC_ROOT).as_posix()
+        for path in _source_modules(SRC_ROOT)
+        if _identifier_offenders([path], snapshot_mode)
+    }
+
+    assert users == {"collect/snapshot.py", "collect/accumulate.py"}, sorted(users)
+    assert not _identifier_offenders(
+        [SRC_ROOT / QUANTIZATION_OWNER], snapshot_mode
+    ), f"{QUANTIZATION_OWNER} rounds half away from zero, never half to even"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from decimal import ROUND_HALF_UP",
+        "from decimal import Decimal, ROUND_HALF_UP",
+        "from decimal import ROUND_HALF_UP as MODE",
+        "import decimal\nv = x.quantize(q, rounding=decimal.ROUND_HALF_UP)",
+        "v = x.quantize(q, rounding=ROUND_HALF_UP)",
+        'v = x.quantize(q, rounding="ROUND_HALF_UP")',
+    ],
+)
+def test_the_scan_detects_a_second_quantization_site(source: str, tmp_path: Path) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _identifier_offenders([module], QUANTIZATION_HELPER), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The snapshot path's own mode, which this rule must not touch.
+        "from decimal import ROUND_HALF_EVEN",
+        "from decimal import ROUND_CEILING, ROUND_FLOOR",
+        # Reading a string somebody else produced is the sanctioned move.
+        "text = figure.formatted",
+        # Prose: `collect/snapshot.py` explains why its mode differs from the formatter's,
+        # and a text scan would fail on the tree that documents the distinction best.
+        '"""Half to even here, unlike the formatter\'s ROUND_HALF_UP display mode."""\n',
+        "# ROUND_HALF_UP would be wrong for an aggregate\n",
+    ],
+)
+def test_the_scan_permits_the_other_mode_and_prose_about_this_one(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _identifier_offenders([module], QUANTIZATION_HELPER), source
 
 
 # --------------------------------------------------------------------------- #
@@ -1140,6 +1296,12 @@ def test_no_renderer_or_verifier_performs_arithmetic_on_a_figures_value() -> Non
         for path in _source_modules(SRC_ROOT / package)
     ]
 
+    # Per package, not only over the union: a union of 15 modules stays comfortably above
+    # any threshold with one of the two packages renamed out of the scan entirely.
+    for package in ARITHMETIC_FREE_PACKAGES:
+        assert _source_modules(SRC_ROOT / package), (
+            f"the arithmetic scan reaches no module under {package}/"
+        )
     assert len(scanned) > 10, "the scan must actually reach render/ and verify/"
     offenders = _figure_arithmetic_offenders(scanned)
 
@@ -1267,3 +1429,150 @@ def test_the_enumeration_would_detect_a_tool(source: str, tmp_path: Path) -> Non
     ]
 
     assert found, source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 10 — no rule above may pass by scanning nothing
+# --------------------------------------------------------------------------- #
+#
+# Every rule in this module is of the form "collect a set of modules, assert no offender".
+# Both halves can be true of the empty set, so every one of them reports the same green on
+# a correct tree and on a scan that resolved to nothing. That is not a hypothetical: the
+# scans are keyed on directory names, so a package rename, a moved file, or a typo in a
+# constant reduces a rule to a no-op *and removes the failure that would say so*.
+#
+# The module docstring records why this rule did not exist at first — the tree was too
+# sparse to support it, and it would have failed on correct code. That is no longer the
+# case, so the rule lands here, once, over the full set of packages, rather than being
+# argued again inside each rule.
+#
+# Two directions are asserted, and the second is the one that keeps this honest over time:
+#
+#   1. every package the rules above sweep **exists and yields at least one module**;
+#   2. that declared set is **exactly** the set of packages in the tree, so a package added
+#      tomorrow fails here until somebody decides which rules reach into it.
+#
+# Direction 2 is what makes this a completeness rule rather than a non-emptiness rule. A
+# new package that no rule sweeps is precisely as unguarded as an empty one, and it is much
+# harder to notice, because nothing about it looks wrong.
+
+GUARDED_PACKAGES: tuple[str, ...] = (
+    "azure",
+    "catalog",
+    "collect",
+    "compare",
+    "compile",
+    "compile/blocks",
+    "narrate",
+    "providers",
+    "render",
+    "storage",
+    "verify",
+)
+"""Every package under `src/reporting_agent/`, each swept by at least one rule above.
+
+`azure/` is here even though rule 1 *exempts* it: the exemption is only meaningful if the
+package exists, and `test_the_scan_exempts_the_azure_package_and_only_it` would pass over
+an absent one. `compile/blocks/` is listed separately from `compile/` because the rules
+recurse and it is where most of `compile/` actually is — a listing that stopped reaching it
+would leave rules 3, 7 and 7b covering the block compilers not at all."""
+
+
+def _package_directories(root: Path = SRC_ROOT) -> set[str]:
+    """Every directory under `root` holding a Python module, POSIX-relative to `root`.
+
+    `__pycache__` is excluded: it holds no source, it is not checked in, and its presence
+    depends on whether the suite has been run before — which would make direction 2 below
+    pass or fail according to the state of a build cache.
+    """
+    return {
+        path.parent.relative_to(root).as_posix()
+        for path in _source_modules(root)
+        if path.parent != root and "__pycache__" not in path.parts
+    }
+
+
+def test_every_guarded_package_exists_and_is_not_empty() -> None:
+    """Direction 1. A rule that swept an absent directory would report a clean pass."""
+    empty = [
+        package
+        for package in GUARDED_PACKAGES
+        if not _source_modules(SRC_ROOT / package)
+    ]
+
+    assert not empty, (
+        "these packages are declared guarded and are absent or hold no module, so every "
+        f"rule scanning them asserts nothing: {empty}"
+    )
+
+
+def test_the_guarded_set_is_every_package_in_the_tree() -> None:
+    """Direction 2. An unswept package is as unguarded as an empty one, and quieter."""
+    declared = set(GUARDED_PACKAGES)
+    present = _package_directories()
+
+    assert present - declared == set(), (
+        "these packages exist and no rule in this module is declared to reach them; add "
+        f"each one to GUARDED_PACKAGES deliberately: {sorted(present - declared)}"
+    )
+    assert declared - present == set(), (
+        "these packages are declared guarded and do not exist, so the declaration is "
+        f"stale and the rules naming them scan nothing: {sorted(declared - present)}"
+    )
+
+
+def test_every_package_the_rules_name_is_in_the_guarded_set() -> None:
+    """The declaration is tied to the rules that consume it, not merely to the tree.
+
+    Without this, `GUARDED_PACKAGES` could agree with the filesystem perfectly while a
+    rule scanned a package name that appears in neither — a rule sweeping `compile/blocks`
+    spelled `compile/block` would be a permanent no-op and both assertions above would
+    still pass.
+    """
+    named = {
+        *SDK_SCAN_PACKAGES,
+        *ARITHMETIC_FREE_PACKAGES,
+        NARRATE_PACKAGE,
+        SDK_ROOT_SEGMENT,
+        VERIFY_PACKAGE.name,
+        *{relative.split("/", 1)[0] for relative in SNAPSHOT_PATH_MODULES},
+        *{
+            relative.split("/", 1)[0]
+            for relative in (FORMATTED_OWNER, QUANTIZATION_OWNER, REPLAY_ENTRY_POINT)
+        },
+    }
+
+    assert named <= set(GUARDED_PACKAGES), sorted(named - set(GUARDED_PACKAGES))
+
+
+def test_the_completeness_rule_would_catch_an_empty_or_unswept_package(
+    tmp_path: Path,
+) -> None:
+    """Guard the guard, in both directions, on a synthetic tree.
+
+    The `tmp_path` cases for rules 1 through 9 deliberately build sparse trees, because
+    those *predicates* must stay correct on one. This rule is the opposite claim — that the
+    **repository** may not be sparse — so it gets its own synthetic tree rather than
+    borrowing theirs.
+    """
+    root = tmp_path / "src" / "reporting_agent"
+    _write(root, "__init__.py", "")
+    _write(root, "collect/__init__.py", "")
+    _write(root, "collect/snapshot.py", "def build():\n    pass\n")
+    # An empty package: a directory with no module at all.
+    (root / "render").mkdir(parents=True)
+    # An unswept package: real modules, named in no declaration.
+    _write(root, "smuggle/thing.py", "import boto3\n")
+
+    present = _package_directories(root)
+
+    assert not _source_modules(root / "render"), "the empty package must stay empty"
+    assert "render" not in present, "an empty package yields no module and so no entry"
+    assert "smuggle" in present, present
+    assert "smuggle" not in GUARDED_PACKAGES
+
+    # A stale declaration is caught by the same comparison, from the other side.
+    assert set(GUARDED_PACKAGES) - present, (
+        "the synthetic tree must be missing declared packages, or direction 2's second "
+        "assertion is untested"
+    )

@@ -41,6 +41,7 @@ wired here fails every verification loudly rather than silently narrowing the ga
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -139,6 +140,27 @@ async def verify(inputs: VerifyInputs) -> VerificationResult:
     point is to record every one of them rather than to stop at the first. It does propagate
     the two refusals to answer — an unreadable `.docx`, a `.pdf` that is not the recorded one
     — because those say the inputs are not the run's artifacts, which is a different claim.
+
+    **The gate body runs in a worker thread.** Every gate but drift is synchronous, and
+    together they are minutes of work at a few hundred resources — the replay fold alone
+    re-runs the whole aggregation. Run on the event loop they would starve the heartbeat
+    ticker `main.invoke` merges around the pipeline, and Req 42.11 requires consecutive
+    events no more than 30 seconds apart while the status is `verifying`. So the one
+    awaiting gate is resolved first and the rest is handed to `asyncio.to_thread`.
+
+    Drift moving to the front changes no output: :func:`_drift` reads `inputs` and nothing
+    the other gates produce, and its findings are still spliced in at the position
+    Req 25.8's document order puts them.
+    """
+    drift = await _drift(inputs)
+    return await asyncio.to_thread(_evaluate_gates, inputs, drift)
+
+
+def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationResult:
+    """Every gate but drift, and the assembled result. Synchronous, and off the loop.
+
+    Split out of :func:`verify` rather than inlined there so the threaded boundary is one
+    call rather than a shape a later edit could accidentally put an `await` back inside.
     """
     gates: set[str] = set()
     findings: list[Finding] = []
@@ -235,7 +257,9 @@ async def verify(inputs: VerifyInputs) -> VerificationResult:
     gates.add("replay")
 
     # --- 34: drift, advisory -----------------------------------------------------------
-    drift = await _drift(inputs)
+    #
+    # Resolved by `verify` before this function was scheduled — it is the one gate that
+    # awaits — and spliced in here, where document order puts it.
     findings.extend(drift.findings)
     counts["drift_resources_requeried"] = drift.requeried
 

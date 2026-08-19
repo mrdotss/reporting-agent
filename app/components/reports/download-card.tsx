@@ -44,7 +44,9 @@ type ArtifactUrlResponse = {
   readonly error?: { readonly message?: string }
 }
 
-const LABEL: Readonly<Record<(typeof DOWNLOADABLE_LEAF_NAMES)[number], string>> = {
+const LABEL: Readonly<
+  Record<(typeof DOWNLOADABLE_LEAF_NAMES)[number], string>
+> = {
   "report.docx": "Word document",
   "report.pdf": "PDF",
 }
@@ -136,7 +138,9 @@ export function DownloadCard({
               <DownloadSimpleIcon aria-hidden="true" />
               {pending === key
                 ? "Preparing…"
-                : (leaf === undefined ? key : LABEL[leaf])}
+                : leaf === undefined
+                  ? key
+                  : LABEL[leaf]}
             </Button>
           )
         })}

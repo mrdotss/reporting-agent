@@ -226,8 +226,7 @@ export default async function RunPage({ params }: RunPageProps) {
         40.4's "present no download control" is this condition being false, so
         the gate is one expression rather than a prop the card has to honour.
       */}
-      {run.status === "completed" &&
-      verification.latest?.status === "pass" ? (
+      {run.status === "completed" && verification.latest?.status === "pass" ? (
         <DownloadCard artifactKeys={view.artifactKeys} />
       ) : null}
 

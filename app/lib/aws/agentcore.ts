@@ -155,9 +155,56 @@ export interface PreviewInvokeContext {
  * command the runtime has no route for.
  */
 export type InvokeCommand =
+  /**
+   * `generate_report`, in the two shapes the runtime's contract admits.
+   *
+   * The pinned version and its definition travel **together or not at all**, which
+   * the union expresses rather than leaving to a convention: a payload naming a
+   * version with no definition would be a snapshot-only run wearing a report run's
+   * label, and the runtime would have no way to tell that was not intended.
+   */
   | {
       command: typeof COMMAND_GENERATE_REPORT
+      /**
+       * The version the run pinned at enqueue (Requirement 9.6). The runtime
+       * checks the run against this version and no other.
+       */
+      template_version_id: string
+      /**
+       * That version's definition, **inline**.
+       *
+       * The runtime has no access to this app's database, so a payload naming a
+       * version id and nothing else would leave it with no template to compile.
+       * Its own contract states the consequence plainly: *a payload carrying no
+       * `definition` is a snapshot-only run* — legal, and not what a
+       * `generate_report` triggered from the report form is asking for. Sending
+       * the id without the definition is therefore not a smaller version of this
+       * command; it is a different one, and it silently produces no document.
+       *
+       * `unknown` rather than `TemplateDefinition`, matching `render_preview`: the
+       * value is the stored `definition` jsonb, and the authority on whether it
+       * compiles is the runtime's `_assert_compilable`, which fails the run as
+       * `TEMPLATE_INVALID` before a single metric is requested. A second typed
+       * copy of that rule here would be a third statement of a schema the mirror
+       * guard already keeps in two places.
+       */
+      definition: unknown
       /** Local calendar dates in the context's `timezone`, `YYYY-MM-DD`. */
+      period: { start: string; end: string }
+      scope: RunScope
+    }
+  /**
+   * A **snapshot-only** run: no pinned version, so no document.
+   *
+   * Still legal by the runtime's contract, and reachable here for exactly one row
+   * shape — a foundation-era `report_runs` row whose `template_version_id` is
+   * `null`. `?: never` rather than omitting the keys, so a caller cannot satisfy
+   * this member while setting one of the two and think it satisfied the other.
+   */
+  | {
+      command: typeof COMMAND_GENERATE_REPORT
+      template_version_id?: never
+      definition?: never
       period: { start: string; end: string }
       scope: RunScope
     }

@@ -53,7 +53,8 @@ export function CopyDigest({
     }
   }, [value])
 
-  const shown = truncate && value.length > TRUNCATE_TO ? value.slice(0, TRUNCATE_TO) : value
+  const shown =
+    truncate && value.length > TRUNCATE_TO ? value.slice(0, TRUNCATE_TO) : value
 
   return (
     <span data-slot="copy-digest" className="inline-flex items-center gap-1.5">

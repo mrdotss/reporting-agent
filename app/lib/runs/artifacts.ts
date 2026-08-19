@@ -1,5 +1,9 @@
 import type { ReportRun } from "@/lib/db/schema"
-import { snapshotArtifactKey } from "@/lib/db/views"
+import {
+  DOWNLOADABLE_LEAF_NAMES,
+  reportArtifactKey,
+  snapshotArtifactKey,
+} from "@/lib/db/views"
 
 /**
  * Every artifact key a run **recorded**, as a set (Requirement 40.5).
@@ -37,16 +41,21 @@ import { snapshotArtifactKey } from "@/lib/db/views"
  * either.
  */
 
-/** The two artifacts a consultant may download, as `artifacts.py` names them. */
-export const DOWNLOADABLE_LEAF_NAMES = ["report.docx", "report.pdf"] as const
-
-export function reportArtifactKey(
-  userId: string,
-  runId: string,
-  leaf: (typeof DOWNLOADABLE_LEAF_NAMES)[number]
-): string {
-  return `${userId}/reports/${runId}/${leaf}`
-}
+/**
+ * The two downloadable leaf names and the key builder, **re-exported** from
+ * `lib/db/views.ts`.
+ *
+ * They live there rather than here because `toRunView` needs them too — the
+ * projection is where Requirement 40.4's gate is applied — and a second
+ * declaration here would be a second key template able to disagree with the
+ * first. Re-exported rather than moved outright so every existing import path
+ * (`@/lib/runs/artifacts`) keeps working, including the client component's.
+ */
+export {
+  DOWNLOADABLE_LEAF_NAMES,
+  reportArtifactKey,
+  type DownloadableLeafName,
+} from "@/lib/db/views"
 
 /**
  * The keys this run recorded, or an empty set.

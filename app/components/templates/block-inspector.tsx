@@ -5,7 +5,11 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { BLOCK_CONFIG, type BlockType } from "@/lib/templates/blocks"
 import { blockTypeLabel } from "@/lib/templates/composer"
-import type { LeafBlock, ScopeSpec, TemplateBlock } from "@/lib/templates/definition"
+import type {
+  LeafBlock,
+  ScopeSpec,
+  TemplateBlock,
+} from "@/lib/templates/definition"
 
 /**
  * The inspector — the selected block's config and its scope override
@@ -47,12 +51,16 @@ function schemaFor(type: BlockType) {
   return BLOCK_CONFIG[type]
 }
 
-function fieldValue(config: Readonly<Record<string, unknown>>, name: string): string {
+function fieldValue(
+  config: Readonly<Record<string, unknown>>,
+  name: string
+): string {
   const value = config[name]
 
   if (value === undefined || value === null) return ""
   if (typeof value === "string") return value
-  if (typeof value === "number" || typeof value === "boolean") return String(value)
+  if (typeof value === "number" || typeof value === "boolean")
+    return String(value)
 
   // A list or an object — rendered as JSON so it is at least editable rather
   // than silently uneditable. See the module docstring's note on the gap.
@@ -144,8 +152,8 @@ export function BlockInspector({
 
       {isRow ? (
         <p className="text-sm text-muted-foreground">
-          A row carries its columns on the block itself, not in a config. Set the
-          column count on the row, on the canvas.
+          A row carries its columns on the block itself, not in a config. Set
+          the column count on the row, on the canvas.
         </p>
       ) : fields.length === 0 ? (
         <p className="text-sm text-muted-foreground">
@@ -155,10 +163,12 @@ export function BlockInspector({
       ) : (
         <div className="flex flex-col gap-3">
           {fields.map((name) => {
-            const required = (schema.required as readonly string[]).includes(name)
-            const enumValues = (schema.enums as Record<string, readonly string[]>)[
+            const required = (schema.required as readonly string[]).includes(
               name
-            ]
+            )
+            const enumValues = (
+              schema.enums as Record<string, readonly string[]>
+            )[name]
 
             return (
               <Field key={name}>

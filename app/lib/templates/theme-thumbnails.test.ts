@@ -33,9 +33,9 @@ describe("Requirement 13.8 — four cards, always", () => {
     // whether its image resolved, which is the property the picker relies on.
     for (const entry of themeThumbnails()) {
       expect(DESIGN_PRESETS).toContain(entry.preset)
-      expect(entry.src === null || entry.src.startsWith(THUMBNAIL_PUBLIC_PREFIX)).toBe(
-        true
-      )
+      expect(
+        entry.src === null || entry.src.startsWith(THUMBNAIL_PUBLIC_PREFIX)
+      ).toBe(true)
     }
   })
 

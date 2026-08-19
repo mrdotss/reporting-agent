@@ -57,7 +57,10 @@ export function VerificationPanel({
   // proven, and mist neutrals rather than `--destructive`. An unverified report
   // is not a failed one, and colouring it as one would make a run that is still
   // verifying look like a run that was refused.
-  if (verification === null || (verification.status !== "pass" && verification.status !== "fail")) {
+  if (
+    verification === null ||
+    (verification.status !== "pass" && verification.status !== "fail")
+  ) {
     return (
       <section
         data-slot="verification-panel"
@@ -66,7 +69,10 @@ export function VerificationPanel({
         className="flex flex-col gap-2 rounded-xl border border-border px-4 py-4"
       >
         <div className="flex items-center gap-2">
-          <SealIcon aria-hidden="true" className="size-5 text-muted-foreground" />
+          <SealIcon
+            aria-hidden="true"
+            className="size-5 text-muted-foreground"
+          />
           <h2
             id="verification-heading"
             className="font-heading text-sm font-medium tracking-tight"
@@ -103,7 +109,11 @@ export function VerificationPanel({
         sentence: two announcements for one outcome is how a screen-reader user
         ends up hearing the count without the status.
       */}
-      <p data-slot="verification-announcement" aria-live="polite" className="sr-only">
+      <p
+        data-slot="verification-announcement"
+        aria-live="polite"
+        className="sr-only"
+      >
         {passed
           ? `Verification passed. ${grouped(verification.figureCount)} figures traced to the snapshot.`
           : `Verification failed with ${grouped(blockingCount)} blocking ${
@@ -149,9 +159,10 @@ export function VerificationPanel({
               <span className="font-mono tabular-nums">
                 {grouped(blockingCount)}
               </span>{" "}
-              blocking {blockingCount === 1 ? "finding" : "findings"}. The report
-              was <strong>not delivered</strong> — no document is offered for
-              download, because no document could be proven against the snapshot.
+              blocking {blockingCount === 1 ? "finding" : "findings"}. The
+              report was <strong>not delivered</strong> — no document is offered
+              for download, because no document could be proven against the
+              snapshot.
             </p>
           )}
         </div>
@@ -249,7 +260,8 @@ export function VerificationPanel({
             </span>{" "}
             resources re-queried · method{" "}
             <span className="font-mono">{verification.driftSample.method}</span>{" "}
-            · seed <span className="font-mono">{verification.driftSample.seed}</span>
+            · seed{" "}
+            <span className="font-mono">{verification.driftSample.seed}</span>
           </p>
 
           {verification.driftSample.notRequeried.length === 0 ? null : (

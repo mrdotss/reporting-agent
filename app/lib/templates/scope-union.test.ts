@@ -53,9 +53,7 @@ function leaf(id: string, scopeOverride?: ScopeSpec): LeafBlock {
 
 describe("resource types and resource groups — an empty dimension wins", () => {
   test("a definition with no overrides is its own default", () => {
-    expect(
-      unionScope(definition(scope({ resource_types: [VM] })))
-    ).toEqual({
+    expect(unionScope(definition(scope({ resource_types: [VM] })))).toEqual({
       resource_types: [VM],
       resource_groups: [],
       tag_filters: {},
@@ -145,7 +143,10 @@ describe("tag filters — an all-of map that must accept every any-of match", ()
     expect(
       unionScope(
         definition(scope({ tag_filters: [{ key: "env", value: "prod" }] }), [
-          leaf("b1", scope({ tag_filters: [{ key: "env", value: "staging" }] })),
+          leaf(
+            "b1",
+            scope({ tag_filters: [{ key: "env", value: "staging" }] })
+          ),
         ])
       ).tag_filters
     ).toEqual({})
@@ -160,7 +161,9 @@ describe("tag filters — an all-of map that must accept every any-of match", ()
 
     expect(
       unionScope(
-        definition(scope({ tag_filters: two }), [leaf("b1", scope({ tag_filters: two }))])
+        definition(scope({ tag_filters: two }), [
+          leaf("b1", scope({ tag_filters: two })),
+        ])
       ).tag_filters
     ).toEqual({})
   })

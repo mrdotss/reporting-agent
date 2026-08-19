@@ -47,9 +47,7 @@ export function NewTemplateButton() {
       const body = (await response.json()) as CreateResponse
 
       if (!response.ok || body.template === undefined) {
-        setError(
-          body.error?.message ?? "The template could not be created."
-        )
+        setError(body.error?.message ?? "The template could not be created.")
         return
       }
 

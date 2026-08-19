@@ -29,7 +29,9 @@ const ESTIMATED_FIGURE =
 
 describe("Requirement 38.1 — figures are found in the emitter's markup", () => {
   test("a document with one figure splits into markup, figure, markup", () => {
-    const segments = splitOnFigures(`<p>CPU average ${EXACT_FIGURE} across.</p>`)
+    const segments = splitOnFigures(
+      `<p>CPU average ${EXACT_FIGURE} across.</p>`
+    )
 
     expect(segments.map((segment) => segment.kind)).toEqual([
       "html",
@@ -79,7 +81,9 @@ describe("Requirement 38.1 — figures are found in the emitter's markup", () =>
         `<td>${EXACT_FIGURE}</td></tr></table>`
     )
 
-    expect(segments.filter((segment) => segment.kind === "figure")).toHaveLength(3)
+    expect(
+      segments.filter((segment) => segment.kind === "figure")
+    ).toHaveLength(3)
   })
 
   test("figures are returned in document order", () => {
@@ -88,9 +92,9 @@ describe("Requirement 38.1 — figures are found in the emitter's markup", () =>
 
     // Requirement 38.6 — sequential keyboard navigation follows "the document
     // order the Html_Emitter emits", and this list is what becomes that order.
-    expect(figures.map((figure) => ("formatted" in figure ? figure.formatted : ""))).toEqual(
-      ["88.10%", "64.20%"]
-    )
+    expect(
+      figures.map((figure) => ("formatted" in figure ? figure.formatted : ""))
+    ).toEqual(["88.10%", "64.20%"])
   })
 })
 

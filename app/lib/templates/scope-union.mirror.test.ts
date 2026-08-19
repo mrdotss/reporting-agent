@@ -33,7 +33,10 @@ import { unionScope } from "@/lib/templates/scope-union"
  * second copy is a third thing to keep correct.
  */
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../.."
+)
 const repoRoot = path.resolve(appRoot, "..")
 
 const CASES_PATH = path.join(

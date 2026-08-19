@@ -350,9 +350,7 @@ export async function createTemplate(
  * created them in, and the id breaks a tie so two rows written in the same
  * transaction do not swap places between renders.
  */
-export async function listTemplates(
-  userId: string
-): Promise<ReportTemplate[]> {
+export async function listTemplates(userId: string): Promise<ReportTemplate[]> {
   return await getDb()
     .select()
     .from(reportTemplates)
@@ -489,7 +487,10 @@ export async function renameTemplate(
  * were removed cannot survive a failure of the last statement as a row with no
  * history.
  */
-export async function deleteTemplate(userId: string, id: string): Promise<void> {
+export async function deleteTemplate(
+  userId: string,
+  id: string
+): Promise<void> {
   const template = await readOwnedTemplate(userId, id)
   if (template === undefined) throw new TemplateNotFoundError()
 
@@ -580,7 +581,8 @@ async function attemptInsertVersion(
   templateId: string,
   input: InsertVersionInput
 ): Promise<
-  { readonly conflict: false; readonly row: ReportTemplateVersion } | { readonly conflict: true }
+  | { readonly conflict: false; readonly row: ReportTemplateVersion }
+  | { readonly conflict: true }
 > {
   try {
     return await getDb().transaction(async (tx) => {
@@ -732,4 +734,36 @@ export async function readLatestVersion(
   if (template === undefined) throw new TemplateNotFoundError()
 
   return await readHighestVersionRow(templateId)
+}
+
+/**
+ * One version row by its **own id**, or `undefined`.
+ *
+ * The read the invocation resolves `report_runs.template_version_id` through: the
+ * `generate_report` payload carries the pinned version's id *and its definition
+ * inline*, so the tick needs the definition of one specific version rather than the
+ * latest of a template.
+ *
+ * **Not scoped by `user_id`**, and safe here for the same specific reason
+ * `lib/runs/detail.ts#readPinnedVersion` records: the only callers pass a
+ * `template_version_id` off a `report_runs` row they read *with* the `AND user_id`
+ * predicate. A version a run pinned is a version that run's owner owned at pin time,
+ * and re-deriving ownership from the version would be a weaker check than the one
+ * already performed — the version row carries no `user_id` of its own, so the
+ * re-derivation would go back through the template and prove less.
+ *
+ * `undefined` rather than a throw for an id nothing matches. A run whose pinned
+ * version has somehow vanished is a run that cannot be rendered, and the caller
+ * decides what that means; this read does not.
+ */
+export async function readVersionById(
+  templateVersionId: string
+): Promise<ReportTemplateVersion | undefined> {
+  const [row] = await getDb()
+    .select()
+    .from(reportTemplateVersions)
+    .where(eq(reportTemplateVersions.id, templateVersionId))
+    .limit(1)
+
+  return row
 }

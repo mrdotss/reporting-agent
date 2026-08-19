@@ -99,7 +99,9 @@ describe("Requirement 44.12 — one presigning path for reports, and it is gated
       (relative) => relative !== PRESIGNER_MODULE
     )
 
-    expect(minting).toEqual([path.join("app", "api", "artifact-url", "route.ts")])
+    expect(minting).toEqual([
+      path.join("app", "api", "artifact-url", "route.ts"),
+    ])
   })
 
   test("that module reads the run's verification status before minting", () => {
@@ -107,7 +109,9 @@ describe("Requirement 44.12 — one presigning path for reports, and it is gated
     // `test/api/artifact-url.route.test.ts`. What this adds is that the gate is
     // *present in the only module that can mint*, so the behavioural test is
     // testing the whole surface rather than one of two.
-    const route = SOURCES.get(path.join("app", "api", "artifact-url", "route.ts"))
+    const route = SOURCES.get(
+      path.join("app", "api", "artifact-url", "route.ts")
+    )
 
     expect(route).toBeDefined()
     expect(route).toContain("readLatestVerificationStatus")
@@ -161,9 +165,17 @@ describe("Requirement 44.12 — one presigning path for reports, and it is gated
     const control = path.join("components", "reports", "download-card.tsx")
     expect(SOURCES.has(control)).toBe(true)
 
+    // An **import** of the component, not a mention of its name. "Rendered from one
+    // place" is a claim about which modules can instantiate it, and a prose reference
+    // in a neighbouring module's docstring — `lib/db/views.ts` explains there why the
+    // key gate lives in the projection rather than in this component — instantiates
+    // nothing. Matching the bare identifier made that comment a failure, which is the
+    // guard reporting on the wrong thing rather than a second control appearing.
     const importers = [...SOURCES]
       .filter(([relative]) => relative !== control)
-      .filter(([, source]) => /\bDownloadCard\b/.test(source))
+      .filter(([, source]) =>
+        /import\s*\{[^}]*\bDownloadCard\b[^}]*\}\s*from/.test(source)
+      )
       .map(([relative]) => relative)
 
     expect(importers).toEqual([

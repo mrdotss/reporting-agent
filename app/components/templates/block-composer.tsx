@@ -261,8 +261,7 @@ export function BlockComposer({
         sensors={[PointerSensor]}
         onDragStart={(event) => {
           const data = event.operation.source?.data as
-            | { blockId?: string; blockType?: string }
-            | undefined
+            { blockId?: string; blockType?: string } | undefined
 
           setDrag(
             data?.blockType === undefined
@@ -298,35 +297,35 @@ export function BlockComposer({
           )
         }}
       >
-      <div className="grid gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,18rem)]">
-        <BlockPalette onInsert={insertFromPalette} />
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,15rem)_minmax(0,1fr)_minmax(0,18rem)]">
+          <BlockPalette onInsert={insertFromPalette} />
 
-        <BlockCanvas
-          blocks={definition.blocks}
-          selectedBlockId={selectedBlockId}
-          focusBlockId={focusBlockId}
-          drag={drag}
-          onSelect={setSelectedBlockId}
-          onCommand={runCommand}
-          onSplitRow={(rowId, columns) =>
-            dispatch({ kind: "splitRow", blockId: rowId, columns })
-          }
-        />
+          <BlockCanvas
+            blocks={definition.blocks}
+            selectedBlockId={selectedBlockId}
+            focusBlockId={focusBlockId}
+            drag={drag}
+            onSelect={setSelectedBlockId}
+            onCommand={runCommand}
+            onSplitRow={(rowId, columns) =>
+              dispatch({ kind: "splitRow", blockId: rowId, columns })
+            }
+          />
 
-        <BlockInspector
-          block={selected}
-          templateDefault={definition.scope}
-          onPatchConfig={(blockId, config) =>
-            dispatch({ kind: "patchConfig", blockId, config })
-          }
-          onPatchScope={(blockId, scope) =>
-            onChange({
-              ...definition,
-              blocks: withScopeOverride(definition.blocks, blockId, scope),
-            })
-          }
-        />
-      </div>
+          <BlockInspector
+            block={selected}
+            templateDefault={definition.scope}
+            onPatchConfig={(blockId, config) =>
+              dispatch({ kind: "patchConfig", blockId, config })
+            }
+            onPatchScope={(blockId, scope) =>
+              onChange({
+                ...definition,
+                blocks: withScopeOverride(definition.blocks, blockId, scope),
+              })
+            }
+          />
+        </div>
       </DragDropProvider>
     </div>
   )
@@ -349,7 +348,8 @@ function demotionTarget(
 ): InsertionPoint | null {
   if (location.container.kind === "row") {
     const next = location.container.columnIndex + 1
-    if (location.columnCount === null || next >= location.columnCount) return null
+    if (location.columnCount === null || next >= location.columnCount)
+      return null
 
     return {
       container: {

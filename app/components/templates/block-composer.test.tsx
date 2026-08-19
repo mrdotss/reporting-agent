@@ -72,8 +72,8 @@ describe("Requirement 12.1 — three panes, in tab order", () => {
   test("the palette, the canvas and the inspector are all regions", () => {
     const { container } = mount(["cover"])
 
-    const labels = [...container.querySelectorAll("[role='region']")].map((node) =>
-      node.getAttribute("aria-label")
+    const labels = [...container.querySelectorAll("[role='region']")].map(
+      (node) => node.getAttribute("aria-label")
     )
 
     // The order in the DOM is the tab order, and it is the order the requirement
@@ -105,7 +105,9 @@ describe("Requirement 12.3 — Enter appends, selects and focuses", () => {
     const { container, onChange } = mount([])
 
     fireEvent.click(
-      container.querySelector("[data-slot='palette-entry'][data-block-type='cover']")!
+      container.querySelector(
+        "[data-slot='palette-entry'][data-block-type='cover']"
+      )!
     )
 
     expect(onChange).toHaveBeenCalledOnce()
@@ -117,7 +119,9 @@ describe("Requirement 12.3 — Enter appends, selects and focuses", () => {
     const { container } = mount([])
 
     fireEvent.click(
-      container.querySelector("[data-slot='palette-entry'][data-block-type='cover']")!
+      container.querySelector(
+        "[data-slot='palette-entry'][data-block-type='cover']"
+      )!
     )
 
     expect(announcement(container)).not.toBe("")

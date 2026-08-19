@@ -35,3 +35,6 @@ pnpm-debug.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# the per-run property ledger (Requirement 45.8); rebuilt by every `pnpm test`
+/.vitest-property-ledger

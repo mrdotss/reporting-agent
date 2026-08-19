@@ -2,8 +2,15 @@ import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
+import ts from "typescript"
 import { describe, expect, test } from "vitest"
 
+import {
+  ARTIFACT_SEGMENT_REPORTS,
+  ARTIFACT_SEGMENT_SNAPSHOTS,
+  DOWNLOADABLE_SEGMENTS,
+  parseArtifactKey,
+} from "@/lib/aws/s3"
 import { REQUIRED_ENV_VARS } from "@/lib/env"
 
 /**
@@ -1373,7 +1380,10 @@ const FILE_INPUT_PATTERNS: readonly RegExp[] = [
  * attribute outright, and an extension filter has nowhere else to live.
  */
 const DOCUMENT_MIME_FRAGMENTS: readonly string[] = [
-  ["application/vnd.openxmlformats-officedocument", "wordprocessingml.document"].join("."),
+  [
+    "application/vnd.openxmlformats-officedocument",
+    "wordprocessingml.document",
+  ].join("."),
   "application/msword",
 ]
 
@@ -1382,9 +1392,9 @@ describe("Requirement 11.6 — the wizard offers no document upload", () => {
     // Requirement 6.11's discipline applied here: a sweep that passes because it
     // swept nothing is not a passing sweep. This whole describe is worthless the
     // day the directory is renamed and nobody notices.
-    expect(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY).length).toBeGreaterThan(
-      0
-    )
+    expect(
+      listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY).length
+    ).toBeGreaterThan(0)
   })
 
   test.each(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY))(
@@ -1436,5 +1446,779 @@ describe("Requirement 11.6 — the wizard offers no document upload", () => {
           `takes JSON parsed by a named zod schema`
       ).toBe(false)
     }
+  })
+})
+
+// ===========================================================================
+// Task 15.1 — the remaining boundary rules
+//
+// Four groups, plus the completeness rule that covers every sweep in this file:
+//
+//   A  the two new data-layer stores carry the server-only marker (Req 6.1)
+//   B  every handler this spec added declares the Node runtime (Req 6.7)
+//   C  the artifact-key predicate admits exactly two segments (Req 43.2, 43.3)
+//   D  no templating library and no figure arithmetic in `app/` (Req 11.6, 18.2,
+//      20.2, 31.7)
+//   E  every directory any sweep in this file walks exists and is non-empty
+//      (Req 6.11)
+//
+// Group D is the only one that parses rather than greps. Everything above uses
+// source text, which is right for a rule about an import specifier or a marker
+// line, and wrong for "is this expression arithmetic": `.value / 2` and
+// `.value // a comment` are one character apart in text and unrelated in a
+// syntax tree. `typescript` is already a dev dependency and
+// `property-hygiene.static.test.ts` already parses with it, so this adds
+// nothing to the toolchain.
+// ===========================================================================
+
+// --- Group A: the new stores ------------------------------------------------
+
+/**
+ * Requirement 6.1 for this spec's two data-layer modules.
+ *
+ * Neither is reached by the Requirement 6.2 rule on its own merits: both go to
+ * Postgres through `@/lib/db`, so they import no `@aws-sdk/*` package and no
+ * `@/lib/crypto`, and {@link opensConnection} does not fire on them either —
+ * `lib/db/index.ts` is the module that constructs the pool. They carry the
+ * marker by **decision**, and this group is what makes that decision a failing
+ * test rather than a comment.
+ *
+ * `lib/templates/` and `lib/verifications/` are classified module by module for
+ * the same reason `lib/subscriptions/` is: a blanket sweep would mark the pure
+ * modules that client leaves legitimately import. `definition.ts`, `blocks.ts`,
+ * `composer.ts`, `period.ts` and `wizard.ts` are rendered by the wizard's client
+ * components, and `lib/verifications/result.ts` is the artifact schema the
+ * verification panel reads. Marking any of them would make the wizard
+ * unbuildable.
+ *
+ * The union is asserted **exhaustive**, so a module added to either directory
+ * has to be classified before this suite passes.
+ */
+const TEMPLATE_STORE = path.join("lib", "templates", "store.ts")
+const VERIFICATION_STORE = path.join("lib", "verifications", "store.ts")
+
+/** Marked because they open a DB connection through `@/lib/db` or reach S3. */
+const SPEC_SERVER_ONLY_MODULES = [
+  TEMPLATE_STORE,
+  VERIFICATION_STORE,
+  path.join("lib", "templates", "catalog.ts"),
+  path.join("lib", "templates", "preview.ts"),
+  path.join("lib", "templates", "seed.ts"),
+  path.join("lib", "templates", "theme-thumbnails.ts"),
+] as const
+
+/** Pure: schemas, reducers and formatters, all imported by client components. */
+const SPEC_PURE_MODULES = [
+  path.join("lib", "templates", "blocks.ts"),
+  path.join("lib", "templates", "canonical-json.ts"),
+  path.join("lib", "templates", "composer.ts"),
+  path.join("lib", "templates", "definition.ts"),
+  path.join("lib", "templates", "draft.ts"),
+  path.join("lib", "templates", "input.ts"),
+  path.join("lib", "templates", "period.ts"),
+  path.join("lib", "templates", "scope-union.ts"),
+  path.join("lib", "templates", "starters.ts"),
+  path.join("lib", "templates", "version.ts"),
+  path.join("lib", "templates", "wizard.ts"),
+  path.join("lib", "verifications", "result.ts"),
+] as const
+
+describe("Requirement 6.1 — the template and verification stores are server-only", () => {
+  test.each([TEMPLATE_STORE, VERIFICATION_STORE])(
+    "%s begins with the marker",
+    (modulePath) => {
+      expect(firstCodeLine(modulePath)).toBe(SERVER_ONLY_MARKER)
+    }
+  )
+
+  test.each(SPEC_SERVER_ONLY_MODULES)(
+    "%s begins with the marker",
+    (modulePath) => {
+      expect(firstCodeLine(modulePath)).toBe(SERVER_ONLY_MARKER)
+    }
+  )
+
+  test.each([TEMPLATE_STORE, VERIFICATION_STORE])(
+    "%s is marked by decision — no rule forces it",
+    (modulePath) => {
+      // The half worth asserting. If either grew a direct `@aws-sdk/*` or
+      // `@/lib/crypto` import it would be reached by Requirement 6.2 and belong
+      // in that group instead, and this failure is what says so rather than
+      // leaving two groups quietly overlapping.
+      const source = readProjectFile(modulePath)
+
+      expect(requiresServerOnly(source)).toBe(false)
+      expect(opensConnection(source)).toBe(false)
+      // It does reach the database, through the one module that opens the pool.
+      expect(source).toContain('from "@/lib/db"')
+    }
+  )
+
+  test("both directories are classified exhaustively", () => {
+    // Requirement 6.11 in the form it takes for a hand-written list: the listing
+    // is asserted against the modules that exist, in both directions, so a module
+    // added here fails until it is classified and a classification naming a
+    // deleted module fails too.
+    const found = [
+      ...listSourceFiles(path.join("lib", "templates")),
+      ...listSourceFiles(path.join("lib", "verifications")),
+    ].sort()
+
+    expect(found.length).toBeGreaterThan(0)
+    expect(found).toEqual(
+      [...SPEC_SERVER_ONLY_MODULES, ...SPEC_PURE_MODULES].sort()
+    )
+  })
+
+  test.each(SPEC_PURE_MODULES)(
+    "%s is pure and deliberately unmarked",
+    (modulePath) => {
+      const source = readProjectFile(modulePath)
+
+      expect(hasServerOnlyMarker(modulePath)).toBe(false)
+      expect(requiresServerOnly(source)).toBe(false)
+      expect(opensConnection(source)).toBe(false)
+    }
+  )
+
+  test("neither directory is in the blanket sweep", () => {
+    expect([...SERVER_ONLY_DIRECTORIES]).not.toContain("lib/templates")
+    expect([...SERVER_ONLY_DIRECTORIES]).not.toContain("lib/verifications")
+  })
+})
+
+// --- Group B: the handlers this spec added ---------------------------------
+
+/**
+ * Requirement 6.7 for the four handlers this spec adds.
+ *
+ * The rule above already asserts the declaration for **every** `app/**\/route.ts`,
+ * which covers these by construction — so this group is not a second rule, it is
+ * the anchor for that one. "Every handler declares it" is also what a listing
+ * that stopped finding these four would report, and each of them is long-running
+ * in a way that makes the edge runtime specifically wrong: the preview handler
+ * drives a real `.docx` → `.pdf` render, the verification callback writes run
+ * state, and the two template handlers open a Postgres connection.
+ */
+const SPEC_ROUTE_HANDLERS = [
+  path.join("app", "api", "templates", "route.ts"),
+  path.join("app", "api", "templates", "[id]", "route.ts"),
+  path.join("app", "api", "templates", "[id]", "preview", "route.ts"),
+  path.join("app", "api", "templates", "catalog", "route.ts"),
+  path.join(
+    "app",
+    "api",
+    "internal",
+    "runs",
+    "[runId]",
+    "verification",
+    "route.ts"
+  ),
+] as const
+
+describe("Requirement 6.7 — this spec's handlers run on the Node runtime", () => {
+  test("the route listing reaches every one of them", () => {
+    const handlers = listRouteHandlers()
+
+    for (const handler of SPEC_ROUTE_HANDLERS) {
+      expect(
+        handlers,
+        `${handler} is not seen by listRouteHandlers()`
+      ).toContain(handler)
+    }
+  })
+
+  test.each(SPEC_ROUTE_HANDLERS)("%s declares it", (handler) => {
+    expect(declaresNodeRuntime(readProjectFile(handler))).toBe(true)
+  })
+})
+
+// --- Group C: the artifact-key predicate -----------------------------------
+
+/**
+ * Requirements 43.2 and 43.3 — the closed set of downloadable key segments,
+ * asserted here as a **boundary** rather than as a unit of `parseArtifactKey`.
+ *
+ * `lib/aws/s3.test.ts` already pins the set and the parser's behaviour. What this
+ * adds is the structural claim: the set is the only gate, so a preview is
+ * unreachable through the report download path **however** the caller asks, and a
+ * third segment cannot be admitted by editing a route. Asserted by importing the
+ * constant rather than by re-listing it, so this file cannot pass while holding a
+ * stale second copy of the answer.
+ */
+const EXPECTED_DOWNLOADABLE_SEGMENTS = ["reports", "snapshots"] as const
+
+describe("Requirements 43.2, 43.3 — exactly two artifact-key segments", () => {
+  test("the predicate admits `snapshots` and `reports` and nothing else", () => {
+    expect([...DOWNLOADABLE_SEGMENTS].sort()).toEqual([
+      ...EXPECTED_DOWNLOADABLE_SEGMENTS,
+    ])
+  })
+
+  test("the set is frozen, so no caller can widen it at run time", () => {
+    // A `ReadonlySet` type is erased. `Object.freeze` is what makes the closed set
+    // closed in a running process, and a route that called `.add("previews")` would
+    // otherwise widen the gate for every other route in the same process.
+    expect(Object.isFrozen(DOWNLOADABLE_SEGMENTS)).toBe(true)
+  })
+
+  test.each(EXPECTED_DOWNLOADABLE_SEGMENTS)("a %s key parses", (segment) => {
+    expect(parseArtifactKey(`alice/${segment}/run-1/artifact.bin`)).toEqual({
+      actorId: "alice",
+      kind: segment,
+      runId: "run-1",
+      rest: "artifact.bin",
+    })
+  })
+
+  test.each([
+    "previews",
+    "Snapshots",
+    "SNAPSHOTS",
+    "reports2",
+    "report",
+    "raw",
+    "",
+  ])("a %s key does not", (segment) => {
+    // `previews` is the one that matters: a preview is written under
+    // `<actor>/previews/<previewId>/preview.pdf` and served inline by a route with
+    // its own key template, so the download path is structurally unable to serve
+    // one. The case variants are here because S3 keys are byte strings and
+    // case-folding here would authorize against a key the writer never wrote.
+    expect(parseArtifactKey(`alice/${segment}/run-1/artifact.bin`)).toBeNull()
+  })
+
+  test("the source declares the set from the two named constants", () => {
+    // The static half. The values above could be satisfied by a literal pair
+    // inlined at the call site; this pins the single declaration the parser reads,
+    // so a second gate somewhere else is a visible edit rather than a quiet one.
+    const source = readProjectFile(path.join("lib", "aws", "s3.ts"))
+
+    expect(source).toContain("export const DOWNLOADABLE_SEGMENTS")
+    expect(source).toContain(
+      "new Set([ARTIFACT_SEGMENT_SNAPSHOTS, ARTIFACT_SEGMENT_REPORTS])"
+    )
+    expect(ARTIFACT_SEGMENT_SNAPSHOTS).toBe("snapshots")
+    expect(ARTIFACT_SEGMENT_REPORTS).toBe("reports")
+  })
+})
+
+// --- Group D: no templating, and no figure arithmetic ----------------------
+
+/**
+ * The JS equivalents of `docxtpl`, as **quoted module specifiers**.
+ *
+ * Two families, banned for one reason each:
+ *
+ * - **Document templaters** — `docxtemplater`, `docx-templates`,
+ *   `easy-template-x`, and `docx` itself. A template here is a versioned JSON
+ *   definition compiled to a typed AST, and a figure is the AST's only numeric
+ *   leaf. A document templater reintroduces exactly the hole that closes: an
+ *   expression in a document produces a number with no `snapshot_path`, which the
+ *   verifier cannot trace and therefore cannot prove.
+ * - **General text templaters** — `handlebars`, `mustache`, `nunjucks`, `ejs`,
+ *   `liquidjs`, `pug`, `eta`, `dot`. Banned in the same rule because the
+ *   requirement is about a *user-facing template language*, and reaching one of
+ *   these is how a placeholder syntax gets introduced without anybody deciding to
+ *   introduce one.
+ *
+ * Matched as a quoted specifier so prose naming a package is not a hit — this
+ * file's own comment above names most of them.
+ */
+const TEMPLATING_PACKAGES = [
+  "docxtemplater",
+  "docx-templates",
+  "easy-template-x",
+  "docx",
+  "handlebars",
+  "mustache",
+  "nunjucks",
+  "ejs",
+  "liquidjs",
+  "pug",
+  "eta",
+  "dot",
+] as const
+
+/**
+ * Arbitrary-precision arithmetic libraries.
+ *
+ * `app/` computes no figure: every number a consultant reads was quantized,
+ * rounded and formatted by `agent/src/reporting_agent/compile/format.py`, and the
+ * app renders the resulting `formatted` string verbatim. So there is nothing here
+ * for a decimal library to do, and reaching for one is the signature of the
+ * mistake — a second rounding path, on the browser side of the boundary, that no
+ * verification covers.
+ */
+const DECIMAL_PACKAGES = [
+  "decimal.js",
+  "decimal.js-light",
+  "big.js",
+  "bignumber.js",
+] as const
+
+/**
+ * `import … from "pkg"`, `import "pkg"`, `import("pkg")`, `require("pkg")` —
+ * subpaths included.
+ *
+ * Anchored on the **import position**, not on the quoted string alone. A bare
+ * quoted-string match is what this rule was written as first, and it failed on two
+ * files that import nothing of the kind: the preview route has a
+ * `PreviewStage = "compilation" | "docx" | "pdf"` union, and `components/ui/chart.tsx`
+ * takes an `indicator?: "line" | "dot" | "dashed"` prop. Both are ordinary string
+ * literals that happen to spell a package name, and short package names like `dot`
+ * and `eta` make that collision likely rather than exotic.
+ */
+function importsPackage(source: string, packageName: string): boolean {
+  const escaped = packageName.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+  return new RegExp(
+    `(?:\\bfrom|\\bimport|\\brequire)\\s*\\(?\\s*["']${escaped}(/[^"']*)?["']`
+  ).test(source)
+}
+
+// --- Group D, the parsed half ----------------------------------------------
+
+/** Parsed with position info, so a failure can name a line. */
+function parseTsModule(relativePath: string): ts.SourceFile {
+  return ts.createSourceFile(
+    relativePath,
+    readProjectFile(relativePath),
+    ts.ScriptTarget.Latest,
+    true
+  )
+}
+
+function parseTsSource(source: string): ts.SourceFile {
+  return ts.createSourceFile(
+    "synthetic.tsx",
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX
+  )
+}
+
+function walkTs(node: ts.Node, visit: (node: ts.Node) => void): void {
+  visit(node)
+  ts.forEachChild(node, (child) => walkTs(child, visit))
+}
+
+/**
+ * The property names a figure's numeric content arrives under.
+ *
+ * `value` is the snapshot's fixed-precision decimal string and `formatted` is the
+ * display string the renderer emitted. Both are strings, and both are things this
+ * half of the product may only pass through.
+ */
+const FIGURE_PROPERTY_NAMES = new Set(["value", "formatted"])
+
+/**
+ * Receivers whose `.value` is a DOM control's value, not a figure's.
+ *
+ * `event.target.value` is a `<select>`'s selected id in `run-form.tsx`, and
+ * `React.ChangeEvent` exposes it under exactly these two names. Coercing one with
+ * `Number()` would be ordinary form handling and is not what this rule is about,
+ * so the two are distinguished **structurally** — by the receiver — rather than by
+ * a path exemption.
+ *
+ * This is a closed set taken from React's own typings rather than an open-ended
+ * escape hatch, which is the distinction that matters: widening it means naming a
+ * third DOM property that carries a value, and there isn't one.
+ */
+const DOM_EVENT_RECEIVERS = new Set(["target", "currentTarget"])
+
+/**
+ * The unambiguously arithmetic operators: one figure operand is enough.
+ *
+ * A figure's `value` and `formatted` are both **strings**, so `-`, `*`, `/`, `%`
+ * and `**` cannot mean anything but "coerce this to a number and compute with
+ * it" — which is the thing being banned, whatever the other operand is.
+ */
+const ARITHMETIC_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.MinusToken,
+  ts.SyntaxKind.AsteriskToken,
+  ts.SyntaxKind.SlashToken,
+  ts.SyntaxKind.PercentToken,
+  ts.SyntaxKind.AsteriskAsteriskToken,
+  ts.SyntaxKind.MinusEqualsToken,
+  ts.SyntaxKind.AsteriskEqualsToken,
+  ts.SyntaxKind.SlashEqualsToken,
+  ts.SyntaxKind.PercentEqualsToken,
+])
+
+/**
+ * `+`, which needs **both** operands to be figure reads before it is an offence.
+ *
+ * `+` is the one operator that is arithmetic or concatenation depending on its
+ * operands, and the split falls out of that rather than out of taste:
+ *
+ * - `a.value + b.value` — two figures. Either it sums them, or it welds two
+ *   display strings into one token the ledger never recorded. Both are this half
+ *   of the product computing a figure, so it is an offence.
+ * - `"CPU " + figure.formatted` — one figure and a literal. That is prose composed
+ *   around a figure whose string is passed through untouched, which is exactly
+ *   what a report component is for, and it is the same operation as
+ *   `` `CPU ${figure.formatted}` ``. Banning one spelling and permitting the other
+ *   would teach the code which spelling evades the guard.
+ *
+ * A `+` that decorates a `formatted` string with a caveat of its own is forbidden
+ * too, by Requirement 18.2 — but that is a rule about *what* is appended, not
+ * about the operator, so it is not this guard's to make. Pretending otherwise here
+ * would mean failing every component that puts a figure in a sentence.
+ */
+const CONCATENATION_OPERATORS = new Set<ts.SyntaxKind>([
+  ts.SyntaxKind.PlusToken,
+  ts.SyntaxKind.PlusEqualsToken,
+])
+
+/** The numeric coercions. `Number`, `parseFloat`, `parseInt`, and unary `+`/`-`. */
+const NUMERIC_COERCIONS = new Set([
+  "Number",
+  "parseFloat",
+  "parseInt",
+  "BigInt",
+])
+
+/** Is this expression a read of a figure's `value` or `formatted`? */
+function readsFigureProperty(node: ts.Node): boolean {
+  if (!ts.isPropertyAccessExpression(node)) return false
+  if (!FIGURE_PROPERTY_NAMES.has(node.name.text)) return false
+
+  const receiver = node.expression
+  if (
+    ts.isPropertyAccessExpression(receiver) &&
+    DOM_EVENT_RECEIVERS.has(receiver.name.text)
+  ) {
+    return false
+  }
+
+  return true
+}
+
+type Offender = {
+  readonly file: string
+  readonly line: number
+  readonly what: string
+}
+
+/**
+ * Every computation over a figure property in one parsed module.
+ *
+ * Four shapes: a binary arithmetic expression with a figure read (either side for
+ * {@link ARITHMETIC_OPERATORS}, both sides for {@link CONCATENATION_OPERATORS}), a
+ * unary `+`/`-` applied to one, a `Number(…)`-family call taking one, and an
+ * increment or decrement of one.
+ *
+ * Takes a parsed `SourceFile` rather than a path so the detector self-tests below
+ * run **this** function over synthetic sources instead of a second copy of the
+ * walk. A guard whose self-test reimplements the rule tests the copy.
+ */
+function figureComputationOffenders(
+  source: ts.SourceFile,
+  label: string
+): readonly Offender[] {
+  const found: Offender[] = []
+
+  const at = (node: ts.Node, what: string): void => {
+    found.push({
+      file: label,
+      line:
+        source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1,
+      what,
+    })
+  }
+
+  walkTs(source, (node) => {
+    if (ts.isBinaryExpression(node)) {
+      const left = readsFigureProperty(node.left)
+      const right = readsFigureProperty(node.right)
+
+      if (
+        ARITHMETIC_OPERATORS.has(node.operatorToken.kind) &&
+        (left || right)
+      ) {
+        at(node, "arithmetic on a figure property")
+        return
+      }
+      if (
+        CONCATENATION_OPERATORS.has(node.operatorToken.kind) &&
+        left &&
+        right
+      ) {
+        at(node, "two figure properties combined with +")
+        return
+      }
+      return
+    }
+
+    if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node)) &&
+      readsFigureProperty(node.operand)
+    ) {
+      at(node, "unary arithmetic on a figure property")
+      return
+    }
+
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      NUMERIC_COERCIONS.has(node.expression.text) &&
+      node.arguments.some(readsFigureProperty)
+    ) {
+      at(node, `${node.expression.text}() over a figure property`)
+    }
+  })
+
+  return found
+}
+
+/** {@link figureComputationOffenders} over a module read from disk. */
+function figureArithmeticOffenders(relativePath: string): readonly Offender[] {
+  return figureComputationOffenders(parseTsModule(relativePath), relativePath)
+}
+
+const REPORT_COMPONENT_DIRECTORY = path.join("components", "reports")
+
+describe("Requirements 18.2, 20.2 — app/ computes no figure", () => {
+  test("the report component directory is not empty", () => {
+    // Requirement 6.11. The rules below are the ones most prone to passing over
+    // nothing, because a clean tree and an empty scan produce the same `[]`.
+    expect(
+      listSourceFiles(REPORT_COMPONENT_DIRECTORY).length,
+      `${REPORT_COMPONENT_DIRECTORY} is absent or holds no source file`
+    ).toBeGreaterThan(0)
+  })
+
+  test("no component under components/reports/ computes over a figure", () => {
+    const offenders = listSourceFiles(REPORT_COMPONENT_DIRECTORY).flatMap(
+      (file) => figureArithmeticOffenders(file)
+    )
+
+    expect(
+      offenders.map(({ file, line, what }) => `${file}:${line} ${what}`),
+      `every number a consultant reads was quantized and formatted by the ` +
+        `agent's compile/format.py; this half renders the ledger's formatted ` +
+        `string verbatim (Requirement 18.2)`
+    ).toEqual([])
+  })
+
+  test("no source file in app/ imports an arbitrary-precision decimal library", () => {
+    for (const packageName of DECIMAL_PACKAGES) {
+      expect(
+        [...declaredDependencyNames()],
+        `${packageName} is declared; app/ computes no figure`
+      ).not.toContain(packageName)
+
+      const offenders = allSourceFiles().filter((file) =>
+        importsPackage(readProjectFile(file), packageName)
+      )
+
+      expect(offenders, `these files import ${packageName}`).toEqual([])
+    }
+  })
+
+  test("the DOM carve-out is exercised and is a receiver rule, not a path one", () => {
+    // Asserting the carve-out is *used* is what stops it being dead weight that
+    // could be widened unnoticed: `run-form.tsx` reads `event.target.value`, so a
+    // rule without it would fail on ordinary form handling, and a rule that
+    // exempted the file instead would stop covering a real figure read in it.
+    const runForm = readProjectFile(
+      path.join("components", "reports", "run-form.tsx")
+    )
+
+    expect(runForm).toContain("event.target.value")
+    expect(
+      figureArithmeticOffenders(
+        path.join("components", "reports", "run-form.tsx")
+      )
+    ).toEqual([])
+  })
+})
+
+describe("Requirement 11.6 — no templating library reaches this product", () => {
+  test.each(TEMPLATING_PACKAGES)(
+    "%s is not a declared dependency",
+    (packageName) => {
+      expect([...declaredDependencyNames()]).not.toContain(packageName)
+    }
+  )
+
+  test("no source file imports one", () => {
+    const offenders = allSourceFiles().flatMap((file) => {
+      const source = readProjectFile(file)
+      return TEMPLATING_PACKAGES.filter((pkg) =>
+        importsPackage(source, pkg)
+      ).map((pkg) => `${file} imports ${pkg}`)
+    })
+
+    expect(
+      offenders,
+      `a template here is a versioned JSON definition compiled to a typed AST; ` +
+        `a document templater reintroduces a figure with no snapshot_path`
+    ).toEqual([])
+  })
+
+  test("the specifier detector matches an import and not prose", () => {
+    // `dot` and `eta` are short enough to appear inside other names, and `docx`
+    // is a substring of `docx-templates` — so the detector is pinned against
+    // both the forms it must catch and the ones it must not.
+    expect(
+      importsPackage(
+        'import Docxtemplater from "docxtemplater"',
+        "docxtemplater"
+      )
+    ).toBe(true)
+    expect(importsPackage('require("handlebars")', "handlebars")).toBe(true)
+    expect(importsPackage('await import("nunjucks/browser")', "nunjucks")).toBe(
+      true
+    )
+    expect(importsPackage('from "docx"', "docx")).toBe(true)
+    // A different package whose name merely starts the same way.
+    expect(importsPackage('from "docx-preview"', "docx")).toBe(false)
+    expect(importsPackage('from "dotenv"', "dot")).toBe(false)
+    expect(importsPackage('from "@types/eta-lang"', "eta")).toBe(false)
+    // Prose naming the package is not an import, which is why this file may
+    // discuss them a few lines above without failing its own rule.
+    expect(importsPackage("// no docxtemplater here", "docxtemplater")).toBe(
+      false
+    )
+    expect(importsPackage("a .docx is emitted by the agent", "docx")).toBe(
+      false
+    )
+  })
+
+  test.each([
+    "const t = figure.value + other.value",
+    "const t = a.formatted + b.formatted",
+    "const t = entry.value * 100",
+    "const t = a.formatted / 2",
+    "const t = -figure.value",
+    "const n = Number(figure.value)",
+    "const n = parseFloat(entry.value)",
+    "const n = parseInt(row.cells[0].value)",
+    "const n = BigInt(figure.value)",
+    "let x = 1; x -= figure.value",
+    "const t = ledger[path].value % 7",
+    "const t = figure.value ** 2",
+  ])("the detector fires on %s", (source) => {
+    // Guard the guard. `components/reports/` is clean, so a green rule above
+    // proves nothing until the detector has been seen to go red. Run through the
+    // same function the rule uses, so a self-test cannot pass against a copy.
+    expect(
+      figureComputationOffenders(parseTsSource(source), "synthetic.tsx")
+    ).not.toEqual([])
+  })
+
+  test.each([
+    // The sanctioned move: render the string the ledger carries.
+    "const text = figure.formatted",
+    "const node = <span>{figure.formatted}</span>",
+    "const strings = ledger.map((f) => f.formatted)",
+    // Prose composed around a figure. Both spellings, deliberately — see
+    // CONCATENATION_OPERATORS for why one operand is not enough.
+    'const label = "CPU " + figure.formatted',
+    "const label = `${figure.formatted} in ${period}`",
+    // Ordinary form handling. `event.target.value` is a selected id, not a figure.
+    "const h = (event) => setId(event.target.value)",
+    "const n = Number(event.target.value)",
+    "const n = Number(event.currentTarget.value)",
+    // Arithmetic on things that are not figures.
+    "const next = index + 1",
+    "const width = bounds.height / 2",
+    // A comparison is not arithmetic.
+    "const same = figure.formatted === recorded",
+  ])("the detector permits %s", (source) => {
+    expect(
+      figureComputationOffenders(parseTsSource(source), "synthetic.tsx")
+    ).toEqual([])
+  })
+})
+
+// --- Group E: the completeness rule over every sweep in this file ----------
+
+/**
+ * Requirement 6.11, consolidated.
+ *
+ * Every rule in this file is "list some files, assert no offender", and both
+ * halves are true of the empty list. Individual rules assert their own scan is
+ * non-empty where they can, but the *listings* are keyed on directory names, so a
+ * renamed or moved directory turns a rule into a no-op **and removes the failure
+ * that would say so**.
+ *
+ * So the directories are declared once, here, and asserted to exist and yield
+ * source files. `hooks/` is the one deliberate omission and it is the reason this
+ * is a declaration rather than a sweep of `SOURCE_DIRECTORIES`: it holds no hook
+ * yet, and the Requirement 6.2 rule that walks it covers the union of four
+ * directories, so an unpopulated one is not the hole this rule closes.
+ */
+const SWEPT_DIRECTORIES = [
+  "lib",
+  "lib/auth",
+  "lib/aws",
+  "lib/db",
+  "lib/subscriptions",
+  "lib/templates",
+  "lib/verifications",
+  "app",
+  "app/api",
+  "components",
+  "components/reports",
+  "components/templates",
+  "components/charts",
+] as const
+
+describe("Requirement 6.11 — no sweep in this file may pass over nothing", () => {
+  test.each(SWEPT_DIRECTORIES)(
+    "%s exists and yields at least one source file",
+    (directory) => {
+      expect(
+        listSourceFiles(directory).length,
+        `${directory} is absent or holds no source file, so every rule scanning ` +
+          `it asserts nothing`
+      ).toBeGreaterThan(0)
+    }
+  )
+
+  test("every directory the rules name is declared here", () => {
+    // Ties the declaration to the rules that consume it rather than to the
+    // filesystem: without this, the list above could agree with the tree
+    // perfectly while a rule swept a name in neither — a sweep of
+    // `components/report` would be a permanent no-op and nothing would fail.
+    const named = new Set<string>([
+      ...SOURCE_DIRECTORIES.filter((directory) => directory !== "hooks"),
+      ...SERVER_ONLY_DIRECTORIES,
+      "lib/db",
+      "lib/subscriptions",
+      TEMPLATE_COMPONENT_DIRECTORY,
+      REPORT_COMPONENT_DIRECTORY.split(path.sep).join("/"),
+      "app/api",
+      path.dirname(TEMPLATE_STORE).split(path.sep).join("/"),
+      path.dirname(VERIFICATION_STORE).split(path.sep).join("/"),
+    ])
+
+    const declared = new Set<string>(SWEPT_DIRECTORIES)
+
+    expect([...named].filter((directory) => !declared.has(directory))).toEqual(
+      []
+    )
+  })
+
+  test("an absent directory yields nothing rather than throwing", () => {
+    // The behaviour the rule above depends on, asserted rather than assumed: if
+    // `listSourceFiles` threw on an absent directory the failure would still be
+    // loud, but if it ever started returning a placeholder the rule would pass
+    // over a directory that does not exist.
+    expect(listSourceFiles("lib/does-not-exist")).toEqual([])
+    expect(listSourceFiles("components/nope/nested")).toEqual([])
+  })
+
+  test("a directory holding only tests yields nothing, and that is a failure here", () => {
+    // The subtler half of Requirement 6.11: `isSourceFileName` excludes test
+    // files, so a directory holding nothing but `*.test.ts` is an empty scan even
+    // though it is full of files. Pinned on the classifier rather than on a
+    // fixture directory, because creating one would be creating the hole.
+    expect(isSourceFileName("only.test.ts")).toBe(false)
+    expect(isSourceFileName("only.test.tsx")).toBe(false)
+    expect(isSourceFileName("real.ts")).toBe(true)
   })
 })

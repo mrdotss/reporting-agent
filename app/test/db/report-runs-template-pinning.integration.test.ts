@@ -62,7 +62,10 @@ import {
   readVersion,
   type InsertVersionInput,
 } from "@/lib/templates/store"
-import { insertVerification, type InsertVerificationInput } from "@/lib/verifications/store"
+import {
+  insertVerification,
+  type InsertVerificationInput,
+} from "@/lib/verifications/store"
 import type { VerificationResult } from "@/lib/verifications/result"
 
 // --- Wiring ------------------------------------------------------------
@@ -157,7 +160,9 @@ interface InsertRunOptions {
  * for — `lib/runs/state.ts`'s enqueue path is a different task's concern
  * (task 13.1) and is not what either half of this file is testing.
  */
-async function insertReportRun(options: InsertRunOptions = {}): Promise<string> {
+async function insertReportRun(
+  options: InsertRunOptions = {}
+): Promise<string> {
   const id = randomUUID()
   const templateVersionId = options.templateVersionId ?? null
   const status = options.status ?? "collecting"
@@ -170,7 +175,15 @@ async function insertReportRun(options: InsertRunOptions = {}): Promise<string> 
           template_version_id)
        VALUES ($1, $2, $3, '2026-07-01', '2026-07-31', 'Asia/Jakarta',
                $4::jsonb, $5, $6, 'token-hash', $7)`,
-      [id, ownerId, subscriptionId, RUN_SCOPE, status, `dedupe-${id}`, templateVersionId]
+      [
+        id,
+        ownerId,
+        subscriptionId,
+        RUN_SCOPE,
+        status,
+        `dedupe-${id}`,
+        templateVersionId,
+      ]
     )
   } else {
     await db.query(
@@ -307,7 +320,9 @@ describe("Requirement 9.8 — the partial CHECK on report_runs.template_version_
     })
 
     await expect(attempt).rejects.toBeTruthy()
-    const driverError = asDriverError(await attempt.catch((error: unknown) => error))
+    const driverError = asDriverError(
+      await attempt.catch((error: unknown) => error)
+    )
     expect(driverError.code).toBe(CHECK_VIOLATION)
     expect(driverError.constraint).toBe(TEMPLATE_VERSION_ID_CHECK)
   })
@@ -412,7 +427,10 @@ describe("Requirements 9.6, 36.2, 36.7 — editing a template a completed run pi
     const pinned = await readVersion(ownerId, template.id, 1)
     expect(pinned.id).toBe(v1.id)
     expect(pinned.definitionSha256).toBe(v1.definitionSha256)
-    expect(pinned.definition).toEqual({ schema_version: 1, blocks: ["v1-only"] })
+    expect(pinned.definition).toEqual({
+      schema_version: 1,
+      blocks: ["v1-only"],
+    })
 
     const latest = await readLatestVersion(ownerId, template.id)
     expect(latest?.id).toBe(v2.id)
@@ -429,7 +447,9 @@ describe("Requirements 9.6, 36.2, 36.7 — editing a template a completed run pi
       `SELECT definition, definition_sha256 FROM report_template_versions WHERE id = $1`,
       [runRow?.template_version_id]
     )
-    expect(resolvedByRunPin.rows[0]?.definition_sha256).toBe(v1.definitionSha256)
+    expect(resolvedByRunPin.rows[0]?.definition_sha256).toBe(
+      v1.definitionSha256
+    )
     expect(resolvedByRunPin.rows[0]?.definition_sha256).not.toBe(
       v2.definitionSha256
     )

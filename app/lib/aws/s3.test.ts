@@ -71,9 +71,9 @@ describe("parseArtifactKey — the key layout", () => {
     // space rather than a rule either route has to remember.
     expect(DOWNLOADABLE_SEGMENTS.has("previews")).toBe(false)
     expect(parseArtifactKey(`${ACTOR}/previews/pv-1/preview.pdf`)).toBeNull()
-    expect(
-      keyBelongsToActor(ACTOR, `${ACTOR}/previews/pv-1/preview.pdf`)
-    ).toBe(false)
+    expect(keyBelongsToActor(ACTOR, `${ACTOR}/previews/pv-1/preview.pdf`)).toBe(
+      false
+    )
   })
 
   test("`rest` is the whole remainder, not just a file name", () => {

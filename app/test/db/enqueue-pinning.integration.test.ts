@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto"
 
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vitest"
 
 import { withScratchSchema } from "@/test/db/scratch-schema"
 
@@ -414,7 +422,10 @@ describe.skipIf(!db.enabled)(
 
     test("a custom span longer than the maximum is refused", async () => {
       const templateId = await insertTemplate(ownerId, [
-        { ...BASE, period: { kind: "custom", start: "2026-05-01", end: "2026-07-31" } },
+        {
+          ...BASE,
+          period: { kind: "custom", start: "2026-05-01", end: "2026-07-31" },
+        },
       ])
 
       const rejection = await rejectionFrom(

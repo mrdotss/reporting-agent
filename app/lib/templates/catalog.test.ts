@@ -33,7 +33,9 @@ import { STARTER_TEMPLATES } from "@/lib/templates/starters"
 const VIRTUAL_MACHINES = "Microsoft.Compute/virtualMachines"
 
 function resourceType(name: string) {
-  const entry = METRIC_CATALOG.find((candidate) => candidate.resourceType === name)
+  const entry = METRIC_CATALOG.find(
+    (candidate) => candidate.resourceType === name
+  )
   expect(entry, `the catalog declares no ${name}`).toBeDefined()
   return entry!
 }
@@ -208,21 +210,18 @@ describe("Requirement 10.8 — every shipped starter validates against this cata
     STARTER_TEMPLATES.map(
       (starter) => [starter.seededStarterKey, starter] as const
     )
-  )(
-    "%s",
-    (_key, starter) => {
-      // Shape first: a catalog check assumes the shape it walks is well-formed.
-      expect(collectDefinitionIssues(starter.definition, { mode: "run" })).toEqual(
-        []
-      )
+  )("%s", (_key, starter) => {
+    // Shape first: a catalog check assumes the shape it walks is well-formed.
+    expect(
+      collectDefinitionIssues(starter.definition, { mode: "run" })
+    ).toEqual([])
 
-      // Then membership, against the catalog the wizard serves. This is the
-      // assertion that catches a drifted estimator label: `starters.ts` restates
-      // the string and `catalog.ts` composes it, and Requirement 5.8 rejects the
-      // entry the moment the two stop agreeing.
-      expect(
-        validateMetricSelectionAgainstCatalog(starter.definition, METRIC_CATALOG)
-      ).toEqual([])
-    }
-  )
+    // Then membership, against the catalog the wizard serves. This is the
+    // assertion that catches a drifted estimator label: `starters.ts` restates
+    // the string and `catalog.ts` composes it, and Requirement 5.8 rejects the
+    // entry the moment the two stop agreeing.
+    expect(
+      validateMetricSelectionAgainstCatalog(starter.definition, METRIC_CATALOG)
+    ).toEqual([])
+  })
 })

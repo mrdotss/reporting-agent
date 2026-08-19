@@ -3,11 +3,7 @@ import type { Metadata } from "next"
 import { RunForm } from "@/components/reports/run-form"
 import { RunList } from "@/components/reports/run-list"
 import { requireSession } from "@/lib/auth/guard"
-import {
-  NO_RUN_VIEW_EXTRAS,
-  toRunView,
-  toTemplateView,
-} from "@/lib/db/views"
+import { NO_RUN_VIEW_EXTRAS, toRunView, toTemplateView } from "@/lib/db/views"
 import { resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"

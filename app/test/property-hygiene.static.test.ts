@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url"
 import ts from "typescript"
 import { describe, expect, test } from "vitest"
 
+import * as ledger from "./property-ledger"
+
 /**
  * Hygiene guards for the web-side properties themselves (Requirements 42.1,
  * 42.7, 42.8).
@@ -32,6 +34,31 @@ import { describe, expect, test } from "vitest"
  *    **ratchet**: {@link MINIMUM_DECLARED_CASES} records how many declared cases
  *    each module carries today and the count may only grow. Adding a case is
  *    free; deleting one fails.
+ *
+ * Two further rules read what the run actually **did** rather than what the source
+ * says, because the four above share one blind spot: every one of them passes over
+ * a property that was written correctly and never executed.
+ *
+ * 5. **The set of properties executed equals the set this spec declares**
+ *    (Requirement 45.7). `test/property-ledger.ts` names the web-side set —
+ *    design.md's Properties 8 to 12 — alongside the foundation's three web
+ *    properties. A property added to design.md and never registered fails, a
+ *    module registered and absent from the tree fails, and a module in the tree
+ *    belonging to no property fails.
+ * 6. **Each property records its framework, its accepted-case count, its
+ *    precondition rejection fraction and its seed** (Requirement 45.8), taken
+ *    from fast-check's own `RunDetails` by the global `reporter` in
+ *    `test/setup.ts`. Requirement 45.4's thresholds are then read off that ledger
+ *    rather than assumed.
+ *
+ *    Rule 6 is enforced in two places for one reason. Vitest evaluates each test
+ *    file in its own module registry and runs files in parallel, so *this* file
+ *    can only see the records that happen to be on disk by the time it executes.
+ *    `test/property-ledger.global.ts` — the node project's `globalSetup` — runs
+ *    once after every file and is the only vantage point that sees the whole run,
+ *    so it owns the completeness half. What this file owns is the declaration, the
+ *    thresholds over whatever has been recorded, and the proof that the recording
+ *    is wired up at all.
  *
  * Every rule is asserted over the **TypeScript AST**, not over text. These
  * modules explain in prose why they declare what they declare — the `numRuns`
@@ -828,5 +855,340 @@ describe("Requirement 42.8 — a fixed counterexample stays fixed", () => {
     expect(
       resolveCaseCount(optionValue(sites[1].options, "examples")!, source)
     ).toEqual({ value: 3 })
+  })
+})
+
+/** A clean execution: 100 accepted generated cases, nothing rejected, one seed. */
+function execution(
+  overrides: Partial<ledger.Execution> = {}
+): ledger.Execution {
+  return {
+    modulePath: "lib/synthetic.property.test.ts",
+    testName: "a synthetic property",
+    framework: ledger.FAST_CHECK,
+    accepted: 100,
+    rejected: 0,
+    declaredCases: 0,
+    seed: 42,
+    failed: false,
+    ...overrides,
+  }
+}
+
+describe("Requirement 45.7 — the set executed equals the set declared", () => {
+  test("every property module belongs to exactly one declared property", () => {
+    // A module belonging to no declared property is a property added to the
+    // design and never registered: it runs, but nothing asserts that it ran and
+    // nothing would notice if it stopped.
+    expect(
+      ledger.unclassifiedModules(),
+      `these property modules belong to no declared property, so nothing asserts ` +
+        `that they ran; register each one in test/property-ledger.ts under the ` +
+        `design property it realizes`
+    ).toEqual([])
+
+    // And the other direction: a declared module absent from disk is a rename
+    // that took its property's identity with it.
+    expect(
+      ledger.undeclaredModules(),
+      `these modules are declared in test/property-ledger.ts and absent from disk; ` +
+        `a renamed property module takes its declaration with it`
+    ).toEqual([])
+  })
+
+  test("the declared set is design.md's Properties 8 to 12", () => {
+    expect(
+      Object.keys(ledger.SPEC_PROPERTIES)
+        .map(Number)
+        .sort((a, b) => a - b)
+    ).toEqual([8, 9, 10, 11, 12])
+
+    // Each declared property names at least one module, and each module is named
+    // once. A property declared over zero modules would pass every gate below.
+    const named = Object.values(ledger.SPEC_PROPERTIES).flatMap(
+      (d) => d.modules
+    )
+    expect(named.length).toBeGreaterThanOrEqual(5)
+    expect(new Set(named).size).toBe(named.length)
+  })
+
+  test("the ratchet and the property registry name the same modules", () => {
+    // The two maps are indexed differently and nothing forces them to agree, so a
+    // module added to one and not the other would be half-guarded: ratcheted but
+    // unregistered, or registered but with its declared cases free to be deleted.
+    expect([...ledger.declaredModules().keys()].sort()).toEqual(
+      Object.keys(MINIMUM_DECLARED_CASES).sort()
+    )
+  })
+
+  test("every declared module hands at least one property to fast-check", () => {
+    // The other half of "registered and never run": a module emptied of its
+    // `fc.assert` calls satisfies both directions above and contributes nothing.
+    for (const [modulePath, owner] of ledger.declaredModules()) {
+      const sites = assertSites(modulePath, parseModule(modulePath))
+
+      expect(
+        sites.length,
+        `${modulePath} is declared as ${owner} and hands nothing to fast-check`
+      ).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe("Requirement 45.8 — each property records four values, observably", () => {
+  test("test/setup.ts installs a reporter that records them", () => {
+    // Read from the AST of the real file. A `reporter` is what makes fast-check
+    // call back on **every** run rather than only on a failure, so it is the
+    // observation point — and because it also replaces fast-check's own
+    // throw-on-failure, the `throw` beside it is load-bearing rather than
+    // decorative. Both are asserted here.
+    const setup = parseModule(path.join("test", "setup.ts"))
+    let configured: ts.ObjectLiteralExpression | undefined
+
+    walk(setup, (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText().endsWith("configureGlobal") &&
+        node.arguments[0] !== undefined &&
+        ts.isObjectLiteralExpression(node.arguments[0])
+      ) {
+        configured = node.arguments[0]
+      }
+    })
+
+    const reporter = optionValue(configured, "reporter")
+    expect(
+      reporter,
+      "fc.configureGlobal declares no reporter, so no property records anything " +
+        "(Requirement 45.8)"
+    ).toBeDefined()
+
+    const body = reporter!.getText()
+    for (const field of [
+      "framework",
+      "accepted",
+      "rejected",
+      "declaredCases",
+      "seed",
+    ]) {
+      expect(
+        body.includes(field),
+        `the reporter records no ${field}; Requirement 45.8 names the framework, the ` +
+          `accepted-case count, the precondition rejection fraction and the seed`
+      ).toBe(true)
+    }
+
+    let throws = false
+    walk(reporter!, (node) => {
+      if (ts.isThrowStatement(node)) throws = true
+    })
+    expect(
+      throws,
+      "a configured reporter replaces fast-check's throw-on-failure, so a reporter " +
+        "that does not throw turns every failing property into a passing test"
+    ).toBe(true)
+  })
+
+  test("test/setup.ts gates each module's records in an afterAll", () => {
+    // Where enforcement has to live. Vitest logs an error thrown from a
+    // `globalSetup` teardown and still exits zero, so a gate there would read like
+    // one and not be one. An `afterAll` fails its file, and a failed file fails
+    // the run.
+    const setup = readProjectFile(path.join("test", "setup.ts"))
+
+    expect(setup).toContain("afterAll")
+    expect(setup).toContain("gateModule")
+    expect(
+      /throw new Error\(/.test(setup),
+      "test/setup.ts computes the gate and does not throw on it, so a property that " +
+        "stopped running would be printed and passed"
+    ).toBe(true)
+  })
+
+  test("vitest.config.ts registers the whole-run roll-up", () => {
+    // The roll-up reports what a per-file check cannot see. It does not enforce —
+    // see the module header — but if it is not registered, the ledger directory is
+    // never emptied either, and stale records from an earlier run would be read as
+    // this one's.
+    const config = readProjectFile("vitest.config.ts")
+
+    expect(config).toContain("globalSetup")
+    expect(config).toContain("./test/property-ledger.global.ts")
+  })
+
+  test("every declared module is inside the node project's include patterns", () => {
+    // The one case a per-file gate structurally cannot reach: a module Vitest never
+    // collects has no `afterAll` to fail in. Closed here instead, statically. The
+    // node project includes `lib/**/*.test.ts`, so a declared module outside `lib/`
+    // or not ending in `.test.ts` would silently never run.
+    const config = readProjectFile("vitest.config.ts")
+    expect(config).toContain('"lib/**/*.test.ts"')
+
+    for (const modulePath of ledger.declaredModules().keys()) {
+      expect(
+        modulePath.startsWith("lib/") && modulePath.endsWith(".test.ts"),
+        `${modulePath} is declared as a property module and does not match the node ` +
+          `project's include patterns, so Vitest would never collect it`
+      ).toBe(true)
+    }
+  })
+
+  test("the execution ratchet is at least the fc.assert calls each module holds", () => {
+    // Ties the runtime ratchet to the source. Adding an `fc.assert` therefore
+    // forces the entry up rather than leaving a new property unwatched; the counts
+    // are executions rather than sites because a `test.each` block is one site run
+    // many times.
+    for (const [modulePath] of ledger.declaredModules()) {
+      const sites = assertSites(modulePath, parseModule(modulePath)).length
+      const declared = ledger.MINIMUM_EXECUTIONS[modulePath]
+
+      expect(
+        declared,
+        `${modulePath} carries no entry in MINIMUM_EXECUTIONS, so nothing would ` +
+          `notice one of its properties going inert`
+      ).toBeDefined()
+      expect(
+        declared,
+        `${modulePath} holds ${sites} fc.assert calls and ratchets only ${declared} ` +
+          `executions; raise the entry`
+      ).toBeGreaterThanOrEqual(sites)
+    }
+
+    // And no entry names a module that is not a declared property module.
+    expect(Object.keys(ledger.MINIMUM_EXECUTIONS).sort()).toEqual(
+      [...ledger.declaredModules().keys()].sort()
+    )
+  })
+
+  test("every recorded execution carries four values and meets the thresholds", () => {
+    // Over whatever is on disk when this runs — a real check and not a complete
+    // one; see this module's header for why completeness belongs to the global
+    // teardown. An empty ledger is not a failure here, because this file may be
+    // the first one Vitest finished.
+    const recorded = ledger.readLedger()
+    const offenders = recorded.flatMap((execution) =>
+      ledger.gateExecution(execution)
+    )
+
+    expect(
+      offenders,
+      `the recorded executions do not meet the thresholds Requirements 45.1 and ` +
+        `45.4 declare`
+    ).toEqual([])
+
+    for (const execution of recorded) {
+      expect(execution.framework).toBe(ledger.FAST_CHECK)
+      expect(Number.isInteger(execution.seed)).toBe(true)
+      expect(execution.accepted).toBeGreaterThan(0)
+    }
+  })
+
+  test.each([
+    // A run below the floor once its declared cases are taken back out —
+    // Requirement 45.5's "in addition to", which is the arithmetic a property
+    // satisfying 42.8 at the bare floor gets wrong.
+    [{ accepted: 104, declaredCases: 5 }, true],
+    [{ accepted: 105, declaredCases: 5 }, false],
+    [{ accepted: 99 }, true],
+    [{ accepted: 100 }, false],
+    // Requirement 45.4's precondition ceiling: 25 skips against 100 accepted is
+    // 20% of what was generated, and 26 is over.
+    [{ rejected: 25 }, false],
+    [{ rejected: 26 }, true],
+    // Requirements 45.3 and 45.8: a run nobody can reproduce.
+    [{ seed: Number.NaN }, true],
+    // A property that quietly moved to another engine.
+    [{ framework: "hypothesis" }, true],
+    // A failure the reporter recorded rather than raised.
+    [{ failed: true }, true],
+  ] as const)("the gate on %o → offends: %s", (overrides, expected) => {
+    expect(ledger.gateExecution(execution(overrides)).length > 0).toBe(expected)
+  })
+
+  test("the property gate reports a declared property that never ran", () => {
+    const offenders = ledger.gateProperty(ledger.SPEC_PROPERTIES[12], [])
+
+    expect(offenders.length).toBe(1)
+    expect(offenders[0]).toContain("executed no property at all")
+  })
+
+  test("the module gate reports a module that ran fewer properties than it holds", () => {
+    // The case a per-execution check cannot see: eight of nine `fc.assert` calls
+    // ran, so every recorded number is healthy and one property never executed.
+    const [modulePath] = ledger.SPEC_PROPERTIES[12].modules
+    const one = execution({ modulePath, testName: "one of several" })
+
+    const offenders = ledger.gateModule(modulePath, [one])
+    expect(offenders.length).toBe(1)
+    expect(offenders[0]).toContain(
+      `recorded 1 property executions, down from ` +
+        `${ledger.MINIMUM_EXECUTIONS[modulePath]}`
+    )
+  })
+
+  test("the module gate reads the aggregate across a module's assertions", () => {
+    // Requirement 45.1 bounds a *property*, and a property here is every
+    // `fc.assert` in its module. The floor is therefore on the claim rather than on
+    // each assertion of it — while a module whose assertions total ninety fails.
+    const [modulePath] = ledger.SPEC_PROPERTIES[12].modules
+    const minimum = ledger.MINIMUM_EXECUTIONS[modulePath]
+    const runs = (accepted: number): readonly ledger.Execution[] =>
+      Array.from({ length: minimum }, (_unused, index) =>
+        execution({ modulePath, testName: `assertion ${index}`, accepted })
+      )
+
+    // Each assertion below the per-execution floor, so both rules report.
+    const thin = ledger.gateModule(modulePath, runs(9))
+    expect(thin.some((line) => line.includes("below the floor"))).toBe(true)
+
+    expect(ledger.gateModule(modulePath, runs(100))).toEqual([])
+  })
+
+  test("an unregistered module is recorded and not gated", () => {
+    // `lib/session-id.test.ts` and `lib/db/views.test.ts` reach for fast-check for
+    // one assertion each without being properties of this spec. Holding them to a
+    // property's contract would make the contract about the tool rather than about
+    // the claim.
+    const stranger = execution({
+      modulePath: "lib/session-id.test.ts",
+      accepted: 3,
+      seed: Number.NaN,
+    })
+
+    expect(ledger.gateModule("lib/session-id.test.ts", [stranger])).toEqual([])
+  })
+
+  test("gateLedger narrows to the properties an invocation selected", () => {
+    // A single-file run is not this spec's suite, and reporting it as a suite in
+    // which eleven properties failed to run would train everyone to ignore the
+    // output. An unreadable file list reports on everything instead.
+    const everything = ledger.gateLedger([])
+    expect(everything.length).toBe(ledger.declaredProperties().length)
+
+    const [selected] = ledger.SPEC_PROPERTIES[12].modules
+    const narrowed = ledger.gateLedger([], new Set([selected]))
+    expect(narrowed.length).toBe(1)
+    expect(narrowed[0]).toContain(selected)
+  })
+
+  test("the printed table carries all four values for every execution", () => {
+    const [modulePath] = ledger.SPEC_PROPERTIES[12].modules
+    const rendered = ledger
+      .formatLedger([
+        execution({
+          modulePath,
+          accepted: 145,
+          rejected: 10,
+          declaredCases: 5,
+          seed: 777,
+        }),
+      ])
+      .join("\n")
+
+    expect(rendered).toContain(ledger.FAST_CHECK) // framework
+    expect(rendered).toContain("140 accepted") // accepted cases, minus the declared
+    expect(rendered).toContain("6.5%") // precondition rejection fraction
+    expect(rendered).toContain("seed=777") // the seed that reproduces it
+    expect(rendered).toContain("+5 declared") // Requirement 45.5, in addition
   })
 })

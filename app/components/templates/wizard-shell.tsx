@@ -87,7 +87,11 @@ type SaveState =
 type PublishState =
   | { readonly kind: "idle" }
   | { readonly kind: "publishing" }
-  | { readonly kind: "published"; readonly version: number; readonly created: boolean }
+  | {
+      readonly kind: "published"
+      readonly version: number
+      readonly created: boolean
+    }
   | { readonly kind: "refused"; readonly message: string }
 
 type PatchResponse = { readonly error?: { readonly message?: string } }
@@ -97,7 +101,10 @@ type PublishResponse = {
   readonly created?: boolean
   readonly error?: {
     readonly message?: string
-    readonly fields?: readonly { readonly path: string; readonly message: string }[]
+    readonly fields?: readonly {
+      readonly path: string
+      readonly message: string
+    }[]
   }
 }
 
@@ -289,7 +296,10 @@ export function WizardShell({
           on **every** step. In the header rather than inside a step body, so
           there is one place it is rendered and no step can omit it.
         */}
-        <p data-slot="wizard-position" className="text-sm text-muted-foreground">
+        <p
+          data-slot="wizard-position"
+          className="text-sm text-muted-foreground"
+        >
           Step <span className="font-mono tabular-nums">{step.number}</span> of{" "}
           <span className="font-mono tabular-nums">{WIZARD_STEP_COUNT}</span> ·{" "}
           {step.title}
@@ -330,7 +340,9 @@ export function WizardShell({
                 key={`${issue.path.join(".")}-${index}`}
                 className="text-sm text-destructive"
               >
-                <span className="font-mono">{issue.path.join(".") || "definition"}</span>{" "}
+                <span className="font-mono">
+                  {issue.path.join(".") || "definition"}
+                </span>{" "}
                 — {issue.message}
               </p>
             ))}

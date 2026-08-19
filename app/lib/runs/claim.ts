@@ -238,6 +238,20 @@ export type ClaimedRun = {
   readonly periodEnd: string
   readonly timezone: string
   readonly scope: RunScope
+  /**
+   * The template version this run pinned at enqueue (Requirement 9.6), or `null`
+   * for a foundation-era row that pins none.
+   *
+   * Carried on the claim because the invocation needs it: `generate_report` sends
+   * the pinned version's id **and its definition inline**, and a run with no
+   * definition is a snapshot-only run by the runtime's own contract. So a claim
+   * that dropped this column would invoke every run as snapshot-only and no
+   * document would ever be produced.
+   *
+   * `null` rather than absent, so "this row pins no version" is a value the
+   * invocation branches on rather than a missing property it has to infer.
+   */
+  readonly templateVersionId: string | null
 }
 
 /**
@@ -283,6 +297,7 @@ export async function claimQueuedRuns(
     period_end: string
     timezone: string
     scope: RunScope
+    template_version_id: string | null
   }>(sql`
     UPDATE report_runs
        SET status = 'claimed',
@@ -297,7 +312,7 @@ export async function claimQueuedRuns(
         FOR UPDATE SKIP LOCKED
         LIMIT ${CLAIM_LIMIT})
     RETURNING id, user_id, connected_subscription_id,
-              period_start, period_end, timezone, scope
+              period_start, period_end, timezone, scope, template_version_id
   `)
 
   return result.rows.map((row) => ({
@@ -308,6 +323,7 @@ export async function claimQueuedRuns(
     periodEnd: row.period_end,
     timezone: row.timezone,
     scope: row.scope,
+    templateVersionId: row.template_version_id,
   }))
 }
 

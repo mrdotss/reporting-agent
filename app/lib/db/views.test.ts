@@ -6,6 +6,7 @@ import {
   SUBSCRIPTION_ID_MASK_CHAR,
   SUBSCRIPTION_ID_VISIBLE_CHARS,
   maskSubscriptionId,
+  reportArtifactKey,
   snapshotArtifactKey,
   toConnectedSubscriptionView,
   toFindingView,
@@ -733,7 +734,13 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
       resourceCount: 200,
       gapCount: 3,
       snapshotId: SNAPSHOT_ID,
-      artifactKeys: [EXPECTED_SNAPSHOT_KEY],
+      // The snapshot key plus the two report keys, because this run's stored
+      // verification passed — see the `artifactKeys` block below for the gate.
+      artifactKeys: [
+        EXPECTED_SNAPSHOT_KEY,
+        reportArtifactKey(RUN_USER_ID, RUN_ID, "report.docx"),
+        reportArtifactKey(RUN_USER_ID, RUN_ID, "report.pdf"),
+      ],
       createdAt: "2026-08-01T03:00:00.000Z",
       updatedAt: "2026-08-01T03:07:30.000Z",
       templateName: TEMPLATE_NAME,
@@ -919,13 +926,6 @@ describe("artifactKeys — Requirements 37.5, 40.4", () => {
     // of this gate stays keyed on `row.status` alone, never on
     // `verificationStatus`. A `completed` snapshot-only run still names its
     // snapshot whether its verification passed, failed, or does not exist.
-    //
-    // This also pins today's honest absence of a second, composed gate: no
-    // `.docx` or `.pdf` key template exists before the render tasks write
-    // those objects (task 13.8), so every branch below yields the identical
-    // array — the snapshot key alone. This assertion is meant to start
-    // failing the day task 13.8 composes a report-key builder into this
-    // array; that is the gate landing, not a regression.
     for (const extras of [
       RUN_VIEW_EXTRAS_PASS,
       RUN_VIEW_EXTRAS_FAIL,
@@ -933,7 +933,37 @@ describe("artifactKeys — Requirements 37.5, 40.4", () => {
     ]) {
       const view = toRunView(completedReportRunRow(), extras)
 
-      expect(view.artifactKeys).toEqual([EXPECTED_SNAPSHOT_KEY])
+      expect(view.artifactKeys[0]).toBe(EXPECTED_SNAPSHOT_KEY)
+    }
+  })
+
+  test("Requirement 40.4 — the two report keys appear only behind a passing verification", () => {
+    // The composed half of the gate, implemented in the projection rather than in a
+    // component: there is no shape in which a browser holds a `.docx` or `.pdf` key
+    // for a run whose document was never proven, so `DownloadCard` cannot render a
+    // control for one however that component is written.
+    expect(
+      toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS).artifactKeys
+    ).toEqual([
+      EXPECTED_SNAPSHOT_KEY,
+      reportArtifactKey(RUN_USER_ID, RUN_ID, "report.docx"),
+      reportArtifactKey(RUN_USER_ID, RUN_ID, "report.pdf"),
+    ])
+
+    // A failing verification and an absent one are different facts, and neither is a
+    // download. Both yield the snapshot key alone.
+    for (const extras of [RUN_VIEW_EXTRAS_FAIL, RUN_VIEW_EXTRAS_UNRESOLVED]) {
+      expect(toRunView(completedReportRunRow(), extras).artifactKeys).toEqual([
+        EXPECTED_SNAPSHOT_KEY,
+      ])
+    }
+
+    // And a passing verification on a run that is not `completed` names nothing at
+    // all: the upload happens after the pass, so the objects do not exist yet.
+    for (const status of ["verifying", "rendering", "failed"] as const) {
+      expect(
+        toRunView(reportRunRow({ status }), RUN_VIEW_EXTRAS_PASS).artifactKeys
+      ).toEqual([])
     }
   })
 })
@@ -1128,12 +1158,20 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11, 43.4, 43.6"
           // `artifactKeys` names the snapshot exactly when the run completed,
           // regardless of `extras.verificationStatus` — see the docstring on
           // `toRunView` for why the snapshot half of this gate stays keyed on
-          // `status` alone. The template is spelled out here rather than
-          // imported, for the same reason the key set is.
+          // `status` alone. The two **report** keys carry the second gate and
+          // appear only where the stored verification passed (Requirement 40.4).
+          // The templates are spelled out here rather than imported, for the same
+          // reason the key set is.
           expect(view.artifactKeys).toEqual(
-            status === "completed"
-              ? [`${userId}/snapshots/${id}/snapshot.json`]
-              : []
+            status !== "completed"
+              ? []
+              : extras.verificationStatus === "pass"
+                ? [
+                    `${userId}/snapshots/${id}/snapshot.json`,
+                    `${userId}/reports/${id}/report.docx`,
+                    `${userId}/reports/${id}/report.pdf`,
+                  ]
+                : [`${userId}/snapshots/${id}/snapshot.json`]
           )
           for (const key of view.artifactKeys) {
             expect(key).not.toContain("://")

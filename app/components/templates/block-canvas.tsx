@@ -232,35 +232,34 @@ function RowColumns({
               aria-label={`Column ${columnIndex + 1} of ${row.columns.length}`}
               className="flex flex-col"
             >
-            {column.map((child, childIndex) => (
-              <li
-                key={child.id}
-                data-block-id={child.id}
-                className="list-none"
-              >
-                <BlockCanvasItem
-                  block={child}
-                  container={container}
-                  position={childIndex + 1}
-                  total={column.length}
-                  columnNumber={columnIndex + 1}
-                  columnCount={row.columns.length}
-                  selected={props.selectedBlockId === child.id}
-                  focusRequested={props.focusBlockId === child.id}
-                  onSelect={() => props.onSelect(child.id)}
-                  onCommand={(command) => props.onCommand(child.id, command)}
-                />
+              {column.map((child, childIndex) => (
+                <li
+                  key={child.id}
+                  data-block-id={child.id}
+                  className="list-none"
+                >
+                  <BlockCanvasItem
+                    block={child}
+                    container={container}
+                    position={childIndex + 1}
+                    total={column.length}
+                    columnNumber={columnIndex + 1}
+                    columnCount={row.columns.length}
+                    selected={props.selectedBlockId === child.id}
+                    focusRequested={props.focusBlockId === child.id}
+                    onSelect={() => props.onSelect(child.id)}
+                    onCommand={(command) => props.onCommand(child.id, command)}
+                  />
 
-                <DropTarget
-                  at={{ container, index: childIndex + 1 }}
-                  total={column.length}
-                  columnNumber={columnIndex + 1}
-                  columnCount={row.columns.length}
-                  refused={refused}
-                />
-              </li>
-            ))}
-
+                  <DropTarget
+                    at={{ container, index: childIndex + 1 }}
+                    total={column.length}
+                    columnNumber={columnIndex + 1}
+                    columnCount={row.columns.length}
+                    refused={refused}
+                  />
+                </li>
+              ))}
             </ol>
 
             {column.length === 0 ? (
@@ -350,12 +349,13 @@ export function BlockCanvas(props: CanvasProps) {
         </p>
       ) : (
         <p className="mt-2 px-1 text-xs text-muted-foreground">
-          {blocks.length} top-level block{blocks.length === 1 ? "" : "s"}, in the
-          order the document emits. Select one and use{" "}
+          {blocks.length} top-level block{blocks.length === 1 ? "" : "s"}, in
+          the order the document emits. Select one and use{" "}
           <kbd className="font-mono">Ctrl</kbd>/
           <kbd className="font-mono">⌘</kbd> with the arrow keys to move it;{" "}
-          <kbd className="font-mono">Delete</kbd> removes it. {blockTypeLabel("row")}{" "}
-          blocks hold two or three columns and hold no row.
+          <kbd className="font-mono">Delete</kbd> removes it.{" "}
+          {blockTypeLabel("row")} blocks hold two or three columns and hold no
+          row.
         </p>
       )}
     </div>

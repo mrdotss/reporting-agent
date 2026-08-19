@@ -52,10 +52,33 @@ over a non-terminal condition and turn a delivered report into no report at all.
 Including on the failing path. A phase that ends by raising still gets its `tool` `end`
 before `done` (Req 14.14), which is what keeps `progress.id` referencing an open step and
 stops the timeline showing a spinner that never resolves.
+
+## Every blocking phase body runs in a worker thread
+
+`compile_document`, `render_document`, `convert_to_pdf` and the verifier's gate body are
+synchronous and each takes **minutes** at a few hundred resources. Called directly they
+would block the event loop for that whole stretch, and two things this spec requires
+happen on that loop:
+
+* the **heartbeat ticker** `main.invoke` merges around this generator, which is what keeps
+  consecutive events no more than 30 seconds apart while the status is `compiling`,
+  `rendering` or `verifying` (Req 42.11) — a blocked loop emits no keep-alive, and the
+  relay's 120-second inactivity window then elapses on a run that is working perfectly;
+* the **fire-and-forget phase-transition callbacks** `ProgressReporter.report` schedules
+  with `asyncio.create_task` (Req 41.4). A task that never gets a loop turn is cancelled
+  by `aclose()` behind the terminal callback, so the `compiling`, `rendering` and
+  `verifying` transitions would never reach the Progress_Endpoint at all — leaving the row
+  to jump `collecting → completed` and bypassing the `verifying → completed`
+  precondition that requires a stored passing verification.
+
+So each blocking body is awaited through `asyncio.to_thread`, the same idiom `azure/`,
+`storage/s3.py` and `collect/` already use for exactly this reason. It is not an
+optimization: the two requirements above are unsatisfiable without it.
 """
 
 from __future__ import annotations
 
+import asyncio
 import io
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
@@ -426,7 +449,9 @@ async def _document_phases(
     # `finally`, before `done` (Req 14.14) — so a step is closed on the raising path either
     # way, and yielding from a `finally` while an exception unwinds an async generator is
     # the one shape that turns a clean failure into a `RuntimeError`.
-    compiled = compile_document(definition, view=view, prose=prose)
+    compiled = await asyncio.to_thread(
+        compile_document, definition, view=view, prose=prose
+    )
     if block_count:
         yield steps.progress(
             compile_step["id"],
@@ -449,8 +474,10 @@ async def _document_phases(
         TOOL_RENDER_DOCUMENT, label="Rendering", status="Emitting the document"
     )
     yield render_step
-    rendered = render_document(compiled.document, ledger=compiled.ledger, design=design)
-    converted = convert_to_pdf(rendered.docx_bytes)
+    rendered = await asyncio.to_thread(
+        render_document, compiled.document, ledger=compiled.ledger, design=design
+    )
+    converted = await asyncio.to_thread(convert_to_pdf, rendered.docx_bytes)
     yield steps.end(render_step["id"])
 
     # --- verifying ------------------------------------------------------------------

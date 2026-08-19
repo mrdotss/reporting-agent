@@ -11,6 +11,7 @@ import { deriveProgressToken } from "@/lib/runs/progress-token"
 import type { ClaimedRun } from "@/lib/runs/claim"
 import { failClaimedRun, readRunStatus } from "@/lib/runs/claim"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
+import { readVersionById } from "@/lib/templates/store"
 import {
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
@@ -188,7 +189,11 @@ async function startWithin(
  *     module writes its own sentence rather than relaying a driver's.
  *  3. **Re-read the row's status** (Requirement 41.9). Anything other than `claimed`
  *     skips the invoke, so a retried tick cannot invoke one run twice.
- *  4. **Invoke**, with a 10-second start budget, and release the stream with a
+ *  4. **Read the pinned template version's definition** (Requirement 9.6), which is
+ *     what makes this a report run rather than a collection — see the comment at the
+ *     read. A pinned version that cannot be read fails the run as
+ *     `TEMPLATE_INVALID`; a row pinning none is the legal snapshot-only shape.
+ *  5. **Invoke**, with a 10-second start budget, and release the stream with a
  *     detached drain (Requirement 39.6).
  *
  * A failure to start is logged with secrets excluded, the row is **left at
@@ -307,6 +312,41 @@ export async function startRunInvocation(
     progress_token: deriveProgressToken(run.id),
   }
 
+  // 4 — the pinned version's definition, read by the version id the row pinned at
+  //     enqueue (Requirement 9.6).
+  //
+  //     This read is what makes the invocation a **report** run. The runtime holds no
+  //     connection to this database, and its contract is explicit that a payload
+  //     carrying no `definition` is a *snapshot-only* run — so a `generate_report`
+  //     that sent only the version id would collect a snapshot, emit no
+  //     `verification`, write no `.docx` and present no download, on every run,
+  //     without failing anything.
+  //
+  //     Read here rather than carried through the claim's `RETURNING` for the reason
+  //     the credentials are: the definition is up to a few hundred kilobytes of jsonb
+  //     and only the row that is actually about to be invoked needs it, whereas the
+  //     claim returns up to ten rows some of which the gate above will refuse.
+  let pinned
+  if (run.templateVersionId !== null) {
+    pinned = await readVersionById(run.templateVersionId)
+
+    if (pinned === undefined) {
+      // The row pins a version that no longer exists. `TEMPLATE_INVALID` rather than
+      // a silent snapshot-only run: a run whose pinned version cannot be read cannot
+      // render the report it was submitted for, and degrading it to a collection
+      // would deliver a run that reports success and produces no document.
+      await failClaimedRun({
+        runId: run.id,
+        errorCode: "TEMPLATE_INVALID",
+        errorMessage:
+          "The template version this run pinned could not be read, so no " +
+          "collection was attempted. A run renders the version pinned when it " +
+          "was submitted, and that version is no longer present.",
+      })
+      return { kind: "failed", code: "TEMPLATE_INVALID" }
+    }
+  }
+
   try {
     const started = await startWithin(
       invokeAgentRuntime({
@@ -315,11 +355,20 @@ export async function startRunInvocation(
         // Requirement 41.8 — a deterministic command, and **no `prompt` field**, so
         // the pipeline is reachable without a model decision. The type has no
         // `prompt` member, which is that requirement expressed as a type.
-        command: {
-          command: COMMAND_GENERATE_REPORT,
-          period: { start: run.periodStart, end: run.periodEnd },
-          scope: run.scope,
-        },
+        command:
+          pinned === undefined
+            ? {
+                command: COMMAND_GENERATE_REPORT,
+                period: { start: run.periodStart, end: run.periodEnd },
+                scope: run.scope,
+              }
+            : {
+                command: COMMAND_GENERATE_REPORT,
+                template_version_id: pinned.id,
+                definition: pinned.definition,
+                period: { start: run.periodStart, end: run.periodEnd },
+                scope: run.scope,
+              },
       }),
       run.id,
       timeoutMs
