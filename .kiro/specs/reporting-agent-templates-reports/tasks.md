@@ -638,7 +638,7 @@ migration.
     - Kills: `key.startsWith(actorId)`, which authorizes `alice-evil/...` for `alice`; `key.startsWith(actorId + "/")`, which still admits any second segment; a case-folding comparison
     - _Requirements: 25.3, 25.4, 40.1, 40.2, 40.3, 40.4, 40.5, 40.6, 40.7, 42.9, 43.2, 43.3, 43.8, 45.1, 45.3, 45.4_
 
-  - [ ] 13.9 Build the in-app charts and the delta table
+  - [x] 13.9 Build the in-app charts and the delta table
     - `components/charts/themed-chart.tsx` with `categorical.ts`, `sequential.ts` over `palette.ts`: render a `chart` event **client-side from the structured spec**, parsing each decimal string **for layout geometry only**, taking every displayed value label from the `formatted` value its ledger reference resolves to, and requesting **no image and no presigned URL**
     - Select the palette from the spec's `encoding` and never from the series count; assign colour by stable key so one metric and one resource keep one colour across every chart and the delta table of one report; direct labels on every series, marker and dash on lines, value labels on bars and heatmap cells, nothing distinguished by colour alone; expose the underlying figures as a table as each chart's text alternative
     - `delta-table.tsx` for `comparison_delta`: the categorical palette, **direction glyphs plus a signed magnitude in one colour** rather than hue encoding good or bad, mono tabular numerals, both runs' snapshot ids in the header, and rows whose fidelity tiers differ between runs marked **not comparable** rather than shown as a delta
