@@ -275,6 +275,49 @@ pushes successfully and then fails on that one call.
 3. Put the resulting runtime ARN in the app's `RPT_RUNTIME_ARN`. The app reads it from
    `process.env` and never hardcodes it.
 
+### `update-agent-runtime` is a full replace — read this before shipping a new image
+
+**Every field you do not pass is deleted.** Omitting `--environment-variables`
+removes all of them, and the container then dies at import on its own config guard,
+in a crash loop, *before any handler exists* — so it cannot report the failure and
+the runs handed to it simply never start.
+
+Read the previous version and replay it whole:
+
+```bash
+V=$(aws bedrock-agentcore-control get-agent-runtime \
+      --agent-runtime-id "$ID" --agent-runtime-version "$PREV" \
+      --region "$AWS_REGION" --output json)
+ENV=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['environmentVariables']))")
+
+aws bedrock-agentcore-control update-agent-runtime \
+  --agent-runtime-id "$ID" --region "$AWS_REGION" \
+  --role-arn "$ROLE_ARN" --description "$DESC" \
+  --agent-runtime-artifact "$ARTIFACT" --network-configuration "$NETWORK" \
+  --protocol-configuration "$PROTOCOL" --lifecycle-configuration "$LIFECYCLE" \
+  --environment-variables "$ENV"
+```
+
+Do **not** assemble that snapshot with a `--query` projection. Reading only the
+fields you remember to name is precisely how the ones you forgot get deleted — dump
+the whole object. Then *verify* the result rather than trusting the call:
+
+```bash
+aws bedrock-agentcore-control get-agent-runtime --agent-runtime-id "$ID" \
+  --region "$AWS_REGION" --output json | python3 -c "
+import sys, json; d = json.load(sys.stdin)
+print(d['agentRuntimeVersion'], d['status'])
+print('env :', sorted(d.get('environmentVariables') or {}))
+print('life:', d.get('lifecycleConfiguration'))
+print('net :', d['networkConfiguration']['networkModeConfig'])"
+```
+
+**A `:latest` container URI resolves when the version is created, not when the image
+is pushed.** A build alone changes nothing about a running runtime; it needs an
+update to cut a version that re-resolves the tag. The useful corollary: building is
+safe and deploying is the gate, which is what lets a build run in parallel with a
+database migration that has to land first.
+
 `deploy/*.example.json` are the committed templates; the real files beside them carry
 account, bucket and runtime identifiers and are git-ignored.
 
@@ -355,6 +398,39 @@ package they share, so the tested closure and the shipped closure disagree. The 
 message names the package and both versions. Do not edit a pin to match: regenerate both
 locks in one pass as shown above — the `--constraint` is what keeps them agreeing.
 
+**The container crash-loops on `MissingConfigError` right after a deploy.** An
+`update-agent-runtime` dropped the environment variables — see the full-replace
+warning above. Cut a new version replaying the previous one whole. Nothing is wrong
+with the image.
+
+**A run fails with `AccessDenied` on the first snapshot write.** The execution role
+needs `s3:PutObjectTagging` as well as `s3:PutObject`: the writer tags every object
+with the actor id, and tagging is a separate action `PutObject` does not imply. The
+role is assumed fresh per invocation, so fixing the policy takes effect on the next
+run with **no rebuild**.
+
+**`REPLAY_MISMATCH` on a run whose numbers look right.** The document is probably
+correct and the verifier is disagreeing with itself. Reproduce it offline — replay is
+pure, so it needs no Azure and no runtime:
+
+```bash
+aws s3 cp "s3://$BUCKET/<actor>/snapshots/<runId>/" ./run --recursive
+PYTHONPATH=src python -c "
+import json, pathlib
+from reporting_agent.verify.replay import replay, plan_from_snapshot
+from reporting_agent.catalog.loader import load_catalog
+d = pathlib.Path('run')
+doc = json.loads((d/'snapshot.json').read_text())
+r = replay([(i, p.read_bytes()) for i, p in enumerate(sorted((d/'raw').glob('*.json.gz')))],
+           plan=plan_from_snapshot(doc, catalog=load_catalog()))
+print(r.outcome)
+print(json.dumps(r.document, indent=2, sort_keys=True)[:400] if r.document else 'no document')"
+```
+
+`ReplayResult.document` is the recomputed snapshot, returned so you can **diff it
+against the stored one** rather than only being told they differ. Pass the raw
+gzipped bytes — `replay` decompresses them itself.
+
 **`ImportError` on a metrics client.** The three-package Azure Monitor pin is wrong. All of
 `azure-monitor-querymetrics` (batch metric values), `azure-mgmt-monitor` (metric
 definitions and the per-resource fallback) and `azure-monitor-query` (logs, enhanced tier
@@ -373,19 +449,40 @@ agent/
                         (compiled first; requirements.lock is resolved against it)
   .python-version       3.12
   src/reporting_agent/
+    main.py             the entrypoint and command router
+    report_pipeline.py  collect -> compile -> render -> verify, in order
     catalog/            the declarative metric catalog and its loader
     providers/          the provider protocol and the id -> factory registry
     azure/              the ONLY package that may import an Azure SDK
     collect/            accumulate · sketch · bucket · archive · snapshot · log
+    compile/            definition + snapshot -> typed document AST
+    render/             python-docx against a styles-only theme, then PDF
+    verify/             the gates: anchors · masking · charts · replay · pdf · coverage
+    compare/            two snapshots -> a delta, as a pure function
+    narrate/            the only package that may reach Bedrock. Prose only.
     storage/            the ObjectStore protocol and its boto3 implementation
+  themes/               editorial · corporate · technical · minimal — STYLES, no content
   tests/
     conftest.py         the hypothesis profile
     test_lock_consistency.py  one version per package across both locks
+    fixtures/definitions/     the shared corpus — read by the web suite too
     fakes/              the Azure ports and ObjectStore, faked
     property/           the hypothesis properties
 ```
 
-`compile/`, `render/`, `verify/`, `compare/`, `tools/`, `agent.py` and `themes/` do not
-exist here on purpose. There is no Strands agent and no model call in this spec: both
-commands are deterministic, so a payload without a `command` is a terminal error rather
-than something to route to chat.
+`agent.py` and `tools/` do not exist on purpose. **There is no Strands agent and no
+tool registry.** Every command is deterministic, so a payload without a recognised
+`command` is a terminal error rather than something to route to a model. The only
+model calls in the whole runtime are two single-shot Bedrock Converse calls inside
+`narrate/`, and neither of them may return a number.
+
+### Module boundaries that are enforced, not conventions
+
+- **`azure/` is the only package that may import an Azure SDK.** A static test fails
+  the build otherwise.
+- **`verify/replay.py` may import only pure modules.** If replay can reach the
+  network it is no longer proving determinism — it is re-collecting. The import
+  closure is walked by a test, transitively.
+- **`narrate/` is the only package that may reach Bedrock.** Same enforcement.
+- The **figure ledger and the render context are the same object**, so they cannot
+  disagree about what was rendered.
