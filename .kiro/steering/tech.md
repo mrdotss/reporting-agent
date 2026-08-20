@@ -186,6 +186,44 @@ only in the git-ignored **`.env`**.
 > `cold-agent` uses for `role_arn` / `external_id`. Never hardcode
 > `RPT_RUNTIME_ARN`; read `process.env`.
 
+## What a green suite does not prove
+
+Six defects reached production against a suite of ~2900 agent and ~2200 web tests.
+Not one was in code the tests ignored — every one was in code they covered heavily.
+They survived because each test asserted **one half of a contract**. Four patterns,
+each of which has now cost a live run:
+
+**A round trip is not two halves.** `collect/archive.py` serialized a `Decimal` to
+its exact digit string and `verify/replay.py` re-read it as a `str` the numeric
+parser rejected. Both halves were individually correct and individually tested. The
+archive was write-only for a month. → Assert `write → read` end to end, and with
+values that only a round trip can break: whole numbers survive the bug that
+fractional values expose.
+
+**A value's provenance is not its shape.** The verification result carried a
+`template_version_id` that was well-formed, non-empty, and the wrong field entirely —
+a run id where a foreign key wanted a template version row. Every shape assertion
+passed. → When a value must come from a *particular* place, assert **which place**,
+not that it looks right.
+
+**An injected seam is an untested seam.** Every test passes `object_store`, so the
+`or _s3_store(...)` fallback had no caller but a deployed container — and it drifted
+to a keyword the constructor does not accept. The end-to-end test named that seam
+and `monkeypatch.setattr`'d it away. → Production-only construction sites need a test
+that *calls* them, plus a guard that fails when a new one appears.
+
+**A test that names the wrong exception tests the wrong path.** A miswired
+`CommandUnimplementedError(...)` raised a `TypeError` from its own constructor, so
+three parametrized cases silently exercised one code path and a mutant survived. →
+Assert the **specific** expected outcome per case, not merely that the outcome is
+acceptable; a case that stops testing what it says should fail, not pass by another
+route.
+
+The through-line: **a test that cannot fail for the reason the code can break is not
+a test.** Mutation-check anything load-bearing — reintroduce the defect and watch it
+go red — because that is the only evidence the assertion is connected to the
+behaviour.
+
 ## Guardrails
 - All AWS SDK calls and all secret access happen **server-side only**. All Azure
   SDK calls happen **inside the agent container** only.
@@ -196,7 +234,10 @@ only in the git-ignored **`.env`**.
   `s3:GetObject` on the artifact bucket (presign); DynamoDB
   `GetItem/PutItem/UpdateItem/DeleteItem/Query` on `RPT_HISTORY_TABLE` + its GSI;
   `bedrock:InvokeModel` on `RPT_TITLE_MODEL_ID`. The runtime's execution role
-  additionally needs `s3:PutObject` on the artifact bucket.
+  additionally needs `s3:PutObject` **and `s3:PutObjectTagging`** on the artifact
+  bucket — the writer tags every object with the actor id, and tagging is a
+  *separate* action that `PutObject` does not imply. Omitting it fails the run at
+  the first snapshot write, after the whole collection has been spent.
 - **Report runs are long** — inventory + metrics + render + verify is minutes, not
   seconds, at a few hundred resources. Keep the stream open, emit `progress` and
   `heartbeat`, and show the live activity timeline until `done`. Never rely on a

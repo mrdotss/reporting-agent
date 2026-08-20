@@ -126,8 +126,15 @@ agent/
   `verify/tokens.py`, `verify/replay.py`, `verify/drift.py`) are property-tested.
   Count-weighted averaging, exact min/max roll-up, and local-day bucketing across a
   DST-free +07:00 offset each get a test that fails on the naive implementation.
-  Replay gets a test asserting the snapshot hash is **byte-identical** across two
-  runs of the aggregation over the same archived input.
+  Replay's test must assert the snapshot hash is byte-identical **across the archive
+  boundary** — fold a response, serialize it through `archive.py`'s own encoder,
+  re-read it with a plain `json.loads`, fold *that*, and compare. Two runs over the
+  same **in-memory** input is deterministic by construction and proves nothing: it
+  was the stated test here, it passed continuously, and it missed a `Decimal` that
+  the archive wrote as a digit string and the reader rejected as a `str`, which made
+  the archive write-only and produced `REPLAY_MISMATCH` on every real subscription.
+  The fixture values must be **fractional** — whole numbers stay JSON integers and
+  survive the exact bug the test exists to catch.
 
 ## `app/` layout (App Router)
 > Existing files: `app/{layout,page,globals.css}.tsx|css`,

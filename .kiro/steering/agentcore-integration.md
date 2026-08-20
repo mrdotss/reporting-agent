@@ -142,6 +142,29 @@ matters:
 | **progress callback → Postgres** | **authoritative persistence** | the reaper eventually times the run out |
 | **SSE event → browser** | live view for whoever is watching | nothing is lost |
 
+#### A `failed` transition must carry a code the row accepts
+
+The endpoint refuses a `failed` callback that arrives **without** an `error_code`
+(the CHECK constraint's precondition), and refuses one carrying a code the enum does
+not have. Both refusals return the same undifferentiated `404` — deliberately, so the
+endpoint is not an oracle for run state — which means the runtime **cannot tell them
+apart** and can only give up.
+
+The trap this sets: dropping an unpresentable code to "at least save the transition"
+does the opposite. It loses the transition *and* the label, the row stays in its
+phase, and the reaper writes `TIMEOUT` over a run that failed in seconds. An operator
+then reads a thirty-minute deadline breach for an exception that took nineteen
+seconds — specific enough to be believed, and pointing at the wrong thing.
+
+So **translate, never omit**: a code the row cannot accept presents as the
+runtime-defect code, and the specific one travels in the `error` event and the log
+where it is actionable. Adding a code to the enum is an additive migration that must
+land **before** the runtime that presents it.
+
+A container that dies at **import** is the residual case this cannot cover — no
+handler exists, so no callback is possible, and the reaper is genuinely the only
+backstop. That is the argument for verifying a runtime update rather than trusting it.
+
 ### The SSE relay is cosmetic
 `api/runs/[runId]/stream` is a **live view over run state** for a browser that
 happens to be watching. **If it drops, nothing is lost** — on reconnect the client
@@ -282,6 +305,50 @@ one snapshot, so the union is the only measure that matches what was collected.
 
 There is **no event** for a zero-resource block — it is ordinary compile output, not
 an error, so it produces neither an `error` event nor a `collection_log` gap.
+
+## Shipping a new runtime version
+
+Three mechanics that are not obvious and each of which has caused a live outage.
+
+### `update-agent-runtime` is a **full replace**, not a patch
+
+Every field you do not pass is **dropped**. Omitting `--environment-variables`
+deletes all of them; the container then dies at import on its own config guard, in a
+crash loop, before any handler exists — so it cannot report the failure and the runs
+it was handed simply never start.
+
+Read the **previous version** and replay it whole:
+
+```bash
+V=$(aws bedrock-agentcore-control get-agent-runtime \
+      --agent-runtime-id "$ID" --agent-runtime-version "$PREV" --region "$REGION" --output json)
+ENV=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['environmentVariables']))")
+# then pass --environment-variables "$ENV" plus --description, --lifecycle-configuration,
+# --network-configuration, --protocol-configuration, --role-arn on the update
+```
+
+Do **not** build that snapshot with a `--query` projection. Reading only the fields
+you remember to name is how the fields you forgot get deleted — dump the whole object
+and replay every one. Verify after the update that env keys, lifecycle, network and
+description all survived, rather than trusting the call.
+
+### A `:latest` container URI is resolved at **version-creation** time
+
+Pushing a new image to the same tag changes nothing about a running runtime. The
+version holds the resolution, so a new image needs an `update-agent-runtime` to cut a
+version that re-resolves the tag. Building without updating is a no-op; the runtime
+happily keeps serving the old image.
+
+Corollary: **building is safe, deploying is the gate.** An image can sit in ECR
+indefinitely, which is what lets a build run in parallel with a database migration
+that must land first.
+
+### Deploy order when a change spans both halves
+
+Migration → app → runtime. The runtime is the only component that can present values
+the database must already accept (a new `run_error_code`, for instance). Shipping it
+first means those callbacks are refused, which is indistinguishable from the bug you
+were fixing.
 
 ## Deployed values (git-ignored `.env`)
 `RPT_RUNTIME_ARN=…:runtime/<RUNTIME_ID>` · `AWS_REGION=us-east-1` ·

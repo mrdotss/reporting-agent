@@ -108,6 +108,9 @@ fully-verified, **empty** report that passes every other check. Do not let
   | Metric **not emitted for this SKU** | a genuine gap | **gap** in `collection_log` |
   | **403** on the resource | a permission failure | **failure** in `collection_log` |
 
+  A **403 from the batch metrics endpoint itself** is a different thing entirely —
+  see "The data plane can refuse every caller" below. Do not classify it here.
+
   Reporting "0% CPU" for a deallocated VM as though it were measured idle is a
   factual error in a document someone may resize infrastructure from.
 
@@ -317,6 +320,29 @@ the single `ClientSecretCredential` already serves that audience — **no new to
 scope**. **Do not drop the region**; a silently missing region is a silently
 incomplete report.
 
+### The data plane can refuse every caller, and that is not your permissions
+
+**Observed in production, `indonesiacentral`, 2026-08:** the batch metrics endpoint
+answered **403 for a service principal holding Reader and for a subscription owner
+alike**, while the ARM per-resource path served the same metrics for the same window
+without complaint.
+
+The cause is not the caller. Azure's own first-party **`Metrics Monitor API`**
+principal performs a `Microsoft.Authorization/checkAccess` to authorize a batch
+request, and where *that* is denied the endpoint answers 403 for everyone in the
+subscription. No role assignment on your side fixes it, and no support case is
+needed — a working route already exists.
+
+So **treat a data-plane `401`, `403` or `404` exactly as the DNS failure above**:
+mark the location fallback-only for the rest of the run, re-issue against ARM, and
+record no gap. Classifying it as a permission gap instead turns a fully collectable
+subscription into `NO_STATISTICS` while a working route sits unused — which is what
+it did before this was understood.
+
+Note the asymmetry: a 403 on **one resource inside** an otherwise-successful batch
+response is still a per-resource permission failure (§ the power-state table above).
+It is only the 403 on the **endpoint** that means "use the other road".
+
 ---
 
 ## 7. SDK traps
@@ -403,6 +429,47 @@ Both come from the same credential; the SDK requests the right scope per client.
   float is acceptable is inside chart *layout* geometry, which is never hashed and
   never rendered as a figure.
 
+### The decimal-string rule applies to the raw archive too — and it bites both ways
+
+The rule above is about what you **write**. It has a mirror obligation about what you
+**read**, and missing it made the raw archive **write-only** for a month.
+
+The chain: the Azure SDK deserializes `total`, `minimum` and `maximum` as **`Decimal`**
+(`azure/monitor/querymetrics/_utils/model_base.py` does this deliberately). The
+archive serializes that Decimal to its **exact digit string**, correctly, so no
+precision is lost to a float. `json.loads` on replay hands it back as a **`str`**.
+
+If the numeric-leaf reader accepts `int`, `float` and `Decimal` but **not `str`**,
+every value the archive preserved perfectly comes back classified as *absent*:
+
+- the interval is recorded as an `interval_counts_missing` gap that never happened,
+- its samples vanish from the count,
+- `max` collapses to nothing,
+- and the recomputed digest cannot match — `REPLAY_MISMATCH` on **every subscription
+  whose metrics carry a fractional value**, which is all of them.
+
+**One reader, both directions.** The function that parses a numeric leaf from a live
+response is the same function that parses it from the archive, and it must accept
+every form either side can produce — `int`, `float`, `Decimal`, and a decimal
+**string**. A string that does not parse is still absent; it must classify as a gap,
+not raise mid-fold.
+
+**Test the round trip, not the halves.** Whole numbers survive this bug — they stay
+JSON integers through the archive — so a fixture using round values passes while
+production fails. Any replay fixture must carry **fractional** values, or it is
+testing the one shape that cannot break.
+
+### Azure emits intervals with a timestamp and nothing else
+
+A `data` point can be `{"timeStamp": "..."}` with no `total`, `count`, `minimum` or
+`maximum` — observed as a **64-hour contiguous stretch** on a running VM, across all
+eight of its metrics simultaneously. This is normal and it is not an error field.
+
+Exclude those intervals from the average and **record each as a gap**. Do not treat
+them as zero: 64 hours of zero CPU on a running machine is a factual claim the data
+does not support. A month of hourly data for one VM legitimately producing ~512 gap
+entries (64 × 8 metrics) is an honest snapshot, not a broken one.
+
 ---
 
 ## 9. Terminal states
@@ -415,6 +482,7 @@ Both come from the same credential; the SDK requests the right scope per client.
 | `THROTTLED` | rate limits exhausted after honouring `Retry-After` | retryable |
 | `PARTIAL_COVERAGE` | some resources unreadable; gaps recorded | **no** — the run completes with gaps |
 | `REGION_UNREACHABLE` | no data-plane host **and** the per-resource fallback also failed | **no** — gap, unless it is every region |
+| `INTERNAL_ERROR` | a defect in this runtime, not a fact about the subscription | **yes** — see `agentcore-integration.md` |
 
 `PARTIAL_COVERAGE` completing is deliberate: a report with **recorded, visible
 gaps** is useful and honest. A report with **hidden** gaps is the thing this whole
