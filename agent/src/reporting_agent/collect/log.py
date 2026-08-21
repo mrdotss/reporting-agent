@@ -157,6 +157,7 @@ def record_gap(
     resource_id: str,
     metric: str | None,
     message: str,
+    interval_start: str | None = None,
 ) -> GapRecord:
     """Build one typed `collection_log` entry.
 
@@ -178,6 +179,16 @@ def record_gap(
       string would silently mean the same thing through a different spelling, which
       is exactly the kind of two-spellings-one-meaning gap this module exists to
       close off.
+    * `ValueError` if `interval_start` is present but empty, on the identical
+      reasoning and deliberately in the identical shape: `None` means "this gap is
+      not about one interval", and an empty string would be a second spelling of
+      that same absence. One validation style here rather than two, so a caller
+      cannot learn a different rule per field.
+
+    `interval_start` defaults to `None`, so the twenty-odd call sites that record a
+    resource-level or metric-level gap are unchanged and say nothing about an interval
+    they have none of. Only the interval-level sites in `azure/metrics.py` and
+    `collect/accumulate.py` pass it.
 
     Returns a `GapRecord` (Req 18.2) rather than a bespoke type, so a caller in
     `azure/` and a caller in `collect/` hand the pipeline the identical shape.
@@ -204,11 +215,21 @@ def record_gap(
             f"{message!r}"
         )
 
+    if interval_start is not None and (
+        not isinstance(interval_start, str) or not interval_start.strip()
+    ):
+        raise ValueError(
+            f"interval_start must be None or a non-empty string for gap_type "
+            f"{gap_type!r}, got {interval_start!r}; use None for a gap that is not "
+            f"about one interval rather than an empty string"
+        )
+
     return GapRecord(
         gap_type=gap_type,
         resource_id=resource_id,
         metric=metric,
         message=message,
+        interval_start=interval_start,
     )
 
 

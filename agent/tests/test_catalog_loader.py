@@ -16,13 +16,44 @@ from pathlib import Path
 import pytest
 
 from reporting_agent.catalog.loader import (
+    AGGREGATION_COUNT,
+    AGGREGATION_TOTAL,
+    AVERAGE_AGGREGATIONS,
     CATALOG_ENTRY_INVALID_GAP_TYPE,
+    DECLARED_AGGREGATIONS,
     MAX_SCALE,
+    MIN_SCALE,
     load_catalog,
 )
 from reporting_agent.errors import CatalogUnusableError, ErrorCode
 
 RESOURCE_TYPE = "Microsoft.Compute/virtualMachines"
+
+CATALOG_VERSION = "1.1.0"
+"""The shipped catalog's version, asserted as a literal here on purpose.
+
+Req 1.3 requires the version to compare **greater** than the `1.0.0` the single-type
+catalog declared, so the number is part of the contract rather than an incidental value:
+`collect/snapshot.py` records it on every snapshot, and a report stays readable against the
+catalog that produced it. A test reading it back out of the file it is checking would
+assert nothing at all — see
+:func:`test_the_shipped_catalog_version_is_greater_than_the_single_type_catalogs`, which
+pins the ordering the criterion actually states."""
+
+SEVEN_RESOURCE_TYPES = (
+    "Microsoft.Compute/virtualMachines",
+    "Microsoft.Sql/servers/databases",
+    "Microsoft.Sql/managedInstances",
+    "Microsoft.DBforPostgreSQL/flexibleServers",
+    "Microsoft.Storage/storageAccounts",
+    "Microsoft.Compute/disks",
+    "Microsoft.Web/sites",
+)
+"""The seven types Req 1.1 enumerates, written out rather than read from the catalog.
+
+The whole content of that criterion is *which* types are covered, so a test deriving the
+set from the file under test would pass for any catalog at all — including the one-type
+catalog this spec exists to replace."""
 
 VALID_METRIC = {
     "name": "Percentage CPU",
@@ -284,7 +315,7 @@ def test_the_shipped_catalog_loads_clean_with_every_platform_metric_and_derived_
     catalog = load_catalog()
 
     assert catalog.invalid_entries == ()
-    assert catalog.catalog_version == "1.0.0"
+    assert catalog.catalog_version == CATALOG_VERSION
 
     rt = catalog.for_resource_type(RESOURCE_TYPE)
     assert rt is not None
@@ -307,6 +338,108 @@ def test_the_shipped_catalog_loads_clean_with_every_platform_metric_and_derived_
     enhanced_ids = {counter.statistic_id for counter in rt.enhanced_counters}
     assert "disk_free_pct" in enhanced_ids
 
-    assert len(catalog.entries) == len(rt.metrics) + len(rt.derived) + len(
-        rt.enhanced_counters
+    # `entries` flattens every kind across **every** resource type, so the sum is over
+    # all of them. It equalled the virtual-machine counts alone only while the catalog
+    # declared one type; keeping that form would have made this assertion a statement
+    # about the catalog's breadth rather than about the flattening.
+    assert len(catalog.entries) == sum(
+        len(entry.metrics) + len(entry.derived) + len(entry.enhanced_counters)
+        for entry in catalog.resource_types
     )
+
+
+# --- the shipped catalog's breadth (Req 1.1, 1.2, 1.3, 1.6, 1.9) -------------------
+
+
+def test_the_shipped_catalog_declares_exactly_the_seven_named_resource_types() -> None:
+    """Req 1.1. A subscription of twenty-three resources produced a document about three
+    of them because this set had one member; the criterion names which seven it must
+    have, so the assertion names them too rather than counting them."""
+    catalog = load_catalog()
+
+    assert set(catalog.resource_type_names) == set(SEVEN_RESOURCE_TYPES)
+
+
+def test_every_declared_resource_type_carries_a_namespace_and_at_least_one_metric() -> None:
+    """Req 1.2. An entry declaring no metric is a resource type the report names and says
+    nothing about, which is indistinguishable from the breadth problem this spec fixes."""
+    catalog = load_catalog()
+
+    for resource_type in SEVEN_RESOURCE_TYPES:
+        declared = catalog.for_resource_type(resource_type)
+        assert declared is not None, resource_type
+        assert declared.metric_namespace.strip(), resource_type
+        assert declared.metrics, f"{resource_type} declares no metric"
+        for metric in declared.metrics:
+            assert metric.name.strip()
+            assert metric.unit
+            assert metric.unit_family
+            assert metric.aggregations
+            assert MIN_SCALE <= metric.scale <= MAX_SCALE
+
+
+def test_the_shipped_catalog_version_is_greater_than_the_single_type_catalogs() -> None:
+    """Req 1.3, compared the way the criterion states it — component-wise as dotted
+    decimal integers, not as strings. `"1.10.0" < "1.9.0"` lexicographically and the
+    reverse numerically, so the comparison method is the assertion."""
+    version = tuple(int(part) for part in load_catalog().catalog_version.split("."))
+
+    assert version > (1, 0, 0)
+    assert version == tuple(int(part) for part in CATALOG_VERSION.split("."))
+
+
+def test_every_metric_emitting_an_average_requests_both_total_and_count() -> None:
+    """Req 1.9, and the reason it is not merely bookkeeping.
+
+    The average is count-weighted — the sum of interval totals over the sum of interval
+    sample counts — so a metric requesting one of the two and not the other cannot
+    produce one. This asserts the implication in the direction that can actually be
+    violated: **if** `Total` and `Count` are both requested an average is derivable, and
+    if either is absent the catalog must not be promising one.
+
+    The converse is deliberately *not* asserted, because it is false by design and that
+    is the whole of this spec's collector change: `Microsoft.Sql/servers/databases`'
+    `cpu_percent` requests `Minimum` and `Maximum` only, because those are the
+    aggregations Azure serves for it, and the honest result is exact extremes and no
+    average rather than a dropped metric or a fabricated mean.
+
+    Three of the four combinations are legitimate and one is not:
+
+    * both — a count-weighted average, plus whichever extremes were requested;
+    * `Total` alone — a **sum** of the interval totals, which is what
+      `Microsoft.Web/sites`' `BytesReceived` means and all Azure serves for it;
+    * neither — exact extremes only;
+    * **`Count` alone — nothing derivable.** A sample count with no total is a
+      denominator with no numerator: it can produce no average, no sum and no extreme, so
+      a metric declaring it is requesting points that can only be discarded.
+    """
+    catalog = load_catalog()
+
+    for entry in catalog.resource_types:
+        for metric in entry.metrics:
+            requested = set(metric.aggregations)
+            assert requested <= DECLARED_AGGREGATIONS, (entry.resource_type, metric.name)
+            assert not (
+                AGGREGATION_COUNT in requested and AGGREGATION_TOTAL not in requested
+            ), (
+                f"{entry.resource_type} / {metric.name} requests {AGGREGATION_COUNT!r} "
+                f"without {AGGREGATION_TOTAL!r}: a sample count with no total is a "
+                f"denominator with no numerator and yields no statistic at all"
+            )
+
+
+def test_no_metric_declares_a_percentile_it_cannot_produce() -> None:
+    """A percentile comes from the sketch, and the sketch is fed each interval's own
+    average — so a metric with no `Count` folds nothing into it and a declared percentile
+    would be unreachable configuration that silently emits nothing."""
+    catalog = load_catalog()
+
+    for entry in catalog.resource_types:
+        for metric in entry.metrics:
+            if not metric.percentiles:
+                continue
+            assert AVERAGE_AGGREGATIONS <= set(metric.aggregations), (
+                f"{entry.resource_type} / {metric.name} declares percentiles "
+                f"{list(metric.percentiles)} but requests {list(metric.aggregations)}, "
+                f"which cannot feed the sketch"
+            )

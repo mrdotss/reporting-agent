@@ -1,58 +1,101 @@
 {
-  "catalog_version": "1.0.0",
+  "catalog_version": "1.1.0",
   "resource_types": {
     "Microsoft.Compute/virtualMachines": {
       "metric_namespace": "Microsoft.Compute/virtualMachines",
-      "sku_capabilities": ["vCPUsAvailable", "MemoryGB"],
+      "sku_capabilities": [
+        "vCPUsAvailable",
+        "MemoryGB"
+      ],
       "metrics": [
         {
           "name": "Percentage CPU",
           "unit": "percent",
           "unit_family": "percentage",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 2,
-          "percentiles": ["p50", "p90", "p95", "p99"]
+          "percentiles": [
+            "p50",
+            "p90",
+            "p95",
+            "p99"
+          ]
         },
         {
           "name": "Available Memory Bytes",
           "unit": "bytes",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 0
         },
         {
           "name": "Disk Read Bytes",
           "unit": "bytes",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 0
         },
         {
           "name": "Disk Write Bytes",
           "unit": "bytes",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 0
         },
         {
           "name": "Disk Read Operations/Sec",
           "unit": "count_per_second",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 2
         },
         {
           "name": "Disk Write Operations/Sec",
           "unit": "count_per_second",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 2
         },
         {
           "name": "Network In Total",
           "unit": "bytes",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 0,
           "label": "NIC-level bytes",
           "interval_scoped": true
@@ -61,7 +104,12 @@
           "name": "Network Out Total",
           "unit": "bytes",
           "unit_family": "magnitude",
-          "aggregations": ["Total", "Count", "Minimum", "Maximum"],
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
           "scale": 0,
           "label": "NIC-level bytes",
           "interval_scoped": true
@@ -116,6 +164,422 @@
           "unit": "percent",
           "unit_family": "percentage",
           "scale": 2
+        }
+      ]
+    },
+    "Microsoft.Sql/servers/databases": {
+      "metric_namespace": "Microsoft.Sql/servers/databases",
+      "metrics": [
+        {
+          "name": "cpu_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "physical_data_read_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "log_write_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "dtu_consumption_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "memory_usage_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "workers_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "sessions_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "storage",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "storage_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "allocated_data_storage",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "availability",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        }
+      ]
+    },
+    "Microsoft.Sql/managedInstances": {
+      "metric_namespace": "Microsoft.Sql/managedInstances",
+      "metrics": [
+        {
+          "name": "avg_cpu_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "avg_workers_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "io_bytes_read",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "io_bytes_written",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        }
+      ]
+    },
+    "Microsoft.DBforPostgreSQL/flexibleServers": {
+      "metric_namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+      "metrics": [
+        {
+          "name": "cpu_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "memory_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "storage_percent",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "storage_used",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "storage_free",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "txlogs_storage_used",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "backup_storage_used",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "disk_bandwidth_consumed_percentage",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "disk_iops_consumed_percentage",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "database_size_bytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "network_bytes_ingress",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "network_bytes_egress",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
+        }
+      ]
+    },
+    "Microsoft.Storage/storageAccounts": {
+      "metric_namespace": "Microsoft.Storage/storageAccounts",
+      "metrics": [
+        {
+          "name": "Availability",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "Egress",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "Ingress",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        }
+      ]
+    },
+    "Microsoft.Compute/disks": {
+      "metric_namespace": "Microsoft.Compute/disks",
+      "metrics": [
+        {
+          "name": "Composite Disk Read Bytes/sec",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "Composite Disk Write Bytes/sec",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "Composite Disk Read Operations/sec",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "Composite Disk Write Operations/sec",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        }
+      ]
+    },
+    "Microsoft.Web/sites": {
+      "metric_namespace": "Microsoft.Web/sites",
+      "metrics": [
+        {
+          "name": "BytesReceived",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "BytesSent",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "IoReadBytesPerSecond",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "IoWriteBytesPerSecond",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total"
+          ],
+          "scale": 0
         }
       ]
     }

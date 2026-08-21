@@ -52,7 +52,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
-from reporting_agent.catalog.loader import MetricEntry
+from reporting_agent.catalog.loader import DECLARED_AGGREGATIONS, MetricEntry
 from reporting_agent.collect.accumulate import MetricAccumulator
 from reporting_agent.collect.buckets import TzInfo, local_day
 from reporting_agent.collect.snapshot import StatisticEntry, exact_statistics
@@ -74,6 +74,21 @@ class DayFold:
     `excluded` mirrors `MetricAccumulator.excluded` at the resource level — a resource
     already carrying a `deallocated` or `power_state_unknown` gap folds nothing here either,
     so a machine that was off all month produces no day values rather than a row of zeros.
+
+    A day accumulator is built with the aggregation set :meth:`fold` is **handed**, which
+    is the window accumulator's own set for that same `(resource, metric)` pair. Passed
+    per call rather than held as a name-keyed mapping on this instance, and that is not a
+    style choice: one `DayFold` serves the whole run across every resource type, and a
+    metric name is not unique across types — `cpu_percent` is declared by both
+    `Microsoft.Sql/servers/databases` and `Microsoft.DBforPostgreSQL/flexibleServers`. A
+    name-keyed map would have to pick one set for both, and would be wrong for one of them
+    the day the two declarations diverge. Taking it from the caller's accumulator makes the
+    window fold and the day fold structurally incapable of disagreeing about one interval.
+
+    Getting that wrong would have been silent: this fold discards the gap it is handed —
+    correct, because the window fold already classified the interval — so a day accumulator
+    defaulting to all four while its window accumulator used `Minimum`/`Maximum` would have
+    produced window extremes and **no day buckets at all**, with nothing recorded anywhere.
     """
 
     tz: TzInfo
@@ -94,6 +109,7 @@ class DayFold:
         count: PlainData,
         minimum: PlainData | None,
         maximum: PlainData | None,
+        aggregations: frozenset[str] = DECLARED_AGGREGATIONS,
     ) -> None:
         """Fold one interval into its local day.
 
@@ -106,6 +122,10 @@ class DayFold:
         An unparsable or absent timestamp folds nothing. The window statistics are unaffected
         by it — they never needed the timestamp — so the day dimension degrades to missing
         rather than taking the whole pair down with it.
+
+        `aggregations` is the set the caller's window accumulator carries for this pair, and
+        it defaults to all four so an existing caller is unchanged. See the class docstring
+        on why it travels per call rather than as a mapping on this instance.
         """
         if resource_id in self.excluded:
             return
@@ -118,7 +138,9 @@ class DayFold:
         accumulator = self._by_day.get(key)
         if accumulator is None:
             # `sketch=None` — see the module docstring on why a day carries no percentile.
-            accumulator = MetricAccumulator(sketch=None)
+            # The aggregation set comes from the catalog so a day classifies an absent
+            # `count` exactly as the window fold did for this same interval.
+            accumulator = MetricAccumulator(sketch=None, aggregations=aggregations)
             self._by_day[key] = accumulator
 
         accumulator.fold_interval(

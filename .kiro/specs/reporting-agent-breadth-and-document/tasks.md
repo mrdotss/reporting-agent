@@ -75,7 +75,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - This is a prerequisite rather than a tidy-up: `verify/replay.py`'s transitive first-party closure widens to `collect/factfold.py` in task 4.4, which imports this module, and the guard of task 16.1 asserts that closure reaches no `azure.*`, `boto3`, `httpx` or `storage.s3`
     - _Requirements: 7.7, 7.9_
 
-  - [ ] 1.2 `GapRecord` gains `interval_start`, end to end through both halves
+  - [x] 1.2 `GapRecord` gains `interval_start`, end to end through both halves
     - `agent/.../providers/base.py`: add `interval_start: str | None` to the `GapRecord` `TypedDict` (line 155), documented the way `metric` is — `None` is the honest answer for a gap that is not about an interval
     - `agent/.../collect/log.py`: `record_gap(gap_type, resource_id, metric, message, interval_start=None)` accepting it and rejecting an **empty string** exactly as it already rejects an empty `metric` (line 194), so there is one validation style and not two
     - `agent/.../collect/snapshot.py`: emit `interval_start` in a gap object **when present and omit it when `None`**, following the omit-when-absent convention that module already documents, so every existing snapshot digest stays byte-identical — assert that with a fixture comparison rather than asserting it in prose
@@ -115,7 +115,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     moves the `rendering` phase budget, and that edit lands with the adoption or not at all.
     No task after this one assumes a table of contents exists — each reads `ADOPTED_APPROACH`.
 
-  - [ ] 2.1 Declare the setting and the candidate set in `render/toc.py`
+  - [x] 2.1 Declare the setting and the candidate set in `render/toc.py`
     - Create `agent/src/reporting_agent/render/toc.py` declaring `TOC_APPROACH_LIBREOFFICE_INDEX`, `TOC_APPROACH_TWO_PASS`, `TOC_APPROACH_CONVERSION_MACRO`, `TOC_APPROACH_NONE`, the `TOC_APPROACHES` tuple over exactly those four, and `ADOPTED_APPROACH: Final[str] = TOC_APPROACH_NONE`
     - A **module constant, not an environment variable**, and the docstring must say why: a table of contents whose correctness was proven in the image build must not be switchable at run time by a deployment that never ran the proof. `.env.example` gains nothing in this task or any other
     - Nothing else in the codebase may declare a TOC approach string; extend `tests/test_boundaries.py` to fail on any of the four literals appearing outside this module
@@ -156,7 +156,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Seven files: `Microsoft.Compute/virtualMachines`, `Microsoft.Sql/servers/databases`, `Microsoft.Sql/managedInstances`, `Microsoft.DBforPostgreSQL/flexibleServers`, `Microsoft.Storage/storageAccounts`, `Microsoft.Compute/disks`, `Microsoft.Web/sites`
     - _Requirements: 2.1, 2.5_
 
-  - [ ] 3.2 Extend `catalog/metrics.v1.json` to the seven resource types
+  - [x] 3.2 Extend `catalog/metrics.v1.json` to the seven resource types
     - Add six entries beside the existing `Microsoft.Compute/virtualMachines` one, each declaring that type's `metric_namespace` and at least one metric, and each metric declaring the name, unit, unit family, requested aggregations and fractional-digit count the foundation's criterion 32.1 requires
     - Every metric for which an average is emitted requests **both `Total` and `Count`** among its aggregations, drawn from `DECLARED_AGGREGATIONS` in `catalog/loader.py`, because that average is the sum of totals over the sum of counts and a metric requesting neither cannot produce one
     - Raise `catalog_version` from `"1.0.0"` to `"1.1.0"` — one version covering both catalog files, compared component-wise as dotted decimal integers; `collect/snapshot.py` already records it on every snapshot and needs no edit

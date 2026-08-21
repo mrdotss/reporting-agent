@@ -281,6 +281,12 @@ def test_an_interval_missing_count_records_interval_counts_missing_and_excludes_
     assert missing[0]["resource_id"] == resource_id
     assert missing[0]["metric"] == "Percentage CPU"
 
+    # The gap names **the interval that was incomplete**, not the one that folded.
+    # The fixture's two intervals are an hour apart precisely so that reading the
+    # wrong one is a failure rather than a coincidence: 01:00 is the interval with
+    # no count, 00:00 is the complete one.
+    assert missing[0]["interval_start"] == "2026-07-01T01:00:00Z"
+
     # Only the complete first interval (total=720, count=60) folded.
     result, _ = accs[(resource_id, "Percentage CPU")].finalize(resource_id, "Percentage CPU")
     assert result is not None

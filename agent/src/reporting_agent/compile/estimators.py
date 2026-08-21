@@ -50,6 +50,7 @@ from reporting_agent.collect.snapshot import (
     ESTIMATOR_EXACT_GUEST_SAMPLE_MINIMUM,
     ESTIMATOR_EXACT_INTERVAL_MAXIMUM,
     ESTIMATOR_EXACT_INTERVAL_MINIMUM,
+    ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM,
 )
 from reporting_agent.compile.snapshot_view import (
     CARDINALITY_ESTIMATOR,
@@ -100,6 +101,7 @@ EXACT_ESTIMATORS: Final[frozenset[str]] = frozenset(
         ESTIMATOR_EXACT_COUNT_WEIGHTED,
         ESTIMATOR_EXACT_INTERVAL_MINIMUM,
         ESTIMATOR_EXACT_INTERVAL_MAXIMUM,
+        ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM,
         ESTIMATOR_EXACT_GUEST_SAMPLE_AVERAGE,
         ESTIMATOR_EXACT_GUEST_SAMPLE_MINIMUM,
         ESTIMATOR_EXACT_GUEST_SAMPLE_MAXIMUM,
@@ -108,7 +110,7 @@ EXACT_ESTIMATORS: Final[frozenset[str]] = frozenset(
         ESTIMATOR_DERIVED_FROM_SOURCE_MAXIMUM,
     }
 )
-"""Nine estimators naming an exact computation.
+"""Ten estimators naming an exact computation.
 
 A **derived** value is in here: `memory_used_pct` is exact arithmetic over exact
 inputs. Its caveats — host-observed, typically 1-3% below what the guest reports — ride
@@ -317,6 +319,10 @@ _EXACT_METHOD_PHRASES: Final[dict[str, str]] = {
     ),
     ESTIMATOR_EXACT_INTERVAL_MAXIMUM: (
         "exact; the maximum of the per-interval maxima is the true maximum at any grain"
+    ),
+    ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM: (
+        "exact; the sum of the per-interval totals over the reported window, for a "
+        "counter Azure serves a total for and no sample count, so no average is derivable"
     ),
     ESTIMATOR_EXACT_GUEST_SAMPLE_AVERAGE: (
         "exact, computed over the individual samples the in-guest agent shipped"

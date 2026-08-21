@@ -51,22 +51,30 @@ import { isTerminalStatus } from "@/lib/runs/state"
 /**
  * One `collection_log` entry, as the snapshot carries it.
  *
- * The four fields the agent's `collect/log.py` writes, and no more. `gap_type` is
- * a **plain string** rather than a union of the agent's nineteen declared values:
- * this app groups by it and displays it, and a build of the app that met a
- * twentieth type must render it rather than reject the whole list. The agent is
+ * The five fields the agent's `collect/log.py` writes, and no more. `gap_type` is
+ * a **plain string** rather than a union of the agent's declared values:
+ * this app groups by it and displays it, and a build of the app that met an
+ * undeclared type must render it rather than reject the whole list. The agent is
  * where the value set is closed — it raises on an undeclared `gap_type` before a
  * snapshot exists — so re-closing it here would only add a way for the two halves
  * to disagree about a document that has already been written.
  *
  * `metric` is `null` for a resource-level gap, which is a genuine absence: a
  * permission denial is about the resource, not about one of its metrics.
+ *
+ * `intervalStart` is `null` for every gap that is not about one interval, and
+ * carries the interval's own start instant for the two that are —
+ * `interval_counts_missing` and `interval_malformed`. It is what makes a
+ * contiguous stretch of gaps visible as one stretch: a VM emitting nothing for
+ * 64 hours across eight metrics records ~512 entries, and grouping them into a
+ * time range rather than a list of 512 is only possible if each one says when.
  */
 export type RunGap = {
   readonly gapType: string
   readonly resourceId: string
   readonly metric: string | null
   readonly message: string
+  readonly intervalStart: string | null
 }
 
 /**
@@ -74,13 +82,25 @@ export type RunGap = {
  *
  * `.catch(null)` on `metric` rather than `.optional()`: the agent always writes
  * the key and writes `null` for a resource-level gap, and a value that is neither
- * a string nor `null` should not discard the entry's other three fields.
+ * a string nor `null` should not discard the entry's other four fields.
+ *
+ * `interval_start` gets the same `.catch(null)` for a different reason, and the
+ * difference is worth stating because it is the one field here the agent
+ * **omits** rather than writing as `null`: it omits it so that adding the field
+ * did not change the canonical bytes — and therefore the `content_hash` — of
+ * every snapshot whose gaps predate it. `.catch(null)` covers the absent key, the
+ * explicit `null` and a non-string alike, all three collapsing to the same `null`,
+ * which is the right answer for all three: this app reads a document a newer or
+ * an older agent wrote, and "no interval is named" is one fact however it is
+ * spelled. `.optional()` would instead make `intervalStart` `string | undefined`
+ * at every consumer for no gain.
  */
 const snapshotGapSchema = z.object({
   gap_type: z.string().min(1),
   resource_id: z.string().min(1),
   metric: z.string().min(1).nullable().catch(null),
   message: z.string(),
+  interval_start: z.string().min(1).nullable().catch(null),
 })
 
 /**
@@ -198,6 +218,7 @@ export async function loadRunGaps(run: ReportRun): Promise<readonly RunGap[]> {
       resourceId: gap.resource_id,
       metric: gap.metric,
       message: gap.message,
+      intervalStart: gap.interval_start,
     }))
 }
 

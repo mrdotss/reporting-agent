@@ -644,6 +644,7 @@ class AzureProvider:
                     resource_id=resource_id,
                     metric=name,
                     excluded=excluded,
+                    aggregations=declared[name].aggregations,
                 )
                 accumulators[(resource_id, name)] = accumulator
                 if gap is not None:
@@ -666,6 +667,13 @@ class AzureProvider:
                 start_time=window["start_utc"],
                 end_time=window["end_utc"],
                 interval_count=interval_count,
+                # One `aggregation` parameter per call, so the collector partitions by
+                # this mapping. Taken from the same `declared` entries the accumulators
+                # above were built from, so the set that is requested and the set the
+                # fold classifies against cannot disagree.
+                aggregations_by_metric={
+                    name: declared[name].aggregations for name in selected
+                },
             )
         )
 

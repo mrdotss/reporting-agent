@@ -33,6 +33,7 @@ const GAPS: readonly RunGap[] = [
     resourceId: "/subscriptions/x/virtualMachines/prod-batch-02",
     metric: null,
     message: "PowerState/deallocated",
+    intervalStart: null,
   },
 ]
 

@@ -74,11 +74,18 @@ import logging
 from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Final
 
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.regions import LocationRequestResult, RegionResolver
+from reporting_agent.catalog.loader import (
+    AGGREGATION_COUNT,
+    AGGREGATION_MAXIMUM,
+    AGGREGATION_MINIMUM,
+    AGGREGATION_TOTAL,
+)
 from reporting_agent.collect.accumulate import MetricAccumulator
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.dayfold import DayFold
@@ -109,6 +116,7 @@ __all__ = [
     "fold_fallback_response",
     "fold_resource_metrics",
     "parse_retry_after",
+    "partition_by_aggregations",
     "plan_batches",
 ]
 
@@ -124,9 +132,29 @@ MAX_CONCURRENCY_PER_SUBSCRIPTION: Final[int] = 8
 """Req 23.7. One semaphore of this size per subscription id, shared by batch and
 per-resource-fallback requests alike."""
 
-AGGREGATIONS: Final[tuple[str, ...]] = ("Total", "Count", "Minimum", "Maximum")
-"""Req 23.11, 27.8. Requested for every metric, so the Accumulator can compute a
-count-weighted average and exact extremes from the response alone."""
+AGGREGATIONS: Final[tuple[str, ...]] = (
+    AGGREGATION_TOTAL,
+    AGGREGATION_COUNT,
+    AGGREGATION_MINIMUM,
+    AGGREGATION_MAXIMUM,
+)
+"""Req 23.11, 27.8. The full set, and the **default** for a metric whose catalog entry
+declares none — so the Accumulator can compute a count-weighted average and exact extremes
+from the response alone.
+
+No longer sent for every metric unconditionally, and the reason is not an optimization.
+Azure serves a different aggregation set per metric: `Microsoft.Sql/servers/databases`'
+`cpu_percent` supports `Average`, `Minimum` and `Maximum` and not `Total` or `Count`, and
+`Microsoft.Web/sites`' `BytesReceived` supports `Total` alone. Asking such a metric for the
+four here means asking for aggregations it does not have, and the answer carries intervals
+with no `total` and no `count` — which the fold then records as one
+`interval_counts_missing` gap **per interval**, roughly 720 per pair per month, before
+`no_samples` and no statistic at all. The catalog declares what each metric actually
+serves; :meth:`MetricsCollector.collect_group` groups by that declaration and sends it.
+
+The order is fixed rather than sorted so the `aggregation` query parameter is
+byte-identical across runs for the same metric set — the same determinism discipline the
+batch planner holds."""
 
 MAX_CONSECUTIVE_429: Final[int] = 5
 """Req 23.9. The 5th consecutive 429 for one logical request raises `ThrottledError`
@@ -242,6 +270,46 @@ def plan_batches(group: BatchGroup, *, interval_count: int) -> list[Batch]:
     ]
 
 
+def partition_by_aggregations(
+    metric_names: Sequence[str],
+    aggregations_by_metric: Mapping[str, Sequence[str]] | None = None,
+) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """`metric_names` grouped into `(aggregations, names)` partitions. **Pure.**
+
+    One partition per distinct aggregation set, because the batch endpoint carries one
+    `aggregation` query parameter per call — the same reason it carries one
+    `metric_namespace` per call and therefore one resource type. Two metrics whose sets
+    differ cannot ride the same request, and asking for the union would ask each of them
+    for an aggregation Azure does not serve it.
+
+    Two orderings are produced rather than inherited, so two runs over the same catalog
+    plan byte-identical requests (Property 4's determinism clause):
+
+    * each partition's names keep **`metric_names`' own order**, which is the catalog's
+      declaration order — not sorted, because that is the order the existing planner and
+      every existing fixture already rely on;
+    * the partitions themselves are ordered by their **canonical aggregation tuple**,
+      which is :data:`AGGREGATIONS`' fixed order filtered to the set, so the sequence does
+      not depend on which metric happened to be seen first.
+
+    A metric absent from the mapping takes the full :data:`AGGREGATIONS` set, and so does
+    every metric when the mapping is `None`. An empty declared set is treated the same
+    way: a metric that somehow reached here declaring no aggregation at all is a metric
+    the loader should already have rejected, and defaulting is strictly safer than
+    issuing a request with an empty `aggregation` parameter.
+    """
+    by_set: dict[tuple[str, ...], list[str]] = {}
+    for name in metric_names:
+        declared = (aggregations_by_metric or {}).get(name) or ()
+        canonical = tuple(a for a in AGGREGATIONS if a in set(declared)) or AGGREGATIONS
+        by_set.setdefault(canonical, []).append(name)
+
+    return [
+        (canonical, tuple(names))
+        for canonical, names in sorted(by_set.items(), key=lambda item: item[0])
+    ]
+
+
 # --- response classification (Req 23.3, 23.8, 23.14) --------------------------------
 
 
@@ -296,6 +364,60 @@ month. See :func:`reporting_agent.collect.numeric.decimal_leaf` for that story.
 
 This is an alias, not a wrapper. A wrapper would be a second place a leaf could be
 pre-filtered, which is the one thing having a single reader is meant to rule out."""
+
+
+def _interval_counts_missing(
+    accumulator: MetricAccumulator | None,
+    *,
+    total: Decimal | None,
+    count: Decimal | None,
+) -> bool:
+    """Whether this interval omits a leaf the metric's request **asked for** (Req 23.13).
+    **Pure.**
+
+    The screening step that keeps `accumulate.py`'s `interval_malformed` a defensive floor
+    rather than the path a response's own omission takes — and the one place the
+    per-metric aggregation set changes what "omission" means.
+
+    An absent `total` or `count` is two entirely different facts depending on the request:
+
+    * **Requested and absent** — a real hole. The 64-hour stretch of timestamp-only
+      intervals `.kiro/steering/azure-integration.md` records is this, and it is a gap.
+    * **Never requested** — Azure serves no such aggregation for this metric, so the
+      response is complete. A gap here would fire once per interval and then hand
+      `no_samples` to a pair whose extremes arrived intact.
+
+    A `None` accumulator falls back to the full set, which preserves exactly what this
+    module did before per-metric aggregations existed: a resource with no accumulator still
+    has an incomplete interval recorded against it.
+    """
+    requested = AGGREGATIONS if accumulator is None else accumulator.aggregations
+    if AGGREGATION_TOTAL in requested or AGGREGATION_COUNT in requested:
+        if total is None:
+            return True
+    if AGGREGATION_COUNT in requested and count is None:
+        return True
+    return False
+
+
+def _interval_start_of(point: Mapping[str, object]) -> str | None:
+    """One interval's `timeStamp` as a non-empty string, or `None`. **Pure.**
+
+    `None` for an absent, non-string or blank value rather than a coerced one: an
+    interval whose own start cannot be read is an interval this gap cannot honestly
+    name, and `str(point.get("timeStamp"))` would put `"None"` in the record. The
+    string is passed through exactly as the response carried it and never reparsed —
+    `collect/dayfold.py` is the module that interprets a timestamp, and a gap is a
+    record of what arrived.
+
+    Returning `None` for a blank string is also what keeps `record_gap`'s
+    empty-string rejection unreachable from this path: the two agree on what absence
+    is, rather than one raising on what the other calls acceptable.
+    """
+    value = point.get("timeStamp")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
 
 
 def _metric_name_of(entry: Mapping[str, object]) -> str | None:
@@ -499,9 +621,14 @@ def fold_resource_metrics(
                 if not isinstance(point, Mapping):
                     continue
 
+                # Read before the screen below, not after: the `continue` in the
+                # `interval_counts_missing` branch is exactly the path that needs the
+                # interval's own start, and the day fold further down reads it too.
+                interval_start = _interval_start_of(point)
+
                 total = _as_decimal(point.get("total"))
                 count = _as_decimal(point.get("count"))
-                if total is None or count is None:
+                if _interval_counts_missing(accumulator, total=total, count=count):
                     gaps.append(
                         record_gap(
                             GAP_TYPE_INTERVAL_COUNTS_MISSING,
@@ -510,6 +637,7 @@ def fold_resource_metrics(
                             f"an interval for metric {metric_name!r} on resource "
                             f"{resource_id!r} omits its total or its count value; "
                             f"excluded from the average.",
+                            interval_start,
                         )
                     )
                     continue
@@ -526,6 +654,7 @@ def fold_resource_metrics(
                     maximum=maximum,
                     resource_id=resource_id,
                     metric=metric_name,
+                    interval_start=interval_start,
                 )
                 if fold_gap is not None:
                     gaps.append(fold_gap)
@@ -539,7 +668,10 @@ def fold_resource_metrics(
                     day_fold.fold(
                         resource_id=resource_id,
                         metric=metric_name,
-                        timestamp=point.get("timeStamp"),
+                        # The window accumulator's own set, so the two folds cannot
+                        # disagree about whether this interval is complete.
+                        aggregations=accumulator.aggregations,
+                        timestamp=interval_start,
                         total=total,
                         count=count,
                         minimum=minimum,
@@ -596,6 +728,7 @@ class MetricsCollector:
         start_time: str,
         end_time: str,
         interval_count: int,
+        aggregations_by_metric: Mapping[str, Sequence[str]] | None = None,
     ) -> list[GapRecord]:
         """Collect one `(subscription, location, resource_type)` group's metrics.
 
@@ -608,6 +741,22 @@ class MetricsCollector:
         returns every gap produced. Runs every batch concurrently, each individually
         bounded by this instance's per-subscription semaphore (Req 23.7).
 
+        `aggregations_by_metric` maps a metric name to the aggregations the catalog
+        declares Azure serves for it. **The batch endpoint takes one `aggregation` query
+        parameter per call**, exactly as it takes one `metric_namespace` per call — so one
+        aggregation set per call, by construction, and metrics whose sets differ cannot
+        share a request. This method therefore partitions `metric_names` by set and plans
+        each partition separately. A metric absent from the mapping, or the mapping being
+        `None`, means the full :data:`AGGREGATIONS` set, so every existing caller and every
+        existing test behaves exactly as before.
+
+        Partitioning here rather than in `plan_batches` keeps the aggregation set out of
+        `GroupKey`: the points budget, the halving loop and the metric split are unchanged
+        and stay property-tested against the same shapes. The cost is more, smaller calls
+        for a resource type whose metrics disagree — which is the honest cost of the
+        endpoint's own shape, and is bounded by the number of distinct sets (four across
+        the whole shipped catalog), never by the number of metrics.
+
         Raises `ValueError` for an empty `resource_ids` or `metric_names` — there is
         nothing to request. Raises `ThrottledError` if a 5th consecutive 429 is met
         for any single logical request (Req 23.9).
@@ -617,12 +766,20 @@ class MetricsCollector:
         if not metric_names:
             raise ValueError("metric_names must be non-empty; there is nothing to collect")
 
-        group = BatchGroup(
-            key=(subscription_id, location, resource_type),
-            resources_sorted=tuple(sorted(resource_ids)),
-            metric_count=len(metric_names),
-        )
-        batches = plan_batches(group, interval_count=interval_count)
+        resources_sorted = tuple(sorted(resource_ids))
+        planned: list[tuple[Batch, tuple[str, ...], tuple[str, ...]]] = []
+        for aggregations, names in partition_by_aggregations(
+            metric_names, aggregations_by_metric
+        ):
+            group = BatchGroup(
+                key=(subscription_id, location, resource_type),
+                resources_sorted=resources_sorted,
+                metric_count=len(names),
+            )
+            planned.extend(
+                (batch, names, aggregations)
+                for batch in plan_batches(group, interval_count=interval_count)
+            )
 
         results = await asyncio.gather(
             *[
@@ -634,7 +791,8 @@ class MetricsCollector:
                     resource_type=resource_type,
                     resource_ids=batch.resource_ids,
                     metric_namespace=metric_namespace,
-                    metric_names=tuple(metric_names),
+                    metric_names=names,
+                    aggregations=aggregations,
                     accumulators=accumulators,
                     day_fold=day_fold,
                     grain=grain,
@@ -642,7 +800,7 @@ class MetricsCollector:
                     start_time=start_time,
                     end_time=end_time,
                 )
-                for batch in batches
+                for batch, names, aggregations in planned
             ]
         )
 
@@ -661,6 +819,7 @@ class MetricsCollector:
         resource_ids: tuple[str, ...],
         metric_namespace: str,
         metric_names: tuple[str, ...],
+        aggregations: tuple[str, ...],
         start_time: str,
         end_time: str,
         interval: str,
@@ -673,7 +832,7 @@ class MetricsCollector:
                 resource_ids=resource_ids,
                 metric_namespace=metric_namespace,
                 metric_names=metric_names,
-                aggregations=AGGREGATIONS,
+                aggregations=aggregations,
                 start_time=start_time,
                 end_time=end_time,
                 interval=interval,
@@ -687,6 +846,7 @@ class MetricsCollector:
         resource_ids: tuple[str, ...],
         metric_namespace: str,
         metric_names: tuple[str, ...],
+        aggregations: tuple[str, ...],
         start_time: str,
         end_time: str,
         interval: str,
@@ -704,6 +864,7 @@ class MetricsCollector:
                 resource_ids=resource_ids,
                 metric_namespace=metric_namespace,
                 metric_names=metric_names,
+                aggregations=aggregations,
                 start_time=start_time,
                 end_time=end_time,
                 interval=interval,
@@ -741,6 +902,7 @@ class MetricsCollector:
         resource_ids: tuple[str, ...],
         metric_namespace: str,
         metric_names: tuple[str, ...],
+        aggregations: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
         day_fold: DayFold | None,
         grain: str,
@@ -754,6 +916,7 @@ class MetricsCollector:
             resource_ids=resource_ids,
             metric_namespace=metric_namespace,
             metric_names=metric_names,
+            aggregations=aggregations,
             start_time=start_time,
             end_time=end_time,
             interval=grain,
@@ -788,6 +951,7 @@ class MetricsCollector:
                     resource_id=resource_ids[0],
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
+                    aggregations=aggregations,
                     accumulators=accumulators,
                     day_fold=day_fold,
                     grain=grain,
@@ -808,6 +972,7 @@ class MetricsCollector:
                     resource_ids=first,
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
+                    aggregations=aggregations,
                     accumulators=accumulators,
                     day_fold=day_fold,
                     grain=grain,
@@ -824,6 +989,7 @@ class MetricsCollector:
                     resource_ids=rest,
                     metric_namespace=metric_namespace,
                     metric_names=metric_names,
+                    aggregations=aggregations,
                     accumulators=accumulators,
                     day_fold=day_fold,
                     grain=grain,
@@ -870,6 +1036,7 @@ class MetricsCollector:
                 resource_ids=resource_ids,
                 metric_namespace=metric_namespace,
                 metric_names=metric_names,
+                aggregations=aggregations,
                 accumulators=accumulators,
                 day_fold=day_fold,
                 grain=grain,
@@ -919,6 +1086,7 @@ class MetricsCollector:
         resource_id: str,
         metric_namespace: str,
         metric_names: tuple[str, ...],
+        aggregations: tuple[str, ...],
         accumulators: Mapping[tuple[str, str], MetricAccumulator],
         day_fold: DayFold | None,
         grain: str,
@@ -938,6 +1106,7 @@ class MetricsCollector:
                 resource_ids=(resource_id,),
                 metric_namespace=metric_namespace,
                 metric_names=(metric_name,),
+                aggregations=aggregations,
                 start_time=start_time,
                 end_time=end_time,
                 interval=grain,

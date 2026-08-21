@@ -52,6 +52,11 @@ from typing import Final, Literal
 from reporting_agent.errors import CatalogUnusableError
 
 __all__ = [
+    "AGGREGATION_COUNT",
+    "AGGREGATION_MAXIMUM",
+    "AGGREGATION_MINIMUM",
+    "AGGREGATION_TOTAL",
+    "AVERAGE_AGGREGATIONS",
     "CATALOG_ENTRY_INVALID_GAP_TYPE",
     "DECLARED_AGGREGATIONS",
     "DECLARED_UNITS",
@@ -78,9 +83,34 @@ __all__ = [
 
 DECLARED_UNITS: Final[frozenset[str]] = frozenset({"percent", "bytes", "count_per_second"})
 DECLARED_UNIT_FAMILIES: Final[frozenset[str]] = frozenset({"percentage", "magnitude"})
+
+# The four aggregation names, each once. Named constants rather than bare strings in the
+# set below, because three other modules now branch on *which* aggregation a metric
+# requested — `azure/metrics.py` builds the `aggregation` query parameter from it,
+# `collect/accumulate.py` decides whether a missing `count` is malformed or simply not
+# asked for, and `collect/snapshot.py` decides whether an average exists at all. A bare
+# `"Count"` in each of those is four places for one string to be misspelled, and the
+# failure mode is silent: an unrequested aggregation reads as an absent one.
+AGGREGATION_TOTAL: Final[str] = "Total"
+AGGREGATION_COUNT: Final[str] = "Count"
+AGGREGATION_MINIMUM: Final[str] = "Minimum"
+AGGREGATION_MAXIMUM: Final[str] = "Maximum"
+
 DECLARED_AGGREGATIONS: Final[frozenset[str]] = frozenset(
-    {"Total", "Count", "Minimum", "Maximum"}
+    {AGGREGATION_TOTAL, AGGREGATION_COUNT, AGGREGATION_MINIMUM, AGGREGATION_MAXIMUM}
 )
+
+AVERAGE_AGGREGATIONS: Final[frozenset[str]] = frozenset(
+    {AGGREGATION_TOTAL, AGGREGATION_COUNT}
+)
+"""The two a count-weighted average needs, together (Req 1.9).
+
+An average here is the sum of totals over the sum of counts, so a metric requesting only
+one of the two cannot produce one — and requesting neither is not an error, it is a metric
+Azure does not serve those aggregations for. `Microsoft.Sql/servers/databases`'
+`cpu_percent` supports `Average`, `Minimum` and `Maximum` and nothing else, so the honest
+outcome for it is an exact minimum and maximum and **no** average, rather than a fabricated
+one or a metric dropped from the catalog."""
 DECLARED_SOURCE_KINDS: Final[frozenset[str]] = frozenset({"metric", "sku_capability"})
 
 MIN_SCALE: Final[int] = 0

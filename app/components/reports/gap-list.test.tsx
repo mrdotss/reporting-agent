@@ -29,6 +29,7 @@ function gap(over: Partial<RunGap> = {}): RunGap {
     resourceId: "/subscriptions/x/virtualMachines/prod-batch-02",
     metric: null,
     message: "PowerState/deallocated",
+    intervalStart: null,
     ...over,
   }
 }

@@ -113,6 +113,7 @@ const GAP: RunGap = {
   resourceId: "/subscriptions/x/vm/prod-batch-02",
   metric: null,
   message: "PowerState/deallocated",
+  intervalStart: null,
 }
 
 /** The next `GET /api/runs/[runId]` answer. */

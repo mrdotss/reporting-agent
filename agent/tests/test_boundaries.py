@@ -1,11 +1,12 @@
 """Static boundary guards for the agent runtime (Req 18.5, 18.7, 19.7).
 
-Rules 1 through 11, all asserted with `ast` over `src/reporting_agent/**/*.py`. The three
-below were written before the code they guard; 4 through 9 and 11 were appended as the
+Rules 1 through 12, all asserted with `ast` over `src/reporting_agent/**/*.py` — except
+rule 12, which also sweeps `tests/`, for the reason recorded where it is defined. The three
+below were written before the code they guard; 4 through 9, 11 and 12 were appended as the
 packages they cover landed, and each is documented where it is defined rather than restated
 here. Rule 7 has two halves — one display *assignment* and one display *computation* — so
-it is numbered 7 and 7b, and rule 11 sits above rule 10 in the file so that rule 10's "no
-rule above" stays literally true.
+it is numbered 7 and 7b, and rules 11 and 12 sit above rule 10 in the file so that rule
+10's "no rule above" stays literally true.
 
 **Rule 10 is the completeness rule**, and it is about the other ten: every directory any
 of them sweeps must exist and yield at least one module, and the declared set must be
@@ -77,6 +78,11 @@ import pytest
 AGENT_ROOT = Path(__file__).resolve().parent.parent
 SRC_ROOT = AGENT_ROOT / "src" / "reporting_agent"
 AZURE_PACKAGE = SRC_ROOT / "azure"
+
+# Rule 12 alone also sweeps the suite: its consumers are largely tests, so a hardcoded
+# approach string in a test is the same defect as one in the shipped tree. Every other
+# rule here scans `SRC_ROOT` only.
+TESTS_ROOT = AGENT_ROOT / "tests"
 
 # The rule is on the FIRST dotted segment, matched exactly. See the module docstring.
 SDK_ROOT_SEGMENT = "azure"
@@ -1707,6 +1713,266 @@ def test_the_numeric_leaf_scan_fails_when_it_finds_no_source_file(tmp_path: Path
 
 
 # --------------------------------------------------------------------------- #
+# Rule 12 — one module declares the TOC approach strings (Req 14.10)
+# --------------------------------------------------------------------------- #
+#
+# `render/toc.py` declares four approach strings and which one this image adopted. The
+# rule is that nothing else spells one.
+#
+# What it prevents is specific. Every front-matter module after task 2.3 *reads*
+# `ADOPTED_APPROACH` rather than assuming a value, so the strings travel widely as
+# comparisons. A comparison written as `== "two_pass_measure"` keeps compiling after the
+# constant is renamed, keeps passing every type check, and silently stops being taken —
+# and the branch it guards is the one that emits page numbers. A table of contents that
+# quietly stops being emitted is a missing section; one that quietly keeps being emitted
+# after its proof was withdrawn is a page number nobody measured.
+#
+# **This rule is in two tiers, because the four strings are not equally distinctive.**
+# That asymmetry is the whole design and is not an accident of implementation:
+#
+#   Tier 1 — `libreoffice_index_update`, `two_pass_measure`, `conversion_macro`. These
+#   have exactly one meaning in this product, so an exact-match scan for the bare literal
+#   is precise: any occurrence outside the owner is a second declaration.
+#
+#   Tier 2 — `none`. A bare-literal scan is **impossible** here and would fail on correct
+#   code today: `render/themes.py` writes `'none'` as a Word table-border value, `main.py`
+#   formats an empty list as `'none'` in a log line, and a drift sample records its method
+#   as `"none"`. None of those is about a table of contents. So for `none` the rule is
+#   contextual — a matching string constant compared against, or assigned to, an
+#   identifier that names a TOC approach — which is exactly the mistake worth catching and
+#   nothing else.
+#
+# Tier 2 applies to all four strings rather than only to `none`, so the distinctive three
+# are caught by both tiers. Belt and braces on the one rule where a false negative is
+# invisible: tier 1 catches the literal wherever it is written, tier 2 catches it even if
+# somebody defeats tier 1 by assembling the string.
+#
+# Both tiers sweep `tests/` as well as `src/`, unlike every other rule in this file. The
+# consumers that later tasks add are largely tests — the evidence guard and the proof test
+# — and a hardcoded candidate name in the *test* that checks the evidence record is the
+# same defect with the same consequence. This module is the one exemption, for the reason
+# `AMBIENT_CREDENTIAL` is exempt from rule 2: a guard has to name what it searches for.
+
+TOC_APPROACH_OWNER = "render/toc.py"
+"""The one module permitted to spell an approach string, POSIX-relative to `SRC_ROOT`.
+Not a list, and not configurable: the content of the rule is that there is exactly one."""
+
+TOC_APPROACH_LITERALS: frozenset[str] = frozenset(
+    {"libreoffice_index_update", "two_pass_measure", "conversion_macro", "none"}
+)
+"""The four strings, written here as literals rather than imported from
+`render/toc.py`.
+
+Deliberate, and the one place in this file where duplication is the right answer: a guard
+that imported the values it checks for would pass no matter what they were, including
+after a rename that broke every comparison in the tree. Writing them out means the guard
+and the declaration have to be changed together, and
+:func:`test_the_toc_approach_rule_covers_every_declared_approach` below asserts the two
+sets are equal — so the duplication cannot drift, it can only fail loudly."""
+
+TOC_APPROACH_DISTINCTIVE: frozenset[str] = frozenset(
+    {"libreoffice_index_update", "two_pass_measure", "conversion_macro"}
+)
+"""Tier 1's set: the three whose bare literal has no other meaning in this product. See
+the section comment above on why `none` is not among them."""
+
+TOC_APPROACH_IDENTIFIER_MARKER = "approach"
+"""Tier 2's context signal, matched as a case-folded substring of an identifier.
+
+`approach` rather than `toc`: the identifiers that carry one of these values are
+`ADOPTED_APPROACH`, `TOC_APPROACHES`, and the `approach=` keyword `measure()` takes. A
+marker of `toc` would miss the keyword argument, which is the parameter the harness and
+the proof test actually pass a candidate through."""
+
+
+def _toc_scanned_modules() -> list[Path]:
+    """Every module under `src/reporting_agent/` and `tests/`, except the owner and this
+    guard. `__pycache__` is excluded the way rule 10 excludes it — a stale `.pyc` is not
+    source, and whether one exists depends on whether the suite has run before."""
+    owner = (SRC_ROOT / TOC_APPROACH_OWNER).resolve()
+    guard = Path(__file__).resolve()
+    return [
+        path
+        for path in (*_source_modules(SRC_ROOT), *_source_modules(TESTS_ROOT))
+        if "__pycache__" not in path.parts
+        and path.resolve() != owner
+        and path.resolve() != guard
+    ]
+
+
+def _toc_approach_identifier(node: ast.AST) -> str | None:
+    """The identifier `node` names, if it names one — a bare name, an attribute's trailing
+    segment, or a keyword argument's name."""
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return node.attr
+    return None
+
+
+def _names_a_toc_approach(node: ast.AST) -> bool:
+    identifier = _toc_approach_identifier(node)
+    return identifier is not None and TOC_APPROACH_IDENTIFIER_MARKER in identifier.casefold()
+
+
+def _matching_literal(node: ast.AST) -> str | None:
+    """The approach string `node` is, if it is one exactly. Compared after `strip()` and
+    with `==`, so prose mentioning a candidate inside a longer sentence — this file's own
+    section comment, `render/toc.py`'s docstring quoted elsewhere — is not a declaration."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        stripped = node.value.strip()
+        if stripped in TOC_APPROACH_LITERALS:
+            return stripped
+    return None
+
+
+def _toc_approach_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every second spelling of an approach string, by either tier."""
+    offenders: list[str] = []
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            # Tier 1: a distinctive literal, anywhere.
+            literal = _matching_literal(node)
+            if literal is not None and literal in TOC_APPROACH_DISTINCTIVE:
+                offenders.append(f"{_label(path)}:{node.lineno} literal {literal!r}")
+                continue
+
+            # Tier 2: any of the four, in a TOC-approach context.
+            for value_node, context_nodes in _toc_approach_contexts(node):
+                matched = _matching_literal(value_node)
+                if matched is not None and any(
+                    _names_a_toc_approach(context) for context in context_nodes
+                ):
+                    offenders.append(
+                        f"{_label(path)}:{node.lineno} approach context {matched!r}"
+                    )
+    return offenders
+
+
+def _toc_approach_contexts(
+    node: ast.AST,
+) -> list[tuple[ast.AST, tuple[ast.AST, ...]]]:
+    """Every `(value, identifiers-that-would-make-it-a-TOC-approach)` pair in `node`.
+
+    The three shapes a second declaration takes: a comparison against an approach-named
+    identifier, an assignment to one, and a keyword argument named like one.
+    """
+    if isinstance(node, ast.Compare):
+        operands = [node.left, *node.comparators]
+        return [(value, tuple(operands)) for value in operands]
+    if isinstance(node, ast.Assign) and node.value is not None:
+        return [(node.value, tuple(node.targets))]
+    if isinstance(node, ast.AnnAssign) and node.value is not None:
+        return [(node.value, (node.target,))]
+    if isinstance(node, ast.keyword) and node.arg is not None:
+        return [(node.value, (ast.Name(id=node.arg),))]
+    return []
+
+
+def test_the_toc_approach_scan_sees_source_files() -> None:
+    """Guard the guard. Both trees, because the rule is the only one here that sweeps
+    `tests/` and a typo in that root would silently halve it."""
+    scanned = _toc_scanned_modules()
+
+    assert scanned, "the TOC approach rule scanned nothing, so it asserts nothing"
+    assert any(path.is_relative_to(SRC_ROOT) for path in scanned), scanned[:5]
+    assert any(path.is_relative_to(TESTS_ROOT) for path in scanned), scanned[:5]
+
+
+def test_the_toc_approach_owner_exists_and_declares_every_approach() -> None:
+    """The exemption is only meaningful if the exempt module is there and is the thing it
+    claims to be. Without this, a rename of `render/toc.py` would leave the rule sweeping
+    a tree in which nothing declares the strings and everything is therefore compliant."""
+    owner = SRC_ROOT / TOC_APPROACH_OWNER
+
+    assert owner.is_file(), f"{TOC_APPROACH_OWNER} is exempt from rule 12 and absent"
+
+    declared = {
+        literal
+        for node in ast.walk(_parse(owner))
+        if (literal := _matching_literal(node)) is not None
+    }
+    assert declared == TOC_APPROACH_LITERALS, sorted(
+        TOC_APPROACH_LITERALS.symmetric_difference(declared)
+    )
+
+
+def test_the_toc_approach_rule_covers_every_declared_approach() -> None:
+    """The duplication in `TOC_APPROACH_LITERALS` cannot drift.
+
+    `render/toc.py` declares `TOC_APPROACHES` as the closed set; this asserts the guard
+    checks for exactly that set and not a subset it happens to remember. A fifth candidate
+    added there without being added here would otherwise be free to appear anywhere.
+    """
+    from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACHES
+
+    assert set(TOC_APPROACHES) == TOC_APPROACH_LITERALS
+    assert TOC_APPROACH_DISTINCTIVE < TOC_APPROACH_LITERALS
+    assert ADOPTED_APPROACH in TOC_APPROACHES
+
+
+def test_no_module_outside_the_owner_declares_a_toc_approach_string() -> None:
+    """Rule 12 over the real tree."""
+    offenders = _toc_approach_offenders(_toc_scanned_modules())
+
+    assert offenders == [], (
+        f"only {TOC_APPROACH_OWNER} may spell a table-of-contents approach string; every "
+        "consumer imports the constant, so that a rename cannot leave a comparison that "
+        "still compiles and is never true (Req 14.10): " + "; ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Tier 1: the distinctive literals, in any position at all.
+        'APPROACH = "two_pass_measure"',
+        'if resolved == "libreoffice_index_update": pass',
+        'CANDIDATES = ["conversion_macro"]',
+        'render(mode="two_pass_measure")',
+        'def emit(kind: str = "conversion_macro") -> None: pass',
+        # Tier 2: `none`, which tier 1 cannot see, in each of the three shapes.
+        'ADOPTED_APPROACH = "none"',
+        'if approach == "none": pass',
+        'if "none" == self.adopted_approach: pass',
+        'measure(definition, snapshot, approach="none")',
+        'TOC_APPROACH: str = "none"',
+    ],
+)
+def test_the_toc_approach_scan_detects_a_second_declaration(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _toc_approach_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The canonical consumer: import the name, compare the name.
+        "from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE\n"
+        "if ADOPTED_APPROACH == TOC_APPROACH_NONE: pass",
+        # The three legitimate `none` values in this tree today, each of which a bare
+        # literal scan would have failed on. These are the cases tier 2 exists to permit.
+        "borders = ('none', 0, 'auto')",
+        "message = f\"(open: {opened or 'none'})\"",
+        'drift_sample = {"n": 0, "method": "none", "seed": seed}',
+        'shape = Shape((), "none", None, 0)',
+        # Prose naming a candidate is not a declaration; the match is exact after strip.
+        '"""The two_pass_measure candidate doubles the conversion."""',
+        # An approach-named identifier compared against something that is not a candidate.
+        'if approach == "unevaluated": pass',
+    ],
+)
+def test_the_toc_approach_scan_permits_the_constants_and_unrelated_none(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _toc_approach_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
 # Rule 10 — no rule above may pass by scanning nothing
 # --------------------------------------------------------------------------- #
 #
@@ -1815,7 +2081,12 @@ def test_every_package_the_rules_name_is_in_the_guarded_set() -> None:
         *{relative.split("/", 1)[0] for relative in SNAPSHOT_PATH_MODULES},
         *{
             relative.split("/", 1)[0]
-            for relative in (FORMATTED_OWNER, QUANTIZATION_OWNER, REPLAY_ENTRY_POINT)
+            for relative in (
+                FORMATTED_OWNER,
+                QUANTIZATION_OWNER,
+                REPLAY_ENTRY_POINT,
+                TOC_APPROACH_OWNER,
+            )
         },
     }
 

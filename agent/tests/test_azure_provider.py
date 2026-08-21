@@ -422,7 +422,14 @@ def test_build_provider_assembles_the_real_sdk_clients_without_reaching_azure() 
     assert isinstance(provider, Provider)
     assert isinstance(provider, AzureProvider)
     assert provider.fidelity_tier == FIDELITY_ENHANCED
-    assert provider.capabilities()["resource_types"] == [RESOURCE_TYPE]
+    # Read from the catalog rather than pinned to a literal list: this is the wiring
+    # test, and what it has to prove is that the provider reports *the catalog it was
+    # built over*. A literal would make it fail every time the catalog gains a resource
+    # type, which is a catalog assertion wearing a wiring test's name.
+    assert provider.capabilities()["resource_types"] == sorted(
+        load_catalog().resource_type_names
+    )
+    assert RESOURCE_TYPE in provider.capabilities()["resource_types"]
     provider.close()  # closes every client, then the credential; never raises
 
 
@@ -475,11 +482,16 @@ def test_capabilities_reports_the_catalog_the_provider_was_built_over() -> None:
 
     capabilities = harness.provider.capabilities()
 
-    assert capabilities["resource_types"] == [RESOURCE_TYPE]
-    assert capabilities["metrics"][RESOURCE_TYPE] == sorted(
-        metric.name
-        for metric in catalog.for_resource_type(RESOURCE_TYPE).metrics  # type: ignore[union-attr]
-    )
+    assert capabilities["resource_types"] == sorted(catalog.resource_type_names)
+    # Every declared type, not only the virtual-machine one: the claim is that this map
+    # mirrors the catalog, and asserting it for a single type would keep passing while
+    # six others were reported wrongly or not at all.
+    for resource_type in catalog.resource_type_names:
+        declared = catalog.for_resource_type(resource_type)
+        assert declared is not None
+        assert capabilities["metrics"][resource_type] == sorted(
+            metric.name for metric in declared.metrics
+        )
     assert capabilities["grains"] == list(SUPPORTED_GRAINS)
     assert capabilities["fidelity_tiers"] == list(FIDELITY_TIERS)
     assert_plain_data(capabilities)

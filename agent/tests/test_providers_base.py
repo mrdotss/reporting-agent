@@ -227,6 +227,7 @@ def test_record_shapes_match_the_design() -> None:
         "resource_id",
         "metric",
         "message",
+        "interval_start",
     }
     assert not ResourceRecord.__optional_keys__
     assert not GapRecord.__optional_keys__

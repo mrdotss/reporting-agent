@@ -73,12 +73,17 @@ from __future__ import annotations
 
 import ast
 import operator
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from decimal import ROUND_HALF_EVEN, Decimal, localcontext
 from typing import Final
 
-from reporting_agent.catalog.loader import DerivedEntry
+from reporting_agent.catalog.loader import (
+    AGGREGATION_COUNT,
+    AGGREGATION_TOTAL,
+    DECLARED_AGGREGATIONS,
+    DerivedEntry,
+)
 from reporting_agent.collect.log import (
     GAP_TYPE_INTERVAL_MALFORMED,
     GAP_TYPE_METRIC_ERROR,
@@ -95,6 +100,7 @@ __all__ = [
     "STATISTIC_AVERAGE",
     "STATISTIC_MAXIMUM",
     "STATISTIC_MINIMUM",
+    "STATISTIC_SUM",
     "WORKING_PRECISION",
     "AccumulatorResult",
     "DerivedSourceRef",
@@ -132,6 +138,21 @@ STATISTIC_AVERAGE: Final[str] = "avg"
 STATISTIC_MINIMUM: Final[str] = "min"
 STATISTIC_MAXIMUM: Final[str] = "max"
 
+STATISTIC_SUM: Final[str] = "sum"
+"""The summed interval totals, for a metric Azure serves `Total` for and `Count` for not.
+
+Deliberately **not** in :data:`_DIRECTION_ORDER`: that tuple is the set of directions a
+*derived* statistic can produce, and no derivation in the catalog binds a sum. This is an
+exact statistic of one metric, not an input to arithmetic.
+
+It exists because the alternative was worse in both available spellings. `Microsoft.Web/
+sites` serves `BytesReceived`, `BytesSent` and its two IO counters as `Total` only, so
+without a sum that resource type declares no metric at all and the report covers App
+Service by naming it and saying nothing. Reporting the same totals as a `min`/`max` of
+per-interval totals would reuse `exact_interval_minimum`, whose documented meaning is the
+minimum of the per-interval *minima* — a different quantity under an identical name, which
+is the class of quiet mislabelling this product exists to eliminate."""
+
 _DIRECTION_ORDER: Final[tuple[str, ...]] = (
     STATISTIC_AVERAGE,
     STATISTIC_MINIMUM,
@@ -153,18 +174,34 @@ class AccumulatorResult:
     folded: the count-weighted average, the exact minimum and maximum, and the summed
     sample count every one of those three numbers was computed over.
 
-    `minimum` and `maximum` are `Decimal | None` rather than always `Decimal`: the
-    catalog's own metrics always request all four aggregations (`Total`, `Count`,
-    `Minimum`, `Maximum`), so in practice every folded interval carries both, but this
-    module does not itself enforce that — a caller that never folds a `minimum` or
-    `maximum` for this pair still gets a valid average rather than a fabricated
-    extreme.
+    `minimum` and `maximum` are `Decimal | None` rather than always `Decimal`, and so is
+    `average`. Not defensiveness — the catalog declares, per metric, which aggregations
+    Azure serves for it, and the three fields are independently present or absent
+    accordingly:
+
+    * `Total` **and** `Count` requested (every `Microsoft.Compute/virtualMachines` metric,
+      every `Microsoft.Compute/disks` metric): `average` is the count-weighted average.
+    * Neither requested (`Microsoft.Sql/servers/databases`' `cpu_percent`, which Azure
+      serves as `Average`, `Minimum` and `Maximum` only): `average` is `None`, and the
+      exact minimum and maximum are the whole result. There is no fabricated average and
+      no dropped metric.
+    * `Total` requested without `Count` (`Microsoft.Web/sites`' `BytesReceived`):
+      `total_sum` carries the summed interval totals and `average` is `None` — a sum over
+      the window is what that counter means, and dividing it by an interval count Azure
+      never sent would be arithmetic on a denominator nobody measured.
+
+    `sample_count` is the summed per-interval sample count when `Count` was requested. When
+    it was not, Azure sent no sample count at all, and this is the number of **intervals**
+    rolled up — which is genuinely what the extremes were computed over, and is the same
+    honesty `percentile_statistics` already applies to a sketch's fold count. `interval` on
+    the emitted `StatisticEntry` is what says which unit that number is in.
     """
 
-    average: Decimal
+    average: Decimal | None
     minimum: Decimal | None
     maximum: Decimal | None
     sample_count: Decimal
+    total_sum: Decimal | None = None
 
 
 @dataclass(slots=True)
@@ -185,14 +222,38 @@ class MetricAccumulator:
     no-op and `finalize` returns `(None, None)` — no result, and deliberately no
     `no_samples` gap, because the reason this pair has nothing is already recorded
     under its own, more specific classification.
+
+    `aggregations` is **the set this metric's request actually asked Azure for**, taken
+    from the catalog entry, and it is what makes an absent `total` or `count` legible.
+    Those two facts are indistinguishable in a response body and mean opposite things:
+
+    * `Count` was requested and the interval omits it — a real omission, and the
+      64-hour timestamp-only stretch `.kiro/steering/azure-integration.md` records is
+      exactly this. It is a gap.
+    * `Count` was never requested, because Azure does not serve it for this metric — the
+      response is complete and correct. Treating it as a gap would produce one entry per
+      interval, roughly 720 per pair per month, and then `no_samples` and no statistic at
+      all, for a metric whose minimum and maximum arrived intact.
+
+    Defaulting to :data:`~reporting_agent.catalog.loader.DECLARED_AGGREGATIONS` — all four
+    — keeps every existing caller and every existing test unchanged: a pair built without
+    an opinion behaves exactly as this class did before the field existed.
+
+    `folded_intervals` counts the intervals that actually contributed, and it is the
+    "did anything arrive" signal `finalize` reads. `count` cannot serve that purpose any
+    more: a `Minimum`/`Maximum`-only metric folds real extremes and leaves `count` at
+    zero, so keying "nothing arrived" on `count == 0` would report `no_samples` for a pair
+    that collected fine.
     """
 
     sketch: Sketch | None = None
     excluded: bool = False
+    aggregations: frozenset[str] = DECLARED_AGGREGATIONS
     total: Decimal = field(default_factory=lambda: Decimal(0))
     count: Decimal = field(default_factory=lambda: Decimal(0))
     minimum: Decimal | None = None
     maximum: Decimal | None = None
+    folded_intervals: int = 0
 
     def fold_interval(
         self,
@@ -203,9 +264,16 @@ class MetricAccumulator:
         maximum: PlainData | None,
         resource_id: str,
         metric: str,
+        interval_start: str | None = None,
     ) -> GapRecord | None:
         """Fold one interval's `{total, count, minimum, maximum}` into this pair's
         running state.
+
+        `interval_start` is recorded on the `interval_malformed` gap and used for
+        nothing else — it is not folded, not compared and not stored on the
+        accumulator. It defaults to `None` so a caller with no timestamp in scope
+        (`collect/dayfold.py`, which discards the returned gap anyway) is unchanged,
+        and so this module keeps deciding nothing about how a timestamp is read.
 
         Returns a `GapRecord` naming `resource_id` and `metric` — never raises, never
         partially mutates — in three cases, and returns `None` (no gap) in every
@@ -239,7 +307,13 @@ class MetricAccumulator:
         if self.excluded:
             return None
 
-        reason = _malformed_reason(total=total, count=count, minimum=minimum, maximum=maximum)
+        reason = _malformed_reason(
+            total=total,
+            count=count,
+            minimum=minimum,
+            maximum=maximum,
+            aggregations=self.aggregations,
+        )
         if reason is not None:
             return record_gap(
                 GAP_TYPE_INTERVAL_MALFORMED,
@@ -247,23 +321,37 @@ class MetricAccumulator:
                 metric,
                 f"interval for {metric!r} on resource {resource_id!r} is malformed: "
                 f"{reason}",
+                interval_start,
             )
 
-        assert isinstance(total, Decimal)
-        assert isinstance(count, Decimal)
-
-        if count == 0:
-            return None
-
-        self.total += total
-        self.count += count
+        if AGGREGATION_COUNT in self.aggregations:
+            assert isinstance(count, Decimal)  # narrowed by _malformed_reason
+            if count == 0:
+                return None
+            assert isinstance(total, Decimal)
+            self.total += total
+            self.count += count
+        elif AGGREGATION_TOTAL in self.aggregations:
+            # A sum over the window, with no denominator to divide it by. See
+            # `AccumulatorResult` on why that is the honest result rather than an average.
+            assert isinstance(total, Decimal)
+            self.total += total
 
         if isinstance(minimum, Decimal) and (self.minimum is None or minimum < self.minimum):
             self.minimum = minimum
         if isinstance(maximum, Decimal) and (self.maximum is None or maximum > self.maximum):
             self.maximum = maximum
 
-        if self.sketch is not None:
+        self.folded_intervals += 1
+
+        # The sketch is fed this interval's own average, so it can only be fed when there
+        # is a count to divide by. A metric Azure serves no `Count` for therefore folds
+        # nothing here and yields no percentile — which is why the catalog declares no
+        # `percentiles` for one, and why that is a fact about the metric rather than a
+        # limitation of this module.
+        if self.sketch is not None and AGGREGATION_COUNT in self.aggregations:
+            assert isinstance(total, Decimal)
+            assert isinstance(count, Decimal)
             with localcontext() as ctx:
                 ctx.prec = WORKING_PRECISION
                 interval_average = total / count
@@ -276,18 +364,27 @@ class MetricAccumulator:
         non-`None`, except for an excluded pair, which is `(None, None)`.
 
         * `excluded`: `(None, None)` — see the class docstring.
-        * `self.count == 0` (nothing was ever successfully folded, or every fold was
-          zero-count): `(None, no_samples gap)` (Req 27.9) — no average, no minimum,
-          no maximum, and an absent measurement is recorded rather than serialized
-          as zero.
-        * Otherwise: `(AccumulatorResult(...), None)`, with `average` divided at
+        * `self.folded_intervals == 0` (nothing was ever successfully folded, or every
+          fold was zero-count): `(None, no_samples gap)` (Req 27.9) — no average, no
+          minimum, no maximum, and an absent measurement is recorded rather than
+          serialized as zero.
+        * Otherwise: `(AccumulatorResult(...), None)`. `average` is divided at
           :data:`WORKING_PRECISION` and quantized to :data:`AVERAGE_QUANTIZE_SCALE`
-          rounding half to even (Req 27.11).
+          rounding half to even (Req 27.11) **when this metric requested both `Total` and
+          `Count`**, and is `None` otherwise; `total_sum` is the summed totals for a
+          metric that requested `Total` without `Count`.
+
+        The emptiness test is `folded_intervals`, not `count`. For every metric that
+        requests both `Total` and `Count` the two agree exactly — `count` only ever grows
+        on an interval that also increments `folded_intervals` — so this changes nothing
+        for them. For a `Minimum`/`Maximum`-only metric they disagree completely: `count`
+        stays at zero while real extremes accumulate, and keying on it would throw away
+        every statistic the metric actually produced and call it `no_samples`.
         """
         if self.excluded:
             return None, None
 
-        if self.count == 0:
+        if self.folded_intervals == 0:
             return None, record_gap(
                 GAP_TYPE_NO_SAMPLES,
                 resource_id,
@@ -295,18 +392,32 @@ class MetricAccumulator:
                 f"no samples were folded for {metric!r} on resource {resource_id!r}",
             )
 
-        with localcontext() as ctx:
-            ctx.prec = WORKING_PRECISION
-            average = (self.total / self.count).quantize(
-                AVERAGE_QUANTIZE_SCALE, rounding=ROUND_HALF_EVEN
-            )
+        average: Decimal | None = None
+        if self.count > 0:
+            with localcontext() as ctx:
+                ctx.prec = WORKING_PRECISION
+                average = (self.total / self.count).quantize(
+                    AVERAGE_QUANTIZE_SCALE, rounding=ROUND_HALF_EVEN
+                )
+
+        summed = (
+            self.total
+            if AGGREGATION_TOTAL in self.aggregations
+            and AGGREGATION_COUNT not in self.aggregations
+            else None
+        )
 
         return (
             AccumulatorResult(
                 average=average,
                 minimum=self.minimum,
                 maximum=self.maximum,
-                sample_count=self.count,
+                # The count Azure reported when it reported one, and the number of
+                # intervals rolled up when it did not. See `AccumulatorResult`.
+                sample_count=(
+                    self.count if self.count > 0 else Decimal(self.folded_intervals)
+                ),
+                total_sum=summed,
             ),
             None,
         )
@@ -318,16 +429,31 @@ def _malformed_reason(
     count: PlainData,
     minimum: PlainData | None,
     maximum: PlainData | None,
+    aggregations: frozenset[str] = DECLARED_AGGREGATIONS,
 ) -> str | None:
     """The human-readable reason `fold_interval`'s arguments are malformed, or `None`
     if they are not. Kept as a free function, not a method, because it has no state
-    to read — it is purely a classification over its own arguments (Req 27.10)."""
-    if not isinstance(total, Decimal):
-        return f"`total` must be a Decimal, got {total!r}"
-    if not isinstance(count, Decimal):
-        return f"`count` must be a Decimal, got {count!r}"
-    if count < 0:
-        return f"`count` must not be negative, got {count!r}"
+    to read — it is purely a classification over its own arguments (Req 27.10).
+
+    **`aggregations` scopes what "malformed" means**, and that is the whole of this
+    function's involvement in the per-metric aggregation change. A `total` of `None` is
+    malformed for a metric that asked for one and complete for a metric that did not, so
+    a check that did not know which was which would classify one of the two wrongly. It
+    defaults to all four, so every existing caller is unaffected.
+
+    `minimum` and `maximum` are checked only for *type*, never for presence, whether or
+    not they were requested — unchanged from before. An interval legitimately carries no
+    extreme, and a requested-but-absent extreme is already handled by the roll-up simply
+    not moving.
+    """
+    if AGGREGATION_TOTAL in aggregations or AGGREGATION_COUNT in aggregations:
+        if not isinstance(total, Decimal):
+            return f"`total` must be a Decimal, got {total!r}"
+    if AGGREGATION_COUNT in aggregations:
+        if not isinstance(count, Decimal):
+            return f"`count` must be a Decimal, got {count!r}"
+        if count < 0:
+            return f"`count` must not be negative, got {count!r}"
     if minimum is not None and not isinstance(minimum, Decimal):
         return f"`minimum` must be a Decimal or None, got {minimum!r}"
     if maximum is not None and not isinstance(maximum, Decimal):
@@ -341,6 +467,7 @@ def new_accumulator(
     resource_id: str,
     metric: str,
     excluded: bool = False,
+    aggregations: Iterable[str] = DECLARED_AGGREGATIONS,
 ) -> tuple[MetricAccumulator, GapRecord | None]:
     """Build a fresh `MetricAccumulator` for one `(resource, metric)` pair, selecting
     its sketch from the catalog-declared `unit_family`.
@@ -358,9 +485,19 @@ def new_accumulator(
     gives — the caller already has a `deallocated` or `power_state_unknown` gap for
     this resource, and duplicating it here would restate one fact under two
     classifications.
+
+    `aggregations` is the catalog entry's own `aggregations` tuple — the set the request
+    for this metric will carry. Passing it here rather than at every `fold_interval` call
+    is what lets `verify/replay.py` inherit it for free: replay rebuilds its accumulators
+    through this same function from the same catalog entry, so the fold it re-runs
+    classifies an absent `count` identically on both sides of the archive. A fold that
+    read the aggregation set from anywhere else would be a second source of truth, and a
+    replay mismatch would then mean "the two sides disagree about the request" rather than
+    "the aggregation is not deterministic".
     """
+    requested = frozenset(aggregations)
     if excluded:
-        return MetricAccumulator(sketch=None, excluded=True), None
+        return MetricAccumulator(sketch=None, excluded=True, aggregations=requested), None
 
     sketch = sketch_for_unit_family(unit_family)
     if sketch is None:
@@ -372,9 +509,9 @@ def new_accumulator(
             f"the DDSketch; {metric!r} on resource {resource_id!r} collects avg, "
             f"min and max with no percentile",
         )
-        return MetricAccumulator(sketch=None), gap
+        return MetricAccumulator(sketch=None, aggregations=requested), gap
 
-    return MetricAccumulator(sketch=sketch), None
+    return MetricAccumulator(sketch=sketch, aggregations=requested), None
 
 
 # --- derived statistics: a generic, catalog-driven evaluator (Req 30.1, 30.7, 30.8) --

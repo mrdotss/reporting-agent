@@ -357,7 +357,14 @@ def test_a_fallback_that_answers_non_2xx_for_every_resource_also_records_the_gap
 def test_no_gap_carries_a_zero_value_or_a_statistic_field() -> None:
     """Req 24.4's explicit "no statistic value and no zero value" — this is
     structural in `GapRecord`, which has no value field at all, but assert the
-    message names the fact rather than silently agreeing with a hypothetical zero."""
+    message names the fact rather than silently agreeing with a hypothetical zero.
+
+    The key set is asserted **exactly**, not by absence of a `value` key, so a field
+    added to `GapRecord` has to be looked at here rather than arriving unnoticed. It
+    grew once already: `interval_start` is the fifth field, and it is `None` on this
+    gap because a region answering through neither route is not a fact about one
+    interval.
+    """
     location = DNS_UNREACHABLE_LOCATIONS[0]
     port = ScriptedPort(
         batch=[DnsResolutionError(location)],
@@ -367,7 +374,14 @@ def test_no_gap_carries_a_zero_value_or_a_statistic_field() -> None:
 
     result = request(resolver, location=location, resource_ids=("vm-1",))
 
-    assert set(result.gaps[0]) == {"gap_type", "resource_id", "metric", "message"}
+    assert set(result.gaps[0]) == {
+        "gap_type",
+        "resource_id",
+        "metric",
+        "message",
+        "interval_start",
+    }
+    assert result.gaps[0]["interval_start"] is None
     assert "0" not in result.gaps[0]["message"].split()
 
 

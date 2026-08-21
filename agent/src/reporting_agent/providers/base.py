@@ -156,13 +156,26 @@ class GapRecord(TypedDict):
     """One typed `collection_log` entry.
 
     A gap is recorded, never zero-filled: a swallowed 403 averages into the report as
-    measured idleness. `metric` is `None` for a resource-level gap.
+    measured idleness. `metric` is `None` for a resource-level gap. `interval_start` is
+    `None` for a gap that is not about one interval — a permission denial, an unknown
+    SKU or a whole-catalog failure did not happen at a point in time, and `None` is the
+    honest answer rather than a timestamp borrowed from the run.
+
+    `interval_start` is the interval's own `timeStamp` as the response carried it,
+    passed through as a string and never reparsed or reformatted here: a gap is a record
+    of what arrived, and normalising the instant would make the record disagree with the
+    document it was read from. It is what makes a **contiguous stretch** of gaps
+    observable at all — the 64-hour run of timestamp-only intervals across all eight of
+    one VM's metrics that `.kiro/steering/azure-integration.md` records is a statement
+    about interval starts, and without them the same 512 entries are indistinguishable
+    from 512 unrelated ones.
     """
 
     gap_type: str
     resource_id: str
     metric: str | None
     message: str
+    interval_start: str | None
 
 
 type StatValue = dict[str, PlainData]

@@ -146,6 +146,7 @@ from reporting_agent.collect.accumulate import (
     STATISTIC_AVERAGE,
     STATISTIC_MAXIMUM,
     STATISTIC_MINIMUM,
+    STATISTIC_SUM,
     WORKING_PRECISION,
     AccumulatorResult,
     DerivedSourceRef,
@@ -175,6 +176,7 @@ __all__ = [
     "ESTIMATOR_EXACT_GUEST_SAMPLE_MINIMUM",
     "ESTIMATOR_EXACT_INTERVAL_MAXIMUM",
     "ESTIMATOR_EXACT_INTERVAL_MINIMUM",
+    "ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM",
     "FORBIDDEN_NETWORK_TERMS",
     "NIC_LEVEL_COUNTER_SCOPE",
     "NIC_LEVEL_METRIC_NAMES",
@@ -269,6 +271,13 @@ _EXCLUDED_FROM_CANONICAL: Final[tuple[str, ...]] = (CONTENT_HASH_FIELD, SNAPSHOT
 ESTIMATOR_EXACT_COUNT_WEIGHTED: Final[str] = "exact_count_weighted"
 ESTIMATOR_EXACT_INTERVAL_MINIMUM: Final[str] = "exact_interval_minimum"
 ESTIMATOR_EXACT_INTERVAL_MAXIMUM: Final[str] = "exact_interval_maximum"
+ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM: Final[str] = "exact_interval_total_sum"
+"""The estimator for :data:`~reporting_agent.collect.accumulate.STATISTIC_SUM`.
+
+Names what was summed — the per-interval **totals** — because that is the one thing a
+reader has to know to interpret the number. `exact` with no hedging: adding totals is
+exact at any grain, the same way a minimum rolls up exactly, and there is nothing here
+estimated from a coarser grain."""
 ESTIMATOR_EXACT_GUEST_SAMPLE_AVERAGE: Final[str] = "exact_guest_sample_average"
 ESTIMATOR_EXACT_GUEST_SAMPLE_MINIMUM: Final[str] = "exact_guest_sample_minimum"
 ESTIMATOR_EXACT_GUEST_SAMPLE_MAXIMUM: Final[str] = "exact_guest_sample_maximum"
@@ -297,9 +306,13 @@ _DIRECTION_ORDER: Final[tuple[str, ...]] = (
     STATISTIC_MINIMUM,
     STATISTIC_MAXIMUM,
 )
-"""A fixed visit order over the three exact directions, so two builds over the same
+"""A fixed visit order over the three **derived** directions, so two builds over the same
 inputs emit the same entries in the same order before sorting even runs. Mirrors
-`collect/accumulate.py`'s constant of the same name for the same reason."""
+`collect/accumulate.py`'s constant of the same name for the same reason.
+
+Read by `derived_statistics` alone. `exact_statistics` iterates its own four-entry tuple,
+which additionally carries `sum`: a derivation can produce an average, a minimum or a
+maximum, and no derivation in the catalog produces a sum."""
 
 _PERCENTILE_KEY_PATTERN: Final[re.Pattern[str]] = re.compile(r"\Ap[0-9]+\Z")
 """`p` followed only by digits — the whole family Req 28.4 forbids as an object key,
@@ -865,6 +878,15 @@ def exact_statistics(
     A NIC-level total additionally carries `counter_scope`, its `interval` and the
     catalog's label, and every emitted entry is checked against Req 30.6's forbidden
     billing terms.
+
+    **`avg` is one of the omittable directions, not a guaranteed one.** A metric whose
+    catalog entry requests `Minimum` and `Maximum` and not `Total`/`Count` — because those
+    are the aggregations Azure serves for it — yields `average is None` and emits `min` and
+    `max` only. That needs no special case here: the loop already omits a direction with no
+    value, and `avg` joins `min` and `max` in being an ordinary member of that set. `sum`
+    is the fourth member, present only for a metric served `Total` without `Count`, and it
+    is mutually exclusive with `avg` by construction in `MetricAccumulator.finalize` — a
+    sum and a count-weighted average cannot both be derivable from one interval's leaves.
     """
     extra = _nic_fields(metric, grain)
     sample_count = int(result.sample_count)
@@ -872,6 +894,7 @@ def exact_statistics(
         (STATISTIC_AVERAGE, result.average, ESTIMATOR_EXACT_COUNT_WEIGHTED),
         (STATISTIC_MINIMUM, result.minimum, ESTIMATOR_EXACT_INTERVAL_MINIMUM),
         (STATISTIC_MAXIMUM, result.maximum, ESTIMATOR_EXACT_INTERVAL_MAXIMUM),
+        (STATISTIC_SUM, result.total_sum, ESTIMATOR_EXACT_INTERVAL_TOTAL_SUM),
     )
 
     entries: list[StatisticEntry] = []
@@ -1313,16 +1336,30 @@ def _gaps_to_plain_data(gaps: Iterable[GapRecord]) -> list[PlainData]:
     dropping a duplicate-looking entry here would silently break that equality. `metric`
     is emitted as `null` for a resource-level gap, which is the `GapRecord` shape
     unchanged.
+
+    `interval_start` is the one field emitted **only when present**, following this
+    module's omit-when-absent convention rather than `metric`'s emit-`null` one. The
+    two differ for a reason that is about digests, not taste: `metric` has been written
+    on every gap since the first snapshot, so emitting it as `null` costs nothing, while
+    `interval_start` is new. Emitting `null` for the twenty gap types that are not about
+    an interval would change the canonical bytes of **every** gap ever recorded, and so
+    the `content_hash` of every snapshot a re-run would produce — turning an additive
+    field into a silent break of the one property the snapshot exists to have. Omitted,
+    a run recording no interval-level gap hashes exactly as it did before.
     """
-    return [
-        {
+    entries: list[PlainData] = []
+    for gap in sorted(gaps, key=gap_sort_key):
+        entry: dict[str, PlainData] = {
             "gap_type": gap["gap_type"],
             "resource_id": gap["resource_id"],
             "metric": gap["metric"],
             "message": gap["message"],
         }
-        for gap in sorted(gaps, key=gap_sort_key)
-    ]
+        interval_start = gap.get("interval_start")
+        if interval_start is not None:
+            entry["interval_start"] = interval_start
+        entries.append(entry)
+    return entries
 
 
 def build_snapshot(

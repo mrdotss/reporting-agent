@@ -338,6 +338,12 @@ def _new_accumulators(plan: ReplayPlan) -> dict[tuple[str, str], MetricAccumulat
                 resource_id=resource_id,
                 metric=name,
                 excluded=resource.excluded,
+                # The same catalog entry the collector used, so the fold classifies an
+                # absent `count` identically on both sides of the archive. Without it a
+                # `Minimum`/`Maximum`-only metric would replay as ~720
+                # `interval_counts_missing` gaps against a snapshot that has none, and
+                # every such subscription would report REPLAY_MISMATCH.
+                aggregations=resource.declared[name].aggregations,
             )
             accumulators[(resource_id, name)] = accumulator
     return accumulators
