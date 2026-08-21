@@ -254,6 +254,83 @@ def test_every_theme_declares_all_three_data_table_styles(preset: str) -> None:
         assert document.styles[table_style_name(setting)] is not None
 
 
+@pytest.mark.parametrize("preset", T.THEME_PRESETS)
+def test_no_design_table_style_setting_resolves_to_the_signature_table(preset: str) -> None:
+    """`Table Signature` is the approvers table's and nothing else's.
+
+    It sits beside the three `design.table_style` choices in `REQUIRED_TABLE_STYLES`, so the
+    thing worth ruling out is a template selecting it as its data-table look — the row height
+    that makes an unsigned signature box visible would then pad every data row in the report.
+    """
+    assert T.SIGNATURE_TABLE_STYLE not in {
+        table_style_name(setting) for setting in ("hairline", "banded", "bordered", "nonsense")
+    }
+    assert T.load_theme(preset).styles[T.SIGNATURE_TABLE_STYLE] is not None
+
+
+@pytest.mark.parametrize("preset", T.THEME_PRESETS)
+def test_the_signature_table_style_declares_a_minimum_row_height(preset: str) -> None:
+    """Breadth 13.6 — "an empty ruled signature box at the height the theme declares".
+
+    That phrase needs somewhere to be true, and this is it. `atLeast` rather than `exact`, so a
+    supplied signature image taller than the box grows the row instead of being clipped: a
+    clipped signature is a worse artifact than a tall one.
+    """
+    style = re.search(
+        r'<w:style w:type="table" w:styleId="TableSignature">.*?</w:style>',
+        _styles_xml(preset),
+        re.DOTALL,
+    )
+    assert style is not None
+    height = re.search(r'<w:trHeight w:val="(\d+)" w:hRule="atLeast"/>', style.group(0))
+    assert height is not None, style.group(0)
+    assert int(height.group(1)) > 0
+
+
+@pytest.mark.parametrize("preset", T.THEME_PRESETS)
+def test_the_toc_entry_style_declares_the_page_number_tab(preset: str) -> None:
+    """Breadth 14.6's page-number column, owned by the theme rather than by the emitter.
+
+    Without the tab stop here every emitter would have to lay out its own, and four themes
+    would drift into four contents pages. The leader is what makes an entry readable across a
+    wide measure; the right alignment is what keeps a two-digit page number from hanging past
+    a one-digit one.
+    """
+    style = re.search(
+        r'<w:style w:type="paragraph" w:styleId="TocEntry">.*?</w:style>',
+        _styles_xml(preset),
+        re.DOTALL,
+    )
+    assert style is not None
+    tab = re.search(r'<w:tab w:val="right" w:leader="dot" w:pos="(\d+)"/>', style.group(0))
+    assert tab is not None, style.group(0)
+    assert int(tab.group(1)) > 0
+
+
+@pytest.mark.parametrize("preset", T.THEME_PRESETS)
+def test_the_cover_title_is_not_a_second_name_for_title(preset: str) -> None:
+    """Breadth 13.4 — the cover carries its own scale, deliberately.
+
+    If `Cover Title` merely aliased `Title` the five new names would be paperwork: a theme
+    could not enlarge its cover without enlarging every section title in the document. So the
+    check is a size relation, not the presence of a name.
+    """
+    style_xml = _styles_xml(preset)
+
+    def size_of(style_id: str) -> int:
+        style = re.search(
+            rf'<w:style w:type="paragraph" w:styleId="{style_id}">.*?</w:style>',
+            style_xml,
+            re.DOTALL,
+        )
+        assert style is not None, style_id
+        size = re.search(r'<w:sz w:val="(\d+)"/>', style.group(0))
+        assert size is not None, style.group(0)
+        return int(size.group(1))
+
+    assert size_of("CoverTitle") > size_of("Title") > size_of("CoverMeta")
+
+
 # --------------------------------------------------------------------------- #
 # The union is derived from the compile stage, not restated
 # --------------------------------------------------------------------------- #
@@ -269,10 +346,69 @@ def test_the_required_union_contains_every_declared_compile_stage_style() -> Non
     assert T.PREVIEW_NOTICE_STYLE in T.REQUIRED_STYLE_NAMES
 
 
-def test_the_union_adds_exactly_the_two_names_the_compile_stage_cannot_declare() -> None:
-    """`Figure` and `PreviewNotice` are the renderer's own, and nothing else is smuggled in."""
+def test_the_union_carries_the_front_matter_styles_the_compile_stage_will_never_declare() -> None:
+    """Breadth 13.4, 13.5, 13.6, 14.6 — and why they are declared here.
+
+    The front matter is fixed rather than composed and accepts no block, so no block type can
+    ever reference one of these five names: `PARAGRAPH_STYLES` and `TABLE_STYLES` are the
+    styles *blocks* reference, and the front matter has none. That makes `render/themes.py`
+    the only honest home for them, the same argument `Figure` and `PreviewNotice` already
+    make.
+
+    Asserted as an equality rather than five memberships so the union cannot quietly grow a
+    sixth name nobody reviewed.
+    """
+    assert T.FRONT_MATTER_PARAGRAPH_STYLES == (
+        "Cover Title",
+        "Cover Meta",
+        "Document Control",
+        "Toc Entry",
+    )
+    assert T.SIGNATURE_TABLE_STYLE == "Table Signature"
+    assert set(T.FRONT_MATTER_PARAGRAPH_STYLES) <= set(T.REQUIRED_PARAGRAPH_STYLES)
+    assert T.SIGNATURE_TABLE_STYLE in T.REQUIRED_TABLE_STYLES
+
+
+def test_the_union_adds_exactly_the_seven_names_the_compile_stage_cannot_declare() -> None:
+    """`Figure`, `PreviewNotice` and the five front-matter styles are the renderer's own, and
+    nothing else is smuggled in."""
     extra = set(T.REQUIRED_STYLE_NAMES) - set(PARAGRAPH_STYLES) - set(TABLE_STYLES)
-    assert extra == {T.FIGURE_CHARACTER_STYLE, T.PREVIEW_NOTICE_STYLE}
+    assert extra == {
+        T.FIGURE_CHARACTER_STYLE,
+        T.PREVIEW_NOTICE_STYLE,
+        *T.FRONT_MATTER_PARAGRAPH_STYLES,
+        T.SIGNATURE_TABLE_STYLE,
+    }
+
+
+def test_the_front_matter_styles_are_additive_and_nothing_was_dropped() -> None:
+    """The front-matter styles grew the union by exactly five and displaced nothing.
+
+    A regeneration is a binary change to four committed files, so "additive" has to be a
+    checked claim rather than an intention: this pins the fifteen names that were required
+    before, so a future edit that renames or removes one fails here rather than surfacing as
+    an unstyled paragraph in a delivered document.
+    """
+    before = {
+        "Figure",
+        "Title",
+        "Subtitle",
+        "Heading 1",
+        "Heading 2",
+        "Heading 3",
+        "Heading 4",
+        "Body Text",
+        "Caption",
+        "Notice",
+        "PreviewNotice",
+        "Table Hairline",
+        "Table Banded",
+        "Table Bordered",
+        "Layout Table",
+    }
+    assert before <= set(T.REQUIRED_STYLE_NAMES)
+    assert len(T.REQUIRED_STYLE_NAMES) == len(before) + 5 == 20
+    assert len(set(T.REQUIRED_STYLE_NAMES)) == len(T.REQUIRED_STYLE_NAMES)
 
 
 @pytest.mark.parametrize("level", [-3, 0, 1, 2, 3, 4, 5, 9, 100, True, None, "2", 2.5])
@@ -318,9 +454,16 @@ def _styles_in_tree(node: object) -> set[str]:
 
 
 RENDERER_APPLIED_STYLES: frozenset[str] = frozenset(
-    {LAYOUT_TABLE_STYLE, "Caption", T.PREVIEW_NOTICE_STYLE, "Notice"}
+    {
+        LAYOUT_TABLE_STYLE,
+        "Caption",
+        T.PREVIEW_NOTICE_STYLE,
+        "Notice",
+        *T.FRONT_MATTER_PARAGRAPH_STYLES,
+        T.SIGNATURE_TABLE_STYLE,
+    }
 )
-"""The four required names a compiled AST never carries in a `style` field.
+"""The nine required names a compiled AST never carries in a `style` field.
 
 Worth naming rather than leaving as a gap in the walk below, because each is applied by the
 renderer for a structural reason:
@@ -334,10 +477,17 @@ renderer for a structural reason:
 * **`PreviewNotice`** — preview mode only, so no compile ever asks for it.
 * **`Notice`** — the empty-scope and no-gaps rows are `TextCell`s inside a table that carries
   the *table* style; the notice style is applied to the cell's paragraph at render time.
+* **`Cover Title`, `Cover Meta`, `Document Control`, `Toc Entry`, `Table Signature`** — the
+  front matter, which requirement 13.2 makes fixed rather than composed: it accepts no block,
+  so a compiled `blocks` list structurally cannot carry one of these names. They are emitted
+  by the Front_Matter_Renderer and the Toc_Builder, which land in later tasks; until then the
+  themes declare them and nothing asks for them, which is the intended order — a style has to
+  exist in all four files *before* a renderer may reference it, or the first run that reaches
+  the front matter is a terminal `RENDER_FAILED`.
 
 `render/docx.py`'s own tests are what cover these; asserting them here would require a fake
-renderer, and a walk that quietly covered ten of fourteen names while reading as exhaustive is
-worse than one that says which four it does not reach.
+renderer, and a walk that quietly covered eleven of twenty names while reading as exhaustive
+is worse than one that says which nine it does not reach.
 """
 
 
@@ -378,7 +528,7 @@ def test_every_style_a_compiled_document_asks_for_is_declared_by_every_theme() -
             table_style=table_style, heading_levels=(1, 2, 3, 4, 9)
         )
 
-    # Every name the AST can carry is now covered, and the four it cannot are accounted for.
+    # Every name the AST can carry is now covered, and the nine it cannot are accounted for.
     assert asked_for | RENDERER_APPLIED_STYLES == set(T.REQUIRED_STYLE_NAMES) - {
         T.FIGURE_CHARACTER_STYLE
     }, sorted(set(T.REQUIRED_STYLE_NAMES) - asked_for - RENDERER_APPLIED_STYLES)

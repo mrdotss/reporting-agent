@@ -1,0 +1,385 @@
+{
+  "comment": "The Metric Definitions vocabulary for Microsoft.Web/sites: every metric name, its unit and its supported aggregations, as the Metric_Catalog's entries for this type must be evidenced against (Req 2.1). Derived from Microsoft documentation rather than captured from a live subscription -- see `provenance`, which records the source per fixture and the basis for the supported-aggregation set per metric. Metric names are recorded as the source's 'Name in REST API' value and never as a portal display name: the two differ by exactly the case, whitespace and separator substitutions the near-miss rule rejects, and a near miss here would make a metric permanently uncollectable.",
+  "provenance": {
+    "resource_type": "Microsoft.Web/sites",
+    "region": "southeastasia",
+    "captured_at": "2026-08-20T17:19:36Z",
+    "capture_method": "derived_from_documentation",
+    "derived_from": [
+      "Microsoft Learn, 'Supported metrics - Microsoft.Web/sites' (https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-web-sites-metrics): the 'Name in REST API', 'Unit', 'Aggregation', 'Dimensions' and 'Time Grains' columns. That page documents 'Aggregation' as the *default* aggregation type, which is why the supported-aggregation set carries a recorded basis per metric.",
+      "Microsoft Learn, 'Metric Definitions - List' (https://learn.microsoft.com/en-us/rest/api/monitor/metric-definitions/list): the response shape, being the `value` array and each definition's `namespace`, `name`, `unit`, `supportedAggregationTypes`, `metricAvailabilities` and `dimensions` fields."
+    ],
+    "aggregation_bases": {
+      "documented_published_set": "The source publishes two or more aggregations for this metric; the set is recorded verbatim, with 'Total (Sum)' written as the REST value 'Total'.",
+      "documented_single_aggregation_treated_as_complete": "The source publishes exactly one aggregation for this metric, and publishes multi-value sets for other metrics of this same resource type -- so this resource provider does declare its supported set, and the single published value is recorded as the complete set."
+    },
+    "aggregation_basis_by_metric": {
+      "CpuTime": "documented_published_set",
+      "CpuPercentage": "documented_single_aggregation_treated_as_complete",
+      "MemoryWorkingSet": "documented_single_aggregation_treated_as_complete",
+      "AverageMemoryWorkingSet": "documented_single_aggregation_treated_as_complete",
+      "PrivateBytes": "documented_single_aggregation_treated_as_complete",
+      "FileSystemUsage": "documented_single_aggregation_treated_as_complete",
+      "BytesReceived": "documented_single_aggregation_treated_as_complete",
+      "BytesSent": "documented_single_aggregation_treated_as_complete",
+      "IoReadBytesPerSecond": "documented_single_aggregation_treated_as_complete",
+      "IoWriteBytesPerSecond": "documented_single_aggregation_treated_as_complete",
+      "Requests": "documented_single_aggregation_treated_as_complete",
+      "Http2xx": "documented_single_aggregation_treated_as_complete",
+      "Http4xx": "documented_single_aggregation_treated_as_complete",
+      "Http5xx": "documented_single_aggregation_treated_as_complete",
+      "AppConnections": "documented_published_set",
+      "InstanceCount": "documented_single_aggregation_treated_as_complete"
+    },
+    "selection": "A subset of the metrics the source lists for this type: the utilization series this product collects, restricted to metrics whose unit is one the catalog's unit mapping covers. A subset fails closed -- a catalog entry naming a metric this fixture does not carry is rejected -- so an omission can block a metric but can never admit a wrong one. `omitted_metrics` records the candidates that were dropped and why.",
+    "omitted_metrics": [
+      {
+        "name": "IoReadOperationsPerSecond, IoWriteOperationsPerSecond, IoOtherOperationsPerSecond",
+        "reason": "the source reports the unit 'BytesPerSecond' for operation-rate metrics, which contradicts the metric's own name, so neither the unit nor the quantity is established with confidence"
+      },
+      {
+        "name": "the Function and Workflow execution metrics",
+        "reason": "Functions and Logic Apps workloads rather than the App Service utilization series this product collects"
+      },
+      {
+        "name": "HttpResponseTime, AverageResponseTime",
+        "reason": "latency rather than utilization, and the source publishes 'Average' alone so no count-weighted average is derivable"
+      }
+    ],
+    "omitted_fields": [
+      "id and resourceId, which are fully qualified resource identifiers carrying a subscription id (Req 2.5 excludes both)",
+      "primaryAggregationType, isDimensionRequired, displayDescription, category, name.localizedValue and metricAvailabilities[].retention, none of which the source establishes -- omitted rather than invented"
+    ],
+    "region_note": "The source is not region-scoped. `region` records the (resource_type, region) pair this fixture stands in for, matching the Definition_Probe's cache key, and is the region the rest of this repository's Azure fixtures use."
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "CpuTime"
+        },
+        "unit": "Seconds",
+        "supportedAggregationTypes": [
+          "Count",
+          "Total",
+          "Minimum",
+          "Maximum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "CpuPercentage"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "MemoryWorkingSet"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "AverageMemoryWorkingSet"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "PrivateBytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "FileSystemUsage"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT6H"
+          },
+          {
+            "timeGrain": "PT12H"
+          },
+          {
+            "timeGrain": "P1D"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "BytesReceived"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "BytesSent"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "IoReadBytesPerSecond"
+        },
+        "unit": "BytesPerSecond",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "IoWriteBytesPerSecond"
+        },
+        "unit": "BytesPerSecond",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "Requests"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "Http2xx"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "Http4xx"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "Http5xx"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "AppConnections"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Count",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Instance"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Web/sites",
+        "name": {
+          "value": "InstanceCount"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -143,11 +143,16 @@ def test_the_counts_are_recorded_on_a_pass(clean) -> None:
     assert all(value >= 0 for value in counts.values())
 
 
-def test_the_gate_set_is_the_eight_requirements_26_through_33_declare() -> None:
+def test_the_gate_set_is_the_eight_of_requirements_26_to_33_plus_the_breadth_specs_three() -> None:
     """Req 25.5's "every gate has been evaluated", made checkable.
 
     Without this the claim is unfalsifiable: a verifier that quietly skipped the PDF gate
     would report `pass` and nothing would say otherwise.
+
+    The last three are the breadth-and-document spec's, and they are in the set **before** the
+    passes that implement them. That is the point: raising the set with each pass would let a
+    half-wired verifier report `pass` on text facts, page numbers and historical points that
+    nothing checked, and this assertion is what a task removing a gate name has to argue with.
     """
     assert REQUIRED_GATES == {
         "extraction",
@@ -158,7 +163,56 @@ def test_the_gate_set_is_the_eight_requirements_26_through_33_declare() -> None:
         "replay",
         "coverage",
         "pdf",
+        "facts",
+        "toc",
+        "historical",
     }
+    assert len(REQUIRED_GATES) == 11
+
+
+def test_every_gate_in_the_required_set_is_recorded_by_a_real_verification(clean) -> None:
+    """The set and the run agree, proven over a document rather than by reading the code.
+
+    `_assert_every_gate_ran` compares the recorded gates against `REQUIRED_GATES` for equality
+    in both directions, so a passing verification *is* the proof that all eleven were recorded
+    — including the three whose passes are still stubs. This test states that out loud, because
+    the property is otherwise invisible: it lives in an assertion inside the function under
+    test rather than in its output.
+    """
+    assert clean.run()["status"] == "pass"
+
+
+@pytest.mark.parametrize("gate", ["extraction", "facts", "toc", "historical", "pdf"])
+def test_a_gate_that_stops_being_recorded_fails_the_verification(clean, gate: str) -> None:
+    """The mutation that makes the gate assertion load-bearing rather than decorative.
+
+    Dropping a gate name from the recorded set — which is exactly what forgetting to wire a
+    pass looks like — must refuse to answer, not narrow the verification quietly. Parametrized
+    over the three new gates as well as two established ones so the three stubs are proven to
+    be *checked*: a stub nobody records would otherwise be indistinguishable from a stub that
+    is wired, and both would pass.
+    """
+    from reporting_agent.verify import verifier as V
+
+    narrowed = set(REQUIRED_GATES) - {gate}
+    with pytest.raises(VerificationFailedError) as raised:
+        V._assert_every_gate_ran(narrowed)
+    assert gate in raised.value.message
+
+
+def test_the_three_stubbed_gates_record_no_finding(clean) -> None:
+    """The stubs are stubs, asserted rather than assumed.
+
+    Each returns an empty tuple until its task lands — 5.5 for `facts`, 8.2 for `toc`, 11.4 for
+    `historical`. Naming them here means the task that replaces one has a test to delete, so
+    "wire the gate" cannot be marked done while the stub is still in the call path.
+    """
+    from reporting_agent.verify import verifier as V
+
+    inputs = clean.inputs()
+    assert V._stub_facts_gate_awaiting_task_5_5(inputs) == ()
+    assert V._stub_toc_gate_awaiting_task_8_2(inputs) == ()
+    assert V._stub_historical_gate_awaiting_task_11_4(inputs) == ()
 
 
 # --------------------------------------------------------------------------- #

@@ -48,7 +48,14 @@ from reporting_agent.compile.format import (
 )
 from reporting_agent.errors import CompileFailedError
 
-THIN_SPACE = "\u2009"
+APOSTROPHE = "'"
+"""The Swiss grouping separator: a third separator that is neither `.` nor `,`, so the
+strategy below exercises a format the two language-derived pairs do not cover.
+
+It was a thin space (U+2009) until Req 16.2 made every whitespace separator a refusal —
+`verify/tokens.numeric_tokens` splits on whitespace, so a whitespace-grouped numeral is
+unlocatable in the document it was written into. The generator must draw from what the
+constructor accepts, so the exotic case is now a character that survives extraction."""
 
 DECLARED_UNITS = tuple(unit for unit, _ in UNIT_PRESENTATION)
 PERCENTAGE_UNITS = ("percent",)
@@ -81,7 +88,7 @@ def _quantize(value: Decimal, scale: int) -> Decimal:
 @st.composite
 def number_formats(draw: st.DrawFn) -> NumberFormat:
     """Decimal places 0-3 x grouping on/off x a decimal separator of `.` or `,` x a
-    grouping separator of `,`, `.` or a thin space.
+    grouping separator of `,`, `.` or an apostrophe.
 
     Equal separators are filtered out rather than generated and discarded downstream: a
     number format whose decimal and grouping separators are the same is refused by
@@ -90,7 +97,7 @@ def number_formats(draw: st.DrawFn) -> NumberFormat:
     """
     decimal_separator = draw(st.sampled_from([".", ","]))
     grouping_separator = draw(
-        st.sampled_from([",", ".", THIN_SPACE]).filter(
+        st.sampled_from([",", ".", APOSTROPHE]).filter(
             lambda candidate: candidate != decimal_separator
         )
     )

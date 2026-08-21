@@ -159,12 +159,55 @@ def test_grouping_off_emits_no_grouping_separator() -> None:
     )
 
 
-def test_a_thin_space_grouping_separator_is_accepted() -> None:
-    thin = NumberFormat(decimal_places=0, group_thousands=True, grouping_separator="\u2009")
-    rendered = format_figure(
-        Decimal("1234567"), unit="bytes", catalog_scale=0, number_format=thin, path=PATH
+@pytest.mark.parametrize(
+    ("field", "separator"),
+    [
+        ("grouping_separator", " "),
+        ("grouping_separator", "\u2009"),  # thin space — a European grouping separator
+        ("grouping_separator", "\u00a0"),  # no-break space — the other one
+        ("grouping_separator", "\t"),
+        ("grouping_separator", "\n"),
+        ("grouping_separator", "\u2028"),  # line separator
+        ("grouping_separator", "\u3000"),  # ideographic space
+        ("decimal_separator", " "),
+        ("decimal_separator", "\u2009"),
+        ("decimal_separator", "\u00a0"),
+    ],
+)
+def test_a_whitespace_separator_is_refused_naming_the_field(
+    field: str, separator: str
+) -> None:
+    """Req 16.2. Whitespace of **any** kind, not only an ASCII space.
+
+    `verify/tokens.numeric_tokens` splits a paragraph on `\\S+`, so `1<thin>234<thin>567`
+    reaches the verifier as three tokens none of which equals the ledger's `formatted`
+    string; and `normalize_pdf_text` collapses every whitespace run to one space, so the
+    `.pdf` pass cannot locate it either. A format the constructor accepted here would
+    withhold a report whose numbers were correct.
+    """
+    with pytest.raises(CompileFailedError) as raised:
+        NumberFormat(**{field: separator})
+
+    # The offending field is named, so the builder can point at the control that wrote it.
+    assert f"number_format.{field}" in str(raised.value)
+    assert "whitespace" in str(raised.value)
+
+
+def test_a_non_whitespace_non_digit_separator_still_constructs() -> None:
+    """The clause above rejects whitespace and nothing wider: an apostrophe (the Swiss
+    grouping separator) and the two language-derived pairs Req 16.3 declares are all
+    still accepted."""
+    swiss = NumberFormat(decimal_places=0, group_thousands=True, grouping_separator="'")
+    assert (
+        format_figure(
+            Decimal("1234567"), unit="bytes", catalog_scale=0, number_format=swiss, path=PATH
+        )
+        == "1'234'567 bytes"
     )
-    assert rendered == "1\u2009234\u2009567 bytes"
+
+    # `en` and `id`, the two resolved pairs the definition can supply at schema_version 2.
+    assert NumberFormat(decimal_separator=".", grouping_separator=",").decimal_places == 1
+    assert NumberFormat(decimal_separator=",", grouping_separator=".").group_thousands is True
 
 
 @pytest.mark.parametrize(

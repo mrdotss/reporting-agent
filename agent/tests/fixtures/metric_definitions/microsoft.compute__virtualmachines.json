@@ -1,0 +1,259 @@
+{
+  "comment": "The Metric Definitions vocabulary for Microsoft.Compute/virtualMachines: every metric name, its unit and its supported aggregations, as the Metric_Catalog's entries for this type must be evidenced against (Req 2.1). Derived from Microsoft documentation rather than captured from a live subscription -- see `provenance`, which records the source per fixture and the basis for the supported-aggregation set per metric. Metric names are recorded as the source's 'Name in REST API' value and never as a portal display name: the two differ by exactly the case, whitespace and separator substitutions the near-miss rule rejects, and a near miss here would make a metric permanently uncollectable.",
+  "provenance": {
+    "resource_type": "Microsoft.Compute/virtualMachines",
+    "region": "southeastasia",
+    "captured_at": "2026-08-20T17:19:36Z",
+    "capture_method": "derived_from_documentation",
+    "derived_from": [
+      "Microsoft Learn, 'Supported metrics - Microsoft.Compute/virtualMachines' (https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-compute-virtualmachines-metrics): the 'Name in REST API', 'Unit', 'Aggregation', 'Dimensions' and 'Time Grains' columns. That page documents 'Aggregation' as the *default* aggregation type, which is why the supported-aggregation set carries a recorded basis per metric.",
+      "Microsoft Learn, 'Metric Definitions - List' (https://learn.microsoft.com/en-us/rest/api/monitor/metric-definitions/list): the response shape, being the `value` array and each definition's `namespace`, `name`, `unit`, `supportedAggregationTypes`, `metricAvailabilities` and `dimensions` fields."
+    ],
+    "aggregation_bases": {
+      "compute_documented_default_widened_by_platform_store_model": "The source publishes one aggregation, and the same provider's 'Percentage CPU' is recorded serving total, count, minimum and maximum (see 'compute_documented_default_widened_by_recorded_response'), so a single documented value is a default rather than a complete set for this provider. Widened to the five aggregations the Azure Metrics store serves for a platform metric whose per-interval record carries sum, count, minimum and maximum, as .kiro/steering/azure-integration.md section 5 records. WEAKEST BASIS IN THIS FILE: replace with a live capture when one is available.",
+      "compute_documented_default_widened_by_recorded_response": "The source publishes one aggregation ('Aggregation' is documented as the *default* type), and a recorded data-plane response committed in this repository (agent/tests/fixtures/azure/metrics_batch_*.json) carries 'total', 'count', 'minimum' and 'maximum' for this metric -- direct evidence that the documented single value understates the supported set for this resource provider.",
+      "documented_published_set": "The source publishes two or more aggregations for this metric; the set is recorded verbatim, with 'Total (Sum)' written as the REST value 'Total'."
+    },
+    "aggregation_basis_by_metric": {
+      "Percentage CPU": "compute_documented_default_widened_by_recorded_response",
+      "Available Memory Bytes": "compute_documented_default_widened_by_platform_store_model",
+      "Available Memory Percentage": "compute_documented_default_widened_by_platform_store_model",
+      "Disk Read Bytes": "compute_documented_default_widened_by_platform_store_model",
+      "Disk Write Bytes": "compute_documented_default_widened_by_platform_store_model",
+      "Disk Read Operations/Sec": "compute_documented_default_widened_by_platform_store_model",
+      "Disk Write Operations/Sec": "compute_documented_default_widened_by_platform_store_model",
+      "Network In Total": "compute_documented_default_widened_by_platform_store_model",
+      "Network Out Total": "compute_documented_default_widened_by_platform_store_model",
+      "VmAvailabilityMetric": "documented_published_set"
+    },
+    "selection": "A subset of the metrics the source lists for this type: the utilization series this product collects, restricted to metrics whose unit is one the catalog's unit mapping covers. A subset fails closed -- a catalog entry naming a metric this fixture does not carry is rejected -- so an omission can block a metric but can never admit a wrong one. `omitted_metrics` records the candidates that were dropped and why.",
+    "omitted_metrics": [
+      {
+        "name": "OS Disk Latency, Data Disk Latency, Temp Disk Latency",
+        "reason": "the source reports the unit 'Milliseconds', which the catalog's unit mapping has no term for, so no unit could be recorded"
+      },
+      {
+        "name": "Data Disk / OS Disk / Temp Disk read and write byte and operation rates",
+        "reason": "per-LUN dimensioned variants of metrics already recorded here at the VM level; the source publishes one aggregation for each and no recorded response in this repository covers them, so the supported set is not established"
+      },
+      {
+        "name": "CPU Credits Consumed, CPU Credits Remaining",
+        "reason": "B-series burstable sizes only, and the source publishes one aggregation with no recorded response covering them"
+      },
+      {
+        "name": "Inbound Flows, Outbound Flows and their maximum creation rates",
+        "reason": "not a utilization series this product collects, and the supported set is not established"
+      },
+      {
+        "name": "VM Cached / Uncached Bandwidth and IOPS Consumed Percentage",
+        "reason": "the source publishes one aggregation and no recorded response in this repository covers them"
+      }
+    ],
+    "omitted_fields": [
+      "id and resourceId, which are fully qualified resource identifiers carrying a subscription id (Req 2.5 excludes both)",
+      "primaryAggregationType, isDimensionRequired, displayDescription, category, name.localizedValue and metricAvailabilities[].retention, none of which the source establishes -- omitted rather than invented"
+    ],
+    "region_note": "The source is not region-scoped. `region` records the (resource_type, region) pair this fixture stands in for, matching the Definition_Probe's cache key, and is the region the rest of this repository's Azure fixtures use."
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Percentage CPU"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Available Memory Bytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Available Memory Percentage"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Disk Read Bytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Disk Write Bytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Disk Read Operations/Sec"
+        },
+        "unit": "CountPerSecond",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Disk Write Operations/Sec"
+        },
+        "unit": "CountPerSecond",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Network In Total"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "Network Out Total"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum",
+          "Total",
+          "Count"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.Compute/virtualMachines",
+        "name": {
+          "value": "VmAvailabilityMetric"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Minimum",
+          "Maximum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "Context"
+          }
+        ]
+      }
+    ]
+  }
+}

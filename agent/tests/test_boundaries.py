@@ -1,12 +1,13 @@
 """Static boundary guards for the agent runtime (Req 18.5, 18.7, 19.7).
 
-Rules 1 through 10, all asserted with `ast` over `src/reporting_agent/**/*.py`. The three
-below were written before the code they guard; 4 through 9 were appended as the packages
-they cover landed, and each is documented where it is defined rather than restated here.
-Rule 7 has two halves — one display *assignment* and one display *computation* — so it is
-numbered 7 and 7b.
+Rules 1 through 11, all asserted with `ast` over `src/reporting_agent/**/*.py`. The three
+below were written before the code they guard; 4 through 9 and 11 were appended as the
+packages they cover landed, and each is documented where it is defined rather than restated
+here. Rule 7 has two halves — one display *assignment* and one display *computation* — so
+it is numbered 7 and 7b, and rule 11 sits above rule 10 in the file so that rule 10's "no
+rule above" stays literally true.
 
-**Rule 10 is the completeness rule**, and it is about the other nine: every directory any
+**Rule 10 is the completeness rule**, and it is about the other ten: every directory any
 of them sweeps must exist and yield at least one module, and the declared set must be
 every package in the tree, so no rule here can pass by scanning nothing and no package can
 arrive unswept.
@@ -118,6 +119,12 @@ SNAPSHOT_PATH_MODULES = frozenset(
         # finalize the collector ran (Req 31.1). It turns accumulators into statistics,
         # so it is squarely on the snapshot path.
         "collect/finalize.py",
+        # The one numeric-leaf reader (Req 7.7). Every value that becomes a snapshot
+        # statistic passes through it, on the live side and again on the replay side, so
+        # a normalization here would change what both sides read — and change it
+        # identically, which is worse than a mismatch: the digest would be self-consistent
+        # and different from the one the collection actually produced.
+        "collect/numeric.py",
         # The per-local-day fold (Req 35.11). It parses a timestamp and emits decimal
         # strings into `day_buckets[].statistics`, both of which land inside the hashed
         # document — and the replay re-runs it, so a normalization here would make a
@@ -1432,6 +1439,274 @@ def test_the_enumeration_would_detect_a_tool(source: str, tmp_path: Path) -> Non
 
 
 # --------------------------------------------------------------------------- #
+# Rule 11 — one numeric-leaf reader, on both sides of the archive (Req 7.7, 7.9)
+# --------------------------------------------------------------------------- #
+#
+# `collect/numeric.py::decimal_leaf` is the only function permitted to turn a value read
+# out of a response body into a `Decimal`. The reason is the month the raw archive was
+# write-only: the SDK deserializes a metric total as a `Decimal`, the archive serializes
+# it to its exact digit string, `json.loads` hands that back as a `str`, and a reader
+# refusing the string form classified every archived value as absent — an
+# `interval_counts_missing` gap that never happened, samples missing from the count, and
+# `REPLAY_MISMATCH` on every subscription whose metrics carry a fractional value.
+#
+# A second inline reader is how that returns. It need not be a *worse* reader to break
+# the system; it only has to disagree about one type form, in one direction, and the
+# digest replay compares is computed from that disagreement.
+#
+# **This is the static half of a two-part guard, and the weaker half.** The behavioural
+# half installs a counting wrapper over `decimal_leaf` and asserts a live collection pass
+# and a replay route equal numbers of leaves through it — because a static rule can only
+# see the constructions it knows how to name. Two independent signals are matched here so
+# that a reintroduction has to evade both:
+#
+#   1. the **key** being read is one a response carries a numeric leaf under, or
+#   2. the **binding** being read out of is one this codebase gives a raw response body.
+#
+# Either fires. Both are deliberately about the response rather than about the `Decimal`
+# call, because the legitimate constructions in these three packages are not response
+# reads at all and must keep passing: `verify/replay.py` reads a value off the *stored
+# snapshot* (already a canonical decimal string), `collect/pipeline.py` reads a
+# `GuestCounterRow` whose `value` the provider already stringified, `azure/skus.py` reads
+# an extracted `Mapping[str, str]` of SKU capabilities, and `collect/sketch.py` builds
+# `Decimal` constants. None of those is a leaf arriving from a body, and a rule that
+# flagged them would be answered by an allowlist — which is the thing this file's other
+# ten rules are written to avoid needing.
+
+NUMERIC_LEAF_PACKAGES: tuple[str, ...] = ("azure", "collect", "verify")
+"""The three packages the rule sweeps: the two that read a live response and the one that
+reads the archive. `compile/` and `render/` are downstream of the snapshot and see decimal
+strings this codebase produced, never a body."""
+
+NUMERIC_LEAF_READER = "collect/numeric.py"
+"""The one module exempt, POSIX-relative to `SRC_ROOT`. Not a list, and not configurable:
+the whole content of the rule is that there is exactly one."""
+
+DECIMAL_CONSTRUCTOR = "Decimal"
+
+RESPONSE_NUMERIC_LEAF_KEYS: frozenset[str] = frozenset(
+    {
+        # Azure Monitor's four per-interval moments — the leaves `_as_decimal` was
+        # introduced for and the ones the archive round trip actually broke.
+        "total",
+        "count",
+        "minimum",
+        "maximum",
+        # The remaining aggregations the batch and ARM per-resource paths can return.
+        "average",
+        "sum",
+        "last",
+    }
+)
+"""Signal 1: the keys a metric or fact response carries a numeric leaf under.
+
+Named after the *data*, not after the variable holding it, so a reintroduction survives
+this signal only by renaming the field Azure sends — which it cannot. `"value"` is
+deliberately absent: in these three packages that key names an already-canonical decimal
+string on the snapshot and on a `GuestCounterRow`, never a raw body leaf, so listing it
+would flag two correct readers and teach the next person to add an allowlist."""
+
+RESPONSE_BODY_BINDINGS: frozenset[str] = frozenset(
+    {"body", "datum", "entry", "interval", "payload", "point", "raw_response", "response"}
+)
+"""Signal 2: the names this codebase binds a raw response body or one of its rows to.
+
+This catches a leaf read under a key signal 1 does not know — a fact response's
+`lastRecoveryPoint`, say — at the cost of being evadable by renaming the variable. That
+is why it is the second signal and not the only one, and why the behavioural seam test
+exists. `raw` and `row` are absent on purpose: both name already-extracted values here
+(`getattr` results in replay, a `GuestCounterRow` in the pipeline)."""
+
+_MAPPING_READ_METHODS: frozenset[str] = frozenset({"get", "pop", "setdefault"})
+
+
+def _is_decimal_call(node: ast.AST) -> bool:
+    """True for `Decimal(...)` or `decimal.Decimal(...)`, under any receiver."""
+    if not isinstance(node, ast.Call):
+        return False
+    dotted = _dotted(node.func)
+    return dotted == DECIMAL_CONSTRUCTOR or (
+        dotted is not None and dotted.endswith(f".{DECIMAL_CONSTRUCTOR}")
+    )
+
+
+def _read_root(node: ast.AST) -> str | None:
+    """The base identifier of a read chain: `point` for `point["a"].b.get("c")`."""
+    current: ast.AST = node
+    while True:
+        if isinstance(current, ast.Attribute | ast.Subscript):
+            current = current.value
+        elif isinstance(current, ast.Call):
+            current = current.func
+        else:
+            break
+    return current.id if isinstance(current, ast.Name) else None
+
+
+def _mapping_reads(node: ast.AST) -> list[tuple[str, str | None]]:
+    """Every `<mapping>["key"]` and `<mapping>.get("key")` in `node`, as `(key, root)`.
+
+    A string **literal** key only. A variable key — `capabilities.get(name)` in
+    `azure/skus.py` — is a lookup in a mapping this codebase built, not a field named in
+    a body, and signal 2 is what covers the case where it is.
+    """
+    reads: list[tuple[str, str | None]] = []
+    for child in ast.walk(node):
+        if isinstance(child, ast.Subscript):
+            key = child.slice
+            if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                reads.append((key.value, _read_root(child.value)))
+        elif (
+            isinstance(child, ast.Call)
+            and isinstance(child.func, ast.Attribute)
+            and child.func.attr in _MAPPING_READ_METHODS
+            and child.args
+            and isinstance(child.args[0], ast.Constant)
+            and isinstance(child.args[0].value, str)
+        ):
+            reads.append((child.args[0].value, _read_root(child.func.value)))
+    return reads
+
+
+def _numeric_leaf_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every `Decimal(...)` built from a response-body read, with the signal that fired.
+
+    The whole argument subtree is inspected, not only its top node, so the `str(...)`
+    detour `Decimal(str(point.get("total")))` takes is caught by the same walk.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            if not _is_decimal_call(node):
+                continue
+            assert isinstance(node, ast.Call)
+            for argument in (*node.args, *(kw.value for kw in node.keywords)):
+                for key, root in _mapping_reads(argument):
+                    if key in RESPONSE_NUMERIC_LEAF_KEYS:
+                        offenders.append(
+                            f"{_label(path)}:{node.lineno} Decimal(... {key!r} ...)"
+                        )
+                    elif root in RESPONSE_BODY_BINDINGS:
+                        offenders.append(
+                            f"{_label(path)}:{node.lineno} Decimal(... {root}[{key!r}] ...)"
+                        )
+    return offenders
+
+
+def _numeric_leaf_scanned_modules(root: Path = SRC_ROOT) -> list[Path]:
+    """Every module in the three swept packages except the one exempt reader."""
+    exempt = (root / NUMERIC_LEAF_READER).resolve()
+    return [
+        path
+        for package in NUMERIC_LEAF_PACKAGES
+        for path in _source_modules(root / package)
+        if path.resolve() != exempt
+    ]
+
+
+def test_the_one_reader_exists_and_the_scan_reaches_every_package_around_it() -> None:
+    """Req 7.9's non-emptiness half, asserted per package rather than over the union.
+
+    A union of eighty modules clears any threshold with one of the three packages renamed
+    out of the scan entirely, and the package most likely to be renamed — `verify/`, whose
+    replay is the reason the reader moved — is also the smallest.
+    """
+    reader = SRC_ROOT / NUMERIC_LEAF_READER
+    assert reader.is_file(), (
+        f"{NUMERIC_LEAF_READER} is the one exempt module and it does not exist, so the "
+        "rule below exempts nothing and the reader it names is not where it says"
+    )
+
+    for package in NUMERIC_LEAF_PACKAGES:
+        assert _source_modules(SRC_ROOT / package), (
+            f"the numeric-leaf scan reaches no module under {package}/"
+        )
+
+    scanned = _numeric_leaf_scanned_modules()
+    assert scanned, "the numeric-leaf scan found zero source files"
+    assert reader not in scanned, "the one reader must be exempt from its own rule"
+
+
+def test_only_the_one_reader_builds_a_decimal_from_a_response_leaf() -> None:
+    """Req 7.7, 7.9. Two readers of one leaf is two opinions about what "absent" means.
+
+    The archive stores the digit string; replay reads it back as a `str`. A second reader
+    that handles one type form differently makes a perfectly reproducible collection
+    report `REPLAY_MISMATCH`, and the failure presents as a positional fault — some
+    metrics replay, some do not — rather than as the type fault it is.
+    """
+    offenders = _numeric_leaf_offenders(_numeric_leaf_scanned_modules())
+
+    assert not offenders, (
+        f"only {NUMERIC_LEAF_READER}'s decimal_leaf may parse a numeric leaf out of a "
+        "response; call it instead of building a Decimal here: " + "; ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Signal 1: the key Azure sends, however the mapping is spelled.
+        'total = Decimal(entry["total"])',
+        'count = Decimal(anything.get("count"))',
+        'low = Decimal(str(whatever["minimum"]))',
+        'high = decimal.Decimal(series[0].get("maximum"))',
+        # Signal 2: a key signal 1 does not know, read out of a response binding.
+        'stamp = Decimal(point.get("lastRecoveryPoint"))',
+        'size = Decimal(raw_response["properties"]["sizeInBytes"])',
+    ],
+)
+def test_the_scan_detects_a_second_numeric_leaf_reader(source: str, tmp_path: Path) -> None:
+    """Guard the guard. Both signals must be seen to find something."""
+    module = _write(tmp_path, "offender.py", source)
+    assert _numeric_leaf_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The sanctioned call, which is not a `Decimal(...)` construction at all.
+        'total = decimal_leaf(point.get("total"))',
+        # Constants and computed values: `collect/sketch.py` and `collect/accumulate.py`.
+        'BIN_WIDTH = Decimal("0.5")',
+        "zero = Decimal(0)",
+        "target = quantile * Decimal(self._count)",
+        'quantile = Decimal(f"0.{name[1:]}")',
+        # An already-canonical decimal string off the stored snapshot: `verify/replay.py`.
+        'value = Decimal(str(stat.get("value") or "0"))',
+        # A `GuestCounterRow` the provider already stringified: `collect/pipeline.py`.
+        'reading = Decimal(row["value"])',
+        # An extracted capability mapping under a variable key: `azure/skus.py`.
+        "parsed = Decimal(capabilities.get(name))",
+        # Reading a response leaf without constructing a Decimal from it.
+        'if point.get("total") is None: pass',
+    ],
+)
+def test_the_scan_permits_constants_snapshot_reads_and_the_sanctioned_call(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _numeric_leaf_offenders([module]), source
+
+
+def test_the_numeric_leaf_scan_fails_when_it_finds_no_source_file(tmp_path: Path) -> None:
+    """The rule above is "collect modules, assert no offender", and both halves hold of
+    the empty set. Rule 10 asserts the packages are non-empty over the real tree; this
+    asserts the *collector* returns nothing when they are, so the assertion protecting
+    the rule is the one that would actually fire.
+    """
+    root = tmp_path / "src" / "reporting_agent"
+    _write(root, "__init__.py", "")
+
+    assert _numeric_leaf_scanned_modules(root) == []
+    assert _numeric_leaf_offenders(_numeric_leaf_scanned_modules(root)) == [], (
+        "an empty scan reports no offender, which is exactly why the non-emptiness "
+        "assertion above is load-bearing"
+    )
+
+
+# --------------------------------------------------------------------------- #
 # Rule 10 — no rule above may pass by scanning nothing
 # --------------------------------------------------------------------------- #
 #
@@ -1532,6 +1807,8 @@ def test_every_package_the_rules_name_is_in_the_guarded_set() -> None:
     named = {
         *SDK_SCAN_PACKAGES,
         *ARITHMETIC_FREE_PACKAGES,
+        *NUMERIC_LEAF_PACKAGES,
+        NUMERIC_LEAF_READER.split("/", 1)[0],
         NARRATE_PACKAGE,
         SDK_ROOT_SEGMENT,
         VERIFY_PACKAGE.name,

@@ -129,13 +129,13 @@ platform does not provide."""
 class NumberFormat:
     """A template's number presentation (Req 7.2).
 
-    `decimal_places` and `group_thousands` come straight from the definition's
-    `design.number_format`. The two separators do **not**: the definition schema declares
-    only those first two fields, so the separators are supplied here with the defaults
-    this product ships and are overridable by the pipeline. That divergence is recorded
-    rather than hidden — if the builder ever offers a separator control, the field it
-    writes into already exists and the formatter already honours it, and Property 1
-    already exercises every combination.
+    All four fields come from the definition's `design.number_format`, conditionally on
+    its `schema_version`: at version 2 the definition declares `decimal_separator` and
+    `grouping_separator` alongside `decimal_places` and `group_thousands`, and at
+    version 1 it declares only the first two and the separators are defaulted from
+    `identity.language` — which is `en` at version 1, which is this class's own defaults,
+    so a stored version 1 definition renders byte-identically to the way it always did
+    (Req 16.3, 16.10). Property 1 exercises every combination.
     """
 
     decimal_places: int = 1
@@ -173,6 +173,31 @@ class NumberFormat:
                     f"number_format.{name} must contain no digit and no minus sign, got "
                     f"{separator!r}: a separator that could be read as part of the "
                     f"number makes the verifier's token extraction ambiguous"
+                )
+            # `str.isspace()` rather than an explicit set (Req 16.2): the set that has to
+            # be caught is every character the two whitespace-splitting readers named
+            # below treat as a break, and that is Unicode's, not ASCII's — a thin space
+            # (U+2009) and a no-break space (U+00A0) are the separators a European number
+            # format actually reaches for, and both would pass an `== " "` check and any
+            # hand-written list that forgot them. An explicit set is also a list that goes
+            # stale as Unicode grows, against a predicate that does not.
+            #
+            # The mirror obligation this puts on `app/lib/templates/definition.ts` in task
+            # 7.1: bare `/\s/u` is **not** this set. JavaScript's `\s` misses `\x1c`-`\x1f`
+            # and `\x85`, which `str.isspace()` is true for, so the app would save a
+            # separator this constructor then refuses — a save-time error turned into a
+            # failed run. Use `/[\s\x1c-\x1f\x85]/u`. The one residual difference,
+            # `\ufeff` (matched by `\s`, not by `isspace()`), errs the safe way: the app
+            # refuses it, so it never reaches here.
+            if any(character.isspace() for character in separator):
+                raise CompileFailedError(
+                    f"number_format.{name} must contain no whitespace, got "
+                    f"{separator!r}: `verify/tokens.numeric_tokens` splits a paragraph on "
+                    f"whitespace, so a whitespace-separated numeral reaches the verifier "
+                    f"as several tokens none of which equals the ledger's formatted "
+                    f"string, and `normalize_pdf_text` collapses every whitespace run to "
+                    f"one space, so the .pdf pass cannot locate it either — the run would "
+                    f"be withheld for a number that was correct"
                 )
         if self.decimal_separator == self.grouping_separator:
             raise CompileFailedError(

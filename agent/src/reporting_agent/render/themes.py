@@ -35,8 +35,8 @@ guard can read them as data (its docstring says so). Restating them here would b
 that declaration exists to prevent: a block module could start emitting `Heading 5` and four
 themes would keep passing a guard that had never heard of it.
 
-Two names are added here because no compile-stage constant declares them, and both are
-genuinely this module's to own:
+Seven names are added here because no compile-stage constant declares them, and every one is
+genuinely this module's to own. Two are the renderer's:
 
 * **`Figure`**, a *character* style. `compile/` has no concept of it — a `Figure` node carries
   no style name, because every figure takes the same one. It is `render/docx.py` that wraps
@@ -45,6 +45,12 @@ genuinely this module's to own:
   assertion.
 * **`PreviewNotice`**, a paragraph style used only when the renderer runs in preview mode, so
   a "Render real preview" artifact says what it is after it leaves the app.
+
+The other five are the **front matter's** — `Cover Title`, `Cover Meta`, `Document Control`,
+`Toc Entry` and `Table Signature`. The front matter is fixed rather than composed and accepts
+no block, so no block type will ever reference one of these names and there is no
+compile-stage constant for them to live in. See :data:`FRONT_MATTER_PARAGRAPH_STYLES` and
+:data:`SIGNATURE_TABLE_STYLE`.
 
 ## The trap that makes a style lookup fail at render time
 
@@ -79,15 +85,21 @@ from reporting_agent.compile.definition import DESIGN_PRESETS
 from reporting_agent.errors import RenderFailedError
 
 __all__ = [
+    "COVER_META_STYLE",
+    "COVER_TITLE_STYLE",
+    "DOCUMENT_CONTROL_STYLE",
     "FIGURE_CHARACTER_STYLE",
+    "FRONT_MATTER_PARAGRAPH_STYLES",
     "PREVIEW_NOTICE_STYLE",
     "REQUIRED_CHARACTER_STYLES",
     "REQUIRED_PARAGRAPH_STYLES",
     "REQUIRED_STYLE_NAMES",
     "REQUIRED_TABLE_STYLES",
+    "SIGNATURE_TABLE_STYLE",
     "THEME_FILENAMES",
     "THEME_PRESETS",
     "THEME_SPECS",
+    "TOC_ENTRY_STYLE",
     "ThemeSpec",
     "assert_theme_available",
     "assert_themes_usable",
@@ -115,14 +127,56 @@ PREVIEW_NOTICE_STYLE: Final[str] = "PreviewNotice"
 """The preview-mode page notice, so a rendered preview says what it is once it has left the
 app."""
 
+COVER_TITLE_STYLE: Final[str] = "Cover Title"
+COVER_META_STYLE: Final[str] = "Cover Meta"
+DOCUMENT_CONTROL_STYLE: Final[str] = "Document Control"
+TOC_ENTRY_STYLE: Final[str] = "Toc Entry"
+
+FRONT_MATTER_PARAGRAPH_STYLES: Final[tuple[str, ...]] = (
+    COVER_TITLE_STYLE,
+    COVER_META_STYLE,
+    DOCUMENT_CONTROL_STYLE,
+    TOC_ENTRY_STYLE,
+)
+"""The front matter's four paragraph styles (breadth criteria 13.4, 13.5, 14.6).
+
+Declared **here** rather than in `compile/blocks/base.py` for the same reason `Figure` and
+`PreviewNotice` are: front matter is not composable and carries no block, so no block type
+references any of these names and the compile-stage declaration has nothing to say about
+them. Requirement 13.2 makes that permanent — the front matter accepts no block at all.
+
+* **`Cover Title`** and **`Cover Meta`** — the report title and the customer / period /
+  contact lines of the cover (13.4). A cover set in `Title` and `Subtitle` would tie the
+  cover's scale to a content heading's, and the two are different typographic jobs.
+* **`Document Control`** — the label lines of the document control page: document name,
+  document number, confidentiality notice (13.5).
+* **`Toc Entry`** — one contents entry, carrying the right-aligned dotted tab the page number
+  sits on. The tab stop belongs to the theme rather than to the emitter, so a table of
+  contents cannot be laid out by inline formatting the four themes disagree about.
+"""
+
+SIGNATURE_TABLE_STYLE: Final[str] = "Table Signature"
+"""The approvers table (breadth criterion 13.6).
+
+Its own style rather than one of the three `design.table_style` choices, because it is the
+one table whose row height is load-bearing: where no signature image is supplied, the
+renderer emits an **empty ruled box at the height the theme declares**, and "the height the
+theme declares" has to be somewhere. It is `w:trHeight` on this style.
+"""
+
 REQUIRED_CHARACTER_STYLES: Final[tuple[str, ...]] = (FIGURE_CHARACTER_STYLE,)
 
-REQUIRED_PARAGRAPH_STYLES: Final[tuple[str, ...]] = (*PARAGRAPH_STYLES, PREVIEW_NOTICE_STYLE)
-"""Every paragraph style the declared block types reference, plus the preview notice.
+REQUIRED_PARAGRAPH_STYLES: Final[tuple[str, ...]] = (
+    *PARAGRAPH_STYLES,
+    PREVIEW_NOTICE_STYLE,
+    *FRONT_MATTER_PARAGRAPH_STYLES,
+)
+"""Every paragraph style the declared block types reference, plus the preview notice and the
+four front-matter styles.
 
 `PARAGRAPH_STYLES` is imported rather than restated — see the module docstring."""
 
-REQUIRED_TABLE_STYLES: Final[tuple[str, ...]] = TABLE_STYLES
+REQUIRED_TABLE_STYLES: Final[tuple[str, ...]] = (*TABLE_STYLES, SIGNATURE_TABLE_STYLE)
 
 REQUIRED_STYLE_NAMES: Final[tuple[str, ...]] = (
     *REQUIRED_CHARACTER_STYLES,
@@ -522,10 +576,15 @@ _STYLE_IDS: Final[Mapping[str, str]] = {
     "Caption": "Caption",
     "Notice": "Notice",
     "PreviewNotice": "PreviewNotice",
+    "Cover Title": "CoverTitle",
+    "Cover Meta": "CoverMeta",
+    "Document Control": "DocumentControl",
+    "Toc Entry": "TocEntry",
     "Figure": "Figure",
     "Table Hairline": "TableHairline",
     "Table Banded": "TableBanded",
     "Table Bordered": "TableBordered",
+    "Table Signature": "TableSignature",
     "Layout Table": "LayoutTable",
 }
 """`w:styleId` per style name. Ids carry no space; names do."""
@@ -542,6 +601,20 @@ _ZIP_TIMESTAMP: Final[tuple[int, int, int, int, int, int]] = (1980, 1, 1, 0, 0, 
 _A4_WIDTH_TWIPS: Final[int] = 11906
 _A4_HEIGHT_TWIPS: Final[int] = 16838
 _MARGIN_TWIPS: Final[int] = 1134  # 2 cm
+
+_SIGNATURE_ROW_HEIGHT_TWIPS: Final[int] = 907  # 1.6 cm
+"""The minimum height of an approvers-table row, and therefore of an unsigned signature box.
+
+`w:hRule="atLeast"`, so a supplied signature image taller than this grows the row rather than
+being clipped."""
+
+_CONTENT_WIDTH_TWIPS: Final[int] = _A4_WIDTH_TWIPS - 2 * _MARGIN_TWIPS
+"""Where `Toc Entry`'s right tab sits: the right text edge of the default section.
+
+A template asking for Letter narrows the page and the emitter overrides the section geometry;
+the tab is then slightly past the text edge rather than at it, which Word and LibreOffice both
+resolve to the margin. A theme cannot hold two page geometries, and a contents entry whose
+leader stops short reads worse than one whose stop is nominal."""
 
 _W_NS: Final[str] = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 
@@ -609,10 +682,18 @@ def _paragraph_style(
     keep_next: bool = False,
     outline_level: int | None = None,
     border_bottom: str | None = None,
+    right_tab_twips: int | None = None,
 ) -> str:
     paragraph_parts: list[str] = []
     if keep_next:
         paragraph_parts.append("<w:keepNext/><w:keepLines/>")
+    if right_tab_twips is not None:
+        # A right tab with a dot leader — the page-number column of a contents entry. It
+        # belongs to the theme rather than to the emitter, so the four themes cannot lay a
+        # table of contents out four different ways.
+        paragraph_parts.append(
+            f'<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{right_tab_twips}"/></w:tabs>'
+        )
     paragraph_parts.append(
         f'<w:spacing w:before="{_twentieths(space_before_pt)}"'
         f' w:after="{_twentieths(space_after_pt)}"'
@@ -756,6 +837,25 @@ def _data_table_styles(spec: ThemeSpec) -> str:
         ),
     )
 
+    # Breadth 13.6 — the approvers table. Not one of the three `design.table_style` choices,
+    # because it is the one table whose **row height** is part of the contract: where the
+    # definition supplies no signature image for a role, the renderer emits an empty ruled box
+    # "at the height the theme declares for that cell", and this `w:trHeight` is that
+    # declaration. A signature box sized to its content would collapse to a line of nothing.
+    signature = _table_style(
+        "Table Signature",
+        spec,
+        body=(
+            f"{common_pPr}{common_run}"
+            f"<w:tblPr>"
+            f"{_borders(edges=dict.fromkeys(('top', 'left', 'bottom', 'right', 'insideH', 'insideV'), ('single', 4, spec.palette.rule)))}"
+            f"{_cell_margins(vertical=80, horizontal=100)}"
+            f"</w:tblPr>"
+            f'<w:trPr><w:trHeight w:val="{_SIGNATURE_ROW_HEIGHT_TWIPS}" w:hRule="atLeast"/></w:trPr>'
+            f"{_header_row_props(spec, underline=False)}"
+        ),
+    )
+
     # Req 15.9 / 21.2 — a `row` block's container. Borderless on every edge, and it carries no
     # header-row conditional formatting because a layout table has no header row: the verifier
     # excludes it by the absence of a `w:tblCaption`, and its *appearance* must not suggest a
@@ -772,7 +872,7 @@ def _data_table_styles(spec: ThemeSpec) -> str:
         ),
     )
 
-    return hairline + banded + bordered + layout
+    return hairline + banded + bordered + signature + layout
 
 
 def _styles_xml(spec: ThemeSpec) -> str:
@@ -928,6 +1028,57 @@ def _styles_xml(spec: ThemeSpec) -> str:
                 space_before_pt=0,
                 space_after_pt=8,
                 border_bottom=palette.rule,
+            ),
+            # --- The front matter (breadth 13.4, 13.5, 14.6) --------------------------
+            #
+            # Deliberately not `Title` and `Subtitle`. A cover and a content heading are
+            # different typographic jobs, and sharing a style would tie the cover's scale to
+            # whatever a section heading needs — so a theme could not make its cover larger
+            # without enlarging every `Title` in the document.
+            _paragraph_style(
+                "Cover Title",
+                spec,
+                next_style="Cover Meta",
+                size_pt=spec.title_pt * 1.35,
+                color=palette.accent,
+                font=face.heading,
+                bold=True,
+                space_before_pt=0,
+                space_after_pt=8,
+                keep_next=True,
+            ),
+            _paragraph_style(
+                "Cover Meta",
+                spec,
+                next_style="Cover Meta",
+                size_pt=spec.subtitle_pt,
+                color=palette.muted,
+                font=face.heading,
+                space_after_pt=3,
+            ),
+            # The document control page's field lines and its confidentiality notice. No
+            # `w:caps`: the lines carry *values* — a customer name, a document number — and
+            # a style that uppercased them would change the data the reader sees.
+            _paragraph_style(
+                "Document Control",
+                spec,
+                next_style="Document Control",
+                size_pt=spec.small_pt,
+                color=palette.ink,
+                font=face.body,
+                space_before_pt=0,
+                space_after_pt=2,
+            ),
+            _paragraph_style(
+                "Toc Entry",
+                spec,
+                next_style="Toc Entry",
+                size_pt=spec.body_pt,
+                color=palette.ink,
+                font=face.body,
+                space_before_pt=0,
+                space_after_pt=2,
+                right_tab_twips=_CONTENT_WIDTH_TWIPS,
             ),
         )
     )

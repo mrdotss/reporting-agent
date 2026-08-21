@@ -80,9 +80,16 @@ REQUIRED_GATES: Final[frozenset[str]] = frozenset(
         "replay",  # 31
         "coverage",  # 32
         "pdf",  # 33
+        # The breadth-and-document spec's three, by that spec's requirement number. Raised
+        # here rather than with each pass on purpose: a gate this set names and :func:`verify`
+        # does not record fails **every** verification naming itself, so the intervening tasks
+        # cannot leave a partially wired verifier quietly passing.
+        "facts",  # breadth 6 — the text-fact exact-string check
+        "toc",  # breadth 14 — the table of contents' page numbers
+        "historical",  # breadth 18 — a plotted point came from a verified prior run
     }
 )
-"""The gates of requirements 26 through 33, by requirement.
+"""The gates of requirements 26 through 33, plus the three the breadth-and-document spec adds.
 
 Named as a set and asserted against rather than left implicit, because Req 25.5's "every
 gate has been evaluated" is otherwise a claim nobody can check. A gate added to the spec and
@@ -273,6 +280,19 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     counts["ledger_entries_unrendered"] = len(unrendered)
     gates.add("completeness")
 
+    # --- breadth 6, 14, 18: recorded, not yet implemented ------------------------------
+    #
+    # Each of the three is a stub returning no finding, and each is named for the task that
+    # replaces it. They are called — rather than left out with the gate names commented — so
+    # the gate assertion below stays satisfiable while the three passes land one at a time,
+    # and so a reader of this list can see exactly which gates are still promises.
+    findings.extend(_stub_facts_gate_awaiting_task_5_5(inputs))
+    gates.add("facts")
+    findings.extend(_stub_toc_gate_awaiting_task_8_2(inputs))
+    gates.add("toc")
+    findings.extend(_stub_historical_gate_awaiting_task_11_4(inputs))
+    gates.add("historical")
+
     _assert_every_gate_ran(gates)
 
     blocking = [f for f in findings if f.get("severity") == SEVERITY_BLOCKING]
@@ -301,11 +321,69 @@ def _assert_every_gate_ran(gates: set[str]) -> None:
         from reporting_agent.errors import VerificationFailedError
 
         raise VerificationFailedError(
-            "the verification did not evaluate every gate requirements 26 through 33 "
-            f"declare; missing {sorted(REQUIRED_GATES - gates)}, unexpected "
+            "the verification did not evaluate every gate REQUIRED_GATES declares "
+            "(requirements 26 through 33, plus facts, toc and historical); "
+            f"missing {sorted(REQUIRED_GATES - gates)}, unexpected "
             f"{sorted(gates - REQUIRED_GATES)}. An incomplete verification is a fail, "
             "never a partial pass."
         )
+
+
+# --------------------------------------------------------------------------- #
+# The three gates the breadth-and-document spec declares, stubbed
+# --------------------------------------------------------------------------- #
+#
+# `REQUIRED_GATES` names `facts`, `toc` and `historical` already, which is deliberate: the
+# alternative — adding each name with the pass that implements it — lets a half-wired
+# verifier report `pass` on a document nothing checked, and that is precisely the outcome
+# `_assert_every_gate_ran` exists to make impossible.
+#
+# So each gate is registered now against a stub that records **no finding at all**. Every
+# stub is named `_stub_<gate>_gate_awaiting_task_<n>`, so its call site says both that it is
+# a stub and which task replaces it. None of them reads `inputs`; the parameter is here so
+# the call site does not change shape when the real pass lands.
+#
+# Until then, none of the three can fail a verification, and that is the honest reading of
+# where the spec is — not a claim that the three properties hold.
+
+
+def _stub_facts_gate_awaiting_task_5_5(inputs: VerifyInputs) -> tuple[Finding, ...]:
+    """STUB. Replaced by task 5.5, which implements `verify/facts.py`.
+
+    That task adds `check_text_facts(ledger, grids)` and the three findings
+    `text_fact_mismatch`, `text_fact_anchor_missing` and `text_fact_unanchored`, and wires
+    this gate to it (breadth criteria 6.4, 6.6, 6.7, 6.8). It also adds `text_fact_count` to
+    the result and moves the completeness assertion onto `entry_paths()`.
+    """
+    del inputs
+    return ()
+
+
+def _stub_toc_gate_awaiting_task_8_2(inputs: VerifyInputs) -> tuple[Finding, ...]:
+    """STUB. Replaced by task 8.2, which implements `verify/toc.py`.
+
+    That task reads the produced `.pdf` — the one whose SHA-256 equals the recorded
+    `pdf_sha256` — through `verify/tokens.pdf_page_texts`, records `toc_page_mismatch` on a
+    disagreement (breadth criteria 14.6, 14.7), and returns the `proven_toc_numerals` mapping
+    that `masking.scan_paragraphs` admits per paragraph ordinal. It therefore has to run
+    **before** the prose gate, which this stub's position does not.
+
+    Task 1.5's own bullet numbers this task 8.3; 8.3 is the Postgres columns, and 8.2 is the
+    task that says "wire it as the `toc` gate from task 1.5".
+    """
+    del inputs
+    return ()
+
+
+def _stub_historical_gate_awaiting_task_11_4(inputs: VerifyInputs) -> tuple[Finding, ...]:
+    """STUB. Replaced by task 11.4, which implements `verify/historical.py`.
+
+    That task reads a `historical` input mapping each source run id to its verification
+    status and resolved period, and records `historical_point_unverified` and
+    `historical_point_overlapping` (breadth criteria 18.11, 18.12).
+    """
+    del inputs
+    return ()
 
 
 # --------------------------------------------------------------------------- #

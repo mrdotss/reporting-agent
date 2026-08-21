@@ -1,0 +1,528 @@
+{
+  "comment": "The Metric Definitions vocabulary for Microsoft.DBforPostgreSQL/flexibleServers: every metric name, its unit and its supported aggregations, as the Metric_Catalog's entries for this type must be evidenced against (Req 2.1). Derived from Microsoft documentation rather than captured from a live subscription -- see `provenance`, which records the source per fixture and the basis for the supported-aggregation set per metric. Metric names are recorded as the source's 'Name in REST API' value and never as a portal display name: the two differ by exactly the case, whitespace and separator substitutions the near-miss rule rejects, and a near miss here would make a metric permanently uncollectable.",
+  "provenance": {
+    "resource_type": "Microsoft.DBforPostgreSQL/flexibleServers",
+    "region": "southeastasia",
+    "captured_at": "2026-08-20T17:19:36Z",
+    "capture_method": "derived_from_documentation",
+    "derived_from": [
+      "Microsoft Learn, 'Supported metrics - Microsoft.DBforPostgreSQL/flexibleServers' (https://learn.microsoft.com/en-us/azure/azure-monitor/reference/supported-metrics/microsoft-dbforpostgresql-flexibleservers-metrics): the 'Name in REST API', 'Unit', 'Aggregation', 'Dimensions' and 'Time Grains' columns. That page documents 'Aggregation' as the *default* aggregation type, which is why the supported-aggregation set carries a recorded basis per metric.",
+      "Microsoft Learn, 'Metric Definitions - List' (https://learn.microsoft.com/en-us/rest/api/monitor/metric-definitions/list): the response shape, being the `value` array and each definition's `namespace`, `name`, `unit`, `supportedAggregationTypes`, `metricAvailabilities` and `dimensions` fields."
+    ],
+    "aggregation_bases": {
+      "documented_published_set": "The source publishes two or more aggregations for this metric; the set is recorded verbatim, with 'Total (Sum)' written as the REST value 'Total'.",
+      "documented_single_aggregation_treated_as_complete": "The source publishes exactly one aggregation for this metric, and publishes multi-value sets for other metrics of this same resource type -- so this resource provider does declare its supported set, and the single published value is recorded as the complete set."
+    },
+    "aggregation_basis_by_metric": {
+      "cpu_percent": "documented_published_set",
+      "memory_percent": "documented_published_set",
+      "storage_percent": "documented_published_set",
+      "storage_used": "documented_published_set",
+      "storage_free": "documented_published_set",
+      "txlogs_storage_used": "documented_published_set",
+      "backup_storage_used": "documented_published_set",
+      "iops": "documented_published_set",
+      "read_iops": "documented_published_set",
+      "write_iops": "documented_published_set",
+      "read_throughput": "documented_published_set",
+      "write_throughput": "documented_published_set",
+      "disk_queue_depth": "documented_published_set",
+      "disk_bandwidth_consumed_percentage": "documented_published_set",
+      "disk_iops_consumed_percentage": "documented_published_set",
+      "active_connections": "documented_published_set",
+      "database_size_bytes": "documented_published_set",
+      "network_bytes_ingress": "documented_single_aggregation_treated_as_complete",
+      "network_bytes_egress": "documented_single_aggregation_treated_as_complete",
+      "max_connections": "documented_single_aggregation_treated_as_complete"
+    },
+    "selection": "A subset of the metrics the source lists for this type: the utilization series this product collects, restricted to metrics whose unit is one the catalog's unit mapping covers. A subset fails closed -- a catalog entry naming a metric this fixture does not carry is rejected -- so an omission can block a metric but can never admit a wrong one. `omitted_metrics` records the candidates that were dropped and why.",
+    "omitted_metrics": [
+      {
+        "name": "the per-table autovacuum and bloat metrics (analyze_count_user_tables, bloat_percent, n_dead_tup_user_tables and their siblings)",
+        "reason": "the source reports a PT30M-and-coarser time grain and a required DatabaseName dimension; not a utilization series this product collects"
+      },
+      {
+        "name": "connections_succeeded, connections_failed",
+        "reason": "recorded neither: the source publishes 'Total (Sum)' alone, so no average is derivable, and a connection counter is not a utilization series this product collects"
+      },
+      {
+        "name": "longest_query_time_sec, oldest_backend_xmin and the other diagnostic counters",
+        "reason": "diagnostic rather than utilization series"
+      }
+    ],
+    "omitted_fields": [
+      "id and resourceId, which are fully qualified resource identifiers carrying a subscription id (Req 2.5 excludes both)",
+      "primaryAggregationType, isDimensionRequired, displayDescription, category, name.localizedValue and metricAvailabilities[].retention, none of which the source establishes -- omitted rather than invented"
+    ],
+    "region_note": "The source is not region-scoped. `region` records the (resource_type, region) pair this fixture stands in for, matching the Definition_Probe's cache key, and is the region the rest of this repository's Azure fixtures use."
+  },
+  "status": 200,
+  "headers": {
+    "content-type": "application/json; charset=utf-8"
+  },
+  "body": {
+    "value": [
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "cpu_percent"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "memory_percent"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "storage_percent"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "storage_used"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "storage_free"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "txlogs_storage_used"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "backup_storage_used"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "iops"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "read_iops"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "write_iops"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "read_throughput"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "write_throughput"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "disk_queue_depth"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "disk_bandwidth_consumed_percentage"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "disk_iops_consumed_percentage"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "LogicalServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "active_connections"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "database_size_bytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Average",
+          "Maximum",
+          "Minimum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT30M"
+          },
+          {
+            "timeGrain": "PT1H"
+          },
+          {
+            "timeGrain": "PT6H"
+          },
+          {
+            "timeGrain": "PT12H"
+          },
+          {
+            "timeGrain": "P1D"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "DatabaseName"
+          },
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "network_bytes_ingress"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "network_bytes_egress"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT1M"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      },
+      {
+        "namespace": "Microsoft.DBforPostgreSQL/flexibleServers",
+        "name": {
+          "value": "max_connections"
+        },
+        "unit": "Count",
+        "supportedAggregationTypes": [
+          "Maximum"
+        ],
+        "metricAvailabilities": [
+          {
+            "timeGrain": "PT30M"
+          },
+          {
+            "timeGrain": "PT1H"
+          },
+          {
+            "timeGrain": "PT6H"
+          },
+          {
+            "timeGrain": "PT12H"
+          },
+          {
+            "timeGrain": "P1D"
+          }
+        ],
+        "dimensions": [
+          {
+            "value": "ServerName"
+          }
+        ]
+      }
+    ]
+  }
+}

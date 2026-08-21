@@ -1,0 +1,659 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Move `_as_decimal` to `collect/numeric.py::decimal_leaf` and add the one-reader guard": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243765910
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243816028
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787247001300
+      }
+    ],
+    "1.2 `GapRecord` gains `interval_start`, end to end through both halves": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243766252
+      }
+    ],
+    "1.3 `DECLARED_GAP_TYPES` from 20 to 24, and a `source` field on the four new types": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243766701
+      }
+    ],
+    "1.4 `NumberFormat` rejects a whitespace separator, in both halves": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243767121
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243823055
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787247011350
+      }
+    ],
+    "1.5 `REQUIRED_GATES` from 8 to 11, and the front-matter theme styles": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243767427
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243831909
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787247019890
+      }
+    ],
+    "1.6 `inventory_query` takes `fact_projections`, and `discover` archives each page": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243767815
+      }
+    ],
+    "2.1 Declare the setting and the candidate set in `render/toc.py`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243768122
+      }
+    ],
+    "2.2 Build the fixture, `verify/tokens.pdf_page_texts` and the one measurement harness": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243768470
+      }
+    ],
+    "2.3 Run the three candidates and commit the evaluation record": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243768984
+      }
+    ],
+    "2.4 The evidence guard and the proof test that never skips": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243769287
+      }
+    ],
+    "2.5 If and only if `two_pass_measure` is adopted, move the rendering budget": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243769652
+      }
+    ],
+    "3.1 Record one Metric Definitions fixture per resource type": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243770122
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243839847
+      },
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787247029985
+      },
+      {
+        "executionId": "47f9d72d-eda0-4e8e-8bfd-874f51f6f358",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787295572784
+      }
+    ],
+    "3.2 Extend `catalog/metrics.v1.json` to the seven resource types": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243770423
+      }
+    ],
+    "3.3 Implement `catalog/evidence.py` and the Catalog_Evidence_Guard": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243770612
+      }
+    ],
+    "3.4 Property test — every catalog entry is evidenced": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243770864
+      }
+    ],
+    "3.5 Declare the facts in `catalog/facts.v1.json` and load them through `catalog/loader.py`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243771362
+      }
+    ],
+    "4.1 Implement `collect/factfold.py` — the one derivation": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243771737
+      }
+    ],
+    "4.2 `collect/snapshot.py` — `FactEntry` and `facts[]` inside the canonical form": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243771996
+      }
+    ],
+    "4.3 Implement `azure/facts.py` and the fact pass between inventory and metrics": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243772383
+      }
+    ],
+    "4.4 The `facts` archive kind and replay's fact re-derivation": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243772589
+      }
+    ],
+    "4.5 The behavioural seam test and the two static guards over it": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243772845
+      }
+    ],
+    "4.6 Property test — a fact round-trips through the archive": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243773212
+      }
+    ],
+    "5.1 Declare `TextFact`, `TextFactCell` and the extended fields, with the AST guard in the same task": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243773638
+      }
+    ],
+    "5.2 `compile/figures.py` — two dictionaries, one walk, byte-identical serialization": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243773878
+      }
+    ],
+    "5.3 `compile/format.py::format_text_fact`, and the guard that formatting cannot translate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243774282
+      }
+    ],
+    "5.4 One anchor mechanism, one run per cell, and the HTML attributes": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243774673
+      }
+    ],
+    "5.5 Implement `verify/facts.py` and wire the `facts` gate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243775160
+      }
+    ],
+    "5.6 Property test — a text fact's check catches what numeric masking cannot": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243775365
+      }
+    ],
+    "6.1 Declare the agent's catalog and `compile/messages.py`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243775507
+      }
+    ],
+    "6.2 Declare the app's catalog and extend the Mirror_Guard": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243775720
+      }
+    ],
+    "6.3 Resolve every fixed string from the catalog, in the four places the literals actually are": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243776153
+      }
+    ],
+    "6.4 The Python literal guard, and the guard that guards itself": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243776452
+      }
+    ],
+    "6.5 The TypeScript literal guard": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243776785
+      }
+    ],
+    "7.1 Declare the version-conditional key sets in `app/lib/templates/definition.ts`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243777037
+      }
+    ],
+    "7.2 Mirror the declarations in `agent/.../compile/definition.py` and dispatch on the version": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243777424
+      }
+    ],
+    "7.3 Extend the Mirror_Guard and the shared fixture corpus": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243777651
+      }
+    ],
+    "7.4 Prove every shipped starter compiles as stored": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243777954
+      }
+    ],
+    "7.5 Implement `app/lib/templates/migrate.ts` and the save that writes v2": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243778321
+      }
+    ],
+    "7.6 Property test — the number-format defaults are language-derived and never overwrite a declaration": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243778564
+      }
+    ],
+    "8.1 Implement `render/front_matter.py`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243778990
+      }
+    ],
+    "8.2 Build the table of contents from the adopted approach, and verify its page numbers": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243779338
+      }
+    ],
+    "8.3 The two additive Postgres columns, the enqueue rejection and the two extended projections": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243779596
+      }
+    ],
+    "8.4 Build the fixed front-matter section of the builder": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243779946
+      }
+    ],
+    "9.1 Supply the declared separators to the Formatter and the fidelity gate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243780302
+      }
+    ],
+    "9.2 Present the separators in the design step, and property-test the agreement": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243780676
+      }
+    ],
+    "10.1 Extend `render/charts.py` and keep the hash input closed": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243781048
+      }
+    ],
+    "10.2 Make the contrast floors a standing gate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243781216
+      }
+    ],
+    "11.1 Implement `app/lib/runs/historical.ts` — the candidate query": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243781393
+      }
+    ],
+    "11.2 Implement `compile/historical.py` — the pure selector": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243781665
+      }
+    ],
+    "11.3 Compile the `historical_trend` block and its two provenance fields": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243782361
+      }
+    ],
+    "11.4 Implement `verify/historical.py` and wire the `historical` gate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243782557
+      }
+    ],
+    "11.5 Property test — historical run selection is newest-N, non-overlapping and verified": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243782993
+      }
+    ],
+    "12.1 Add `distinct_dimensions` and the `list_inventory` command": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243783310
+      }
+    ],
+    "12.2 Implement the cache and the endpoint, in the order the criteria force": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243783672
+      }
+    ],
+    "12.3 Implement `lib/templates/options.ts` and its property": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243783848
+      }
+    ],
+    "12.4 Build the scope picker and its property": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243784198
+      }
+    ],
+    "12.5 Build the metric picker over every catalog type": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243784595
+      }
+    ],
+    "12.6 Build the block-config picker and change the `columns` shape": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243785017
+      }
+    ],
+    "12.7 Make saving the identity step name the template": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243785468
+      }
+    ],
+    "13.1 Implement `lib/runs/gap-groups.ts` and its property": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243785896
+      }
+    ],
+    "13.2 Rebuild `gap-list.tsx` over the grouping": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243786172
+      }
+    ],
+    "13.3 Make the verification panel fit its box, and assert it by presented text": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243786809
+      }
+    ],
+    "13.4 The declared class collection, the additive `globals.css` edit and its guard": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243787213
+      }
+    ],
+    "13.5 Decide the paper rendering's claim with an executing assertion": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243787841
+      }
+    ],
+    "13.6 Settle the reservation-facts decision in the declaration, rather than shipping the gap silently": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243788375
+      }
+    ],
+    "14. Checkpoint — collection, compilation, rendering and the surfaces": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243788646
+      }
+    ],
+    "15.1 A numeric fact's rendered value changed": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243789149
+      }
+    ],
+    "15.2 A text fact's rendered value changed from `Succeeded` to `Failed`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243789376
+      }
+    ],
+    "15.3 A fact-producing response removed from the archive": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243789548
+      }
+    ],
+    "15.4 An `id` document declaring a comma, converted with a period": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243789817
+      }
+    ],
+    "15.5 An `en` document declaring a period, converted with a comma": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243790218
+      }
+    ],
+    "15.6 Retire the one-directional N5 and keep the locale companion in force": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243790472
+      }
+    ],
+    "15.7 A short trend is a labelled normal outcome — the one test that asserts a pass": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243790877
+      }
+    ],
+    "15.8 A historical point injected from a run whose verification failed": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243791070
+      }
+    ],
+    "15.9 Historical points injected from two runs whose periods overlap": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243791271
+      }
+    ],
+    "15.10 A table of contents naming the wrong page": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243791942
+      }
+    ],
+    "15.11 A `TextFact` emitted outside a data-table cell": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243792276
+      }
+    ],
+    "15.12 A `Fact` compiled with no `source` or no `collected_at`": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243792723
+      }
+    ],
+    "15.13 A table identity altered so a `TextFact`'s anchor resolves to no cell": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243793515
+      }
+    ],
+    "15.14 A `schema_version` 2 run missing one per-run front-matter value": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243793931
+      }
+    ],
+    "15.15 An `id` run for which the catalog declares no `id` value": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794062
+      }
+    ],
+    "15.16 Extend the enumeration meta-test and assert nothing in this section is skipped": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794314
+      }
+    ],
+    "16.1 Complete and assert the static guards in both halves": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794435
+      }
+    ],
+    "16.2 Assert the six mirrors through the one mechanism": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794633
+      }
+    ],
+    "16.3 Extend the property-hygiene guards and run the regression gate": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794798
+      }
+    ],
+    "16.4 Wire and verify one full run end to end": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243794924
+      }
+    ],
+    "17. Final checkpoint": [
+      {
+        "executionId": "dc51a834-3b31-4980-8cf7-e601e338da15",
+        "chatSessionId": "sess_4209e1ba-1eff-4479-944d-a790fab0520b",
+        "timestamp": 1787243795158
+      }
+    ]
+  }
+}
