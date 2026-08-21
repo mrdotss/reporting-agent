@@ -113,12 +113,45 @@ assert len(set(TOC_APPROACHES)) == len(TOC_APPROACHES)
 
 # --- the decision (Req 14.3, 14.10) -------------------------------------------------
 
-ADOPTED_APPROACH: Final[str] = TOC_APPROACH_NONE
+ADOPTED_APPROACH: Final[str] = TOC_APPROACH_TWO_PASS
 """The approach this image ships, and the value every front-matter module reads.
 
 Set to the first candidate the evaluation recorded a `correct` verdict for, or left at
 :data:`TOC_APPROACH_NONE`. See the module docstring on why this is a module constant and
 not an environment variable, and why `none` is a shippable value rather than a
-placeholder."""
+placeholder.
+
+## What the evaluation found (`agent/evidence/toc/evaluation.json`)
+
+Measured over `agent/tests/fixtures/toc/long_report.*` — a 12-page document with six
+`Heading 1` sections on six distinct pages — under **LibreOffice 26.2.4.2**. All three
+verdicts are in the record; these are the two that were rejected and why:
+
+* :data:`TOC_APPROACH_LIBREOFFICE_INDEX` — **`incorrect`.** The field was emitted exactly as
+  criterion 14.1 specifies, `TOC \\o "1-3" \\h \\z \\u` with no `separate` and therefore no
+  cached result, and `w:dirty="true"`. The conversion **did not resolve it**: the contents
+  page came back carrying its heading and nothing else, so the document named no page for any
+  of the six headings. Note which way that failed — not a stale cached number, which the
+  no-cached-result shape rules out, but no number at all. Cheap and silent, which is why it
+  was worth measuring first and why it could not be adopted on the assumption that it worked.
+* :data:`TOC_APPROACH_CONVERSION_MACRO` — **`unavailable`.** Addressing `updateIndexes()`
+  needs a Basic macro in the profile's `user/basic/Standard/Module1.xba`, and LibreOffice
+  warms that library **empty**. Installing the macro is a write into the profile the image
+  builds at build time, and installing it at run time needs a second `soffice` invocation
+  contending on that same single profile — criterion 14.3 rejects both. Recorded as
+  `unavailable` rather than `incorrect` on purpose: the mechanism was never exercised, so
+  nothing here says whether it would have produced right or wrong numbers.
+
+:data:`TOC_APPROACH_TWO_PASS` is `correct`: every one of the six headings is named on the page
+it landed on, across six distinct pages of the 13-page document (the contents section adds
+one). The fixed point holds — `named_pages` **is** pass 1's measurement and `observed_pages`
+is pass 2's pagination, so their equality is the fixed-point test rather than a separate
+check — and it held on three consecutive runs.
+
+**Adopting this one has a consequence outside this module**, and it is task 2.5's whole
+content: the two-pass approach performs **two** LibreOffice conversions, each bounded at
+300s, so `app/lib/runs/state.ts`'s `PHASE_DEADLINE_SECONDS.rendering` has to rise from 600 to
+900. A deadline that did not move would time out a rendering phase that is behaving
+correctly."""
 
 assert ADOPTED_APPROACH in TOC_APPROACHES

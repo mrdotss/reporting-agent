@@ -136,6 +136,11 @@ SNAPSHOT_PATH_MODULES = frozenset(
         # document — and the replay re-runs it, so a normalization here would make a
         # reproducible snapshot report a mismatch.
         "collect/dayfold.py",
+        # The one fact fold (Req 5.x). It produces the `value` strings that land in
+        # `resources[].facts[]`, inside the canonical form the `content_hash` is taken
+        # over — and a fact key is a snapshot field name, so normalizing either side
+        # would change the bytes hashed and change them identically on a replay.
+        "collect/factfold.py",
         # The ledger's canonical form and its digest (Req 17.x). A normalization here
         # would produce a different `ledger_sha256` for one render, which is the same
         # failure the snapshot rule exists to prevent one level up — and a

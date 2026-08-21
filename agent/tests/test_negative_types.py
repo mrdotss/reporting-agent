@@ -22,6 +22,7 @@ from __future__ import annotations
 import copy
 import gzip
 import io
+import json
 from typing import Any, Final
 
 from docx import Document as open_docx
@@ -41,6 +42,7 @@ from negatives import (
     set_cell_text,
 )
 from pipeline_harness import definition, df
+from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.errors import ErrorCode
 from reporting_agent.verify.findings import (
     FINDING_CHART_TABLE_MISSING,
@@ -504,7 +506,21 @@ def _mutate_one_archived_decimal(
     archive would be exercising the wrong branch.
     """
     assert objects, "the run archived nothing, so there is no response to mutate"
-    ordinal, body = objects[0]
+    # The **first metrics response**, not the first object: the inventory query projects the
+    # catalog's declared facts, so its Resource Graph page is archived too (Req 7.1) and
+    # sorts first by sequence. Picked by the object's declared `kind`, because a page of
+    # inventory carries no metric decimal to move and the loop below would find nothing.
+    index = next(
+        (
+            position
+            for position, (_, candidate) in enumerate(objects)
+            if archive_kind_of(json.loads(gzip.decompress(candidate)))
+            == ARCHIVE_KIND_METRICS
+        ),
+        None,
+    )
+    assert index is not None, "the run archived no metrics response to mutate"
+    ordinal, body = objects[index]
     text = gzip.decompress(body).decode("utf-8")
     for original, replacement in (("720.0", "999.0"), ("720", "999")):
         if original in text:
@@ -512,7 +528,9 @@ def _mutate_one_archived_decimal(
             break
     else:  # pragma: no cover - the fake's canned response always carries one
         raise AssertionError("no decimal string found in the first archived response")
-    return ((ordinal, gzip.compress(text.encode("utf-8"))), *objects[1:])
+    mutated = list(objects)
+    mutated[index] = (ordinal, gzip.compress(text.encode("utf-8")))
+    return tuple(mutated)
 
 
 def _save(document: Any) -> bytes:

@@ -1,11 +1,23 @@
 import { describe, expect, test } from "vitest"
 
+import { LANGUAGES as MESSAGE_LANGUAGES } from "@/lib/messages/language"
+import { BLOCK_TYPES } from "@/lib/templates/blocks"
 import {
   collectDefinitionIssues,
   looksLikeAzureIdentifier,
+  resolveSeparators,
   templateDefinitionForRunSchema,
   templateDefinitionSchema,
   validateMetricSelectionAgainstCatalog,
+  FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
+  FRONT_MATTER_KEYS,
+  IDENTITY_KEYS,
+  LANGUAGES,
+  MAX_SUPPORTED_SCHEMA_VERSION,
+  MIN_SCHEMA_VERSION,
+  NUMBER_FORMAT_KEYS,
+  REQUIRED_IDENTITY_KEYS,
+  REQUIRED_TOP_LEVEL_KEYS,
   type MetricCatalogSnapshot,
   type TemplateDefinition,
 } from "@/lib/templates/definition"
@@ -1657,5 +1669,481 @@ describe("validateMetricSelectionAgainstCatalog — the catalog-aware layer", ()
       },
     })
     expect(result.success).toBe(true)
+  })
+})
+
+// --- Requirements 13.1, 13.2, 13.10, 15.1, 16.1, 16.2, 16.3 -----------------
+//
+// `schema_version` 2, and the three things that raise the version: `front_matter`,
+// `identity.language`, and the two `number_format` separators.
+//
+// The organising claim under test is that the version-conditional facts are **declared as
+// data** and read once, not written as two validators. So most of these cases assert a
+// *v1* definition rejecting a v2 field, and the same field accepted at v2, over the same
+// fixture — a pair no single-version validator could satisfy, and a pair that a second
+// hand-written branch would eventually get one half of wrong.
+
+function validDefinitionV2(): Record<string, unknown> {
+  const base = validDefinition() as unknown as Record<string, unknown>
+  return {
+    ...base,
+    schema_version: 2,
+    identity: { ...(base.identity as object), language: "en" },
+    // Task 7.4 declares this section's own fields; at this version it only has to be present.
+    front_matter: {},
+  }
+}
+
+describe("Requirement 13.10 — schema_version 2 is supported and 3 is not", () => {
+  test("2 is accepted", () => {
+    expect(collectDefinitionIssues(validDefinitionV2())).toEqual([])
+  })
+
+  test.each([3, 4, 99])("%s is rejected", (value) => {
+    const issues = collectDefinitionIssues({
+      ...validDefinitionV2(),
+      schema_version: value,
+    })
+    expect(pathsOf(issues)).toContain("schema_version")
+  })
+
+  test("MIN stays 1, so every stored v1 definition still validates", () => {
+    expect(MIN_SCHEMA_VERSION).toBe(1)
+    expect(MAX_SUPPORTED_SCHEMA_VERSION).toBe(2)
+    expect(collectDefinitionIssues(validDefinition())).toEqual([])
+  })
+
+  test("a definition with an unusable version still reports its other defects", () => {
+    // `resolveSchemaVersion` falls back to the narrower key set rather than stopping the
+    // walk, so Requirement 2.7's "every failing field path in one pass" survives a broken
+    // version — and the broken version is itself still reported.
+    const issues = collectDefinitionIssues({
+      ...validDefinition(),
+      schema_version: "not a number",
+      design: { ...validDefinition().design, page_size: "Legal" },
+    })
+    const paths = pathsOf(issues)
+    expect(paths).toContain("schema_version")
+    expect(paths).toContain("design.page_size")
+  })
+})
+
+describe("Requirement 13.1 — front_matter is declared at v2 and undeclared at v1", () => {
+  test("a v1 definition carrying front_matter is rejected as an undeclared key", () => {
+    // No new rule: version 1's key list does not name it, and the existing strict check
+    // rejects anything the list omits.
+    const issues = collectDefinitionIssues({
+      ...validDefinition(),
+      front_matter: {},
+    })
+    expect(pathsOf(issues)).toContain("front_matter")
+    expect(
+      issues.some((issue) =>
+        issue.message.includes("Unrecognized top-level key")
+      )
+    ).toBe(true)
+  })
+
+  test("a v2 definition omitting front_matter is rejected as missing it", () => {
+    const definition = validDefinitionV2()
+    delete definition.front_matter
+
+    const issues = collectDefinitionIssues(definition)
+    expect(pathsOf(issues)).toContain("front_matter")
+    expect(
+      issues.some((issue) =>
+        issue.message.includes("Missing required top-level key")
+      )
+    ).toBe(true)
+  })
+
+  test("the two rejections are different messages, not one shared one", () => {
+    // "you may not have this" and "you must have this" are opposite instructions, and an
+    // author reading the wrong one deletes the field they were told to add.
+    const atV1 = collectDefinitionIssues({
+      ...validDefinition(),
+      front_matter: {},
+    }).filter((issue) => issue.path.join(".") === "front_matter")
+    const definition = validDefinitionV2()
+    delete definition.front_matter
+    const atV2 = collectDefinitionIssues(definition).filter(
+      (issue) => issue.path.join(".") === "front_matter"
+    )
+
+    expect(atV1[0]?.message).not.toEqual(atV2[0]?.message)
+  })
+})
+
+describe("Requirement 13.2 — the front matter owns the cover at v2", () => {
+  const coverBlock = {
+    id: "cover-1",
+    type: "cover",
+    config: { subtitle: "Monthly utilization review" },
+  }
+
+  test("a v2 definition placing a cover block in blocks is rejected by block id", () => {
+    const definition = validDefinitionV2()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      blocks: [coverBlock, ...(definition.blocks as unknown[])],
+    })
+
+    expect(pathsOf(issues)).toContain("blocks.0.type")
+    expect(
+      issues.some((issue) => issue.message.includes('Block "cover-1"'))
+    ).toBe(true)
+  })
+
+  test("a v1 definition placing a cover block in blocks is accepted", () => {
+    // Requirement 13.11 — every starter template carries one, and a stored v1 definition
+    // must keep compiling. This is the assertion that stops the rule above from being
+    // implemented by removing `cover` from BLOCK_TYPES.
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      blocks: [coverBlock, ...definition.blocks],
+    })
+
+    expect(issues).toEqual([])
+  })
+
+  test("cover is still a declared block type", () => {
+    expect(BLOCK_TYPES).toContain("cover")
+    expect(FRONT_MATTER_FORBIDDEN_BLOCK_TYPES).toEqual(["cover"])
+  })
+
+  test.each(["document_control", "toc"])(
+    "%s in blocks is rejected as an undeclared block type, not by the front-matter rule",
+    (type) => {
+      // These are not block types and never were, so there is nothing to forbid for them —
+      // the existing unknown-type check already refuses them, at both versions.
+      const definition = validDefinitionV2()
+      const issues = collectDefinitionIssues({
+        ...definition,
+        blocks: [{ id: "fm-1", type, config: {} }],
+      })
+
+      expect(
+        issues.some((issue) =>
+          issue.message.includes("is not a declared block type")
+        )
+      ).toBe(true)
+      expect(
+        FRONT_MATTER_FORBIDDEN_BLOCK_TYPES as readonly string[]
+      ).not.toContain(type)
+    }
+  )
+
+  test("a cover nested inside a row is caught at v2 too", () => {
+    // The walk recurses, and the state carries the version, so depth changes nothing.
+    const definition = validDefinitionV2()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      blocks: [
+        {
+          id: "row-1",
+          type: "row",
+          columns: [[coverBlock], []],
+        },
+      ],
+    })
+
+    expect(pathsOf(issues)).toContain("blocks.0.columns.0.0.type")
+  })
+})
+
+describe("Requirement 15.1 — identity.language", () => {
+  test("required at v2", () => {
+    const definition = validDefinitionV2()
+    delete (definition.identity as Record<string, unknown>).language
+
+    const issues = collectDefinitionIssues(definition)
+    expect(pathsOf(issues)).toContain("identity.language")
+  })
+
+  test("undeclared at v1, so a v1 definition carrying it is rejected", () => {
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      identity: { ...definition.identity, language: "en" },
+    })
+
+    expect(pathsOf(issues)).toContain("identity.language")
+    expect(
+      issues.some((issue) =>
+        issue.message.includes("Unrecognized identity field")
+      )
+    ).toBe(true)
+  })
+
+  test.each(["en", "id"])("%s is accepted at v2", (language) => {
+    const definition = validDefinitionV2()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      identity: { ...(definition.identity as object), language },
+    })
+    expect(issues).toEqual([])
+  })
+
+  test.each(["EN", "En", "ID", "eng", "fr", "", " en", 1, null, true])(
+    "%s is rejected at v2",
+    (language) => {
+      // Case-sensitive on purpose: the value keys a message catalog whose ids are lowercase
+      // ASCII by pattern, so `EN` would pin a language the resolver cannot find.
+      const definition = validDefinitionV2()
+      const issues = collectDefinitionIssues({
+        ...definition,
+        identity: { ...(definition.identity as object), language },
+      })
+      expect(pathsOf(issues)).toContain("identity.language")
+    }
+  )
+
+  test("the declared languages agree with the message catalog's", () => {
+    // Two sentinel blocks mirror two different Python declarations, so nothing ties them to
+    // each other; without this they could drift and a template would pin a language the
+    // catalog has no column for.
+    expect([...LANGUAGES]).toEqual([...MESSAGE_LANGUAGES])
+  })
+})
+
+describe("Requirement 16.1 — number_format permits two keys at v1 and four at v2", () => {
+  test.each(["decimal_separator", "grouping_separator"])(
+    "%s is rejected at v1",
+    (key) => {
+      const definition = validDefinition()
+      const issues = collectDefinitionIssues({
+        ...definition,
+        design: {
+          ...definition.design,
+          number_format: { ...definition.design.number_format, [key]: "." },
+        },
+      })
+      expect(pathsOf(issues)).toContain(`design.number_format.${key}`)
+    }
+  )
+
+  test("both are accepted at v2", () => {
+    const definition = validDefinitionV2()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      design: {
+        ...(definition.design as object),
+        number_format: {
+          decimal_places: 2,
+          group_thousands: true,
+          decimal_separator: ",",
+          grouping_separator: ".",
+        },
+      },
+    })
+    expect(issues).toEqual([])
+  })
+
+  test("an undeclared separator at v2 is not an error — it resolves from the language", () => {
+    const definition = validDefinitionV2()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      design: {
+        ...(definition.design as object),
+        number_format: { decimal_places: 2, group_thousands: true },
+      },
+    })
+    expect(issues).toEqual([])
+  })
+})
+
+describe("Requirement 16.2 — the separator constraints, on the resolved pair", () => {
+  function withSeparators(
+    separators: Record<string, unknown>,
+    language = "en"
+  ): ReturnType<typeof collectDefinitionIssues> {
+    const definition = validDefinitionV2()
+    return collectDefinitionIssues({
+      ...definition,
+      identity: { ...(definition.identity as object), language },
+      design: {
+        ...(definition.design as object),
+        number_format: {
+          decimal_places: 2,
+          group_thousands: true,
+          ...separators,
+        },
+      },
+    })
+  }
+
+  test.each([
+    ["a digit", "5"],
+    ["a minus sign", "-"],
+    ["an ASCII space", " "],
+    ["a no-break space", "\u00a0"],
+    ["a thin space", "\u2009"],
+    ["a file separator", "\x1c"],
+    ["a unit separator", "\x1f"],
+    ["a next-line character", "\x85"],
+    ["two characters", "'."],
+    ["an empty string", ""],
+  ])("a decimal separator that is %s is rejected", (_why, separator) => {
+    expect(pathsOf(withSeparators({ decimal_separator: separator }))).toContain(
+      "design.number_format.decimal_separator"
+    )
+  })
+
+  test.each([
+    ["a digit", "0"],
+    ["whitespace", "\u2009"],
+    ["two characters", ".."],
+  ])("a grouping separator that is %s is rejected", (_why, separator) => {
+    expect(
+      pathsOf(withSeparators({ grouping_separator: separator }))
+    ).toContain("design.number_format.grouping_separator")
+  })
+
+  test.each(["'", "\u00b7", "\u066b", "٫"])(
+    "%s is accepted — the rule is about ambiguity, not about being unusual",
+    (separator) => {
+      expect(withSeparators({ decimal_separator: separator })).toEqual([])
+    }
+  )
+
+  test("the two separators may not be equal", () => {
+    const issues = withSeparators({
+      decimal_separator: ".",
+      grouping_separator: ".",
+    })
+    expect(pathsOf(issues)).toContain("design.number_format.decimal_separator")
+    expect(
+      issues.some((issue) =>
+        issue.message.includes("could not tell one from the other")
+      )
+    ).toBe(true)
+  })
+
+  test("a collision that only appears AFTER the language default is applied is rejected", () => {
+    // The load-bearing case for "resolved, not declared", and the one a validator checking
+    // the declared pair would miss entirely: `id` defaults grouping to `.`, so declaring
+    // only `decimal_separator: "."` produces a document in which both separators are `.` —
+    // and the definition itself carries no visible collision to notice.
+    const issues = withSeparators({ decimal_separator: "." }, "id")
+
+    expect(pathsOf(issues)).toContain("design.number_format.decimal_separator")
+  })
+
+  test("the mirrored pair for the same language is accepted", () => {
+    // Guard the guard: the collision above must come from the defaulting, not from `id`
+    // rejecting a declared decimal separator in general.
+    expect(withSeparators({ decimal_separator: "," }, "id")).toEqual([])
+    expect(withSeparators({ decimal_separator: "." }, "en")).toEqual([])
+  })
+
+  test("a v1 definition is unaffected by any of this", () => {
+    // v1 declares no separators and resolves to `en`'s legal pair, so no stored definition
+    // gains a failure. This is Requirement 16.10 as an assertion.
+    expect(collectDefinitionIssues(validDefinition())).toEqual([])
+  })
+})
+
+describe("Requirement 16.3 — the language-derived defaults", () => {
+  test.each([
+    ["en", ".", ","],
+    ["id", ",", "."],
+  ])("%s resolves to %s and %s", (language, decimal, grouping) => {
+    expect(resolveSeparators(undefined, language as "en" | "id")).toEqual({
+      decimal_separator: decimal,
+      grouping_separator: grouping,
+    })
+  })
+
+  test("no language resolves to en's pair, which is what v1 has always rendered with", () => {
+    expect(resolveSeparators({ decimal_places: 2 }, null)).toEqual({
+      decimal_separator: ".",
+      grouping_separator: ",",
+    })
+  })
+
+  test("a declared value is returned unchanged and no default is applied to it", () => {
+    // Requirement 16.3's own words. "Absent" and "equal to the default" have to stay two
+    // different stored definitions, or migrating one rewrites a row.
+    expect(resolveSeparators({ decimal_separator: "'" }, "id")).toEqual({
+      decimal_separator: "'",
+      grouping_separator: ".",
+    })
+  })
+
+  test("resolving reads the definition and writes nothing back", () => {
+    const numberFormat = { decimal_places: 2, group_thousands: true }
+    const before = JSON.stringify(numberFormat)
+
+    resolveSeparators(numberFormat, "id")
+
+    expect(JSON.stringify(numberFormat)).toEqual(before)
+  })
+
+  test("validation applies no default to the definition it validated", () => {
+    const definition = validDefinitionV2()
+    const before = JSON.stringify(definition)
+
+    collectDefinitionIssues(definition)
+
+    expect(JSON.stringify(definition)).toEqual(before)
+  })
+})
+
+describe("the version tables are declared as data, once", () => {
+  test("every table names exactly the two supported versions", () => {
+    for (const table of [
+      REQUIRED_TOP_LEVEL_KEYS,
+      NUMBER_FORMAT_KEYS,
+      IDENTITY_KEYS,
+      REQUIRED_IDENTITY_KEYS,
+    ]) {
+      expect(Object.keys(table).map(Number).sort()).toEqual([
+        MIN_SCHEMA_VERSION,
+        MAX_SUPPORTED_SCHEMA_VERSION,
+      ])
+    }
+  })
+
+  test("each version-2 set is a superset of its version-1 set", () => {
+    // What "the version raises" means, structurally: v2 adds keys and removes none, which is
+    // why a stored v1 definition remains valid at v1 and the migration is additive.
+    for (const table of [
+      REQUIRED_TOP_LEVEL_KEYS,
+      NUMBER_FORMAT_KEYS,
+      IDENTITY_KEYS,
+      REQUIRED_IDENTITY_KEYS,
+    ] as const) {
+      expect(new Set(table[2])).toEqual(
+        new Set([...table[1], ...table[2]].filter(Boolean))
+      )
+      expect(table[2].length).toBeGreaterThanOrEqual(table[1].length)
+    }
+  })
+
+  test("exactly the three declared things raise the version", () => {
+    const added = (table: {
+      readonly 1: readonly string[]
+      readonly 2: readonly string[]
+    }): string[] => table[2].filter((key) => !table[1].includes(key))
+
+    expect(added(REQUIRED_TOP_LEVEL_KEYS)).toEqual(["front_matter"])
+    expect(added(IDENTITY_KEYS)).toEqual(["language"])
+    expect(added(NUMBER_FORMAT_KEYS)).toEqual([
+      "decimal_separator",
+      "grouping_separator",
+    ])
+  })
+
+  test("every required key is also an allowed key", () => {
+    for (const version of [1, 2] as const) {
+      for (const key of REQUIRED_IDENTITY_KEYS[version]) {
+        expect(IDENTITY_KEYS[version] as readonly string[]).toContain(key)
+      }
+    }
+  })
+
+  test("the front matter's three sections are declared", () => {
+    expect([...FRONT_MATTER_KEYS]).toEqual(["cover", "document_control", "toc"])
   })
 })

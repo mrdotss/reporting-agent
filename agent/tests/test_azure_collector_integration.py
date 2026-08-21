@@ -77,6 +77,7 @@ from reporting_agent.azure.provider import (
     provider_over_ports,
 )
 from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_DUPLICATE_INVENTORY_ROW,
@@ -715,8 +716,17 @@ def test_a_response_too_large_halves_to_one_resource_and_then_splits_by_metric()
         assert collected["statistics"][rid][CPU]["avg"]["value"] == "12.00"
         assert MEMORY in collected["statistics"][rid]
 
-    # Req 26.10 — only the three accepted responses were archived; neither rejection was.
-    assert collected["raw_archive"] == {"complete": True, "object_count": 3}
+    # Req 26.10 — only the three *accepted* batch responses were archived; neither of the
+    # two rejections was. The fourth object is the one Resource Graph page, archived
+    # because the inventory query projects facts (Req 7.1) — written as a sum so the
+    # claim being made stays "3 of the 5 batch requests, plus the inventory page" rather
+    # than a bare 4 that any accounting could satisfy.
+    accepted_batch_responses = 3
+    inventory_pages = 1
+    assert collected["raw_archive"] == {
+        "complete": True,
+        "object_count": accepted_batch_responses + inventory_pages,
+    }
 
 
 def test_a_single_metric_request_that_still_rejects_records_the_gap_and_no_value() -> None:
@@ -740,7 +750,10 @@ def test_a_single_metric_request_that_still_rejects_records_the_gap_and_no_value
     too_large = of_type(collected["gaps"], GAP_TYPE_RESPONSE_TOO_LARGE)
     assert [(gap["resource_id"], gap["metric"]) for gap in too_large] == [(WEB_01, CPU)]
     assert collected["statistics"] == {}
-    assert collected["raw_archive"] == {"complete": True, "object_count": 0}
+    # No batch response was ever accepted, so the only archived object is the one Resource
+    # Graph page — the inventory query projects the catalog's facts, so its page is a
+    # fact-bearing response and is archived as it arrives (Req 7.1).
+    assert collected["raw_archive"] == {"complete": True, "object_count": 1}
 
 
 @pytest.mark.parametrize(
@@ -778,8 +791,14 @@ def test_a_429_retry_after_is_honoured_in_both_recorded_forms_and_the_retry_fold
     assert collector.waits == [expected_wait]
     assert len(collector.metrics_port.batch_calls) == 2
     assert collected["statistics"][WEB_01][CPU]["avg"]["value"] == "12.00"
-    # The rejected 429 was not archived; the accepted retry was (Req 26.10).
-    assert collected["raw_archive"] == {"complete": True, "object_count": 1}
+    # The rejected 429 was not archived; the accepted retry was (Req 26.10). Plus the one
+    # Resource Graph page, archived because the inventory query projects facts (Req 7.1).
+    accepted_retries = 1
+    inventory_pages = 1
+    assert collected["raw_archive"] == {
+        "complete": True,
+        "object_count": accepted_retries + inventory_pages,
+    }
 
 
 # =========================================================================== #
@@ -1074,16 +1093,29 @@ def test_a_dns_failure_routes_to_the_per_resource_fallback_and_archives_its_resp
     # Req 24.8, 26.3, 26.8 — one gzip archive object per fallback response, in the fold
     # pass, under the run's own prefix.
     keys = collector.store.keys()
-    assert len(keys) == 2
-    assert collected["raw_archive"] == {"complete": True, "object_count": 2}
+    fallback_responses = 2
+    inventory_pages = 1
+    assert len(keys) == fallback_responses + inventory_pages
+    assert collected["raw_archive"] == {
+        "complete": True,
+        "object_count": fallback_responses + inventory_pages,
+    }
     for key in keys:
         assert key.startswith(f"{ACTOR_ID}/snapshots/{RUN_ID}/raw/")
         assert key.endswith(".json.gz")
 
-    archived = [
+    everything = [
         json.loads(gzip.decompress(collector.store.get(key).body))  # type: ignore[union-attr]
         for key in keys
     ]
+    # Narrowed by the object's **declared kind**, not by which keys happen to sort first:
+    # the inventory page is archived alongside these and carries a different body shape.
+    archived = [
+        document
+        for document in everything
+        if archive_kind_of(document) == ARCHIVE_KIND_METRICS
+    ]
+    assert len(archived) == fallback_responses
     assert [document["resource_ids"] for document in archived] == [[WEB_01], [WEB_02]]
     for document in archived:
         assert document["grouping_key"]["location"] == UNREACHABLE_LOCATION

@@ -33,6 +33,7 @@ __all__ = [
     "CollectRequest",
     "CollectResult",
     "DiscoverResult",
+    "FactRecord",
     "GapRecord",
     "GuestCounterOutcome",
     "GuestCounterProvider",
@@ -182,6 +183,44 @@ class GapRecord(TypedDict):
     message: str
     interval_start: str | None
     source: str | None
+
+
+class FactRecord(TypedDict):
+    """One collected fact about one resource (Req 4.2, 4.11, 5.5).
+
+    A fact answers *what is this resource* — its OS, its SKU, its backup status — where a
+    statistic answers *how much did it do*. They cross the boundary as two different records
+    rather than one, because almost nothing about them is shared: a fact has no window, no
+    estimator, no sample count and no aggregation, and a statistic has no `value_kind`.
+
+    `value` is **always a `str`**, including for a `numeric` fact, and that is the same rule
+    Req 30 applies to every metric value for the same reason: a JSON number is serialized
+    through `float.__repr__`, and a snapshot that hashes differently on two machines is not
+    immutable in any useful sense. A numeric fact's string is a fixed-precision decimal —
+    `collect/factfold.py` produces it through `collect/numeric.decimal_leaf` and formats it in
+    plain notation, so `1E+2` cannot reach a snapshot as a value the grammar rejects.
+
+    `value_kind` comes from the **declaration**, never from the characters of the value
+    (Req 4.11). The requirement states the reason and it is worth restating at the record: a
+    router reading the characters formats a Windows version — `2022` — with a grouping
+    separator, and refuses `10.0.0.4` as unparseable when it is an address.
+
+    `source` is one of the four `catalog/loader.py` declares, recorded from the request that
+    produced the fact rather than derived from its key. `collected_at` is the response's own
+    receipt instant, supplied by the caller's clock and passed through verbatim — this record
+    reads no clock, exactly as `GapRecord.interval_start` reparses no timestamp.
+
+    `unit` is present for a `numeric` fact and `None` for a `text` one; there is no unit for
+    `Succeeded`.
+    """
+
+    resource_id: str
+    key: str
+    value: str
+    value_kind: str
+    source: str
+    collected_at: str
+    unit: str | None
 
 
 type StatValue = dict[str, PlainData]

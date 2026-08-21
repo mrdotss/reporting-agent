@@ -1,0 +1,291 @@
+{
+  "resource_types": {
+    "Microsoft.Compute/virtualMachines": {
+      "facts": [
+        {
+          "key": "os_type",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.osType), tostring(properties.storageProfile.osDisk.osType))"
+        },
+        {
+          "key": "provisioning_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.provisioningState)"
+        },
+        {
+          "key": "vm_size",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.hardwareProfile.vmSize)"
+        },
+        {
+          "key": "data_disk_count",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(array_length(properties.storageProfile.dataDisks))",
+          "unit": "count"
+        },
+        {
+          "key": "last_backup_status",
+          "value_kind": "text",
+          "source": "recovery_services",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "last_restore_point",
+          "value_kind": "text",
+          "source": "recovery_services",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "replication_health",
+          "value_kind": "text",
+          "source": "recovery_services",
+          "projectable": false,
+          "absent_gap_type": "replication_not_enabled"
+        },
+        {
+          "key": "reservation_term",
+          "value_kind": "text",
+          "source": "capacity",
+          "projectable": false,
+          "absent_gap_type": "no_reservations"
+        },
+        {
+          "key": "reservation_expires_at",
+          "value_kind": "text",
+          "source": "capacity",
+          "projectable": false,
+          "absent_gap_type": "no_reservations"
+        }
+      ]
+    },
+    "Microsoft.Storage/storageAccounts": {
+      "facts": [
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "kind",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(kind)"
+        },
+        {
+          "key": "access_tier",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.accessTier)"
+        },
+        {
+          "key": "https_only",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.httpsOnly), tostring(properties.supportsHttpsTrafficOnly))"
+        },
+        {
+          "key": "provisioning_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.provisioningState)"
+        }
+      ]
+    },
+    "Microsoft.Compute/disks": {
+      "facts": [
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "disk_size_gb",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.diskSizeGB)",
+          "unit": "count"
+        },
+        {
+          "key": "disk_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.diskState)"
+        },
+        {
+          "key": "os_type",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.osType), tostring(properties.storageProfile.osDisk.osType))"
+        }
+      ]
+    },
+    "Microsoft.Web/sites": {
+      "facts": [
+        {
+          "key": "kind",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(kind)"
+        },
+        {
+          "key": "state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.state)"
+        },
+        {
+          "key": "https_only",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.httpsOnly), tostring(properties.supportsHttpsTrafficOnly))"
+        },
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        }
+      ]
+    },
+    "Microsoft.Sql/servers/databases": {
+      "facts": [
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "tier",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(sku.tier)"
+        },
+        {
+          "key": "max_size_bytes",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.maxSizeBytes)",
+          "unit": "bytes"
+        },
+        {
+          "key": "zone_redundant",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.zoneRedundant)"
+        },
+        {
+          "key": "last_backup_status",
+          "value_kind": "text",
+          "source": "recovery_services",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        }
+      ]
+    },
+    "Microsoft.Sql/managedInstances": {
+      "facts": [
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "license_type",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.licenseType)"
+        },
+        {
+          "key": "storage_size_gb",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.storage.storageSizeGB), tostring(properties.storageSizeInGB))",
+          "unit": "count"
+        },
+        {
+          "key": "vcores",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.vCores)",
+          "unit": "count"
+        }
+      ]
+    },
+    "Microsoft.DBforPostgreSQL/flexibleServers": {
+      "facts": [
+        {
+          "key": "version",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.version)"
+        },
+        {
+          "key": "tier",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(sku.tier)"
+        },
+        {
+          "key": "sku_name",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "storage_size_gb",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(properties.storage.storageSizeGB), tostring(properties.storageSizeInGB))",
+          "unit": "count"
+        },
+        {
+          "key": "backup_retention_days",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.backup.backupRetentionDays)",
+          "unit": "days"
+        }
+      ]
+    }
+  }
+}

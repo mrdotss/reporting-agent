@@ -110,6 +110,9 @@ SKIPPING_MARKS = frozenset({"skip", "skipif", "xfail"})
 # direction, so the map cannot silently fall behind the tree.
 MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     "test_accumulate_property.py": 11,
+    # The four Req 2.7 near-miss spellings the design declares, each asserting rejection,
+    # plus the missing-fixture case of Req 2.4.
+    "test_catalog_evidence_property.py": 4,
     "test_buckets_property.py": 10,
     "test_metrics_property.py": 9,
     "test_redaction_property.py": 26,
@@ -417,6 +420,128 @@ def test_no_property_module_is_skipped_wholesale() -> None:
     assert not offenders, (
         "a module-level pytestmark skips every property in the file, invisibly from any "
         "one property's decorators:\n  " + "\n  ".join(offenders)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Req 14.2 — the TOC proof may not be skipped either, and it is not a property
+# --------------------------------------------------------------------------- #
+#
+# Everything above sweeps `tests/property/`. This one rule reaches outside it, at a module
+# named explicitly, because criterion 14.2 makes the same demand of a test that is not a
+# property: *"SHALL fail IF that test is absent, is skipped or is marked as an expected
+# failure."*
+#
+# Named rather than swept, and the narrowness is the point. A rule banning `skipif` across
+# the whole suite would be wrong — `tests/test_pdf.py` and several others legitimately skip
+# on a missing binary, and `test_toc_harness.py` skips its LibreOffice cases the same way.
+# What criterion 14.2 says is that **this** test does not get that latitude: a green suite on
+# a machine with no converter has not proven that a page number in a delivered document is
+# true, which is the one claim the whole table-of-contents evaluation exists to establish.
+#
+# So the module carries the cost instead: it asserts `soffice` is present rather than
+# skipping. This rule is what stops that from being quietly relaxed into a skip later.
+
+UNSKIPPABLE_MODULES: tuple[str, ...] = ("test_toc_proof.py",)
+"""Modules outside `tests/property/` that criterion 14.2 forbids skipping.
+
+A tuple with one member today. It is a declared list rather than a scan because the property
+being asserted is *"this specific test always runs"*, and only a requirement can say which
+tests those are — inferring it from the tree would make the rule a description of whatever
+happens to be there."""
+
+
+def _named_module_paths() -> list[Path]:
+    return [AGENT_ROOT / "tests" / name for name in UNSKIPPABLE_MODULES]
+
+
+def _named_module_skip_offenders(modules: list[Path]) -> list[str]:
+    """Every skip route in `modules`: a decorator on any test, a module-level `pytestmark`,
+    or a `pytest.skip` / `pytest.xfail` call in a body.
+
+    Reuses the same three detectors the property rules use rather than a fourth scan, so a
+    skip spelling that fools this rule would have to fool those too.
+    """
+    offenders = list(_module_level_skip_offenders(modules))
+
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                for decorator in node.decorator_list:
+                    name = _decorator_name(decorator)
+                    if name in SKIPPING_MARKS and _is_pytest_mark(decorator):
+                        offenders.append(
+                            f"{_label(path)}:{node.lineno} {node.name} @{name}"
+                        )
+            elif isinstance(node, ast.Call):
+                target = node.func
+                if (
+                    isinstance(target, ast.Attribute)
+                    and target.attr in {"skip", "xfail"}
+                    and isinstance(target.value, ast.Name)
+                    and target.value.id == "pytest"
+                ):
+                    offenders.append(
+                        f"{_label(path)}:{node.lineno} pytest.{target.attr}(...)"
+                    )
+    return offenders
+
+
+def test_the_unskippable_modules_exist_and_hold_tests() -> None:
+    """A rule over an absent module is a rule that passes by scanning nothing — and criterion
+    14.2 names *absence* as one of the three failures, so this is the requirement's own first
+    clause rather than only a guard-the-guard."""
+    for path in _named_module_paths():
+        assert path.is_file(), (
+            f"{path.name} is declared unskippable and does not exist; criterion 14.2 fails "
+            f"the suite if the proof test is absent"
+        )
+        tree = _parse(path)
+        tests = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test_")
+        ]
+        assert tests, f"{path.name} declares no test function"
+
+
+def test_no_unskippable_module_is_skipped_or_expected_to_fail() -> None:
+    offenders = _named_module_skip_offenders(_named_module_paths())
+    assert not offenders, (
+        "criterion 14.2 fails the suite if the table-of-contents proof is skipped or marked "
+        "as an expected failure; a page number nothing proved is a claim this product does "
+        "not make:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_no_unskippable_module_declares_a_bare_pass_body() -> None:
+    """The third route to a test that proves nothing, and the quietest: a body that is only
+    `pass`, or only a docstring, reports green having asserted nothing at all."""
+    offenders: list[str] = []
+    for path in _named_module_paths():
+        for node in ast.walk(_parse(path)):
+            if not (
+                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.name.startswith("test_")
+            ):
+                continue
+            body = [
+                statement
+                for statement in node.body
+                if not (
+                    isinstance(statement, ast.Expr)
+                    and isinstance(statement.value, ast.Constant)
+                    and isinstance(statement.value.value, str)
+                )
+            ]
+            if not body or all(isinstance(statement, ast.Pass) for statement in body):
+                offenders.append(f"{_label(path)}:{node.lineno} {node.name}")
+
+    assert not offenders, (
+        "these tests in an unskippable module have empty bodies, which is a skip spelled "
+        "without a marker:\n  " + "\n  ".join(offenders)
     )
 
 

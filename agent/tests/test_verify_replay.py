@@ -37,6 +37,7 @@ from fixtures import load_response
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_ports
 from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.collect.buckets import day_buckets, resolve_window
 from reporting_agent.collect.pipeline import sku_from_plain, statistic_from_plain
 from reporting_agent.collect.snapshot import (
@@ -371,13 +372,31 @@ def test_a_real_collection_replays_to_an_identical_digest(collection) -> None:
     assert result.outcome["objects_folded"] == len(collection.archived()) > 0
 
 
+def metrics_objects(archived: list[tuple[int, bytes]]) -> list[tuple[int, int, bytes]]:
+    """`(index, ordinal, payload)` for every **metrics-kind** archived object.
+
+    The archive holds two kinds now — the inventory query projects the catalog's facts, so
+    its Resource Graph page is archived too (Req 7.1) — and only the metrics ones carry a
+    `values` body to reach into. Narrowed by the object's **declared kind** rather than by
+    position, because position is exactly what changed when the second kind arrived.
+    """
+    found: list[tuple[int, int, bytes]] = []
+    for index, (ordinal, payload) in enumerate(archived):
+        document = json.loads(gzip.decompress(payload))
+        if archive_kind_of(document) == ARCHIVE_KIND_METRICS:
+            found.append((index, ordinal, payload))
+    return found
+
+
 def test_the_archive_is_non_empty_so_the_replay_folded_something(collection) -> None:
     """Guard the guard. A replay over an empty archive would agree with any snapshot whose
     resources produced no statistic, and Property 4.1 would pass vacuously."""
     archived = collection.archived()
+    metrics = metrics_objects(archived)
 
     assert archived
-    for _, payload in archived:
+    assert metrics, "the archive holds no metrics response for the replay to fold"
+    for _, _, payload in metrics:
         document = json.loads(gzip.decompress(payload))
         assert document["raw_response"]["values"]
         assert document["metric_names"]
@@ -410,6 +429,22 @@ def mutate(payload: bytes, mutation) -> bytes:
     return gzip.compress(json.dumps(document).encode("utf-8"))
 
 
+def with_first_metrics_mutated(
+    archived: list[tuple[int, bytes]], mutation
+) -> list[tuple[int, bytes]]:
+    """`archived`, with `mutation` applied to its first metrics-kind object and every
+    other object — the inventory page included — supplied unchanged.
+
+    Whole-archive rather than `[mutated, *archived[1:]]`: the mutated object has to go back
+    at **its own** index, or the ordinals stop matching the sequence the archive named and
+    the replay would refuse for that reason instead of the digest mismatch under test.
+    """
+    index, ordinal, payload = metrics_objects(archived)[0]
+    rebuilt = list(archived)
+    rebuilt[index] = (ordinal, mutate(payload, mutation))
+    return rebuilt
+
+
 def test_altering_one_decimal_string_in_one_archived_object_changes_the_digest(
     collection,
 ) -> None:
@@ -419,14 +454,13 @@ def test_altering_one_decimal_string_in_one_archived_object_changes_the_digest(
     possibly pass this: the mutation cannot change a digest that was never recomputed.
     """
     archived = collection.archived()
-    ordinal, payload = archived[0]
 
     def bump(document):
         document["raw_response"]["values"][0]["value"][0]["timeseries"][0]["data"][0][
             "total"
         ] = 999999.0
 
-    result = replay([(ordinal, mutate(payload, bump)), *archived[1:]], plan=collection.plan())
+    result = replay(with_first_metrics_mutated(archived, bump), plan=collection.plan())
 
     assert result.outcome["possible"] is True
     assert result.outcome["recomputed_sha256"] != collection.document["snapshot_id"]
@@ -443,7 +477,6 @@ def test_making_one_interval_malformed_changes_the_digest_through_the_gap_list(
     instead of recomputing them would report an identical digest here — the statistics
     barely move, and the whole signal is the new `interval_counts_missing` entry."""
     archived = collection.archived()
-    ordinal, payload = archived[0]
 
     def drop_count(document):
         del document["raw_response"]["values"][0]["value"][0]["timeseries"][0]["data"][0][
@@ -451,7 +484,7 @@ def test_making_one_interval_malformed_changes_the_digest_through_the_gap_list(
         ]
 
     result = replay(
-        [(ordinal, mutate(payload, drop_count)), *archived[1:]], plan=collection.plan()
+        with_first_metrics_mutated(archived, drop_count), plan=collection.plan()
     )
 
     assert result.outcome["recomputed_sha256"] != collection.document["snapshot_id"]

@@ -102,6 +102,7 @@ UNIT_PRESENTATION: Final[tuple[tuple[str, str], ...]] = (
     ("bytes", " bytes"),
     ("count_per_second", "/s"),
     ("count", ""),
+    ("days", " days"),
 )
 """How each declared unit reads immediately after its digits.
 
@@ -113,6 +114,18 @@ withheld for a correct number.
 
 `count` presents as nothing at all — a vCPU count reads as `2`, not `2 count`. Declared
 explicitly rather than defaulted, so the absence is a decision on the record.
+
+`count` and `days` are here for the **facts** half of the catalog, whose declared units are
+not the metric ones (`catalog/loader.py`'s `DECLARED_FACT_UNITS`): a fact is never sketched,
+so it has no `count_per_second`, and a metric is never a duration in days.
+
+**`days` does not agree in number, deliberately.** A retention of one day reads `1 days`,
+the same way one byte already reads `1 bytes` above. Both are the consequence of the rule
+that makes the ledger checkable: this module is the *only* place a figure becomes a string
+(Req 18.6), the verifier matches that string by exact equality, and a pluralization branch
+would be a second formatting decision — one that would also have to be right in Indonesian,
+which does not pluralize at all. A grammatically tidy figure the verifier cannot match is
+worse than an ungrammatical one it can.
 
 A `tuple` of pairs rather than a `dict`: scanned in a declared order, and nothing on this
 path iterates a hash-ordered container."""

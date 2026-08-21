@@ -406,6 +406,25 @@ def snapshot_of(harness: Harness) -> dict[str, Any]:
     return asyncio.run(harness.store.get_json(snapshot_key(ACTOR_ID, RUN_ID)))
 
 
+def assert_no_snapshot_written(harness: Harness, why: str = "") -> None:
+    """No snapshot object exists, and nothing but raw archive objects does.
+
+    Two assertions rather than `store.keys() == ()`, because a gate that fires *after*
+    inventory legitimately leaves the archive behind: the inventory query now projects the
+    catalog's facts, so its Resource Graph page is a fact-bearing response and gets archived
+    as it arrives (Req 7.1) — before the run reaches the gate that ends it. Those objects are
+    orphaned evidence of a collection that happened, which is honest; a **snapshot** for a run
+    that failed a gate would not be.
+
+    The second assertion is what keeps this as strong as the equality it replaces: only
+    `/raw/` keys may appear, so a stray write of any other kind still fails here.
+    """
+    keys = harness.store.keys()
+    assert snapshot_key(ACTOR_ID, RUN_ID) not in keys, why or "no snapshot was written"
+    unexpected = [key for key in keys if "/raw/" not in key]
+    assert unexpected == [], f"{why}: unexpected non-archive objects {unexpected}"
+
+
 def statistics_of(snapshot: dict[str, Any], resource_id_: str) -> list[dict[str, Any]]:
     for resource in snapshot["resources"]:
         if resource["resource_id"] == resource_id_:
@@ -617,7 +636,7 @@ def test_resources_with_no_statistic_at_all_are_terminal_no_statistics() -> None
 
     assert caught.value.code is ErrorCode.NO_STATISTICS
     assert caught.value.terminal is True
-    assert harness.store.keys() == ()
+    assert_no_snapshot_written(harness, "no snapshot for a run that measured nothing")
 
 
 def test_distinct_resource_ids_counts_ids_not_rows() -> None:
@@ -678,7 +697,7 @@ def test_a_dns_failure_and_a_failed_fallback_fails_the_only_location_terminally(
         harness.run()
 
     assert caught.value.terminal is True
-    assert harness.store.keys() == (), "no snapshot for a run that reached no location"
+    assert_no_snapshot_written(harness, "no snapshot for a run that reached no location")
 
 
 # --------------------------------------------------------------------------- #
@@ -1290,7 +1309,15 @@ def test_the_snapshot_records_the_requested_scope_and_the_producer() -> None:
     assert document["requested_scope"]["metrics_by_resource_type"] == {
         RESOURCE_TYPE: sorted(DECLARED_METRICS)
     }
-    assert document["raw_archive"]["object_count"] == 1
+    # One metrics batch response plus the one Resource Graph page — the inventory query
+    # projects the catalog's facts, so its page is a fact-bearing response and is archived
+    # as it arrives (Req 7.1). Summed rather than written as a bare 2, so the claim stays
+    # "one of each" rather than a total that several accountings would satisfy.
+    batch_responses = 1
+    inventory_pages = 1
+    assert (
+        document["raw_archive"]["object_count"] == batch_responses + inventory_pages
+    )
     assert document["raw_archive"]["complete"] is True
 
 
@@ -1467,7 +1494,7 @@ def test_the_empty_scope_gate_fires_whatever_the_cause_and_emits_no_snapshot_rea
     assert "snapshot_ready" not in types_of(events)
     assert harness.metrics_port.batch_calls == []
     assert harness.metrics_port.fallback_calls == []
-    assert harness.store.keys() == ()
+    assert_no_snapshot_written(harness, cause)
     # The inventory step opened and closed before the gate fired, and carried no
     # `progress`: a step with nothing to count emits none rather than a `0 / 0` bar
     # (Req 14.7, 14.8, 14.14). The metrics step never opened at all.
@@ -1566,7 +1593,7 @@ def test_every_location_unreachable_is_reported_ahead_of_the_no_statistics_gate(
         "the no-statistics gate would also have fired; the escalation runs first"
     )
     assert "snapshot_ready" not in types_of(events)
-    assert harness.store.keys() == ()
+    assert_no_snapshot_written(harness)
 
 
 # --- PARTIAL_COVERAGE and the gap count (Req 29.5, 29.9) ----------------------------

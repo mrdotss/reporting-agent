@@ -645,9 +645,30 @@ def test_discover_scopes_the_query_to_the_subscription_and_resource_types() -> N
             "subscription_id": SUBSCRIPTION,
             "resource_types": (RESOURCE_TYPE,),
             "skip_token": None,
-            "fact_projections": (),
+            "fact_projections": load_catalog().facts.projectable(),
         }
     ]
+
+
+def test_the_projected_facts_come_from_the_declaration_not_from_the_scope() -> None:
+    """Req 4.7. Named as the *place* the pairs came from, not as their shape.
+
+    The provider hands the inventory port the **union** of every projectable fact the
+    catalog declares, not the subset its scope's one resource type declares. One Resource
+    Graph query serves the whole scope, so narrowing per type would mean one query per
+    type — the cost projecting exists to avoid. A well-formed non-empty tuple of pairs
+    would satisfy a shape assertion whichever of the two it was; this asserts which.
+    """
+    harness = Harness(inventory=[inventory_page([inventory_row("prod-web-01")])])
+    declaration = load_catalog().facts
+
+    run(harness.provider.discover(scope()))
+    passed = harness.inventory_port.calls[0]["fact_projections"]
+
+    assert passed == declaration.projectable()
+    assert passed != declaration.projectable(RESOURCE_TYPE)
+    # And the union is strictly wider, so the difference above is "more", not "other".
+    assert set(declaration.projectable(RESOURCE_TYPE)) < set(passed)
 
 
 # --------------------------------------------------------------------------- #

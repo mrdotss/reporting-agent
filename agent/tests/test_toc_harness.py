@@ -29,22 +29,20 @@ conversion would be measuring an assumption about the thing under test.
 from __future__ import annotations
 
 import asyncio
+import io
 import shutil
 from pathlib import Path
 from typing import Final
 
 import pytest
+from docx import Document as open_docx
 from pypdf import PdfWriter
 
 import toc_harness as H
 from reporting_agent.errors import ErrorCode, VerificationFailedError
 from reporting_agent.render import pdf as P
-from reporting_agent.render.toc import (
-    TOC_APPROACH_CONVERSION_MACRO,
-    TOC_APPROACH_LIBREOFFICE_INDEX,
-    TOC_APPROACH_NONE,
-    TOC_APPROACH_TWO_PASS,
-)
+from reporting_agent.render.themes import TOC_ENTRY_STYLE
+from reporting_agent.render.toc import TOC_APPROACH_NONE
 from reporting_agent.verify.tokens import pdf_page_texts, read_pdf_text
 
 SOFFICE: Final[str | None] = shutil.which("soffice")
@@ -133,22 +131,256 @@ def test_an_undeclared_approach_is_refused() -> None:
         asyncio.run(H.measure(definition, snapshot, approach="two-pass"))
 
 
-@pytest.mark.parametrize(
-    "approach",
-    [
-        TOC_APPROACH_LIBREOFFICE_INDEX,
-        TOC_APPROACH_TWO_PASS,
-        TOC_APPROACH_CONVERSION_MACRO,
-    ],
-)
-def test_a_candidate_with_no_emission_path_refuses_to_be_measured(approach: str) -> None:
-    """Task 2.3 adds one emission path per candidate. Until then, measuring one has to fail:
-    returning a measurement for a candidate whose table of contents was never emitted would
-    let the evaluation record `correct` for a document that carried none."""
-    definition, snapshot = H.load_fixture()
+# --- the emission paths, without converting (Req 14.1) --------------------------------
+#
+# These build the `.docx` and inspect its XML. No LibreOffice, so they are milliseconds
+# rather than seconds, and they check the half of each candidate that is ours: what the
+# document asks for. Whether the converter honours it is the evaluation's question.
 
-    with pytest.raises(NotImplementedError, match="has no emission path yet"):
-        asyncio.run(H.measure(definition, snapshot, approach=approach))
+
+@pytest.fixture(scope="module")
+def base_docx() -> bytes:
+    definition, snapshot = H.load_fixture()
+    return H._base_docx(definition, snapshot)
+
+
+def document_xml(docx_bytes: bytes) -> str:
+    import io
+    import zipfile
+
+    return (
+        zipfile.ZipFile(io.BytesIO(docx_bytes)).read("word/document.xml").decode("utf-8")
+    )
+
+
+def test_the_field_candidate_emits_a_toc_field_with_no_cached_result(
+    base_docx: bytes,
+) -> None:
+    """Criterion 14.1's exact shape, and the reason it matters.
+
+    `begin` → `instrText` → `end` with **no `separate`** means there is no cached result run,
+    so the PDF cannot display a page number computed when the `.docx` was written. A cached
+    result is the failure that would look most like success: a stale number that reads as
+    resolved. `w:dirty="true"` is the only signal a consumer gets that the empty result is
+    deliberate.
+    """
+    xml = document_xml(H._prepend_toc(base_docx, field=True))
+
+    assert 'TOC \\o "1-3" \\h \\z \\u' in xml
+    assert xml.count('w:fldCharType="begin"') == 1
+    assert xml.count('w:fldCharType="end"') == 1
+    assert 'w:fldCharType="separate"' not in xml
+    assert 'w:dirty="true"' in xml
+
+
+def test_the_contents_label_uses_a_style_the_field_does_not_collect(
+    base_docx: bytes,
+) -> None:
+    """`\\o "1-3"` collects `Heading 1` to `Heading 3`, so a `Heading 1` label would put
+    "Contents" into its own table of contents — and would add a seventh entry to
+    `observed_pages` for a section the definition never declared, making the fixture's
+    heading count disagree with the six it declares."""
+    document = open_docx(io.BytesIO(H._prepend_toc(base_docx, field=True)))
+    label = next(p for p in document.paragraphs if p.text == H.TOC_LABEL)
+
+    assert label.style.name == "Title"
+    assert label.style.name not in {"Heading 1", "Heading 2", "Heading 3"}
+
+
+def test_the_two_pass_candidate_emits_the_same_layout_with_and_without_numbers(
+    base_docx: bytes,
+) -> None:
+    """"At full size with no numbers" made executable, and it is the whole basis of the
+    fixed point.
+
+    Pass 1 must lay out to exactly the height pass 2 will, or the page numbers pass 1
+    measured describe a document with a different pagination. Both passes therefore emit one
+    paragraph per entry **and the tab**, differing only in whether a number follows it.
+    """
+    headings = ("Alpha Section", "Beta Section")
+    without = open_docx(
+        io.BytesIO(
+            H._prepend_toc(base_docx, entries=tuple((h, None) for h in headings))
+        )
+    )
+    with_numbers = open_docx(
+        io.BytesIO(
+            H._prepend_toc(base_docx, entries=tuple((h, 4) for h in headings))
+        )
+    )
+
+    def entries(document: object) -> list[tuple[str, str]]:
+        return [
+            (p.style.name, p.text)
+            for p in document.paragraphs  # type: ignore[attr-defined]
+            if p.style.name == TOC_ENTRY_STYLE
+        ]
+
+    assert [style for style, _ in entries(without)] == [TOC_ENTRY_STYLE] * 2
+    assert [text for _, text in entries(without)] == ["Alpha Section\t", "Beta Section\t"]
+    assert [text for _, text in entries(with_numbers)] == [
+        "Alpha Section\t4",
+        "Beta Section\t4",
+    ]
+    # Same paragraph count in both passes: the number is a run inside an existing paragraph,
+    # never a paragraph of its own.
+    assert len(without.paragraphs) == len(with_numbers.paragraphs)
+
+
+def test_the_two_pass_candidate_emits_no_field_and_the_field_candidate_no_entries(
+    base_docx: bytes,
+) -> None:
+    """The two emission paths are genuinely different documents.
+
+    Without this, a wiring mistake that sent both candidates through one path would have the
+    evaluation record two verdicts for one mechanism — and they would agree, which is exactly
+    what would make it look right.
+    """
+    field_xml = document_xml(H._prepend_toc(base_docx, field=True))
+    literal_xml = document_xml(H._prepend_toc(base_docx, entries=(("Alpha", 3),)))
+
+    assert "instrText" in field_xml
+    assert "instrText" not in literal_xml
+    assert "Alpha" in literal_xml
+    assert field_xml != literal_xml
+
+
+def test_the_toc_section_is_inserted_before_the_first_block(base_docx: bytes) -> None:
+    """Ahead of the content, not appended after it: a table of contents at the end of the
+    document would still name true pages and would still be wrong."""
+    before = open_docx(io.BytesIO(base_docx))
+    after = open_docx(io.BytesIO(H._prepend_toc(base_docx, entries=(("Alpha", 1),))))
+
+    assert before.paragraphs[0].style.name == "Heading 1"
+    assert after.paragraphs[0].text == H.TOC_LABEL
+    assert [p.text for p in after.paragraphs[3:]] == [
+        p.text for p in before.paragraphs
+    ]
+
+
+# --- the macro candidate's availability check (Req 14.3) ------------------------------
+
+
+def test_the_macro_candidate_refuses_a_profile_with_no_basic_module(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`unavailable`, decided **before** invoking anything and without writing to the profile.
+
+    The alternative — installing the macro — is the writable macro library criterion 14.3
+    rejects in as many words, so the refusal has to happen here rather than being discovered
+    after a `soffice` invocation has already mutated the profile.
+    """
+    monkeypatch.setenv(P.PROFILE_ENV_VAR, str(tmp_path))
+
+    with pytest.raises(H.TocApproachUnavailableError, match="no Basic module"):
+        H._convert_via_macro(b"PK\x03\x04 not really a docx")
+
+    assert list(tmp_path.iterdir()) == [], "the check must not create anything"
+
+
+def test_the_macro_candidate_refuses_an_empty_standard_library(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The case the real image is in: LibreOffice warms `Module1.xba` containing an empty
+    `Sub Main`, so the file exists and the macro does not."""
+    module = tmp_path / H.MACRO_LIBRARY_RELATIVE_PATH
+    module.parent.mkdir(parents=True)
+    module.write_text("<script:module>REM\nSub Main\nEnd Sub</script:module>", "utf-8")
+    monkeypatch.setenv(P.PROFILE_ENV_VAR, str(tmp_path))
+
+    with pytest.raises(H.TocApproachUnavailableError, match="declares no"):
+        H._convert_via_macro(b"PK\x03\x04 not really a docx")
+
+
+def test_the_macro_candidates_refusal_names_no_machine_specific_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The message is committed into `evidence/toc/evaluation.json`, so it must describe the
+    missing facility rather than the directory the evaluation happened to run in."""
+    monkeypatch.setenv(P.PROFILE_ENV_VAR, str(tmp_path))
+
+    with pytest.raises(H.TocApproachUnavailableError) as raised:
+        H._convert_via_macro(b"PK\x03\x04 not really a docx")
+
+    assert str(tmp_path) not in str(raised.value)
+    assert H.MACRO_LIBRARY_RELATIVE_PATH in str(raised.value)
+
+
+# --- the contents pages are excluded from the observation (Req 14.2) ------------------
+#
+# The defect these exist for is not hypothetical; it is the one this measurement had. A
+# contents entry contains the heading's text, and the contents page comes first, so a locator
+# that searched every page reported every heading on page 1 — `distinct_heading_pages`
+# collapsed to 1 while the numbers printed beside them stayed right, which reads as a
+# *correct* table of contents for a document with no pagination.
+
+CONTENTS_PAGE: Final[str] = (
+    "Contents Alpha Section..........2 Beta Section..........4"
+)
+
+
+def test_a_heading_is_observed_on_its_body_page_not_on_the_contents_page() -> None:
+    pages = (CONTENTS_PAGE, "Alpha Section and its prose", "more", "Beta Section here")
+
+    observed = H._observed_pages(pages, ("Alpha Section", "Beta Section"))
+
+    assert observed == {"Alpha Section": 2, "Beta Section": 4}
+
+
+def test_the_contents_page_is_identified_by_starting_with_the_label() -> None:
+    """A substring test would also match a body page whose prose contained the word, and
+    excluding a body page from the observation would report its heading one page late."""
+    prose = "The section below lists Contents of the archive: Alpha Section"
+
+    assert H._contents_page_indices((CONTENTS_PAGE, prose)) == frozenset({0})
+
+
+def test_named_pages_are_read_from_the_contents_page_only() -> None:
+    """Read back out of the PDF rather than returned from the dict the emitter wrote — a
+    number the emitter intended but the converter dropped must not be reported as named."""
+    pages = (CONTENTS_PAGE, "Alpha Section and its prose", "more", "Beta Section here")
+
+    assert H._named_pages(pages, ("Alpha Section", "Beta Section")) == {
+        "Alpha Section": 2,
+        "Beta Section": 4,
+    }
+
+
+def test_a_heading_followed_by_a_number_in_body_prose_is_not_a_named_page() -> None:
+    """Why the pattern is applied only to the contents pages.
+
+    In body prose "a heading followed by a number" is an ordinary sentence — a running header
+    above a figure, a cross-reference, a sentence beginning with a count — and anchoring the
+    pattern to a line boundary would not help, because the extractor returns a whole contents
+    page as **one** line.
+
+    Constructed so the two readings give **different** answers: the body page comes first and
+    says 12, the contents page comes later and says 5. A locator that searched every page
+    would report 12, which is a page number lifted out of a sentence.
+    """
+    pages = (
+        "Alpha Section 12 machines were in scope for this period",
+        "Contents Alpha Section..........5",
+        "Alpha Section and its prose",
+    )
+
+    assert H._named_pages(pages, ("Alpha Section",)) == {"Alpha Section": 5}
+
+
+def test_a_heading_named_on_no_contents_page_names_no_page() -> None:
+    """A document with no table of contents names nothing, however much its prose looks like
+    an entry. This is the case that makes the restriction visible on its own."""
+    pages = ("Alpha Section 12 machines were in scope", "Alpha Section and its prose")
+
+    assert H._named_pages(pages, ("Alpha Section",)) == {}
+
+
+def test_a_contents_entry_with_no_number_names_no_page() -> None:
+    """Candidate B's first pass, and candidate A's unresolved field: entries are present and
+    carry no number. Absent rather than zero, so the verdict rule sees "named nothing"."""
+    pages = ("Contents Alpha Section\t Beta Section\t", "Alpha Section prose")
+
+    assert H._named_pages(pages, ("Alpha Section", "Beta Section")) == {}
 
 
 def test_the_fixture_declares_the_headings_the_measurement_looks_for() -> None:

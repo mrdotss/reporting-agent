@@ -199,9 +199,168 @@ export const DESCRIPTION_MAX_LENGTH = 1000
 /** Not bounded by any single criterion; kept in the same range as `name`. */
 export const REPORT_TITLE_MAX_LENGTH = 200
 
-/** Requirement 2.9 — the highest `schema_version` this reader accepts. */
+// --- BEGIN SCHEMA VERSIONS (mirrored in agent/src/reporting_agent/compile/definition.py) ---
+/**
+ * Requirement 2.9, 13.10 — `MIN_SCHEMA_VERSION` stays `1`, and `2` is the highest this
+ * reader accepts. What raises the version is exactly three things: `front_matter`,
+ * `identity.language`, and the two `number_format` separators.
+ */
 export const MIN_SCHEMA_VERSION = 1
-export const MAX_SUPPORTED_SCHEMA_VERSION = 1
+export const MAX_SUPPORTED_SCHEMA_VERSION = 2
+
+/**
+ * The version-conditional key sets, **declared as data rather than as two validators**.
+ *
+ * `collectDefinitionIssues` reads the record for the resolved version, so no branch is
+ * written twice and the Mirror_Guard stays a set comparison with no parser on either side.
+ * Two validators would be two places for a key to be admitted at one version and not the
+ * other, and the divergence would present as a definition the wizard saves and the compiler
+ * refuses — minutes into a run, after the collection has been spent.
+ *
+ * Three behaviours follow from these tables with no rule anybody writes:
+ *
+ * - a v1 definition carrying `front_matter` is rejected as an **undeclared top-level key**
+ *   by the existing strict check, because it is absent from version 1's list;
+ * - a v1 definition carrying `identity.language` is rejected the same way, one level down;
+ * - a v1 definition carrying either separator is rejected as an unrecognized
+ *   `number_format` field.
+ *
+ * Requirement 13.13 makes `front_matter` **required** at version 2, not merely permitted, so
+ * it belongs in this list rather than in a separate optional set — the same reasoning
+ * `validateScopeSpec` records for requiring presence over defaulting: one shape, never a
+ * shape plus a set of implicit defaults a second reader has to reproduce exactly.
+ */
+export const REQUIRED_TOP_LEVEL_KEYS = {
+  1: [
+    "schema_version",
+    "identity",
+    "scope",
+    "period",
+    "metrics",
+    "blocks",
+    "design",
+  ],
+  2: [
+    "schema_version",
+    "identity",
+    "scope",
+    "period",
+    "metrics",
+    "blocks",
+    "design",
+    "front_matter",
+  ],
+} as const
+
+/** Requirement 16.1 — two keys at v1, four at v2. */
+export const NUMBER_FORMAT_KEYS = {
+  1: ["decimal_places", "group_thousands"],
+  2: [
+    "decimal_places",
+    "group_thousands",
+    "decimal_separator",
+    "grouping_separator",
+  ],
+} as const
+
+/** Requirement 15.1 — `identity.language` exists at v2 and nowhere else. */
+export const IDENTITY_KEYS = {
+  1: ["name", "description", "report_title"],
+  2: ["name", "description", "report_title", "language"],
+} as const
+
+export const REQUIRED_IDENTITY_KEYS = {
+  1: ["name"],
+  2: ["name", "language"],
+} as const
+
+/**
+ * Requirement 15.1 — the two declared languages, matched **case-sensitively**. `EN` is not a
+ * spelling of `en`: the value keys a message catalog whose ids are lowercase ASCII by pattern,
+ * and admitting a second spelling would mean a template could pin a language the resolver
+ * cannot find while looking valid.
+ */
+export const LANGUAGES = ["en", "id"] as const
+
+/** Requirement 13.1 — the three sections of the front matter. */
+export const FRONT_MATTER_KEYS = ["cover", "document_control", "toc"] as const
+
+/**
+ * Requirement 13.2 — block types the front matter owns at v2 and above, so they may not also
+ * appear in `blocks`.
+ *
+ * Only `cover`. `document_control` and `toc` are **not block types and never were**, so there
+ * is nothing to forbid for them — a definition naming either in `blocks` is already rejected
+ * as an undeclared block type.
+ *
+ * `cover` **stays** in `BLOCK_TYPES` rather than being removed, because Requirement 13.11
+ * requires a stored v1 definition carrying one to keep compiling, and `lib/templates/
+ * starters.ts` carries one per starter template. Removing the type would invalidate every
+ * stored v1 definition, which is precisely the immutable-row rewrite this whole section
+ * exists to avoid.
+ */
+export const FRONT_MATTER_FORBIDDEN_BLOCK_TYPES = ["cover"] as const
+// --- END SCHEMA VERSIONS ---
+
+/** A `schema_version` this reader has a key set for. */
+export type SchemaVersion = keyof typeof REQUIRED_TOP_LEVEL_KEYS
+
+/**
+ * Requirement 16.3 — the separators each language implies when the definition declares none.
+ *
+ * Applied at **validation** time only to decide whether the resolved pair is legal, and at
+ * **format** time to decide what a figure looks like. Never written back into the definition:
+ * a declared value is persisted unchanged, and an undeclared one stays undeclared, so a
+ * stored v1 row is never rewritten and a v1 definition renders byte-identically to the way it
+ * always did (Requirement 16.10).
+ */
+export const SEPARATOR_DEFAULTS = {
+  en: { decimal_separator: ".", grouping_separator: "," },
+  id: { decimal_separator: ",", grouping_separator: "." },
+} as const satisfies Record<
+  (typeof LANGUAGES)[number],
+  { readonly decimal_separator: string; readonly grouping_separator: string }
+>
+
+/**
+ * A separator character the verifier could not tell from the number around it, or from the
+ * other separator (Requirement 16.2). Returns the reason, or `null` if the character is legal.
+ *
+ * Mirrors `compile/format.NumberFormat.__post_init__` clause for clause, with one deliberate
+ * asymmetry: that constructor accepts a **non-empty** string of any length, and this rejects
+ * anything but exactly one code point. The asymmetry errs the safe way — the app refuses a
+ * two-character separator the agent would have accepted, so it never reaches a run — which is
+ * the same direction the Python side records for `\ufeff`.
+ *
+ * The whitespace class is `/[\s\x1c-\x1f\x85]/u` and **not** bare `/\s/u`, and that is not
+ * fussiness: `str.isspace()` is true for `\x1c`-`\x1f` and `\x85`, which JavaScript's `\s`
+ * misses. Bare `\s` would let the app save a separator the compiler then refuses — a save-time
+ * error turned into a failed run, which is the exact divergence the mirror exists to prevent.
+ *
+ * Why whitespace at all: `verify/tokens.numeric_tokens` splits a paragraph on whitespace, so a
+ * whitespace-separated numeral reaches the verifier as several tokens none of which equals the
+ * ledger's formatted string, and `normalize_pdf_text` collapses every whitespace run to one
+ * space — so neither pass can locate it, and the run is withheld for a number that was right.
+ */
+function separatorProblem(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) {
+    return "must be a non-empty string"
+  }
+  // Code points, not UTF-16 code units, so a non-BMP character counts as one.
+  if ([...value].length !== 1) {
+    return "must be exactly one character"
+  }
+  if (/[0-9]/u.test(value)) {
+    return "must not be a digit — a separator that reads as part of the number makes the verifier's token extraction ambiguous"
+  }
+  if (value === "-") {
+    return "must not be a minus sign — a separator that reads as part of the number makes the verifier's token extraction ambiguous"
+  }
+  if (/[\s\x1c-\x1f\x85]/u.test(value)) {
+    return "must not be whitespace — the verifier splits a paragraph on whitespace, so a whitespace-separated numeral reaches it as several tokens and the run would be withheld for a correct number"
+  }
+  return null
+}
 
 /** Requirement 2.10 — 262,144 bytes of UTF-8 in RFC 8785 canonical form. */
 export const MAX_DEFINITION_CANONICAL_BYTES = 262_144
@@ -335,6 +494,16 @@ export type TemplateBlock = LeafBlock | RowBlock
 export type NumberFormat = {
   readonly decimal_places: number
   readonly group_thousands: boolean
+  /**
+   * Declarable at `schema_version` 2 and above only (Requirement 16.1). Optional rather than
+   * required even there, because Requirement 16.3 resolves an undeclared separator from
+   * `identity.language` and a **declared** value is persisted unchanged — so "absent" and
+   * "equal to the language default" are two different stored definitions, and collapsing them
+   * would rewrite a row. Use {@link resolveSeparators} to read the pair a definition renders
+   * with.
+   */
+  readonly decimal_separator?: string
+  readonly grouping_separator?: string
 }
 
 export type DesignSpec = {
@@ -352,10 +521,20 @@ export type TemplateIdentity = {
   readonly name: string
   readonly description?: string
   readonly report_title?: string
+  /**
+   * Required at `schema_version` 2, absent at 1 (Requirement 15.1, 15.12). Optional in the type
+   * because one type serves both versions; which versions require it is
+   * {@link REQUIRED_IDENTITY_KEYS}, and a v1 definition carrying it is rejected as an
+   * unrecognized identity field.
+   */
+  readonly language?: (typeof LANGUAGES)[number]
 }
 
 /**
- * The seven required top-level keys, and nothing else (Requirement 2.1).
+ * The required top-level keys, and nothing else (Requirement 2.1) — seven at
+ * `schema_version` 1 and eight at 2. {@link REQUIRED_TOP_LEVEL_KEYS} is which, per version;
+ * this type is the union of both, so `front_matter` is optional here and required by the
+ * validator at the version that declares it.
  */
 export type TemplateDefinition = {
   readonly schema_version: number
@@ -365,6 +544,14 @@ export type TemplateDefinition = {
   readonly metrics: MetricSelection
   readonly blocks: readonly TemplateBlock[]
   readonly design: DesignSpec
+  /**
+   * The front matter's cover, document control and table of contents (Requirement 13.1).
+   * Required at `schema_version` 2 and undeclared at 1. Typed as `unknown` until task 7.4
+   * declares its fields and bounds — deliberately, rather than as a hopeful shape nothing
+   * validates, so a caller reading it has to narrow it and cannot mistake the type for a
+   * guarantee.
+   */
+  readonly front_matter?: unknown
 }
 
 // --- Issue collection -----------------------------------------------------
@@ -520,21 +707,46 @@ const PERCENTILE_STATISTIC_PATTERN = /^p[0-9]+$/
 
 // --- Identity (Requirement 2.10) -------------------------------------------
 
-const IDENTITY_ALLOWED_KEYS = new Set(["name", "description", "report_title"])
-
 function validateIdentity(
   identity: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  version: SchemaVersion
 ): void {
   if (!isPlainObject(identity)) {
     addIssue(issues, path, "identity must be an object.")
     return
   }
 
+  const allowedKeys: readonly string[] = IDENTITY_KEYS[version]
   for (const key of Object.keys(identity)) {
-    if (!IDENTITY_ALLOWED_KEYS.has(key)) {
+    if (!allowedKeys.includes(key)) {
       addIssue(issues, [...path, key], `Unrecognized identity field "${key}".`)
+    }
+  }
+
+  // Requirement 15.1 — required at v2, and the absence is reported here rather than left to
+  // the value check below, so that "you forgot it" and "that is not a language" are two
+  // different messages.
+  for (const key of REQUIRED_IDENTITY_KEYS[version]) {
+    if (!(key in identity)) {
+      addIssue(
+        issues,
+        [...path, key],
+        `identity.${key} is required at schema_version ${version}.`
+      )
+    }
+  }
+
+  if (allowedKeys.includes("language") && identity.language !== undefined) {
+    // Case-sensitive: `EN` is not a spelling of `en`. See LANGUAGES.
+    if (!LANGUAGES.includes(identity.language as (typeof LANGUAGES)[number])) {
+      addIssue(
+        issues,
+        [...path, "language"],
+        `identity.language must be exactly one of: ${LANGUAGES.join(", ")} ` +
+          "(case-sensitive)."
+      )
     }
   }
 
@@ -1135,6 +1347,14 @@ const RICH_TEXT_FORBIDDEN_BINDING_FIELDS = new Set([
 type BlockWalkState = {
   readonly idOccurrences: Map<string, (readonly (string | number)[])[]>
   totalBlockCount: number
+  /**
+   * The resolved `schema_version`, carried on the walk state rather than added to
+   * `validateBlock`, `validateLeafBlock` and `validateRowBlock`'s four signatures. The state
+   * already exists for exactly this — a fact true of the whole walk that one block's check
+   * needs — and threading a fifth parameter through the recursion would put the version in
+   * three places it is only forwarded from.
+   */
+  readonly version: SchemaVersion
 }
 
 function validateBlockConfig(
@@ -1238,6 +1458,33 @@ function validateLeafBlock(
     if (!LEAF_BLOCK_ALLOWED_KEYS.has(key)) {
       addIssue(issues, [...path, key], `Unrecognized block field "${key}".`)
     }
+  }
+
+  // Requirement 13.2 — at v2 and above the front matter owns the cover, so a `cover` block in
+  // `blocks` would emit it twice: once from `front_matter.cover` and once from the block.
+  //
+  // Rejected rather than ignored, and **named by block id**, because the author put it there
+  // deliberately: a silently dropped block is indistinguishable from one that was never
+  // configured, and the migration in `lib/templates/version.ts` is what lifts a v1 cover into
+  // the front matter rather than the validator quietly discarding it.
+  //
+  // `cover` stays a declared type, so this check is about *placement at this version* and not
+  // about the type existing. That is why it is here and not a change to `BLOCK_TYPES`.
+  if (
+    state.version >= 2 &&
+    (FRONT_MATTER_FORBIDDEN_BLOCK_TYPES as readonly string[]).includes(
+      blockType
+    )
+  ) {
+    const id =
+      typeof block.id === "string" ? block.id : String(path[path.length - 1])
+    addIssue(
+      issues,
+      [...path, "type"],
+      `Block "${id}" is a "${blockType}" block, which the front matter owns at ` +
+        `schema_version ${state.version}. Declare it under front_matter.${blockType} ` +
+        `instead of in blocks.`
+    )
   }
 
   if (!NON_ROW_BLOCK_TYPE_SET.has(blockType)) {
@@ -1398,7 +1645,8 @@ function validateBlocks(
   blocks: unknown,
   path: readonly (string | number)[],
   issues: IssueSink,
-  mode: "draft" | "run"
+  mode: "draft" | "run",
+  version: SchemaVersion
 ): void {
   if (!Array.isArray(blocks)) {
     addIssue(issues, path, "blocks must be an array.")
@@ -1414,7 +1662,11 @@ function validateBlocks(
     )
   }
 
-  const state: BlockWalkState = { idOccurrences: new Map(), totalBlockCount: 0 }
+  const state: BlockWalkState = {
+    idOccurrences: new Map(),
+    totalBlockCount: 0,
+    version,
+  }
 
   blocks.forEach((block, index) => {
     validateBlock(block, [...path, index], state, issues, false)
@@ -1446,22 +1698,54 @@ const DESIGN_ALLOWED_KEYS = new Set([
 function validateNumberFormat(
   value: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  version: SchemaVersion,
+  language: (typeof LANGUAGES)[number] | null
 ): void {
   if (!isPlainObject(value)) {
     addIssue(issues, path, "number_format must be an object.")
     return
   }
 
-  const allowedKeys = new Set(["decimal_places", "group_thousands"])
+  const allowedKeys: readonly string[] = NUMBER_FORMAT_KEYS[version]
   for (const key of Object.keys(value)) {
-    if (!allowedKeys.has(key)) {
+    if (!allowedKeys.includes(key)) {
       addIssue(
         issues,
         [...path, key],
         `Unrecognized number_format field "${key}".`
       )
     }
+  }
+
+  // Requirement 16.2 — checked on the **resolved** pair, not on the declared one.
+  //
+  // Resolved, because the constraint is about what the renderer will emit: a definition
+  // declaring only a decimal separator still renders a grouping one, and a pair that
+  // collides after defaulting collides in the document. At v1 nothing is declarable and the
+  // resolution is `en`'s `.` and `,`, which passes every clause — so this adds no failure
+  // to any stored v1 definition.
+  const resolved = resolveSeparators(value, language)
+  for (const key of ["decimal_separator", "grouping_separator"] as const) {
+    // Only report on a key this version admits: at v1 an undeclared separator resolves to a
+    // legal default, and a *declared* one has already been reported as unrecognized above —
+    // a second issue about its characters would be noise about a field that may not exist.
+    if (!allowedKeys.includes(key)) continue
+    const problem = separatorProblem(resolved[key])
+    if (problem !== null) {
+      addIssue(issues, [...path, key], `number_format.${key} ${problem}.`)
+    }
+  }
+  if (
+    resolved.decimal_separator === resolved.grouping_separator &&
+    allowedKeys.includes("decimal_separator")
+  ) {
+    addIssue(
+      issues,
+      [...path, "decimal_separator"],
+      `number_format's decimal and grouping separators are both ` +
+        `"${resolved.decimal_separator}"; a reader could not tell one from the other.`
+    )
   }
 
   const { decimal_places: decimalPlaces, group_thousands: groupThousands } =
@@ -1491,7 +1775,9 @@ function validateNumberFormat(
 function validateDesign(
   design: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  version: SchemaVersion,
+  language: (typeof LANGUAGES)[number] | null
 ): void {
   if (!isPlainObject(design)) {
     addIssue(issues, path, "design must be an object.")
@@ -1559,7 +1845,13 @@ function validateDesign(
     )
   }
 
-  validateNumberFormat(numberFormat, [...path, "number_format"], issues)
+  validateNumberFormat(
+    numberFormat,
+    [...path, "number_format"],
+    issues,
+    version,
+    language
+  )
 
   if (!isBoolean(coverPage)) {
     addIssue(issues, [...path, "cover_page"], "cover_page must be a boolean.")
@@ -1589,16 +1881,6 @@ function validateDesign(
 
 // --- Top level (Requirements 2.1, 2.2, 2.4, 2.9, 2.10) ----------------------
 
-const TOP_LEVEL_REQUIRED_KEYS = [
-  "schema_version",
-  "identity",
-  "scope",
-  "period",
-  "metrics",
-  "blocks",
-  "design",
-] as const
-
 function validateSchemaVersion(value: unknown, issues: IssueSink): void {
   if (!isFiniteInteger(value)) {
     addIssue(issues, ["schema_version"], "schema_version must be an integer.")
@@ -1611,6 +1893,77 @@ function validateSchemaVersion(value: unknown, issues: IssueSink): void {
       `schema_version must be between ${MIN_SCHEMA_VERSION} and ${MAX_SUPPORTED_SCHEMA_VERSION} ` +
         `(highest supported); found ${value}.`
     )
+  }
+}
+
+/**
+ * Which key sets the rest of the walk reads, for a definition whose `schema_version` may not be
+ * usable.
+ *
+ * **This applies no default to the definition.** `validateSchemaVersion` has already reported
+ * an issue at `schema_version` for an absent, non-integer or out-of-range value, and that issue
+ * stands; this function only decides which of two key tables the *remaining* checks consult, so
+ * that a definition with a broken version still reports every other violation in the same pass
+ * (Requirement 2.7) instead of returning one issue and stopping.
+ *
+ * `MIN_SCHEMA_VERSION` is the choice, and it is the conservative one: the version 1 tables are
+ * the narrower of the two, so an unusable version is validated against the smaller key set and
+ * a `front_matter` or a `language` alongside it is *also* reported rather than silently
+ * admitted on the strength of a version nobody could read.
+ */
+function resolveSchemaVersion(value: unknown): SchemaVersion {
+  if (isFiniteInteger(value) && value in REQUIRED_TOP_LEVEL_KEYS) {
+    return value as SchemaVersion
+  }
+  return MIN_SCHEMA_VERSION
+}
+
+/**
+ * The `identity.language` a definition pins, or `null` when it declares none — which is every
+ * v1 definition, where every string id resolves in `en` (Requirement 15.12).
+ *
+ * Read for two reasons and written for none: to resolve the separator defaults below, and to
+ * pick the message catalog's language at compile time.
+ */
+export function declaredLanguage(
+  raw: unknown
+): (typeof LANGUAGES)[number] | null {
+  if (!isPlainObject(raw)) return null
+  const identity = raw.identity
+  if (!isPlainObject(identity)) return null
+  const language = identity.language
+  return LANGUAGES.includes(language as (typeof LANGUAGES)[number])
+    ? (language as (typeof LANGUAGES)[number])
+    : null
+}
+
+/**
+ * The `{decimal_separator, grouping_separator}` pair a definition **resolves to**: whatever it
+ * declares, with anything undeclared filled from the language (Requirement 16.3).
+ *
+ * Exported because the resolution has to happen in exactly one place and three callers need
+ * it — this module's own separator validation, the version-2 migration in
+ * `lib/templates/version.ts`, and whatever presents a number in the browser. A second
+ * resolution would eventually disagree with this one about one definition, and the two
+ * would then format the same figure two ways.
+ *
+ * `language` defaults to the first declared language, which is `en`, which is also
+ * `compile/format.DEFAULT_NUMBER_FORMAT` — so a v1 definition, which declares no language and
+ * no separators, resolves to exactly the pair it has always rendered with.
+ */
+export function resolveSeparators(
+  numberFormat: unknown,
+  language: (typeof LANGUAGES)[number] | null
+): { readonly decimal_separator: string; readonly grouping_separator: string } {
+  const defaults = SEPARATOR_DEFAULTS[language ?? LANGUAGES[0]]
+  if (!isPlainObject(numberFormat)) return defaults
+  const declared = (key: keyof typeof defaults): string =>
+    numberFormat[key] === undefined
+      ? defaults[key]
+      : (numberFormat[key] as string)
+  return {
+    decimal_separator: declared("decimal_separator"),
+    grouping_separator: declared("grouping_separator"),
   }
 }
 
@@ -1935,29 +2288,36 @@ export function collectDefinitionIssues(
     return issues
   }
 
-  for (const key of TOP_LEVEL_REQUIRED_KEYS) {
+  // Resolved once and read by every check below. See `resolveSchemaVersion` on why an
+  // unusable version resolves to the narrower key set rather than stopping the walk.
+  const version = resolveSchemaVersion(raw.schema_version)
+  const language = declaredLanguage(raw)
+  const requiredKeys: readonly string[] = REQUIRED_TOP_LEVEL_KEYS[version]
+
+  for (const key of requiredKeys) {
     if (!(key in raw)) {
       addIssue(issues, [key], `Missing required top-level key "${key}".`)
     }
   }
 
   for (const key of Object.keys(raw)) {
-    if (
-      !TOP_LEVEL_REQUIRED_KEYS.includes(
-        key as (typeof TOP_LEVEL_REQUIRED_KEYS)[number]
-      )
-    ) {
+    if (!requiredKeys.includes(key)) {
       addIssue(issues, [key], `Unrecognized top-level key "${key}".`)
     }
   }
 
   validateSchemaVersion(raw.schema_version, issues)
-  validateIdentity(raw.identity, ["identity"], issues)
+  validateIdentity(raw.identity, ["identity"], issues, version)
   validateScopeSpec(raw.scope, ["scope"], issues)
   validatePeriod(raw.period, ["period"], issues)
   validateMetrics(raw.metrics, ["metrics"], issues)
-  validateBlocks(raw.blocks, ["blocks"], issues, mode)
-  validateDesign(raw.design, ["design"], issues)
+  validateBlocks(raw.blocks, ["blocks"], issues, mode, version)
+  validateDesign(raw.design, ["design"], issues, version, language)
+  // `front_matter`'s own fields and bounds are task 7.4's. This task makes the **key**
+  // required at v2 (through REQUIRED_TOP_LEVEL_KEYS) and undeclared at v1, and validates
+  // nothing inside it — so a v2 definition carrying `front_matter: "nonsense"` is accepted
+  // here today. The hole is deliberate and named rather than left to be discovered:
+  // Requirement 13.13's per-field bounds land in one place, beside FRONT_MATTER_KEYS.
   validateCanonicalByteSize(raw, issues)
   validateEveryScopedTypeIsSelected(raw, issues, mode)
   validateRequiredConfigIsFilled(raw, issues, mode)

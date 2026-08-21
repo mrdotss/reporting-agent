@@ -420,6 +420,15 @@ class AzureProvider:
             subscription_id=scope["subscription_id"],
             resource_types=tuple(scope["resource_types"]),
             fidelity_tier=self.fidelity_tier,
+            # Every projectable fact the catalog declares, as `(key, projection)` pairs
+            # ordered by key (Req 4.7). The **union across every declared type**, not this
+            # scope's types: one Resource Graph query serves the whole scope, a projected
+            # column that does not apply to a row comes back empty rather than failing the
+            # query, and narrowing per type would mean one query per type — which is the
+            # cost the projection exists to avoid. `FactDeclaration.projectable`
+            # de-duplicates, so the several types declaring `sku_name` identically project
+            # it once.
+            fact_projections=self.catalog.facts.projectable(),
             # The **same** writer the metrics collector uses, not a second one: the
             # snapshot records one `raw_archive.object_count`, and a replay refuses to
             # proceed when the objects supplied and the objects the sequence names differ.

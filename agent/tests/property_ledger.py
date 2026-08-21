@@ -117,6 +117,33 @@ SPEC_PROPERTIES: dict[int, PropertyDeclaration] = {
 }
 
 # --------------------------------------------------------------------------- #
+# The breadth-and-document spec's own properties
+# --------------------------------------------------------------------------- #
+# A **separate map** from `SPEC_PROPERTIES`, and not a continuation of it, because the two
+# specs number their properties independently from 1. The templates spec's Property 5 is
+# "drift sample selection is bounded and reproducible"; this spec's Property 5 is "every
+# catalog entry is evidenced". Merging them would need one of the two renumbered, which
+# would put a number in this file that appears nowhere in the design document it is
+# supposed to be checkable against — and the whole point of keying by number is that the
+# registry and the design can be compared.
+#
+# Populated as the properties land. `test_property_hygiene.py` asserts every declared
+# number is within this spec's range and that every declared module exists, rather than
+# asserting the full set, because a spec in progress legitimately has fewer.
+BREADTH_PROPERTIES: dict[int, PropertyDeclaration] = {
+    5: PropertyDeclaration(
+        "Every catalog entry is evidenced",
+        ("test_catalog_evidence_property.py",),
+    ),
+}
+
+BREADTH_PROPERTY_RANGE: range = range(1, 10)
+"""The nine properties `design.md` declares for this spec.
+
+Declared as the range rather than as the count so a property numbered 0 or 10 fails the
+registry check instead of being silently accepted as the tenth."""
+
+# --------------------------------------------------------------------------- #
 # Req 45.2 / 45.9 — the regression gate
 # --------------------------------------------------------------------------- #
 
@@ -322,6 +349,9 @@ def declared_modules() -> dict[str, str]:
     for number, declaration in SPEC_PROPERTIES.items():
         for module in declaration.modules:
             owners[module] = f"Property {number}"
+    for number, declaration in BREADTH_PROPERTIES.items():
+        for module in declaration.modules:
+            owners[module] = f"breadth Property {number}"
     for number, declaration in FOUNDATION_GATE.items():
         for module in declaration.modules:
             owners[module] = f"foundation Property {number}"

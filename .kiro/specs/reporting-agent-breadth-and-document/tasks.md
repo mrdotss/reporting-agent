@@ -128,14 +128,14 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - One function used by both the evaluation and the proof test, so neither can measure something the other does not
     - _Requirements: 14.2, 14.11_
 
-  - [ ] 2.3 Run the three candidates and commit the evaluation record
+  - [x] 2.3 Run the three candidates and commit the evaluation record
     - Evaluate in order A, B, C — cheapest first: **A** inserts a `TOC \o "1-3" \h \z \u` field with **no cached result** and leaves the `render/pdf.py` conversion filter unchanged; **B** emits the TOC section at full size with no numbers, converts, measures, then re-emits with the measured numbers as literal text and converts again; **C** invokes a Basic macro through `soffice`'s scripting URL calling `updateIndexes()` before export
     - Commit `agent/evidence/toc/evaluation.json` and `agent/evidence/toc/<candidate>/{named,observed}.json`: `schema_version`, the `fixture` block carrying its path, `pages`, `headings` and `distinct_heading_pages`, the `soffice --version` string from the image, and one entry per candidate carrying `verdict` from `{correct, incorrect, unavailable}`, `evaluated_at`, `docx_sha256`, `pdf_sha256`, `named_pages`, `observed_pages` and a `note`
     - **All three verdicts are recorded regardless of which is adopted**, because criterion 14.1 asks for the record and not for the winner. Reject A if the PDF carries the field's cached text or names any other page, or if it works only with a filter option needing a profile beyond the pre-warmed one; reject B if any heading's observed page differs between its two passes, because then there is no fixed point; reject C if it needs a writable macro library, a scripting-enabled profile the image does not build, or a **second** `soffice` invocation contending on the one pre-warmed profile
     - Set `ADOPTED_APPROACH` to the first candidate whose verdict is `correct`, or leave it `TOC_APPROACH_NONE`. If it stays `none` the document is cover → document control → content, `front_matter.toc` is retained in the definition exactly as criterion 13.9 retains a disabled cover, and `verification.counts.toc_entries_checked` is `0`
     - _Requirements: 14.1, 14.3_
 
-  - [ ] 2.4 The evidence guard and the proof test that never skips
+  - [x] 2.4 The evidence guard and the proof test that never skips
     - `agent/tests/test_toc_evidence.py`: the record names **exactly** the three candidates and no more; every candidate carries a verdict from the declared set; a `correct` verdict's `named_pages` equals its own `observed_pages`, because a `correct` verdict that disagrees with its own numbers is the recollection criterion 14.1 refuses; `ADOPTED_APPROACH` is `none` or a candidate whose verdict is `correct`; and the fixture the record names is the fixture the proof test uses, compared **by path and by content digest**
     - `agent/tests/test_toc_proof.py` reading `ADOPTED_APPROACH`: an adopted candidate ⇒ `measure(...)` over the fixture, `named_pages == observed_pages` for every heading, `pages >= 8`, `headings >= 6`, `distinct_heading_pages >= 4`; `none` ⇒ the produced `.docx` carries no TOC section, no `w:fldChar` of type `TOC`, and no page-number position anywhere in the front matter
     - Neither branch is `skipif`, `xfail` or a bare `pass`, so there is no configuration in which nothing executes. Extend `agent/tests/test_property_hygiene.py`'s scan to fail on a skip or expected-failure marker **in this module by name**, which is how criterion 14.2's "SHALL fail IF that test is absent, is skipped or is marked as an expected failure" becomes an assertion rather than a convention
@@ -172,7 +172,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Invoke the guard from `agent/Dockerfile` beside `--assert-build`, because `.dockerignore` excludes `tests/` and a guard that only ran in the suite could not stop an image carrying a catalog entry contradicted by the evidence committed beside it; extend `tests/test_image_build.py` to assert that invocation is present
     - _Requirements: 1.6, 2.2, 2.3, 2.4, 2.6, 2.7, 2.9, 2.10, 2.11_
 
-  - [ ] 3.4 Property test — every catalog entry is evidenced
+  - [x] 3.4 Property test — every catalog entry is evidenced
     - **Property 5: Every catalog entry is evidenced**, identifier `catalog_evidence`
     - **Validates: Requirements 1.6, 2.2, 2.3, 2.4, 2.7, 2.9, 2.10**
     - `hypothesis` over `catalog/evidence.py`'s guard function: fixtures of 1–7 resource types × 1–30 metrics with units from the Metric Definitions vocabulary and 1–4 supported aggregations each; entries drawn from those fixtures then mutated by {none, rename, case-fold, pad with whitespace, substitute a separator, change the unit, add an unsupported aggregation, remove the fixture}
@@ -181,7 +181,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Kills: a guard comparing metric names case-insensitively, which accepts `Percentage Cpu`; one comparing only names and not units, which accepts a metric declared in the wrong unit family and therefore sketched into the wrong structure; one comparing the catalog's unit to the fixture's unit as equal strings, which fails every correct entry; one that passes when a fixture is missing, which makes the whole guard vacuous for a newly added type
     - _Requirements: 1.6, 2.2, 2.3, 2.4, 2.7, 2.9, 2.10, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
-  - [ ] 3.5 Declare the facts in `catalog/facts.v1.json` and load them through `catalog/loader.py`
+  - [x] 3.5 Declare the facts in `catalog/facts.v1.json` and load them through `catalog/loader.py`
     - `agent/src/reporting_agent/catalog/facts.v1.json`: a `resource_types` map, one `facts` list per declared type, each entry carrying `key`, `value_kind`, `source`, `projectable`, plus `projection` **iff** projectable, `absent_gap_type` **iff not** projectable, and `unit` for a `numeric` fact alone. **No `catalog_version` key of its own** — declaring one is itself a validation failure, so the two files cannot be raised apart
     - `catalog/loader.py`: `DECLARED_FACT_UNITS = {"bytes", "count", "percent", "days"}` — deliberately **not** `DECLARED_UNITS`, because a metric's unit selects a sketch and a fact is never sketched — plus `DECLARED_FACT_SOURCES`, `DECLARED_FACT_VALUE_KINDS`, `DECLARED_ABSENT_GAP_TYPES`, `DEFAULT_FACTS_PATH`, the frozen `FactDeclarationEntry` and `FactDeclaration` with `for_resource_type` (case-folded, matching `LoadedCatalog.for_resource_type`, because Resource Graph lowercases `type` in its response body), `projectable()` and `by_source(source)`
     - `load_catalog(path=None, *, facts_path=None)` keeps its signature for existing callers; `LoadedCatalog` gains `facts: FactDeclaration`. Per-entry validation degrades rather than raises exactly as a metric entry does: `key` 1–120 characters matching `^[a-z][a-z0-9_]*$`, no repeated key within one type, and a failing entry becomes one more `InvalidEntry` carrying `gap_type` `catalog_entry_invalid` with the run continuing
@@ -191,7 +191,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 1.4, 1.7, 1.8, 4.7, 4.11_
 
 - [ ] 4. The one fold, the fact collector, the archive and replay
-  - [ ] 4.1 Implement `collect/factfold.py` — the one derivation
+  - [x] 4.1 Implement `collect/factfold.py` — the one derivation
     - `agent/src/reporting_agent/collect/factfold.py`: `fold_fact_response(body, *, kind, source, resource_ids, declaration, resource_types, received_at) -> tuple[tuple[FactRecord, ...], tuple[GapRecord, ...]]`, **pure** — no clock, no network, no object store, with `received_at` **supplied**
     - `kind` selects the reader: `"inventory"` walks `data` rows for `fact_<key>` columns, `"facts"` walks the source's own item list. Every numeric leaf goes through `collect/numeric.decimal_leaf`, so a value that does not parse classifies as **absent** and records `fact_unavailable` rather than raising mid-fold
     - `projected_facts_from_row(row, *, declaration, received_at)`: the loop is over the declaration for **that row's resource type**, which is what makes criterion 5.9 structural — a key the type does not declare is never visited, so it can produce neither a fact nor a gap, and no storage account collects a `no_reservations` gap
@@ -300,13 +300,16 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `agent/tests/test_messages.py` asserting the `en` id set equals the `id` id set and naming every id present in one and absent from the other
     - _Requirements: 15.2, 15.4, 15.5_
 
-  - [ ] 6.2 Declare the app's catalog and extend the Mirror_Guard
+  - [x] 6.2 Declare the app's catalog and extend the Mirror_Guard
     - `app/lib/messages/catalog.ts` declaring the identical map **between sentinel comments**, following the same mechanism as the event vocabulary and the block types rather than inventing a third: no guard needs a parser, and the app does not import the agent's JSON across the monorepo path
     - `app/test/message-catalog.static.test.ts`: the **id sets** are equal, naming every id present in one half and absent from the other, and — more strongly — the **values** for every shared id are equal, because a diverging value would put different copy in the document and the interface
     - Add `ui.template.untitled_placeholder` in this task, because task 12.7's template list presents it where `report_templates.name` is absent or empty
     - _Requirements: 15.2, 15.5, 15.10_
 
   - [ ] 6.3 Resolve every fixed string from the catalog, in the four places the literals actually are
+    - **Tasks 6.4 and 6.5 are the guards over this migration and run after it**, not before. The
+      four places below are all under `agent/`; see 6.5 for the app-side copy this task does not
+      reach and the scoping decision that leaves open.
     - `agent/.../compile/blocks/base.py`: `EMPTY_SCOPE_TEXT` (line 178) and `NO_DATA_TEXT` (line 179) become string ids resolved through `context.messages`, and every `Column(header=…)` and `Table(caption=…)` across `compile/blocks/*` resolves its own id — the catalog is resolved **at compile time and the AST carries resolved strings**, because these strings have a compile-time node to carry them
     - `render/front_matter.py`, `render/toc.py` and `render/charts.py` resolve their own chrome directly, because their strings have no compile-time node
     - `narrate/summary.py` instructs the narrator **in Indonesian** where the pinned definition's `identity.language` is `id`, supplying the narrator the context the templates spec permits and nothing further
@@ -315,6 +318,16 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 15.3, 15.7, 15.8, 15.11, 15.12_
 
   - [ ] 6.4 The Python literal guard, and the guard that guards itself
+    - **Depends on task 6.3, and runs in a later wave than it.** A guard is only writable once the
+      thing it guards exists: measured against the tree as it stands before 6.3, this guard reports
+      **29 offenders across 7 files** — `compile/blocks/base.py` 6 (`EMPTY_SCOPE_TEXT`,
+      `NO_DATA_TEXT`, `NO_GAPS_TEXT`, `NOTICE_COLUMN_HEADER`, `OMITTED_ROW_LABEL`,
+      `NOT_COMPARABLE_TEXT`), `compile/blocks/tables.py` 6, `record.py` 5, `comparison.py` 4,
+      `narrative.py` 2, `render/charts.py` 5 and `render/docx.py` 1 (`PREVIEW_NOTICE_TEXT`). Those
+      are exactly the literals 6.3 migrates, so writing this first would mean either a suite that
+      fails on a correct tree or a 29-entry allowlist — and an allowlist is the mechanism every
+      rule in `tests/test_boundaries.py` is deliberately written to avoid needing. The guard lands
+      with the migration it guards, which is how every other guard in this repo is sequenced.
     - `agent/tests/test_message_literals.py` walking each module with the standard `ast` module: a **declared** set of text-emitting sites as `(callable_name, parameter)` pairs — `(Text, "text")`, `(TextCell, "text")`, `(Column, "header")`, `(Table, "caption")`, `(Series, "label")`, `(Chart, "title")`, plus `(add_paragraph, 0)`, `(add_run, 0)` and an assignment to `.text` on a `python-docx` run. `(Paragraph, "style")` is **excluded**: a Word style id is not copy
     - Every `str` `ast.Constant` at a declared site, or assigned to a module-level `Final[str]` whose name matches `_(TEXT|LABEL|HEADER|CAPTION|NOTICE|TITLE)$`, must be a declared string id — or `""`
     - Excluded: element names, attribute names, class names, `data-` values; **Word style names**; and a `TextFact`'s `formatted`, which is collected data
@@ -324,6 +337,21 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 15.2, 15.6_
 
   - [ ] 6.5 The TypeScript literal guard
+    - **Depends on an app-side migration that no task currently declares.** Task 6.3 migrates the
+      agent's four places; its title says "the four places the literals actually are" and all four
+      are under `agent/`. Nothing in this plan migrates `app/components/reports/**`, yet task 6.2
+      states that `ui.` ids are "resolved by the app" and this guard checks those files against the
+      declared id set. Measured against the current tree the guard reports **91 offenders across 11
+      of 15 files** — `verification-panel.tsx` 38, `run-form.tsx` 13, `paper-render.tsx` 9,
+      `run-list.tsx` 8, `snapshot-provenance.tsx` 8, `run-failure-notice.tsx` 4,
+      `activity-timeline.tsx` 3, and 2 each in `download-card.tsx`, `figure-provenance.tsx`,
+      `gap-list.tsx` and `run-progress.tsx`. The catalog declares 16 `ui.` ids today, so closing
+      this needs new ids as well as new call sites.
+    - **Resolve that before starting this task**, either by extending 6.3 to a fifth place or by
+      adding a sibling task for the interface's copy. Moving this task to a later wave is necessary
+      and not sufficient: with no migration anywhere in the plan, this guard cannot pass in any
+      wave. Recorded here rather than closed by inventing a task, because which of the two it
+      should be is a scoping decision.
     - `app/test/message-literals.static.test.ts` using the `typescript` package's own `ts.createSourceFile` — already a dev dependency since `pnpm typecheck` runs `tsc`, so no new dependency — over `app/components/reports/**`, parsed with position info so `getText` works
     - Flag every `ts.JsxText` node with non-whitespace content; every string literal inside a `ts.JsxExpression` that is a **child** rather than an attribute value; and every string literal assigned to `aria-label`, `title`, `alt` or `placeholder` — those **are** user-facing copy, so this is deliberately stricter than criterion 15.6's "excluding attribute names"
     - Do not flag `className`, `data-*`, element or attribute names. An offender is any flagged literal that is not a declared string id
@@ -331,7 +359,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 15.6, 15.9_
 
 - [ ] 7. `schema_version` 2 in both halves, without rewriting an immutable row
-  - [ ] 7.1 Declare the version-conditional key sets in `app/lib/templates/definition.ts`
+  - [x] 7.1 Declare the version-conditional key sets in `app/lib/templates/definition.ts`
     - Between `// --- BEGIN SCHEMA VERSIONS ---` / `// --- END SCHEMA VERSIONS ---` sentinels: `MIN_SCHEMA_VERSION = 1`, `MAX_SUPPORTED_SCHEMA_VERSION = 2`, and the per-version records `REQUIRED_TOP_LEVEL_KEYS`, `NUMBER_FORMAT_KEYS`, `IDENTITY_KEYS`, `REQUIRED_IDENTITY_KEYS`, plus `LANGUAGES = ["en", "id"]`, `FRONT_MATTER_KEYS = ["cover", "document_control", "toc"]` and `FRONT_MATTER_FORBIDDEN_BLOCK_TYPES = ["cover"]`
     - **Declared as data, not as two validators**: `validateDefinition` reads the record for the resolved version, so no branch is written twice and the Mirror_Guard stays a set comparison
     - Behaviour that follows with no new rule: a v1 definition carrying `front_matter` is rejected as an **undeclared key** by the existing strict check; a v2 definition placing a `cover` block in `blocks` is rejected naming the block id; `document_control` and `toc` are **not** block types and never were, so there is nothing to forbid for them; and `cover` **stays** a block type, because a stored v1 definition carrying one must compile and `app/lib/templates/starters.ts` alone carries five
@@ -869,12 +897,12 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 1, "tasks": ["1.2", "2.1", "3.2"] },
     { "id": 2, "tasks": ["1.3", "1.6", "2.2", "3.3", "6.1"] },
     { "id": 3, "tasks": ["2.3", "3.4", "3.5", "6.2"] },
-    { "id": 4, "tasks": ["2.4", "4.1", "6.4", "6.5", "7.1"] },
+    { "id": 4, "tasks": ["2.4", "4.1", "7.1"] },
     { "id": 5, "tasks": ["2.5", "4.2", "5.1", "7.2", "12.1"] },
     { "id": 6, "tasks": ["4.3", "5.2", "7.3", "7.6", "12.2"] },
     { "id": 7, "tasks": ["4.4", "5.3", "5.4", "7.5", "12.3"] },
     { "id": 8, "tasks": ["4.5", "5.5", "6.3", "7.4", "11.1", "12.4"] },
-    { "id": 9, "tasks": ["4.6", "5.6", "8.1", "9.1", "11.2", "12.5"] },
+    { "id": 9, "tasks": ["4.6", "5.6", "6.4", "6.5", "8.1", "9.1", "11.2", "12.5"] },
     { "id": 10, "tasks": ["8.2", "9.2", "10.1", "11.3", "13.1"] },
     { "id": 11, "tasks": ["8.3", "10.2", "11.4", "12.6", "12.7", "13.2", "13.4"] },
     { "id": 12, "tasks": ["8.4", "11.5", "13.3", "13.5", "13.6"] },

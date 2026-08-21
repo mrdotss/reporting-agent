@@ -397,6 +397,10 @@
       "en": "Provenance",
       "id": "Asal data"
     },
+    "ui.template.untitled_placeholder": {
+      "en": "Untitled template",
+      "id": "Templat tanpa nama"
+    },
     "ui.verification.failed": {
       "en": "Not verified",
       "id": "Tidak terverifikasi"

@@ -1,0 +1,66 @@
+{
+  "candidates": [
+    {
+      "candidate": "libreoffice_index_update",
+      "docx_sha256": "0f6c7e795fe3412c8e341491bf7c033db97c7cc4dd46c0acac4b1a5c1fdf5fa8",
+      "evaluated_at": "2026-08-21T17:37:27.601557Z",
+      "named_pages": {},
+      "note": "the document named no page for any heading: the field was emitted with no cached result and the conversion did not resolve it, so the section renders as a heading with nothing under it",
+      "observed_pages": {
+        "Compute Utilization": 4,
+        "Executive Overview": 2,
+        "Memory And Capacity": 6,
+        "Methodology And Provenance": 12,
+        "Network Counters": 10,
+        "Storage Throughput": 8
+      },
+      "pdf_sha256": "3d88dadc37ade00af9a1870e44f4bbf92be617ccdeb3763dfcf7e058b2ea92ac",
+      "verdict": "incorrect"
+    },
+    {
+      "candidate": "two_pass_measure",
+      "docx_sha256": "d07cc3bad10e09398536088d4fe541292e820c2ce9b46e3fe33fef7053e317fb",
+      "evaluated_at": "2026-08-21T17:37:28.228754Z",
+      "named_pages": {
+        "Compute Utilization": 4,
+        "Executive Overview": 2,
+        "Memory And Capacity": 6,
+        "Methodology And Provenance": 12,
+        "Network Counters": 10,
+        "Storage Throughput": 8
+      },
+      "note": "every one of the 6 headings is named on the page it landed on, across 6 distinct pages of a 13-page document",
+      "observed_pages": {
+        "Compute Utilization": 4,
+        "Executive Overview": 2,
+        "Memory And Capacity": 6,
+        "Methodology And Provenance": 12,
+        "Network Counters": 10,
+        "Storage Throughput": 8
+      },
+      "pdf_sha256": "1bdcfe6531d7b4d5b391f486c0f6b314bf3eaecd1f62b8b420ca46564f1c5e84",
+      "verdict": "correct"
+    },
+    {
+      "candidate": "conversion_macro",
+      "docx_sha256": null,
+      "evaluated_at": "2026-08-21T17:37:29.639563Z",
+      "named_pages": {},
+      "note": "the profile's user/basic/Standard/Module1.xba exists but declares no 'Standard.Module1.ConvertWithIndexes': LibreOffice warms an **empty** Standard library, so the macro would have to be written into the profile the image builds. That is the writable macro library criterion 14.3 rejects, and the alternative — a second `soffice` invocation to install it — contends on the one pre-warmed profile, which criterion 14.3 also rejects",
+      "observed_pages": {},
+      "pdf_sha256": null,
+      "verdict": "unavailable"
+    }
+  ],
+  "fixture": {
+    "definition_path": "tests/fixtures/toc/long_report.definition.json",
+    "distinct_heading_pages": 6,
+    "headings": 6,
+    "name": "long_report",
+    "pages": 12,
+    "sha256": "547512206ebaa7010136db127659792fad67717f6bbbede62d44cd8459261571",
+    "snapshot_path": "tests/fixtures/toc/long_report.snapshot.json"
+  },
+  "schema_version": "1.0.0",
+  "soffice_version": "LibreOffice 26.2.4.2 620(Build:2)"
+}
