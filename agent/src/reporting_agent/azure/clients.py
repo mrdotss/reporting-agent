@@ -301,8 +301,34 @@ def _kql_literal(value: str) -> str:
     return "'" + cleaned.replace("'", "''") + "'"
 
 
-def inventory_query(resource_types: Sequence[str], *, subscription_id: str) -> str:
-    """The Resource Graph query one page is requested with (Req 20.1, 20.11). **Pure.**
+FACT_FIELD_PREFIX: Final[str] = "fact_"
+"""The prefix every projected fact column carries (Req 4.7).
+
+A prefix rather than the bare key, so a fact key can **never** collide with one of the
+eight columns `inventory_query` already projects: `id`, `name`, `type`, `location`,
+`resourceGroup`, `tags`, `sku` and `powerState`. A declaration naming its key `name` or
+`sku` would otherwise silently overwrite the inventory field of the same name, and the
+resulting record would look complete while carrying a fact where its own identity should
+be. The reader strips this prefix; nothing else in the product spells it."""
+
+_RESERVED_PROJECTION_NAMES: Final[frozenset[str]] = frozenset(
+    {"id", "name", "type", "location", "resourceGroup", "tags", "sku", "powerState"}
+)
+"""The eight columns the projection already emits, asserted against rather than assumed.
+
+The prefix makes a collision impossible, so this is the guard that proves the prefix is
+doing its job — if it is ever dropped, the assertion fails instead of a record silently
+carrying a fact in its `name` column."""
+
+
+def inventory_query(
+    resource_types: Sequence[str],
+    *,
+    subscription_id: str,
+    fact_projections: Sequence[tuple[str, str]] = (),
+) -> str:
+    """The Resource Graph query one page is requested with (Req 20.1, 20.11, 4.7).
+    **Pure.**
 
     Projects exactly the fields Req 20.11 enumerates — id, name, type, location,
     resource group, tags, the SKU or size identifier, and
@@ -315,6 +341,21 @@ def inventory_query(resource_types: Sequence[str], *, subscription_id: str) -> s
     virtualMachines`. A request naming no resource type omits the type filter entirely
     rather than emitting `in~ ()`, which matches nothing — an empty request list means
     "every type in scope", the same reading `discover`'s group and tag filters take.
+
+    `fact_projections` is `(key, projection)` pairs from the fact declaration, each
+    appended to the same `project` clause as `fact_<key> = <projection>`. Two properties
+    of how they are appended are load-bearing:
+
+    * **Ordered by key**, not in the order the declaration happened to list them, so two
+      runs over one declaration build a byte-identical query. The query string is not
+      hashed, but it is the thing a support case quotes and a fixture records, and a
+      query that reorders itself between runs makes both useless.
+    * **Prefixed** with :data:`FACT_FIELD_PREFIX`, so no fact key can shadow an inventory
+      column. See that constant.
+
+    Defaulting to `()` means every existing caller builds the query it built before,
+    character for character — the projection clause is unchanged when there is no fact to
+    project.
     """
     lines = [
         "Resources",
@@ -323,15 +364,20 @@ def inventory_query(resource_types: Sequence[str], *, subscription_id: str) -> s
     if resource_types:
         joined = ", ".join(_kql_literal(name) for name in resource_types)
         lines.append(f"| where type in~ ({joined})")
-    lines.extend(
-        [
-            "| project id, name, type, location, resourceGroup, tags,",
-            "          sku = tostring(properties.hardwareProfile.vmSize),",
-            "          powerState = tostring("
-            "properties.extended.instanceView.powerState.code)",
-            "| order by id asc",
-        ]
-    )
+
+    projection = [
+        "| project id, name, type, location, resourceGroup, tags,",
+        "          sku = tostring(properties.hardwareProfile.vmSize),",
+        "          powerState = tostring("
+        "properties.extended.instanceView.powerState.code)",
+    ]
+    for key, expression in sorted(fact_projections, key=lambda pair: pair[0]):
+        column = f"{FACT_FIELD_PREFIX}{key}"
+        assert column not in _RESERVED_PROJECTION_NAMES, column
+        projection.append(f"          , {column} = {expression}")
+
+    lines.extend(projection)
+    lines.append("| order by id asc")
     return "\n".join(lines)
 
 
@@ -362,6 +408,7 @@ class ArmInventoryPort:
         subscription_id: str,
         resource_types: Sequence[str],
         skip_token: str | None,
+        fact_projections: Sequence[tuple[str, str]] = (),
     ) -> RawHttpResponse:
         options: dict[str, Any] = {"resultFormat": "objectArray"}
         if skip_token:
@@ -372,7 +419,11 @@ class ArmInventoryPort:
             params={"api-version": self.api_version},
             json={
                 "subscriptions": [subscription_id],
-                "query": inventory_query(resource_types, subscription_id=subscription_id),
+                "query": inventory_query(
+                    resource_types,
+                    subscription_id=subscription_id,
+                    fact_projections=fact_projections,
+                ),
                 "options": options,
             },
         )

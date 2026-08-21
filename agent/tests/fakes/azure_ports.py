@@ -110,6 +110,7 @@ class FakeInventoryPort:
         subscription_id: str,
         resource_types: Sequence[str],
         skip_token: str | None,
+        fact_projections: Sequence[tuple[str, str]] = (),
     ) -> RawHttpResponse:
         result = self._state.record_and_pop(
             port_name="FakeInventoryPort",
@@ -117,6 +118,10 @@ class FakeInventoryPort:
             subscription_id=subscription_id,
             resource_types=tuple(resource_types),
             skip_token=skip_token,
+            # Recorded so a test can assert the projections reached the port. A fake that
+            # accepted the argument and dropped it would let the whole wiring be asserted
+            # against nothing.
+            fact_projections=tuple(fact_projections),
         )
         assert isinstance(result, RawHttpResponse)
         return result

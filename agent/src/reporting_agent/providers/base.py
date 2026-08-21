@@ -169,6 +169,11 @@ class GapRecord(TypedDict):
     one VM's metrics that `.kiro/steering/azure-integration.md` records is a statement
     about interval starts, and without them the same 512 entries are indistinguishable
     from 512 unrelated ones.
+
+    `source` is the named source a **fact** gap queried — the four fact gap types
+    `collect/log.py` declares carry one and the other twenty do not. `None` is again the
+    honest answer for a metric gap: `permission_denied` on a resource is not about a
+    source that was consulted and came back empty, it is about the resource itself.
     """
 
     gap_type: str
@@ -176,6 +181,7 @@ class GapRecord(TypedDict):
     metric: str | None
     message: str
     interval_start: str | None
+    source: str | None
 
 
 type StatValue = dict[str, PlainData]

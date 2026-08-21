@@ -81,15 +81,19 @@ import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from reporting_agent.azure.ports import InventoryPort, RawHttpResponse
+from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_DUPLICATE_INVENTORY_ROW,
     GAP_TYPE_POWER_STATE_UNKNOWN,
     record_gap,
 )
+from reporting_agent.collect.snapshot import rfc3339_utc
 from reporting_agent.errors import ThrottledError
 from reporting_agent.providers.base import (
     DiscoverResult,
@@ -104,7 +108,10 @@ __all__ = [
     "FALLBACK_WAIT_S",
     "MAX_CONSECUTIVE_FALLBACK_WAITS",
     "POWER_STATE_UNKNOWN",
+    "RESOURCE_GRAPH_REQUEST_TARGET",
+    "RESOURCE_GRAPH_SOURCE",
     "VIRTUAL_MACHINE_RESOURCE_TYPE",
+    "InventoryArchiveContext",
     "InventoryCollector",
     "normalize_power_state",
     "parse_quota_remaining",
@@ -316,6 +323,47 @@ def _string_field(row: Mapping[str, Any], field: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+RESOURCE_GRAPH_SOURCE: Final[str] = "resource_graph"
+"""The fact-declaration `source` name for a projected fact (Req 4.7).
+
+The same string the fact declaration uses, so a gap naming its source and an archived page
+naming its source name the same thing. Declared here because this is the module that
+queries it."""
+
+RESOURCE_GRAPH_REQUEST_TARGET: Final[str] = (
+    "/providers/Microsoft.ResourceGraph/resources"
+)
+"""What was asked, recorded on every archived page.
+
+The ARM path rather than a full URL: a URL carries the subscription id, and an archived
+object is read by a replay that already knows the subscription. Keeping the identifier
+subscription-free is the same discipline the metric-definition fixtures keep."""
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryArchiveContext:
+    """What :meth:`InventoryCollector.discover` needs in order to archive a page.
+
+    One object rather than five more keyword arguments on `discover`, because the five are
+    meaningless apart: there is no sensible call that supplies an actor id and no writer, or
+    a writer and no catalog version. Grouping them makes "archive the pages" a single
+    decision at the call site instead of five that could disagree.
+
+    `catalog_version` is on the page because the projection that produced its facts came
+    from that catalog. A replay re-deriving a fact has to know which declaration was in
+    force, and the snapshot's own `catalog_version` answers that for the run — but an
+    object that travels alone through an S3 lifecycle policy should not need the snapshot
+    to be interpretable.
+    """
+
+    writer: ArchiveWriter
+    actor_id: str
+    run_id: str
+    catalog_version: str
+    source: str = RESOURCE_GRAPH_SOURCE
+    request_target: str = RESOURCE_GRAPH_REQUEST_TARGET
+
+
 class InventoryCollector:
     """Pages an `InventoryPort` to completion, resolving one run's inventory.
 
@@ -325,9 +373,16 @@ class InventoryCollector:
     `progress.py` use for their own clocks.
     """
 
-    def __init__(self, port: InventoryPort, *, sleep: Sleep = asyncio.sleep) -> None:
+    def __init__(
+        self,
+        port: InventoryPort,
+        *,
+        sleep: Sleep = asyncio.sleep,
+        now: Callable[[], datetime] = lambda: datetime.now(UTC),
+    ) -> None:
         self._port = port
         self._sleep = sleep
+        self._now = now
 
     async def discover(
         self,
@@ -335,6 +390,8 @@ class InventoryCollector:
         subscription_id: str,
         resource_types: Sequence[str],
         fidelity_tier: str,
+        fact_projections: Sequence[tuple[str, str]] = (),
+        archive: InventoryArchiveContext | None = None,
     ) -> DiscoverResult:
         """Page the run's whole inventory (Req 20.1, 20.2, 20.11).
 
@@ -342,6 +399,31 @@ class InventoryCollector:
         `skip_token` until a page carries none, obeying the quota headers exactly
         (Req 20.3, 20.4, 20.14), and recording every power-state and duplicate-row gap
         along the way (Req 20.5, 20.9, 20.10, 20.12, 20.13).
+
+        `fact_projections` is handed to the port, which appends one projected column per
+        pair to the query (Req 4.7). `archive`, when supplied, receives **each page as it
+        arrives** (Req 7.1): a projected fact makes this response a fact-producing
+        response, and a fact-producing response absent from the archive is a fact a replay
+        cannot re-derive — which reports `REPLAY_MISMATCH` on a run that collected
+        correctly. Both default to absent, so a caller with no fact declaration and no
+        archive behaves exactly as before.
+
+        **A page is archived only when this query projected a fact.** Criterion 7.1's
+        obligation is over fact-*producing* responses, and with no projection this response
+        produces none: every other field it carries — the id, the type, the SKU, the power
+        state — is recorded on the snapshot itself, and Req 31.4 explicitly permits a replay
+        to read a resource's identity and capacity from there. Archiving it anyway would add
+        an object per page to the run's `raw_archive.object_count` that a replay folds
+        nothing from, which is a cost with no reader: more objects, a larger archive, and a
+        count whose growth no longer tracks the responses a replay actually needs. So the
+        condition is the presence of a projection, not the presence of a writer.
+
+
+        The page is archived **before** it is folded, matching the collector's own
+        write-then-fold order (Req 26.3, 26.4): the object lands first, so a fold that
+        raises cannot leave a folded page with no archived counterpart. A failed write
+        records gaps and the page is folded regardless — an inventory that cannot be
+        archived is still an inventory that was collected.
 
         Raises `ThrottledError` if a 4th consecutive quota-fallback wait would be
         required (Req 20.14). Raises `ValueError` for a blank `subscription_id`, since
@@ -354,12 +436,18 @@ class InventoryCollector:
         gaps: list[GapRecord] = []
         skip_token: str | None = None
         consecutive_fallback_waits = 0
+        page_index = 0
+        # Resolved once, before the loop, so every page of one `skip_token` sequence is
+        # treated the same way — a run that archived its first page and not its fourth
+        # would report an archive a replay cannot use and no reason why.
+        archive_pages = archive is not None and bool(fact_projections)
 
         while True:
             response = await self._port.query_resources(
                 subscription_id=subscription_id,
                 resource_types=resource_types,
                 skip_token=skip_token,
+                fact_projections=fact_projections,
             )
 
             if not response.ok:
@@ -371,9 +459,24 @@ class InventoryCollector:
                 )
                 break
 
+            next_token = _skip_token_from_body(response.body)
+
+            if archive_pages:
+                assert archive is not None  # narrowed by `archive_pages`
+                gaps.extend(
+                    await self._archive_page(
+                        archive,
+                        subscription_id=subscription_id,
+                        body=response.body,
+                        page_index=page_index,
+                        skip_token_present=next_token is not None,
+                    )
+                )
+
             self._fold_page(response.body, resources, gaps, fidelity_tier=fidelity_tier)
 
-            skip_token = _skip_token_from_body(response.body)
+            skip_token = next_token
+            page_index += 1
             if skip_token is None:
                 break
 
@@ -382,6 +485,55 @@ class InventoryCollector:
             )
 
         return DiscoverResult(resources=sort_inventory(resources.values()), gaps=gaps)
+
+    async def _archive_page(
+        self,
+        archive: InventoryArchiveContext,
+        *,
+        subscription_id: str,
+        body: object,
+        page_index: int,
+        skip_token_present: bool,
+    ) -> list[GapRecord]:
+        """Archive one Resource Graph page, returning any gap the write produced.
+
+        Returns `[]` — writing nothing — for a page carrying no usable resource id.
+        `ArchiveWriter.write_inventory` refuses an empty `resource_ids` by design, and a
+        page with no rows is the ordinary last page of a `skip_token` sequence rather than
+        a failure: archiving an object that names no resource would add an object to the
+        run's count that a replay could attribute to nothing.
+
+        `received_at` comes from this instance's injected clock, so a test drives it
+        rather than the wall clock deciding what lands in a committed fixture.
+        """
+        resource_ids = [
+            row[_FIELD_ID]
+            for row in _rows_from_body(body)
+            if isinstance(row.get(_FIELD_ID), str) and row[_FIELD_ID].strip()
+        ]
+        if not resource_ids:
+            return []
+
+        result = await archive.writer.write_inventory(
+            actor_id=archive.actor_id,
+            run_id=archive.run_id,
+            source=archive.source,
+            request_target=archive.request_target,
+            page_index=page_index,
+            skip_token_present=skip_token_present,
+            received_at=rfc3339_utc(self._now()),
+            catalog_version=archive.catalog_version,
+            resource_ids=resource_ids,
+            raw_body=body,
+        )
+        if not result.wrote:
+            logger.warning(
+                "inventory page %d for subscription %r was not archived; this run's raw "
+                "archive is incomplete and a projected fact cannot be replayed from it.",
+                page_index,
+                subscription_id,
+            )
+        return list(result.gaps)
 
     def _fold_page(
         self,

@@ -279,13 +279,34 @@ def test_partial_coverage_is_never_terminal() -> None:
 
 
 def test_every_exception_is_catchable_as_agent_error() -> None:
-    subclasses = _all_agent_error_subclasses()
+    """Every declared code has exactly one class that **declares** it, and every class is
+    catchable as an `AgentError`.
 
-    assert len(subclasses) == len(ErrorCode)
+    Counted over classes declaring a `code` in their own `__dict__`, not over all
+    descendants, and the distinction is the whole point of the assertion. What must stay
+    1:1 is code-to-class: a code with no class cannot be raised, and a class inventing a
+    code widens the vocabulary the app switches on. Neither is affected by a **specialized**
+    subclass of an existing class that inherits its parent's code and only adds context —
+    `compile/messages.py`'s `MissingMessageError` is a `RenderFailedError` carrying the
+    string id and the language, which is strictly more information under the same code.
+
+    Asserting `len(descendants) == len(ErrorCode)` instead would forbid every such
+    specialization, which is a rule about class hierarchy shape rather than about the error
+    vocabulary, and not one this codebase has a reason to hold.
+    """
+    subclasses = _all_agent_error_subclasses()
+    declaring = {
+        subclass for subclass in subclasses if "code" in vars(subclass)
+    }
+
+    assert len(declaring) == len(ErrorCode)
+    assert {subclass.code for subclass in declaring} == set(ErrorCode)
 
     for subclass in subclasses:
         assert issubclass(subclass, AgentError)
         assert issubclass(subclass, Exception)
+        # A specialization inherits a real code rather than leaving it unset.
+        assert subclass.code in set(ErrorCode)
 
 
 def test_repr_states_the_code_and_terminality() -> None:

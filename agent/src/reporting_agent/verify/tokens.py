@@ -61,6 +61,7 @@ __all__ = [
     "open_document",
     "paragraph_text",
     "paragraph_texts",
+    "pdf_page_texts",
     "read_pdf_text",
     "table_caption",
     "table_grid",
@@ -377,6 +378,47 @@ def normalize_pdf_text(pages: list[str]) -> str:
     because there is none.
     """
     return _WHITESPACE_RUN.sub(" ", " ".join(pages)).strip()
+
+
+def pdf_page_texts(path: str | Path) -> tuple[str, ...]:
+    """One normalized string **per page**, in page order (Req 14.2, 14.11).
+
+    The per-page counterpart of :func:`read_pdf_text`, and the reason it exists separately
+    rather than as an option on it: the two answer opposite questions and each would be
+    wrong for the other's caller.
+
+    * :func:`read_pdf_text` deliberately **destroys** page boundaries, joining every page
+      into one string, because the fidelity gate asks "is this `formatted` string present"
+      and a figure the conversion split across a page break must still be found.
+    * This function is the only way to ask **which page** something landed on, which is the
+      whole content of a table of contents. Page numbers are the one claim neither the
+      compiler nor the HTML emitter can make, because pagination is decided by the
+      converter.
+
+    Each page's text is normalized the same way — whitespace runs collapsed to one space,
+    trimmed — so a heading broken across lines within a page is still one contiguous
+    substring of that page's string. Pages are **not** joined, and an empty page yields an
+    empty string rather than being dropped: the index of a page in the returned tuple is its
+    page number minus one, so dropping a blank page would renumber every page after it.
+
+    Raises the same `VerificationFailedError` as :func:`read_pdf_text` for an unreadable
+    file, for the same reason — a caller must not conclude that a heading is on no page
+    because the document would not parse.
+    """
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(str(path))
+        return tuple(
+            _WHITESPACE_RUN.sub(" ", page.extract_text() or "").strip()
+            for page in reader.pages
+        )
+    # Broad for the reason `read_pdf_text` gives: every way a PDF fails to parse is one
+    # outcome, and it is not "the heading is absent".
+    except Exception as exc:
+        raise VerificationFailedError(
+            f"the converted PDF at {path} could not be read: {type(exc).__name__}"
+        ) from exc
 
 
 def read_pdf_text(path: str | Path) -> tuple[str, int]:

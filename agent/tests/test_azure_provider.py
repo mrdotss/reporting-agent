@@ -645,6 +645,7 @@ def test_discover_scopes_the_query_to_the_subscription_and_resource_types() -> N
             "subscription_id": SUBSCRIPTION,
             "resource_types": (RESOURCE_TYPE,),
             "skip_token": None,
+            "fact_projections": (),
         }
     ]
 

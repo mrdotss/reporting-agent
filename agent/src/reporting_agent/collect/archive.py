@@ -54,9 +54,15 @@ from reporting_agent.providers.base import GapRecord
 from reporting_agent.storage.base import JSON_CONTENT_TYPE, ObjectStore
 
 __all__ = [
+    "ARCHIVE_KINDS",
+    "ARCHIVE_KIND_INVENTORY",
+    "ARCHIVE_KIND_METRICS",
+    "ARCHIVE_SCHEMA_VERSION",
     "ArchiveWriteResult",
     "ArchiveWriter",
     "archive_key",
+    "archive_kind_of",
+    "inventory_archive_key",
 ]
 
 logger = logging.getLogger(__name__)
@@ -66,6 +72,47 @@ _TAGS: Final[dict[str, str]] = {"content-encoding": "gzip"}
 parameter) — the key's own `.json.gz` suffix is what Req 26.3 actually requires; this
 tag is a convenience for a human browsing the bucket, not a contract this module
 relies on being read back."""
+
+
+ARCHIVE_SCHEMA_VERSION: Final[str] = "1.0.0"
+"""The archived object's own `schema_version`, carried by every **inventory** object.
+
+Not retrofitted onto a metrics object, and that is the whole reason the dispatch below
+reads a *default* rather than a required field: adding a key to the metrics shape would
+mean every object already written lacks it, so a reader would have to tolerate its absence
+anyway. Tolerating the absence is therefore the contract, and writing it on the objects
+that never lacked it is the only honest version of that."""
+
+ARCHIVE_KIND_METRICS: Final[str] = "metrics"
+ARCHIVE_KIND_INVENTORY: Final[str] = "inventory"
+
+ARCHIVE_KINDS: Final[tuple[str, ...]] = (ARCHIVE_KIND_METRICS, ARCHIVE_KIND_INVENTORY)
+"""The object kinds the archive holds, and the closed set :func:`archive_kind_of` returns
+a member of."""
+
+
+def archive_kind_of(document: Mapping[str, object]) -> str:
+    """Which kind of archived object `document` is (Req 7.2). **Pure.**
+
+    Dispatches on the **declared `kind` field**, defaulting to
+    :data:`ARCHIVE_KIND_METRICS` when it is absent — because every object written before
+    this field existed is a metrics response and carries no `kind`, so absence *is* the
+    metrics claim rather than an unknown.
+
+    Deliberately **not** a guess from the shape of the body. A metrics batch response
+    carries `values`, a per-resource fallback carries `value`, and a Resource Graph page
+    carries `data` — so shape-sniffing works right up until one of those three services
+    renames a field or a new kind arrives whose body resembles an existing one, at which
+    point a replay folds an object as the wrong kind and reports a mismatch on a
+    reproducible snapshot. A declared field cannot be wrong by coincidence.
+
+    An unrecognised declared `kind` is returned as-is rather than coerced, so a caller can
+    refuse it by name; coercing it to `metrics` would fold a fact response as a metric one.
+    """
+    kind = document.get("kind")
+    if kind is None:
+        return ARCHIVE_KIND_METRICS
+    return str(kind)
 
 
 def archive_key(*, actor_id: str, run_id: str, sequence: int, location: str, resource_type: str) -> str:
@@ -79,6 +126,28 @@ def archive_key(*, actor_id: str, run_id: str, sequence: int, location: str, res
     """
     safe_type = resource_type.replace("/", "_")
     return f"{actor_id}/snapshots/{run_id}/raw/{sequence:06d}-{location}-{safe_type}.json.gz"
+
+
+def inventory_archive_key(
+    *, actor_id: str, run_id: str, sequence: int, source: str, page_index: int
+) -> str:
+    """The object key for one archived inventory page (Req 7.1). **Pure.**
+
+    Shares the `<seq:06d>-` prefix with :func:`archive_key` for a reason that is not
+    cosmetic: a replay reads the archive by listing the run's `raw/` prefix and sorting
+    the keys, so sorting by key has to equal sorting by sequence. A key that led with the
+    source name instead would interleave inventory pages among the metric objects in an
+    order that depends on the alphabet, and the sequence the snapshot names would no
+    longer be the sequence a replay folds in.
+
+    `page_index` is in the key as well as in the body, so a human listing the bucket can
+    see the paging without decompressing anything.
+    """
+    safe_source = source.replace("/", "_")
+    return (
+        f"{actor_id}/snapshots/{run_id}/raw/"
+        f"{sequence:06d}-{ARCHIVE_KIND_INVENTORY}-{safe_source}-{page_index:04d}.json.gz"
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +310,118 @@ class ArchiveWriter:
                     f"resource's metrics were still folded into the accumulator and "
                     f"the sketch, but this run's raw archive is incomplete and "
                     f"cannot be fully replayed.",
+                )
+                for resource_id in resource_ids
+            )
+            return ArchiveWriteResult(wrote=False, key=key, gaps=gaps)
+
+        with self._lock:
+            self._written += 1
+        return ArchiveWriteResult(wrote=True, key=key)
+
+    async def write_inventory(
+        self,
+        *,
+        actor_id: str,
+        run_id: str,
+        source: str,
+        request_target: str,
+        page_index: int,
+        skip_token_present: bool,
+        received_at: str,
+        catalog_version: str,
+        resource_ids: Sequence[str],
+        raw_body: object,
+    ) -> ArchiveWriteResult:
+        """Write one **inventory** page to the raw archive (Req 7.1, 7.2).
+
+        A separate method rather than a `kind` argument on :meth:`write`, because the two
+        object shapes have almost nothing in common: a metrics object is identified by a
+        `(subscription, location, resource_type)` grouping key over a window at a grain,
+        and an inventory page is identified by its source, its request target and its
+        position in a `skip_token` sequence. One method taking the union would have every
+        caller passing four `None`s, and the shape a reader gets would depend on which
+        arguments happened to be set rather than on a declared field.
+
+        **Why an inventory page is archived at all.** It was not, until a projected fact
+        made the inventory response a *fact-producing* response. Req 7.1 requires every
+        response that produces a fact to be archived in the pass that folds it, for the
+        same reason a metrics response is: a fact absent from the archive is a fact a
+        replay cannot re-derive, which makes the recomputed snapshot differ and reports
+        `REPLAY_MISMATCH` on a run that collected perfectly.
+
+        Shares this instance's sequence counter, `archive_incomplete` flag and
+        `object_count` with :meth:`write`, and that sharing is required rather than
+        convenient: the snapshot records **one** `raw_archive.object_count`, and a replay
+        refuses to proceed when the number of objects supplied differs from the number the
+        sequence names. Two writers would produce two counts and one of them would be
+        wrong.
+
+        Never raises, exactly as :meth:`write` never does. On a store failure it records
+        one `archive_write_failed` gap per resource on the page and flips
+        `archive_incomplete`; the caller keeps the page's records and continues, because a
+        run that cannot archive its inventory is still a run that collected an inventory.
+        """
+        if not resource_ids:
+            raise ValueError(
+                "resource_ids must be non-empty; an inventory page naming no resource is "
+                "not one this method can archive"
+            )
+
+        sequence = self._next_sequence()
+        key = inventory_archive_key(
+            actor_id=actor_id,
+            run_id=run_id,
+            sequence=sequence,
+            source=source,
+            page_index=page_index,
+        )
+
+        # `kind` is declared, `schema_version` is declared, and the field order below is
+        # the order the object's own contract lists them in — see `archive_kind_of` on why
+        # the dispatch reads a field rather than sniffing the body.
+        document: dict[str, Any] = {
+            "schema_version": ARCHIVE_SCHEMA_VERSION,
+            "kind": ARCHIVE_KIND_INVENTORY,
+            "sequence": sequence,
+            "source": source,
+            "request_target": request_target,
+            "page_index": page_index,
+            "skip_token_present": bool(skip_token_present),
+            "received_at": received_at,
+            "catalog_version": catalog_version,
+            "resource_ids": list(resource_ids),
+            "raw_response": raw_body,
+        }
+
+        try:
+            body_bytes = gzip.compress(
+                json.dumps(document, default=_json_default).encode("utf-8")
+            )
+            await self.store.put_bytes(
+                key, body_bytes, content_type=JSON_CONTENT_TYPE, tags=_TAGS
+            )
+        except Exception as exc:
+            self._incomplete = True
+            logger.warning(
+                "archive write failed for inventory key %r (source %r, page %d, %d "
+                "resource(s)); keeping the page's records and marking this run's raw "
+                "archive incomplete: %s",
+                key,
+                source,
+                page_index,
+                len(resource_ids),
+                exc,
+            )
+            gaps = tuple(
+                record_gap(
+                    GAP_TYPE_ARCHIVE_WRITE_FAILED,
+                    resource_id,
+                    None,
+                    f"the raw archive write for inventory key {key!r} failed: {exc}; "
+                    f"this resource's inventory record and any projected fact were "
+                    f"still kept, but this run's raw archive is incomplete and cannot "
+                    f"be fully replayed.",
                 )
                 for resource_id in resource_ids
             )

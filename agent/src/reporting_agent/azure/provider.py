@@ -72,6 +72,7 @@ from reporting_agent.azure.definitions import DefinitionProbe
 from reporting_agent.azure.inventory import (
     DEALLOCATED_POWER_STATE_CODES,
     VIRTUAL_MACHINE_RESOURCE_TYPE,
+    InventoryArchiveContext,
     InventoryCollector,
 )
 from reporting_agent.azure.metrics import MetricsCollector
@@ -419,6 +420,17 @@ class AzureProvider:
             subscription_id=scope["subscription_id"],
             resource_types=tuple(scope["resource_types"]),
             fidelity_tier=self.fidelity_tier,
+            # The **same** writer the metrics collector uses, not a second one: the
+            # snapshot records one `raw_archive.object_count`, and a replay refuses to
+            # proceed when the objects supplied and the objects the sequence names differ.
+            # Two writers would keep two sequences and two counts, and one of them would
+            # be wrong (Req 26.12, 7.1).
+            archive=InventoryArchiveContext(
+                writer=self.metrics.archive_writer,
+                actor_id=self.actor_id,
+                run_id=self.run_id,
+                catalog_version=self.catalog.catalog_version,
+            ),
         )
 
         groups = tuple(scope.get("resource_groups") or ())
@@ -1261,6 +1273,9 @@ def provider_over_ports(
     a test supplying its own passes it explicitly rather than patching a module.
     """
     loaded = catalog if catalog is not None else load_catalog()
+    # One writer for the whole run, shared by the inventory pages and the metric
+    # responses. See `AzureProvider.discover` on why it cannot be two.
+    archive_writer = ArchiveWriter(store=object_store)
     return AzureProvider(
         catalog=loaded,
         inventory=InventoryCollector(inventory_port, sleep=sleep),
@@ -1268,7 +1283,7 @@ def provider_over_ports(
         definitions=DefinitionProbe(definitions_port, loaded),
         metrics=MetricsCollector(
             region_resolver=RegionResolver(port=metrics_port),
-            archive_writer=ArchiveWriter(store=object_store),
+            archive_writer=archive_writer,
             sleep=sleep,
         ),
         logs=metrics_port,

@@ -107,6 +107,9 @@ def test_paging_scopes_every_request_to_the_subscription_and_resource_types() ->
                 "Microsoft.Storage/storageAccounts",
             ),
             "skip_token": None,
+            # Empty until the fact declaration supplies projections: with none, the
+            # query is byte-identical to the one this port built before facts existed.
+            "fact_projections": (),
         }
     ]
 

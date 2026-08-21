@@ -84,7 +84,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Without this criterion 20.4 and Property 4.6 have no observable at all: contiguity is a statement about interval starts
     - _Requirements: 20.4_
 
-  - [ ] 1.3 `DECLARED_GAP_TYPES` from 20 to 24, and a `source` field on the four new types
+  - [x] 1.3 `DECLARED_GAP_TYPES` from 20 to 24, and a `source` field on the four new types
     - `agent/.../collect/log.py`: add `GAP_TYPE_BACKUP_NOT_CONFIGURED`, `GAP_TYPE_NO_RESERVATIONS`, `GAP_TYPE_REPLICATION_NOT_ENABLED` and `GAP_TYPE_FACT_UNAVAILABLE` as four more `Final[str]` constants beside the existing twenty, add all four to `__all__` and to `DECLARED_GAP_TYPES`, and raise the `assert len(DECLARED_GAP_TYPES) == 20` at line 137 to `== 24`
     - `record_gap` gains `source: str | None = None`, rejecting an empty string, and `collect/snapshot.py` emits `source` on a gap **when present and omits it when `None`** — present on every gap of the four new types, absent on the twenty existing ones, so no existing snapshot digest changes
     - Update the module comment at line 68 that reads "20 values" so the count in the prose and the count in the assertion cannot disagree
@@ -103,7 +103,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `agent/tests/test_themes.py` and `tests/test_verify_verifier.py` extended in the same task, and `tests/test_image_build.py`'s `--assert-build` path still passes
     - _Requirements: 6.4, 13.5, 13.6, 14.6, 18.11_
 
-  - [ ] 1.6 `inventory_query` takes `fact_projections`, and `discover` archives each page
+  - [x] 1.6 `inventory_query` takes `fact_projections`, and `discover` archives each page
     - `agent/.../azure/clients.py`: `inventory_query(resource_types, *, subscription_id, fact_projections: Sequence[tuple[str, str]])` appending one `fact_<key> = <projection>` term per pair to the existing `project` clause (line 328), ordered by key so two runs build one identical query, under `FACT_FIELD_PREFIX: Final[str] = "fact_"` so a fact key can never collide with `id`, `name`, `type`, `location`, `resourceGroup`, `tags`, `sku` or `powerState`
     - `agent/.../azure/inventory.py`: `discover(...)` hands each Resource Graph page to the `ArchiveWriter` as it arrives, because a projected fact makes the inventory response a **fact-producing response** and criterion 7.1 requires it archived in the pass that folds it
     - `agent/.../collect/archive.py`: add the `kind` dispatch field and the `"inventory"` object shape — `schema_version`, `kind`, `sequence`, `source`, `request_target`, `page_index`, `skip_token_present`, `received_at`, `catalog_version`, `raw_response` — dispatching on the **declared `kind` field** rather than on the shape of the body, so an existing metric object carrying no `kind` still means `metrics` and no committed object changes
@@ -121,7 +121,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Nothing else in the codebase may declare a TOC approach string; extend `tests/test_boundaries.py` to fail on any of the four literals appearing outside this module
     - _Requirements: 14.10_
 
-  - [ ] 2.2 Build the fixture, `verify/tokens.pdf_page_texts` and the one measurement harness
+  - [x] 2.2 Build the fixture, `verify/tokens.pdf_page_texts` and the one measurement harness
     - `agent/tests/fixtures/toc/long_report.definition.json` and `long_report.snapshot.json`: a compiled report of **at least 8 pages carrying at least 6 section headings distributed across at least 4 pages**, produced by the same `compile → render/docx.py → render/pdf.py` path a delivered report uses — no hand-built document anywhere
     - `agent/.../verify/tokens.py`: add `pdf_page_texts(path) -> tuple[str, ...]` beside the existing `read_pdf_text` and `normalize_pdf_text`, returning per-page text so a heading can be located to a page
     - `agent/tests/toc_harness.py`: `TocMeasurement(docx_bytes, pdf_bytes, pdf_sha256, observed_pages, named_pages)` and `async def measure(definition, snapshot, *, approach)`, rendering through `render/docx.py`, converting through `render/pdf.py` and reading pages through `pdf_page_texts`. `observed_pages` takes the page carrying a heading's **first rendered character**, so a heading spanning a page boundary resolves to exactly one page
@@ -163,7 +163,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Derive every metric name, unit and aggregation from that type's fixture from task 3.1 rather than from portal display names, which differ from API metric names by exactly the case, whitespace and separator substitutions the near-miss rule of task 3.3 rejects
     - _Requirements: 1.1, 1.2, 1.3, 1.9_
 
-  - [ ] 3.3 Implement `catalog/evidence.py` and the Catalog_Evidence_Guard
+  - [x] 3.3 Implement `catalog/evidence.py` and the Catalog_Evidence_Guard
     - `agent/src/reporting_agent/catalog/evidence.py` holding the guard function, **imported** by `agent/tests/test_catalog_evidence.py` so Property 5 of task 3.4 tests the implementation rather than the test
     - Declare the unit mapping associating each unit name a fixture reports (`Percent`, `Bytes`, `BytesPerSecond`, `CountPerSecond`, `Count`, `Seconds`, `Unspecified`) with exactly one term of `DECLARED_UNITS` in `catalog/loader.py`, because the Metric Definitions API reports its own vocabulary and comparing the two as equal strings would fail every correct entry; a reported unit the mapping has no term for **fails** naming the type, the metric and the unit
     - For every metric every entry declares: the name present in that type's fixture compared as **exact strings**; the catalog's unit equal to the mapping's term for the fixture's unit; every requested aggregation among the fixture's supported set, compared as exact strings. A resource type with no fixture fails naming the type
@@ -292,7 +292,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     charts, the historical-trend statements and the gap explanations. It therefore lands before
     all of them.
 
-  - [ ] 6.1 Declare the agent's catalog and `compile/messages.py`
+  - [x] 6.1 Declare the agent's catalog and `compile/messages.py`
     - `agent/src/reporting_agent/messages/__init__.py` and `messages/catalog.v1.json`: `schema_version` plus a `messages` map from string id to `{ "en": …, "id": … }`, covering the block labels, the table headers, the methodology appendix, the gap explanations, the verification record and the front matter, with a value declared for **every** id in **both** languages
     - The id namespace is `^(doc|chart|ui)\.[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$` — a closed prefix set, lowercase ASCII, dotted. `doc.` and `chart.` ids are resolved by the agent and `ui.` by the app, but **both halves declare every id**, because the id sets must be equal and the interface has to present an archived run's fixed copy in its pinned language
     - `agent/src/reporting_agent/compile/messages.py`: `MissingMessageError(RenderFailedError)` and the frozen `Messages(language, _table)` with `text(string_id) -> str` returning the declared value or raising `RENDER_FAILED` naming the id **and** the language — never a fallback to the other language, which is the failure this exists to prevent

@@ -1337,15 +1337,19 @@ def _gaps_to_plain_data(gaps: Iterable[GapRecord]) -> list[PlainData]:
     is emitted as `null` for a resource-level gap, which is the `GapRecord` shape
     unchanged.
 
-    `interval_start` is the one field emitted **only when present**, following this
+    `interval_start` and `source` are emitted **only when present**, following this
     module's omit-when-absent convention rather than `metric`'s emit-`null` one. The
     two differ for a reason that is about digests, not taste: `metric` has been written
     on every gap since the first snapshot, so emitting it as `null` costs nothing, while
-    `interval_start` is new. Emitting `null` for the twenty gap types that are not about
-    an interval would change the canonical bytes of **every** gap ever recorded, and so
-    the `content_hash` of every snapshot a re-run would produce — turning an additive
-    field into a silent break of the one property the snapshot exists to have. Omitted,
-    a run recording no interval-level gap hashes exactly as it did before.
+    the other two are new. Emitting `null` for the twenty gap types that carry neither
+    would change the canonical bytes of **every** gap ever recorded, and so the
+    `content_hash` of every snapshot a re-run would produce — turning two additive fields
+    into a silent break of the one property the snapshot exists to have. Omitted, a run
+    recording no interval-level and no fact gap hashes exactly as it did before.
+
+    Both are read with `.get`, so a gap built as a plain dict by an older writer — or read
+    back out of an archived snapshot — is emitted rather than raising a `KeyError` on a
+    field it predates.
     """
     entries: list[PlainData] = []
     for gap in sorted(gaps, key=gap_sort_key):
@@ -1355,9 +1359,10 @@ def _gaps_to_plain_data(gaps: Iterable[GapRecord]) -> list[PlainData]:
             "metric": gap["metric"],
             "message": gap["message"],
         }
-        interval_start = gap.get("interval_start")
-        if interval_start is not None:
-            entry["interval_start"] = interval_start
+        for field_name in ("interval_start", "source"):
+            value = gap.get(field_name)  # type: ignore[literal-required]
+            if value is not None:
+                entry[field_name] = value
         entries.append(entry)
     return entries
 

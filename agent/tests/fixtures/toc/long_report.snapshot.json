@@ -1,0 +1,281 @@
+{
+  "collected_at": "2026-07-03T01:30:00Z",
+  "content_hash": "7fa6dc73ed7130da755a8bad9763b7d0dca6db9bca8e84cc5388a0e9c312918b",
+  "gaps": [
+    {
+      "gap_type": "metric_not_emitted",
+      "message": "the SKU does not emit this counter",
+      "metric": "Network In Total",
+      "resource_id": "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/prod-web-01"
+    }
+  ],
+  "grain": "PT1H",
+  "producer": {
+    "agent_version": "0.0.0+unknown",
+    "catalog_version": "1.0.0"
+  },
+  "raw_archive": {
+    "complete": true,
+    "object_count": 4
+  },
+  "requested_scope": {
+    "metrics_by_resource_type": {
+      "Microsoft.Compute/virtualMachines": [
+        "Available Memory Bytes",
+        "Percentage CPU"
+      ]
+    },
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "tag_filters": {}
+  },
+  "resources": [
+    {
+      "day_buckets": [
+        {
+          "local_day": "2026-07-01",
+          "slot_count": 24,
+          "statistics": [
+            {
+              "estimator": "exact_count_weighted",
+              "fidelity_tier": "baseline",
+              "metric": "Percentage CPU",
+              "sample_count": 48,
+              "statistic": "avg",
+              "unit": "percent",
+              "value": "60.00"
+            }
+          ]
+        },
+        {
+          "local_day": "2026-07-02",
+          "slot_count": 24,
+          "statistics": [
+            {
+              "estimator": "exact_count_weighted",
+              "fidelity_tier": "baseline",
+              "metric": "Percentage CPU",
+              "sample_count": 48,
+              "statistic": "avg",
+              "unit": "percent",
+              "value": "68.40"
+            }
+          ]
+        }
+      ],
+      "fidelity_tier": "baseline",
+      "location": "southeastasia",
+      "name": "prod-sql-01",
+      "power_state": "running",
+      "power_state_raw": "PowerState/running",
+      "resource_group": "rg-prod",
+      "resource_id": "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/prod-sql-01",
+      "resource_type": "Microsoft.Compute/virtualMachines",
+      "sku": {
+        "memory_bytes": "8589934592",
+        "name": "Standard_D2s_v5",
+        "vcpus_available": "2"
+      },
+      "statistics": [
+        {
+          "estimator": "exact_count_weighted",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "avg",
+          "unit": "percent",
+          "value": "64.20"
+        },
+        {
+          "estimator": "exact_interval_maximum",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "max",
+          "unit": "percent",
+          "value": "99.90"
+        },
+        {
+          "estimator": "exact_interval_minimum",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "min",
+          "unit": "percent",
+          "value": "21.00"
+        },
+        {
+          "estimated": true,
+          "estimator": "histogram_sketch_pt1h_interval_average",
+          "fidelity_tier": "baseline",
+          "label": "95.10% (p95, est. from hourly averages)",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "p95",
+          "unit": "percent",
+          "value": "95.10"
+        },
+        {
+          "derived_from": [
+            {
+              "kind": "metric",
+              "name": "Available Memory Bytes",
+              "statistic": "avg",
+              "unit": "bytes"
+            },
+            {
+              "kind": "sku_capability",
+              "name": "MemoryGB",
+              "unit": "bytes"
+            }
+          ],
+          "estimator": "derived_count_weighted",
+          "fidelity_tier": "baseline",
+          "formula": "(sku_memory_bytes - available_memory_bytes) / sku_memory_bytes * 100",
+          "metric": "memory_used_pct",
+          "note": "Host-observed; typically 1-3% below what the guest reports.",
+          "observation": "host_observed",
+          "sample_count": 48,
+          "statistic": "avg",
+          "unit": "percent",
+          "value": "81.40"
+        }
+      ],
+      "tags": {
+        "env": "Prod",
+        "tier": "data"
+      }
+    },
+    {
+      "day_buckets": [
+        {
+          "local_day": "2026-07-01",
+          "slot_count": 24,
+          "statistics": [
+            {
+              "estimator": "exact_count_weighted",
+              "fidelity_tier": "baseline",
+              "metric": "Percentage CPU",
+              "sample_count": 48,
+              "statistic": "avg",
+              "unit": "percent",
+              "value": "10.00"
+            }
+          ]
+        },
+        {
+          "local_day": "2026-07-02",
+          "slot_count": 24,
+          "statistics": [
+            {
+              "estimator": "exact_count_weighted",
+              "fidelity_tier": "baseline",
+              "metric": "Percentage CPU",
+              "sample_count": 48,
+              "statistic": "avg",
+              "unit": "percent",
+              "value": "14.96"
+            }
+          ]
+        }
+      ],
+      "fidelity_tier": "baseline",
+      "location": "southeastasia",
+      "name": "prod-web-01",
+      "power_state": "running",
+      "power_state_raw": "PowerState/running",
+      "resource_group": "rg-prod",
+      "resource_id": "/subscriptions/11111111-2222-3333-4444-555555555555/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+      "resource_type": "Microsoft.Compute/virtualMachines",
+      "sku": {
+        "memory_bytes": "8589934592",
+        "name": "Standard_D2s_v5",
+        "vcpus_available": "2"
+      },
+      "statistics": [
+        {
+          "estimator": "exact_count_weighted",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "avg",
+          "unit": "percent",
+          "value": "12.48"
+        },
+        {
+          "estimator": "exact_interval_maximum",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "max",
+          "unit": "percent",
+          "value": "88.20"
+        },
+        {
+          "estimator": "exact_interval_minimum",
+          "fidelity_tier": "baseline",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "min",
+          "unit": "percent",
+          "value": "0.51"
+        },
+        {
+          "estimated": true,
+          "estimator": "histogram_sketch_pt1h_interval_average",
+          "fidelity_tier": "baseline",
+          "label": "68.40% (p95, est. from hourly averages)",
+          "metric": "Percentage CPU",
+          "sample_count": 48,
+          "statistic": "p95",
+          "unit": "percent",
+          "value": "68.40"
+        },
+        {
+          "derived_from": [
+            {
+              "kind": "metric",
+              "name": "Available Memory Bytes",
+              "statistic": "avg",
+              "unit": "bytes"
+            },
+            {
+              "kind": "sku_capability",
+              "name": "MemoryGB",
+              "unit": "bytes"
+            }
+          ],
+          "estimator": "derived_count_weighted",
+          "fidelity_tier": "baseline",
+          "formula": "(sku_memory_bytes - available_memory_bytes) / sku_memory_bytes * 100",
+          "metric": "memory_used_pct",
+          "note": "Host-observed; typically 1-3% below what the guest reports.",
+          "observation": "host_observed",
+          "sample_count": 48,
+          "statistic": "avg",
+          "unit": "percent",
+          "value": "42.10"
+        }
+      ],
+      "tags": {
+        "env": "prod",
+        "tier": "web"
+      }
+    }
+  ],
+  "run_id": "run-compile-fixture",
+  "schema_version": "1.1.0",
+  "scope_verified": true,
+  "snapshot_id": "7fa6dc73ed7130da755a8bad9763b7d0dca6db9bca8e84cc5388a0e9c312918b",
+  "subscription_id": "11111111-2222-3333-4444-555555555555",
+  "timezone": "Asia/Jakarta",
+  "utc_offset": "+07:00",
+  "window": {
+    "end": "2026-07-02",
+    "end_utc": "2026-07-02T17:00:00Z",
+    "start": "2026-07-01",
+    "start_utc": "2026-06-30T17:00:00Z"
+  }
+}

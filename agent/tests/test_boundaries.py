@@ -2004,6 +2004,7 @@ GUARDED_PACKAGES: tuple[str, ...] = (
     "compare",
     "compile",
     "compile/blocks",
+    "messages",
     "narrate",
     "providers",
     "render",

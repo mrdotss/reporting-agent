@@ -3,7 +3,7 @@
 **A gap is recorded, never zero-filled** (Req 29.3, 29.4). `deallocated`,
 `metric_not_emitted` and `permission_denied` are three completely different facts that
 a zero-filling collector would render identically as "0% CPU" — the partition of
-20 declared `gap_type` values below is the point, not an implementation detail, and it
+24 declared `gap_type` values below is the point, not an implementation detail, and it
 is fixed by the requirements glossary rather than inferred from whatever a caller
 happens to pass. This module is the single place that partition is declared and the
 single place a caller builds one entry, so a typo in a `gap_type` string fails at the
@@ -38,22 +38,27 @@ from reporting_agent.providers.base import GapRecord
 
 __all__ = [
     "DECLARED_GAP_TYPES",
+    "FACT_GAP_TYPES",
     "GAP_TYPE_ARCHIVE_WRITE_FAILED",
+    "GAP_TYPE_BACKUP_NOT_CONFIGURED",
     "GAP_TYPE_CATALOG_ENTRY_INVALID",
     "GAP_TYPE_DEALLOCATED",
     "GAP_TYPE_DEFINITIONS_UNAVAILABLE",
     "GAP_TYPE_DUPLICATE_INVENTORY_ROW",
+    "GAP_TYPE_FACT_UNAVAILABLE",
     "GAP_TYPE_INSTANCE_NAME_COLLAPSED",
     "GAP_TYPE_INTERVAL_COUNTS_MISSING",
     "GAP_TYPE_INTERVAL_MALFORMED",
     "GAP_TYPE_METRIC_ERROR",
     "GAP_TYPE_METRIC_NOT_EMITTED",
     "GAP_TYPE_METRIC_NOT_SELECTED",
+    "GAP_TYPE_NO_RESERVATIONS",
     "GAP_TYPE_NO_SAMPLES",
     "GAP_TYPE_PERCENTILE_UNSUPPORTED_UNIT",
     "GAP_TYPE_PERMISSION_DENIED",
     "GAP_TYPE_POWER_STATE_UNKNOWN",
     "GAP_TYPE_REGION_UNREACHABLE",
+    "GAP_TYPE_REPLICATION_NOT_ENABLED",
     "GAP_TYPE_RESOURCE_ABSENT_FROM_RESPONSE",
     "GAP_TYPE_RESPONSE_TOO_LARGE",
     "GAP_TYPE_SKU_CAPABILITY_MISSING",
@@ -65,7 +70,7 @@ __all__ = [
 
 # --- the declared gap_type partition (requirements.md glossary; Req 29.2, 29.7) ------
 #
-# 20 values, one `Final[str]` each rather than a `StrEnum`. `catalog/loader.py`
+# 24 values, one `Final[str]` each rather than a `StrEnum`. `catalog/loader.py`
 # already set this precedent for `CATALOG_ENTRY_INVALID_GAP_TYPE` — a bare string
 # constant, not an enum member — and a `GapRecord` is a `TypedDict` whose `gap_type`
 # field is a plain `str` (Req 18.3: only str, bool, int, Decimal, None, list, dict
@@ -109,6 +114,40 @@ GAP_TYPE_INSTANCE_NAME_COLLAPSED: Final[str] = "instance_name_collapsed"
 # figures and nothing anywhere saying why.
 GAP_TYPE_METRIC_NOT_SELECTED: Final[str] = "metric_not_selected"
 
+# Req 5.1-5.4 — the four fact gaps. A fact answers *what is this resource*, so its
+# absences are different facts from a metric's and are classified separately.
+#
+# The first three are **not errors**: a subscription with no backups, no reservations and
+# no Site Recovery is an ordinary subscription, and the source answered successfully in
+# each case. What they prevent is a blank cell in a delivered document, which a reader
+# cannot distinguish from "configured, nothing to report" (Req 5.1's own user story).
+#
+# `fact_unavailable` is the fourth and it is the one that means something went wrong: the
+# request failed, was rejected, or answered no value for a key the type declares. Keeping
+# it apart from the other three is the whole point of having four rather than one —
+# "Azure says there is no backup" and "we could not ask Azure about the backup" are
+# opposite facts, and Req 5.8 forbids recording both for one key.
+GAP_TYPE_BACKUP_NOT_CONFIGURED: Final[str] = "backup_not_configured"
+GAP_TYPE_NO_RESERVATIONS: Final[str] = "no_reservations"
+GAP_TYPE_REPLICATION_NOT_ENABLED: Final[str] = "replication_not_enabled"
+GAP_TYPE_FACT_UNAVAILABLE: Final[str] = "fact_unavailable"
+
+FACT_GAP_TYPES: Final[frozenset[str]] = frozenset(
+    {
+        GAP_TYPE_BACKUP_NOT_CONFIGURED,
+        GAP_TYPE_NO_RESERVATIONS,
+        GAP_TYPE_REPLICATION_NOT_ENABLED,
+        GAP_TYPE_FACT_UNAVAILABLE,
+    }
+)
+"""The four gap types a fact produces, and the set `record_gap` requires a `source` for.
+
+Req 5.10 asks that every gap of a type this spec adds record the source that was queried.
+Declared as a set and enforced at the one gate rather than left to the caller: the fold
+that records these gaps handles four sources and several keys per resource, so "remember to
+pass the source" is exactly the kind of obligation that holds for three call sites and not
+the fourth. A gap that cannot name where it looked is not evidence of anything."""
+
 DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
     {
         GAP_TYPE_DEALLOCATED,
@@ -131,14 +170,16 @@ DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
         GAP_TYPE_CATALOG_ENTRY_INVALID,
         GAP_TYPE_INSTANCE_NAME_COLLAPSED,
         GAP_TYPE_METRIC_NOT_SELECTED,
+        *FACT_GAP_TYPES,
     }
 )
 
-assert len(DECLARED_GAP_TYPES) == 20
+assert len(DECLARED_GAP_TYPES) == 24
+assert FACT_GAP_TYPES < DECLARED_GAP_TYPES
 
 
 class GapTypeError(ValueError):
-    """`gap_type` is not one of the 20 declared values.
+    """`gap_type` is not one of the 24 declared values.
 
     Carries the offending value so a caller building a message does not have to
     re-parse `str(exc)`.
@@ -158,13 +199,14 @@ def record_gap(
     metric: str | None,
     message: str,
     interval_start: str | None = None,
+    source: str | None = None,
 ) -> GapRecord:
     """Build one typed `collection_log` entry.
 
     The single gate every gap-recording call site passes through (Req 29.2). Raises
     rather than returning a malformed entry:
 
-    * `GapTypeError` if `gap_type` is not one of the 20 declared values — a typo here
+    * `GapTypeError` if `gap_type` is not one of the 24 declared values — a typo here
       is exactly the "unrecognised classification" Req 29.7 refuses to drop, so it
       must not reach the snapshot as an ad hoc string either.
     * `ValueError` if `resource_id` or `message` is empty or not a string. Every gap
@@ -185,10 +227,20 @@ def record_gap(
       that same absence. One validation style here rather than two, so a caller
       cannot learn a different rule per field.
 
+    * `ValueError` if `source` is present but empty — the same reasoning again — and
+      also if it is **absent for one of the four** :data:`FACT_GAP_TYPES` (Req 5.10).
+      That second clause is the only conditional validation in this function, and it
+      earns the exception: a fact gap's whole content is "I asked *there* and it said
+      nothing", so one that cannot name where it looked states an absence without
+      evidence of having looked. Enforced here rather than trusted to the fold, which
+      handles four sources across several keys per resource — precisely the shape where
+      three call sites remember and the fourth does not.
+
     `interval_start` defaults to `None`, so the twenty-odd call sites that record a
     resource-level or metric-level gap are unchanged and say nothing about an interval
     they have none of. Only the interval-level sites in `azure/metrics.py` and
-    `collect/accumulate.py` pass it.
+    `collect/accumulate.py` pass it. `source` is the same shape one field over: absent on
+    all twenty of the original types, required on the four fact types.
 
     Returns a `GapRecord` (Req 18.2) rather than a bespoke type, so a caller in
     `azure/` and a caller in `collect/` hand the pipeline the identical shape.
@@ -224,12 +276,28 @@ def record_gap(
             f"about one interval rather than an empty string"
         )
 
+    if source is not None and (not isinstance(source, str) or not source.strip()):
+        raise ValueError(
+            f"source must be None or a non-empty string for gap_type {gap_type!r}, got "
+            f"{source!r}; use None for a gap that queried no named source rather than an "
+            f"empty string"
+        )
+
+    if source is None and gap_type in FACT_GAP_TYPES:
+        raise ValueError(
+            f"gap_type {gap_type!r} is a fact gap and must name the source that was "
+            f"queried (Req 5.10); got source=None. A fact gap asserts that a named "
+            f"source answered and named nothing, so one that cannot say where it looked "
+            f"records an absence with no evidence behind it"
+        )
+
     return GapRecord(
         gap_type=gap_type,
         resource_id=resource_id,
         metric=metric,
         message=message,
         interval_start=interval_start,
+        source=source,
     )
 
 

@@ -42,6 +42,8 @@ import pytest
 
 from reporting_agent.collect.accumulate import MetricAccumulator
 from reporting_agent.collect.log import (
+    DECLARED_GAP_TYPES,
+    FACT_GAP_TYPES,
     GAP_TYPE_INTERVAL_MALFORMED,
     GAP_TYPE_METRIC_NOT_EMITTED,
     GAP_TYPE_PERMISSION_DENIED,
@@ -218,3 +220,107 @@ def test_a_gap_carrying_an_interval_start_does_move_the_digest() -> None:
     assert with_interval["gaps"][0]["interval_start"] == INTERVAL_START
     assert "interval_start" not in without["gaps"][0]
     assert with_interval[CONTENT_HASH_FIELD] != without[CONTENT_HASH_FIELD]
+
+
+# --- the four fact gap types, and `source` (Req 5.1-5.4, 5.10) ----------------------
+
+
+def test_the_declared_gap_type_partition_holds_exactly_twenty_four_values() -> None:
+    """The count is asserted in `collect/log.py` itself; this asserts *which* four were
+    added, because a count is satisfied by any four strings."""
+    assert len(DECLARED_GAP_TYPES) == 24
+    assert FACT_GAP_TYPES == {
+        "backup_not_configured",
+        "no_reservations",
+        "replication_not_enabled",
+        "fact_unavailable",
+    }
+    assert FACT_GAP_TYPES < DECLARED_GAP_TYPES
+
+
+@pytest.mark.parametrize("gap_type", sorted(FACT_GAP_TYPES))
+def test_a_fact_gap_must_name_the_source_it_queried(gap_type: str) -> None:
+    """Req 5.10, enforced at the gate rather than trusted to the fold.
+
+    A fact gap's entire content is "I asked a named source and it named nothing". One
+    that cannot say where it looked asserts an absence with no evidence behind it, which
+    is indistinguishable from never having asked.
+    """
+    with pytest.raises(ValueError, match="must name the source that was queried"):
+        record_gap(gap_type, RESOURCE_ID, "last_backup_status", "no protected item")
+
+
+@pytest.mark.parametrize("gap_type", sorted(FACT_GAP_TYPES))
+def test_a_fact_gap_carrying_its_source_is_accepted(gap_type: str) -> None:
+    gap = record_gap(
+        gap_type,
+        RESOURCE_ID,
+        "last_backup_status",
+        "no protected item",
+        source="recovery_services",
+    )
+
+    assert gap["source"] == "recovery_services"
+    assert gap["interval_start"] is None
+
+
+@pytest.mark.parametrize("blank", ["", "   "])
+def test_an_empty_source_is_refused(blank: str) -> None:
+    """Refused for the reason an empty `metric` is refused: a second spelling of `None`."""
+    with pytest.raises(ValueError, match="source must be None or a non-empty"):
+        record_gap(
+            GAP_TYPE_METRIC_NOT_EMITTED, RESOURCE_ID, CPU, "no count", source=blank
+        )
+
+
+def test_a_metric_gap_needs_no_source_and_carries_none() -> None:
+    """The twenty original types are unaffected — the conditional requirement is scoped to
+    the four, so every existing call site keeps working with four positional arguments."""
+    gap = record_gap(GAP_TYPE_PERMISSION_DENIED, RESOURCE_ID, None, "403 on the resource")
+
+    assert gap["source"] is None
+
+
+def test_a_gap_carrying_no_source_emits_no_such_key() -> None:
+    document = two_vm_snapshot()
+
+    for gap in document["gaps"]:
+        assert "source" not in gap
+
+
+def test_adding_source_moved_neither_committed_digest() -> None:
+    """The same two literals the `interval_start` tests pin, asserted again after a second
+    field was added.
+
+    Not redundant: the omission is what keeps them stable, and it is a separate omission
+    per field. A change that emitted `source` as `null` on the twenty types that do not
+    carry one would move both digests exactly as emitting `interval_start` as `null`
+    would, and the two fields are omitted by two different lines of code.
+    """
+    assert two_vm_snapshot()[CONTENT_HASH_FIELD] == TWO_VM_DIGEST
+    assert snapshot_with_every_gap_type()[CONTENT_HASH_FIELD] == EVERY_GAP_TYPE_DIGEST
+
+
+def test_a_gap_carrying_a_source_does_move_the_digest() -> None:
+    """Guard the guard, for `source` this time: the omission above is an omission and not
+    an absence of implementation."""
+    without = build(
+        resources=[vm(resource_id=RESOURCE_ID, name="prod-web-01")],
+        gaps=[record_gap(GAP_TYPE_METRIC_NOT_EMITTED, RESOURCE_ID, CPU, "no count")],
+    )
+    with_source = build(
+        resources=[vm(resource_id=RESOURCE_ID, name="prod-web-01")],
+        gaps=[
+            record_gap(
+                "backup_not_configured",
+                RESOURCE_ID,
+                "last_backup_status",
+                "no protected item",
+                source="recovery_services",
+            )
+        ],
+    )
+
+    assert with_source["gaps"][0]["source"] == "recovery_services"
+    assert "source" not in without["gaps"][0]
+    assert with_source[CONTENT_HASH_FIELD] != without[CONTENT_HASH_FIELD]

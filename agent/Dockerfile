@@ -75,6 +75,19 @@ COPY src/reporting_agent/ ./reporting_agent/
 # probing, so the two layouts do not depend on which directory happens to exist.
 COPY themes/ ./themes/
 
+# The recorded Metric Definitions responses every catalog entry is checked against
+# (Req 2.1, 2.6). `/app/evidence/metric_definitions/` is what
+# catalog/evidence.py's evidence_directory() resolves to here; in a checkout it resolves
+# to agent/tests/fixtures/metric_definitions/ instead, keyed off the checkout marker the
+# same way theme_directory() is rather than by probing for whichever exists.
+#
+# These are the only files from tests/ that enter the build. `.dockerignore` excludes
+# `tests/**` and re-includes exactly this subtree — the guard below has to run in the
+# build, and it cannot check evidence that never arrived. Every subscription id, tenant
+# id, resource id and credential-shaped value is excluded from them, and the guard
+# asserts that rather than trusting it.
+COPY tests/fixtures/metric_definitions/ ./evidence/metric_definitions/
+
 # --- the operator's certificate authority, if there is one ---------------------
 #
 # `RPT_CA_BUNDLE` names a PEM of additional trusted roots for the progress callback,
@@ -131,6 +144,24 @@ RUN python -m reporting_agent.compile.ast --assert-build
 # not. Reports every (theme, style) pair missing across all four documents in one run,
 # so one fix pass clears the build.
 RUN python -m reporting_agent.render.themes --assert-build
+
+# Fail the BUILD if any catalog entry disagrees with the Metric Definitions response it
+# was derived from (Req 2.2, 2.3, 2.4, 2.6, 2.7, 2.10, 2.11).
+#
+# This is the control the whole catalog rests on, and it has to be a build-time check
+# because the failure it prevents is **silent at run time**: Azure answers a request for a
+# metric it does not have with a per-resource error, the collector records a typed gap, the
+# run completes, verification passes, and the delivered document simply never mentions that
+# metric. A guessed name is therefore permanently uncollectable with nothing going red.
+#
+# Runs here as well as in tests/test_catalog_evidence.py because .dockerignore excludes
+# tests/ — the same reasoning as the two guards above. Checks every declared metric's name
+# as an exact string, its unit against the declared unit mapping, and every requested
+# aggregation against the fixture's supported set; rejects a near miss (a portal display
+# name differing only by case, whitespace or a separator) as a near miss rather than as an
+# absence; and fails if a fixture carries an identifier it should not. Reports every
+# disagreement in one run, so one fix pass clears the build.
+RUN python -m reporting_agent.catalog.evidence --assert-build
 
 # --- Pre-warm the LibreOffice user profile (Req 23.5) -------------------------
 #

@@ -147,11 +147,17 @@ class InventoryPort(Protocol):
         subscription_id: str,
         resource_types: Sequence[str],
         skip_token: str | None,
+        fact_projections: Sequence[tuple[str, str]] = (),
     ) -> RawHttpResponse:
         """One page. `body` is the Resource Graph response as returned; `headers`
         carries `x-ms-user-quota-remaining` and `x-ms-user-quota-resets-after` when
         Azure sent them. The port does not parse either — that interpretation
-        (Req 20.3, 20.4, 20.14) belongs to `azure/inventory.py`."""
+        (Req 20.3, 20.4, 20.14) belongs to `azure/inventory.py`.
+
+        `fact_projections` is `(key, projection)` pairs the port appends to the query's
+        `project` clause (Req 4.7). It defaults to `()` — no projected fact, and a query
+        byte-identical to the one this port built before facts existed — so a caller with
+        no fact declaration to hand is unchanged."""
         ...
 
 

@@ -206,13 +206,19 @@ def test_the_profile_is_group_writable_for_an_arbitrary_uid(dockerfile_body: str
     [
         "python -m reporting_agent.render.themes --assert-build",
         "python -m reporting_agent.compile.ast --assert-build",
+        "python -m reporting_agent.catalog.evidence --assert-build",
     ],
 )
 def test_the_build_runs_the_guard(assertion: str, dockerfile_body: str) -> None:
-    """Req 8.7 and 23.10 — the build aborts and publishes nothing.
+    """Req 8.7, 23.10 and 2.6 — the build aborts and publishes nothing.
 
-    Both guards live in `src/` precisely so they can run here: `.dockerignore` excludes
-    `tests/`, so a guard that only ran in the suite could not stop a bad image.
+    All three guards live in `src/` precisely so they can run here: `.dockerignore` excludes
+    `tests/**`, so a guard that only ran in the suite could not stop a bad image.
+
+    The catalog guard is the one whose absence would be hardest to notice, because the
+    defect it catches is silent at run time: Azure answers a request for a metric it does
+    not have with a per-resource error, the collector records a typed gap, the run completes,
+    verification passes, and the delivered document simply never mentions that metric.
     """
     assert assertion in dockerfile_body
 
@@ -290,14 +296,94 @@ def test_the_dockerignore_does_not_exclude_the_themes(dockerfile_body: str) -> N
 
 
 def test_the_dockerignore_still_excludes_the_tests_and_the_dev_closure() -> None:
-    """The reason both guards must be assertable from `src/` alone."""
-    excluded = {
+    """The reason all three guards must be assertable from `src/` alone.
+
+    The exclusion is written `tests/**` rather than `tests/`, and the distinction is
+    load-bearing rather than stylistic: `.dockerignore` exceptions are last-match-wins **per
+    path**, so excluding the *directory* makes its contents unreachable whatever follows,
+    while excluding its *files* leaves a later `!` free to re-include exactly the ones the
+    build needs. The Metric Definitions evidence is re-included on that basis — see the test
+    below.
+    """
+    patterns = [
         line.strip()
         for line in DOCKERIGNORE.read_text().splitlines()
         if line.strip() and not line.startswith("#")
-    }
-    assert "tests/" in excluded
-    assert "requirements-dev.lock" in excluded
+    ]
+
+    assert "tests/**" in patterns
+    assert "tests/" not in patterns, (
+        "`tests/` excludes the directory itself, which makes the evidence re-inclusion "
+        "below unreachable no matter where it appears"
+    )
+    assert "requirements-dev.lock" in patterns
+
+
+def test_the_dockerignore_re_includes_only_the_metric_definitions_evidence() -> None:
+    """Req 2.6 — the guard runs in the build, so its evidence has to arrive.
+
+    Two properties, and the order of the two patterns is one of them: the re-inclusion has to
+    come **after** the exclusion, because the last matching pattern wins. Asserted by index
+    rather than by presence, so reordering the file fails here instead of silently shipping
+    an image whose catalog guard checks nothing.
+
+    The re-inclusion is also asserted to be **narrow**. `!tests/` would re-include the whole
+    suite — pytest fixtures, fakes, every test module — into the production image, which is
+    the opposite of what the exclusion is for.
+    """
+    patterns = [
+        line.strip()
+        for line in DOCKERIGNORE.read_text().splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    reinclusions = [pattern for pattern in patterns if pattern.startswith("!")]
+
+    assert reinclusions == ["!tests/fixtures/metric_definitions/**"], (
+        "exactly one re-inclusion, naming exactly the evidence: anything broader ships the "
+        f"test suite into the image, got {reinclusions}"
+    )
+    assert patterns.index("tests/**") < patterns.index(
+        "!tests/fixtures/metric_definitions/**"
+    ), "the re-inclusion must follow the exclusion; the last matching pattern wins"
+
+
+def test_the_build_copies_the_evidence_before_the_catalog_guard_runs(
+    instructions: list[str],
+) -> None:
+    """Ordering is load-bearing the same way it is for the themes: the guard reads the
+    fixtures, so a build that asserted before copying them would fail on every build for the
+    wrong reason — and one that never copied them would fail for a reason that reads like a
+    catalog defect."""
+    copy_index = next(
+        index
+        for index, line in enumerate(instructions)
+        if line.startswith("COPY tests/fixtures/metric_definitions/")
+    )
+    guard_index = next(
+        index
+        for index, line in enumerate(instructions)
+        if "catalog.evidence --assert-build" in line
+    )
+
+    assert copy_index < guard_index, instructions
+
+
+def test_the_evidence_lands_where_the_guard_resolves_it() -> None:
+    """The Dockerfile's destination and `evidence_directory`'s image branch are two
+    statements of one path, in two files, in two languages. This is the assertion that keeps
+    them equal — otherwise the guard fails in the image with "the evidence directory does not
+    exist" and the Dockerfile looks correct.
+    """
+    from reporting_agent.catalog.evidence import evidence_directory
+
+    dockerfile = DOCKERFILE.read_text()
+    assert "COPY tests/fixtures/metric_definitions/ ./evidence/metric_definitions/" in (
+        dockerfile
+    )
+    # `evidence_directory()` resolves the checkout branch here, so the image branch is
+    # asserted by its shape: the package's parent, plus the two segments the COPY names.
+    assert evidence_directory().name == "metric_definitions"
+    assert evidence_directory().parent.name in {"fixtures", "evidence"}
 
 
 # --------------------------------------------------------------------------- #

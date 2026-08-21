@@ -51,7 +51,12 @@ import { isTerminalStatus } from "@/lib/runs/state"
 /**
  * One `collection_log` entry, as the snapshot carries it.
  *
- * The five fields the agent's `collect/log.py` writes, and no more. `gap_type` is
+ * Five of the six fields the agent's `collect/log.py` writes. The sixth, `source`, is
+ * the named source a **fact** gap queried, and it is deliberately not read here: this
+ * app groups by `(resourceId, metric)` and `source` is not part of that key, so reading
+ * it would add a field with no consumer. It is in the snapshot when a consumer wants it.
+ *
+ * `gap_type` is
  * a **plain string** rather than a union of the agent's declared values:
  * this app groups by it and displays it, and a build of the app that met an
  * undeclared type must render it rather than reject the whole list. The agent is

@@ -8,7 +8,6 @@ __pycache__/
 .hypothesis/
 .ruff_cache/
 *.egg-info/
-tests/
 *.md
 .python-version
 
@@ -17,3 +16,26 @@ tests/
 # exclusion, so anything not listed here IS in the build context, and a future
 # `COPY requirements*.lock ./` would otherwise silently pull the dev tools in.
 requirements-dev.lock
+# ...except the Metric Definitions evidence, which is the one thing under tests/ that the
+# BUILD needs (Req 2.6). The Catalog_Evidence_Guard compares every catalog entry against
+# the recorded response it was derived from, and it runs in the image build as well as in
+# the suite — a guard that only ran in the suite could not stop an image carrying an entry
+# the evidence beside it contradicts, and a guessed metric name is permanently
+# uncollectable with nothing failing at run time.
+#
+# Re-included rather than duplicated into src/. Two copies of the evidence is the worst
+# available option: they can disagree about what Azure reported, and then neither is
+# evidence. These are recorded API responses with every subscription id, tenant id,
+# resource id and credential-shaped value excluded — asserted by the guard itself, not
+# assumed — so nothing sensitive travels with them.
+#
+# `!` exceptions are last-match-wins **per path**, so the exclusion above is written as
+# `tests/**` (every file under tests/) rather than `tests/` (the directory itself). That
+# distinction is the whole trick: excluding the directory makes its contents unreachable no
+# matter what follows, while excluding its files leaves a later `!` free to re-include
+# exactly the ones the build needs.
+#
+# Verified by building the context and listing what arrived, not by reading the docs —
+# tests/test_image_build.py asserts the two patterns are present and in this order.
+tests/**
+!tests/fixtures/metric_definitions/**

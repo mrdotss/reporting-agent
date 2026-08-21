@@ -64,6 +64,7 @@ from reporting_agent.compile.ast import (
 from reporting_agent.compile.estimators import COMPARE_ESTIMATORS, DECLARED_ESTIMATORS
 from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.format import NumberFormat
+from reporting_agent.compile.messages import Messages, load_messages
 from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import (
     SKU_CAPACITY_STATISTIC,
@@ -73,6 +74,7 @@ from reporting_agent.compile.snapshot_view import (
     SnapshotView,
 )
 from reporting_agent.errors import CompileFailedError
+from reporting_agent.messages import DEFAULT_LANGUAGE
 
 __all__ = [
     "CAPTION_STYLE",
@@ -493,6 +495,24 @@ class BlockContext:
     ledger: FigureLedger
     design: DesignSettings
     default_scope: ScopeRules
+    messages: Messages = field(default_factory=lambda: load_messages(DEFAULT_LANGUAGE))
+    """The run's pinned language, resolved (Req 15.2).
+
+    A `Messages` instance **is** a language — it holds one language's table and cannot
+    reach the other — so a block compiler holding this context cannot emit a mixed-language
+    document even by mistake.
+
+    Defaulted to the shipped catalog in `en` so every existing construction site is
+    unchanged while the block compilers are migrated to resolve ids one at a time. The
+    default is a convenience for that migration and not a fallback at render time: once a
+    caller passes the template's pinned language, an id missing from it fails the render
+    rather than resolving to English.
+
+    It keeps this dataclass's no-client, no-clock, no-network discipline: the catalog is a
+    JSON file shipped in the image, read once at construction, and holds no handle to
+    anything.
+    """
+
     period: Mapping[str, object] = field(default_factory=dict)
     report_title: str = ""
     subscription_display_name: str = ""

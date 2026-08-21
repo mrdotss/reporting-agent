@@ -1,0 +1,377 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "level": 1,
+        "text": "Executive Overview"
+      },
+      "id": "h0",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p0_5",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "pb0",
+      "type": "page_break"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Compute Utilization"
+      },
+      "id": "h1",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p1_5",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "pb1",
+      "type": "page_break"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Memory And Capacity"
+      },
+      "id": "h2",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p2_5",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "pb2",
+      "type": "page_break"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Storage Throughput"
+      },
+      "id": "h3",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p3_5",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "pb3",
+      "type": "page_break"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Network Counters"
+      },
+      "id": "h4",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p4_5",
+      "type": "rich_text"
+    },
+    {
+      "config": {},
+      "id": "pb4",
+      "type": "page_break"
+    },
+    {
+      "config": {
+        "level": 1,
+        "text": "Methodology And Provenance"
+      },
+      "id": "h5",
+      "type": "heading"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_0",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_1",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_2",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_3",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_4",
+      "type": "rich_text"
+    },
+    {
+      "config": {
+        "text": "This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. This section exists to occupy vertical space so that the six section headings in this fixture are distributed across at least four rendered pages. Its wording is deliberately uninteresting: the fixture's job is to have a pagination, not to say anything. Every sentence here is static prose authored in the template, which is what a rich_text block carries, so it introduces no figure and no dependency on the snapshot's values. "
+      },
+      "id": "p5_5",
+      "type": "rich_text"
+    }
+  ],
+  "design": {
+    "accent_color": "#1f6f78",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 2,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "TOC measurement fixture",
+    "report_title": "TOC measurement fixture"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "estimator": "histogram_sketch_pt1h_interval_average",
+        "fidelity_tier": "baseline",
+        "metric": "Percentage CPU",
+        "statistic": "p95"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

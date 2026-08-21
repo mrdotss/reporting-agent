@@ -360,10 +360,10 @@ def test_no_gap_carries_a_zero_value_or_a_statistic_field() -> None:
     message names the fact rather than silently agreeing with a hypothetical zero.
 
     The key set is asserted **exactly**, not by absence of a `value` key, so a field
-    added to `GapRecord` has to be looked at here rather than arriving unnoticed. It
-    grew once already: `interval_start` is the fifth field, and it is `None` on this
-    gap because a region answering through neither route is not a fact about one
-    interval.
+    added to `GapRecord` has to be looked at here rather than arriving unnoticed. It has
+    grown twice: `interval_start` is the fifth field and `source` the sixth, and both are
+    `None` on this gap. A region answering through neither route is not a fact about one
+    interval, and it consulted no named fact source.
     """
     location = DNS_UNREACHABLE_LOCATIONS[0]
     port = ScriptedPort(
@@ -380,8 +380,10 @@ def test_no_gap_carries_a_zero_value_or_a_statistic_field() -> None:
         "metric",
         "message",
         "interval_start",
+        "source",
     }
     assert result.gaps[0]["interval_start"] is None
+    assert result.gaps[0]["source"] is None
     assert "0" not in result.gaps[0]["message"].split()
 
 

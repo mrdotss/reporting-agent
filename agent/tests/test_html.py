@@ -694,7 +694,13 @@ def test_the_failure_carries_no_error_code_and_so_cannot_fail_the_run() -> None:
 
 def test_the_html_emitter_adds_no_exception_class_to_the_error_code_vocabulary() -> None:
     """The invariant `tests/test_errors.py` owns, asserted here too because this module is
-    where it would be broken again."""
+    where it would be broken again.
+
+    Counted over classes that **declare** a `code`, matching that module's own formulation:
+    the vocabulary the app switches on is the set of codes, and a subclass inheriting an
+    existing code without declaring a new one widens nothing. See
+    `test_every_exception_is_catchable_as_agent_error` for the reasoning.
+    """
     from reporting_agent.errors import AgentError, ErrorCode
 
     def descendants(cls: type) -> set[type]:
@@ -703,7 +709,10 @@ def test_the_html_emitter_adds_no_exception_class_to_the_error_code_vocabulary()
             found |= descendants(child)
         return found
 
-    assert len(descendants(AgentError)) == len(ErrorCode)
+    declaring = {cls for cls in descendants(AgentError) if "code" in vars(cls)}
+
+    assert len(declaring) == len(ErrorCode)
+    assert {cls.code for cls in declaring} == set(ErrorCode)  # type: ignore[attr-defined]
 
 
 def test_a_non_document_argument_is_refused() -> None:
