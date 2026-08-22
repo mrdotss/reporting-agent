@@ -67,14 +67,16 @@ vi.mock("@/lib/aws/agentcore", async (importOriginal) => {
   }
 })
 
+// The frame reader moved to `lib/aws/agent-stream.ts` when the inventory endpoint
+// became its second caller. The cases below are unchanged and still live here,
+// because what they pin is how *this* module reads a runtime's answer.
+import { parseSseFrame, splitSseFrames } from "@/lib/aws/agent-stream"
 import { MissingRuntimeConfigError } from "@/lib/aws/agentcore"
 import {
   DEFAULT_REJECTION_CODE,
   PREFLIGHT_TIMEOUT_MS,
   outcomeFromDone,
-  parseSseFrame,
   runPreflight,
-  splitSseFrames,
   type PreflightSubmission,
 } from "@/lib/subscriptions/preflight"
 

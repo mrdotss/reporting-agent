@@ -338,6 +338,26 @@ export const connectedSubscriptions = pgTable(
     logAnalyticsWorkspaceId: text("log_analytics_workspace_id"),
 
     createdAt: instant("created_at").notNull().defaultNow(),
+
+    /**
+     * The instant this row was last written, and the Inventory_Endpoint's
+     * invalidation signal (Requirement 9.2).
+     *
+     * The inventory cache in `lib/subscriptions/inventory-cache.ts` keys on the row
+     * id and holds a listing for 300 seconds, but a rotated credential or a changed
+     * status has to list the subscription again rather than serve the previous
+     * answer. Comparing this column makes invalidation-on-write a read of the row
+     * the handler already loaded, instead of a publish/subscribe problem between one
+     * request that writes and another that caches.
+     *
+     * `defaultNow()` so an existing row gets a value on the additive migration, and
+     * NOT NULL because "never written" and "written at an unknown instant" would
+     * otherwise be the same absence — and a NULL compared against a cache entry
+     * would read as "not written since", which is the answer that serves a stale
+     * list. Every writer in `lib/subscriptions/store.ts` sets it explicitly: a
+     * column that only ever holds its default is invalidation that never fires.
+     */
+    updatedAt: instant("updated_at").notNull().defaultNow(),
   },
   (table) => [
     /** Requirement 9.7 — every read and write is scoped by `user_id`. */

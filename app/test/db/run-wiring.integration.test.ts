@@ -983,12 +983,20 @@ describe("Requirements 40.4, 40.5 — the relay reconstructs the run from the ro
     expect(events[1]).toEqual({ type: "done", status: "completed" })
 
     // The gap list came from the snapshot rather than from a column or a table.
+    //
+    // `intervalStart` is `null` because `SNAPSHOT_GAP` is a `deallocated` entry,
+    // which is about a resource rather than about one interval. The field was added
+    // to the projection with the interval-level gap types and this expectation went
+    // stale, unnoticed, because every suite in this directory is skipped unless
+    // `TEST_DATABASE_URL` is set — the same way the `run_error_code` count in
+    // `schema.integration.test.ts` did. Stated rather than silently corrected.
     expect(events[0].gaps).toEqual([
       {
         gapType: SNAPSHOT_GAP.gap_type,
         resourceId: SNAPSHOT_GAP.resource_id,
         metric: null,
         message: SNAPSHOT_GAP.message,
+        intervalStart: null,
       },
     ])
     expect(s3.reads).toContain(snapshotArtifactKey(userId, runId))

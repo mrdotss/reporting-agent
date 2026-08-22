@@ -36,6 +36,13 @@
       "when": 1787163378738,
       "tag": "0004_omniscient_puma",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787403309539,
+      "tag": "0005_talented_living_lightning",
+      "breakpoints": true
     }
   ]
 }

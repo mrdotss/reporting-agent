@@ -52,6 +52,18 @@ export const COMMAND_PREFLIGHT = "preflight"
  */
 export const COMMAND_RENDER_PREVIEW = "render_preview"
 
+/**
+ * The distinct dimensions of one subscription's inventory, for the wizard's
+ * pickers (Requirement 9.3).
+ *
+ * A **command**, so no model decides whether to look. The endpoint behind it exists
+ * because the app issues no Azure request and holds no Azure access token: the
+ * Resource Graph query runs inside the container the customer's credentials were
+ * shipped to anyway, and the four dimensions come back on the terminal `done`
+ * event with no new event type added for them.
+ */
+export const COMMAND_LIST_INVENTORY = "list_inventory"
+
 /** The default report timezone (Requirement 41.5). The customer is UTC+07:00. */
 export const DEFAULT_TIMEZONE = "Asia/Jakarta"
 
@@ -209,6 +221,15 @@ export type InvokeCommand =
       scope: RunScope
     }
   | { command: typeof COMMAND_PREFLIGHT }
+  /**
+   * `list_inventory` — no field but the command.
+   *
+   * Everything it reads is already in the `context`: the subscription id and the
+   * three credential fields. There is no run id because there is no row, and no
+   * scope because the query covers the whole subscription — a scope argument would
+   * be a filter on the very list the pickers exist to offer.
+   */
+  | { command: typeof COMMAND_LIST_INVENTORY }
   | {
       command: typeof COMMAND_RENDER_PREVIEW
       /** Minted per activation; the key the runtime writes under. */

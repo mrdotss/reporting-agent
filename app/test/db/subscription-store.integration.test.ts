@@ -53,6 +53,7 @@ import {
   disableConnectedSubscription,
   getConnectedSubscription,
   listConnectedSubscriptions,
+  readSubscriptionRowState,
   resolveSubscriptionCredentials,
   resolveSubscriptionIdentity,
   rotateClientSecret,
@@ -185,6 +186,9 @@ interface StoredRow {
   readonly secret_expires_at: Date
   readonly status: string
   readonly log_analytics_workspace_id: string | null
+  readonly created_at: Date
+  /** Requirement 9.2 — the inventory cache's invalidation signal. */
+  readonly updated_at: Date
 }
 
 async function allRows(): Promise<readonly StoredRow[]> {
@@ -535,6 +539,133 @@ describe("resolveSubscriptionIdentity", () => {
     const identity = await resolveSubscriptionIdentity(ownerId, mine.id)
     expect(identity.tenantId).toBe(OWNER_TENANT_ID)
     expect(identity.clientId).toBe(OWNER_CLIENT_ID)
+  })
+})
+
+// --- The inventory endpoint's ordering read ---------------------------------
+
+describe("readSubscriptionRowState", () => {
+  test("Requirement 9.2 — the two facts the endpoint orders by, and no credential", async () => {
+    const mine = await createConnectedSubscription(createInput())
+    const row = await rowById(mine.id)
+    expect(row).toBeDefined()
+
+    const state = await readSubscriptionRowState(ownerId, mine.id)
+
+    // `toStrictEqual` against the whole shape for the reason
+    // `resolveSubscriptionIdentity`'s test uses it: a field added to the return value
+    // has to be added here too, which is the assertion that no secret joins it by
+    // convenience.
+    expect(state).toStrictEqual({
+      status: "active",
+      updatedAt: row?.updated_at.toISOString(),
+      displayName: "Northwind production",
+    })
+    expect(Object.keys(state)).not.toContain("clientSecret")
+    expect(Object.keys(state)).not.toContain("tenantId")
+  })
+
+  test("`updatedAt` is the row's updated_at and not its created_at", async () => {
+    // The two are equal on an inserted row, so a read of the wrong column passes
+    // every assertion until something writes. This forces them apart first.
+    const mine = await createConnectedSubscription(createInput())
+    await db.query(
+      `UPDATE connected_subscriptions SET updated_at = created_at + interval '1 hour' WHERE id = $1`,
+      [mine.id]
+    )
+
+    const row = await rowById(mine.id)
+    const state = await readSubscriptionRowState(ownerId, mine.id)
+
+    expect(state.updatedAt).toBe(row?.updated_at.toISOString())
+    expect(state.updatedAt).not.toBe(row?.created_at.toISOString())
+  })
+
+  test("Requirements 9.4, 9.8 — another user's id resolves as not found", async () => {
+    const intruderSubscriptionId = await seedIntruderSubscription()
+
+    await expect(
+      readSubscriptionRowState(ownerId, intruderSubscriptionId)
+    ).rejects.toBeInstanceOf(SubscriptionNotFoundError)
+  })
+
+  test("an unreadable envelope still resolves, because nothing is decrypted", async () => {
+    // The whole reason this is its own read. A `disabled` row is exactly the row
+    // whose envelope may no longer decrypt, and Requirement 9.9 says the endpoint
+    // names that status — which means not touching the secret to find it.
+    const mine = await createConnectedSubscription(createInput())
+    await db.query(
+      `UPDATE connected_subscriptions SET client_secret_enc = $1, status = 'disabled' WHERE id = $2`,
+      [Buffer.alloc(64, 3).toString("base64"), mine.id]
+    )
+
+    const state = await readSubscriptionRowState(ownerId, mine.id)
+
+    expect(state.status).toBe("disabled")
+  })
+})
+
+describe("Requirement 9.2 — updated_at moves on every write to the row", () => {
+  test("an inserted row carries an updated_at", async () => {
+    const mine = await createConnectedSubscription(createInput())
+
+    const row = await rowById(mine.id)
+
+    // NOT NULL with a default, so the additive migration gives an existing row a
+    // value: a NULL compared against a cache entry would read as "not written
+    // since", which is the answer that serves a stale list.
+    expect(row?.updated_at).toBeInstanceOf(Date)
+  })
+
+  test("a rotation moves it, so a rotated credential lists the subscription again", async () => {
+    const mine = await createConnectedSubscription(createInput())
+    // Backdated, so "moved" cannot be satisfied by the value it already had.
+    await db.query(
+      `UPDATE connected_subscriptions SET updated_at = now() - interval '1 day' WHERE id = $1`,
+      [mine.id]
+    )
+    const before = await rowById(mine.id)
+
+    await rotateClientSecret(ownerId, mine.id, {
+      clientSecret: ROTATED_SECRET,
+      secretExpiresAt: ROTATED_EXPIRES_AT,
+      scopeVerified: true,
+    })
+
+    const after = await rowById(mine.id)
+    expect(after?.updated_at.getTime()).toBeGreaterThan(
+      before?.updated_at.getTime() ?? 0
+    )
+  })
+
+  test("a disable moves it too, even though it is otherwise idempotent", async () => {
+    const mine = await createConnectedSubscription(createInput())
+    await db.query(
+      `UPDATE connected_subscriptions SET updated_at = now() - interval '1 day' WHERE id = $1`,
+      [mine.id]
+    )
+    const before = await rowById(mine.id)
+
+    await disableConnectedSubscription(ownerId, mine.id)
+
+    const after = await rowById(mine.id)
+    // A changed status has to invalidate the cached listing, and this write changes
+    // nothing else — so without the explicit `updatedAt` it would move nothing.
+    expect(after?.updated_at.getTime()).toBeGreaterThan(
+      before?.updated_at.getTime() ?? 0
+    )
+  })
+
+  test("a write that touches another user's row moves nothing", async () => {
+    const intruderSubscriptionId = await seedIntruderSubscription()
+    const before = await rowById(intruderSubscriptionId)
+
+    await expect(
+      disableConnectedSubscription(ownerId, intruderSubscriptionId)
+    ).rejects.toBeInstanceOf(SubscriptionNotFoundError)
+
+    const after = await rowById(intruderSubscriptionId)
+    expect(after?.updated_at.getTime()).toBe(before?.updated_at.getTime())
   })
 })
 

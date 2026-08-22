@@ -410,6 +410,78 @@ export async function getConnectedSubscription(
   return toConnectedSubscriptionView(row)
 }
 
+// --- The two facts the inventory endpoint orders itself by ------------------
+
+/**
+ * A row's `status`, its `updated_at` and its label — and **no credential**
+ * (Requirements 9.2, 9.9).
+ *
+ * Exactly what the Inventory_Endpoint needs before it may go any further, and
+ * deliberately not one field more. The endpoint's order is three criteria —
+ * ownership, then status, then the cache — and each step must be able to answer
+ * without having read what the next one looks at:
+ *
+ *   * **Ownership** is this read's `WHERE`, so a row belonging to another user
+ *     raises {@link SubscriptionNotFoundError} and no field of it is read.
+ *   * **Status** is the first field, so a subscription that is not `active`
+ *     resolves as unavailable naming that status — and nothing else about the row
+ *     has been decrypted, resolved or disclosed by then.
+ *   * **The cache** is keyed on the row id and invalidated by `updated_at`, which
+ *     is the second field.
+ *
+ * The absence of the credential is the reason this is its own function rather than
+ * two fields read off {@link resolveSubscriptionCredentials}. A row whose stored
+ * envelope no longer decrypts raises {@link SubscriptionSecretUnreadableError}
+ * there, and a `disabled` row is exactly the row that shape describes — so
+ * resolving credentials first would answer "this secret cannot be read" for a
+ * request whose correct answer is "this subscription is disabled". Requirement 9.9
+ * says name the status, and naming the status means not touching the secret to find
+ * it.
+ */
+export type SubscriptionRowState = {
+  readonly status: SubscriptionStatus
+  /** ISO 8601, UTC — the cache stores and compares this exact string. */
+  readonly updatedAt: string
+  /**
+   * The consultant's own label for the connection, carried because
+   * `AgentInvokeContext.display_name` is a required field of the invoke payload.
+   *
+   * Read here rather than through a second query, and **never** placed in a
+   * response by the endpoint: Requirement 9.9's "disclose no field of that row
+   * other than that status" is a rule about the answer, and the answer for a
+   * non-`active` row names the status alone. It is already browser-safe —
+   * `ConnectedSubscriptionView` carries it — so the rule is about restraint here
+   * rather than about secrecy.
+   */
+  readonly displayName: string
+}
+
+/**
+ * The `status` and `updated_at` of one of this user's subscriptions.
+ *
+ * Scoped by `user_id` like every other read here: another user's id resolves as
+ * {@link SubscriptionNotFoundError}, disclosing no field (Requirements 9.4, 9.8).
+ *
+ * `updatedAt` is serialized to a string here for the reason
+ * {@link toConnectedSubscriptionView} serializes `secretExpiresAt`: it is compared
+ * against a value the cache is holding, and two representations of one instant that
+ * compare unequal would make every lookup a miss — a cache that silently never hits
+ * is indistinguishable from one that is working.
+ */
+export async function readSubscriptionRowState(
+  userId: string,
+  id: string
+): Promise<SubscriptionRowState> {
+  const row = await readOwnedRow(userId, id)
+  if (row === undefined) throw new SubscriptionNotFoundError()
+
+  return {
+    status: row.status,
+    updatedAt: row.updatedAt.toISOString(),
+    displayName: row.displayName,
+  }
+}
+
 // --- Credential resolution --------------------------------------------------
 
 /**
@@ -586,6 +658,9 @@ export async function rotateClientSecret(
         secretExpiresAt: input.secretExpiresAt,
         scopeVerified: input.scopeVerified,
         status: statusFor(input.scopeVerified),
+        // Requirement 9.2 — a rotated credential must list the subscription again
+        // rather than serve the listing the previous credential produced.
+        updatedAt: new Date(),
         ...(input.fidelityTier === undefined
           ? {}
           : { fidelityTier: input.fidelityTier }),
@@ -638,7 +713,9 @@ export async function disableConnectedSubscription(
   try {
     rows = await getDb()
       .update(connectedSubscriptions)
-      .set({ status: "disabled" })
+      // Requirement 9.2 — a changed status invalidates the cached listing, so this
+      // write moves `updated_at` even though it is idempotent in every other field.
+      .set({ status: "disabled", updatedAt: new Date() })
       .where(
         and(
           eq(connectedSubscriptions.id, id),

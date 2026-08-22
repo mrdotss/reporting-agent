@@ -3,6 +3,14 @@ import "server-only"
 import { z } from "zod"
 
 import {
+  TIMED_OUT,
+  parseSseFrame,
+  releaseIterator,
+  settle,
+  splitSseFrames,
+  withDeadline,
+} from "@/lib/aws/agent-stream"
+import {
   COMMAND_PREFLIGHT,
   DEFAULT_TIMEZONE,
   MissingRuntimeConfigError,
@@ -48,6 +56,14 @@ import { newSessionId } from "@/lib/session-id"
  * value straight into `lib/subscriptions/store.ts`, which derives `status` from it
  * — so there is no code path in `app/` that can write the flag from an inventory
  * result, from a request body, or from an optimistic default.
+ *
+ * ## The frame reader and the deadline live in `lib/aws/agent-stream.ts`
+ *
+ * They were written here and moved when `lib/subscriptions/inventory.ts` became the
+ * second module to invoke a deterministic command, read its answer off `done` and
+ * give up after 30 seconds. What stayed is the part that is *about a preflight*:
+ * which shape counts as proof, which code a rejection carries, and what an
+ * unanswered question means. Frame splitting is not about any of that.
  *
  * ## The plaintext secret
  *
@@ -236,65 +252,6 @@ const errorEventSchema = z.object({
 const MAX_RELAYED_MESSAGE_LENGTH = 500
 
 /**
- * `\n\n` terminates an SSE frame, and `\r\n\r\n` does too.
- *
- * Both spellings are handled because the separator is chosen by whatever
- * serialized the stream, not by us, and a reader that only knew one would
- * accumulate the entire stream into a single unterminated frame and then time
- * out — a failure that looks exactly like an unresponsive runtime.
- */
-const FRAME_SEPARATOR = /\r?\n\r?\n/
-
-/**
- * Split a buffer into complete SSE frames plus the trailing partial one.
- *
- * Pure, and exported for its own test: the whole correctness of the reader is
- * that a frame split across two network chunks is reassembled rather than
- * dropped, and that is a property of this function.
- *
- * The final element is always the remainder — possibly empty — so a buffer ending
- * exactly on a separator yields no phantom empty frame.
- */
-export function splitSseFrames(buffer: string): {
-  frames: readonly string[]
-  rest: string
-} {
-  const parts = buffer.split(FRAME_SEPARATOR)
-  const rest = parts.pop() ?? ""
-
-  return { frames: parts, rest }
-}
-
-/**
- * The JSON payload of one SSE frame, or `undefined`.
- *
- * Joins every `data:` line with a newline, as the SSE grammar requires for a
- * multi-line payload, and ignores everything else — a comment line (`: keep
- * alive`), an `event:` name, an `id:` or a `retry:`. A single leading space after
- * the colon is part of the framing and is stripped; further whitespace is part of
- * the value.
- *
- * Returns `undefined` rather than throwing for a frame with no data and for a
- * payload that is not JSON. Neither is a reason to fail a preflight: the stream is
- * read for one specific fact, and a frame that does not carry it is simply not the
- * frame being looked for.
- */
-export function parseSseFrame(frame: string): unknown {
-  const data = frame
-    .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
-    .map((line) => line.slice("data:".length).replace(/^ /, ""))
-
-  if (data.length === 0) return undefined
-
-  try {
-    return JSON.parse(data.join("\n"))
-  } catch {
-    return undefined
-  }
-}
-
-/**
  * The outcome one `done` event states, given the last `error` seen before it.
  *
  * Pure, and the single place a `PreflightOutcome` is decided, so the fail-closed
@@ -375,73 +332,6 @@ function relayedMessage(message: string | undefined): string {
   }
 
   return trimmed.slice(0, MAX_RELAYED_MESSAGE_LENGTH)
-}
-
-// --- The deadline -----------------------------------------------------------
-
-/** A promise that never rejects, so a race cannot leave one unhandled. */
-type Settled<T> =
-  | { readonly ok: true; readonly value: T }
-  | { readonly ok: false; readonly error: unknown }
-
-function settle<T>(work: Promise<T>): Promise<Settled<T>> {
-  return work.then(
-    (value) => ({ ok: true, value }) as const,
-    (error: unknown) => ({ ok: false, error }) as const
-  )
-}
-
-/** The race's timeout arm, distinguishable from any settled value. */
-const TIMED_OUT = Symbol("preflight deadline")
-
-/**
- * Race already-settled work against a deadline, clearing the timer either way.
- *
- * The work is settled **before** the race rather than raced directly: a promise
- * that rejects after the timer won would otherwise be an unhandled rejection,
- * which in a Node server is a process-level warning (and, under some
- * configurations, an exit) triggered by nothing worse than a slow runtime.
- *
- * The timer is always cleared, so a fast answer does not leave a 30-second handle
- * holding the event loop open — which is also what keeps a test suite from
- * hanging for half a minute after its assertions have passed.
- */
-async function withDeadline<T>(
-  work: Promise<Settled<T>>,
-  remainingMs: number
-): Promise<Settled<T> | typeof TIMED_OUT> {
-  let handle: ReturnType<typeof setTimeout> | undefined
-
-  const deadline = new Promise<typeof TIMED_OUT>((resolve) => {
-    handle = setTimeout(() => resolve(TIMED_OUT), Math.max(0, remainingMs))
-  })
-
-  try {
-    return await Promise.race([work, deadline])
-  } finally {
-    if (handle !== undefined) clearTimeout(handle)
-  }
-}
-
-/**
- * Release a stream the reader is abandoning.
- *
- * Called on the timeout path and on the path where `done` arrived before the
- * stream ended. Without it the underlying socket stays open until the runtime
- * closes it, and a preflight that timed out would keep consuming a connection for
- * as long as the container kept talking.
- *
- * Failures are swallowed: this runs while abandoning a stream that may already be
- * broken, and the outcome is decided by then.
- */
-async function releaseIterator(
-  iterator: AsyncIterator<Uint8Array>
-): Promise<void> {
-  try {
-    await iterator.return?.()
-  } catch {
-    // Nothing to do and nothing to say: the answer is already decided.
-  }
 }
 
 // --- The service ------------------------------------------------------------

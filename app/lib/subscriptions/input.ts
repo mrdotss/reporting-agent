@@ -358,6 +358,40 @@ export const subscriptionIdParamSchema = z
 
 export type SubscriptionIdParam = z.output<typeof subscriptionIdParamSchema>
 
+// --- The inventory endpoint's boundary --------------------------------------
+
+/**
+ * `GET /api/subscriptions/[id]/inventory` — the path parameter (Requirement 9.3).
+ *
+ * Deliberately **the same schema object** as {@link subscriptionIdParamSchema},
+ * exported under the name that endpoint's boundary uses. One rule, two names, and
+ * the aliasing is the point: an id is an id, and two independently written schemas
+ * over the same column would eventually disagree about trimming or about a length
+ * bound, which is a difference a caller could probe.
+ */
+export const inventoryParamsSchema = subscriptionIdParamSchema
+
+export type InventoryParams = z.output<typeof inventoryParamsSchema>
+
+/**
+ * `GET /api/subscriptions/[id]/inventory` — the search parameters, of which there
+ * are none (Requirement 9.3).
+ *
+ * `.strict()` over an empty object rather than no schema at all, and that is a
+ * statement rather than a formality: this endpoint's answer is a property of the
+ * subscription alone, so there is nothing to filter, page or narrow by. A caller
+ * that sends `?dimension=tag_keys` is a caller working from a different idea of what
+ * this route does, and a 400 naming the unrecognized key says so — where ignoring it
+ * would return the full listing and let that idea survive.
+ *
+ * It is also what keeps the cache honest. Every accepted search parameter would be
+ * part of the answer and therefore part of the cache key, and the key is the row id
+ * alone (Requirement 9.2). Refusing parameters is how that stays true.
+ */
+export const inventoryQuerySchema = z.object({}).strict()
+
+export type InventoryQuery = z.output<typeof inventoryQuerySchema>
+
 // --- Rotation ---------------------------------------------------------------
 
 /**

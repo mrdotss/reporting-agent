@@ -535,7 +535,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Extend `tests/test_main.py` and `tests/test_report_events.py`: the four dimension keys reach `done`, the invocation-level error codes stay disjoint, and nothing follows `done`
     - _Requirements: 9.1, 9.3, 9.5_
 
-  - [ ] 12.2 Implement the cache and the endpoint, in the order the criteria force
+  - [x] 12.2 Implement the cache and the endpoint, in the order the criteria force
     - `app/lib/subscriptions/inventory-cache.ts`, `import "server-only"`: a module-level `Map<string, { at: number; rowUpdatedAt: string; payload: InventoryDimensions }>` keyed on the connected subscription's **row id alone**, a hit for **300 seconds** after the query completed, a miss thereafter, and a miss once that row has been written after that instant — invalidation-on-write is then a comparison of the row's `updated_at` the handler already loaded, not a publish/subscribe problem
     - `app/app/api/subscriptions/[id]/inventory/route.ts`, `GET`, `export const runtime = "nodejs"`, `Cache-Control: no-store`, with **named** zod schemas at the boundary: `inventoryParamsSchema` over `id` and `inventoryQuerySchema` as `z.object({}).strict()` — no search parameters, and saying so
     - The order is three criteria: **ownership first** — a `user_id` differing from the signed-in user's resolves as **not found** with no Azure query and no field of that row disclosed, byte-identical to the response for an id that exists for no row; **then status** — a `status` other than `active` resolves as unavailable naming that status and disclosing nothing else, which drives the free-entry fallback rather than an empty option list a consultant would read as an empty subscription; **then the cache**

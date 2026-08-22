@@ -109,6 +109,12 @@ function connectedSubscriptionRow(
     status: "active",
     logAnalyticsWorkspaceId: WORKSPACE_ID,
     createdAt: new Date("2026-06-01T00:00:00.000Z"),
+    // The reviewed decision this fixture's typing exists to force: `updated_at` is
+    // the inventory cache's invalidation signal (Requirement 9.2) and is read
+    // server-side only. It is **not** projected — the browser has no use for it, and
+    // a field in the projection is a field the guard below has to keep proving is
+    // safe. Distinct from `createdAt` so a projection that confused the two fails.
+    updatedAt: new Date("2026-06-02T00:00:00.000Z"),
     ...overrides,
   }
 }

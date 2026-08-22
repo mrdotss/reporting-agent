@@ -1,0 +1,1 @@
+ALTER TABLE "connected_subscriptions" ADD COLUMN "updated_at" timestamp with time zone DEFAULT now() NOT NULL;

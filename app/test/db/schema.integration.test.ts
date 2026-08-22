@@ -157,8 +157,16 @@ describe("Requirements 9.6, 36.1 — the enums are real Postgres types", () => {
     const values = await enumValues("run_error_code")
 
     expect(values).not.toContain("PARTIAL_COVERAGE")
-    // Requirement 36.6's ten, plus Requirement 41.2's six document-phase codes.
-    expect(values).toHaveLength(16)
+    // Requirement 36.6's ten, plus Requirement 41.2's six document-phase codes,
+    // plus `INTERNAL_ERROR` — the code the five invocation-level failures present
+    // as, because the progress endpoint refuses a `failed` transition carrying none.
+    //
+    // This count was 16 and stale: `INTERNAL_ERROR` landed without it, and the
+    // failure sat unseen because every suite in this directory is skipped unless
+    // `TEST_DATABASE_URL` is set. Worth noting rather than quietly correcting — a
+    // guard nobody runs is a guard that has stopped guarding.
+    expect(values).toHaveLength(17)
+    expect(values).toContain("INTERNAL_ERROR")
   })
 
   test("run_error_code grew by addition, keeping the ten it already had", async () => {

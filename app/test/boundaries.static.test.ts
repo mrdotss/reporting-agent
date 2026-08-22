@@ -581,6 +581,93 @@ describe("Requirements 6.2, 6.10, 6.11 — an SDK or crypto import requires the 
   })
 })
 
+describe("Requirement 9.2 — every write to a subscription moves updated_at", () => {
+  const STORE = path.join("lib", "subscriptions", "store.ts")
+
+  /**
+   * The `.set({ … })` body of every `.update(connectedSubscriptions)` in the store.
+   *
+   * A text scan rather than an assertion against a database, because the claim is
+   * about *which writers exist in the source*, and the integration suite can only
+   * check the writers it happens to call. A writer added tomorrow that forgets
+   * `updatedAt` would leave the inventory cache serving that row's previous listing
+   * for five minutes — and every test of that writer would pass, because nothing it
+   * asserts is about a column it does not set.
+   */
+  /** The text between the brace at `openIndex` and its match. */
+  function bracedBody(source: string, openIndex: number): string {
+    let depth = 0
+
+    for (let index = openIndex; index < source.length; index += 1) {
+      if (source[index] === "{") depth += 1
+      if (source[index] === "}") {
+        depth -= 1
+        if (depth === 0) return source.slice(openIndex + 1, index)
+      }
+    }
+
+    return source.slice(openIndex + 1)
+  }
+
+  function updateSetBodies(source: string): readonly string[] {
+    const bodies: string[] = []
+    const marker = ".update(connectedSubscriptions)"
+
+    for (
+      let at = source.indexOf(marker);
+      at !== -1;
+      at = source.indexOf(marker, at + marker.length)
+    ) {
+      const setAt = source.indexOf(".set({", at)
+      expect(
+        setAt,
+        `an .update(connectedSubscriptions) at index ${at} in ${STORE} has no ` +
+          `.set({ … }) after it, so this scan cannot see what it writes`
+      ).toBeGreaterThan(at)
+
+      bodies.push(bracedBody(source, source.indexOf("{", setAt)))
+    }
+
+    return bodies
+  }
+
+  test("the scan finds every update in the store", () => {
+    // Requirement 6.11 — a scan that found nothing would pass while proving nothing.
+    // Two writers exist today: the secret rotation and the Azure-rejected disable.
+    const bodies = updateSetBodies(readProjectFile(STORE))
+
+    expect(bodies.length).toBeGreaterThanOrEqual(2)
+  })
+
+  test("every one of them sets updatedAt", () => {
+    const offenders = updateSetBodies(readProjectFile(STORE)).filter(
+      (body) => !body.includes("updatedAt")
+    )
+
+    expect(
+      offenders,
+      `these writes to connected_subscriptions do not move updated_at, so the ` +
+        `inventory cache would go on serving the listing the previous row state ` +
+        `produced (Requirement 9.2). A column that only ever holds its default is ` +
+        `invalidation that never fires.`
+    ).toEqual([])
+  })
+
+  test("the detector is not satisfied by a nearby mention", () => {
+    // The scan reads the `.set` body, not the whole file, so a comment three
+    // functions away naming the column does not acquit a writer that omits it.
+    const withColumn =
+      `x.update(connectedSubscriptions).set({ status: "disabled", ` +
+      `updatedAt: new Date() }).where(y)`
+    const without =
+      `// updatedAt matters\n` +
+      `x.update(connectedSubscriptions).set({ status: "disabled" }).where(y)`
+
+    expect(updateSetBodies(withColumn)[0]).toContain("updatedAt")
+    expect(updateSetBodies(without)[0]).not.toContain("updatedAt")
+  })
+})
+
 describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
   const SUBSCRIPTIONS = "lib/subscriptions"
 
@@ -617,7 +704,19 @@ describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
    * precisely the kind of module a client component must not be able to name. This
    * group exists so that intent is a failing test rather than a comment.
    */
-  const MARKED_BY_DECISION = [path.join("lib", "subscriptions", "preflight.ts")]
+  const MARKED_BY_DECISION = [
+    path.join("lib", "subscriptions", "preflight.ts"),
+    // Same reasoning as `preflight.ts`: it reaches the runtime through
+    // `lib/aws/agentcore.ts`, and it takes the customer's decrypted client secret as
+    // an argument to put into an invoke payload.
+    path.join("lib", "subscriptions", "inventory.ts"),
+    // No credential and no SDK — a module-level `Map` of four string lists per row.
+    // Marked because a client component must not be able to name it at all: the map
+    // is one server process's memory, so an import from a client leaf would either
+    // bundle a cache that can never hit or fail at build, and the second of those is
+    // the failure worth having.
+    path.join("lib", "subscriptions", "inventory-cache.ts"),
+  ]
 
   const PURE_HERE = [
     path.join("lib", "subscriptions", "state.ts"),
