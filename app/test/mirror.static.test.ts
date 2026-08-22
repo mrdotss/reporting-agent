@@ -7,6 +7,17 @@ import { describe, expect, test } from "vitest"
 
 import { BLOCK_CONFIG, BLOCK_TYPES } from "@/lib/templates/blocks"
 import {
+  FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
+  FRONT_MATTER_KEYS,
+  IDENTITY_KEYS,
+  LANGUAGES,
+  MAX_SUPPORTED_SCHEMA_VERSION,
+  MIN_SCHEMA_VERSION,
+  NUMBER_FORMAT_KEYS,
+  REQUIRED_IDENTITY_KEYS,
+  REQUIRED_TOP_LEVEL_KEYS,
+} from "@/lib/templates/definition"
+import {
   collectDefinitionIssues,
   type FieldIssue,
 } from "@/lib/templates/definition"
@@ -430,6 +441,280 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
     }
 
     expect(mismatches).toEqual([])
+  })
+})
+
+// ===========================================================================
+// Mirror_Guard — the schema-version declarations (Requirements 13.10, 15.10)
+// ===========================================================================
+
+/**
+ * `lib/templates/definition.ts` and `agent/.../compile/definition.py` each declare the
+ * version-conditional key sets between `--- BEGIN SCHEMA VERSIONS ---` sentinels, and the
+ * whole point of declaring them **as data** rather than as two validators is that this guard
+ * can then be a set comparison with no parser on either side.
+ *
+ * What it protects is specific. A key admitted at one version in one half and not the other
+ * presents as a definition the wizard **saves** and the compiler **refuses** — minutes into a
+ * run, after the collection has been spent. Nothing in either suite would catch that: each
+ * half is internally consistent and each half's tests pass.
+ *
+ * The extraction is deliberately textual and per-key, so a failure names the differing key
+ * rather than reporting that two blocks of text are unequal.
+ */
+
+const BEGIN_VERSIONS_SENTINEL = "--- BEGIN SCHEMA VERSIONS"
+const END_VERSIONS_SENTINEL = "--- END SCHEMA VERSIONS"
+
+/** The declaration for `definition.ts`; the block types live in `blocks.ts`. */
+const TS_VERSIONS_DECLARATION = path.join(
+  appRoot,
+  "lib",
+  "templates",
+  "definition.ts"
+)
+
+/**
+ * The two scalars, the four per-version records and the three flat lists — every name the two
+ * halves must agree on, and the list this guard iterates rather than a set of hand-written
+ * assertions. A declaration added to one half and not to this list would be unguarded, so the
+ * completeness check below reads the sentinel bodies themselves.
+ */
+const VERSION_SCALARS = [
+  "MIN_SCHEMA_VERSION",
+  "MAX_SUPPORTED_SCHEMA_VERSION",
+] as const
+const VERSION_RECORDS = [
+  "REQUIRED_TOP_LEVEL_KEYS",
+  "NUMBER_FORMAT_KEYS",
+  "IDENTITY_KEYS",
+  "REQUIRED_IDENTITY_KEYS",
+] as const
+const VERSION_LISTS = [
+  "LANGUAGES",
+  "FRONT_MATTER_KEYS",
+  "FRONT_MATTER_FORBIDDEN_BLOCK_TYPES",
+] as const
+
+const DECLARED_VERSION_NAMES: readonly string[] = [
+  ...VERSION_SCALARS,
+  ...VERSION_RECORDS,
+  ...VERSION_LISTS,
+]
+
+function versionsBody(absolutePath: string): string {
+  return sentinelBody(
+    absolutePath,
+    BEGIN_VERSIONS_SENTINEL,
+    END_VERSIONS_SENTINEL
+  )
+}
+
+/**
+ * An integer assigned to `name` inside the sentinel body.
+ *
+ * One pattern for both languages: `MIN_SCHEMA_VERSION = 1` and
+ * `MIN_SCHEMA_VERSION: Final[int] = 1` differ only in an annotation this skips over.
+ */
+function declaredScalar(body: string, name: string): number | undefined {
+  const pattern = new RegExp(`\\b${name}\\b[^=\\n]*=\\s*(-?\\d+)`)
+  const match = pattern.exec(body)
+  return match === null ? undefined : Number(match[1])
+}
+
+/** The quoted strings inside the `[ ... ]` or `( ... )` following `name`'s assignment. */
+function declaredList(
+  body: string,
+  name: string
+): readonly string[] | undefined {
+  const pattern = new RegExp(`\\b${name}\\b[^=\\n]*=\\s*([\\[(])`)
+  const match = pattern.exec(body)
+  if (match === null) return undefined
+  const open = match[1] as "[" | "("
+  const close = open === "[" ? "]" : ")"
+  const openIndex = match.index + match[0].length - 1
+  return quotedStrings(matchBalanced(body, openIndex, open, close as "]" | ")"))
+}
+
+/**
+ * A per-version record as `version -> the quoted strings it declares`.
+ *
+ * TypeScript spells the record `{ 1: [...], 2: [...] }` and Python spells it
+ * `{1: (...), 2: (...)}`; the numeric key is bare in both, and each version's members are
+ * bracketed in one language and parenthesised in the other. Reading the members by balanced
+ * delimiter rather than by line makes both spellings one code path.
+ */
+function declaredRecord(
+  body: string,
+  name: string
+): Record<number, readonly string[]> | undefined {
+  const pattern = new RegExp(`\\b${name}\\b[^=\\n]*=\\s*\\{`)
+  const match = pattern.exec(body)
+  if (match === null) return undefined
+  const record = matchBalanced(
+    body,
+    match.index + match[0].length - 1,
+    "{",
+    "}"
+  )
+
+  const found: Record<number, readonly string[]> = {}
+  const entry = /(\d+)\s*:\s*([[(])/g
+  for (const hit of record.matchAll(entry)) {
+    const open = hit[2] as "[" | "("
+    const close = open === "[" ? "]" : ")"
+    const openIndex = (hit.index ?? 0) + hit[0].length - 1
+    found[Number(hit[1])] = quotedStrings(
+      matchBalanced(record, openIndex, open, close as "]" | ")")
+    )
+  }
+  return found
+}
+
+describe("Requirement 13.10 — the schema-version declarations are mirrored", () => {
+  const tsBody = versionsBody(TS_VERSIONS_DECLARATION)
+  const pyBody = versionsBody(PY_DECLARATION)
+
+  test("both halves declare every name this guard compares", () => {
+    // The first failure mode to rule out: a guard that passes because it extracted nothing.
+    // `undefined` from any reader below would make the comparison `undefined === undefined`,
+    // which is exactly the shape of a rule that has quietly stopped applying.
+    const missing: string[] = []
+    for (const name of DECLARED_VERSION_NAMES) {
+      for (const [half, body] of [
+        ["typescript", tsBody],
+        ["python", pyBody],
+      ] as const) {
+        if (!new RegExp(`\\b${name}\\b`).test(body)) {
+          missing.push(`${half}: ${name}`)
+        }
+      }
+    }
+    expect(missing).toEqual([])
+  })
+
+  test.each(VERSION_SCALARS)(
+    "%s is the same integer in both halves",
+    (name) => {
+      const ts = declaredScalar(tsBody, name)
+      const py = declaredScalar(pyBody, name)
+      expect(ts, `typescript declares no readable ${name}`).toBeTypeOf("number")
+      expect(py, `python declares no readable ${name}`).toBeTypeOf("number")
+      expect({ name, ts }).toEqual({ name, ts: py })
+    }
+  )
+
+  test.each(VERSION_LISTS)(
+    "%s declares the same members in both halves",
+    (name) => {
+      const ts = declaredList(tsBody, name)
+      const py = declaredList(pyBody, name)
+      expect(ts, `typescript declares no readable ${name}`).toBeDefined()
+      expect(py, `python declares no readable ${name}`).toBeDefined()
+      // Order-sensitive on purpose for these three: `FRONT_MATTER_KEYS` is the order the front
+      // matter emits its sections in, and `LANGUAGES[0]` is the language the separators default
+      // from. A set comparison would let the two halves default from different languages.
+      expect({ name, members: ts }).toEqual({ name, members: py })
+    }
+  )
+
+  test.each(VERSION_RECORDS)(
+    "%s declares the same keys per version in both halves",
+    (name) => {
+      const ts = declaredRecord(tsBody, name)
+      const py = declaredRecord(pyBody, name)
+      expect(ts, `typescript declares no readable ${name}`).toBeDefined()
+      expect(py, `python declares no readable ${name}`).toBeDefined()
+
+      const versions = [
+        ...new Set([
+          ...Object.keys(ts ?? {}).map(Number),
+          ...Object.keys(py ?? {}).map(Number),
+        ]),
+      ].sort()
+      expect(
+        versions.length,
+        `${name} declares no version at all in either half`
+      ).toBeGreaterThan(0)
+
+      // Compared **per version and per key**, so a failure names the differing key rather
+      // than reporting that two records are unequal.
+      const differences: string[] = []
+      for (const version of versions) {
+        const tsKeys = new Set(ts?.[version] ?? [])
+        const pyKeys = new Set(py?.[version] ?? [])
+        for (const key of tsKeys) {
+          if (!pyKeys.has(key)) {
+            differences.push(`${name}[${version}] "${key}": typescript only`)
+          }
+        }
+        for (const key of pyKeys) {
+          if (!tsKeys.has(key)) {
+            differences.push(`${name}[${version}] "${key}": python only`)
+          }
+        }
+      }
+      expect(differences).toEqual([])
+    }
+  )
+
+  test("the sentinel bodies name no declaration this guard ignores", () => {
+    // The completeness half. Without it a tenth declaration could be added to both halves,
+    // drift, and never be compared — which is exactly as unguarded as one this guard reads
+    // and much harder to notice, because everything about it looks deliberate.
+    const declared = (body: string): readonly string[] =>
+      [...body.matchAll(/^\s*([A-Z][A-Z0-9_]*)\s*[:=]/gm)].map(
+        (match) => match[1]
+      )
+
+    for (const [half, body] of [
+      ["typescript", tsBody],
+      ["python", pyBody],
+    ] as const) {
+      const unguarded = [...new Set(declared(body))].filter(
+        (name) => !DECLARED_VERSION_NAMES.includes(name)
+      )
+      expect(
+        unguarded,
+        `${half} declares names this guard does not compare`
+      ).toEqual([])
+    }
+  })
+
+  test("the TypeScript sentinel block is the module's actual exports", () => {
+    // Extraction is textual, so on its own it would pass against sentinels wrapping a
+    // decorative comment while the module exported something else — the same hole the
+    // BLOCK_TYPES check closes from the app side.
+    expect(declaredScalar(tsBody, "MIN_SCHEMA_VERSION")).toBe(
+      MIN_SCHEMA_VERSION
+    )
+    expect(declaredScalar(tsBody, "MAX_SUPPORTED_SCHEMA_VERSION")).toBe(
+      MAX_SUPPORTED_SCHEMA_VERSION
+    )
+    expect(declaredList(tsBody, "LANGUAGES")).toEqual([...LANGUAGES])
+    expect(declaredList(tsBody, "FRONT_MATTER_KEYS")).toEqual([
+      ...FRONT_MATTER_KEYS,
+    ])
+    expect(declaredList(tsBody, "FRONT_MATTER_FORBIDDEN_BLOCK_TYPES")).toEqual([
+      ...FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
+    ])
+
+    const records = {
+      REQUIRED_TOP_LEVEL_KEYS,
+      NUMBER_FORMAT_KEYS,
+      IDENTITY_KEYS,
+      REQUIRED_IDENTITY_KEYS,
+    } as const
+    for (const name of VERSION_RECORDS) {
+      const extracted = declaredRecord(tsBody, name)
+      const actual = records[name] as Record<number, readonly string[]>
+      for (const version of Object.keys(actual).map(Number)) {
+        expect(
+          [...(extracted?.[version] ?? [])].sort(),
+          `${name}[${version}]: sentinel vs export differ`
+        ).toEqual([...actual[version]].sort())
+      }
+    }
   })
 })
 

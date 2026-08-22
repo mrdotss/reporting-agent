@@ -88,6 +88,12 @@ const PROPERTY_SEARCH_DIRECTORIES = [
   "app",
   "components",
   "hooks",
+  // `test/property/` is where the breadth-and-document spec puts its web-side properties.
+  // Without it a module there would be invisible to every rule in this file — unscanned for a
+  // lowered `numRuns`, for a `test.skip`, and for belonging to no declared property — while
+  // `vitest.config.ts`'s node project collects and runs it perfectly happily. A property the
+  // hygiene guard cannot see is the exact hole this guard exists to be.
+  "test",
 ] as const
 
 const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".next"])
@@ -161,6 +167,11 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
   // a hand-written recipe tuple names nothing a reader can recognise. The named
   // boundaries live in the single-action property, where the action is concrete.
   "lib/templates/composer.property.test.ts": 6,
+  /**
+   * Fifteen distinct declared cases across four arrays: three languages, six pairs of language
+   * and declared separator, three colliding resolved pairs, and three version-1 shapes.
+   */
+  "test/property/number-format-defaults.property.test.ts": 15,
 }
 
 /** Recorded from the tree, so deleting a whole entry above is caught too. */
@@ -896,6 +907,20 @@ describe("Requirement 45.7 — the set executed equals the set declared", () => 
     ).toEqual([])
   })
 
+  test("the two discovery walks descend the same directories", () => {
+    // The walk above (`listPropertyModules`) scans for hygiene; the ledger's own walk
+    // classifies. They are separate implementations on purpose, and nothing but this
+    // assertion forces them to agree — so a directory added to one alone splits the
+    // guarantee in a way that reads green from either side. A module under a directory
+    // only the ledger knows is registered and never scanned for a lowered `numRuns` or
+    // a `test.skip`; a module under a directory only the scan knows is reported by
+    // `undeclaredModules()` as a rename that never happened. Both were live: `test/`
+    // was added to the scan first and this test is what caught the ledger still missing it.
+    expect([...PROPERTY_SEARCH_DIRECTORIES].sort()).toEqual(
+      [...ledger.SEARCH_DIRECTORIES].sort()
+    )
+  })
+
   test("the declared set is design.md's Properties 8 to 12", () => {
     expect(
       Object.keys(ledger.SPEC_PROPERTIES)
@@ -1022,11 +1047,16 @@ describe("Requirement 45.8 — each property records four values, observably", (
     // node project includes `lib/**/*.test.ts`, so a declared module outside `lib/`
     // or not ending in `.test.ts` would silently never run.
     const config = readProjectFile("vitest.config.ts")
-    expect(config).toContain('"lib/**/*.test.ts"')
+    // Both patterns, read from the config rather than assumed: the node project collects
+    // `lib/**` and `test/**`, and a declared module outside both would silently never run.
+    for (const pattern of ['"lib/**/*.test.ts"', '"test/**/*.test.ts"']) {
+      expect(config).toContain(pattern)
+    }
 
     for (const modulePath of ledger.declaredModules().keys()) {
       expect(
-        modulePath.startsWith("lib/") && modulePath.endsWith(".test.ts"),
+        (modulePath.startsWith("lib/") || modulePath.startsWith("test/")) &&
+          modulePath.endsWith(".test.ts"),
         `${modulePath} is declared as a property module and does not match the node ` +
           `project's include patterns, so Vitest would never collect it`
       ).toBe(true)

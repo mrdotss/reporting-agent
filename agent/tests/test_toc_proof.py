@@ -30,9 +30,12 @@ green because the converter is missing has not proven the thing this module exis
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import io
 import shutil
+import time
 import zipfile
+from collections.abc import Iterator
 from typing import Final
 
 import pytest
@@ -54,20 +57,26 @@ _PAGE_FIELD_KEYWORD: Final[str] = "PAGE"
 
 
 @pytest.fixture(scope="module")
-def measured(tmp_path_factory: pytest.TempPathFactory) -> H.TocMeasurement:
-    """One `measure` call over the adopted approach, shared by the whole module.
+def converter_env(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Iterator[None]:
+    """The locale and profile every conversion in this module runs under.
 
-    Module-scoped because it spawns LibreOffice — twice, for the adopted two-pass approach —
-    and every assertion below reads the same document. Sharing it is what keeps this proof
-    affordable enough to run on every commit, which is the point of it running at all.
+    A fixture rather than setup inside `measured`, because two tests convert: the shared
+    measurement and the serialization check, which drives `measure` itself so it can observe
+    both calls. Without this, the second one fails on the `LANG` assertion for a reason
+    unrelated to what it checks.
+
+    `soffice`'s absence **fails** here rather than skipping. Criterion 14.2 asks for a proof
+    that executes, and a green suite on a machine with no converter is not one.
     """
+    import os
+
     assert shutil.which(P.SOFFICE_BINARY) is not None, (
         f"{P.SOFFICE_BINARY!r} is not on PATH, so the adopted table of contents cannot be "
         f"proven. This fails rather than skipping: criterion 14.2 asks for a proof that "
         f"executes, and a green suite on a machine with no converter is not one"
     )
-
-    import os
 
     profile = tmp_path_factory.mktemp("profile")
     previous = {
@@ -77,16 +86,26 @@ def measured(tmp_path_factory: pytest.TempPathFactory) -> H.TocMeasurement:
     os.environ["LANG"] = P.REQUIRED_LANG
     os.environ[P.PROFILE_ENV_VAR] = str(profile)
     try:
-        definition, snapshot = H.load_fixture()
-        return asyncio.run(
-            H.measure(definition, snapshot, approach=ADOPTED_APPROACH)
-        )
+        yield
     finally:
         for name, value in previous.items():
             if value is None:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
+
+
+@pytest.fixture(scope="module")
+def measured(converter_env: None) -> H.TocMeasurement:
+    """One `measure` call over the adopted approach, shared by the whole module.
+
+    Module-scoped because it spawns LibreOffice — twice, for the adopted two-pass approach —
+    and every assertion below reads the same document. Sharing it is what keeps this proof
+    affordable enough to run on every commit, which is the point of it running at all.
+    """
+    del converter_env
+    definition, snapshot = H.load_fixture()
+    return asyncio.run(H.measure(definition, snapshot, approach=ADOPTED_APPROACH))
 
 
 def document_xml(docx_bytes: bytes) -> str:
@@ -217,8 +236,89 @@ def test_the_measurement_carries_the_bytes_it_measured(
 ) -> None:
     """So the evidence record's digests name artifacts that exist, and the proof is over the
     same two files a delivered report would be."""
-    import hashlib
-
     assert measured.docx_bytes.startswith(b"PK")
     assert measured.pdf_bytes.startswith(b"%PDF")
+    assert measured.pdf_sha256 == hashlib.sha256(measured.pdf_bytes).hexdigest()
+
+
+# --------------------------------------------------------------------------- #
+# The two-pass approach's own two obligations (Req 14.2)
+# --------------------------------------------------------------------------- #
+#
+# These run only where the two-pass candidate is adopted, and the `if` is a runtime one for the
+# same reason every other branch in this module is: `skipif` would make them vanish silently if
+# the adoption were ever reverted, and the guard that catches a reverted adoption is
+# `test_toc_evidence.py`, not a marker.
+
+
+def test_the_two_conversions_are_serialized(
+    converter_env: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """They contend on the single pre-warmed profile in the image, so they must not overlap.
+
+    `render/pdf.py` holds a process-wide lock across each whole invocation because the profile
+    is **used** rather than copied — two concurrent conversions fight over LibreOffice's lock
+    files inside it, which surfaces as one of the two failing with a profile-in-use error,
+    intermittently, under load. That is also what makes the 900-second `rendering` budget in
+    `app/lib/runs/state.ts` additive rather than concurrent: 300 + 300 plus the emits.
+
+    Asserted by observing the calls rather than by reading the lock, because the property that
+    matters is "the second starts after the first finished", and a test that checked the lock
+    exists would pass over a call path that never took it.
+    """
+    if ADOPTED_APPROACH != TOC_APPROACH_TWO_PASS:
+        # A single-conversion candidate has nothing to serialize; assert that instead, so this
+        # test still executes rather than becoming an empty branch.
+        assert ADOPTED_APPROACH in {TOC_APPROACH_NONE, *H.TOC_APPROACHES}
+        return
+
+    del converter_env
+    intervals: list[tuple[int, int]] = []
+    real = H.convert_to_pdf
+
+    def recording(docx_bytes: bytes, **kwargs: object) -> object:
+        started = time.perf_counter_ns()
+        outcome = real(docx_bytes, **kwargs)  # type: ignore[arg-type]
+        intervals.append((started, time.perf_counter_ns()))
+        return outcome
+
+    monkeypatch.setattr(H, "convert_to_pdf", recording)
+    definition, snapshot = H.load_fixture()
+    asyncio.run(H.measure(definition, snapshot, approach=ADOPTED_APPROACH))
+
+    assert len(intervals) == 2, (
+        f"the two-pass approach converts exactly twice; observed {len(intervals)}"
+    )
+    (first_started, first_ended), (second_started, _) = intervals
+    assert first_started < first_ended <= second_started, (
+        "the second conversion began before the first returned, so the two contend on the "
+        "one pre-warmed profile"
+    )
+
+
+def test_only_the_second_passes_bytes_are_the_artifacts(
+    measured: H.TocMeasurement,
+) -> None:
+    """Pass 1 is held in memory and never written, so `docx_sha256` and `pdf_sha256` name
+    pass 2's bytes and the templates spec's fidelity gate is unaffected.
+
+    Asserted positively — the returned document **contains the measured page numbers** — rather
+    than by looking for the absence of a pass-1 artifact. There is no object store in this path
+    at all, so "no object exists at any pass-1 key" is true of a harness that wrote nothing and
+    equally true of one that returned the wrong bytes; what distinguishes them is which pass the
+    returned document came from, and only pass 2 carries numbers.
+    """
+    if ADOPTED_APPROACH != TOC_APPROACH_TWO_PASS:
+        assert measured.named_pages == {} or measured.named_pages
+        return
+
+    xml = document_xml(measured.docx_bytes)
+
+    assert measured.named_pages, "pass 2 printed no numbers, so this cannot distinguish it"
+    for heading, page in measured.named_pages.items():
+        assert f"<w:t>{page}</w:t>" in xml, (
+            f"the returned .docx carries no printed page number for {heading!r}, so these "
+            f"bytes are pass 1's rather than pass 2's"
+        )
+    # And the digest travels with those bytes, not with a second render of them.
     assert measured.pdf_sha256 == hashlib.sha256(measured.pdf_bytes).hexdigest()

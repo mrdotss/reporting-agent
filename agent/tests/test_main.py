@@ -57,6 +57,7 @@ from reporting_agent.main import (
     COMMAND_COMPARE_RUNS,
     COMMAND_GENERATE_REPORT,
     COMMAND_HANDLERS,
+    COMMAND_LIST_INVENTORY,
     COMMAND_PREFLIGHT,
     COMMAND_RENDER_PREVIEW,
     COMMAND_VERIFY_REPORT,
@@ -239,6 +240,7 @@ def test_every_accepted_command_is_routed_and_compare_runs_is_neither() -> None:
         COMMAND_PREFLIGHT,
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
+        COMMAND_LIST_INVENTORY,
     }
     assert set(COMMAND_HANDLERS) == COMMANDS
     assert COMMAND_COMPARE_RUNS not in COMMANDS
@@ -341,6 +343,24 @@ def test_an_invocation_level_code_is_distinct_from_every_collection_phase_code()
     assert not INVOCATION_ERROR_CODES & collection_codes
     assert not INVOCATION_ERROR_CODES & APP_WRITTEN_CODES
     assert CODE_UNSUPPORTED_COMMAND in INVOCATION_ERROR_CODES
+def test_a_commands_outcome_keys_cannot_shadow_the_terminal_events_own_fields() -> None:
+    """Every key a command puts on `done` through `Invocation.outcome`, against the three
+    fields Req 14.10 pins there.
+    `_done_event` writes `type`, `run_id` and `status` **last**, so a collision is
+    already unrepresentable — this is the assertion that the outcome vocabularies stay
+    clear of them anyway, because relying on write order alone means a reordering of two
+    lines silently changes what `done` says a run's status was. `list_inventory` is the
+    command that makes this worth pinning: it merges four keys rather than two.
+    """
+    from reporting_agent.azure.inventory import INVENTORY_DIMENSIONS
+    pinned = {"type", "run_id", "status"}
+    preflight_keys = {"scope_verified", "fidelity_tier"}
+    inventory_keys = set(INVENTORY_DIMENSIONS)
+    assert not pinned & preflight_keys
+    assert not pinned & inventory_keys
+    # And the two commands' outcomes do not collide with each other either, so a client
+    # reading `done` can tell which command answered from the keys it carries.
+    assert not preflight_keys & inventory_keys
 
 
 def test_an_unimplemented_seam_produces_a_well_formed_terminal_stream(

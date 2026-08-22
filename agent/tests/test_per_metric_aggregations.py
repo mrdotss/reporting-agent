@@ -52,6 +52,7 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
 )
 from fakes.object_store import InMemoryObjectStore
 from reporting_agent.azure.metrics import (
@@ -1035,6 +1036,8 @@ def test_replays_accumulators_carry_the_pinned_catalogs_declared_set() -> None:
     }
     document = build_snapshot(
         run_id=RUN_ID,
+        # See `tests/test_verify_replay.py` on the required-but-nullable keyword.
+        invocation_started_at=None,
         scope=ScopeSpec(
             subscription_id=SUBSCRIPTION,
             resource_types=[resource_type],
@@ -1129,6 +1132,7 @@ def test_the_provider_wires_the_catalogs_sets_into_both_the_request_and_the_fold
             ]
         ),
         metrics_port=metrics_port,
+        facts_port=facts_port_answering_nothing(),
         object_store=InMemoryObjectStore(),
         actor_id=ACTOR_ID,
         run_id=RUN_ID,

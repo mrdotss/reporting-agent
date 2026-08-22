@@ -34,6 +34,7 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
 )
 from fakes.object_store import InMemoryObjectStore
 from reporting_agent.azure.clients import (
@@ -323,6 +324,7 @@ class Harness:
             sku_port=self.sku_port,
             definitions_port=self.definitions_port,
             metrics_port=self.metrics_port,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,

@@ -126,7 +126,8 @@ _ITEM_ID_KEYS: Final[tuple[str, ...]] = ("resource_id", "id")
 list convention — or a bare list, with each item naming its resource under one of these two
 keys and carrying its fact values under the **declared fact keys themselves**, unprefixed.
 
-The port normalizes into this. That boundary is deliberate: a backup status lives at
+`azure/facts.py` normalizes into this — not the port, which answers with the envelope the
+service sent and interprets nothing. That boundary is deliberate: a backup status lives at
 `properties.sourceResourceId` on one API and somewhere else on the next, and a pure fold that
 knew those paths would be a pure module that has to change whenever a provider does."""
 

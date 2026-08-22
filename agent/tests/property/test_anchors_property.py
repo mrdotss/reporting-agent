@@ -113,6 +113,11 @@ class _Resolver:
         found = self._answers.get(raw_pointer)
         return () if found is None else (found,)
 
+    def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+        """Numeric side only — this property compiles figures, not text facts."""
+        del raw_pointer
+        return ()
+
 
 def _snapshot_value(pointer: str, value: str) -> SnapshotValue:
     return SnapshotValue(

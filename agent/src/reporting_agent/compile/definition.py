@@ -214,6 +214,7 @@ assert set(BLOCK_CONFIG.keys()) == set(BLOCK_TYPES), BLOCK_CONFIG.keys()
 
 __all__ = [
     "ACCENT_COLOR_MAX_LENGTH",
+    "APPROVER_ROLES",
     "BLOCK_CONFIG",
     "BLOCK_ID_MAX_LENGTH",
     "BLOCK_ID_MIN_LENGTH",
@@ -221,6 +222,12 @@ __all__ = [
     "DENSITY_VALUES",
     "DESCRIPTION_MAX_LENGTH",
     "DESIGN_PRESETS",
+    "DOCUMENT_NUMBER_PLACEHOLDERS",
+    "DOCUMENT_NUMBER_VARYING_PLACEHOLDERS",
+    "FRONT_MATTER_FORBIDDEN_BLOCK_TYPES",
+    "FRONT_MATTER_KEYS",
+    "IDENTITY_KEYS",
+    "LANGUAGES",
     "LOGO_MAX_LENGTH",
     "MAX_BLOCKS_TOTAL",
     "MAX_CHILDREN_PER_COLUMN",
@@ -242,12 +249,16 @@ __all__ = [
     "NAME_MAX_LENGTH",
     "NAME_MIN_LENGTH",
     "NON_ROW_BLOCK_TYPES",
+    "NUMBER_FORMAT_KEYS",
     "PAGE_SIZE_VALUES",
     "PERIOD_KINDS",
     "REPORT_TITLE_MAX_LENGTH",
+    "REQUIRED_IDENTITY_KEYS",
+    "REQUIRED_TOP_LEVEL_KEYS",
     "RESOURCE_GROUP_MAX_LENGTH",
     "RESOURCE_GROUP_MIN_LENGTH",
     "RESOURCE_TYPE_MAX_LENGTH",
+    "SEPARATOR_DEFAULTS",
     "SORT_DIRECTIONS",
     "TABLE_STYLE_VALUES",
     "TAG_KEY_MAX_LENGTH",
@@ -265,6 +276,7 @@ __all__ = [
     "inclusive_local_day_span",
     "is_real_calendar_date",
     "looks_like_azure_identifier",
+    "resolved_schema_version",
 ]
 
 
@@ -281,8 +293,98 @@ NAME_MAX_LENGTH: Final[int] = 120
 DESCRIPTION_MAX_LENGTH: Final[int] = 1000
 REPORT_TITLE_MAX_LENGTH: Final[int] = 200
 
+# --- BEGIN SCHEMA VERSIONS (mirrored in app/lib/templates/definition.ts) ---
+# Req 2.9, 13.10 — MIN stays 1 and 2 is the highest this reader accepts. What raises the
+# version is exactly three things: `front_matter`, `identity.language`, and the two
+# `number_format` separators.
 MIN_SCHEMA_VERSION: Final[int] = 1
-MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 1
+MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 2
+
+# The version-conditional key sets, **declared as data rather than as two validators**.
+# `collect_definition_issues` resolves the version once and reads the record for it, so no
+# branch is written twice and the Mirror_Guard stays a set comparison with no parser on
+# either side. Two validators would be two places for a key to be admitted at one version
+# and not the other, and the divergence would present as a definition the wizard saves and
+# this compiler refuses — minutes into a run, after the collection has been spent.
+#
+# Three behaviours follow with no rule anybody writes: a v1 definition carrying
+# `front_matter`, `identity.language` or either separator is rejected as an **undeclared
+# key** by the existing strict checks, at three different levels of the document.
+#
+# Req 13.13 makes `front_matter` **required** at version 2, not merely permitted, so it
+# belongs in this list rather than in a separate optional set.
+REQUIRED_TOP_LEVEL_KEYS: Final[dict[int, tuple[str, ...]]] = {
+    1: ("schema_version", "identity", "scope", "period", "metrics", "blocks", "design"),
+    2: (
+        "schema_version",
+        "identity",
+        "scope",
+        "period",
+        "metrics",
+        "blocks",
+        "design",
+        "front_matter",
+    ),
+}
+
+# Req 16.1 — two keys at v1, four at v2.
+NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
+    1: ("decimal_places", "group_thousands"),
+    2: (
+        "decimal_places",
+        "group_thousands",
+        "decimal_separator",
+        "grouping_separator",
+    ),
+}
+
+# Req 15.1 — `identity.language` exists at v2 and nowhere else.
+IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
+    1: ("name", "description", "report_title"),
+    2: ("name", "description", "report_title", "language"),
+}
+
+REQUIRED_IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
+    1: ("name",),
+    2: ("name", "language"),
+}
+
+# Req 15.1 — the two declared languages, matched **case-sensitively**. `EN` is not a
+# spelling of `en`: the value keys a message catalog whose ids are lowercase ASCII by
+# pattern, so a second spelling would pin a language the resolver cannot find.
+LANGUAGES: Final[tuple[str, ...]] = ("en", "id")
+
+# Req 13.1 — the three sections of the front matter.
+FRONT_MATTER_KEYS: Final[tuple[str, ...]] = ("cover", "document_control", "toc")
+
+# Req 13.2 — block types the front matter owns at v2 and above, so they may not also appear
+# in `blocks`. Only `cover`: `document_control` and `toc` are **not block types and never
+# were**, so a definition naming either in `blocks` is already rejected as an undeclared
+# type. `cover` **stays** in `BLOCK_TYPES` because Req 13.11 requires a stored v1
+# definition carrying one to keep compiling.
+FRONT_MATTER_FORBIDDEN_BLOCK_TYPES: Final[tuple[str, ...]] = ("cover",)
+# --- END SCHEMA VERSIONS ---
+
+assert set(REQUIRED_TOP_LEVEL_KEYS) == {MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION}
+assert set(NUMBER_FORMAT_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
+assert set(IDENTITY_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
+assert set(REQUIRED_IDENTITY_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
+assert set(FRONT_MATTER_FORBIDDEN_BLOCK_TYPES) <= set(BLOCK_TYPES)
+
+# Req 16.3 — the separators each language implies when the definition declares none.
+# Applied at validation time to decide whether the resolved pair is legal, and never
+# written back: a declared value is persisted unchanged and an undeclared one stays
+# undeclared, so no stored row is rewritten and a v1 definition renders byte-identically
+# to the way it always did (Req 16.10).
+SEPARATOR_DEFAULTS: Final[dict[str, tuple[str, str]]] = {
+    "en": (".", ","),
+    "id": (",", "."),
+}
+"""`language -> (decimal_separator, grouping_separator)`. `en`'s pair is
+`compile/format.DEFAULT_NUMBER_FORMAT`'s, which is what a v1 definition has always
+rendered with."""
+
+assert set(SEPARATOR_DEFAULTS) == set(LANGUAGES)
 
 MAX_DEFINITION_CANONICAL_BYTES: Final[int] = 262_144
 
@@ -340,19 +442,6 @@ NON_ROW_BLOCK_TYPES: Final[tuple[str, ...]] = tuple(
 
 _NON_ROW_BLOCK_TYPE_SET: Final[frozenset[str]] = frozenset(NON_ROW_BLOCK_TYPES)
 
-_TOP_LEVEL_REQUIRED_KEYS: Final[tuple[str, ...]] = (
-    "schema_version",
-    "identity",
-    "scope",
-    "period",
-    "metrics",
-    "blocks",
-    "design",
-)
-
-_IDENTITY_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
-    {"name", "description", "report_title"}
-)
 _SCOPE_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
     {"resource_types", "tag_filters", "resource_groups", "top_n", "sort"}
 )
@@ -375,9 +464,6 @@ _DESIGN_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         "logo",
         "page_size",
     }
-)
-_NUMBER_FORMAT_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
-    {"decimal_places", "group_thousands"}
 )
 
 # Req 6.6 — `rich_text` carries static prose and no figure. Each of these is already
@@ -494,6 +580,17 @@ class _Walk:
     issues: list[FieldIssue]
     id_occurrences: dict[str, list[Path]]
     total_block_count: int = 0
+    version: int = MIN_SCHEMA_VERSION
+    """The resolved `schema_version`, carried on the walk rather than added to
+    `_validate_block`, `_validate_leaf_block` and `_validate_row_block`'s signatures.
+
+    The walk state already exists for exactly this — a fact true of the whole document that
+    one block's check needs — and threading a parameter through the recursion would put the
+    version in three places it is only forwarded from. The web half carries it on
+    `BlockWalkState` for the same reason."""
+    language: str | None = None
+    """`identity.language` where the definition declares a valid one, else `None` — which is
+    every v1 definition, where every string id resolves in `en` (Req 15.12)."""
 
     def add(self, path: Path, message: str, block_id: str | None = None) -> None:
         self.issues.append(FieldIssue(path=path, message=message, block_id=block_id))
@@ -665,9 +762,28 @@ def _validate_identity(identity: object, path: Path, walk: _Walk) -> None:
         walk.add(path, "identity must be an object.")
         return
 
+    allowed = IDENTITY_KEYS[walk.version]
     for key in identity:
-        if key not in _IDENTITY_ALLOWED_KEYS:
+        if key not in allowed:
             walk.add((*path, key), f'Unrecognized identity field "{key}".')
+
+    # Req 15.1 — required at v2. Reported here rather than left to the value check below, so
+    # that "you forgot it" and "that is not a language" are two different messages.
+    for required in REQUIRED_IDENTITY_KEYS[walk.version]:
+        if required not in identity:
+            walk.add(
+                (*path, required),
+                f"identity.{required} is required at schema_version {walk.version}.",
+            )
+
+    if "language" in allowed and "language" in identity:
+        # Case-sensitive: `EN` is not a spelling of `en`. See LANGUAGES.
+        if identity["language"] not in LANGUAGES:
+            walk.add(
+                (*path, "language"),
+                f"identity.language must be exactly one of: {', '.join(LANGUAGES)} "
+                f"(case-sensitive).",
+            )
 
     name = identity.get("name")
     if not _is_non_empty_string(name) or not _string_length_in_range(
@@ -1166,6 +1282,25 @@ def _validate_leaf_block(
         if key not in _LEAF_BLOCK_ALLOWED_KEYS:
             walk.add((*path, key), f'Unrecognized block field "{key}".', block_id)
 
+    # Req 13.2 — at v2 and above the front matter owns the cover, so a `cover` block in
+    # `blocks` would emit it twice: once from `front_matter.cover` and once from the block.
+    #
+    # Rejected rather than ignored, and **named by block id**, because the author put it there
+    # deliberately: a silently dropped block is indistinguishable from one that was never
+    # configured. The v1 -> v2 migration in the app is what lifts a cover into the front
+    # matter; this validator's job is to refuse the state where both carry one.
+    #
+    # `cover` stays a declared type, so this is about *placement at this version* and not
+    # about the type existing — which is what keeps every stored v1 definition compiling.
+    if walk.version >= 2 and block_type in FRONT_MATTER_FORBIDDEN_BLOCK_TYPES:
+        walk.add(
+            (*path, "type"),
+            f'Block "{block_id or format_path(path)}" is a "{block_type}" block, which the '
+            f"front matter owns at schema_version {walk.version}. Declare it under "
+            f"front_matter.{block_type} instead of in blocks.",
+            block_id,
+        )
+
     if block_type not in _NON_ROW_BLOCK_TYPE_SET:
         # Req 2.3 — a block whose type is absent from the declared set is rejected by
         # name, and is neither ignored nor dropped. Dropping it would render a
@@ -1323,14 +1458,474 @@ def _validate_blocks(blocks: object, path: Path, walk: _Walk, mode: str) -> None
 # --- design (Req 7.1, 7.2) ----------------------------------------------------------
 
 
+DOCUMENT_NUMBER_PATTERN_MIN_LENGTH: Final[int] = 1
+DOCUMENT_NUMBER_PATTERN_MAX_LENGTH: Final[int] = 120
+
+DOCUMENT_NUMBER_PLACEHOLDERS: Final[tuple[str, ...]] = (
+    "{template}",
+    "{year}",
+    "{month}",
+    "{run}",
+)
+"""Req 13.16's closed placeholder set for `document_control.document_number_pattern`.
+
+Closed rather than open, and that is the whole of the no-template-language rule applied one
+field down: a pattern is literal characters plus substitutions from **this** list, so there
+is no expression to evaluate and nothing that could yield a number without provenance.
+"""
+
+DOCUMENT_NUMBER_VARYING_PLACEHOLDERS: Final[frozenset[str]] = frozenset({"{run}"})
+"""The placeholders whose value can differ between **two runs of one template over one
+resolved period**.
+
+`{template}` is fixed per template; `{year}` and `{month}` come from the resolved period, so
+two runs of one template over July 2026 substitute the same values for all three. Only
+`{run}` distinguishes them — so a pattern naming none of these produces the *same document
+number* for both runs, which makes a document number that is not a number for the document.
+"""
+
+_PLACEHOLDER_TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(r"\{[^{}]*\}")
+"""Any `{...}` token, so an **undeclared** placeholder is reported by name rather than
+silently treated as a literal. A validator that only looked for the four declared tokens
+would accept `{quarter}` as literal text and emit it verbatim into a delivered document."""
+
+_TOC_MIN_LEVEL: Final[int] = 1
+_TOC_MAX_LEVEL: Final[int] = 4
+"""`toc.max_level`'s bound — the four heading levels `render/themes.py` declares styles for.
+A table of contents asking for level 5 would collect headings the themes cannot style."""
+
+_COVER_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
+    {"logo", "contact_block", "subtitle"}
+)
+_DOCUMENT_CONTROL_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
+    {
+        "document_name",
+        "document_number_pattern",
+        "confidentiality_notice_id",
+        "distribution",
+        "approvers",
+    }
+)
+_TOC_ALLOWED_KEYS: Final[frozenset[str]] = frozenset({"enabled", "max_level"})
+
+APPROVER_ROLES: Final[tuple[str, ...]] = ("author", "reviewer", "approver", "recipient")
+"""Req 13.6's four roles, in the order the signature table presents them.
+
+A closed tuple rather than free text, so the approvers list is four declared slots and not a
+list a template can grow — the signature table's row height is a theme style, and a fifth
+role would have nowhere to be laid out."""
+
+_APPROVER_ALLOWED_KEYS: Final[frozenset[str]] = frozenset({"role", "name", "title"})
+
+CONTACT_BLOCK_MAX_LENGTH: Final[int] = 500
+DOCUMENT_NAME_MAX_LENGTH: Final[int] = 200
+DISTRIBUTION_MAX_LENGTH: Final[int] = 500
+SUBTITLE_MAX_LENGTH: Final[int] = 200
+APPROVER_NAME_MAX_LENGTH: Final[int] = 120
+APPROVER_TITLE_MAX_LENGTH: Final[int] = 120
+
+
+def _validate_front_matter(front_matter: object, path: Path, walk: _Walk) -> None:
+    """The `front_matter` section's three subsections and their bounds (Req 13.1, 13.13).
+
+    Every failing field path is reported, and nothing here writes: a v2 definition omitting
+    the section, carrying an undeclared key, or violating a bound is rejected with **no
+    version row persisted**, which is a property of this function performing no I/O rather
+    than a rule the caller has to honour.
+
+    Reached only when the resolved version declares `front_matter` — the caller checks that,
+    so a v1 definition carrying the key is reported once, as an undeclared top-level key,
+    rather than twice.
+    """
+    if not _is_plain_object(front_matter):
+        walk.add(path, "front_matter must be an object.")
+        return
+
+    for key in front_matter:
+        if key not in FRONT_MATTER_KEYS:
+            walk.add((*path, key), f'Unrecognized front_matter field "{key}".')
+
+    for section in FRONT_MATTER_KEYS:
+        if section not in front_matter:
+            walk.add(
+                (*path, section),
+                f"front_matter.{section} is required at schema_version {walk.version}.",
+            )
+
+    _validate_cover(front_matter.get("cover"), (*path, "cover"), walk)
+    _validate_document_control(
+        front_matter.get("document_control"), (*path, "document_control"), walk
+    )
+    _validate_toc(front_matter.get("toc"), (*path, "toc"), walk)
+
+
+def _validate_cover(cover: object, path: Path, walk: _Walk) -> None:
+    """Req 13.4 — the cover's logo, contact block and subtitle.
+
+    Every field optional: a cover with none of them still emits the report title, the
+    subscription's display name and the resolved period, which the compiler derives on its
+    own (Req 16.13). There is nothing here a consultant must fill in.
+    """
+    if cover is None or not _is_plain_object(cover):
+        if cover is not None:
+            walk.add(path, "front_matter.cover must be an object.")
+        return
+
+    for key in cover:
+        if key not in _COVER_ALLOWED_KEYS:
+            walk.add((*path, key), f'Unrecognized cover field "{key}".')
+
+    _optional_bounded_string(cover, "logo", path, walk, LOGO_MAX_LENGTH)
+    _optional_bounded_string(
+        cover, "contact_block", path, walk, CONTACT_BLOCK_MAX_LENGTH
+    )
+    _optional_bounded_string(cover, "subtitle", path, walk, SUBTITLE_MAX_LENGTH)
+
+
+def _validate_document_control(control: object, path: Path, walk: _Walk) -> None:
+    """Req 13.5, 13.6, 13.16 — the document control page."""
+    if control is None or not _is_plain_object(control):
+        if control is not None:
+            walk.add(path, "front_matter.document_control must be an object.")
+        return
+
+    for key in control:
+        if key not in _DOCUMENT_CONTROL_ALLOWED_KEYS:
+            walk.add((*path, key), f'Unrecognized document_control field "{key}".')
+
+    _optional_bounded_string(
+        control, "document_name", path, walk, DOCUMENT_NAME_MAX_LENGTH
+    )
+    _optional_bounded_string(
+        control, "distribution", path, walk, DISTRIBUTION_MAX_LENGTH
+    )
+
+    if "confidentiality_notice_id" in control:
+        notice = control["confidentiality_notice_id"]
+        # A **string id**, resolved from the message catalog rather than carried as copy, so
+        # the notice appears in the pinned language like every other fixed string. A literal
+        # here would be English in an Indonesian document.
+        if not _is_non_empty_string(notice) or not notice.startswith("doc."):
+            walk.add(
+                (*path, "confidentiality_notice_id"),
+                "document_control.confidentiality_notice_id must be a `doc.` message "
+                "catalog string id, not literal copy.",
+            )
+
+    if "document_number_pattern" in control:
+        _validate_document_number_pattern(
+            control["document_number_pattern"], (*path, "document_number_pattern"), walk
+        )
+
+    if "approvers" in control:
+        _validate_approvers(control["approvers"], (*path, "approvers"), walk)
+
+
+def _validate_document_number_pattern(value: object, path: Path, walk: _Walk) -> None:
+    """Req 13.16 — literal characters plus the four declared placeholders, and at least one
+    that varies between runs.
+
+    Three refusals, and the third is the one worth explaining:
+
+    * not a string of 1 to 120 characters;
+    * naming a `{...}` token outside :data:`DOCUMENT_NUMBER_PLACEHOLDERS` — reported **by
+      name**, because a validator that only looked for the declared four would accept
+      `{quarter}` as literal text and emit it verbatim into a delivered document;
+    * naming **no** placeholder whose value differs between two runs of one template over one
+      resolved period. `{template}`, `{year}` and `{month}` are all fixed across such a pair,
+      so a pattern using only those gives both runs the *same* document number — which makes
+      it not a number for the document. Only `{run}` distinguishes them.
+    """
+    if not isinstance(value, str) or not (
+        DOCUMENT_NUMBER_PATTERN_MIN_LENGTH
+        <= _utf16_length(value)
+        <= DOCUMENT_NUMBER_PATTERN_MAX_LENGTH
+    ):
+        walk.add(
+            path,
+            f"document_number_pattern must be a string of "
+            f"{DOCUMENT_NUMBER_PATTERN_MIN_LENGTH} to "
+            f"{DOCUMENT_NUMBER_PATTERN_MAX_LENGTH} characters.",
+        )
+        return
+
+    found = _PLACEHOLDER_TOKEN_PATTERN.findall(value)
+    undeclared = [token for token in found if token not in DOCUMENT_NUMBER_PLACEHOLDERS]
+    if undeclared:
+        walk.add(
+            path,
+            f"document_number_pattern names undeclared placeholder(s) "
+            f"{', '.join(sorted(set(undeclared)))}; the declared set is "
+            f"{', '.join(DOCUMENT_NUMBER_PLACEHOLDERS)}.",
+        )
+
+    if not any(token in DOCUMENT_NUMBER_VARYING_PLACEHOLDERS for token in found):
+        walk.add(
+            path,
+            f"document_number_pattern names no placeholder whose value differs between two "
+            f"runs of one template over one resolved period, so both runs would carry the "
+            f"same document number. Include one of: "
+            f"{', '.join(sorted(DOCUMENT_NUMBER_VARYING_PLACEHOLDERS))}.",
+        )
+
+
+def _validate_approvers(approvers: object, path: Path, walk: _Walk) -> None:
+    """Req 13.6 — the four-role approvers list.
+
+    At most one entry per role and no undeclared role. A repeated role would put two names in
+    one signature row, and the row height is a theme style rather than something that grows.
+    """
+    if not isinstance(approvers, list):
+        walk.add(path, "document_control.approvers must be an array.")
+        return
+
+    if len(approvers) > len(APPROVER_ROLES):
+        walk.add(
+            path,
+            f"document_control.approvers accepts at most {len(APPROVER_ROLES)} entries, "
+            f"one per declared role; found {len(approvers)}.",
+        )
+
+    seen: set[str] = set()
+    for index, entry in enumerate(approvers):
+        at = (*path, index)
+        if not _is_plain_object(entry):
+            walk.add(at, "Each approver must be an object.")
+            continue
+
+        for key in entry:
+            if key not in _APPROVER_ALLOWED_KEYS:
+                walk.add((*at, key), f'Unrecognized approver field "{key}".')
+
+        role = entry.get("role")
+        if not isinstance(role, str) or role not in APPROVER_ROLES:
+            walk.add(
+                (*at, "role"),
+                f"approver.role must be one of: {', '.join(APPROVER_ROLES)}.",
+            )
+        elif role in seen:
+            walk.add((*at, "role"), f'Duplicate approver role "{role}".')
+        else:
+            seen.add(role)
+
+        _optional_bounded_string(entry, "name", at, walk, APPROVER_NAME_MAX_LENGTH)
+        _optional_bounded_string(entry, "title", at, walk, APPROVER_TITLE_MAX_LENGTH)
+
+
+def _validate_toc(toc: object, path: Path, walk: _Walk) -> None:
+    """Req 13.9 — `enabled` and `max_level`.
+
+    `front_matter.toc` is retained in the definition even where the image ships no table of
+    contents, exactly as a disabled cover is retained: the definition records what the author
+    asked for, and what the renderer can deliver is a property of the image rather than of the
+    template.
+    """
+    if toc is None or not _is_plain_object(toc):
+        if toc is not None:
+            walk.add(path, "front_matter.toc must be an object.")
+        return
+
+    for key in toc:
+        if key not in _TOC_ALLOWED_KEYS:
+            walk.add((*path, key), f'Unrecognized toc field "{key}".')
+
+    if "enabled" in toc and not _is_boolean(toc["enabled"]):
+        walk.add((*path, "enabled"), "toc.enabled must be a boolean.")
+
+    if "max_level" in toc:
+        level = toc["max_level"]
+        if (
+            not _is_finite_integer(level)
+            or level < _TOC_MIN_LEVEL
+            or level > _TOC_MAX_LEVEL
+        ):
+            walk.add(
+                (*path, "max_level"),
+                f"toc.max_level must be an integer from {_TOC_MIN_LEVEL} to "
+                f"{_TOC_MAX_LEVEL}.",
+            )
+
+
+def _optional_bounded_string(
+    holder: dict[str, object],
+    key: str,
+    path: Path,
+    walk: _Walk,
+    maximum: int,
+) -> None:
+    """One optional string field with a length bound, measured in UTF-16 code units.
+
+    Absent is fine; present-and-wrong is reported. `_utf16_length` rather than `len` for the
+    reason that function's own docstring gives: a bound checked against code points is a rule
+    the browser and this compiler enforce differently.
+    """
+    if key not in holder:
+        return
+    value = holder[key]
+    if value is None:
+        return
+    if not isinstance(value, str) or _utf16_length(value) > maximum:
+        walk.add(
+            (*path, key),
+            f"{key} must be null or a string of at most {maximum} characters.",
+        )
+
+
+def resolved_schema_version(value: object) -> int:
+    """Which key tables a definition's `schema_version` selects, for a value that may not be
+    usable. See :func:`collect_definition_issues` on why this is not a default.
+
+    Public because the **compiler** reads it too: `compile/blocks/__init__.py` dispatches the
+    `cover` block on it (Req 13.2), and a second resolution rule there could disagree with
+    this one — admitting a definition at one version and compiling it at another. One
+    function, two callers.
+    """
+    if _is_finite_integer(value) and value in REQUIRED_TOP_LEVEL_KEYS:
+        return int(value)
+    return MIN_SCHEMA_VERSION
+
+
+def _declared_language(raw: object) -> str | None:
+    """The `identity.language` a definition pins, or `None` when it declares none — which is
+    every v1 definition, where every string id resolves in `en` (Req 15.12).
+
+    Read for the separator resolution below and, later, to pick the message catalog's
+    language. An unrecognised value reads as `None` here and is reported as an issue by
+    `_validate_identity`; resolving separators from a language nobody accepts would add a
+    second, less informative issue about the same root cause.
+    """
+    if not _is_plain_object(raw):
+        return None
+    identity = raw.get("identity")
+    if not _is_plain_object(identity):
+        return None
+    language = identity.get("language")
+    return language if language in LANGUAGES else None
+
+
+def _resolved_separators(
+    number_format: object, language: str | None
+) -> tuple[object, object]:
+    """The `(decimal_separator, grouping_separator)` pair a definition **resolves to**:
+    whatever it declares, with anything **absent** filled from the language (Req 16.3).
+
+    `language` of `None` resolves from `en`, which is `compile/format.DEFAULT_NUMBER_FORMAT`'s
+    pair — so a v1 definition, which declares no language and no separators, resolves to
+    exactly what it has always rendered with.
+
+    Reads and returns; writes nothing back. A declared value stays declared and an undeclared
+    one stays undeclared, because "absent" and "equal to the language default" have to remain
+    two different stored definitions or migrating one rewrites an immutable row.
+
+    **Absent, not unusable.** The key being present is what makes a value declared, so a
+    `decimal_separator` of `null` or `1` is returned as it stands and reported by
+    `_separator_problem` — it is not quietly replaced with the language default. Defaulting an
+    unusable declaration would accept a definition that says one thing and render a document
+    that says another, and it would put this half on the *looser* side of the mirror:
+    `app/lib/templates/definition.ts`'s `resolveSeparators` defaults on `=== undefined` alone,
+    which for a `JSON.parse`d definition means exactly "the key is absent".
+
+    Hence the `object` return type rather than `str`, and hence `in` rather than `.get()`: in
+    Python a missing key and a JSON `null` both read as `None`, so `.get()` cannot tell the two
+    apart and would default the one TypeScript reports.
+    """
+    decimal_default, grouping_default = SEPARATOR_DEFAULTS[language or LANGUAGES[0]]
+    if not _is_plain_object(number_format):
+        return decimal_default, grouping_default
+
+    return (
+        number_format["decimal_separator"]
+        if "decimal_separator" in number_format
+        else decimal_default,
+        number_format["grouping_separator"]
+        if "grouping_separator" in number_format
+        else grouping_default,
+    )
+
+
+def _separator_problem(value: object) -> str | None:
+    """Why `value` is not a usable separator, or `None` (Req 16.2).
+
+    Mirrors `app/lib/templates/definition.ts`'s `separatorProblem` message for message, and
+    both mirror `compile/format.NumberFormat.__post_init__`'s clauses — with one deliberate
+    asymmetry recorded in both halves: that constructor accepts a **non-empty** string of any
+    length, and both validators reject anything but exactly one character. The asymmetry errs
+    the safe way — the app and this validator refuse a two-character separator the constructor
+    would have accepted, so it never reaches a run.
+
+    Whitespace is refused because `verify/tokens.numeric_tokens` splits a paragraph on it, so a
+    whitespace-separated numeral reaches the verifier as several tokens none of which equals the
+    ledger's formatted string, and `normalize_pdf_text` collapses every whitespace run to one
+    space — neither pass can locate it, and the run is withheld for a number that was right.
+    """
+    if not isinstance(value, str) or not value:
+        return "must be a non-empty string"
+    if len(value) != 1:
+        return "must be exactly one character"
+    # `in "0123456789"` and **not** `str.isdigit()`, and the direction of the difference is
+    # the whole reason. `isdigit()` is true for `²` and for every Unicode decimal digit; the
+    # app's mirror uses `/[0-9]/u`, which is not. Using `isdigit()` here would make the agent
+    # *stricter* than the app, so the wizard would save a separator this compiler then
+    # refuses — a save-time error turned into a failed run, which is the one divergence
+    # direction the mirror exists to prevent. Where the two must differ, the app has to be
+    # the stricter half.
+    if value in "0123456789":
+        return (
+            "must not be a digit — a separator that reads as part of the number makes the "
+            "verifier's token extraction ambiguous"
+        )
+    if value == "-":
+        return (
+            "must not be a minus sign — a separator that reads as part of the number makes "
+            "the verifier's token extraction ambiguous"
+        )
+    if value.isspace():
+        return (
+            "must not be whitespace — the verifier splits a paragraph on whitespace, so a "
+            "whitespace-separated numeral reaches it as several tokens and the run would be "
+            "withheld for a correct number"
+        )
+    return None
+
+
 def _validate_number_format(value: object, path: Path, walk: _Walk) -> None:
     if not _is_plain_object(value):
         walk.add(path, "number_format must be an object.")
         return
 
+    allowed = NUMBER_FORMAT_KEYS[walk.version]
     for key in value:
-        if key not in _NUMBER_FORMAT_ALLOWED_KEYS:
+        if key not in allowed:
             walk.add((*path, key), f'Unrecognized number_format field "{key}".')
+
+    # Req 16.2 — checked on the **resolved** pair, not the declared one.
+    #
+    # Resolved, because the constraint is about what the renderer will emit: a definition
+    # declaring only a decimal separator still renders a grouping one, and a pair that
+    # collides after defaulting collides in the document. At v1 nothing is declarable and the
+    # resolution is `en`'s `.` and `,`, which passes every clause — so this adds no failure to
+    # any stored v1 definition.
+    decimal_separator, grouping_separator = _resolved_separators(value, walk.language)
+    for key, separator in (
+        ("decimal_separator", decimal_separator),
+        ("grouping_separator", grouping_separator),
+    ):
+        # Only report on a key this version admits: at v1 an undeclared separator resolves to
+        # a legal default, and a *declared* one has already been reported as unrecognized
+        # above — a second issue about its characters would be noise about a field that may
+        # not exist.
+        if key not in allowed:
+            continue
+        problem = _separator_problem(separator)
+        if problem is not None:
+            walk.add((*path, key), f"number_format.{key} {problem}.")
+
+    if decimal_separator == grouping_separator and "decimal_separator" in allowed:
+        walk.add(
+            (*path, "decimal_separator"),
+            f"number_format's decimal and grouping separators are both "
+            f'"{decimal_separator}"; a reader could not tell one from the other.',
+        )
 
     decimal_places = value.get("decimal_places")
     if (
@@ -1730,7 +2325,18 @@ def collect_definition_issues(raw: object, *, mode: str = "draft") -> list[Field
         walk.add((), "A template definition must be an object.")
         return walk.issues
 
-    for key in _TOP_LEVEL_REQUIRED_KEYS:
+    # Resolved once and read by every check below.
+    #
+    # `resolved_schema_version` falls back to the **narrower** version-1 tables for a version
+    # this reader cannot use rather than stopping the walk, so Req 2.7's "every failing field
+    # path in one pass" survives a broken version — and the broken version is itself still
+    # reported by `_validate_schema_version`. This applies no default to the *definition*: it
+    # decides which of two key tables the remaining checks consult, nothing more.
+    walk.version = resolved_schema_version(raw.get("schema_version"))
+    walk.language = _declared_language(raw)
+
+    required_keys = REQUIRED_TOP_LEVEL_KEYS[walk.version]
+    for key in required_keys:
         if key not in raw:
             walk.add((key,), f'Missing required top-level key "{key}".')
 
@@ -1738,11 +2344,13 @@ def collect_definition_issues(raw: object, *, mode: str = "draft") -> list[Field
     # validator turns a misspelled field into a definition that saves cleanly and
     # compiles into a document missing whatever the author meant to configure.
     for key in raw:
-        if key not in _TOP_LEVEL_REQUIRED_KEYS:
+        if key not in required_keys:
             walk.add((key,), f'Unrecognized top-level key "{key}".')
 
     _validate_schema_version(raw.get("schema_version"), walk)
     _validate_identity(raw.get("identity"), ("identity",), walk)
+    if "front_matter" in required_keys:
+        _validate_front_matter(raw.get("front_matter"), ("front_matter",), walk)
     _validate_scope_spec(raw.get("scope"), ("scope",), walk, None)
     _validate_period(raw.get("period"), ("period",), walk)
     _validate_metrics(raw.get("metrics"), ("metrics",), walk)

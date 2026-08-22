@@ -142,6 +142,34 @@ def test_inline_and_cell_are_unions_over_exactly_their_declared_members() -> Non
         "FigureCell",
         "TextCell",
         "EmptyCell",
+        "TextFactCell",
+    }
+    # And the literal above agrees with the module's own declaration, so the two cannot
+    # drift into asserting different things about one union.
+    assert dict(A._EXPECTED_UNION_MEMBERS)["Cell"] == (
+        "FigureCell",
+        "TextCell",
+        "EmptyCell",
+        "TextFactCell",
+    )
+
+
+def test_the_runtime_cell_tuple_is_exactly_the_cell_unions_members() -> None:
+    """A `type` alias cannot be used with `isinstance`, so `Row.__post_init__` checks against
+    `CELL_TYPES` — a second spelling of the same set, and therefore a place the two can
+    diverge.
+
+    They did. `TextFactCell` joined the `Cell` union and the row's check kept refusing it, so
+    the annotation admitted a cell the constructor rejected: a type error and a runtime error
+    disagreeing about one position. This is the assertion that makes the next such edit fail
+    here instead.
+    """
+    assert A.CELL_TYPES == A.Cell.__value__.__args__
+    assert {member.__name__ for member in A.CELL_TYPES} == {
+        "FigureCell",
+        "TextCell",
+        "EmptyCell",
+        "TextFactCell",
     }
 
 
@@ -472,6 +500,13 @@ class _FakeResolver:
             answer for answer in self.answers if answer.pointer == raw_pointer
         )
 
+    def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+        """This fake answers on the numeric side only; `tests/test_text_fact.py` has the
+        text-side twin. Declared so the fake satisfies the whole protocol rather than the
+        half of it these tests happen to call."""
+        del raw_pointer
+        return ()
+
 
 def _snapshot_value(pointer: str, value: str) -> SnapshotValue:
     return SnapshotValue(
@@ -757,3 +792,99 @@ def test_decimal_string_of_refuses_a_decimal_and_a_non_decimal_spelling() -> Non
     for bad in (Decimal("12.48"), 12, 12.48, True, None, "1E+3", "", "+1"):
         with pytest.raises(CompileFailedError):
             A.decimal_string_of(bad, at="t")
+
+
+# --------------------------------------------------------------------------- #
+# Req 6.2, 6.3, 17.1, 18.9 — the text-fact node, under the numeric rule
+# --------------------------------------------------------------------------- #
+
+
+def test_text_fact_is_not_exempted_from_the_numeric_annotation_rule() -> None:
+    """The point of adding `TextFact` under the existing rule rather than beside it.
+
+    `test_figure_is_the_only_dataclass_mentioning_a_numeric_type` already sweeps every
+    dataclass in the module, so `TextFact` is covered by it automatically — and this test is
+    what makes that coverage deliberate rather than incidental. A future edit adding a
+    `count: int` to `TextFact` fails the sweep, and this test explains why that is correct.
+    """
+    assert "TextFact" not in A.NUMERIC_ANNOTATION_NAMES
+    assert not any(
+        numeric in str(A.TextFact.__annotations__.get(declared.name, ""))
+        for declared in dataclasses.fields(A.TextFact)
+        for numeric in A.NUMERIC_ANNOTATION_NAMES
+    )
+
+
+def test_text_fact_cell_is_the_only_field_annotated_text_fact() -> None:
+    """Req 6.3 — "every `TextFact` position admits the `TextFact` node type alone" as a
+    **type declaration**, not a run-time rule.
+
+    One field in the whole module mentions the type, so there is no second position a text
+    fact could occupy and no second place a bare string could be accepted instead.
+    """
+    mentioning: list[str] = []
+    for name, declared in vars(A).items():
+        if not (
+            isinstance(declared, type)
+            and dataclasses.is_dataclass(declared)
+            and declared.__module__ == A.__name__
+        ):
+            continue
+        annotations = getattr(declared, "__annotations__", {})
+        for member in dataclasses.fields(declared):
+            annotation = str(annotations.get(member.name, ""))
+            if any(
+                re.search(rf"\b{admitting}\b", annotation)
+                for admitting in A.TEXT_FACT_ADMITTING_ANNOTATIONS
+            ):
+                mentioning.append(f"{name}.{member.name}")
+
+    assert mentioning == ["TextFactCell.fact"], mentioning
+
+
+def test_text_fact_cell_is_a_member_of_cell_and_of_nothing_else() -> None:
+    """The other half of Req 6.3: "only into a data-table cell" is a consequence of union
+    membership rather than a rule somebody checks.
+
+    `Inline` is the union that would matter if this were wrong — a `TextFactCell` reachable
+    from a paragraph would put a fact in a prose position, where the verifier extracts numeric
+    tokens and checks nothing else.
+    """
+    assert "TextFactCell" in {
+        member.__name__ for member in A.Cell.__value__.__args__
+    }
+    assert "TextFactCell" not in {
+        member.__name__ for member in A.Inline.__value__.__args__
+    }
+    assert "TextFact" not in {member.__name__ for member in A.Inline.__value__.__args__}
+
+
+def test_the_required_node_names_cover_both_new_nodes() -> None:
+    """Every other rule in this module is "no violations found", so a module that lost
+    `TextFact` entirely would satisfy all of them."""
+    assert "TextFact" in A.REQUIRED_NODE_NAMES
+    assert "TextFactCell" in A.REQUIRED_NODE_NAMES
+
+
+def test_the_two_new_figure_fields_are_strings_so_the_numeric_scan_is_unaffected() -> None:
+    """Req 18.9. A run id and a digest are identifiers, not quantities.
+
+    `Figure` is already the one dataclass permitted to mention a number, so declaring these
+    as `int` would have passed the sweep — which is exactly why asserting their annotations
+    here is worth doing: the rule that would have caught it elsewhere cannot catch it on this
+    class.
+    """
+    annotations = A.Figure.__annotations__
+
+    assert annotations["source_run_id"] == "str | None"
+    assert annotations["source_snapshot_sha256"] == "str | None"
+
+
+def test_the_three_new_chart_fields_are_strings() -> None:
+    """Two message ids and a label — no numeric field, so a chart still carries every
+    quantity it presents through a `Figure`."""
+    annotations = A.Chart.__annotations__
+
+    assert annotations["x_axis_label_id"] == "str"
+    assert annotations["y_axis_label_id"] == "str"
+    assert annotations["period_label"] == "str"

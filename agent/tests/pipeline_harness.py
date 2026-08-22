@@ -41,13 +41,14 @@ from fakes.azure_ports import (  # noqa: E402
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
     raw_response_from_recorded,
 )
 from fakes.object_store import InMemoryObjectStore  # noqa: E402
 from fixtures import load_response  # noqa: E402
 from reporting_agent.azure.ports import RawHttpResponse  # noqa: E402
 from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_ports  # noqa: E402
-from reporting_agent.catalog.loader import load_catalog  # noqa: E402
+from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog  # noqa: E402
 from reporting_agent.main import StepTracker  # noqa: E402
 from reporting_agent.report_pipeline import ReportOutcome, run_generate_report  # noqa: E402
 
@@ -344,7 +345,7 @@ class Pipeline:
         self.store = InMemoryObjectStore()
         self.steps = StepTracker()
         self.outcome = ReportOutcome()
-        self.catalog = load_catalog()
+        self.catalog = load_catalog(DEFAULT_CATALOG_PATH)
         self.definition = overrides.pop("definition", definition())
         # Which VMs the inventory answers with. `()` is an inventory that finds nothing,
         # which is the condition Req 44.8's expired secret produces and the one case where
@@ -388,6 +389,7 @@ class Pipeline:
                 [raw({"value": [{"name": {"value": CPU}}, {"name": {"value": MEMORY}}]})]
             ),
             metrics_port=self.provider_metrics,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,

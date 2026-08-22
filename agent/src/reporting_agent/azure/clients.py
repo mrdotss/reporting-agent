@@ -65,25 +65,46 @@ from reporting_agent.azure.credential import (
     METRICS_DATA_PLANE_SCOPE,
     InvocationCredential,
 )
+
+# The dimension column names and the 2000-value bound live in `azure/inventory.py`, which
+# reads them back out of the response — one declaration for the column this query emits and
+# the field that reader looks for, rather than two that agree today. Safe as a module-level
+# import in the one direction: `inventory.py` imports only `azure/ports.py`, which pulls in
+# no SDK, so this adds no import cost to a module that already imports `azure.core`.
+from reporting_agent.azure.inventory import (
+    DIMENSION_RESOURCE_GROUPS,
+    DIMENSION_RESOURCE_TYPES,
+    DIMENSION_TAG_KEYS,
+    DIMENSION_TAG_VALUES,
+    DISTINCT_VALUE_LIMIT,
+)
 from reporting_agent.azure.ports import DnsResolutionError, RawHttpResponse
 from reporting_agent.azure.regions import metrics_data_plane_endpoint
 
 __all__ = [
     "ARM_ENDPOINT",
+    "BACKUP_MANAGEMENT_TYPE_FILTER",
     "DNS_FAILURE_PHRASES",
     "LOGS_ENDPOINT",
+    "MAX_FACT_LIST_PAGES",
     "METRICS_BATCH_API_VERSION",
     "METRIC_DEFINITIONS_API_VERSION",
     "MONITOR_METRICS_API_VERSION",
+    "RECOVERY_SERVICES_BACKUP_API_VERSION",
+    "RESERVATIONS_API_VERSION",
     "RESOURCE_GRAPH_API_VERSION",
     "RESOURCE_SKUS_API_VERSION",
+    "SITE_RECOVERY_API_VERSION",
     "ArmDefinitionsPort",
+    "ArmFactsPort",
     "ArmInventoryPort",
     "ArmSkuPort",
     "AzureMetricsPort",
     "AzurePorts",
     "RequestSender",
     "build_azure_ports",
+    "build_inventory_port",
+    "distinct_dimensions_query",
     "envelope_from_response",
     "inventory_query",
     "is_dns_resolution_failure",
@@ -381,6 +402,69 @@ def inventory_query(
     return "\n".join(lines)
 
 
+_MAKE_SET_LIMIT: Final[int] = DISTINCT_VALUE_LIMIT + 1
+"""What the query actually asks `make_set_if` for — **one more** than the bound.
+
+Asking for exactly 2000 would make "there are exactly 2000 distinct values" and "there are
+more than 2000 and the service cut the set" the same response, and Req 9.1 requires each
+dimension to *declare* whether the bound truncated it. Asking for 2001 and receiving 2001
+is the only evidence available that the true set is larger, because Resource Graph reports
+no total alongside an aggregate. The reader cuts back to 2000 and sets the flag."""
+
+_TAG_KEY_SENTINEL: Final[str] = ""
+"""The single-element array an untagged resource's tag keys expand to.
+
+`mv-expand` over an **empty** array drops the row entirely, which would remove an untagged
+resource's `type` and `resourceGroup` from those two dimensions as well — a picker that
+cannot offer the type of the one untagged VM in the subscription. Expanding a sentinel keeps
+the row, and `isnotempty` then excludes the sentinel from the two tag dimensions alone."""
+
+
+def distinct_dimensions_query(*, subscription_id: str) -> str:
+    """The **one** Resource Graph query behind `distinct_dimensions` (Req 9.1, 9.5).
+    **Pure.**
+
+    Projects the four dimensions **and nothing else**, which is what makes Req 9.5's
+    exclusion structural: no `id`, no `subscriptionId`, no `tenantId`, no `clientId` appears
+    in the `project` clause or in the `summarize` output, so there is no field for a later
+    filter to have to remove. A response cannot disclose a resource identifier it was never
+    asked for.
+
+    Aggregated in the service rather than paged into this process. The alternative — page the
+    whole inventory and reduce locally — reads every resource id in order to throw all of
+    them away, which is both the slow way and the way that puts every identifier Req 9.5
+    excludes into this process's memory on the way.
+
+    **Ordering is not asked of the query.** `make_set_if` returns its members in an
+    unspecified order, and `azure/inventory.py` sorts each dimension ascending in Unicode
+    code-point order after reading it. Doing it there rather than here makes Req 9.1's
+    ordering a property of code with a unit test rather than of a service behaviour no test
+    in this repository can observe.
+    """
+    limit = _MAKE_SET_LIMIT
+    sentinel = _kql_literal(_TAG_KEY_SENTINEL)
+    return "\n".join(
+        [
+            "Resources",
+            f"| where subscriptionId == {_kql_literal(subscription_id)}",
+            "| project type, resourceGroup, tags",
+            "| extend tagKeys = bag_keys(tags)",
+            "| extend tagKeys = iff(coalesce(array_length(tagKeys), 0) > 0, "
+            f"tagKeys, pack_array({sentinel}))",
+            "| mv-expand tagKey = tagKeys to typeof(string)",
+            "| extend tagValue = tostring(tags[tagKey])",
+            f"| summarize {DIMENSION_RESOURCE_TYPES} = "
+            f"make_set_if(type, isnotempty(type), {limit}),",
+            f"            {DIMENSION_RESOURCE_GROUPS} = "
+            f"make_set_if(resourceGroup, isnotempty(resourceGroup), {limit}),",
+            f"            {DIMENSION_TAG_KEYS} = "
+            f"make_set_if(tagKey, isnotempty(tagKey), {limit}),",
+            f"            {DIMENSION_TAG_VALUES} = "
+            f"make_set_if(tagValue, isnotempty(tagValue), {limit})",
+        ]
+    )
+
+
 _SKIP_TOKEN_WIRE_KEY: Final[str] = "$skipToken"
 _SKIP_TOKEN_PARSED_KEY: Final[str] = "skipToken"
 """Resource Graph names its continuation token `$skipToken` on the wire — both in a
@@ -429,6 +513,26 @@ class ArmInventoryPort:
         )
         response = await _send(self.sender, request)
         return _with_normalized_skip_token(response)
+
+    async def query_distinct_dimensions(self, *, subscription_id: str) -> RawHttpResponse:
+        """The one aggregate query behind `distinct_dimensions` (Req 9.1, 9.2, 9.5).
+
+        No `$skipToken` in `options` and none read from the answer: a `summarize` with no
+        `by` clause resolves to a single row, so there is no continuation to follow. That is
+        also what makes Req 9.2's "exactly one Azure Resource Graph query per cache miss"
+        hold by construction rather than by a loop that happens to run once.
+        """
+        request = HttpRequest(
+            "POST",
+            f"{ARM_ENDPOINT}/providers/Microsoft.ResourceGraph/resources",
+            params={"api-version": self.api_version},
+            json={
+                "subscriptions": [subscription_id],
+                "query": distinct_dimensions_query(subscription_id=subscription_id),
+                "options": {"resultFormat": "objectArray"},
+            },
+        )
+        return await _send(self.sender, request)
 
 
 def _with_normalized_skip_token(response: RawHttpResponse) -> RawHttpResponse:
@@ -554,6 +658,191 @@ class ArmDefinitionsPort:
             },
         )
         return await _send(self.sender, request)
+
+
+# --- facts: Backup, Site Recovery and Reservations (Req 4.8, 5.1, 5.2, 5.3) -----------
+
+RECOVERY_SERVICES_BACKUP_API_VERSION: Final[str] = "2021-01-01"
+SITE_RECOVERY_API_VERSION: Final[str] = "2024-04-01"
+RESERVATIONS_API_VERSION: Final[str] = "2022-11-01"
+"""Pinned for the reason every version here is pinned: the response *shape*
+`azure/facts.py` reads is a property of the version, so floating one would change what a
+fact means without changing a line of this repository."""
+
+BACKUP_MANAGEMENT_TYPE_FILTER: Final[str] = "backupManagementType eq 'AzureIaasVM'"
+"""The one filter the backup list carries, and the reason its answer covers only virtual
+machines.
+
+Declared here, beside the request that carries it, and read by `azure/facts.py` to state
+which resource types the answer can speak about. A SQL database's backup lives under the
+`AzureWorkload` management type, so this list is silent about one — and silence has to
+produce no fact and no gap rather than a `backup_not_configured` for a database that is
+backed up nightly."""
+
+MAX_FACT_LIST_PAGES: Final[int] = 50
+"""The page ceiling each fact list follows `nextLink` up to, the same bound and the same
+reasoning as :data:`MAX_SKU_PAGES`: a service that keeps handing back a continuation is a
+service this run cannot finish reading, and stopping with a warning beats looping."""
+
+
+@dataclass(slots=True)
+class ArmFactsPort:
+    """`FactsPort` over three ARM providers, one credential (Req 4.8).
+
+    One class rather than three, exactly as :class:`AzureMetricsPort` is one class over three
+    endpoints: what these three share is the client, the credential audience and the paging
+    convention, and splitting them would need a facade whose only content is delegation.
+
+    **Two to six requests for a subscription of any size.** One backup list, one replication
+    list per Recovery Services vault the run's inventory holds, and one reservation-order list
+    plus one reservation list per order. Nothing here scales with the resource count, which is
+    Req 4.8's actual requirement rather than a performance note.
+    """
+
+    sender: RequestSender
+    backup_api_version: str = RECOVERY_SERVICES_BACKUP_API_VERSION
+    site_recovery_api_version: str = SITE_RECOVERY_API_VERSION
+    reservations_api_version: str = RESERVATIONS_API_VERSION
+    max_pages: int = MAX_FACT_LIST_PAGES
+
+    async def list_backup_protected_items(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        return await self._paged_list(
+            HttpRequest(
+                "GET",
+                f"{ARM_ENDPOINT}/subscriptions/{subscription_id}/providers/"
+                f"Microsoft.RecoveryServices/backupProtectedItems",
+                params={
+                    "api-version": self.backup_api_version,
+                    "$filter": BACKUP_MANAGEMENT_TYPE_FILTER,
+                },
+            ),
+            what="backupProtectedItems",
+        )
+
+    async def list_replication_protected_items(
+        self, *, vault_id: str
+    ) -> RawHttpResponse:
+        return await self._paged_list(
+            HttpRequest(
+                "GET",
+                f"{ARM_ENDPOINT}{vault_id}/replicationProtectedItems",
+                params={"api-version": self.site_recovery_api_version},
+            ),
+            what=f"replicationProtectedItems for {vault_id}",
+        )
+
+    async def list_reservations(self) -> RawHttpResponse:
+        """Reservation orders, then each order's reservations, concatenated into one envelope.
+
+        Two levels because the API has two: an order is the purchase and a reservation is
+        what it bought, and the properties a fact needs — the term and the expiry — are on the
+        reservation. Concatenating here keeps the port's contract "one list" and keeps
+        `azure/facts.py` from having to know that the resource is nested.
+
+        **An order list that answers non-2xx short-circuits and is returned as-is**, which is
+        the common case: Reader at subscription scope does not grant
+        `Microsoft.Capacity/reservationOrders/read`. `azure/facts.py` turns that into
+        `fact_unavailable` naming the source, never into `no_reservations` — see its docstring
+        on why collapsing the two would print "no reservations" for a subscription with plenty.
+        """
+        orders = await self._paged_list(
+            HttpRequest(
+                "GET",
+                f"{ARM_ENDPOINT}/providers/Microsoft.Capacity/reservationOrders",
+                params={"api-version": self.reservations_api_version},
+            ),
+            what="reservationOrders",
+        )
+        if not orders.ok:
+            return orders
+
+        entries: list[Any] = []
+        for order in _value_entries(orders.body):
+            order_id = order.get("id") if isinstance(order, Mapping) else None
+            if not isinstance(order_id, str) or not order_id.strip():
+                continue
+            listed = await self._paged_list(
+                HttpRequest(
+                    "GET",
+                    f"{ARM_ENDPOINT}{order_id}/reservations",
+                    params={"api-version": self.reservations_api_version},
+                ),
+                what=f"reservations for {order_id}",
+            )
+            if not listed.ok:
+                # One unreadable order does not make the whole listing unreadable, and it must
+                # not present as one either: returning this envelope would report
+                # `fact_unavailable` for every resource on the strength of one order, while
+                # dropping it silently would report `no_reservations` for a resource the order
+                # may well have covered. Neither is available, so the order is skipped and the
+                # partial listing is returned — the honest reading of "these are the
+                # reservations that could be read".
+                logger.warning(
+                    "reservation order %r could not be listed (HTTP %d); its reservations "
+                    "are not part of this run's coverage check.",
+                    order_id,
+                    listed.status,
+                )
+                continue
+            entries.extend(_value_entries(listed.body))
+
+        return RawHttpResponse(
+            status=orders.status, headers=orders.headers, body={"value": entries}
+        )
+
+    async def _paged_list(self, request: HttpRequest, *, what: str) -> RawHttpResponse:
+        """One ARM list, `nextLink` followed to the end, concatenated into one envelope.
+
+        The same shape :class:`ArmSkuPort` uses and for the same reason: the port's contract
+        is a whole list, so a caller must never be able to observe half of one and read the
+        missing half as an absence. A page answering non-2xx is returned as-is, which
+        `azure/facts.py` reads as "this source did not answer".
+        """
+        response = await _send(self.sender, request)
+        if not response.ok:
+            return response
+
+        entries: list[Any] = []
+        pages = 0
+        current = response
+        while True:
+            body = current.body if isinstance(current.body, Mapping) else {}
+            entries.extend(_value_entries(body))
+            next_link = body.get("nextLink")
+            pages += 1
+            if not isinstance(next_link, str) or not next_link.strip():
+                break
+            if pages >= self.max_pages:
+                logger.warning(
+                    "the %s listing still carried a nextLink after %d pages; %d item(s) "
+                    "are used and the rest are ignored for this run.",
+                    what,
+                    pages,
+                    len(entries),
+                )
+                break
+            current = await _send(self.sender, HttpRequest("GET", next_link))
+            if not current.ok:
+                return current
+
+        return RawHttpResponse(
+            status=response.status, headers=response.headers, body={"value": entries}
+        )
+
+
+def _value_entries(body: object) -> list[Any]:
+    """One ARM list body's `value` array, or `[]`. **Pure.**
+
+    ARM's list convention is `{"value": [...], "nextLink": "..."}`; a body that is not that
+    shape yields no entries rather than raising, the same defensive reading
+    `azure/inventory.py`'s `_rows_from_body` takes of a Resource Graph page.
+    """
+    if not isinstance(body, Mapping):
+        return []
+    value = body.get("value")
+    return list(value) if isinstance(value, list) else []
 
 
 # --- metrics: the batch data plane, the ARM fallback, and Log Analytics ---------------
@@ -750,7 +1039,7 @@ class AzureMetricsPort:
 
 @dataclass(slots=True)
 class AzurePorts:
-    """The four ports for one invocation, plus the clients behind them.
+    """The five ports for one invocation, plus the clients behind them.
 
     Held together so `close` releases every transport the run opened in one call —
     `azure/provider.py`'s own `close` is what invokes it, at run end.
@@ -760,6 +1049,7 @@ class AzurePorts:
     skus: ArmSkuPort
     definitions: ArmDefinitionsPort
     metrics: AzureMetricsPort
+    facts: ArmFactsPort
     _clients: tuple[Any, ...] = field(default=(), repr=False)
 
     def close(self) -> None:
@@ -778,6 +1068,38 @@ def _close_quietly(client: Any) -> None:
         closer()
     except Exception as exc:  # pragma: no cover - defensive teardown
         logger.debug("closing %s failed: %s", type(client).__name__, exc)
+
+
+def build_inventory_port(
+    *, credential: InvocationCredential
+) -> tuple[ArmInventoryPort, Callable[[], None]]:
+    """The Resource Graph port **alone**, plus the call that closes its client.
+
+    For `list_inventory`, which issues one aggregate Resource Graph query and touches no
+    other service (Req 9.1, 9.3). :func:`build_azure_ports` would additionally construct a
+    Compute client, a Monitor client and a metrics-client factory the command never calls —
+    three transports opened, authenticated and closed for nothing, and three more ways for a
+    listing to fail for a reason unrelated to listing.
+
+    It takes no `subscription_id`: `ResourceGraphClient` is the one ARM client here that is
+    not subscription-scoped at construction — the scope travels in each request's
+    `subscriptions` array — so there is no field to pass and none to get wrong.
+
+    Returns the closer rather than an :class:`AzurePorts`, because the other three fields of
+    that dataclass have no value to carry here and `None`s in them would make `close`
+    conditional.
+    """
+    from azure.mgmt.resourcegraph import ResourceGraphClient
+
+    client = ResourceGraphClient(credential.for_scope(ARM_SCOPE))
+    port = ArmInventoryPort(sender=pipeline_sender(client))
+
+    def close() -> None:
+        """Never raises: teardown replacing a real terminal error with a cleanup one is
+        the failure this shares with :meth:`AzurePorts.close`."""
+        _close_quietly(client)
+
+    return (port, close)
 
 
 def build_azure_ports(
@@ -828,5 +1150,11 @@ def build_azure_ports(
             metrics_client_factory=metrics_client_factory,
             logs_sender_factory=logs_sender_factory,
         ),
+        # Over the **Monitor** client's pipeline, not a fourth SDK client: the three fact
+        # providers are plain ARM paths on `management.azure.com`, and `pipeline_sender`
+        # resolves an absolute URL through whichever client it is handed. A dedicated client
+        # would authenticate through the same credential to the same audience and open one
+        # more transport for nothing.
+        facts=ArmFactsPort(sender=pipeline_sender(monitor)),
         _clients=(resource_graph, compute, monitor),
     )

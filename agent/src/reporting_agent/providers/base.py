@@ -33,7 +33,10 @@ __all__ = [
     "CollectRequest",
     "CollectResult",
     "DiscoverResult",
+    "FactCollectingProvider",
     "FactRecord",
+    "FactRequest",
+    "FactResult",
     "GapRecord",
     "GuestCounterOutcome",
     "GuestCounterProvider",
@@ -263,11 +266,32 @@ class CollectRequest(TypedDict):
     utc_offset: str
 
 
-class DiscoverResult(TypedDict):
+class _DiscoverResultExtras(TypedDict, total=False):
+    """The one optional key an inventory result may carry.
+
+    A separate `total=False` base for the reason :class:`_SkuCapacityCapabilities` documents:
+    this module stringifies its annotations, so `NotRequired[...]` inside one is invisible to
+    `TypedDict` and class-level totality is the only thing that survives.
+    """
+
+    inventory_pages: list[PlainData]
+
+
+class DiscoverResult(_DiscoverResultExtras):
     """A resource inventory and a collection_log (Req 18.2).
 
     `resources` is ordered by `resource_id` ascending in Unicode code-point order
     (Req 18.9) — see `sort_inventory`.
+
+    `inventory_pages` is every raw page the inventory query returned, retained so the fact
+    pass can fold the `fact_<key>` columns those pages already carry (Req 4.7). It is
+    **optional**, so a provider with no projectable fact to offer returns the two keys it
+    always did.
+
+    Retaining the pages rather than folding inside the inventory collector is what keeps the
+    fact pass in one place: a projectable fact and a Backup fact then reach the snapshot
+    through one function with one set of bounds, one clock and one gap vocabulary, instead of
+    the projectable half being derived in `azure/inventory.py` and the rest somewhere else.
     """
 
     resources: list[ResourceRecord]
@@ -579,3 +603,43 @@ class GuestCounterProvider(Protocol):
         """Query each counter for each resource. Returns one outcome per pair and does
         not raise for a failed query (Req 31.7)."""
         ...
+
+
+@runtime_checkable
+class FactCollectingProvider(Protocol):
+    """The optional third surface: configuration facts beside the statistics (Req 4.7, 4.8).
+
+    Optional for the same reason :class:`GuestCounterProvider` is: a provider with no fact
+    sources is a provider whose resources carry an empty `facts` collection, which Req 4.12
+    declares as an ordinary canonical form rather than an omission. `collect/pipeline.py` asks
+    `isinstance(provider, FactCollectingProvider)` and, when the answer is no, records no fact
+    and no fact gap and issues no request.
+
+    Kept off :class:`Provider` deliberately: adding a fourth required method would break every
+    conforming provider — including the two fakes the collection tests are built on — for a
+    capability two of the three do not have.
+    """
+
+    async def collect_facts(self, request: FactRequest) -> FactResult:
+        """Every fact for every resource in `request`. Does not raise for a source that
+        failed: each failure is a typed gap (Req 5.4, 5.7)."""
+        ...
+
+
+class FactRequest(TypedDict):
+    """What a fact pass needs, and nothing more.
+
+    `inventory_pages` are the pages `discover` already returned, so the projectable facts cost
+    no request (Req 4.7). `subscription_id` scopes the Backup list.
+    """
+
+    resources: list[ResourceRecord]
+    inventory_pages: list[PlainData]
+    subscription_id: str
+
+
+class FactResult(TypedDict):
+    """One fact pass's records and gaps, as plain data across the provider boundary."""
+
+    facts: list[FactRecord]
+    gaps: list[GapRecord]

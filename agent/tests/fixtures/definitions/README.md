@@ -68,3 +68,29 @@ Adding a fixture means adding its manifest entry in the same change: both suites
 fail otherwise. Changing a fixture's bytes changes its `definition_sha256`, which
 is pinned on purpose — a digest that moved without anyone intending it is exactly
 what the pin is for.
+
+## The `schema_version` fixtures, and the two that look redundant
+
+Eleven fixtures cover the version-conditional key sets. Nine are what you would expect —
+an accepted version 2 with a full front matter, one with the separators left to default from
+`id`, and rejections for an absent `front_matter`, a `cover` block in `blocks`, an absent
+`identity.language`, a version-1 definition carrying either `front_matter` or a separator, a
+front matter with five simultaneous defects, and a resolved separator pair that collides.
+
+Two exist because the nine left a real divergence undetected, and both are worth keeping for
+that reason rather than for coverage:
+
+- **`reject-schema-version-2-subtitle-astral-over-bound.json`** — a subtitle of 101 astral
+  characters: 101 code points and **202** UTF-16 code units. It is over the 200-unit bound and
+  under a 200-code-point one, so a half measuring code points accepts it. Every other
+  string-bound fixture is ASCII, where the two measurements agree.
+- **`reject-schema-version-2-document-number-cannot-vary.json`** — a document-number pattern
+  naming only declared placeholders and none that varies between two runs of one template over
+  one resolved period. The `{quarter}` case in the five-defect fixture reports **two** issues at
+  that one path, and the comparison is over a set of *locations*, so it cannot distinguish a
+  validator that dropped the varying-placeholder rule from one that kept it.
+
+Both were added after a mutation pass over the guard: with the other nine in place, a
+`TOC_MAX_LEVEL` moved to 9 failed, a dropped `startsWith("doc.")` failed, and those two
+mutations passed. A fixture set that cannot fail for the reason a validator can drift is not a
+corpus.

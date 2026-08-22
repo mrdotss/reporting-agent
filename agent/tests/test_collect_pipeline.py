@@ -49,6 +49,7 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
     raw_response_from_recorded,
 )
 from fakes.object_store import InMemoryObjectStore
@@ -62,7 +63,7 @@ from reporting_agent.azure.provider import (
     FIDELITY_ENHANCED as AZURE_FIDELITY_ENHANCED,
 )
 from reporting_agent.azure.provider import provider_over_ports
-from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
@@ -123,7 +124,14 @@ MEMORY = "Available Memory Bytes"
 DISK_FREE = "disk_free_pct"
 WATCHDOG_S = 10.0
 
-CATALOG = load_catalog()
+# The **metric** catalog alone, so the runs below declare no fact and the fact pass is a
+# no-op for them. These suites are about paging, aggregation, the gates, the document phases
+# and replay determinism; `test_facts_*` owns the fact pass. Loading the shipped pair here
+# would make each of them also an assertion about backup coverage — and, until task 4.4
+# teaches `verify/replay.py` to re-derive a fact from the archive, a snapshot carrying facts
+# cannot be replayed to an identical digest at all. `load_catalog(path)` declaring no facts
+# without a `facts_path` is documented behaviour in `catalog/loader.py`.
+CATALOG = load_catalog(DEFAULT_CATALOG_PATH)
 VM_CATALOG = CATALOG.for_resource_type(RESOURCE_TYPE)
 assert VM_CATALOG is not None
 DECLARED_METRICS: tuple[str, ...] = tuple(metric.name for metric in VM_CATALOG.metrics)
@@ -332,6 +340,7 @@ class Harness:
             sku_port=self.sku_port,
             definitions_port=self.definitions_port,
             metrics_port=self.metrics_port,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,
@@ -1309,12 +1318,15 @@ def test_the_snapshot_records_the_requested_scope_and_the_producer() -> None:
     assert document["requested_scope"]["metrics_by_resource_type"] == {
         RESOURCE_TYPE: sorted(DECLARED_METRICS)
     }
-    # One metrics batch response plus the one Resource Graph page — the inventory query
-    # projects the catalog's facts, so its page is a fact-bearing response and is archived
-    # as it arrives (Req 7.1). Summed rather than written as a bare 2, so the claim stays
-    # "one of each" rather than a total that several accountings would satisfy.
+    # One metrics batch response, and **no** archived Resource Graph page: this module's
+    # `CATALOG` is the metric catalog alone (see its own comment), so the inventory query
+    # projects no fact and its page is not a fact-producing response. Req 7.1's obligation is
+    # over fact-producing responses, and `azure/inventory.py` archives a page on the presence
+    # of a projection rather than on the presence of a writer — `tests/test_inventory_facts.py`
+    # owns both directions of that. Summed rather than written as a bare 1, so the claim stays
+    # "one of each" rather than a total several accountings would satisfy.
     batch_responses = 1
-    inventory_pages = 1
+    inventory_pages = 0
     assert (
         document["raw_archive"]["object_count"] == batch_responses + inventory_pages
     )

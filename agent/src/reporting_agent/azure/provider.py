@@ -69,6 +69,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Final, cast
 
 from reporting_agent.azure.definitions import DefinitionProbe
+from reporting_agent.azure.facts import FactCollector
 from reporting_agent.azure.inventory import (
     DEALLOCATED_POWER_STATE_CODES,
     VIRTUAL_MACHINE_RESOURCE_TYPE,
@@ -78,6 +79,7 @@ from reporting_agent.azure.inventory import (
 from reporting_agent.azure.metrics import MetricsCollector
 from reporting_agent.azure.ports import (
     DefinitionsPort,
+    FactsPort,
     InventoryPort,
     MetricsPort,
     SkuPort,
@@ -122,6 +124,8 @@ from reporting_agent.providers.base import (
     CollectRequest,
     CollectResult,
     DiscoverResult,
+    FactRequest,
+    FactResult,
     GapRecord,
     GuestCounterOutcome,
     GuestCounterRequest,
@@ -381,6 +385,7 @@ class AzureProvider:
     skus: SkuCatalog
     definitions: DefinitionProbe
     metrics: MetricsCollector
+    facts: FactsPort
     logs: MetricsPort
     """The run's `MetricsPort`, held directly for the one operation on it that has no
     collector module of its own: the enhanced tier's Log Analytics counter query
@@ -460,11 +465,45 @@ class AzureProvider:
             )
 
         discovered = DiscoverResult(
-            resources=sort_inventory(resources), gaps=list(result["gaps"])
+            resources=sort_inventory(resources),
+            gaps=list(result["gaps"]),
+            # Passed through **unfiltered**, exactly as the gaps are: the pages are what
+            # Azure answered, and `collect_facts` folds a page against the resource ids that
+            # page names. A row a group or tag filter excluded contributes a fact for a
+            # resource the snapshot does not carry, which the Snapshot_Builder ignores —
+            # whereas trimming the pages here would mean two derivations of one filter.
+            inventory_pages=list(result.get("inventory_pages") or ()),
         )
         assert_inventory_sorted(discovered["resources"])
         assert_plain_data(discovered)
         return discovered
+
+    # --- facts (Req 4.7, 4.8, 4.9, 5.1-5.5) ------------------------------------------
+
+    async def collect_facts(self, request: FactRequest) -> FactResult:
+        """The fact pass: the projected columns plus the three subscription-scoped lists.
+
+        Constructed per call rather than held on this provider, because a `FactCollector` is
+        cheap and holding one would mean holding the semaphore lookup's answer across a run
+        whose subscription is fixed anyway — state with no second reader.
+
+        `semaphore_for` returns the **same** object the metrics collector acquires, so a fact
+        request and a metric request share one budget of eight (Req 4.9).
+        """
+        collector = FactCollector(
+            self.facts,
+            self.metrics.archive_writer,
+            declaration=self.catalog.facts,
+            semaphore=self.metrics.semaphore_for(request["subscription_id"]),
+        )
+        result = await collector.collect(
+            resources=request["resources"],
+            inventory_pages=request["inventory_pages"],
+            subscription_id=request["subscription_id"],
+        )
+        collected = FactResult(facts=list(result.facts), gaps=list(result.gaps))
+        assert_plain_data(collected)
+        return collected
 
     # --- collect (Req 18.2, 18.3, 21.x-30.x) -----------------------------------------
 
@@ -1262,6 +1301,7 @@ def provider_over_ports(
     sku_port: SkuPort,
     definitions_port: DefinitionsPort,
     metrics_port: MetricsPort,
+    facts_port: FactsPort,
     object_store: ObjectStore,
     actor_id: str,
     run_id: str,
@@ -1270,7 +1310,7 @@ def provider_over_ports(
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     on_close: Callable[[], None] | None = None,
 ) -> AzureProvider:
-    """Assemble an :class:`AzureProvider` over four ports and one object store.
+    """Assemble an :class:`AzureProvider` over five ports and one object store.
 
     The one place the five collector modules are wired together, so the wiring is
     identical whether the ports are the recorded-response fakes or the SDK-backed
@@ -1295,6 +1335,7 @@ def provider_over_ports(
             archive_writer=archive_writer,
             sleep=sleep,
         ),
+        facts=facts_port,
         logs=metrics_port,
         actor_id=actor_id,
         run_id=run_id,
@@ -1368,6 +1409,7 @@ def build_provider(
         sku_port=ports.skus,
         definitions_port=ports.definitions,
         metrics_port=ports.metrics,
+        facts_port=ports.facts,
         object_store=store,
         actor_id=actor_id,
         run_id=run_id,

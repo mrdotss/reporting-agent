@@ -451,6 +451,11 @@ def _assemble(
         )
 
     return build_snapshot(
+        # `None` is the decision this path makes, not a default it inherited: replay
+        # re-derives a document that was already validated when it was written, and it
+        # has no invocation of its own to bound a `collected_at` by. Re-checking the
+        # bound here against a fresh instant would fail every stored snapshot.
+        invocation_started_at=None,
         run_id=plan.run_id,
         scope=plan.scope,
         scope_verified=plan.scope_verified,

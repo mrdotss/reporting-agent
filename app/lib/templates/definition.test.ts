@@ -1683,14 +1683,26 @@ describe("validateMetricSelectionAgainstCatalog — the catalog-aware layer", ()
 // fixture — a pair no single-version validator could satisfy, and a pair that a second
 // hand-written branch would eventually get one half of wrong.
 
+/**
+ * The smallest `front_matter` this validator accepts: the three sections Requirement 13.1
+ * declares, each empty.
+ *
+ * Every field *inside* a section is optional — the compiler derives the report title, the
+ * customer and the resolved period on its own — so three empty objects is a complete front
+ * matter rather than a stub. `{}` alone is not: the sections are required, which is what
+ * `reject-schema-version-2-without-front-matter.json` in the shared corpus pins.
+ */
+function minimalFrontMatter(): Record<string, unknown> {
+  return { cover: {}, document_control: {}, toc: {} }
+}
+
 function validDefinitionV2(): Record<string, unknown> {
   const base = validDefinition() as unknown as Record<string, unknown>
   return {
     ...base,
     schema_version: 2,
     identity: { ...(base.identity as object), language: "en" },
-    // Task 7.4 declares this section's own fields; at this version it only has to be present.
-    front_matter: {},
+    front_matter: minimalFrontMatter(),
   }
 }
 
@@ -1734,7 +1746,7 @@ describe("Requirement 13.1 — front_matter is declared at v2 and undeclared at 
     // rejects anything the list omits.
     const issues = collectDefinitionIssues({
       ...validDefinition(),
-      front_matter: {},
+      front_matter: minimalFrontMatter(),
     })
     expect(pathsOf(issues)).toContain("front_matter")
     expect(
@@ -1762,7 +1774,7 @@ describe("Requirement 13.1 — front_matter is declared at v2 and undeclared at 
     // author reading the wrong one deletes the field they were told to add.
     const atV1 = collectDefinitionIssues({
       ...validDefinition(),
-      front_matter: {},
+      front_matter: minimalFrontMatter(),
     }).filter((issue) => issue.path.join(".") === "front_matter")
     const definition = validDefinitionV2()
     delete definition.front_matter

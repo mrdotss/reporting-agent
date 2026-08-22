@@ -44,6 +44,7 @@ from reporting_agent.heartbeat import (
 from reporting_agent.main import (
     CODE_INTERNAL_ERROR,
     COMMAND_GENERATE_REPORT,
+    COMMAND_LIST_INVENTORY,
     parse_invocation,
     run_invocation,
 )
@@ -112,6 +113,39 @@ def test_this_spec_adds_emitters_and_no_event_type() -> None:
     }
 
 
+def test_the_inventory_listing_command_adds_no_event_type_either() -> None:
+    """Task 12.1 reports its whole result on `done`'s outcome mapping, so `events.py` and
+    `app/lib/events.ts` are both untouched and `event-mirror.static.test.ts` needs no edit.
+    Asserted here, beside the claim the document phases make, because this is the file that
+    would have to change if either spec ever did grow a type.
+    """
+    async def handler(invocation, steps) -> AsyncIterator[dict[str, Any]]:
+        del steps
+        invocation.outcome.update(
+            {
+                "resource_types": {"values": ["Microsoft.Compute/virtualMachines"],
+                                   "truncated": False},
+                "resource_groups": {"values": [], "truncated": False},
+                "tag_keys": {"values": [], "truncated": False},
+                "tag_values": {"values": [], "truncated": True},
+            }
+        )
+        for event in ():  # a handler with nothing to say still reaches `done`
+            yield event
+    events = drain(
+        run_invocation(
+            parse_invocation(payload(command=COMMAND_LIST_INVENTORY)),
+            handlers={COMMAND_LIST_INVENTORY: handler},
+        )
+    )
+    assert types_of(events) == ["done"], "nothing precedes and nothing follows `done`"
+    done = one(events, "done")
+    assert done["status"] == "completed"
+    # The four dimension keys reach `done`, and every emitted type is still declared.
+    assert {"resource_types", "resource_groups", "tag_keys", "tag_values"} <= set(done)
+    assert done["tag_values"]["truncated"] is True
+    for kind in types_of(events):
+        assert kind in EVENT_TYPES
 def test_the_four_new_step_names_are_declared_once_each() -> None:
     """A step name spelled twice is a step the timeline renders as two different things."""
     names = [

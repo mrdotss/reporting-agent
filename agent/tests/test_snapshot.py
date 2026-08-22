@@ -300,6 +300,7 @@ def built_snapshot(
         resources = [measured, unmeasured]
 
     return build_snapshot(
+        invocation_started_at=None,
         run_id=run_id,
         scope=scope_spec(),
         scope_verified=True,

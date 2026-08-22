@@ -64,6 +64,7 @@ from reporting_agent.compile.ast import (
     FigurePath,
     FigureSource,
     LayoutColumn,
+    TextFact,
     chart_id,
     child_nodes,
     decimal_string_of,
@@ -76,7 +77,7 @@ from reporting_agent.compile.format import (
     NumberFormat,
     format_figure,
 )
-from reporting_agent.compile.snapshot_view import SnapshotValue
+from reporting_agent.compile.snapshot_view import FactTextValue, SnapshotValue
 from reporting_agent.errors import CompileFailedError
 
 __all__ = [
@@ -86,10 +87,18 @@ __all__ = [
     "UNSET",
     "BlockCursor",
     "FigureLedger",
+    "LedgerNode",
     "TableAnchor",
     "assert_ledger_matches_tree",
     "walk_figures",
+    "walk_ledger_nodes",
 ]
+
+type LedgerNode = Figure | TextFact
+"""The two node kinds one ledger holds: a numeric leaf and a text one.
+
+A union at the *walk*'s return type and deliberately **not** at the ledger's storage type —
+see :class:`FigureLedger` on why the two dictionaries stay apart."""
 
 ANCHOR_TABLE: Final[str] = "table"
 ANCHOR_CHART: Final[str] = "chart"
@@ -153,6 +162,8 @@ class FigureLedger:
     _entries: dict[FigurePath, Figure] = field(default_factory=dict)
     _anchors: dict[FigurePath, TableAnchor] = field(default_factory=dict)
     _tables: dict[str, FigurePath] = field(default_factory=dict)
+    _text_facts: dict[FigurePath, TextFact] = field(default_factory=dict)
+    _text_fact_anchors: dict[FigurePath, TableAnchor] = field(default_factory=dict)
 
     def __getitem__(self, path: FigurePath | str) -> Figure:
         try:
@@ -195,7 +206,79 @@ class FigureLedger:
                 f"({existing.snapshot_path!r} and {figure.snapshot_path!r}); a node path "
                 f"addresses exactly one position"
             )
+        if figure.path in self._text_facts:
+            raise CompileFailedError(
+                f"the ledger key {figure.path!r} already holds a text fact "
+                f"({self._text_facts[figure.path].snapshot_path!r}); one node position "
+                f"carries one checked value, not one of each kind"
+            )
         self._entries[figure.path] = figure
+
+    def insert_text_fact(self, fact: TextFact) -> None:
+        """Record `fact` under its own path — the text mirror of :meth:`insert`.
+
+        Refuses a path either dictionary already holds. The **cross**-refusal is the load-
+        bearing half: `entry_paths()` claims "one ledger keyed by AST path", which is only
+        true of a pair of dictionaries whose key sets are disjoint, and a node position
+        holding both a figure and a text fact would give the verifier two answers for one
+        document cell.
+        """
+        if fact.path in self._text_facts:
+            existing = self._text_facts[fact.path]
+            raise CompileFailedError(
+                f"two text facts resolve to the ledger key {fact.path!r} "
+                f"({existing.snapshot_path!r} and {fact.snapshot_path!r}); a node path "
+                f"addresses exactly one position"
+            )
+        if fact.path in self._entries:
+            raise CompileFailedError(
+                f"the ledger key {fact.path!r} already holds a figure "
+                f"({self._entries[fact.path].snapshot_path!r}); one node position carries "
+                f"one checked value, not one of each kind"
+            )
+        self._text_facts[fact.path] = fact
+
+    def text_facts(self) -> Mapping[FigurePath, TextFact]:
+        """A read-only view of the text-fact entries, in insertion order — document order,
+        because insertion happens during the traversal that builds the tree."""
+        return MappingProxyType(self._text_facts)
+
+    def record_text_fact_anchor(self, path: FigurePath, anchor: TableAnchor) -> None:
+        """Attach a table identity to an **existing** text-fact entry — the mirror of
+        :meth:`record_anchor`, and separate for the same reason the entries are.
+
+        `verify/facts.py` reads these and the figure anchors are read by the table pass; a
+        single anchor collection would make each pass filter the other's entries out, and a
+        filter is a thing that can be forgotten at one call site.
+        """
+        if path not in self._text_facts:
+            raise CompileFailedError(
+                f"cannot record a text-fact anchor for {path!r}: the ledger holds no text "
+                f"fact there"
+            )
+        self._text_fact_anchors[path] = anchor
+
+    def text_fact_anchors(self) -> Mapping[FigurePath, TableAnchor]:
+        return MappingProxyType(self._text_fact_anchors)
+
+    def entry_paths(self) -> tuple[FigurePath, ...]:
+        """Every ledger entry path of **both** kinds, in document order.
+
+        Read by the completeness assertion and by nothing else — deliberately. Every other
+        consumer wants one kind: `formatted_values()` feeds masking stage 1 and must see the
+        figures **alone**, `by_snapshot_path()` feeds the numeric coverage pass, and
+        `verify/facts.py` reads `text_facts()`. Making the union the convenient thing to
+        reach for is how a text fact ends up masked as though it were a number, which
+        reports a clean pass on a document nobody proved.
+
+        Figures first, then text facts, each in insertion order. The two are interleaved in
+        the tree; this order is for the assertion's own error messages, which compare sets.
+        """
+        assert not (self._entries.keys() & self._text_facts.keys()), (
+            "the ledger's two entry dictionaries share a key, so `entry_paths` is not a "
+            f"key set: {sorted(self._entries.keys() & self._text_facts.keys())}"
+        )
+        return (*self._entries, *self._text_facts)
 
     def record_anchor(self, path: FigurePath, anchor: TableAnchor) -> None:
         """Attach a table or chart identity to an **existing** entry.
@@ -277,19 +360,33 @@ class FigureLedger:
         emitted in sorted order for readability; JCS orders object keys itself, so the
         digest does not depend on it.
         """
-        return rfc8785.dumps(
-            {
-                "schema_version": 1,
-                "entries": {
-                    str(path): _figure_to_plain(self._entries[path])
-                    for path in sorted(self._entries)
-                },
-                "anchors": {
-                    str(path): _anchor_to_plain(self._anchors[path])
-                    for path in sorted(self._anchors)
-                },
+        document: dict[str, object] = {
+            "schema_version": 1,
+            "entries": {
+                str(path): _figure_to_plain(self._entries[path])
+                for path in sorted(self._entries)
+            },
+            "anchors": {
+                str(path): _anchor_to_plain(self._anchors[path])
+                for path in sorted(self._anchors)
+            },
+        }
+        # Omitted when empty, following the omit-when-`None` convention `_figure_to_plain`
+        # documents — and here it is what makes "additive" a claim about **bytes**: a
+        # document carrying no text fact serializes to exactly the bytes it did before this
+        # key existed, so every committed `ledger_sha256` is unchanged. Emitting `{}` would
+        # be a second spelling of absent and a second digest for one ledger.
+        if self._text_facts:
+            document["text_facts"] = {
+                str(path): _text_fact_to_plain(self._text_facts[path])
+                for path in sorted(self._text_facts)
             }
-        )
+        if self._text_fact_anchors:
+            document["text_fact_anchors"] = {
+                str(path): _anchor_to_plain(self._text_fact_anchors[path])
+                for path in sorted(self._text_fact_anchors)
+            }
+        return rfc8785.dumps(document)
 
     def digest(self) -> str:
         """SHA-256 over :meth:`serialize`, as 64 lowercase hexadecimal characters."""
@@ -338,6 +435,29 @@ def _source_to_plain(source: FigureSource) -> dict[str, object]:
     if source.unit is not None:
         plain["unit"] = source.unit
     return plain
+
+
+def _text_fact_to_plain(fact: TextFact) -> dict[str, object]:
+    """One text-fact entry as plain data.
+
+    Every field is required on a `TextFact`, so unlike `_figure_to_plain` there is nothing to
+    omit — which is itself the shape of the invariant: a fact with no source or no
+    `collected_at` is unconstructible, so the serialized entry cannot be missing one.
+
+    `formatted` is emitted even though `TextFact.__post_init__` requires it to equal `value`.
+    The verifier matches a document token against `formatted` for **both** entry kinds without
+    branching on which it is holding, and a reader of the artifact should not have to know
+    that one kind's display string is derivable from another field.
+    """
+    return {
+        "path": str(fact.path),
+        "key": fact.key,
+        "value": fact.value,
+        "snapshot_path": fact.snapshot_path,
+        "source": fact.source,
+        "collected_at": fact.collected_at,
+        "formatted": fact.formatted,
+    }
 
 
 def _anchor_to_plain(anchor: TableAnchor) -> dict[str, object]:
@@ -529,6 +649,53 @@ class BlockCursor:
         self._factory_calls[0] += 1
         return figure
 
+    def text_fact(self, fact_value: FactTextValue) -> TextFact:
+        """Mint the text fact at this cursor's path, and record it. **The only factory.**
+
+        Mirrors :meth:`figure` deliberately, down to taking a value that only
+        `compile/snapshot_view.py`'s walk produces: a `FactTextValue` carries the JSON
+        pointer of the position it was read at, so a `TextFact` is unconstructible from a
+        string a template supplied or a model wrote. The entry is created during the
+        traversal that creates the node, which is why there is no
+        `build_text_fact_ledger(ast)` anywhere and cannot be one without deleting this
+        method — the same argument the module docstring makes for the numeric side.
+
+        **Nothing is formatted here**, and that is the one place the mirror is not
+        symmetrical. `formatted` is the value character for character: a fact carries no unit
+        suffix, no grouping and no estimator label, so there is nothing for
+        `compile/format.py` to decide. `format_text_fact` (task 5.3) exists so that the
+        assignment still happens in one module, not because there is a transformation to
+        apply — and `TextFact.__post_init__` refuses any `formatted` that differs, so a
+        future translation of a collected value fails at construction.
+        """
+        path = self.path
+        at = f"text fact {str(path)!r}"
+
+        if not isinstance(fact_value, FactTextValue):
+            raise CompileFailedError(
+                f"{at}: a text fact is minted from a FactTextValue, got "
+                f"{type(fact_value).__name__}. Every checked value in the document traces "
+                f"to a position in an immutable snapshot; there is no factory that accepts "
+                f"a bare string, which is what makes a model-authored fact unconstructible."
+            )
+
+        fact = TextFact(
+            path=path,
+            key=fact_value.key,
+            value=fact_value.value,
+            snapshot_path=fact_value.pointer,
+            source=fact_value.source,
+            collected_at=fact_value.collected_at,
+            formatted=fact_value.value,
+        )
+
+        self.ledger.insert_text_fact(fact)
+        # The **same** counter the numeric factory increments, so the closing invariant's
+        # count is over both kinds. A second counter would let one kind's second pass hide
+        # behind the other kind's correct total.
+        self._factory_calls[0] += 1
+        return fact
+
     def anchor_table(self, path: FigurePath) -> str:
         """Record the table anchor for every figure already inside `path`'s subtree, and
         return the anchor id.
@@ -563,9 +730,9 @@ class BlockCursor:
 # --- the assertion-only walk and the closing invariant -------------------------------
 
 
-def walk_figures(node: object) -> Iterator[tuple[tuple[int, ...], Figure]]:
-    """Every figure in `node`'s subtree, with the **structurally recomputed** ordinals
-    that address it.
+def walk_ledger_nodes(node: object) -> Iterator[tuple[tuple[int, ...], LedgerNode]]:
+    """Every ledger-bearing node in `node`'s subtree, with the **structurally recomputed**
+    ordinals that address it — a `Figure` or a `TextFact`.
 
     Assertion-only. Nothing builds a ledger from this — that is the point. It recomputes
     positions from `compile/ast.py`'s `child_nodes`, which is the single definition of
@@ -579,14 +746,27 @@ def walk_figures(node: object) -> Iterator[tuple[tuple[int, ...], Figure]]:
     block is registered with :func:`assert_ledger_matches_tree` under its own id instead,
     so every figure is still walked exactly once and the union still covers the whole tree.
     """
-    if isinstance(node, Figure):
+    if isinstance(node, Figure | TextFact):
         yield ((), node)
         return
     if isinstance(node, LayoutColumn):
         return
     for ordinal, child in enumerate(child_nodes(node)):
-        for suffix, found in walk_figures(child):
+        for suffix, found in walk_ledger_nodes(child):
             yield ((ordinal, *suffix), found)
+
+
+def walk_figures(node: object) -> Iterator[tuple[tuple[int, ...], Figure]]:
+    """:func:`walk_ledger_nodes`, filtered to the figures.
+
+    Retained as a wrapper rather than replaced, so every existing caller — the foundation's
+    `tests/property/test_ledger_property.py` among them — reads exactly what it read before.
+    A caller that wanted only the numeric leaves still gets only those, and does not have to
+    learn a union type to keep doing so.
+    """
+    for ordinals, found in walk_ledger_nodes(node):
+        if isinstance(found, Figure):
+            yield (ordinals, found)
 
 
 def assert_ledger_matches_tree(
@@ -612,14 +792,14 @@ def assert_ledger_matches_tree(
 
     Raises `COMPILE_FAILED` naming every differing or colliding path.
     """
-    from_tree: dict[FigurePath, Figure] = {}
+    from_tree: dict[FigurePath, LedgerNode] = {}
     collisions: list[str] = []
     misplaced: list[str] = []
 
     for block_id, emitted in sorted(blocks.items()):
         nodes = emitted if isinstance(emitted, tuple) else (emitted,)
         for ordinal, node in enumerate(nodes):
-            for suffix, figure in walk_figures(node):
+            for suffix, figure in walk_ledger_nodes(node):
                 structural = figure_path(block_id, ordinal, *suffix)
                 if structural in from_tree:
                     collisions.append(str(structural))
@@ -638,7 +818,7 @@ def assert_ledger_matches_tree(
             f"{sorted(set(misplaced))}"
         )
 
-    ledger_keys = {str(path) for path in ledger.paths()}
+    ledger_keys = {str(path) for path in ledger.entry_paths()}
     tree_keys = {str(path) for path in from_tree}
     if ledger_keys != tree_keys:
         only_ledger = sorted(ledger_keys - tree_keys)
@@ -648,19 +828,21 @@ def assert_ledger_matches_tree(
         if only_tree:
             problems.append(f"in the tree but not in the ledger: {only_tree}")
 
+    held = {**ledger.entries, **ledger.text_facts()}
     for path in sorted(ledger_keys & tree_keys):
         key = FigurePath(path)
-        if ledger[key] is not from_tree[key]:
+        if held[key] is not from_tree[key]:
             problems.append(
                 f"{path}: the ledger's figure is not the object the tree holds; the "
                 f"ledger is a view of the tree, not a copy of it"
             )
 
-    if factory_calls != len(ledger) or factory_calls != len(from_tree):
+    entry_count = len(ledger.entry_paths())
+    if factory_calls != entry_count or factory_calls != len(from_tree):
         problems.append(
-            f"the figure factory was called {factory_calls} time(s) but the ledger holds "
-            f"{len(ledger)} entr(ies) and the tree holds {len(from_tree)} figure node(s); "
-            f"a second pass built one of them"
+            f"the two ledger factories were called {factory_calls} time(s) in total but the "
+            f"ledger holds {entry_count} entr(ies) and the tree holds {len(from_tree)} "
+            f"ledger node(s); a second pass built one of them"
         )
 
     if problems:

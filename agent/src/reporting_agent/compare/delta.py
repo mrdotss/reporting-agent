@@ -185,6 +185,18 @@ class DeltaResolver:
             return (found,)
         return self.base.resolve_all(raw_pointer)
 
+    def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+        """No text value, always `()` (Req 6.2).
+
+        A delta is a numeric difference between two runs, so this resolver indexes deltas and
+        nothing else. Returning `()` rather than raising is the honest answer and it is also
+        the useful one: a `TextFact` constructed during a compare compile fails with
+        "addresses no text value" naming its own path, which is a defect report, where an
+        `AttributeError` from a missing protocol member would name this class instead.
+        """
+        del raw_pointer
+        return ()
+
 
 def compile_delta(
     *,

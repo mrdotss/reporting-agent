@@ -55,7 +55,11 @@ from reporting_agent.compile.blocks.structure import (
     compile_page_break,
     compile_rich_text,
 )
-from reporting_agent.compile.definition import BLOCK_TYPES
+from reporting_agent.compile.definition import (
+    BLOCK_TYPES,
+    FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
+    resolved_schema_version,
+)
 from reporting_agent.compile.figures import (
     BlockCursor,
     FigureLedger,
@@ -67,6 +71,7 @@ from reporting_agent.errors import CompileFailedError
 
 __all__ = [
     "BLOCK_COMPILERS",
+    "FRONT_MATTER_SCHEMA_VERSION",
     "BlockCompiler",
     "CompiledDocument",
     "compile_block",
@@ -98,6 +103,22 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
 separately in :func:`compile_block`."""
 
 _ROW_TYPE: Final[str] = "row"
+
+FRONT_MATTER_SCHEMA_VERSION: Final[int] = 2
+"""The lowest `schema_version` at which the front matter owns its own sections.
+
+At and above it, `render/front_matter.py` emits the cover from `front_matter.cover`, so
+:func:`compile_document` compiles no `cover` **block** — see :func:`_phase_one`.
+"""
+
+assert FRONT_MATTER_SCHEMA_VERSION > 1, (
+    "version 1 has no front matter; a front-matter floor of 1 would stop every stored v1 "
+    "definition from compiling the cover block it carries"
+)
+assert set(FRONT_MATTER_FORBIDDEN_BLOCK_TYPES) <= set(BLOCK_COMPILERS), (
+    "the front matter claims a block type this registry cannot compile at version 1: "
+    f"{sorted(set(FRONT_MATTER_FORBIDDEN_BLOCK_TYPES) - set(BLOCK_COMPILERS))}"
+)
 
 assert set(BLOCK_COMPILERS) | {_ROW_TYPE} == set(BLOCK_TYPES), (
     "the block registry and the declared block-type set disagree: "
@@ -186,7 +207,14 @@ def compile_document(
     :func:`~reporting_agent.compile.definition.assert_valid_pinned_definition`. This function
     does not re-validate it: a second validator would be a second verdict, and the pipeline runs
     the gate first so a drifted mirror fails as `TEMPLATE_INVALID` before any figure exists.
+
+    The one thing it does read off the definition itself is `schema_version`, through
+    :func:`~reporting_agent.compile.definition.resolved_schema_version` — the same function the
+    validator resolves with, so the version a definition is admitted at and the version it is
+    compiled at cannot differ. It selects **one** behaviour: whether a `cover` block compiles
+    (Req 13.2), described on :func:`_phase_one`.
     """
+    schema_version = resolved_schema_version(definition.get("schema_version"))
     ledger = FigureLedger()
     design = DesignSettings.from_plain(definition.get("design"))
     identity = definition.get("identity")
@@ -215,7 +243,9 @@ def compile_document(
     specs = _block_specs(definition)
 
     with compiling_against(view):
-        emitted, nodes_by_block, deferrals, factory_calls = _phase_one(context, specs, design)
+        emitted, nodes_by_block, deferrals, factory_calls = _phase_one(
+            context, specs, design, schema_version=schema_version
+        )
         prose_by_block = _phase_two(context, deferrals)
         document, nodes_by_block = _phase_three(
             emitted, nodes_by_block, deferrals, prose_by_block
@@ -242,15 +272,49 @@ class _Emitted:
 
 
 def _phase_one(
-    context: BlockContext, specs: Sequence[BlockSpec], design: DesignSettings
+    context: BlockContext,
+    specs: Sequence[BlockSpec],
+    design: DesignSettings,
+    *,
+    schema_version: int,
 ) -> tuple[list[_Emitted], dict[str, tuple[Block, ...]], list[Deferred], int]:
-    """Compile every block in document order, minting every figure into the one ledger."""
+    """Compile every block in document order, minting every figure into the one ledger.
+
+    Two blocks are skipped rather than compiled, for different reasons, and the version skip
+    comes first because it is the stronger statement:
+
+    **The front matter owns the cover from version 2 on** (Req 13.2). At that version
+    `render/front_matter.py` emits the cover from `front_matter.cover`, so compiling a `cover`
+    block as well would put two covers in one document. The validator already refuses a `cover`
+    in `blocks` at version 2 on both sides of the mirror, so this branch is reached only if the
+    two halves drift — and unlike the undeclared-type branch in :func:`compile_block`, skipping
+    here loses no section: the cover is still emitted, from the front matter. Dropping a block
+    is only dishonest when nothing else produces it.
+
+    **At version 1 the cover is a block**, and it compiles exactly as it always has, which is
+    what keeps every stored v1 row and all five `app/lib/templates/starters.ts` covers
+    rendering byte-identically (Req 13.11).
+    """
     emitted: list[_Emitted] = []
     nodes_by_block: dict[str, tuple[Block, ...]] = {}
     deferrals: list[Deferred] = []
     factory_calls = 0
 
     for spec in specs:
+        if (
+            schema_version >= FRONT_MATTER_SCHEMA_VERSION
+            and spec.type in FRONT_MATTER_FORBIDDEN_BLOCK_TYPES
+        ):
+            logger.warning(
+                "block %s declares the type %r, which the front matter owns at schema_version "
+                "%d and above; it is not compiled here because the front matter emits it. The "
+                "validator should have refused it, so the two halves of the mirror have drifted",
+                spec.id,
+                spec.type,
+                schema_version,
+            )
+            continue
+
         # Req 16.13 — a cover is emitted only where the template's cover-page flag is true, so
         # a template with it off carries no empty cover rather than an unstyled stub.
         if spec.type == "cover" and not design.cover_page:

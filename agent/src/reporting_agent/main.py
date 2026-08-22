@@ -52,9 +52,9 @@ from the client's side, from a runtime that died.
 
 **A command whose result is its outcome reports it on `done`.** `preflight` has no run row
 and no later callback, so `scope_verified` and `fidelity_tier` ride on the terminal event
-through `Invocation.outcome` (see :func:`_done_event`). That keeps the result inside the
-declared vocabulary rather than adding an eleventh event type the two languages would both
-have to grow.
+through `Invocation.outcome` (see :func:`_done_event`). `list_inventory` reports its four
+dimensions the same way. That keeps both results inside the declared vocabulary rather than
+adding an eleventh event type the two languages would both have to grow.
 """
 
 from __future__ import annotations
@@ -110,6 +110,7 @@ __all__ = [
     "COMMAND_COMPARE_RUNS",
     "COMMAND_GENERATE_REPORT",
     "COMMAND_HANDLERS",
+    "COMMAND_LIST_INVENTORY",
     "COMMAND_PREFLIGHT",
     "COMMAND_RENDER_PREVIEW",
     "COMMAND_VERIFY_REPORT",
@@ -134,6 +135,7 @@ __all__ = [
     "describe_invocation",
     "emit",
     "handle_generate_report",
+    "handle_list_inventory",
     "handle_preflight",
     "invoke",
     "main",
@@ -153,6 +155,7 @@ COMMAND_GENERATE_REPORT: Final[str] = "generate_report"
 COMMAND_PREFLIGHT: Final[str] = "preflight"
 COMMAND_VERIFY_REPORT: Final[str] = "verify_report"
 COMMAND_RENDER_PREVIEW: Final[str] = "render_preview"
+COMMAND_LIST_INVENTORY: Final[str] = "list_inventory"
 
 COMMAND_COMPARE_RUNS: Final[str] = "compare_runs"
 """**Declared and unrouted**, deliberately (Req 14.5).
@@ -169,13 +172,17 @@ COMMANDS: Final[frozenset[str]] = frozenset(
         COMMAND_PREFLIGHT,
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
+        COMMAND_LIST_INVENTORY,
     }
 )
 """The commands this runtime accepts (Req 14.3).
 
-`verify_report` and `render_preview` are **deterministic**: any `prompt` in the payload is
-ignored, because neither has a model in it and a payload field nothing reads is a field a
-caller will eventually expect to matter."""
+`verify_report`, `render_preview` and `list_inventory` are **deterministic**: any `prompt` in
+the payload is ignored, because none of them has a model in it and a payload field nothing
+reads is a field a caller will eventually expect to matter. `list_inventory` is deterministic
+for a second reason Req 9.3 states outright — the endpoint behind it must reach Azure through
+a command rather than a prompt, so the web app issues no Azure request and holds no Azure
+access token."""
 
 
 # --- error codes that describe the *invocation*, not the collection -------------------
@@ -973,11 +980,85 @@ async def handle_render_preview(
         yield event
 
 
+async def handle_list_inventory(
+    invocation: Invocation, steps: StepTracker
+) -> AsyncIterator[Event]:
+    """List the subscription's distinct picker dimensions (Req 9.1, 9.3, 9.5).
+
+    One step and one outcome, the same shape as `handle_preflight` and for the same reason:
+    there is no run row, no snapshot and no later callback, so the whole result rides on
+    `done` through `Invocation.outcome`. **No event type is added for it** — `events.py` and
+    `app/lib/events.ts` are untouched, so the cross-language event vocabulary does not have
+    to be renegotiated for a listing.
+
+    **The outcome is written only on success, and that is the difference from
+    `handle_preflight`.** Preflight seeds the *refusing* answer first, because
+    `scope_verified: false` is what a preflight that proved nothing means — it is a true
+    statement. Four empty dimensions is not: it is a claim that the subscription contains no
+    resource types, which Req 9.9 names as exactly the reading to avoid. So a failed listing's
+    `done` carries no dimension key at all, and the endpoint's "are the four keys present"
+    test answers correctly without having to correlate an `error` event with a terminal event.
+
+    The Azure import is **local to this function**, matching `handle_preflight`: an invocation
+    that is not a listing has no business paying for the SDK. Only the Resource Graph client
+    is built — `build_inventory_port` rather than `build_azure_ports` — because this command
+    touches no other service.
+    """
+    from reporting_agent.azure.clients import build_inventory_port
+    from reporting_agent.azure.credential import InvocationCredential
+    from reporting_agent.azure.inventory import (
+        INVENTORY_DIMENSIONS,
+        InventoryCollector,
+    )
+
+    context = invocation.context
+    subscription_id = context.get("subscription_id")
+    if not isinstance(subscription_id, str) or not subscription_id.strip():
+        raise ValueError(
+            "`context.subscription_id` is required by `list_inventory`: there is no scope "
+            "to enumerate without one, and no safe default for it."
+        )
+
+    credential = InvocationCredential(
+        tenant_id=context.get("tenant_id"),  # type: ignore[arg-type]
+        client_id=context.get("client_id"),  # type: ignore[arg-type]
+        client_secret=context.get("client_secret"),  # type: ignore[arg-type]
+    )
+    port, close_port = build_inventory_port(credential=credential)
+    try:
+        step = steps.start(
+            TOOL_COLLECT_INVENTORY,
+            label="Inventory",
+            status="Listing the subscription's resource types, groups and tags",
+        )
+        yield step
+        dimensions = await InventoryCollector(port).distinct_dimensions(
+            subscription_id=subscription_id.strip()
+        )
+        invocation.outcome.update(dimensions.to_plain_data())
+        yield steps.end(step["id"])
+    finally:
+        close_port()
+        credential.close()
+
+    logger.info(
+        "list_inventory completed: %s",
+        {
+            name: {
+                "count": len(getattr(dimensions, name).values),
+                "truncated": getattr(dimensions, name).truncated,
+            }
+            for name in INVENTORY_DIMENSIONS
+        },
+    )
+
+
 COMMAND_HANDLERS: Final[dict[str, CommandHandler]] = {
     COMMAND_GENERATE_REPORT: handle_generate_report,
     COMMAND_PREFLIGHT: handle_preflight,
     COMMAND_VERIFY_REPORT: handle_verify_report,
     COMMAND_RENDER_PREVIEW: handle_render_preview,
+    COMMAND_LIST_INVENTORY: handle_list_inventory,
 }
 
 

@@ -44,12 +44,17 @@ from reporting_agent.collect.accumulate import MetricAccumulator
 from reporting_agent.collect.log import (
     DECLARED_GAP_TYPES,
     FACT_GAP_TYPES,
+    GAP_TYPE_BACKUP_NOT_CONFIGURED,
     GAP_TYPE_INTERVAL_MALFORMED,
     GAP_TYPE_METRIC_NOT_EMITTED,
     GAP_TYPE_PERMISSION_DENIED,
     record_gap,
 )
-from reporting_agent.collect.snapshot import CONTENT_HASH_FIELD, SNAPSHOT_ID_FIELD
+from reporting_agent.collect.snapshot import (
+    CONTENT_HASH_FIELD,
+    SNAPSHOT_ID_FIELD,
+    SNAPSHOT_SCHEMA_VERSION,
+)
 from snapshot_factory import (
     SUBSCRIPTION_ID,
     build,
@@ -65,17 +70,31 @@ RESOURCE_ID: Final[str] = (
 CPU: Final[str] = "Percentage CPU"
 INTERVAL_START: Final[str] = "2026-07-01T03:00:00Z"
 
-# Computed against the tree at commit 09e9449, before `interval_start` existed, by
-# running `two_vm_snapshot()` / `snapshot_with_every_gap_type()` from a pristine
-# `git worktree`. Neither may change for as long as the gaps in those two fixtures carry
-# no interval. A change here is not a fixture to refresh — it means every archived
-# report's snapshot would now re-hash differently, which is the one thing an immutable
-# content-addressed document may not do.
+# The two fixtures' digests, pinned **at a stated `SNAPSHOT_SCHEMA_VERSION`**.
+#
+# A change here is not a fixture to refresh. It means every archived report's snapshot would
+# now re-hash differently, which is the one thing an immutable content-addressed document may
+# not do — so a moved digest is either a defect or a **declared shape bump**, and the two are
+# told apart by whether `SNAPSHOT_SCHEMA_VERSION` moved with it.
+#
+# History, kept because it is the evidence that each field addition was digest-neutral on its
+# own:
+#
+#   1.0.x  7fa6dc73…  /  cd0e1ccd…   computed at commit 09e9449 from a pristine `git worktree`
+#                                    before `interval_start` existed, and unchanged by
+#                                    `interval_start` and then by `source` — both omitted when
+#                                    absent, which is what kept them stable
+#   1.2.0  1e5c01fc…  /  bf5a9b24…   `resources[].facts` is emitted **always, including empty**
+#                                    (Req 4.6), so every digest moved at that bump by design
+#
+# `test_omitting_a_field_is_digest_neutral_whatever_the_schema_version` below asserts the part
+# of this that must hold forever, without a literal: the omission itself changes nothing.
+PINNED_AT_SCHEMA_VERSION: Final[str] = "1.2.0"
 TWO_VM_DIGEST: Final[str] = (
-    "7fa6dc73ed7130da755a8bad9763b7d0dca6db9bca8e84cc5388a0e9c312918b"
+    "1e5c01fca8a4c4911c220b0f22fde4000f28390c196d5da0018aa904928cf0fd"
 )
 EVERY_GAP_TYPE_DIGEST: Final[str] = (
-    "cd0e1ccd580d3fb2c0bf8ee5c8bf4467549683ec2778f1c07ff1c9cc5614f09f"
+    "bf5a9b24809c5675721f1e597b5d535a83c5b7db3ffeb91e992b4c44daf3be5a"
 )
 
 
@@ -175,9 +194,28 @@ def test_a_gap_carrying_no_interval_start_emits_no_such_key() -> None:
         assert None not in gap.values()
 
 
+def test_the_pinned_digests_are_pinned_at_the_current_schema_version() -> None:
+    """The guard on the two literals below.
+
+    They are absolute digests, so they move whenever the snapshot's *shape* changes — and a
+    shape change is legitimate exactly when `SNAPSHOT_SCHEMA_VERSION` is bumped to declare it.
+    This test is what makes the pair of facts inseparable: recomputing a literal without
+    bumping the version fails here, and so does bumping the version without recomputing.
+
+    Without it, "refresh the constant until the test goes green" would be an available and
+    invisible response to a genuine content-addressing defect.
+    """
+    assert PINNED_AT_SCHEMA_VERSION == SNAPSHOT_SCHEMA_VERSION, (
+        f"the digests below were pinned at snapshot schema {PINNED_AT_SCHEMA_VERSION} and the "
+        f"module now declares {SNAPSHOT_SCHEMA_VERSION}. If the shape change was deliberate, "
+        f"recompute both literals and move this constant in the same edit; if it was not, the "
+        f"digest change is the defect"
+    )
+
+
 def test_the_two_vm_snapshot_digest_is_unchanged_by_the_new_field() -> None:
-    """The literal was computed before `interval_start` existed. See the module
-    docstring on why it is a committed constant rather than a recomputed value."""
+    """The literal was computed before `interval_start` existed and has moved only once since,
+    at the declared `1.2.0` shape bump. See the constants above for the history."""
     document = two_vm_snapshot()
 
     assert document[CONTENT_HASH_FIELD] == TWO_VM_DIGEST
@@ -299,6 +337,64 @@ def test_adding_source_moved_neither_committed_digest() -> None:
     """
     assert two_vm_snapshot()[CONTENT_HASH_FIELD] == TWO_VM_DIGEST
     assert snapshot_with_every_gap_type()[CONTENT_HASH_FIELD] == EVERY_GAP_TYPE_DIGEST
+
+
+def test_omitting_a_field_is_digest_neutral_whatever_the_schema_version() -> None:
+    """The part of the two literals' claim that must hold **forever**, asserted without one.
+
+    The literals above are absolute, so a declared shape bump moves them and the history in the
+    constants is the only record that each field addition was neutral at the time. This is the
+    same claim in a form no bump can invalidate: a gap that carries `interval_start=None` and
+    `source=None` hashes identically to one whose dict never had those keys.
+
+    That equality is what "omitted when absent" *means*, and it is the property that keeps every
+    archived snapshot's digest reproducible across a field addition. A builder that emitted
+    either field as `null` would fail here at any schema version.
+    """
+    from reporting_agent.collect.snapshot import canonical_bytes
+
+    absent = canonical_bytes(
+        build(
+            resources=[vm(resource_id=RESOURCE_ID, name="prod-web-01")],
+            gaps=[
+                record_gap(
+                    GAP_TYPE_PERMISSION_DENIED, RESOURCE_ID, None, "403 on the resource"
+                )
+            ],
+        )
+    )
+
+    assert b'"interval_start"' not in absent
+    assert b'"source"' not in absent
+
+    # The positive control, without which the two assertions above would pass just as happily
+    # against a builder that emitted neither field under any circumstances — which is the
+    # "asserting an omission rather than an absence of implementation" trap the interval tests
+    # already guard against with their own digest-moves case.
+    present = canonical_bytes(
+        build(
+            resources=[vm(resource_id=RESOURCE_ID, name="prod-web-01")],
+            gaps=[
+                record_gap(
+                    GAP_TYPE_METRIC_NOT_EMITTED,
+                    RESOURCE_ID,
+                    CPU,
+                    "no count",
+                    INTERVAL_START,
+                ),
+                record_gap(
+                    GAP_TYPE_BACKUP_NOT_CONFIGURED,
+                    RESOURCE_ID,
+                    "last_backup_status",
+                    "no backup",
+                    source="recovery_services",
+                ),
+            ],
+        )
+    )
+
+    assert b'"interval_start"' in present
+    assert b'"source"' in present
 
 
 def test_a_gap_carrying_a_source_does_move_the_digest() -> None:

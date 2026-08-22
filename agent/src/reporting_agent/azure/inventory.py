@@ -94,7 +94,7 @@ from reporting_agent.collect.log import (
     record_gap,
 )
 from reporting_agent.collect.snapshot import rfc3339_utc
-from reporting_agent.errors import ThrottledError
+from reporting_agent.errors import AuthFailedError, ThrottledError
 from reporting_agent.providers.base import (
     DiscoverResult,
     GapRecord,
@@ -105,22 +105,73 @@ from reporting_agent.providers.base import (
 __all__ = [
     "DEALLOCATED_POWER_STATE_CODES",
     "DECLARED_POWER_STATES",
+    "DISTINCT_VALUE_LIMIT",
     "FALLBACK_WAIT_S",
+    "INVENTORY_DIMENSIONS",
     "MAX_CONSECUTIVE_FALLBACK_WAITS",
     "POWER_STATE_UNKNOWN",
     "RESOURCE_GRAPH_REQUEST_TARGET",
     "RESOURCE_GRAPH_SOURCE",
     "VIRTUAL_MACHINE_RESOURCE_TYPE",
+    "DimensionValues",
     "InventoryArchiveContext",
     "InventoryCollector",
+    "InventoryDimensions",
+    "ResourceGraphQueryError",
     "normalize_power_state",
     "parse_quota_remaining",
     "parse_reset_after",
+    "read_dimension",
 ]
 
 logger = logging.getLogger(__name__)
 
 Sleep = Callable[[float], Awaitable[None]]
+
+_THROTTLED_STATUS: Final[int] = 429
+_AUTH_STATUSES: Final[frozenset[int]] = frozenset({401, 403})
+
+
+class ResourceGraphQueryError(RuntimeError):
+    """A Resource Graph query answered with a status that names no actionable cause.
+
+    Deliberately **not** an `AgentError`: `main.run_invocation` reports an unhandled
+    exception as the runtime-defect code, and that is the honest label here. A `400` means
+    the KQL this package wrote is wrong and a `5xx` means Azure is unwell; presenting either
+    as `AUTH_FAILED` would send a consultant to rotate a secret that is fine, which is the
+    "specific enough to be believed and pointing at the wrong thing" failure
+    `main._row_error_code` records at length.
+    """
+
+    def __init__(self, status: int) -> None:
+        super().__init__(
+            f"the Azure Resource Graph query answered HTTP {status}, which names no "
+            f"cause a consultant can act on; the subscription's inventory was not listed "
+            f"and no dimension is reported"
+        )
+        self.status = status
+
+
+def _dimension_failure(status: int) -> Exception:
+    """The exception one unsuccessful dimensions response raises. **Pure.**
+
+    Separated from the call site so the mapping from status to code is a value a test can
+    assert per status rather than three branches reachable only through a fake port.
+    """
+    if status == _THROTTLED_STATUS:
+        return ThrottledError(
+            f"the Azure Resource Graph query for the subscription's distinct inventory "
+            f"dimensions answered HTTP {status}; the request was throttled and no "
+            f"dimension is reported."
+        )
+    if status in _AUTH_STATUSES:
+        return AuthFailedError(
+            f"the Azure Resource Graph query for the subscription's distinct inventory "
+            f"dimensions answered HTTP {status}. Reader at the subscription's own scope is "
+            f"what lists its inventory, so either the client secret or the role assignment "
+            f"is the thing to check."
+        )
+    return ResourceGraphQueryError(status)
 
 # --- the projection Req 20.1, 20.11 requires, as the field names the query returns --
 
@@ -323,6 +374,128 @@ def _string_field(row: Mapping[str, Any], field: str) -> str:
     return value if isinstance(value, str) else ""
 
 
+# --- the four picker dimensions (Req 9.1, 9.5) --------------------------------------
+
+DIMENSION_RESOURCE_TYPES: Final[str] = "resource_types"
+DIMENSION_RESOURCE_GROUPS: Final[str] = "resource_groups"
+DIMENSION_TAG_KEYS: Final[str] = "tag_keys"
+DIMENSION_TAG_VALUES: Final[str] = "tag_values"
+
+INVENTORY_DIMENSIONS: Final[tuple[str, ...]] = (
+    DIMENSION_RESOURCE_TYPES,
+    DIMENSION_RESOURCE_GROUPS,
+    DIMENSION_TAG_KEYS,
+    DIMENSION_TAG_VALUES,
+)
+"""The four dimensions Req 9.1 names — and the **three** names that would otherwise drift.
+
+One declaration serves as the column `azure/clients.distinct_dimensions_query` emits, the
+field :func:`read_dimension` looks for in the answer, and the key `list_inventory` puts on
+`done`. Three spellings that agree today is how a picker ends up silently empty for one
+dimension: the query renames a column, the reader finds nothing there, and "no resource
+groups in this subscription" is a perfectly plausible-looking answer.
+"""
+
+DISTINCT_VALUE_LIMIT: Final[int] = 2000
+"""Req 9.1's per-dimension bound: at most this many distinct values are returned.
+
+The query asks the service for one more than this (see `_MAKE_SET_LIMIT` there), because
+receiving `DISTINCT_VALUE_LIMIT + 1` is the only available evidence that the true set is
+larger — Resource Graph reports no total beside an aggregate. :func:`read_dimension` cuts
+back to this bound and sets `truncated`."""
+
+
+@dataclass(frozen=True, slots=True)
+class DimensionValues:
+    """One dimension's distinct values, and whether the bound cut them (Req 9.1).
+
+    `truncated` travels **with** the values rather than as a separate flag per response,
+    because it is a fact about this dimension alone: a subscription can carry three resource
+    types and forty thousand tag values, and a single response-level flag would either
+    understate the complete dimensions or overstate the cut one. The picker reads it per
+    dimension to decide whether to keep offering free entry (Req 9.6).
+    """
+
+    values: tuple[str, ...]
+    truncated: bool
+
+    def __post_init__(self) -> None:
+        if len(self.values) > DISTINCT_VALUE_LIMIT:
+            raise ValueError(
+                f"a dimension carries {len(self.values)} values, past Req 9.1's bound of "
+                f"{DISTINCT_VALUE_LIMIT}; the reader cuts to the bound and sets "
+                f"`truncated` rather than returning more than it promised"
+            )
+        if len(set(self.values)) != len(self.values):
+            raise ValueError(
+                "a dimension carries a repeated value; these are the *distinct* values "
+                "of one dimension, so a duplicate means the read folded two columns"
+            )
+        if list(self.values) != sorted(self.values):
+            raise ValueError(
+                "a dimension's values are not ascending in Unicode code-point order "
+                "(Req 9.1); the order is the picker's presentation order"
+            )
+
+    def to_plain_data(self) -> dict[str, Any]:
+        return {"values": list(self.values), "truncated": self.truncated}
+
+
+@dataclass(frozen=True, slots=True)
+class InventoryDimensions:
+    """The four dimensions one `distinct_dimensions` call resolved (Req 9.1).
+
+    Carries **no** subscription id, no tenant id, no client id and no resource id — not as a
+    filter applied on the way out, but because the query projected none of them and there is
+    no field here to hold one (Req 9.5).
+    """
+
+    resource_types: DimensionValues
+    resource_groups: DimensionValues
+    tag_keys: DimensionValues
+    tag_values: DimensionValues
+
+    def to_plain_data(self) -> dict[str, Any]:
+        """The four dimensions as the mapping `list_inventory` merges onto `done`.
+
+        Keyed by :data:`INVENTORY_DIMENSIONS` rather than by four literals, so a dimension
+        added to that tuple without a field here fails loudly instead of being absent from
+        the payload.
+        """
+        return {name: getattr(self, name).to_plain_data() for name in INVENTORY_DIMENSIONS}
+
+
+def read_dimension(row: Mapping[str, Any], name: str) -> DimensionValues:
+    """One dimension out of the aggregate row. **Pure.**
+
+    Three things happen here and each is a requirement rather than tidying:
+
+    * **Non-strings are dropped.** `make_set_if` over a `tostring(...)` projection yields
+      strings, but a `null` in a tag bag can still reach the array, and a `None` in a
+      picker's option list is an option a consultant can select and a run cannot collect.
+    * **Sorted ascending in Unicode code-point order** (Req 9.1). Python's `sorted` on `str`
+      compares code points, which is exactly the order named; the service returns an
+      aggregate set in no specified order, so this is where the order comes from.
+    * **Cut to :data:`DISTINCT_VALUE_LIMIT`, with `truncated` set from the count the service
+      returned.** The cut happens **after** the sort, so a truncated dimension is the
+      lexicographically first 2000 of what came back rather than an arbitrary 2000 of it.
+
+    An absent or non-array column reads as an empty, untruncated dimension. That is the one
+    place this function is deliberately lenient, and the leniency is bounded: `list_inventory`
+    reports nothing at all when the query itself did not answer, so an empty dimension here
+    means the query answered and this dimension is genuinely empty.
+    """
+    raw = row.get(name)
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        return DimensionValues(values=(), truncated=False)
+
+    unique = {value for value in raw if isinstance(value, str) and value}
+    truncated = len(unique) > DISTINCT_VALUE_LIMIT
+    return DimensionValues(
+        values=tuple(sorted(unique)[:DISTINCT_VALUE_LIMIT]), truncated=truncated
+    )
+
+
 RESOURCE_GRAPH_SOURCE: Final[str] = "resource_graph"
 """The fact-declaration `source` name for a projected fact (Req 4.7).
 
@@ -434,6 +607,7 @@ class InventoryCollector:
 
         resources: dict[str, ResourceRecord] = {}
         gaps: list[GapRecord] = []
+        pages: list[Any] = []
         skip_token: str | None = None
         consecutive_fallback_waits = 0
         page_index = 0
@@ -474,6 +648,11 @@ class InventoryCollector:
                 )
 
             self._fold_page(response.body, resources, gaps, fidelity_tier=fidelity_tier)
+            # Retained only where a fact was projected into the query, so a run with no fact
+            # declaration holds no page at all and the memory cost is exactly the cost of the
+            # feature that needs it (Req 4.7). `azure/facts.py` folds these.
+            if fact_projections:
+                pages.append(response.body)
 
             skip_token = next_token
             page_index += 1
@@ -484,7 +663,62 @@ class InventoryCollector:
                 response, consecutive_fallback_waits
             )
 
-        return DiscoverResult(resources=sort_inventory(resources.values()), gaps=gaps)
+        return DiscoverResult(
+            resources=sort_inventory(resources.values()),
+            gaps=gaps,
+            inventory_pages=pages,
+        )
+
+    async def distinct_dimensions(self, *, subscription_id: str) -> InventoryDimensions:
+        """The four picker dimensions, from **one** Resource Graph query (Req 9.1, 9.5).
+
+        One call to the port and no loop: the query aggregates with no `by` clause, so the
+        answer is a single row and there is no continuation token to follow. Req 9.2's "one
+        query per cache miss" is therefore a property of this method's shape.
+
+        Nothing is archived and no gap is recorded. This is not a collection: it feeds three
+        pickers in the template wizard, produces no snapshot, no figure and no run row, and
+        an object written under a run prefix for it would be an archive entry no replay folds
+        anything from.
+
+        **A response that did not succeed raises rather than returning four empty
+        dimensions.** Four empty dimensions is a claim about the subscription — Req 9.9's
+        "an empty option list a consultant would read as an empty subscription" — and the one
+        thing a failed query does not license is a claim about what is in there. The three
+        cases are told apart because they call for different actions:
+
+        * `429` raises :class:`ThrottledError`, the retryable code, so the wizard can say
+          "try again" rather than "we could not read this subscription".
+        * `401` and `403` raise :class:`AuthFailedError`, which is the code that means the
+          credentials or the role assignment are wrong — the thing a consultant can fix.
+        * every other non-2xx raises :class:`ResourceGraphQueryError`, which the router
+          reports as the runtime-defect code. A `400` from Resource Graph is a defect in the
+          KQL **this module wrote**, and a `500` is Azure's; neither is an expired secret, and
+          `main._row_error_code`'s own recorded lesson is that presenting a specific wrong
+          code is worse than presenting the general right one. A consultant sent to rotate a
+          working secret by a transient 503 is exactly that failure.
+        """
+        if not isinstance(subscription_id, str) or not subscription_id.strip():
+            raise ValueError("subscription_id must be a non-empty string")
+
+        response = await self._port.query_distinct_dimensions(
+            subscription_id=subscription_id
+        )
+        if not response.ok:
+            raise _dimension_failure(response.status)
+
+        rows = _rows_from_body(response.body)
+        # An aggregate over an empty `Resources` table returns **no row at all**, not a row
+        # of empty sets — an entirely empty subscription is a real case (Req 9.9 routes it to
+        # the free-entry fallback rather than treating it as an error), so an absent row reads
+        # as four empty dimensions rather than as a malformed answer.
+        row = rows[0] if rows else {}
+        return InventoryDimensions(
+            resource_types=read_dimension(row, DIMENSION_RESOURCE_TYPES),
+            resource_groups=read_dimension(row, DIMENSION_RESOURCE_GROUPS),
+            tag_keys=read_dimension(row, DIMENSION_TAG_KEYS),
+            tag_values=read_dimension(row, DIMENSION_TAG_VALUES),
+        )
 
     async def _archive_page(
         self,

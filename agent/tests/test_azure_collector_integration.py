@@ -59,6 +59,7 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
     raw_response_from_recorded,
 )
 from fakes.object_store import InMemoryObjectStore
@@ -319,6 +320,7 @@ class Collector:
             sku_port=self.sku_port,
             definitions_port=self.definitions_port,
             metrics_port=self.metrics_port,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,

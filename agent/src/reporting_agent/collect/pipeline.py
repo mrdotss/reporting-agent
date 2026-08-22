@@ -97,6 +97,7 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from datetime import tzinfo as TzInfo
 from decimal import Decimal, InvalidOperation
+from types import MappingProxyType
 from typing import Any, Final, Protocol, runtime_checkable
 
 from reporting_agent.catalog.loader import (
@@ -124,6 +125,7 @@ from reporting_agent.collect.log import (
     record_gap,
 )
 from reporting_agent.collect.snapshot import (
+    FactEntry,
     ResourceDayBucket,
     ResourceSnapshot,
     SkuCapacity,
@@ -146,6 +148,10 @@ from reporting_agent.providers.base import (
     GUEST_STATUS_EMPTY,
     GUEST_STATUS_OK,
     CollectRequest,
+    DiscoverResult,
+    FactCollectingProvider,
+    FactRecord,
+    FactRequest,
     GapRecord,
     GuestCounterOutcome,
     GuestCounterProvider,
@@ -176,6 +182,7 @@ __all__ = [
     "assert_some_location_reachable",
     "assert_some_statistic",
     "distinct_resource_ids",
+    "fact_from_plain",
     "resolve_run_plan",
     "run_collection",
     "run_generate_report",
@@ -606,6 +613,32 @@ def _scale_of(text: str) -> int:
     """The scale a decimal string was rendered at: its count of fractional digits."""
     _, _, fraction = text.partition(".")
     return len(fraction)
+
+
+def fact_from_plain(record: FactRecord) -> FactEntry:
+    """One `FactRecord` back as the `FactEntry` the snapshot carries (Req 4.1-4.6).
+
+    The fact-side counterpart of :func:`statistic_from_plain`, and a much thinner one: there
+    is nothing to override and nothing to re-render. A fact's `value` is already its own
+    display form — a `text` fact is the string the API returned and a `numeric` fact arrives
+    as the fixed-precision decimal string `collect/factfold.py` produced — so `formatted` is
+    that same string, character for character, and `FactEntry.__post_init__` refuses any other
+    relationship between the two.
+
+    Nothing is defaulted. A record missing its `source`, its `value_kind` or its `collected_at`
+    reaches `FactEntry`, which raises and writes no snapshot object (Req 4.4): a fact whose
+    provenance is absent is an assertion rather than an observation, and substituting a
+    plausible value here is precisely how one would become the other.
+    """
+    return FactEntry(
+        key=record["key"],
+        value=record["value"],
+        value_kind=record["value_kind"],
+        source=record["source"],
+        collected_at=record["collected_at"],
+        formatted=record["value"],
+        unit=record.get("unit"),
+    )
 
 
 def statistic_from_plain(value: StatValue, *, fidelity_tier: str) -> StatisticEntry:
@@ -1196,6 +1229,10 @@ async def _drive(
     """
     active = provider
     loaded = catalog
+    # Read **before** the first request, so every fact this run collects is stamped at or after
+    # it. Reading it beside the snapshot build instead would produce a lower bound later than
+    # the facts it is supposed to contain, and the check would reject every correct run.
+    invocation_started_at = now()
 
     await _report(progress, PHASE_COLLECTING, label="Inventory")
 
@@ -1219,6 +1256,25 @@ async def _drive(
 
     # --- the empty-scope gate, before anything is requested or written (Req 33.5) ----
     assert_scope_not_empty(plan, resources)
+
+    # --- facts, between inventory and metrics (Req 4.7, 4.8, 4.9) --------------------
+    #
+    # Here for two reasons, and the second is the one that decided it. It is **after** the
+    # empty-scope gate, because the gate's promise is that nothing is requested for a run
+    # that resolved to zero resources and this pass issues requests. And it is **before**
+    # metrics, because the per-subscription budget of 8 is uncontended at this moment: two
+    # to six requests cost seconds, where the same requests interleaved with the metric
+    # fan-out would each wait behind a batch and extend the critical path of an 8-to-12
+    # minute run.
+    #
+    # No `tool` step of its own. The activity timeline's step vocabulary is a UI contract
+    # (`AGENTCORE_INTEGRATION.md` names six), and a pass that finishes in seconds would
+    # render as a step that flickers — the honest presentation of something this short is
+    # nothing at all.
+    facts_by_resource, fact_gaps = await _collect_facts(
+        provider=active, plan=plan, resources=resources, discovered=discovered
+    )
+    gaps.extend(fact_gaps)
 
     metrics_by_resource_type = _requested_metrics(active, plan.scope, metric_selection)
     gaps.extend(_metric_not_selected_gaps(resources, metrics_by_resource_type))
@@ -1281,11 +1337,17 @@ async def _drive(
             capacities=collected.get("sku_capacities") or {},
             tiers=tiers,
             guest_entries=guest_entries,
+            facts_by_resource=facts_by_resource,
         ),
         gaps=gaps,
         catalog_version=loaded.catalog_version,
         raw_archive_complete=archive_complete,
         raw_archive_object_count=_archive_object_count(archive),
+        # Req 4.13's lower bound on every fact's `collected_at`, read once at the top of this
+        # function rather than here: a bound read after the collection would be later than the
+        # facts it is meant to contain. See `_assert_facts_are_collectable` on why the
+        # invocation instant stands in for `claimed_at` and why that is strictly tighter.
+        invocation_started_at=invocation_started_at,
     )
     written = await write_once(store, document, actor_id=plan.actor_id, run_id=plan.run_id)
     if not written:
@@ -1335,6 +1397,55 @@ async def _drive(
 # --- assembly helpers ----------------------------------------------------------------
 
 
+async def _collect_facts(
+    *,
+    provider: Provider,
+    plan: RunPlan,
+    resources: Sequence[ResourceRecord],
+    discovered: DiscoverResult,
+) -> tuple[dict[str, tuple[FactEntry, ...]], list[GapRecord]]:
+    """The fact pass, or nothing at all (Req 4.7, 4.8, 4.12).
+
+    A provider with no fact surface records **no fact and no gap and issues no request** —
+    Req 4.12 declares an empty `facts` collection an ordinary canonical form, so a provider
+    that cannot collect one is not a provider that has to fail. That is the same shape
+    `_resolve_fidelity` takes against `GuestCounterProvider`, and for the same reason: a
+    fourth required method on `Provider` would break every conforming implementation for a
+    capability two of the three do not have.
+
+    `FactEntry`'s own `__post_init__` is the gate on each record, and it raises — which is
+    correct and is why it runs **here** rather than inside the provider: a fact carrying no
+    source or an unparseable numeric value is a defect in this runtime's own derivation, not
+    a fact about the subscription, and Req 4.4 requires no snapshot object to be written for
+    one. The bounds Req 5.4 makes a *collection* outcome are applied one layer earlier, in
+    `azure/facts.py`, so an over-long value costs a cell rather than the run.
+    """
+    if not isinstance(provider, FactCollectingProvider):
+        logger.info(
+            "the provider exposes no fact surface; every resource carries an empty facts "
+            "collection and no fact request was issued."
+        )
+        return {}, []
+
+    result = await provider.collect_facts(
+        FactRequest(
+            resources=list(resources),
+            inventory_pages=list(discovered.get("inventory_pages") or ()),
+            subscription_id=plan.scope["subscription_id"],
+        )
+    )
+
+    by_resource: dict[str, list[FactEntry]] = {}
+    for record in result["facts"]:
+        by_resource.setdefault(record["resource_id"], []).append(
+            fact_from_plain(record)
+        )
+    return (
+        {resource_id: tuple(entries) for resource_id, entries in by_resource.items()},
+        list(result["gaps"]),
+    )
+
+
 def _resource_snapshots(
     *,
     plan: RunPlan,
@@ -1344,6 +1455,7 @@ def _resource_snapshots(
     capacities: Mapping[str, SkuCapacityRecord],
     tiers: Mapping[str, str],
     guest_entries: Mapping[str, tuple[StatisticEntry, ...]],
+    facts_by_resource: Mapping[str, tuple[FactEntry, ...]] = MappingProxyType({}),
 ) -> list[ResourceSnapshot]:
     """Every resource as the Snapshot_Builder takes it (Req 29.8, 31.1, 31.2, 35.3).
 
@@ -1398,6 +1510,12 @@ def _resource_snapshots(
                 ),
                 statistics=tuple(entries),
                 day_buckets=buckets,
+                # Req 4.10, 4.12 — **every** resource carries a `facts` collection, and a
+                # resource whose statistics are absent still carries its configuration: a
+                # deallocated VM's size and OS are facts about it whatever it measured. The
+                # default is the empty tuple rather than an absent key, which Req 4.12 makes
+                # a different canonical form.
+                facts=facts_by_resource.get(resource_id, ()),
             )
         )
     return built

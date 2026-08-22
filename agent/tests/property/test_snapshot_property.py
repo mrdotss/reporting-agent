@@ -1006,6 +1006,7 @@ def built_snapshots(draw: st.DrawFn) -> dict[str, PlainData]:
     window = resolve_window(date(2026, 7, 1), date(2026, 7, 31), _JAKARTA)
 
     return build_snapshot(
+        invocation_started_at=None,
         run_id=draw(st.text(alphabet=_ASCII_KEY_ALPHABET, min_size=1, max_size=8)),
         scope=scope,
         scope_verified=True,

@@ -136,8 +136,35 @@ export const FOUNDATION_PROPERTIES: readonly PropertyDeclaration[] = [
   },
 ]
 
+/**
+ * The **breadth-and-document** spec's web-side properties, keyed by *its* property numbers.
+ *
+ * A third record rather than more entries in {@link SPEC_PROPERTIES}, because the two specs
+ * number their properties independently and both reach 9: the templates spec's Property 9 is
+ * period resolution and this one's is the number-format defaults. Merging them would need one
+ * of the two renumbered, which would make every cross-reference in the other spec's design
+ * document wrong — and a key collision in an object literal loses one silently, which is the
+ * worse of the two outcomes by far.
+ *
+ * `declaredProperties()` folds all three together, so the completeness gates read one set and
+ * a module belonging to no property still fails whichever spec introduced it.
+ */
+export const BREADTH_PROPERTIES: Readonly<Record<number, PropertyDeclaration>> =
+  {
+    9: {
+      label: "breadth Property 9",
+      title:
+        "The number-format defaults are language-derived and never overwrite a declaration",
+      modules: ["test/property/number-format-defaults.property.test.ts"],
+    },
+  }
+
 export function declaredProperties(): readonly PropertyDeclaration[] {
-  return [...Object.values(SPEC_PROPERTIES), ...FOUNDATION_PROPERTIES]
+  return [
+    ...Object.values(SPEC_PROPERTIES),
+    ...Object.values(BREADTH_PROPERTIES),
+    ...FOUNDATION_PROPERTIES,
+  ]
 }
 
 /**
@@ -165,6 +192,7 @@ export const MINIMUM_EXECUTIONS: Readonly<Record<string, number>> = {
   "lib/templates/definition.property.test.ts": 5,
   "lib/templates/period.property.test.ts": 6,
   "lib/templates/version.property.test.ts": 6,
+  "test/property/number-format-defaults.property.test.ts": 9,
 }
 
 /** The declared property that claims this module, if any claims it. */
@@ -266,7 +294,17 @@ export function readLedger(): readonly Execution[] {
 
 const PROPERTY_MODULE_SUFFIX = ".property.test.ts"
 
-const SEARCH_DIRECTORIES = ["lib", "app", "components", "hooks"] as const
+// Mirrors `PROPERTY_SEARCH_DIRECTORIES` in `test/property-hygiene.static.test.ts`. The two
+// walks are deliberately independent — this one classifies, that one scans — but a directory
+// present in only one of them splits the guarantee: a module under `test/property/` would be
+// scanned for hygiene and yet counted as "declared but absent from disk" here, or the reverse.
+export const SEARCH_DIRECTORIES = [
+  "lib",
+  "app",
+  "components",
+  "hooks",
+  "test",
+] as const
 
 const EXCLUDED_DIRECTORIES = new Set(["node_modules", ".next"])
 

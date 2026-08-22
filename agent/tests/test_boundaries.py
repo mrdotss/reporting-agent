@@ -1978,6 +1978,312 @@ def test_the_toc_approach_scan_permits_the_constants_and_unrelated_none(
 
 
 # --------------------------------------------------------------------------- #
+# Rule 13 — no bare suppression on the path from a fact response to the snapshot
+# --------------------------------------------------------------------------- #
+#
+# Req 5.7, and it is a **build**-time requirement rather than a review note: "the
+# Build_Pipeline SHALL fail IF a module on the path from a fact response to the
+# Snapshot_Builder declares an exception handler whose body records no typed gap and
+# re-raises no exception."
+#
+# The failure it forecloses is the one this whole spec is arranged against. A fact-collection
+# failure that is swallowed leaves no hole a reader can see: the fact is simply absent from the
+# document, and an absent configuration cell reads exactly like a configured one with nothing
+# to report. `except Exception: pass` around a backup lookup is how "backup: —" reaches a page
+# nobody can distinguish from "no backup configured".
+#
+# The rule is deliberately **narrow and structural**: a handler must either record a typed gap
+# — a `record_gap` call, or one of the declared wrappers around it — or leave by `raise`.
+# Logging is not enough on its own, because a log line is not on the artifact a customer reads.
+FACT_PATH_MODULES = frozenset(
+    {
+        # The collector: three sources, and the module that decides what each answer covers.
+        "azure/facts.py",
+        # The fold: every value and every absence between a response and a `FactRecord`.
+        "collect/factfold.py",
+        # The one numeric-leaf reader, shared with the metric path (rule 11).
+        "collect/numeric.py",
+        # The pipeline hands each `FactRecord` to `FactEntry`, and the Snapshot_Builder is the
+        # far end of the path this rule names.
+        "collect/pipeline.py",
+        "collect/snapshot.py",
+    }
+)
+"""Every module a fact travels through, from a response to the hashed document.
+
+Deliberately **not** `azure/clients.py`: a port builds a request and wraps an answer, and its
+one handler rebuilds a rejected `HttpResponseError` into an envelope the caller reads as
+"not ok" — which is neither a gap nor a re-raise, and is correct, because the classification
+happens one layer up in `azure/facts.py` where this rule does apply. Nor `collect/archive.py`,
+whose handler does record a gap but which is on the *archive* path rather than between a fact
+response and the snapshot; task 4.4's `"facts"` kind is what puts it on this one."""
+
+GAP_RECORDING_CALLS: tuple[str, ...] = ("record_gap", "_unavailable", "_absent")
+"""What counts as "records a typed gap" inside a handler body.
+
+`record_gap` is the one gate every gap passes through — `collect/log.py` raises for an
+undeclared type — and the two underscored names are `collect/factfold.py`'s own wrappers
+around it. Declared by name rather than resolved, because this is a syntactic guard: a scan
+that tried to prove a call eventually reaches `record_gap` would be a type checker, and one
+that accepted any call at all would accept `logger.warning`."""
+
+
+FACT_PATH_HANDLER_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
+    {
+        # `decimal_leaf` **is** on the fact path, and its handler returns `None` — the one
+        # declared spelling of "this leaf is absent". The gap is recorded one frame up, by
+        # `collect/factfold._fold_one`, which turns that `None` into `fact_unavailable`. So the
+        # failure is not converted into a *value*; it is converted into the absence the caller
+        # is obliged to classify. `test_a_leaf_that_does_not_parse_still_reaches_a_typed_gap`
+        # asserts that obligation is met, so this exemption rests on a behavioural assertion
+        # rather than on this comment.
+        ("collect/numeric.py", "decimal_leaf"),
+        # Teardown, after the snapshot is written. An exception here would replace a real
+        # terminal error with a cleanup one, and there is no fact in scope to record a gap
+        # against.
+        ("collect/pipeline.py", "_close_quietly"),
+        # The **guest-counter** path, not the fact path: an unreadable Log Analytics row is
+        # governed by Req 31.7, which requires the resource to be downgraded to `baseline`
+        # rather than a gap recorded here.
+        ("collect/pipeline.py", "_fold_guest_rows"),
+        # The package's own version, read once at import. Not a response at all.
+        ("collect/snapshot.py", "_agent_version"),
+    }
+)
+"""The handlers on the declared modules that are exempt, each by enclosing function and each
+for a stated reason.
+
+An exemption list rather than a narrower module set, because the alternative is worse in both
+directions: declaring only `azure/facts.py` and `collect/factfold.py` would drop
+`collect/numeric.py` — genuinely on the path — out of the rule, while declaring the whole
+`collect` package would exempt nothing and the rule would be deleted the first time it fired.
+
+Keyed by `(module, function)` and **not** by line number, so an exemption survives an edit
+above it. The residual looseness is that a *second* handler added to an already-exempt
+function inherits the pass; it is bounded by these four functions being short and none of them
+being where a fact response is read.
+
+The set is asserted **equal** to the offenders the scan finds, not merely a superset of them —
+so an exemption kept after its handler learnt to record a gap fails as loudly as a missing one.
+That equality is what caught three entries this list originally carried for handlers that
+already re-raise: `_local_date`, `statistic_from_plain` and `_parse_rfc3339` never needed
+exempting, and claiming they did would have hidden a real regression in any of them."""
+
+
+def _handler_offenders(
+    modules: Iterable[Path],
+    exemptions: frozenset[tuple[str, str]] = frozenset(),
+) -> list[str]:
+    """Every `except` handler whose body neither records a typed gap nor raises.
+
+    Reported as `<module>:<line> in <function>`, because the enclosing function is what an
+    exemption is keyed on — a line number would go stale on the next edit above it.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        label = _label(path)
+        relative = label.removeprefix("src/reporting_agent/")
+        for enclosing, handler in _handlers_with_enclosing_function(_parse(path)):
+            if _records_a_gap_or_raises(handler):
+                continue
+            if (relative, enclosing) in exemptions:
+                continue
+            offenders.append(f"{label}:{handler.lineno} in {enclosing}")
+    return offenders
+
+
+def _handlers_with_enclosing_function(
+    tree: ast.AST,
+) -> list[tuple[str, ast.ExceptHandler]]:
+    """Every handler in the module, paired with the name of the function it sits in.
+
+    `<module>` for a handler at module scope, and the **innermost** enclosing function for a
+    nested one, which is the granularity an exemption should be expressible at.
+    """
+    found: list[tuple[str, ast.ExceptHandler]] = []
+
+    def walk(node: ast.AST, enclosing: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef):
+                walk(child, child.name)
+                continue
+            if isinstance(child, ast.ExceptHandler):
+                found.append((enclosing, child))
+            walk(child, enclosing)
+
+    walk(tree, "<module>")
+    return found
+
+
+def _records_a_gap_or_raises(handler: ast.ExceptHandler) -> bool:
+    """Whether this handler's **own** body records a gap or raises.
+
+    A nested handler's subtree is skipped, which is what makes the claim above true rather
+    than merely intended: `except Exception:` wrapping an inner `try` that re-raises still
+    swallows at the outer level, and an `ast.walk` over the whole body would read the inner
+    `raise` as the outer handler's own.
+    """
+    pending: list[ast.AST] = list(handler.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.Raise):
+            return True
+        if (
+            isinstance(node, ast.Call)
+            and _handler_call_name(node.func) in GAP_RECORDING_CALLS
+        ):
+            return True
+        pending.extend(
+            child for child in ast.iter_child_nodes(node)
+            if not isinstance(child, ast.ExceptHandler)
+        )
+    return False
+
+
+def _handler_call_name(func: ast.expr) -> str:
+    """A call target's trailing segment. Named apart from `_called_name` above on purpose:
+    that one takes the `Call` and this one takes its `func`, and one name for both is how a
+    rule silently starts scanning for the wrong thing."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ""
+
+
+def _fact_path_modules(root: Path = SRC_ROOT) -> list[Path]:
+    return sorted(p for p in (root / rel for rel in FACT_PATH_MODULES) if p.is_file())
+
+
+def test_the_fact_path_is_walked_and_every_declared_module_exists() -> None:
+    """A guard that passes by scanning nothing is the first failure mode to rule out — and for
+    this rule a *missing* declared module is a real regression rather than a rename to
+    tolerate, because every one of them is a module this spec creates or extends."""
+    walked = _fact_path_modules()
+    assert len(walked) == len(FACT_PATH_MODULES), sorted(
+        rel for rel in FACT_PATH_MODULES if not (SRC_ROOT / rel).is_file()
+    )
+    assert any(
+        isinstance(node, ast.ExceptHandler)
+        for path in walked
+        for node in ast.walk(_parse(path))
+    ), "no handler anywhere on the fact path, so the rule would pass vacuously"
+
+
+def test_no_module_on_the_fact_path_suppresses_an_exception_bare() -> None:
+    """Req 5.7 — the rule itself."""
+    offenders = _handler_offenders(
+        _fact_path_modules(), exemptions=FACT_PATH_HANDLER_EXEMPTIONS
+    )
+    assert not offenders, (
+        "these handlers neither record a typed gap nor re-raise, so a fact-collection "
+        "failure they catch becomes an absent cell a reader cannot distinguish from a "
+        f"configured one: {offenders}"
+    )
+
+
+def _reported_handlers(modules: Iterable[Path]) -> set[tuple[str, str]]:
+    """Every `(module, function)` the rule would report, exemptions **not** applied."""
+    return {
+        (_label(path).removeprefix("src/reporting_agent/"), enclosing)
+        for path in modules
+        for enclosing, handler in _handlers_with_enclosing_function(_parse(path))
+        if not _records_a_gap_or_raises(handler)
+    }
+
+
+def _exemption_drift(
+    declared: frozenset[tuple[str, str]], reported: set[tuple[str, str]]
+) -> dict[str, list[tuple[str, str]]]:
+    """Both directions of disagreement between the exemption list and the scan. **Pure.**
+
+    A function rather than an inline set comparison so the comparison itself is testable — a
+    superset check would satisfy the assertion below on today's tree, and the direction it
+    silently drops is the one that matters.
+    """
+    return {
+        "exempt but no longer an offender": sorted(declared - reported),
+        "an offender and not exempt": sorted(reported - declared),
+    }
+
+
+def test_every_declared_exemption_names_a_handler_that_is_still_there() -> None:
+    """A stale exemption is worse than none: it reads as a considered decision while
+    exempting nothing, and the next handler added to that function inherits the pass.
+
+    Both directions — see :func:`_exemption_drift`.
+    """
+    drift = _exemption_drift(
+        FACT_PATH_HANDLER_EXEMPTIONS, _reported_handlers(_fact_path_modules())
+    )
+    assert not any(drift.values()), drift
+
+
+@pytest.mark.parametrize(
+    ("declared", "reported", "expected"),
+    [
+        # A stale exemption: the direction a superset check would silently drop.
+        (
+            frozenset({("a.py", "f"), ("b.py", "g")}),
+            {("a.py", "f")},
+            "exempt but no longer an offender",
+        ),
+        # A new offender nobody exempted.
+        (
+            frozenset({("a.py", "f")}),
+            {("a.py", "f"), ("b.py", "g")},
+            "an offender and not exempt",
+        ),
+    ],
+)
+def test_the_drift_comparison_catches_both_directions(
+    declared: frozenset[tuple[str, str]],
+    reported: set[tuple[str, str]],
+    expected: str,
+) -> None:
+    drift = _exemption_drift(declared, reported)
+    assert drift[expected], drift
+    assert not _exemption_drift(declared, set(declared))["an offender and not exempt"]
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "try:\n    x = 1\nexcept Exception:\n    pass\n",
+        "try:\n    x = 1\nexcept ValueError:\n    x = 0\n",
+        "try:\n    x = 1\nexcept Exception as exc:\n    logger.warning('%s', exc)\n",
+        "def f():\n    try:\n        x = 1\n    except Exception:\n        return None\n",
+        # Evidence inside a *nested* handler does not acquit the outer one.
+        "try:\n    x = 1\nexcept Exception:\n    try:\n        y = 2\n"
+        "    except Exception:\n        raise\n",
+    ],
+)
+def test_the_handler_scan_detects_a_bare_suppression(tmp_path: Path, source: str) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _handler_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "try:\n    x = 1\nexcept Exception:\n    raise\n",
+        "try:\n    x = 1\nexcept Exception as exc:\n    raise ValueError('x') from exc\n",
+        "try:\n    x = 1\nexcept Exception:\n    gaps.append(record_gap('a', 'b', None, 'c'))\n",
+        "def f():\n    try:\n        x = 1\n    except Exception:\n"
+        "        return _unavailable(entry, rid, 'why')\n",
+        "def f():\n    try:\n        x = 1\n    except Exception:\n"
+        "        return _absent(entry, rid)\n",
+        # Logging **beside** a gap is fine; it is logging *instead* of one that is not.
+        "try:\n    x = 1\nexcept Exception as exc:\n    logger.warning('%s', exc)\n"
+        "    gaps.append(record_gap('a', 'b', None, 'c'))\n",
+    ],
+)
+def test_the_handler_scan_permits_a_gap_or_a_raise(tmp_path: Path, source: str) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _handler_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
 # Rule 10 — no rule above may pass by scanning nothing
 # --------------------------------------------------------------------------- #
 #
@@ -2085,6 +2391,7 @@ def test_every_package_the_rules_name_is_in_the_guarded_set() -> None:
         SDK_ROOT_SEGMENT,
         VERIFY_PACKAGE.name,
         *{relative.split("/", 1)[0] for relative in SNAPSHOT_PATH_MODULES},
+        *{relative.split("/", 1)[0] for relative in FACT_PATH_MODULES},
         *{
             relative.split("/", 1)[0]
             for relative in (

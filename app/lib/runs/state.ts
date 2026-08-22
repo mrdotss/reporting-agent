@@ -183,7 +183,7 @@ export const AGENT_ERROR_CODES: ReadonlySet<RunErrorCode> = Object.freeze(
  * | `claimed` | 300 | claimed-but-not-collecting means the container never started; five minutes covers a cold start on an arm64 image |
  * | `collecting` | 1800 | the 8-to-12-minute p99 run duration plus at least 900 seconds of headroom, so an ordinary slow month is not reaped mid-flight |
  * | `compiling` | 300 | pure computation over a snapshot already in memory; five minutes is generous for 200 blocks |
- * | `rendering` | 600 | LibreOffice conversion is bounded at 300 seconds on its own, and the emit precedes it |
+ * | `rendering` | 900 | **two** LibreOffice conversions, each bounded at 300 seconds, and the emit precedes both |
  * | `verifying` | 600 | the verifier reads the whole document twice, and replay re-runs the aggregation over the raw archive |
  *
  * Every non-terminal status now carries a budget, so a row can no longer sit in
@@ -191,6 +191,28 @@ export const AGENT_ERROR_CODES: ReadonlySet<RunErrorCode> = Object.freeze(
  * on purpose — {@link phaseDeadlineFor} returns `null` for them, which is
  * Requirement 38.12's "clear `phase_deadline`": a finished run must never be
  * swept.
+ *
+ * ## Why `rendering` is 900 and not 600
+ *
+ * The table of contents is produced by the **two-pass** approach
+ * (`agent/src/reporting_agent/render/toc.py`'s `ADOPTED_APPROACH`, and
+ * `agent/evidence/toc/evaluation.json` for the measurement that chose it): the
+ * document is emitted with no page numbers, converted, measured to find which
+ * page each heading landed on, re-emitted with those numbers, and converted
+ * **again**. Two conversions, each bounded at 300 seconds by
+ * `render/pdf.py`'s `CONVERT_TIMEOUT_S`, and they are **serialized** — they
+ * contend on the single LibreOffice profile the image pre-warms — so the worst
+ * case is additive rather than concurrent.
+ *
+ * At 600 the budget equalled the two conversion ceilings exactly and left
+ * nothing for the emit that precedes each of them, so a rendering phase
+ * behaving correctly at its own limits would be reaped as `TIMEOUT` — the
+ * reaper reporting a deadline breach for a run that was working. 900 is the two
+ * ceilings plus 300 seconds for the two emits and the measurement between them.
+ *
+ * This budget moves **with** that adoption and not before it: the other two
+ * candidates convert once, and if `ADOPTED_APPROACH` were ever returned to
+ * `none` or to a single-conversion candidate, this would go back to 600.
  */
 export const PHASE_DEADLINE_SECONDS: Readonly<
   Partial<Record<RunStatus, number>>
@@ -199,7 +221,7 @@ export const PHASE_DEADLINE_SECONDS: Readonly<
   claimed: 300,
   collecting: 1800,
   compiling: 300,
-  rendering: 600,
+  rendering: 900,
   verifying: 600,
 })
 

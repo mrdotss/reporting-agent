@@ -85,6 +85,7 @@ from reporting_agent.errors import CompileFailedError
 
 __all__ = [
     "ANCHOR_ID_MAX_LENGTH",
+    "CELL_TYPES",
     "CHART_ENCODINGS",
     "CHART_ID_PREFIX",
     "CHART_TYPES",
@@ -93,8 +94,10 @@ __all__ = [
     "MAX_LAYOUT_COLUMNS",
     "MIN_LAYOUT_COLUMNS",
     "NUMERIC_ANNOTATION_NAMES",
+    "PRIOR_RUNS_POINTER_PREFIX",
     "REQUIRED_NODE_NAMES",
     "TABLE_ID_PREFIX",
+    "TEXT_FACT_ADMITTING_ANNOTATIONS",
     "AstInvariantError",
     "Block",
     "Cell",
@@ -120,6 +123,8 @@ __all__ = [
     "Table",
     "Text",
     "TextCell",
+    "TextFact",
+    "TextFactCell",
     "assert_numeric_leaf_invariant",
     "chart_id",
     "child_nodes",
@@ -178,6 +183,13 @@ ANCHOR_ID_MAX_LENGTH: Final[int] = 255
 
 MIN_LAYOUT_COLUMNS: Final[int] = 2
 MAX_LAYOUT_COLUMNS: Final[int] = 3
+
+PRIOR_RUNS_POINTER_PREFIX: Final[str] = "/prior_runs"
+"""Where a historical-trend figure's `snapshot_path` addresses another run (Req 18.9).
+
+Declared as a constant because two things compare against it — `Figure.__post_init__` and the
+resolver that indexes a prior run's values — and a prefix spelled twice is a prefix that
+eventually differs in one of the two places."""
 
 CHART_TYPES: Final[tuple[str, ...]] = ("bar", "hbar", "line", "area", "heatmap")
 CHART_ENCODINGS: Final[tuple[str, ...]] = ("categorical", "sequential")
@@ -390,6 +402,24 @@ class Figure:
     estimator_label: str | None = None
     derived_from: tuple[FigureSource, ...] = field(default_factory=tuple)
     formula: str | None = None
+    source_run_id: str | None = None
+    """The **prior** run this figure was read from, for a historical-trend series (Req 18.9).
+
+    `None` for every figure compiled from this run's own snapshot, which is all of them today.
+    A figure whose `snapshot_path` points under `/prior_runs/<id>` carries the matching run id,
+    and `__post_init__` asserts the two agree — so a figure cannot claim a position in another
+    run's snapshot while presenting as this run's own.
+
+    `str | None`, so the numeric-annotation scan is unaffected: a run id is an identifier and
+    not a quantity, and this class is already the one dataclass permitted to mention a number
+    anyway. Declaring it as a string keeps that permission from being needed for a field that
+    does not want it."""
+    source_snapshot_sha256: str | None = None
+    """The digest of the snapshot `source_run_id` names (Req 18.9).
+
+    Required whenever `source_run_id` is present, and that pairing is the point: a delta between
+    two runs only means something if both snapshots are pinned, so a figure naming a prior run
+    without naming *which* snapshot of it would be a comparison against a moving target."""
 
     def __post_init__(self) -> None:
         at = f"figure {self.path!r}"
@@ -426,7 +456,44 @@ class Figure:
                 f"{at}: `derived_from` must be a tuple of FigureSource"
             )
 
+        self._assert_prior_run_provenance(at)
         self._assert_provenance_resolves(at)
+
+    def _assert_prior_run_provenance(self, at: str) -> None:
+        """The two `source_*` fields agree with the `snapshot_path` (Req 18.9).
+
+        Both directions, because each is a different wrong document:
+
+        * a `snapshot_path` under `/prior_runs/<id>` **must** name the run it came from,
+          or the figure presents another run's value as this run's own;
+        * a `source_run_id` **must** be accompanied by a `source_snapshot_sha256`, because
+          a delta between two runs only means something if both snapshots are pinned — a
+          figure naming a prior run without naming which snapshot of it is a comparison
+          against a moving target.
+
+        The id is matched against the path rather than merely required to be present, so a
+        figure cannot carry run A's id beside run B's position.
+        """
+        prefix = f"{PRIOR_RUNS_POINTER_PREFIX}/"
+        if self.snapshot_path.startswith(prefix):
+            declared = self.snapshot_path[len(prefix) :].split("/", 1)[0]
+            if not self.source_run_id:
+                raise CompileFailedError(
+                    f"{at}: `snapshot_path` {self.snapshot_path!r} addresses the prior run "
+                    f"{declared!r} and the figure names no `source_run_id`; a value read "
+                    f"from another run must say which one"
+                )
+            if self.source_run_id != declared:
+                raise CompileFailedError(
+                    f"{at}: `source_run_id` is {self.source_run_id!r} and `snapshot_path` "
+                    f"{self.snapshot_path!r} addresses run {declared!r}"
+                )
+        if self.source_run_id and not self.source_snapshot_sha256:
+            raise CompileFailedError(
+                f"{at}: `source_run_id` {self.source_run_id!r} carries no "
+                f"`source_snapshot_sha256`. A delta between two runs means something only "
+                f"if both snapshots are pinned"
+            )
 
     def _assert_provenance_resolves(self, at: str) -> None:
         """Re-resolve `snapshot_path` and require it to address exactly this value
@@ -566,8 +633,164 @@ class EmptyCell:
     path: FigurePath
 
 
-type Cell = FigureCell | TextCell | EmptyCell
-"""A data-table cell. A union over exactly these three members; the guard asserts it."""
+@dataclass(frozen=True, slots=True)
+class TextFact:
+    """One collected **text** fact in the document, with everything needed to prove it
+    (Req 6.2, 6.3, 17.1).
+
+    The text-side counterpart of :class:`Figure`, and it declares **no field admitting a
+    quantity** — no `int`, no `float`, no `Decimal`, no `DecimalString`. That is not an
+    oversight to be corrected later: `tests/test_ast_guard.py`'s numeric-annotation scan
+    still names `Figure` as the only dataclass here permitted to mention one, and
+    `TextFact` is deliberately **not** exempted from it. A future edit adding a
+    `count: int` to this class fails the guard, which is the point of adding it under the
+    same rule rather than beside it.
+
+    ## Why a text fact needs its own node at all
+
+    A `TextCell` would have carried the characters perfectly well. What it could not carry
+    is the **provenance**, and that is what makes the difference visible to the verifier:
+    a `TextCell` is prose, so the soundness pass extracts numeric tokens from it and
+    checks nothing else. `Succeeded` becoming `Failed` in a `TextCell` is invisible —
+    the token carries no digit, so it is never extracted, and the document would ship a
+    backup status that came from nowhere.
+
+    Routing text facts through the numeric masking path is the other available mistake and
+    is worse, because it *reports a clean pass*: the mutated token gets masked as though it
+    were a `formatted` value and the verifier agrees with itself. So a text fact is a
+    ledger entry of its own kind, re-resolved against the snapshot's text side.
+
+    `formatted` must equal `value` character for character, the same rule
+    `collect/snapshot.py`'s `FactEntry` enforces one layer down and for the same reason: a
+    fact carries no unit suffix and no grouping, so a second spelling would be a second
+    display path the verifier would have to choose between.
+    """
+
+    path: FigurePath
+    key: str
+    value: str
+    snapshot_path: str
+    source: str
+    collected_at: str
+    formatted: str
+
+    def __post_init__(self) -> None:
+        at = f"text fact {self.path!r}"
+        if not FIGURE_PATH_PATTERN.match(str(self.path)):
+            raise CompileFailedError(
+                f"{at}: path does not match {FIGURE_PATH_PATTERN.pattern}"
+            )
+        for name in ("key", "value", "snapshot_path", "source", "collected_at", "formatted"):
+            _require_text(getattr(self, name), name, at)
+        if self.formatted != self.value:
+            raise CompileFailedError(
+                f"{at}: `formatted` {self.formatted!r} differs from `value` "
+                f"{self.value!r}. A fact carries no unit suffix and no grouping, so the "
+                f"two are one string; a second spelling here would be a second display "
+                f"path the verifier would have to choose between"
+            )
+
+        self._assert_provenance_resolves(at)
+
+    def _assert_provenance_resolves(self, at: str) -> None:
+        """Re-resolve `snapshot_path` against the snapshot's **text** side and require it
+        to address exactly this value (Req 17.1).
+
+        The same three failures :meth:`Figure._assert_provenance_resolves` distinguishes,
+        because they are the same three bugs: **nothing** means the provenance is fiction,
+        **two values** means the ledger could not say which one a `snapshot_path` meant,
+        and **a different string** is the transcription error that would otherwise reach a
+        document looking entirely plausible.
+
+        Resolved through `resolve_text_all` and not `resolve_all`, which is what makes a
+        text fact structurally unable to claim a statistic's provenance: a `snapshot_path`
+        naming a statistic addresses nothing on the text side.
+        """
+        resolver = _ACTIVE_SNAPSHOT.get()
+        if resolver is None:
+            raise CompileFailedError(
+                f"{at}: a TextFact may only be constructed while compiling against a "
+                f"snapshot (see `compiling_against`). Its `snapshot_path` is re-resolved "
+                f"at construction, and a provenance nobody checked is the claim this "
+                f"class exists to refuse."
+            )
+
+        addressed = resolver.resolve_text_all(self.snapshot_path)
+        if not addressed:
+            raise CompileFailedError(
+                f"{at}: `snapshot_path` {self.snapshot_path!r} addresses no text value in "
+                f"the snapshot being compiled"
+            )
+        if len(addressed) > 1:
+            raise CompileFailedError(
+                f"{at}: `snapshot_path` {self.snapshot_path!r} addresses "
+                f"{len(addressed)} values; a fact's provenance must be unambiguous"
+            )
+        if addressed[0] != self.value:
+            raise CompileFailedError(
+                f"{at}: `value` is {self.value!r} but `snapshot_path` "
+                f"{self.snapshot_path!r} addresses {addressed[0]!r}"
+            )
+
+
+def _text_fact_setattr(self: TextFact, name: str, value: object) -> None:
+    raise FigureImmutableError(
+        f"text fact {self.path!r} is immutable; cannot set {name!r}. The ledger holds "
+        f"this same object, so an edit here would agree with the ledger and the verifier "
+        f"would find the document and the ledger in perfect agreement about a value that "
+        f"came from nowhere."
+    )
+
+
+def _text_fact_delattr(self: TextFact, name: str) -> None:
+    raise FigureImmutableError(
+        f"text fact {self.path!r} is immutable; cannot delete {name!r}"
+    )
+
+
+# Installed after the class body for the reason the module docstring gives about `Figure`:
+# `dataclasses` refuses a `__setattr__` defined inside a frozen class body.
+TextFact.__setattr__ = _text_fact_setattr  # type: ignore[method-assign, assignment]
+TextFact.__delattr__ = _text_fact_delattr  # type: ignore[method-assign, assignment]
+
+
+@dataclass(frozen=True, slots=True)
+class TextFactCell:
+    """A data-table cell holding a text fact, and nothing else (Req 6.3).
+
+    Mirrors :class:`FigureCell` exactly, including the runtime refusal: the annotation says
+    it statically and `__post_init__` says it on the paths a type checker does not see.
+
+    Its `fact` field is the **only** field in this module annotated `TextFact`, and this
+    class is a member of :data:`Cell` and of nothing else. Together those two facts make
+    "every `TextFact` position admits the `TextFact` node type alone" a **type
+    declaration**, and "only into a data-table cell" a consequence of union membership
+    rather than a run-time rule somebody has to remember to check.
+    """
+
+    path: FigurePath
+    fact: TextFact
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fact, TextFact):
+            raise CompileFailedError(
+                f"cell {self.path!r} field 'fact' is {type(self.fact).__name__}; a "
+                f"TextFactCell admits a TextFact alone, so a bare string cannot reach a "
+                f"fact position and skip its provenance check"
+            )
+
+
+type Cell = FigureCell | TextCell | EmptyCell | TextFactCell
+"""A data-table cell. A union over exactly these four members; the guard asserts it."""
+
+CELL_TYPES: Final[tuple[type, ...]] = (FigureCell, TextCell, EmptyCell, TextFactCell)
+"""The `Cell` union's members as a runtime tuple, for `Row.__post_init__`'s check.
+
+A `type` alias is not usable with `isinstance` at runtime, so the check needs the members
+spelled once more — and spelling them *here*, beside the alias, is what keeps the two from
+diverging silently. `tests/test_ast_guard.py`'s `_EXPECTED_UNION_MEMBERS` compares this tuple
+against the alias's own annotation, so a member added to one and not the other fails there
+rather than presenting as a cell type the annotation permits and the constructor refuses."""
 
 
 # --- block-level nodes --------------------------------------------------------------
@@ -609,10 +832,15 @@ class Row:
     def __post_init__(self) -> None:
         _require_text(self.key, "key", f"row {self.path!r}")
         for ordinal, cell in enumerate(self.cells):
-            if not isinstance(cell, FigureCell | TextCell | EmptyCell):
+            # Checked against `CELL_TYPES`, which is derived from the `Cell` union itself, so
+            # a member added to that union cannot be admitted by the annotation and refused
+            # here. That divergence is not hypothetical: `TextFactCell` joined `Cell` and this
+            # check kept refusing it, so the type said one thing and the constructor another.
+            if not isinstance(cell, CELL_TYPES):
                 raise CompileFailedError(
                     f"row {self.path!r} cell {ordinal} is {type(cell).__name__}; a cell "
-                    f"position admits only FigureCell, TextCell or EmptyCell"
+                    f"position admits only "
+                    + ", ".join(kind.__name__ for kind in CELL_TYPES)
                 )
 
 
@@ -705,6 +933,9 @@ class Chart:
     title: str
     unit: str
     encoding: str
+    x_axis_label_id: str = ""
+    y_axis_label_id: str = ""
+    period_label: str = ""
     series: tuple[Series, ...] = field(default_factory=tuple)
     caption: str | None = None
 
@@ -811,11 +1042,13 @@ they hold no position and no children."""
 _NODE_TYPES: Final[tuple[type, ...]] = (
     Text,
     Figure,
+    TextFact,
     Paragraph,
     Row,
     FigureCell,
     TextCell,
     EmptyCell,
+    TextFactCell,
     Table,
     ChartPoint,
     Series,
@@ -916,7 +1149,9 @@ NUMERIC_ANNOTATION_NAMES: Final[tuple[str, ...]] = (
     "Fraction",
 )
 """Every spelling that names a quantity. `Figure` is the only dataclass in this module
-permitted to mention one.
+permitted to mention one — **including `TextFact`**, which is deliberately not exempted:
+adding a `count: int` to it later fails the guard, which is why the text-fact node was
+added under this rule rather than beside it.
 
 `DecimalString` is listed separately from `Decimal` and the check is word-bounded, so
 `\\bDecimal\\b` does not match inside `DecimalString` and each is caught under its own
@@ -942,7 +1177,7 @@ _FIGURE_MENTION_PATTERN: Final[re.Pattern[str]] = re.compile(r"\b(Figure|Inline|
 
 _EXPECTED_UNION_MEMBERS: Final[tuple[tuple[str, tuple[str, ...]], ...]] = (
     ("Inline", ("Text", "Figure")),
-    ("Cell", ("FigureCell", "TextCell", "EmptyCell")),
+    ("Cell", ("FigureCell", "TextCell", "EmptyCell", "TextFactCell")),
 )
 """`Inline` and `Cell` must be unions over **exactly** these members.
 
@@ -957,12 +1192,26 @@ class AstInvariantError(AssertionError):
     first: a single fix pass should be able to clear the module."""
 
 
+TEXT_FACT_ADMITTING_ANNOTATIONS: Final[frozenset[str]] = frozenset({"TextFact"})
+"""Every spelling that names a text fact.
+
+The mirror of :data:`NUMERIC_ANNOTATION_NAMES` one node over: `TextFactCell.fact` is the only
+field in this module permitted to mention one, so "every `TextFact` position admits the
+`TextFact` node type alone" is checkable as a **declaration** rather than trusted to review.
+
+A `frozenset` of one today. It is a set rather than a bare string because the guard asks the
+same question of it that it asks of the numeric names — which fields mention any of these — and
+a rule written against one name would have to be rewritten to ask about two."""
+
+
 REQUIRED_NODE_NAMES: Final[tuple[str, ...]] = (
     "Figure",
     "Text",
+    "TextFact",
     "FigureCell",
     "TextCell",
     "EmptyCell",
+    "TextFactCell",
     "LayoutRow",
 )
 """Nodes whose absence means the module was restructured rather than merely edited.

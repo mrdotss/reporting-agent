@@ -30,13 +30,14 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
     raw_response_from_recorded,
 )
 from fakes.object_store import InMemoryObjectStore
 from fixtures import load_response
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_ports
-from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
 from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.collect.buckets import day_buckets, resolve_window
 from reporting_agent.collect.pipeline import sku_from_plain, statistic_from_plain
@@ -173,7 +174,7 @@ class Collection:
 
     def __init__(self, *, batches: list[RawHttpResponse] | None = None) -> None:
         self.store = InMemoryObjectStore()
-        self.catalog = load_catalog()
+        self.catalog = load_catalog(DEFAULT_CATALOG_PATH)
         self.provider = provider_over_ports(
             inventory_port=FakeInventoryPort(
                 [
@@ -199,6 +200,7 @@ class Collection:
                 ),
                 fallback_responses=[],
             ),
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,
@@ -281,6 +283,11 @@ class Collection:
         ]
         self.document = build_snapshot(
             run_id=RUN_ID,
+            # No lower bound on a fact's `collected_at`: this snapshot is built in a test
+            # rather than by a run, so there is no invocation instant to bound it against and
+            # this harness declares no fact anyway. `build_snapshot` takes it as a
+            # required-but-nullable keyword so every call site states which it is.
+            invocation_started_at=None,
             scope=self.scope(),
             scope_verified=True,
             collected_at=COLLECTED_AT,

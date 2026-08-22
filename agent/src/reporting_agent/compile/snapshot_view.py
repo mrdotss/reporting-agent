@@ -82,6 +82,7 @@ __all__ = [
     "SKU_METRIC_PREFIX",
     "CountKind",
     "DerivedSource",
+    "FactTextValue",
     "GapEntry",
     "RequestedScope",
     "ResourceView",
@@ -262,6 +263,48 @@ class DerivedSource:
     name: str
     statistic: str | None = None
     unit: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FactTextValue:
+    """One **fact** read out of a snapshot, with everything a `TextFact` needs to prove it
+    (Req 6.2, 6.3).
+
+    The text-side counterpart of :class:`SnapshotValue`, and deliberately a much smaller
+    shape: a fact has no window, no statistic, no estimator and no scale, because it answers
+    *what is this resource* rather than *how much did it do*.
+
+    **It declares no field admitting a quantity.** `value` is a `str` — a numeric fact's too,
+    which reaches the snapshot as a fixed-precision decimal string (Req 4.6) — so a
+    `FactTextValue` is not a second way a `Decimal` reaches the compile stage. That is what
+    lets `compile/figures.BlockCursor.text_fact` mint a node with no number in it while the
+    numeric factory keeps its own single entrance.
+
+    `pointer` is the RFC 6901 pointer of this fact's own `value` field, recorded by the walk
+    from the position it was found at, so provenance is an observation rather than a claim.
+    """
+
+    key: str
+    value: str
+    source: str
+    collected_at: str
+    pointer: str
+    resource_id: str
+    unit: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("key", "value", "source", "collected_at", "pointer", "resource_id"):
+            if not getattr(self, name):
+                raise CompileFailedError(
+                    f"a fact read at {self.pointer!r} carries no {name}; every field a "
+                    f"`TextFact` proves itself with is present or the fact is not readable"
+                )
+        if not self.pointer.endswith("/value"):
+            raise CompileFailedError(
+                f"a fact's pointer must address its own `value` field, got "
+                f"{self.pointer!r}; a pointer naming the fact object would resolve to a "
+                f"mapping rather than to the string the document prints"
+            )
 
 
 @dataclass(frozen=True, slots=True)
@@ -476,6 +519,24 @@ class SnapshotResolver(Protocol):
         into a well-formed snapshot; `()` for a pointer that addresses nothing."""
         ...
 
+    def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+        """Every **text** value the pointer addresses — a fact's `value` (Req 6.2).
+
+        A second method rather than a widened return from :meth:`resolve_all`, and the
+        separation is the whole point. `resolve_all` returns `SnapshotValue`s carrying a
+        `Decimal`, and `Figure._assert_provenance_resolves` compares against
+        `f"{value:f}"`; a text fact has no `Decimal` and never will, so folding the two
+        together would mean one of them returning a union that every caller then has to
+        narrow — and the narrowing decision would be made from the value's characters,
+        which is exactly the inference Req 4.11 exists to forbid one layer down.
+
+        Two methods means `TextFact` re-resolves against the text side and `Figure`
+        against the numeric side, and neither can accidentally address the other's
+        values: a `snapshot_path` naming a statistic resolves to nothing here, and one
+        naming a fact resolves to nothing there.
+        """
+        ...
+
 
 # --- the view -----------------------------------------------------------------------
 
@@ -513,6 +574,23 @@ class SnapshotView:
     _tier_counts: Mapping[str, int]
     _statistic_count: int
     _day_bucket_count: int
+    _facts_by_pointer: Mapping[str, FactTextValue] = field(default_factory=dict)
+    """Every **fact** the snapshot carries, keyed by the JSON pointer of its `value`
+    (Req 6.2).
+
+    A second index rather than a widened `_by_pointer`, for the reason
+    `SnapshotResolver.resolve_text_all` gives: the numeric side carries `Decimal`s and the
+    text side does not, and a single index would force every caller to narrow a union by
+    inspecting the value — the inference Req 4.11 forbids.
+
+    **One** index rather than two, though. It holds the whole :class:`FactTextValue` and
+    :meth:`resolve_text_all` reads `.value` off it, because an index of bare strings beside
+    an index of records would be two structures over one array — and the provenance a
+    `TextFact` carries would then come from a different lookup than the value it re-resolves
+    against.
+
+    Defaulted so every existing `SnapshotView` construction site is unchanged; the real
+    builder always fills it."""
 
     # --- lookups ---
 
@@ -688,6 +766,40 @@ class SnapshotView:
         found = self.resolve_all(raw_pointer)
         return found[0] if len(found) == 1 else None
 
+    def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+        """Every text value `raw_pointer` addresses — exactly one, or none.
+
+        The text-side twin of :meth:`resolve_all`, with the same tuple return for the same
+        reason: `compile/ast.py` asserts *exactly one* against a resolver that can return
+        two, which is how that rule gets tested for failure. A real view can never return
+        two — :func:`build_snapshot_view` refuses a duplicate pointer.
+
+        A pointer naming a **statistic** resolves to nothing here, and one naming a **fact**
+        resolves to nothing in `resolve_all`. That mutual exclusion is what makes a
+        `TextFact` unable to claim a numeric provenance and a `Figure` unable to claim a
+        textual one.
+        """
+        found = self._facts_by_pointer.get(raw_pointer)
+        return () if found is None else (found.value,)
+
+    def facts_for(self, resource_id: str) -> tuple[FactTextValue, ...]:
+        """Every fact one resource carries, in the snapshot's own `key` order.
+
+        The only way a caller obtains a :class:`FactTextValue`, and therefore the only way
+        one reaches `compile/figures.BlockCursor.text_fact` — the same shape the numeric side
+        keeps, where a `SnapshotValue` exists solely as the output of this walk. A block
+        compiler cannot assemble one from a template's configuration.
+
+        Exact comparison on the resource id, matching :meth:`resource`: a snapshot resource
+        id is the id Azure returned, and re-normalizing it here would be a second reading of
+        the same string.
+        """
+        return tuple(
+            fact
+            for fact in self._facts_by_pointer.values()
+            if fact.resource_id == resource_id
+        )
+
 
 # --- the walk -----------------------------------------------------------------------
 
@@ -707,6 +819,7 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     window = _build_window(document)
 
     by_pointer: dict[str, SnapshotValue] = {}
+    facts_by_pointer: dict[str, FactTextValue] = {}
     window_stats: dict[tuple[str, str, str, str], SnapshotValue] = {}
     day_stats: dict[tuple[str, str, str, str, str], SnapshotValue] = {}
     tier_counts: dict[str, int] = {}
@@ -728,6 +841,32 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         for value in _sku_values(resource, raw_resource, at, window.descriptor):
             _record(by_pointer, value)
             window_stats[_window_key(value)] = value
+
+        for position, raw_fact in enumerate(_list_at(raw_resource, "facts", at)):
+            fact_at = pointer("resources", index, "facts", position, "value")
+            if not isinstance(raw_fact, dict):
+                raise CompileFailedError(f"{fact_at} is not an object")
+            fact_value = raw_fact.get("value")
+            if not isinstance(fact_value, str) or not fact_value:
+                raise CompileFailedError(
+                    f"{fact_at} is not a non-empty string; a fact's value is always a "
+                    f"string, including a numeric fact's (Req 4.6)"
+                )
+            # No duplicate-pointer check here, deliberately, unlike `_record` on the numeric
+            # side: this pointer is built from `enumerate`'s own position, so two facts cannot
+            # share one within a resource and a guard against it would be a branch no test can
+            # reach. What *can* collide is two facts sharing a **key**, and that is refused one
+            # layer up by `build_snapshot._assert_facts_are_collectable`, where the resource id
+            # is in scope to name.
+            facts_by_pointer[fact_at] = FactTextValue(
+                key=_require_str(raw_fact, "key", fact_at),
+                value=fact_value,
+                source=_require_str(raw_fact, "source", fact_at),
+                collected_at=_require_str(raw_fact, "collected_at", fact_at),
+                pointer=fact_at,
+                resource_id=resource.resource_id,
+                unit=raw_fact.get("unit") if isinstance(raw_fact.get("unit"), str) else None,
+            )
 
         for position, raw_stat in enumerate(_list_at(raw_resource, "statistics", at)):
             value = _build_value(
@@ -829,6 +968,7 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         gaps=gaps,
         day_names=tuple(sorted(day_names)),
         _by_pointer=MappingProxyType(by_pointer),
+        _facts_by_pointer=MappingProxyType(facts_by_pointer),
         _window_stats=MappingProxyType(window_stats),
         _day_stats=MappingProxyType(day_stats),
         _tier_counts=MappingProxyType(dict(sorted(tier_counts.items()))),

@@ -68,12 +68,13 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
 )
 from fakes.object_store import InMemoryObjectStore
 from reporting_agent import main
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.provider import provider_over_ports
-from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
 from reporting_agent.collect.snapshot import snapshot_key
 from reporting_agent.events import (
     EMITTED_BY_FOUNDATION,
@@ -115,7 +116,14 @@ PROGRESS_TOKEN = "not-a-real-progress-token-b7e2d4c6a8f0192837465564738291a0"
 TENANT_ID = "tenant-0d4f1a2b-not-a-real-tenant-id"
 CLIENT_ID = "client-9e8d7c6b-not-a-real-client-id"
 
-CATALOG = load_catalog()
+# The **metric** catalog alone, so the runs below declare no fact and the fact pass is a
+# no-op for them. These suites are about paging, aggregation, the gates, the document phases
+# and replay determinism; `test_facts_*` owns the fact pass. Loading the shipped pair here
+# would make each of them also an assertion about backup coverage — and, until task 4.4
+# teaches `verify/replay.py` to re-derive a fact from the archive, a snapshot carrying facts
+# cannot be replayed to an identical digest at all. `load_catalog(path)` declaring no facts
+# without a `facts_path` is documented behaviour in `catalog/loader.py`.
+CATALOG = load_catalog(DEFAULT_CATALOG_PATH)
 _VM_CATALOG = CATALOG.for_resource_type(RESOURCE_TYPE)
 assert _VM_CATALOG is not None
 DECLARED_METRICS: tuple[str, ...] = tuple(metric.name for metric in _VM_CATALOG.metrics)
@@ -425,6 +433,7 @@ class Wiring:
             sku_port=self.sku_port,
             definitions_port=self.definitions_port,
             metrics_port=self.metrics_port,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,

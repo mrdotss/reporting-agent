@@ -790,6 +790,433 @@ function validateIdentity(
   }
 }
 
+// --- front_matter (Requirements 13.1, 13.4, 13.5, 13.6, 13.9, 13.13, 13.16) --
+
+export const DOCUMENT_NUMBER_PATTERN_MIN_LENGTH = 1
+export const DOCUMENT_NUMBER_PATTERN_MAX_LENGTH = 120
+
+export const DOCUMENT_NUMBER_PLACEHOLDERS = [
+  "{template}",
+  "{year}",
+  "{month}",
+  "{run}",
+] as const
+/**
+ * Requirement 13.16's closed placeholder set for
+ * `document_control.document_number_pattern`.
+ *
+ * Closed rather than open, and that is the no-template-language rule applied one field down:
+ * a pattern is literal characters plus substitutions from **this** list, so there is no
+ * expression to evaluate and nothing that could yield a number without provenance.
+ */
+
+export const DOCUMENT_NUMBER_VARYING_PLACEHOLDERS = ["{run}"] as const
+/**
+ * The placeholders whose value can differ between **two runs of one template over one
+ * resolved period**.
+ *
+ * `{template}` is fixed per template; `{year}` and `{month}` come from the resolved period, so
+ * two runs over July 2026 substitute the same values for all three. Only `{run}`
+ * distinguishes them — a pattern naming none of these gives both runs the *same* document
+ * number, which makes a document number that is not a number for the document.
+ */
+
+/** Any `{...}` token, so an **undeclared** placeholder is reported by name. */
+const PLACEHOLDER_TOKEN_PATTERN = /\{[^{}]*\}/g
+
+const TOC_MIN_LEVEL = 1
+const TOC_MAX_LEVEL = 4
+/**
+ * `toc.max_level`'s bound — the four heading levels the themes declare styles for. A table of
+ * contents asking for level 5 would collect headings no theme can style.
+ */
+
+export const APPROVER_ROLES = [
+  "author",
+  "reviewer",
+  "approver",
+  "recipient",
+] as const
+/**
+ * Requirement 13.6's four roles, in the order the signature table presents them.
+ *
+ * A closed list rather than free text, so the approvers list is four declared slots and not a
+ * list a template can grow — the signature table's row height is a theme style, and a fifth
+ * role would have nowhere to be laid out.
+ */
+
+export const CONTACT_BLOCK_MAX_LENGTH = 500
+export const DOCUMENT_NAME_MAX_LENGTH = 200
+export const DISTRIBUTION_MAX_LENGTH = 500
+export const SUBTITLE_MAX_LENGTH = 200
+export const APPROVER_NAME_MAX_LENGTH = 120
+export const APPROVER_TITLE_MAX_LENGTH = 120
+
+const COVER_ALLOWED_KEYS = ["logo", "contact_block", "subtitle"] as const
+const DOCUMENT_CONTROL_ALLOWED_KEYS = [
+  "document_name",
+  "document_number_pattern",
+  "confidentiality_notice_id",
+  "distribution",
+  "approvers",
+] as const
+const TOC_ALLOWED_KEYS = ["enabled", "max_level"] as const
+const APPROVER_ALLOWED_KEYS = ["role", "name", "title"] as const
+
+const CONFIDENTIALITY_NOTICE_PREFIX = "doc."
+
+/**
+ * One optional string field with a length bound, measured in UTF-16 code units.
+ *
+ * Absent is fine; present-and-wrong is reported. Code units and not code points, matching
+ * `agent/.../compile/definition.py`'s `_utf16_length`: a bound checked against code points is
+ * a rule the browser and that compiler would enforce differently, and an astral character is
+ * one code point and two code units.
+ */
+function optionalBoundedString(
+  holder: Record<string, unknown>,
+  key: string,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  maximum: number
+): void {
+  if (!(key in holder)) return
+  const value = holder[key]
+  if (value === null || value === undefined) return
+  if (typeof value !== "string" || value.length > maximum) {
+    addIssue(
+      issues,
+      [...path, key],
+      `${key} must be null or a string of at most ${maximum} characters.`
+    )
+  }
+}
+
+/**
+ * The `front_matter` section's three subsections and their bounds (Requirements 13.1, 13.13).
+ *
+ * Reached only when the resolved version declares `front_matter` — the caller checks that — so
+ * a version-1 definition carrying the key is reported once, as an undeclared top-level key,
+ * rather than twice.
+ *
+ * Nothing here writes. A version-2 definition omitting the section, carrying an undeclared
+ * key, or violating a bound is rejected with **no version row persisted**, which is a property
+ * of this function performing no I/O rather than a rule the caller has to honour.
+ */
+function validateFrontMatter(
+  frontMatter: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  version: SchemaVersion
+): void {
+  if (!isPlainObject(frontMatter)) {
+    addIssue(issues, path, "front_matter must be an object.")
+    return
+  }
+
+  for (const key of Object.keys(frontMatter)) {
+    if (!(FRONT_MATTER_KEYS as readonly string[]).includes(key)) {
+      addIssue(
+        issues,
+        [...path, key],
+        `Unrecognized front_matter field "${key}".`
+      )
+    }
+  }
+
+  for (const section of FRONT_MATTER_KEYS) {
+    if (!(section in frontMatter)) {
+      addIssue(
+        issues,
+        [...path, section],
+        `front_matter.${section} is required at schema_version ${version}.`
+      )
+    }
+  }
+
+  validateCover(frontMatter.cover, [...path, "cover"], issues)
+  validateDocumentControl(
+    frontMatter.document_control,
+    [...path, "document_control"],
+    issues
+  )
+  validateToc(frontMatter.toc, [...path, "toc"], issues)
+}
+
+/**
+ * Requirement 13.4 — the cover's logo, contact block and subtitle.
+ *
+ * Every field optional: a cover with none of them still emits the report title, the
+ * subscription's display name and the resolved period, which the compiler derives on its own.
+ * There is nothing here a consultant must fill in.
+ */
+function validateCover(
+  cover: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (cover === undefined || cover === null) return
+  if (!isPlainObject(cover)) {
+    addIssue(issues, path, "front_matter.cover must be an object.")
+    return
+  }
+
+  for (const key of Object.keys(cover)) {
+    if (!(COVER_ALLOWED_KEYS as readonly string[]).includes(key)) {
+      addIssue(issues, [...path, key], `Unrecognized cover field "${key}".`)
+    }
+  }
+
+  optionalBoundedString(cover, "logo", path, issues, LOGO_MAX_LENGTH)
+  optionalBoundedString(
+    cover,
+    "contact_block",
+    path,
+    issues,
+    CONTACT_BLOCK_MAX_LENGTH
+  )
+  optionalBoundedString(cover, "subtitle", path, issues, SUBTITLE_MAX_LENGTH)
+}
+
+/** Requirements 13.5, 13.6, 13.16 — the document control page. */
+function validateDocumentControl(
+  control: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (control === undefined || control === null) return
+  if (!isPlainObject(control)) {
+    addIssue(issues, path, "front_matter.document_control must be an object.")
+    return
+  }
+
+  for (const key of Object.keys(control)) {
+    if (!(DOCUMENT_CONTROL_ALLOWED_KEYS as readonly string[]).includes(key)) {
+      addIssue(
+        issues,
+        [...path, key],
+        `Unrecognized document_control field "${key}".`
+      )
+    }
+  }
+
+  optionalBoundedString(
+    control,
+    "document_name",
+    path,
+    issues,
+    DOCUMENT_NAME_MAX_LENGTH
+  )
+  optionalBoundedString(
+    control,
+    "distribution",
+    path,
+    issues,
+    DISTRIBUTION_MAX_LENGTH
+  )
+
+  if ("confidentiality_notice_id" in control) {
+    // A **string id**, resolved from the message catalog rather than carried as copy, so the
+    // notice appears in the pinned language like every other fixed string. A literal here
+    // would be English in an Indonesian document.
+    const notice = control.confidentiality_notice_id
+    if (
+      !isNonEmptyString(notice) ||
+      !notice.startsWith(CONFIDENTIALITY_NOTICE_PREFIX)
+    ) {
+      addIssue(
+        issues,
+        [...path, "confidentiality_notice_id"],
+        "document_control.confidentiality_notice_id must be a `doc.` message " +
+          "catalog string id, not literal copy."
+      )
+    }
+  }
+
+  if ("document_number_pattern" in control) {
+    validateDocumentNumberPattern(
+      control.document_number_pattern,
+      [...path, "document_number_pattern"],
+      issues
+    )
+  }
+
+  if ("approvers" in control) {
+    validateApprovers(control.approvers, [...path, "approvers"], issues)
+  }
+}
+
+/**
+ * Requirement 13.16 — literal characters plus the four declared placeholders, and at least one
+ * that varies between runs.
+ *
+ * Three refusals, and the third is the one worth explaining:
+ *
+ * - not a string of 1 to 120 characters;
+ * - naming a `{...}` token outside {@link DOCUMENT_NUMBER_PLACEHOLDERS} — reported **by
+ *   name**, because a validator that only looked for the declared four would accept
+ *   `{quarter}` as literal text and emit it verbatim into a delivered document;
+ * - naming **no** placeholder whose value differs between two runs of one template over one
+ *   resolved period, so both runs would carry the same document number.
+ */
+function validateDocumentNumberPattern(
+  value: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (
+    typeof value !== "string" ||
+    value.length < DOCUMENT_NUMBER_PATTERN_MIN_LENGTH ||
+    value.length > DOCUMENT_NUMBER_PATTERN_MAX_LENGTH
+  ) {
+    addIssue(
+      issues,
+      path,
+      `document_number_pattern must be a string of ` +
+        `${DOCUMENT_NUMBER_PATTERN_MIN_LENGTH} to ` +
+        `${DOCUMENT_NUMBER_PATTERN_MAX_LENGTH} characters.`
+    )
+    return
+  }
+
+  const found = [...value.matchAll(PLACEHOLDER_TOKEN_PATTERN)].map(
+    (match) => match[0]
+  )
+  const undeclared = [
+    ...new Set(
+      found.filter(
+        (token) =>
+          !(DOCUMENT_NUMBER_PLACEHOLDERS as readonly string[]).includes(token)
+      )
+    ),
+  ].sort()
+  if (undeclared.length > 0) {
+    addIssue(
+      issues,
+      path,
+      `document_number_pattern names undeclared placeholder(s) ` +
+        `${undeclared.join(", ")}; the declared set is ` +
+        `${DOCUMENT_NUMBER_PLACEHOLDERS.join(", ")}.`
+    )
+  }
+
+  const varying: readonly string[] = DOCUMENT_NUMBER_VARYING_PLACEHOLDERS
+  if (!found.some((token) => varying.includes(token))) {
+    addIssue(
+      issues,
+      path,
+      "document_number_pattern names no placeholder whose value differs between two " +
+        "runs of one template over one resolved period, so both runs would carry the " +
+        `same document number. Include one of: ${[...varying].sort().join(", ")}.`
+    )
+  }
+}
+
+/**
+ * Requirement 13.6 — the four-role approvers list.
+ *
+ * At most one entry per role and no undeclared role. A repeated role would put two names in
+ * one signature row, and the row height is a theme style rather than something that grows.
+ */
+function validateApprovers(
+  approvers: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (!Array.isArray(approvers)) {
+    addIssue(issues, path, "document_control.approvers must be an array.")
+    return
+  }
+
+  if (approvers.length > APPROVER_ROLES.length) {
+    addIssue(
+      issues,
+      path,
+      `document_control.approvers accepts at most ${APPROVER_ROLES.length} entries, ` +
+        `one per declared role; found ${approvers.length}.`
+    )
+  }
+
+  const seen = new Set<string>()
+  approvers.forEach((entry, index) => {
+    const at = [...path, index]
+    if (!isPlainObject(entry)) {
+      addIssue(issues, at, "Each approver must be an object.")
+      return
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (!(APPROVER_ALLOWED_KEYS as readonly string[]).includes(key)) {
+        addIssue(issues, [...at, key], `Unrecognized approver field "${key}".`)
+      }
+    }
+
+    const role = entry.role
+    if (
+      typeof role !== "string" ||
+      !(APPROVER_ROLES as readonly string[]).includes(role)
+    ) {
+      addIssue(
+        issues,
+        [...at, "role"],
+        `approver.role must be one of: ${APPROVER_ROLES.join(", ")}.`
+      )
+    } else if (seen.has(role)) {
+      addIssue(issues, [...at, "role"], `Duplicate approver role "${role}".`)
+    } else {
+      seen.add(role)
+    }
+
+    optionalBoundedString(entry, "name", at, issues, APPROVER_NAME_MAX_LENGTH)
+    optionalBoundedString(entry, "title", at, issues, APPROVER_TITLE_MAX_LENGTH)
+  })
+}
+
+/**
+ * Requirement 13.9 — `enabled` and `max_level`.
+ *
+ * `front_matter.toc` is retained in the definition even where the image ships no table of
+ * contents, exactly as a disabled cover is retained: the definition records what the author
+ * asked for, and what the renderer can deliver is a property of the image rather than of the
+ * template.
+ */
+function validateToc(
+  toc: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (toc === undefined || toc === null) return
+  if (!isPlainObject(toc)) {
+    addIssue(issues, path, "front_matter.toc must be an object.")
+    return
+  }
+
+  for (const key of Object.keys(toc)) {
+    if (!(TOC_ALLOWED_KEYS as readonly string[]).includes(key)) {
+      addIssue(issues, [...path, key], `Unrecognized toc field "${key}".`)
+    }
+  }
+
+  if ("enabled" in toc && !isBoolean(toc.enabled)) {
+    addIssue(issues, [...path, "enabled"], "toc.enabled must be a boolean.")
+  }
+
+  if ("max_level" in toc) {
+    const level = toc.max_level
+    if (
+      !isFiniteInteger(level) ||
+      level < TOC_MIN_LEVEL ||
+      level > TOC_MAX_LEVEL
+    ) {
+      addIssue(
+        issues,
+        [...path, "max_level"],
+        `toc.max_level must be an integer from ${TOC_MIN_LEVEL} to ${TOC_MAX_LEVEL}.`
+      )
+    }
+  }
+}
+
 // --- Scope (Requirements 1.3, 3.1, 3.2, 3.10) -------------------------------
 
 const SCOPE_ALLOWED_KEYS = new Set([
@@ -2313,11 +2740,12 @@ export function collectDefinitionIssues(
   validateMetrics(raw.metrics, ["metrics"], issues)
   validateBlocks(raw.blocks, ["blocks"], issues, mode, version)
   validateDesign(raw.design, ["design"], issues, version, language)
-  // `front_matter`'s own fields and bounds are task 7.4's. This task makes the **key**
-  // required at v2 (through REQUIRED_TOP_LEVEL_KEYS) and undeclared at v1, and validates
-  // nothing inside it — so a v2 definition carrying `front_matter: "nonsense"` is accepted
-  // here today. The hole is deliberate and named rather than left to be discovered:
-  // Requirement 13.13's per-field bounds land in one place, beside FRONT_MATTER_KEYS.
+  // Requirement 13.13 — `front_matter` is validated only where the resolved version declares
+  // it, so a version-1 definition carrying the key is reported once, as an undeclared
+  // top-level key by the strict check above, rather than twice.
+  if (requiredKeys.includes("front_matter")) {
+    validateFrontMatter(raw.front_matter, ["front_matter"], issues, version)
+  }
   validateCanonicalByteSize(raw, issues)
   validateEveryScopedTypeIsSelected(raw, issues, mode)
   validateRequiredConfigIsFilled(raw, issues, mode)

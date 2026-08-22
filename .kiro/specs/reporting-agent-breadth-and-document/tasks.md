@@ -141,7 +141,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Neither branch is `skipif`, `xfail` or a bare `pass`, so there is no configuration in which nothing executes. Extend `agent/tests/test_property_hygiene.py`'s scan to fail on a skip or expected-failure marker **in this module by name**, which is how criterion 14.2's "SHALL fail IF that test is absent, is skipped or is marked as an expected failure" becomes an assertion rather than a convention
     - _Requirements: 14.2, 14.10_
 
-  - [ ] 2.5 If and only if `two_pass_measure` is adopted, move the rendering budget
+  - [x] 2.5 If and only if `two_pass_measure` is adopted, move the rendering budget
     - `app/lib/runs/state.ts`: raise `PHASE_DEADLINE_SECONDS.rendering` from `600` to `900`, because B doubles the LibreOffice conversion and each conversion is bounded at 300s
     - Add the integration assertion that the two conversions are **serialized**, because they contend on the single pre-warmed profile in the image
     - Only pass 2's `.docx` and `.pdf` are artifacts; pass 1's are held in memory and never written, so `docx_sha256` and `pdf_sha256` name pass 2's bytes and the templates spec's fidelity gate is unaffected — assert that no object exists at any pass-1 key
@@ -199,7 +199,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Record no `Fact` whose `value` is the empty string, and none for a key the response carried no value for
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.8, 5.9, 5.10, 7.7, 7.8, 7.11_
 
-  - [ ] 4.2 `collect/snapshot.py` — `FactEntry` and `facts[]` inside the canonical form
+  - [x] 4.2 `collect/snapshot.py` — `FactEntry` and `facts[]` inside the canonical form
     - `FactEntry(key, value, value_kind, source, collected_at, formatted, unit=None)` frozen with `sort_key` returning `key`; `NUMERIC_FACT_GRAMMAR = re.compile(r"^-?[0-9]+(\.[0-9]+)?$")` **anchored end to end** — no exponent, no grouping separator, no leading plus, no surrounding whitespace
     - `__post_init__` refuses an absent or undeclared `source`, an absent `collected_at`, an absent or undeclared `value_kind`, and a `numeric` value the grammar does not match, naming the resource id and the key and writing **no snapshot object**
     - `ResourceSnapshot` gains `facts: tuple[FactEntry, ...]` and `to_plain_data` emits `"facts": [...]` **always, including as an empty array**, ordered by `key` ascending in Unicode code-point order, **inside** the RFC 8785 canonical form the `content_hash` is computed over. Every `value` is a JSON **string**, including a numeric fact's
@@ -207,7 +207,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Record a `Fact` for a resource whose statistics are absent, including one carrying a `deallocated` or `permission_denied` gap, so a stopped resource still contributes its configuration
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.10, 4.11, 4.12, 4.13_
 
-  - [ ] 4.3 Implement `azure/facts.py` and the fact pass between inventory and metrics
+  - [x] 4.3 Implement `azure/facts.py` and the fact pass between inventory and metrics
     - `agent/.../azure/ports.py`: `FactsPort` protocol with `list_backup_protected_items(subscription_id)`, `list_replication_protected_items(vault_id)` and `list_reservations()`, so the whole Azure surface is fakeable and the entire fact suite runs without a subscription
     - `agent/.../azure/clients.py`: the three ARM ports behind it — Backup as one paged `backupProtectedItems` list filtered `backupManagementType eq 'AzureIaasVM'`, Site Recovery as one `replicationProtectedItems` list **per Recovery Services vault** taken from the inventory the run already has, Reservations as `reservationOrders` then `reservations` per order. **One subscription-scoped list per source, never one request per resource**: three to six requests for a subscription of any size
     - `agent/src/reporting_agent/azure/facts.py`: `MAX_FACT_KEY_LENGTH = 120`, `MAX_FACT_VALUE_LENGTH = 512`, the plain-data `FactRecord`, and `FactCollector(port, archive, *, declaration, semaphore, clock)` whose `collect(*, resources, inventory_pages)` takes projected facts from the pages the caller already has and the rest from the three sources, through the **same semaphore keyed by subscription id** `azure/metrics.py` uses so the cap of 8 in flight is honoured
@@ -240,7 +240,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 4.1, 4.5, 4.6, 4.11, 4.12, 7.3, 7.7, 7.8, 7.11, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
 - [ ] 5. `TextFact` in the AST, the ledger, the anchors and the verifier
-  - [ ] 5.1 Declare `TextFact`, `TextFactCell` and the extended fields, with the AST guard in the same task
+  - [x] 5.1 Declare `TextFact`, `TextFactCell` and the extended fields, with the AST guard in the same task
     - `agent/.../compile/ast.py`: `TextFact(path, key, value, snapshot_path, source, collected_at, formatted)` frozen with slots, declaring **no field admitting an `int`, a `float`, a `Decimal` or a `DecimalString`**, immutable after construction through a `__setattr__` override, with `__post_init__` requiring every field non-empty, `FIGURE_PATH_PATTERN` on `path`, `formatted == value` character for character, and a `_assert_provenance_resolves` re-resolving `snapshot_path` against the installed resolver's text side with the same three failures `Figure` distinguishes
     - `TextFactCell(path, fact)` mirroring `FigureCell`, refusing a non-`TextFact` `fact`, and `type Cell = FigureCell | TextCell | EmptyCell | TextFactCell`. `TextFactCell.fact` is the **only** field annotated `TextFact` and `TextFactCell` is a member of `Cell` and of nothing else, so "every `TextFact` position admits the `TextFact` node type alone" is a type declaration and "only into a data-table cell" is a consequence of union membership rather than a run-time rule
     - `Figure` gains `source_run_id: str | None = None` and `source_snapshot_sha256: str | None = None`, with `__post_init__` asserting that a `snapshot_path` under `/prior_runs/<id>` carries a matching `source_run_id` and that a `source_run_id` is accompanied by a `source_snapshot_sha256`. Both `str | None`, so the numeric-annotation scan is unaffected
@@ -248,7 +248,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - **In the same task**, extend `agent/tests/test_ast_guard.py`: `TEXT_FACT_ADMITTING_ANNOTATIONS = frozenset({"TextFact"})`, `_EXPECTED_UNION_MEMBERS` carrying `("Cell", ("FigureCell", "TextCell", "EmptyCell", "TextFactCell"))`, and `REQUIRED_NODE_NAMES` gaining `"TextFact"` and `"TextFactCell"`. `NUMERIC_ANNOTATION_NAMES` is **unchanged and `TextFact` is not exempted from it**, which is the point: a future edit adding a `count: int` to `TextFact` fails the guard. The existing guard-the-guard cases need no change
     - _Requirements: 6.2, 6.3, 6.8, 17.1, 18.9_
 
-  - [ ] 5.2 `compile/figures.py` — two dictionaries, one walk, byte-identical serialization
+  - [x] 5.2 `compile/figures.py` — two dictionaries, one walk, byte-identical serialization
     - `FigureLedger` gains `_text_facts: dict[FigurePath, TextFact]` and `_text_fact_anchors: dict[FigurePath, TableAnchor]` beside `_entries`, `_anchors` and `_tables` — **two dictionaries rather than one dictionary of a union**, because masking stage 1 must not see the text facts and `formatted_values()` reading `_entries` is what makes that exclusion structural rather than a filter at every call site. Assert the key sets are **disjoint**, so "one ledger keyed by AST path" is still true of the pair
     - `insert_text_fact` mirroring `insert`, `record_text_fact_anchor` mirroring `record_anchor`, the `text_facts` and `text_fact_anchors` mappings, and `entry_paths()` returning every ledger entry path of both kinds in document order — read by the completeness assertion and by nothing else
     - `BlockCursor.text_fact(fact_value: FactTextValue) -> TextFact` as the **only** factory, mirroring `.figure(...)` deliberately so the ledger entry is created during the traversal that creates the node and there is no `build_text_fact_ledger(ast)` anywhere
@@ -369,7 +369,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `historical_trend` is declared in `app/lib/templates/blocks.ts` in task 11.3; this task declares the version key sets alone
     - _Requirements: 13.1, 13.2, 13.10, 13.13, 15.1, 16.1, 16.2, 16.3_
 
-  - [ ] 7.2 Mirror the declarations in `agent/.../compile/definition.py` and dispatch on the version
+  - [x] 7.2 Mirror the declarations in `agent/.../compile/definition.py` and dispatch on the version
     - The identical declarations between matching sentinels, and `validate_definition(raw)` resolving `version = _schema_version(raw)` once and then reading `REQUIRED_TOP_LEVEL_KEYS[version]`, `NUMBER_FORMAT_KEYS[version]`, `IDENTITY_KEYS[version]` and `REQUIRED_IDENTITY_KEYS[version]` — one dispatch, in one place
     - Declare the `front_matter` section's fields and bounds: the cover's logo, contact block and subtitle; the document control's `document_name`, `document_number_pattern`, `confidentiality_notice_id`, `distribution` and four-role `approvers` list; and `toc`'s `enabled` and `max_level`. A v2 definition omitting `front_matter`, carrying an undeclared `front_matter` key, or violating one of those bounds is rejected naming **every** failing field path with no version row persisted
     - Constrain the document-number pattern to 1–120 characters of literal characters and the closed placeholder set `{template}`, `{year}`, `{month}`, `{run}`; reject a pattern naming an undeclared placeholder, and reject one naming no placeholder whose value differs between two runs of one template and one resolved period
@@ -377,7 +377,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - **No migration in the agent, and none is needed.** A stored v1 row is compiled as v1 for as long as it exists, which is what makes an archived report reproducible from its pinned version; a migration here would mean a two-year-old report rendered through today's reading of its definition
     - _Requirements: 13.1, 13.2, 13.10, 13.11, 13.13, 13.16, 15.1, 16.1_
 
-  - [ ] 7.3 Extend the Mirror_Guard and the shared fixture corpus
+  - [x] 7.3 Extend the Mirror_Guard and the shared fixture corpus
     - `app/test/mirror.static.test.ts`: extend the sentinel extraction to `MIN_SCHEMA_VERSION`, `MAX_SUPPORTED_SCHEMA_VERSION`, `REQUIRED_TOP_LEVEL_KEYS`, `NUMBER_FORMAT_KEYS`, `IDENTITY_KEYS`, `REQUIRED_IDENTITY_KEYS`, `LANGUAGES`, `FRONT_MATTER_KEYS` and `FRONT_MATTER_FORBIDDEN_BLOCK_TYPES`, failing naming every differing key
     - `agent/tests/fixtures/definitions/` gains `schema_version` 1 and 2 cases — **accepted and rejected** — run through both the `Template_Validator` and the `Block_Compiler` with matching verdicts and matching offender paths, which is the Mirror_Guard's behavioural half
     - `app/test/event-mirror.static.test.ts` is **not** touched: no event type is added, so the cross-language event vocabulary is unchanged
@@ -395,7 +395,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Migration is app-only and one-directional. That asymmetry with the agent is the design, not an omission
     - _Requirements: 13.12_
 
-  - [ ] 7.6 Property test — the number-format defaults are language-derived and never overwrite a declaration
+  - [x] 7.6 Property test — the number-format defaults are language-derived and never overwrite a declaration
     - **Property 9: The number-format defaults are language-derived and never overwrite a declaration**, identifier `number_format_defaults`, in `app/test/property/number-format-defaults.property.test.ts`
     - **Validates: Requirements 16.2, 16.3, 16.10**
     - `fast-check` over `schema_version` 1 and 2 definitions; languages `en`, `id` and absent; separators present on neither, one or both fields; declared separators including ones equal to the language default and ones deliberately different
@@ -528,7 +528,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
   - The app's **pure** modules land before the components that use them: `lib/templates/options.ts`,
     `lib/subscriptions/inventory-cache.ts`, `lib/templates/migrate.ts` (task 7.5).
 
-  - [ ] 12.1 Add `distinct_dimensions` and the `list_inventory` command
+  - [x] 12.1 Add `distinct_dimensions` and the `list_inventory` command
     - `agent/.../azure/inventory.py`: `distinct_dimensions(...)` issuing **one** Resource Graph query per call with a `summarize`/`distinct` projection over the whole subscription scope, each dimension ordered ascending in Unicode code-point order, at most **2000** values per dimension with a per-dimension `truncated` flag
     - The query projects the four dimensions **and nothing else**, so the exclusion of every fully qualified resource identifier, subscription id, tenant id and client id is a property of the projection rather than a filter applied afterwards
     - `agent/.../main.py`: add `list_inventory` to `COMMANDS` and route it deterministically, reporting its whole result on `done`'s `outcome` mapping — `_done_event` already merges an `Invocation.outcome` mapping and `preflight` already reports its whole result that way. **No SSE event type is added**, so `events.py` and `lib/events.ts` are not edited and the cross-language event mirror stays untouched

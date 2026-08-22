@@ -36,6 +36,7 @@ from reporting_agent.collect.snapshot import (
     ESTIMATOR_EXACT_COUNT_WEIGHTED,
     ESTIMATOR_EXACT_INTERVAL_MAXIMUM,
     ESTIMATOR_EXACT_INTERVAL_MINIMUM,
+    FactEntry,
     ResourceDayBucket,
     ResourceSnapshot,
     SkuCapacity,
@@ -170,8 +171,16 @@ def build(
     resource_types: list[str] | None = None,
     raw_archive_complete: bool = True,
     raw_archive_object_count: int = 4,
+    collected_at: datetime | None = None,
+    invocation_started_at: datetime | None = None,
 ) -> dict:
-    """One real snapshot document over `resources`."""
+    """One real snapshot document over `resources`.
+
+    `invocation_started_at` defaults to `None` — no lower bound on a fact's `collected_at` —
+    because most fixtures here carry no fact at all and the ones that do are asserting a shape
+    rather than a clock. `tests/test_snapshot_facts.py` passes a real instant where the bound
+    itself is under test.
+    """
     window = resolve_window(WINDOW_START, WINDOW_END, JAKARTA)
     declared_types = resource_types or [VM_TYPE]
     scope = ScopeSpec(
@@ -181,10 +190,11 @@ def build(
         tag_filters={},
     )
     return build_snapshot(
+        invocation_started_at=invocation_started_at,
         run_id="run-compile-fixture",
         scope=scope,
         scope_verified=True,
-        collected_at=datetime(2026, 7, 3, 1, 30, tzinfo=UTC),
+        collected_at=collected_at or datetime(2026, 7, 3, 1, 30, tzinfo=UTC),
         timezone_name="Asia/Jakarta",
         tz=JAKARTA,
         window=window,
@@ -219,6 +229,7 @@ def vm(
     vcpus_available: int | None = 2,
     memory_bytes: str | None = "8589934592",
     statistics: list[StatisticEntry] | None = None,
+    facts: tuple[FactEntry, ...] = (),
 ) -> ResourceSnapshot:
     """One resource with a small, realistic statistic set and two day buckets."""
     if statistics is None:
@@ -260,6 +271,7 @@ def vm(
         ),
         statistics=tuple(statistics),
         day_buckets=buckets,
+        facts=facts,
     )
 
 

@@ -215,6 +215,9 @@ def _sample_snapshot() -> dict[str, Any]:
 
     return null_context_snapshot(
         build_snapshot(
+            # A synthetic snapshot for a theme thumbnail; it carries no fact and
+            # belongs to no run, so there is no invocation instant to bound one by.
+            invocation_started_at=None,
             run_id="theme-thumbnail",
             scope=ScopeSpec(
                 subscription_id="00000000-0000-0000-0000-000000000000",

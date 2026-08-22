@@ -54,6 +54,7 @@ __all__ = [
     "AzureTransportError",
     "DefinitionsPort",
     "DnsResolutionError",
+    "FactsPort",
     "InventoryPort",
     "MetricsPort",
     "RawHttpResponse",
@@ -160,6 +161,25 @@ class InventoryPort(Protocol):
         no fact declaration to hand is unchanged."""
         ...
 
+    async def query_distinct_dimensions(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """One aggregate Resource Graph query returning the four picker dimensions
+        (Req 9.1, 9.2, 9.5).
+
+        A second method on this port rather than a second port, because it is the same
+        service, the same endpoint, the same credential audience and the same envelope —
+        what differs is the query, and a port whose two operations differ only in the KQL
+        they send is one port. `azure/inventory.py` owns the query text, the ordering, the
+        2000-value bound and the truncation flag.
+
+        **No continuation.** The query aggregates with no `by` clause, so the answer is a
+        single row: there is no `skip_token` parameter here and none to read back, which is
+        what makes "exactly one query per call" a property of the signature rather than of a
+        loop that happens to run once.
+        """
+        ...
+
 
 @runtime_checkable
 class SkuPort(Protocol):
@@ -193,6 +213,57 @@ class DefinitionsPort(Protocol):
     ) -> RawHttpResponse:
         """The metric definitions Azure reports for `resource_id`'s type and region.
         `body` is the definitions listing as returned."""
+        ...
+
+
+@runtime_checkable
+class FactsPort(Protocol):
+    """The three non-projectable fact sources: Backup, Site Recovery and Reservations
+    (Req 4.8).
+
+    **Every method is a list over a scope, and none takes a resource id.** That is the
+    requirement expressed as a signature: Req 4.8 forbids a per-resource request for a fact,
+    and a port whose methods accepted one would make the forbidden shape the easy one to
+    write. A subscription of five resources and a subscription of five thousand cost the same
+    two-to-six requests through this port.
+
+    Which resources each answer *covers* is the caller's statement, not the port's, because
+    it follows from the filter the request carries — `azure/facts.py` owns that filter and
+    therefore owns the claim. This matters: a list filtered to `AzureIaasVM` cannot say
+    anything about a SQL database, and a fold that assumed otherwise would print "backup not
+    configured" on a database that is backed up nightly.
+
+    The port itself normalizes nothing. Each method answers with the envelope the service
+    sent, and `azure/facts.py` maps it onto the `(resource_id, key)` item shape
+    `collect/factfold.py` folds — the same division of labour every other port here keeps.
+    """
+
+    async def list_backup_protected_items(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """Every backup-protected item in the subscription, one subscription-scoped list.
+
+        Filtered to the IaaS-VM backup management type, so the answer covers virtual
+        machines and states nothing about any other resource type (Req 5.1).
+        """
+        ...
+
+    async def list_replication_protected_items(self, *, vault_id: str) -> RawHttpResponse:
+        """Every replication-protected item in **one** Recovery Services vault (Req 5.3).
+
+        Vault-scoped rather than subscription-scoped because Site Recovery has no
+        subscription-wide list; the vaults come from the inventory the run already holds, so
+        enumerating them costs no request of its own.
+        """
+        ...
+
+    async def list_reservations(self) -> RawHttpResponse:
+        """Every reservation the caller can see, across every reservation order (Req 5.2).
+
+        Tenant-scoped, not subscription-scoped — `Microsoft.Capacity/reservationOrders` is a
+        tenant-level provider — which is also why Reader at subscription scope does not grant
+        it and a rejection is the ordinary outcome rather than an exceptional one.
+        """
         ...
 
 

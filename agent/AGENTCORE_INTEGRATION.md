@@ -38,6 +38,7 @@ constructs one.
 | `preflight` | yes | yes |
 | `verify_report` | yes | yes |
 | `render_preview` | yes | yes |
+| `list_inventory` | yes | yes |
 | `compare_runs` | **no — declared and unrouted** | — |
 
 Every routed command is deterministic: a `prompt` alongside the payload is **ignored**.
@@ -118,6 +119,46 @@ artifact says what it is after it leaves the app. The verifier runs and its stat
 reported as **information** — it does not gate. A draft template must be previewable for
 layout before its figures verify, and a wizard that refused to show a page until every
 number was provable would be unusable at exactly the moment a consultant needs the page.
+
+### `list_inventory`
+
+```jsonc
+{ "command": "list_inventory",
+  "context": { /* … — `subscription_id` and the three Azure credential fields are what
+                     this command reads; it needs no run id and writes no row */ } }
+```
+
+Answers the template wizard's three pickers: the **distinct resource types, resource groups,
+tag keys and tag values** present across the whole subscription scope, each ordered ascending
+in Unicode code-point order, at most **2000** values per dimension, each dimension declaring
+whether that bound truncated it.
+
+**One Resource Graph query**, aggregated in the service. It projects the four dimensions and
+nothing else — no resource id, no subscription id, no tenant or client id — so the exclusion
+of every identifier is a property of the projection rather than a filter applied afterwards.
+
+**The result rides on `done`, and no event type was added for it.** Four keys are merged into
+the terminal event, exactly as `preflight` merges `scope_verified` and `fidelity_tier`:
+
+```jsonc
+{ "type": "done", "run_id": null, "status": "completed",
+  "resource_types":  { "values": ["Microsoft.Compute/virtualMachines"], "truncated": false },
+  "resource_groups": { "values": ["rg-prod"], "truncated": false },
+  "tag_keys":        { "values": ["env", "owner"], "truncated": false },
+  "tag_values":      { "values": ["dev", "prod"], "truncated": false } }
+```
+
+**A listing that did not answer carries no dimension key at all** — not four empty ones. Four
+empty dimensions is a claim that the subscription holds nothing, which is the reading the
+endpoint must not present; the caller's test is "are the four keys on `done`", with no need to
+correlate an `error` event against a terminal one. The `error` code names what happened:
+`THROTTLED` for a rate-limited query, `AUTH_FAILED` for a rejected credential or a missing
+role assignment, and `INTERNAL_ERROR` for a status that names no actionable cause — a `400` is
+a defect in the runtime's own query and a `5xx` is Azure's, and neither is an expired secret.
+
+The caller bounds its own wait at 30 seconds and writes no cache entry for a listing that
+did not answer. Neither bound is enforced here: this command has no run row, so there is no
+reaper behind it and the timeout belongs to the endpoint.
 
 ---
 

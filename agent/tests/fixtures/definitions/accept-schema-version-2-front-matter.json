@@ -1,0 +1,93 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "level": 2,
+        "text": "One block"
+      },
+      "id": "only",
+      "type": "heading"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 2,
+      "decimal_separator": ",",
+      "group_thousands": true,
+      "grouping_separator": "."
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "front_matter": {
+    "cover": {
+      "contact_block": "Acme Consulting\nreports@example.test",
+      "logo": null,
+      "subtitle": "Monthly utilization review"
+    },
+    "document_control": {
+      "approvers": [
+        {
+          "name": "R. Prakoso",
+          "role": "author",
+          "title": "Consultant"
+        },
+        {
+          "name": "S. Dewi",
+          "role": "reviewer",
+          "title": "Principal"
+        }
+      ],
+      "confidentiality_notice_id": "doc.confidentiality.internal",
+      "distribution": "Acme platform team; Acme finance",
+      "document_name": "Infrastructure Utilization Report",
+      "document_number_pattern": "ACME-{template}-{year}{month}-{run}"
+    },
+    "toc": {
+      "enabled": true,
+      "max_level": 3
+    }
+  },
+  "identity": {
+    "language": "id",
+    "name": "Version two, front matter and separators"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      },
+      {
+        "metric": "Percentage CPU",
+        "statistic": "max"
+      },
+      {
+        "metric": "Available Memory Bytes",
+        "statistic": "avg"
+      },
+      {
+        "derived": "memory_used_pct",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 2,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

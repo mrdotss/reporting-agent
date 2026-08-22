@@ -167,6 +167,8 @@ from reporting_agent.storage.base import JSON_CONTENT_TYPE, ObjectStore, owner_t
 
 __all__ = [
     "AGENT_VERSION",
+    "DECLARED_FACT_SOURCES",
+    "DECLARED_FACT_VALUE_KINDS",
     "ESTIMATOR_DERIVED_COUNT_WEIGHTED",
     "ESTIMATOR_DERIVED_FROM_SOURCE_MAXIMUM",
     "ESTIMATOR_DERIVED_FROM_SOURCE_MINIMUM",
@@ -180,8 +182,11 @@ __all__ = [
     "FORBIDDEN_NETWORK_TERMS",
     "NIC_LEVEL_COUNTER_SCOPE",
     "NIC_LEVEL_METRIC_NAMES",
+    "NUMERIC_FACT_GRAMMAR",
     "SNAPSHOT_SCHEMA_VERSION",
     "BillingTermError",
+    "FactEntry",
+    "FactEntryError",
     "FloatInSnapshotError",
     "PercentileKeyError",
     "ResourceDayBucket",
@@ -212,7 +217,7 @@ logger = logging.getLogger(__name__)
 
 # --- what a reader needs to identify the producer (Req 35.8) -------------------------
 
-SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.1.0"
+SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.2.0"
 """The version of the snapshot *shape* — this module's output contract, distinct from
 the agent's own version and from the catalog's. A later reader tells which producer
 wrote a snapshot from `schema_version` plus `producer`, without consulting the run
@@ -227,7 +232,16 @@ meets an array where it expected an empty one, which is the case it already hand
 recomputation now emits day statistics the stored document does not carry. That is
 correct rather than unfortunate — a stored artifact and the code that would produce it
 today genuinely disagree — but it means a re-verification of a pre-bump run reports
-`replay_hash_mismatch`, which is what the version is for."""
+`replay_hash_mismatch`, which is what the version is for.
+
+`1.2.0` adds `resources[].facts` (Req 4.6), on the same reasoning and with the same
+consequence. The array is emitted **always, including empty**, so **every** digest changes
+at this bump and not only the digests of runs that collected a fact — which is deliberate:
+a key that appeared only when a source answered would make the document's shape depend on
+whether the estate happened to have a backup configured, and two runs over one subscription
+would then differ in shape rather than in content. A minor bump again because nothing was
+removed or re-typed: a `1.1.0` reader meets an array where it expected no key, which is the
+same case it already handles for `day_buckets[].statistics`."""
 
 
 def _agent_version() -> str:
@@ -800,6 +814,175 @@ class StatisticEntry:
         return data
 
 
+NUMERIC_FACT_GRAMMAR: Final[re.Pattern[str]] = re.compile(
+    r"\A-?[0-9]+(\.[0-9]+)?\Z"
+)
+"""The only shape a `numeric` fact's `value` may take (Req 4.11, 4.12).
+
+An optional leading minus, digits, and at most one fractional part. No exponent, no
+grouping separator, no leading plus, no surrounding whitespace — each excluded for the same
+reason the metric values are stored as decimal strings: this string goes into the canonical
+form the `content_hash` is computed over, and every alternative spelling of one quantity is
+a second document with a different id.
+
+**`\\A` and `\\Z`, not `^` and `$`.** The two differ on exactly one input and it is the one
+that matters here: `$` also matches immediately before a trailing newline, so `"12\\n"` would
+satisfy an `^…$` pattern and land in a snapshot carrying whitespace the requirement forbids.
+`\\Z` matches only at the very end. `collect/snapshot.py`'s `_PERCENTILE_KEY_PATTERN` and
+`compile/definition.py`'s patterns are anchored the same way, for the same reason."""
+
+DECLARED_FACT_VALUE_KINDS: Final[frozenset[str]] = frozenset({"numeric", "text"})
+DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
+    {"resource_graph", "arm", "recovery_services", "capacity"}
+)
+"""Req 4.2 and 4.11's vocabularies, mirrored from `catalog/loader.py` **by value**.
+
+The same non-coupling `collect/sketch.py` draws against the catalog's unit families and
+`catalog/loader.py` draws against `collect/log.py`'s gap types: the snapshot is the document
+whose shape this module owns, and it validates what it is handed rather than importing the
+catalog to find out what is legal. `tests/test_snapshot.py` asserts the two agree, which is
+a cheaper coupling than an import that would put a data-file read on the snapshot path."""
+
+
+class FactEntryError(ValueError):
+    """A fact the snapshot refuses to carry (Req 4.11, 4.12, 4.13).
+
+    Carries `key` and, where the caller had one, `resource_id`, so a handler building an
+    event does not have to re-parse the message. Raised **before** any digest exists, so
+    **no snapshot object is written** — the same ordering `assert_no_floats` relies on.
+
+    A `ValueError` rather than an `AgentError`: this module is pure and declares no error
+    code, exactly as `PercentileKeyError` and `BillingTermError` above it do. The pipeline
+    maps it to a terminal code at the boundary where run state lives.
+    """
+
+    def __init__(self, message: str, *, key: str, resource_id: str | None = None) -> None:
+        super().__init__(message)
+        self.key = key
+        self.resource_id = resource_id
+
+
+@dataclass(frozen=True, slots=True)
+class FactEntry:
+    """One collected fact about one resource, as the snapshot carries it (Req 4.1-4.6).
+
+    The fact-side counterpart of :class:`StatisticEntry`, and deliberately a much smaller
+    shape: a fact has no window, no estimator, no sample count and no aggregation, because it
+    is an answer to *what is this resource* rather than *how much did it do*.
+
+    `value` is a `str` here **and** a string in the emitted document — unlike
+    `StatisticEntry.value`, which is a `Decimal` this module renders. There is no scale to
+    render a fact at: a `text` fact is already its own display form, and a `numeric` fact
+    arrives from `collect/factfold.py` as a fixed-precision decimal string that
+    :data:`NUMERIC_FACT_GRAMMAR` checks rather than reformats. Reformatting it here would be a
+    second place a fact's characters are decided.
+
+    `value_kind` is read from the **declaration**, never inferred from the characters
+    (Req 4.11). `2022` satisfies a decimal grammar and is an operating-system version, while
+    `10.0.0.4` fails it and is an address — so a router reading the characters formats a
+    Windows version with a grouping separator and refuses an address as malformed.
+
+    `formatted` must equal `value` character for character. A fact carries no unit suffix and
+    no grouping, so the two are the same string; the field exists so the verifier's token
+    extraction has one thing to match against for every leaf in the document, fact or figure,
+    without branching on which kind it is. Asserting the equality here is what stops that
+    convenience from becoming a second display path.
+    """
+
+    key: str
+    value: str
+    value_kind: str
+    source: str
+    collected_at: str
+    formatted: str
+    unit: str | None = None
+
+    def __post_init__(self) -> None:
+        at = f"fact {self.key!r}"
+        if not isinstance(self.key, str) or not self.key.strip():
+            raise FactEntryError(
+                f"a fact's key must be a non-empty string, got {self.key!r}",
+                key=str(self.key),
+            )
+        if self.value_kind not in DECLARED_FACT_VALUE_KINDS:
+            raise FactEntryError(
+                f"{at}: value_kind {self.value_kind!r} is not one of "
+                f"{sorted(DECLARED_FACT_VALUE_KINDS)}; the kind is read from the "
+                f"declaration and never inferred from the value's characters (Req 4.11)",
+                key=self.key,
+            )
+        if self.source not in DECLARED_FACT_SOURCES:
+            raise FactEntryError(
+                f"{at}: source {self.source!r} is not one of "
+                f"{sorted(DECLARED_FACT_SOURCES)}. A fact that cannot name where it came "
+                f"from is an assertion rather than an observation",
+                key=self.key,
+            )
+        if not isinstance(self.collected_at, str) or not self.collected_at.strip():
+            raise FactEntryError(
+                f"{at}: collected_at is absent. A fact with no receipt instant cannot be "
+                f"checked against the run's own lifetime (Req 4.13)",
+                key=self.key,
+            )
+        if not isinstance(self.value, str) or not self.value:
+            raise FactEntryError(
+                f"{at}: value must be a non-empty string; an absent fact is recorded as a "
+                f"gap and not as an empty value (Req 5.5)",
+                key=self.key,
+            )
+        if self.formatted != self.value:
+            raise FactEntryError(
+                f"{at}: formatted {self.formatted!r} differs from value {self.value!r}. A "
+                f"fact carries no unit suffix and no grouping, so the two are one string; a "
+                f"second spelling here would be a second display path the verifier would "
+                f"have to choose between",
+                key=self.key,
+            )
+        if self.value_kind == "numeric" and not NUMERIC_FACT_GRAMMAR.match(self.value):
+            raise FactEntryError(
+                f"{at}: the declared numeric value {self.value!r} does not match "
+                f"{NUMERIC_FACT_GRAMMAR.pattern} — no exponent, no grouping separator, no "
+                f"leading plus and no surrounding whitespace, because this string goes into "
+                f"the canonical form the content hash is taken over",
+                key=self.key,
+            )
+        if self.value_kind == "text" and self.unit is not None:
+            raise FactEntryError(
+                f"{at}: a text fact declares no unit, got {self.unit!r}: there is no unit "
+                f"for `Succeeded`",
+                key=self.key,
+            )
+
+    @property
+    def sort_key(self) -> str:
+        """`key` — the array order Req 34.8 requires of a resource's facts.
+
+        One field rather than a tuple because a resource carries at most one fact per key, and
+        :func:`build_snapshot` refuses a pair that shares one. A tie-break would be a
+        tie-break for a case that raises.
+        """
+        return self.key
+
+    def to_plain_data(self) -> dict[str, PlainData]:
+        """This fact as the plain-data object the snapshot carries (Req 4.2, 4.6).
+
+        `unit` is omitted rather than emitted as `null` when it does not apply, the same rule
+        every optional field on :class:`StatisticEntry` follows: the emitted object carries
+        exactly the fields that apply to it, so a value's shape says what kind of value it is.
+        """
+        data: dict[str, PlainData] = {
+            "key": self.key,
+            "value": self.value,
+            "value_kind": self.value_kind,
+            "source": self.source,
+            "collected_at": self.collected_at,
+            "formatted": self.formatted,
+        }
+        if self.unit is not None:
+            data["unit"] = self.unit
+        return data
+
+
 def _assert_no_billing_terms(entry: StatisticEntry) -> None:
     """Req 30.6 over one NIC-level value: no string field of it may contain `egress`,
     `transfer cost`, `bandwidth charge` or `billable`, compared case-insensitively.
@@ -1256,6 +1439,15 @@ class ResourceSnapshot:
     sku: SkuCapacity
     statistics: tuple[StatisticEntry, ...] = field(default_factory=tuple)
     day_buckets: tuple[ResourceDayBucket, ...] = field(default_factory=tuple)
+    facts: tuple[FactEntry, ...] = field(default_factory=tuple)
+    """This resource's collected facts (Req 4.1).
+
+    **Independent of `statistics`.** A resource carrying a `deallocated` or
+    `permission_denied` gap has no statistics and still has facts: a stopped machine's size,
+    OS and backup status are all readable while it is switched off, and they are exactly what
+    a right-sizing reader wants about a machine nobody is using. Emitting facts only for
+    resources that produced a measurement would drop the configuration of every resource the
+    report most needs to talk about."""
 
     @property
     def resource_id(self) -> str:
@@ -1264,9 +1456,11 @@ class ResourceSnapshot:
     def to_plain_data(self) -> dict[str, PlainData]:
         """This resource as the plain-data object the snapshot carries (Req 35.3).
 
-        Day buckets are ordered by local day and statistics by `(metric, statistic)`,
-        both produced here rather than inherited from the order responses arrived in
-        (Req 34.8).
+        Day buckets are ordered by local day, statistics by `(metric, statistic)` and facts
+        by `key` ascending in Unicode code-point order — all produced here rather than
+        inherited from the order responses arrived in (Req 34.8). `sorted` over `str` compares
+        by code point, which is what the requirement asks for and what JCS assumes of the
+        arrays it leaves untouched.
         """
         record = self.record
         return {
@@ -1284,6 +1478,16 @@ class ResourceSnapshot:
             "day_buckets": [
                 bucket.to_plain_data()
                 for bucket in sorted(self.day_buckets, key=lambda item: item.local_day)
+            ],
+            # Req 4.6 — emitted **always**, including as an empty array, and inside the
+            # canonical form the content hash is taken over. Omitting the key when a resource
+            # has no fact would make "this resource has no facts" and "this snapshot predates
+            # facts" the same document, which is the distinction `schema_version` exists to
+            # carry; and a key that appears conditionally makes the digest depend on whether a
+            # source happened to answer.
+            "facts": [
+                entry.to_plain_data()
+                for entry in sorted(self.facts, key=lambda item: item.sort_key)
             ],
         }
 
@@ -1383,6 +1587,7 @@ def build_snapshot(
     catalog_version: str,
     raw_archive_complete: bool,
     raw_archive_object_count: int,
+    invocation_started_at: datetime | None,
     agent_version: str = AGENT_VERSION,
     schema_version: str = SNAPSHOT_SCHEMA_VERSION,
 ) -> dict[str, PlainData]:
@@ -1422,6 +1627,13 @@ def build_snapshot(
     document's identity is its bytes, and a class wrapping it would invite an `update`
     method, which Req 34.6 forbids outright.
     """
+    resource_list = list(resources)
+    _assert_facts_are_collectable(
+        resource_list,
+        invocation_started_at=invocation_started_at,
+        snapshot_written_at=collected_at,
+    )
+
     body: dict[str, PlainData] = {
         "schema_version": schema_version,
         "producer": {
@@ -1443,7 +1655,7 @@ def build_snapshot(
         },
         "resources": [
             resource.to_plain_data()
-            for resource in sorted(resources, key=lambda item: item.resource_id)
+            for resource in sorted(resource_list, key=lambda item: item.resource_id)
         ],
         "gaps": _gaps_to_plain_data(gaps),
     }
@@ -1457,6 +1669,106 @@ def build_snapshot(
     scrubbed[CONTENT_HASH_FIELD] = digest
     scrubbed[SNAPSHOT_ID_FIELD] = digest
     return scrubbed
+
+
+def _assert_facts_are_collectable(
+    resources: Sequence[ResourceSnapshot],
+    *,
+    invocation_started_at: datetime | None,
+    snapshot_written_at: datetime,
+) -> None:
+    """The two refusals a fact's own `__post_init__` cannot make (Req 4.12, 4.13).
+
+    Both need something an individual :class:`FactEntry` does not have — the other facts on the
+    resource, and the run's own clock — so they live here, where `build_snapshot` has both and
+    can name the **resource id** alongside the key. Raised before the body is assembled, so no
+    digest exists and therefore no snapshot object could have been written.
+
+    ## Two facts for one resource sharing a key
+
+    Refused rather than resolved. A resource carrying `os_type` twice makes the emitted array's
+    contents depend on which one sorted first among equals, and `FactEntry.sort_key` is the key
+    alone precisely because a pair sharing one is a case that raises. Whichever value won would
+    also be a coin toss between two answers from possibly two different sources.
+
+    ## `collected_at` outside the run's lifetime
+
+    A fact stamped before the run began or after its snapshot was written did not come from this
+    run, and a snapshot that carried one would be attributing an observation to a collection
+    that could not have made it.
+
+    **The lower bound is the invocation instant, not `claimed_at`**, and that is the design's
+    deliberate narrowing of Req 4.13. The runtime cannot observe `claimed_at`: the invoke
+    `context` is closed at twelve fields with a guard, and reaching `claimed_at` would need a
+    thirteenth. The invocation instant is `>= claimed_at` by construction — the app claims the
+    row and then invokes — so this bound is **strictly tighter** than the requirement's and
+    rejects no correct run. A looser bound would have been the thing to argue about; a tighter
+    one needs only to be recorded, which is what this paragraph is.
+
+    `invocation_started_at` is `None` on the **replay** path, and that is a decision rather than
+    a default: `verify/replay.py` re-derives a document that was already validated when it was
+    written, and it has no invocation of its own to bound anything by. Required-but-nullable so
+    every call site states which of the two it is, rather than inheriting a default that would
+    make the check skippable by omission.
+    """
+    for resource in resources:
+        resource_id = resource.resource_id
+        seen: set[str] = set()
+        for entry in resource.facts:
+            if entry.key in seen:
+                raise FactEntryError(
+                    f"resource {resource_id!r} carries two facts for the key "
+                    f"{entry.key!r}. One resource holds at most one value per key, so the "
+                    f"emitted array's contents would depend on which of the two sorted "
+                    f"first among equals",
+                    key=entry.key,
+                    resource_id=resource_id,
+                )
+            seen.add(entry.key)
+
+            if invocation_started_at is None:
+                continue
+            instant = _parse_rfc3339(entry.collected_at, key=entry.key, resource_id=resource_id)
+            if not invocation_started_at <= instant <= snapshot_written_at:
+                raise FactEntryError(
+                    f"resource {resource_id!r} fact {entry.key!r} was collected at "
+                    f"{entry.collected_at}, outside this run's lifetime "
+                    f"[{rfc3339_utc(invocation_started_at)}, "
+                    f"{rfc3339_utc(snapshot_written_at)}]. A fact from outside the window "
+                    f"attributes an observation to a collection that could not have made it",
+                    key=entry.key,
+                    resource_id=resource_id,
+                )
+
+
+def _parse_rfc3339(value: str, *, key: str, resource_id: str) -> datetime:
+    """`value` as an aware `datetime`, or a :class:`FactEntryError`.
+
+    Parsed only to compare against the run's own bounds and **never written back**: the
+    snapshot carries `collected_at` as the string the response arrived with, exactly as
+    `GapRecord.interval_start` is passed through unreparsed. A normalized instant here would
+    make the digest depend on this function's formatting rather than on what Azure said.
+    """
+    text = value.replace("Z", "+00:00") if value.endswith("Z") else value
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError as error:
+        raise FactEntryError(
+            f"resource {resource_id!r} fact {key!r} carries a collected_at "
+            f"{value!r} that is not an RFC 3339 instant, so it cannot be checked against "
+            f"the run's lifetime (Req 4.13)",
+            key=key,
+            resource_id=resource_id,
+        ) from error
+    if parsed.tzinfo is None:
+        raise FactEntryError(
+            f"resource {resource_id!r} fact {key!r} carries a naive collected_at "
+            f"{value!r}; an instant with no offset cannot be ordered against the run's "
+            f"bounds without inventing a zone for it",
+            key=key,
+            resource_id=resource_id,
+        )
+    return parsed
 
 
 def _resolved_offset(window: Window, tz: TzInfo) -> timedelta:

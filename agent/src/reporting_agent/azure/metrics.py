@@ -701,9 +701,16 @@ class MetricsCollector:
     now: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
     _semaphores: dict[str, asyncio.Semaphore] = field(default_factory=dict, repr=False)
 
-    def _semaphore_for(self, subscription_id: str) -> asyncio.Semaphore:
+    def semaphore_for(self, subscription_id: str) -> asyncio.Semaphore:
         """Req 23.7's per-subscription concurrency budget, created lazily and reused
-        for the life of this instance."""
+        for the life of this instance.
+
+        **Public because the fact pass shares it** (Req 4.9). `azure/facts.py`'s
+        `FactCollector` is handed the object this returns, not a semaphore of its own:
+        the requirement is that fact requests count against the *same* limit as metric
+        requests, and two semaphores of eight would be sixteen in flight while satisfying
+        every assertion either of them could make about itself.
+        """
         semaphore = self._semaphores.get(subscription_id)
         if semaphore is None:
             semaphore = asyncio.Semaphore(MAX_CONCURRENCY_PER_SUBSCRIPTION)
@@ -824,7 +831,7 @@ class MetricsCollector:
         end_time: str,
         interval: str,
     ) -> LocationRequestResult:
-        semaphore = self._semaphore_for(subscription_id)
+        semaphore = self.semaphore_for(subscription_id)
         async with semaphore:
             return await self.region_resolver.request_batch_or_fallback(
                 location=location,

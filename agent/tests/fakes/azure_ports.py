@@ -33,9 +33,12 @@ __all__ = [
     "DNS_UNREACHABLE_LOCATIONS",
     "ExhaustedScriptError",
     "FakeDefinitionsPort",
+    "FakeFactsPort",
     "FakeInventoryPort",
     "FakeMetricsPort",
     "FakeSkuPort",
+    "empty_fact_list",
+    "facts_port_answering_nothing",
     "raw_response_from_recorded",
 ]
 
@@ -125,6 +128,125 @@ class FakeInventoryPort:
         )
         assert isinstance(result, RawHttpResponse)
         return result
+
+    async def query_distinct_dimensions(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """The next scripted response, recorded like every other call.
+
+        Scripted from the **same** sequence as :meth:`query_resources`, not a second one.
+        That is what lets a test assert Req 9.1's "one query per call": a fake with a
+        separate queue per method could not notice a `distinct_dimensions` that also paged
+        the inventory, because both would find a response waiting.
+        """
+        result = self._state.record_and_pop(
+            port_name="FakeInventoryPort",
+            method_name="query_distinct_dimensions",
+            subscription_id=subscription_id,
+        )
+        assert isinstance(result, RawHttpResponse)
+        return result
+
+
+class FakeFactsPort:
+    """Scripts the three non-projectable fact sources (Req 4.8, 5.1, 5.2, 5.3).
+
+    **Three independent queues**, unlike `FakeInventoryPort`'s one, because the three methods
+    are three different services and a test almost always wants to script them
+    asymmetrically — a successful backup list beside a rejected reservation listing is the
+    ordinary subscription, not an edge case.
+
+    A queue left empty means "this test does not exercise that source", and calling it is a
+    test bug rather than an observation, so it raises :class:`ExhaustedScriptError` the way
+    every other fake here does.
+    """
+
+    def __init__(
+        self,
+        *,
+        backup_responses: Sequence[RawHttpResponse] = (),
+        replication_responses: Sequence[RawHttpResponse] = (),
+        reservation_responses: Sequence[RawHttpResponse] = (),
+    ) -> None:
+        self._backup = _ScriptedCalls(responses=list(backup_responses))
+        self._replication = _ScriptedCalls(responses=list(replication_responses))
+        self._reservations = _ScriptedCalls(responses=list(reservation_responses))
+
+    @property
+    def backup_calls(self) -> list[dict[str, Any]]:
+        return self._backup.calls
+
+    @property
+    def replication_calls(self) -> list[dict[str, Any]]:
+        return self._replication.calls
+
+    @property
+    def reservation_calls(self) -> list[dict[str, Any]]:
+        return self._reservations.calls
+
+    async def list_backup_protected_items(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        return _one(
+            self._backup.record_and_pop(
+                port_name="FakeFactsPort",
+                method_name="list_backup_protected_items",
+                subscription_id=subscription_id,
+            )
+        )
+
+    async def list_replication_protected_items(self, *, vault_id: str) -> RawHttpResponse:
+        return _one(
+            self._replication.record_and_pop(
+                port_name="FakeFactsPort",
+                method_name="list_replication_protected_items",
+                vault_id=vault_id,
+            )
+        )
+
+    async def list_reservations(self) -> RawHttpResponse:
+        return _one(
+            self._reservations.record_and_pop(
+                port_name="FakeFactsPort", method_name="list_reservations"
+            )
+        )
+
+
+def _one(result: object) -> RawHttpResponse:
+    assert isinstance(result, RawHttpResponse), result
+    return result
+
+
+def empty_fact_list() -> RawHttpResponse:
+    """A successful fact list naming nothing — the ordinary subscription with no backups.
+
+    `200` with an empty `value` array, which is what makes the answer a **statement** rather
+    than a failure: `azure/facts.py` folds it into `backup_not_configured` or
+    `no_reservations`, not into `fact_unavailable`. A test that wants the failure scripts a
+    non-2xx response instead, and the difference between the two is the whole of
+    `test_facts_reservations.py`.
+    """
+    return RawHttpResponse(status=200, headers={}, body={"value": []})
+
+
+def facts_port_answering_nothing(*, vaults: int = 0) -> FakeFactsPort:
+    """A `FakeFactsPort` every source of which answers successfully and names nothing.
+
+    The default for a harness that is **not** about facts: it models a subscription with no
+    backup, no replication and no reservation, so the run collects the projected facts from
+    the inventory query and records one typed absence per non-projectable key. That is a real
+    subscription rather than an evasion — and it is why those harnesses' runs now carry gaps
+    and report `PARTIAL_COVERAGE`, which Req 5.6 names as the intended outcome.
+
+    `vaults` scripts one replication answer per Recovery Services vault the harness's
+    inventory holds; zero is the common case, and `azure/facts.py` then issues no replication
+    request at all.
+    """
+    return FakeFactsPort(
+        backup_responses=[empty_fact_list()],
+        replication_responses=[empty_fact_list() for _ in range(vaults)],
+        reservation_responses=[empty_fact_list()],
+    )
 
 
 class FakeSkuPort:

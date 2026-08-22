@@ -70,6 +70,7 @@ from fakes.azure_ports import (
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
+    facts_port_answering_nothing,
 )
 from pipeline_harness import (
     ACTOR_ID,
@@ -98,7 +99,7 @@ from reporting_agent.azure.provider import (
     FIDELITY_BASELINE,
     provider_over_ports,
 )
-from reporting_agent.catalog.loader import load_catalog
+from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
 from reporting_agent.collect.snapshot import snapshot_key
 from reporting_agent.events import (
     EVENT_TYPES,
@@ -354,7 +355,7 @@ class Walk:
     """One `main.invoke` over the fakes, with everything the run touched observable."""
 
     def __init__(self, *, store: InMemoryObjectStore | None = None) -> None:
-        self.catalog = load_catalog()
+        self.catalog = load_catalog(DEFAULT_CATALOG_PATH)
         self.store = store if store is not None else InMemoryObjectStore()
         self.transport = RecordingTransport()
         self.inventory_port = FakeInventoryPort([inventory(VMS)])
@@ -373,6 +374,7 @@ class Walk:
             sku_port=self.sku_port,
             definitions_port=self.definitions_port,
             metrics_port=self.metrics_port,
+            facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,
