@@ -38,7 +38,7 @@ from reporting_agent.verify.findings import (
 
 NEGATIVE_MODULES: Final[tuple[object, ...]] = (test_negative_gates, test_negative_types)
 
-EXPECTED_BLOCKING_COUNT: Final[int] = 16
+EXPECTED_BLOCKING_COUNT: Final[int] = 23
 """Req 44.1 names the number, so the number is asserted rather than derived.
 
 A count read from `BLOCKING_FINDING_TYPES` would agree with itself whatever that tuple said,
@@ -68,7 +68,7 @@ def _test_functions(module: object) -> list[ast.FunctionDef]:
 # --------------------------------------------------------------------------- #
 
 
-def test_the_glossary_declares_exactly_sixteen_blocking_types() -> None:
+def test_the_glossary_declares_exactly_twenty_three_blocking_types() -> None:
     assert len(BLOCKING_FINDING_TYPES) == EXPECTED_BLOCKING_COUNT, BLOCKING_FINDING_TYPES
     assert len(set(BLOCKING_FINDING_TYPES)) == EXPECTED_BLOCKING_COUNT
     for finding_type in BLOCKING_FINDING_TYPES:

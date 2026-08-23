@@ -60,6 +60,7 @@ from reporting_agent.compile.blocks.base import (
 )
 from reporting_agent.compile.estimators import method_phrase
 from reporting_agent.compile.figures import BlockCursor
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.snapshot_view import SnapshotValue
 
 __all__ = [
@@ -69,8 +70,12 @@ __all__ = [
     "compile_verification_record",
 ]
 
-_FIELD_COLUMN = Column(key="field", header="Field")
-_VALUE_COLUMN = Column(key="value", header="Value")
+def _field_column(messages: Messages) -> Column:
+    return Column(key="field", header=messages.text("doc.table.field"))
+
+
+def _value_column(messages: Messages) -> Column:
+    return Column(key="value", header=messages.text("doc.table.value"))
 
 TIER_MEANINGS: Final = {
     "baseline": (
@@ -153,7 +158,7 @@ def compile_gaps_and_coverage(
                 path=row_cursor.path,
                 key="no-gaps",
                 cells=(
-                    text_cell(row_cursor.child("cells", 0), NO_GAPS_TEXT),
+                    text_cell(row_cursor.child("cells", 0), context.messages.text(NO_GAPS_TEXT)),
                     text_cell(row_cursor.child("cells", 1), ""),
                     empty_cell(row_cursor.child("cells", 2)),
                 ),
@@ -186,9 +191,9 @@ def compile_gaps_and_coverage(
         path=table_cursor.path,
         style=style,
         columns=(
-            Column(key="gap_type", header="Gap"),
-            Column(key="resources", header="Resources affected"),
-            Column(key="count", header="Count"),
+            Column(key="gap_type", header=context.messages.text("doc.table.gap")),
+            Column(key="resources", header=context.messages.text("doc.table.resources_affected")),
+            Column(key="count", header=context.messages.text("doc.table.count")),
         ),
         rows=tuple(rows),
         caption=caption,
@@ -260,7 +265,7 @@ def compile_verification_record(
     table = Table(
         path=table_cursor.path,
         style=context.design.table_style_name,
-        columns=(_FIELD_COLUMN, _VALUE_COLUMN),
+        columns=(_field_column(context.messages), _value_column(context.messages)),
         rows=tuple(rows),
         caption=caption_of(block),
     )

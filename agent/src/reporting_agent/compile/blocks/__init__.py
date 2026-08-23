@@ -60,6 +60,8 @@ from reporting_agent.compile.definition import (
     FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
     resolved_schema_version,
 )
+from reporting_agent.compile.messages import Messages, load_messages
+from reporting_agent.messages import DEFAULT_LANGUAGE
 from reporting_agent.compile.figures import (
     BlockCursor,
     FigureLedger,
@@ -223,6 +225,15 @@ def compile_document(
         title = identity.get("report_title") or identity.get("name")
         report_title = title if isinstance(title, str) else ""
 
+    # Req 15.11, 15.12 — resolve language from the pinned definition's identity.
+    # A v1 definition has no identity.language, so it resolves as `en` (Req 15.12).
+    language = DEFAULT_LANGUAGE
+    if isinstance(identity, Mapping):
+        declared_lang = identity.get("language")
+        if isinstance(declared_lang, str) and declared_lang in ("en", "id"):
+            language = declared_lang
+    messages = load_messages(language)
+
     period_raw = definition.get("period")
     metrics_raw = definition.get("metrics")
 
@@ -231,6 +242,7 @@ def compile_document(
         ledger=ledger,
         design=design,
         default_scope=_default_scope(definition),
+        messages=messages,
         period=dict(period_raw) if isinstance(period_raw, Mapping) else {},
         report_title=report_title,
         subscription_display_name=subscription_display_name,

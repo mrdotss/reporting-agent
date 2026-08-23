@@ -180,6 +180,17 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
    */
   "test/property/config-options.property.test.ts": 3,
   /**
+   * breadth Property 7 (`scope_stays_a_rule`). Two, exactly the two the task
+   * declares: an inventory whose resource group name contains a
+   * subscription-like identifier substring, and a definition carrying a
+   * resource type the response does not list. Both are retained as fixed cases
+   * because each pins a rule a generator would only reach by luck — the first
+   * that a group name *looking* like an identifier is still stored verbatim,
+   * the second that a stored value absent from the current inventory is neither
+   * deselected nor pruned.
+   */
+  "test/property/scope-picker.property.test.ts": 2,
+  /**
    * Fifteen distinct declared cases across four arrays: three languages, six pairs of language
    * and declared separator, three colliding resolved pairs, and three version-1 shapes.
    */

@@ -41,12 +41,18 @@ from reporting_agent.compile.ast import Figure, child_nodes
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, DesignSettings
 from reporting_agent.compile.figures import walk_figures
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render.docx import render_document
 from reporting_agent.verify.anchors import check_tables, read_grids
 from reporting_agent.verify.findings import FINDING_LEDGER_ENTRY_UNRENDERED
 
 CPU: Final[str] = sf.CPU
+
+EMPTY_SCOPE_TEXT_RESOLVED: Final[str] = load_messages("en").text(EMPTY_SCOPE_TEXT)
+"""`EMPTY_SCOPE_TEXT` is a catalog string **id**, and the AST carries the **resolved**
+string — that is the whole point of resolving at compile time. So a document assertion
+compares against the resolved message, never against the id."""
 
 # The block types a definition can carry here. `comparison_delta` needs two completed runs
 # and a `ComparisonSource`, which is a pipeline concern rather than a compile one; `cover`
@@ -317,7 +323,7 @@ def test_an_empty_scope_block_carries_the_explicit_row_and_zero_figures() -> Non
     compiled = compile_pair(pair)
 
     assert compiled.figure_count == 0
-    assert EMPTY_SCOPE_TEXT in _all_text(compiled.document)
+    assert EMPTY_SCOPE_TEXT_RESOLVED in _all_text(compiled.document)
 
 
 def _all_text(node: object) -> str:

@@ -69,6 +69,7 @@ from reporting_agent.compile.blocks.base import (
     text_cell,
 )
 from reporting_agent.compile.figures import BlockCursor
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue
 
@@ -112,8 +113,12 @@ no unit and no snapshot statistic. `fidelity_tier` is on both this list and
 :data:`_TIER_COLUMN`'s implicit path, which is why naming it explicitly while `show_fidelity`
 is set is a validation error rather than two identical columns."""
 
-_RESOURCE_COLUMN = Column(key="resource", header="Resource")
-_TIER_COLUMN = Column(key="fidelity_tier", header="Fidelity")
+def _resource_column(messages: Messages) -> Column:
+    return Column(key="resource", header=messages.text("doc.table.resource"))
+
+
+def _tier_column(messages: Messages) -> Column:
+    return Column(key="fidelity_tier", header=messages.text("doc.table.fidelity"))
 
 
 def resource_attribute_text(resource: ResourceView, attribute: str) -> str:
@@ -206,7 +211,7 @@ def _resource_rows_table(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption),))
+        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
 
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
@@ -219,14 +224,15 @@ def _resource_rows_table(
     ]
 
     truncation = omitted_row(
-        table_cursor.child("rows", len(rows)), context.view, len(shown), len(matched)
+        table_cursor.child("rows", len(rows)), context.view, len(shown), len(matched),
+        messages=context.messages,
     )
     if truncation is not None:
         rows.append(truncation)
 
     columns = (
-        _RESOURCE_COLUMN,
-        *((_TIER_COLUMN,) if with_tier else ()),
+        _resource_column(context.messages),
+        *((_tier_column(context.messages),) if with_tier else ()),
         *_metric_columns(refs),
     )
     table = Table(
@@ -296,7 +302,7 @@ def compile_kpi_row(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption),))
+        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
 
     rows: list[Row] = []
     for ordinal, ref in enumerate(refs):
@@ -323,10 +329,10 @@ def compile_kpi_row(
         path=table_cursor.path,
         style=style,
         columns=(
-            Column(key="metric", header="Metric"),
-            Column(key="basis", header="Basis"),
-            Column(key="value", header="Value"),
-            Column(key="resource", header="Resource"),
+            Column(key="metric", header=context.messages.text("doc.table.metric")),
+            Column(key="basis", header=context.messages.text("doc.table.basis")),
+            Column(key="value", header=context.messages.text("doc.table.value")),
+            Column(key="resource", header=context.messages.text("doc.table.resource")),
         ),
         rows=tuple(rows),
         caption=caption,
@@ -391,7 +397,7 @@ def compile_capacity_vs_usage(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption),))
+        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
 
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
@@ -422,7 +428,8 @@ def compile_capacity_vs_usage(
         rows.append(Row(path=row_cursor.path, key=resource.resource_id, cells=tuple(cells)))  # type: ignore[arg-type]
 
     truncation = omitted_row(
-        table_cursor.child("rows", len(rows)), context.view, len(shown), len(matched)
+        table_cursor.child("rows", len(rows)), context.view, len(shown), len(matched),
+        messages=context.messages,
     )
     if truncation is not None:
         rows.append(truncation)
@@ -431,8 +438,8 @@ def compile_capacity_vs_usage(
         path=table_cursor.path,
         style=style,
         columns=(
-            _RESOURCE_COLUMN,
-            *((_TIER_COLUMN,) if with_tier else ()),
+            _resource_column(context.messages),
+            *((_tier_column(context.messages),) if with_tier else ()),
             Column(key=capacity_ref.key, header=f"{capacity_ref.label} (capacity)"),
             Column(key=usage_ref.key, header=f"{usage_ref.label} (observed)"),
         ),

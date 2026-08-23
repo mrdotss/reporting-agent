@@ -293,11 +293,21 @@ class FactTextValue:
     unit: str | None = None
 
     def __post_init__(self) -> None:
+        # Req 6.11 — this is the `fact_source_missing` gate, and it is here rather than at
+        # the `text_fact` factory on purpose: a fact with no provenance is unreadable at
+        # construction, so there is no reachable path that carries one further. A second
+        # check downstream could only fire against a `FactTextValue` built around this
+        # constructor, which is a state no production code can produce.
+        #
+        # The message names the finding type, the resource and the key, because the field
+        # that is missing is rarely the one the operator needs to find the entry by.
         for name in ("key", "value", "source", "collected_at", "pointer", "resource_id"):
             if not getattr(self, name):
                 raise CompileFailedError(
-                    f"a fact read at {self.pointer!r} carries no {name}; every field a "
-                    f"`TextFact` proves itself with is present or the fact is not readable"
+                    f"fact_source_missing — a fact carries no {name}: resource "
+                    f"{self.resource_id!r}, key {self.key!r}, read at {self.pointer!r}; "
+                    f"every field a `TextFact` proves itself with is present or the fact "
+                    f"is not readable"
                 )
         if not self.pointer.endswith("/value"):
             raise CompileFailedError(

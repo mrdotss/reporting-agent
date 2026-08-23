@@ -681,6 +681,12 @@ class BlockCursor:
                 f"a bare string, which is what makes a model-authored fact unconstructible."
             )
 
+        # Req 6.11's `fact_source_missing` gate is `FactTextValue.__post_init__`, not a
+        # check here: a fact with no `source` or no `collected_at` cannot be constructed,
+        # so by the time one reaches this factory it has both. A guard at this point would
+        # be unreachable, and a test for it could only pass by building a `FactTextValue`
+        # around its own constructor — certifying dead code.
+
         fact = TextFact(
             path=path,
             key=fact_value.key,

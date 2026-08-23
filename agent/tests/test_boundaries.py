@@ -2739,3 +2739,231 @@ def test_the_completeness_rule_would_catch_an_empty_or_unswept_package(
         "the synthetic tree must be missing declared packages, or direction 2's second "
         "assertion is untested"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Rule 15 — no clock on the replay/fact-fold path (Req 7.11)
+# --------------------------------------------------------------------------- #
+#
+# `collect/factfold.py` is pure: it takes `received_at` as a parameter and reads no clock.
+# `verify/replay.py` drives it: it takes every `received_at` from the archived object and
+# stamps nothing itself. A clock read in either module would put an instant that changes on
+# every call into the canonical form, and the digest replay compares is computed from that
+# instant — so every run that replays would mismatch even though the collection was correct.
+#
+# The lesson is the same as `collect/snapshot.py`'s ban on `unicodedata.normalize`:
+# determinism is not a style preference on a hash path.
+
+NO_CLOCK_MODULES: tuple[str, ...] = (
+    "collect/factfold.py",
+    "verify/replay.py",
+)
+"""The two modules that must never read a clock.
+
+`verify/replay.py` is also on the replay closure (rule 5) and is already forbidden from
+reaching the network. This rule adds the narrower constraint that it may not *time* anything
+either — a clock is not a network client, so rule 5 does not catch it."""
+
+CLOCK_TOKENS: frozenset[str] = frozenset({"datetime.now", "time.time", "utcnow"})
+"""The three spellings of a clock read.
+
+`datetime.now`    — the common wall-clock call, with or without a tz argument.
+`time.time`       — the POSIX-epoch float; rarer but just as non-deterministic.
+`utcnow`          — deprecated and dangerous (`datetime.utcnow()` returns naive).
+
+Matched as **attribute chains** for `datetime.now` and `time.time`, and as a bare
+**attribute or name** for `utcnow` (which appears as both `datetime.utcnow` and the
+occasionally imported bare name).
+"""
+
+
+def _clock_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every clock-read token in the given modules.
+
+    Deliberately looks at attribute chains and name occurrences rather than imports,
+    because a function that constructs a datetime from its arguments and then calls `.now()`
+    on it is not detectable from the import alone — and `datetime` is imported for
+    annotations on both modules today.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            # Attribute chain: `datetime.now`, `time.time`, `datetime.utcnow`
+            if isinstance(node, ast.Attribute):
+                chain = _dotted(node)
+                if chain is not None and chain in CLOCK_TOKENS:
+                    offenders.append(f"{_label(path)}:{node.lineno} {chain}")
+                elif node.attr == "utcnow":
+                    offenders.append(f"{_label(path)}:{node.lineno} .utcnow")
+            # Bare name: a locally imported `utcnow` (unlikely but covered).
+            elif isinstance(node, ast.Name) and node.id == "utcnow":
+                offenders.append(f"{_label(path)}:{node.lineno} name utcnow")
+            # String constant: `getattr(dt, "utcnow")` or similar dynamic dispatch.
+            elif (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and node.value.strip() in CLOCK_TOKENS
+            ):
+                offenders.append(f"{_label(path)}:{node.lineno} string {node.value!r}")
+    return offenders
+
+
+def _no_clock_scanned_modules() -> list[Path]:
+    return [SRC_ROOT / rel for rel in NO_CLOCK_MODULES if (SRC_ROOT / rel).is_file()]
+
+
+def test_no_clock_modules_exist() -> None:
+    """The two modules the no-clock rule covers must both exist, or the rule scans nothing."""
+    for rel in NO_CLOCK_MODULES:
+        path = SRC_ROOT / rel
+        assert path.is_file(), (
+            f"{rel} is declared clock-free and does not exist, so the rule below "
+            "asserts nothing for it"
+        )
+
+
+def test_no_clock_on_the_fact_fold_or_replay_path() -> None:
+    """Req 7.11. A clock read here makes every replay mismatch.
+
+    `collect/factfold.py` takes `received_at` as a parameter — the instant the caller
+    recorded when it received the response. `verify/replay.py` reads that instant from the
+    archived object. Neither may substitute its own clock.
+    """
+    offenders = _clock_offenders(_no_clock_scanned_modules())
+
+    assert not offenders, (
+        "these modules read a clock, so a `collected_at` or `received_at` stamped at the "
+        "replay instant enters the canonical form and produces REPLAY_MISMATCH on every "
+        "run however correct the collection was: " + "; ".join(offenders)
+    )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import datetime\nnow = datetime.now()",
+        "from datetime import datetime\nts = datetime.now(tz=timezone.utc)",
+        "import time\nts = time.time()",
+        "from datetime import datetime\nts = datetime.utcnow()",
+        "ts = dt.utcnow()",
+        'fn = getattr(dt_module, "utcnow")',
+    ],
+)
+def test_the_clock_scan_detects_a_clock_read(source: str, tmp_path: Path) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _clock_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # Annotations and type hints are not calls.
+        "from datetime import datetime\ndef f(ts: datetime) -> None: pass",
+        # A parameter named `received_at` is the correct pattern.
+        "def fold(body, *, received_at: str) -> None: pass",
+        # Prose about the ban.
+        '"""This module reads no clock (Req 7.11)."""',
+        "# datetime.now would put a non-deterministic instant into the hash",
+        # Reading a stored datetime value from an object is fine.
+        "stored_at = document.get('received_at')",
+        "instant = record['collected_at']",
+    ],
+)
+def test_the_clock_scan_permits_annotations_and_stored_reads(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _clock_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 15b — replay closure includes factfold, numeric and catalog/loader
+# --------------------------------------------------------------------------- #
+#
+# Task 4.4 widened the replay's transitive first-party closure to include
+# `collect/factfold.py` (for fact re-derivation), `collect/numeric.py` (the one numeric
+# reader it calls) and `catalog/loader.py` (the declarations it resolves against).
+# Asserting them present here means a refactor that moves them off the closure — which
+# would force replay to grow its own fold — fails this test rather than silently breaking
+# the one-fold guarantee.
+
+
+def test_the_replay_closure_includes_the_fact_fold_and_its_dependencies() -> None:
+    """Req 7.9, 7.11. The replay's closure must include the fact fold path.
+
+    If any of these modules left the closure, replay would have grown a second derivation
+    and the one-fold argument would be broken — which means a fact that differed between
+    collection and replay would no longer be a genuine error.
+    """
+    closure = {
+        _label(path) for path in _first_party_closure(SRC_ROOT / REPLAY_ENTRY_POINT)
+    }
+
+    for required in (
+        "src/reporting_agent/collect/factfold.py",
+        "src/reporting_agent/collect/numeric.py",
+        "src/reporting_agent/catalog/loader.py",
+    ):
+        assert required in closure, (
+            f"{required} is not on the replay closure — replay may have grown its own "
+            f"fold, breaking the one-derivation guarantee. Closure: {sorted(closure)}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# Rule 15c — the SDK boundary scan explicitly reaches factfold and numeric
+# --------------------------------------------------------------------------- #
+#
+# Both modules are under `collect/`, which is in `SDK_SCAN_PACKAGES`, so they are already
+# swept by rule 1. This test is the **explicit** assertion the task requires — it names
+# the two files and fails if the scan does not actually see them. Belt and braces: rule 1's
+# per-package assertion would pass if the directory held other files and these two were
+# renamed.
+
+
+def test_the_sdk_boundary_scan_reaches_factfold_and_numeric() -> None:
+    """Req 7.9. Both pure modules must be swept by the SDK boundary rule."""
+    scanned = set(_modules_outside_azure_package())
+
+    factfold = SRC_ROOT / "collect" / "factfold.py"
+    numeric = SRC_ROOT / "collect" / "numeric.py"
+
+    assert factfold.is_file(), f"{factfold} does not exist"
+    assert numeric.is_file(), f"{numeric} does not exist"
+
+    assert factfold in scanned, (
+        f"{factfold} is not in the SDK boundary scan — it would not be caught importing "
+        "an Azure SDK"
+    )
+    assert numeric in scanned, (
+        f"{numeric} is not in the SDK boundary scan — it would not be caught importing "
+        "an Azure SDK"
+    )
+
+
+def test_the_sdk_boundary_scan_fails_on_an_empty_directory(tmp_path: Path) -> None:
+    """The scan must return nothing meaningful (and therefore assert nothing) for a tree
+    whose only non-azure module is the root __init__.py,
+    so the non-emptiness assertion that wraps it is what actually protects the rule.
+
+    This test proves the collector returns no package-level modules when packages are
+    absent, which is why the per-package `assert reached` in
+    `test_no_module_outside_the_azure_package_imports_an_azure_sdk` is load-bearing
+    rather than cosmetic.
+    """
+    root = tmp_path / "src" / "reporting_agent"
+    _write(root, "__init__.py", "")
+    _write(root, "azure/__init__.py", "")
+    # No modules in any of the SDK_SCAN_PACKAGES directories
+    scanned = _modules_outside_azure_package(root)
+    # Only the root __init__.py should be outside azure/
+    assert all(p.name == "__init__.py" for p in scanned), (
+        "with no package directories present, only __init__.py should be scanned"
+    )
+    # None of the SDK_SCAN_PACKAGES are reachable
+    for package in SDK_SCAN_PACKAGES:
+        reached = [p for p in scanned if p.is_relative_to(root / package)]
+        assert not reached, (
+            f"package {package}/ should not be reachable in an empty tree"
+        )

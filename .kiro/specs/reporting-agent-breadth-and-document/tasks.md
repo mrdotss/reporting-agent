@@ -224,7 +224,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Replay continues to take each resource's inventory **record** from `ReplayPlan` built from the stored snapshot — it proves the fact derivation and the aggregation, not the inventory query, which is the boundary it already has for metrics. Deriving the facts from the plan instead would be reading a fact out of the snapshot and putting it back
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.10, 7.11, 7.12_
 
-  - [ ] 4.5 The behavioural seam test and the two static guards over it
+  - [x] 4.5 The behavioural seam test and the two static guards over it
     - `agent/tests/test_fact_reader_seam.py`: install a **counting wrapper** over `collect.numeric.decimal_leaf` and assert a live collection pass **and** a replay both route every numeric fact through it, with equal counts. This is the lesson `tech.md` records as "an injected seam is an untested seam" — a static assertion that both modules import the symbol would pass against a module that imported it and then parsed inline
     - Extend `tests/test_boundaries.py`: neither `collect/factfold.py` nor `verify/replay.py` may contain the tokens `datetime.now`, `time.time` or `utcnow`; and `verify/replay.py`'s transitive first-party import closure — now including `collect/factfold.py`, `collect/numeric.py` and `catalog/loader.py` — reaches no `azure.*`, `boto3`, `httpx` or `storage.s3`
     - Extend the SDK boundary scan to cover `collect/factfold.py` and `collect/numeric.py`, and assert the scan fails on a directory that yields zero source files
@@ -269,7 +269,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - A `TextFact` reaching `write_layout_table` records **no** anchor, because a layout table writes no `w:tblCaption` — that path stays reachable on purpose and is what negative test 15.11 drives
     - _Requirements: 6.4, 6.9, 8.4_
 
-  - [ ] 5.5 Implement `verify/facts.py` and wire the `facts` gate
+  - [x] 5.5 Implement `verify/facts.py` and wire the `facts` gate
     - `agent/src/reporting_agent/verify/facts.py`: `TextFactPass(findings, entries_checked, entries_resolved)` and `check_text_facts(ledger, grids) -> TextFactPass`, reading the ledger's `text_facts` and `text_fact_anchors` and the `.docx` grids and **not** the figure entries — `verify/pdf.py` does not read the text-fact entries either, so the two passes have disjoint inputs
     - `text_fact_mismatch` where an anchor resolves to exactly one cell whose runs concatenated in document order **with no character inserted between runs** differ from `formatted` — no trimming, no whitespace normalization, no case folding, no re-parsing of either string — naming the table identity, the row key, the column key, the fact key and both strings verbatim; `text_fact_anchor_missing` where an anchor **was** recorded and resolves to no cell; `text_fact_unanchored` where a `TextFact` entry has **no anchor recorded at all**
     - `verify/findings.py`: add the seven blocking types this spec declares, taking `BLOCKING_FINDING_TYPES` to **twenty-three** — `text_fact_mismatch`, `text_fact_anchor_missing`, `text_fact_unanchored`, `historical_point_unverified`, `historical_point_overlapping`, `toc_page_mismatch`, `fact_source_missing` — each with `SEVERITY_BLOCKING`
@@ -306,7 +306,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Add `ui.template.untitled_placeholder` in this task, because task 12.7's template list presents it where `report_templates.name` is absent or empty
     - _Requirements: 15.2, 15.5, 15.10_
 
-  - [ ] 6.3 Resolve every fixed string from the catalog, in the four places the literals actually are
+  - [x] 6.3 Resolve every fixed string from the catalog, in the four places the literals actually are
     - **Tasks 6.4 and 6.5 are the guards over this migration and run after it**, not before. The
       four places below are all under `agent/`; see 6.5 for the app-side copy this task does not
       reach and the scoping decision that leaves open.
@@ -383,7 +383,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `app/test/event-mirror.static.test.ts` is **not** touched: no event type is added, so the cross-language event vocabulary is unchanged
     - _Requirements: 13.10, 15.10_
 
-  - [ ] 7.4 Prove every shipped starter compiles as stored
+  - [x] 7.4 Prove every shipped starter compiles as stored
     - `agent/tests/test_schema_version_1.py` compiling **every** definition in `app/lib/templates/starters.ts` **as stored** — five `cover` blocks in the `blocks` list, exactly two `number_format` keys, no `identity.language` — and asserting a rendered document, a passing verification, every string id resolved in `en`, and the separators resolved to `.` and `,`
     - This is the **positive** outcome criterion 24.17 names as exempt from the enumeration meta-test: it is proven by a compile test rather than by a gate that can fail, so the exemption is declared in task 15.16 and justified here
     - Assert no stored version row is written, updated or rewritten by this path — raising the schema version rewrites nothing
@@ -480,7 +480,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
   - The four parts go in that order, and the selector is **pure with the snapshots supplied**:
     `report_runs` and `report_verifications` are in Postgres and the agent reaches no database.
 
-  - [ ] 11.1 Implement `app/lib/runs/historical.ts` — the candidate query
+  - [x] 11.1 Implement `app/lib/runs/historical.ts` — the candidate query
     - `import "server-only"` first line. One query joining `report_runs` to `report_template_versions` with a `LEFT JOIN LATERAL … ORDER BY rv.created_at DESC, rv.id DESC LIMIT 1` for each run's **latest** verification, which is criterion 18.6's tie-break expressed in the query rather than re-derived in the selector — `report_verifications` deliberately carries no `UNIQUE (run_id)` because a re-verification appends, so "the latest" is a real question with a real answer
     - Filter on `tv.template_id`, **not** `r.template_version_id`: a template version is immutable and editing a template writes a new version, so keying on the identical version id would **empty every trend on the next edit**. The cost — two points may have been compiled from different definitions — is what the exclusions of task 11.2 catch wherever that difference reaches a plotted value
     - `r.user_id = $1`, the connected subscription id, `r.id <> $4`, and `r.period_end < $5` for the compiling period's start; `ORDER BY r.period_end DESC, v.created_at DESC, r.id DESC` and **`LIMIT 200`, not `LIMIT $lookback`**, because the eligibility filters run after the bound and bounding at the lookback would let an ineligible newer run displace an eligible older one. Record the residual in a comment with its number: 200 leaves room for 176 ineligible candidates at `lookback <= 24`, so a template with more than 200 prior runs against one subscription of which at least 177 of the newest 200 are ineligible loses an eligible run to the bound — sixteen years at one run a month, seven months at one a day
@@ -552,7 +552,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Kills: a resolver drawing metric options from the catalog rather than the selection, which offers a metric the run does not collect; one offering every declared fact key regardless of scope; a load path that removes an undeclared reference instead of reporting it
     - _Requirements: 11.9, 12.2, 12.4, 12.9, 12.10, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
-  - [ ] 12.4 Build the scope picker and its property
+  - [x] 12.4 Build the scope picker and its property
     - `app/components/templates/scope-picker.tsx` replacing the comma-separated text controls `app/components/templates/step-scope.tsx` presents today through `parseList` (line 40) and `parseTagFilters` (line 60), presenting the resource types, resource groups and tag keys and values the endpoint returned as selectable options
     - Four option kinds, four stored shapes: a resource type stores that string in `scope.resource_types`; a resource group that string in `scope.resource_groups`; a **tag key alone** stores `{ key, value: "" }`, because a zero-length value is already the rule "carries this tag" — the alternative, inventing a wildcard token, would be a value no inventory response carried and a second spelling of a rule the schema already has; a tag key with a value stores both
     - Record **nothing** identifying the subscription whose inventory was listed, and do not relax the `Template_Validator`'s existing rejection of a resource id, subscription id or tenant id in any scope field

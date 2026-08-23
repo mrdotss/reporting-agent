@@ -488,3 +488,16 @@ export async function enqueueRun(
     throw redactedWriteError("enqueueing a run", thrown)
   }
 }
+
+// --- Historical-trend candidates (Requirement 18.4) -------------------------
+
+/**
+ * The candidate query for the historical-trend block.
+ *
+ * Re-exported here so `lib/actions/runs.ts` is the public surface for run-related
+ * database queries (this module owns enqueue; `historical.ts` owns the trend
+ * candidates). The actual call site is `lib/runs/invoke.ts`, which fetches
+ * candidates at invoke time and carries them in the **command payload** — never in
+ * `context`, which stays closed at twelve fields with its existing guard.
+ */
+export { fetchHistoricalCandidates } from "@/lib/runs/historical"

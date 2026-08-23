@@ -64,6 +64,7 @@ from reporting_agent.compile.ast import (
     TextCell,
 )
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, NOTICE_COLUMN_HEADER
+from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import chartstyle as style
 
@@ -237,7 +238,7 @@ def sidecar_bytes(node: Chart, *, data_hash: str) -> bytes:
 # --------------------------------------------------------------------------- #
 
 
-def companion_table(node: Chart, table_style: str) -> Table:
+def companion_table(node: Chart, table_style: str, *, messages: Messages | None = None) -> Table:
     """Every plotted point of every plotted series, as a data table.
 
     No sampling, no thinning, no re-rounding (Req 22.1): the cell text is the ledger's
@@ -252,10 +253,14 @@ def companion_table(node: Chart, table_style: str) -> Table:
     keyed the way `render/docx.py` recognises a notice row so it is styled as information
     rather than as a failure.
     """
+    if messages is None:
+        from reporting_agent.compile.messages import load_messages
+        messages = load_messages()
+
     columns = (
-        Column(key=SERIES_COLUMN_KEY, header=SERIES_COLUMN_HEADER),
-        Column(key=X_COLUMN_KEY, header=X_COLUMN_HEADER),
-        Column(key=VALUE_COLUMN_KEY, header=VALUE_COLUMN_HEADER),
+        Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.period")),
+        Column(key=X_COLUMN_KEY, header=messages.text("chart.axis.time")),
+        Column(key=VALUE_COLUMN_KEY, header=messages.text("doc.table.value")),
     )
 
     series_set = plotted_series(node)
@@ -264,12 +269,12 @@ def companion_table(node: Chart, table_style: str) -> Table:
         return Table(
             path=node.path,
             style=table_style,
-            columns=(Column(key="notice", header=NOTICE_COLUMN_HEADER),),
+            columns=(Column(key="notice", header=messages.text(NOTICE_COLUMN_HEADER)),),
             rows=(
                 Row(
                     path=node.path,
                     key="empty-scope",
-                    cells=(TextCell(path=node.path, text=EMPTY_SCOPE_TEXT),),
+                    cells=(TextCell(path=node.path, text=messages.text(EMPTY_SCOPE_TEXT)),),
                 ),
             ),
             caption=node.caption,
@@ -313,13 +318,17 @@ def _figure_cell(figure: Figure):
 # --------------------------------------------------------------------------- #
 
 
-def render_chart(node: Chart, *, table_style: str, theme: str = "light") -> ChartArtifacts:
+def render_chart(node: Chart, *, table_style: str, theme: str = "light", messages: Messages | None = None) -> ChartArtifacts:
     """Emit one chart's image, sidecar and companion table.
 
     The image is drawn under :func:`chartstyle.frozen_rc_params` in a `rc_context`, so the
     style is applied for this call and not left on the global state — where it would make the
     emitted bytes depend on whether some other module had already changed an rcParam.
     """
+    if messages is None:
+        from reporting_agent.compile.messages import load_messages
+        messages = load_messages()
+
     if node.encoding not in style.CHART_ENCODINGS:  # pragma: no cover - AST validates
         raise RenderFailedError(
             f"chart {node.path!r} declares encoding {node.encoding!r}, not one of "
@@ -352,7 +361,7 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light") -> Char
     return ChartArtifacts(
         image_png=image,
         sidecar_json=sidecar_bytes(node, data_hash=data_hash),
-        table=companion_table(node, table_style),
+        table=companion_table(node, table_style, messages=messages),
         data_hash=data_hash,
         identity=node.anchor_id,
         plotted_keys=tuple(series.key for series in series_set),

@@ -55,6 +55,11 @@ from reporting_agent.compile.blocks.base import (
     NOTICE_COLUMN_HEADER,
     DesignSettings,
 )
+from reporting_agent.compile.messages import load_messages
+
+_MESSAGES = load_messages("en")
+_EMPTY_SCOPE_RESOLVED = _MESSAGES.text(EMPTY_SCOPE_TEXT)
+_NOTICE_HEADER_RESOLVED = _MESSAGES.text(NOTICE_COLUMN_HEADER)
 from reporting_agent.compile.figures import FigureLedger
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import ErrorCode, RenderFailedError
@@ -477,8 +482,8 @@ def test_a_data_table_carrying_zero_figures_still_registers_its_identity() -> No
 
     # And the explicit row is present, with a real column header.
     texts = row_texts(emitted[0])
-    assert texts[0] == [NOTICE_COLUMN_HEADER]
-    assert [EMPTY_SCOPE_TEXT] in texts
+    assert texts[0] == [_NOTICE_HEADER_RESOLVED]
+    assert [_EMPTY_SCOPE_RESOLVED] in texts
 
 
 def test_a_blank_caption_reads_as_absent() -> None:

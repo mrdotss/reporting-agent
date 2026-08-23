@@ -33,6 +33,9 @@ from reporting_agent.compare.delta import (
 from reporting_agent.compile.ast import EmptyCell, FigureCell, Table, TextCell
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import NOT_COMPARABLE_TEXT
+from reporting_agent.compile.messages import load_messages
+
+_NOT_COMPARABLE_RESOLVED = load_messages("en").text(NOT_COMPARABLE_TEXT)
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import CompileFailedError
 
@@ -223,7 +226,7 @@ def test_the_block_renders_a_not_comparable_row_with_an_empty_delta_cell() -> No
     assert isinstance(row.cells[2], EmptyCell)
     note = row.cells[3]
     assert isinstance(note, TextCell)
-    assert NOT_COMPARABLE_TEXT in note.text
+    assert _NOT_COMPARABLE_RESOLVED in note.text
     assert "baseline" in note.text and "enhanced" in note.text
 
     # No delta figure was minted for it.

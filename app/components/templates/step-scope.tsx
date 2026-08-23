@@ -1,13 +1,12 @@
 "use client"
 
-import { useId } from "react"
-
-import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
-import { Input } from "@/components/ui/input"
+import { ScopePicker, type ScopePickerValue } from "@/components/templates/scope-picker"
+import type { InventoryDimensions } from "@/lib/subscriptions/inventory-cache"
 import type { ScopeSpec, TemplateDefinition } from "@/lib/templates/definition"
 
 /**
- * Step 2 — the template's default scope rules (Requirements 3.1, 3.12, 11.1).
+ * Step 2 — the template's default scope rules (Requirements 3.1, 3.12, 9.5, 9.6,
+ * 9.7, 10.1–10.11).
  *
  * ## Rules, never resources, and the UI has to say so
  *
@@ -26,14 +25,20 @@ import type { ScopeSpec, TemplateDefinition } from "@/lib/templates/definition"
  * read it the other way would build a template they believed was narrow and get a
  * report over the whole subscription, so each field states its empty meaning.
  *
- * ## Comma-separated text, not a chip editor
+ * ## The scope picker replaces comma-separated text
  *
- * A deliberate simplification at this step. The values are Azure resource type
- * names and resource group names — long, exact strings a consultant pastes rather
- * than picks — and a chip editor's value is in constraining a short vocabulary.
- * The parsing is one function, tested with the rest of the step, and trimming
- * empties is what keeps a trailing comma from becoming an empty entry the
- * validator then rejects.
+ * The previous implementation used comma-separated text controls (`parseList` and
+ * `parseTagFilters`). The scope picker now presents the connected subscription's
+ * inventory as selectable options, while retaining free entry with identical bounds
+ * and validation. A picked value stores the same rule a manually entered value does
+ * — character-identical — and one entry not two on a duplicate.
+ *
+ * ## The picker never writes
+ *
+ * It renders stored values as selected whether or not the inventory response
+ * contains them, marks absent ones as "not present in this subscription", and
+ * removes a value only on explicit removal. Opening a template against a second
+ * subscription's inventory edits no rule.
  */
 
 /** `"a, b , ,c"` → `["a", "b", "c"]`. A trailing comma is not an empty entry. */
@@ -42,11 +47,6 @@ export function parseList(value: string): string[] {
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry) => entry !== "")
-}
-
-/** `[{key, value}]` → `"env=prod, tier=web"`. */
-function formatTagFilters(filters: ScopeSpec["tag_filters"]): string {
-  return filters.map((filter) => `${filter.key}=${filter.value}`).join(", ")
 }
 
 /**
@@ -78,76 +78,41 @@ export function parseTagFilters(
 export function StepScope({
   definition,
   onChange,
+  inventory,
+  inventoryUnavailableReason,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
+  /**
+   * The inventory dimensions from the selected subscription, or undefined if no
+   * subscription is selected or the endpoint is unavailable.
+   */
+  inventory?: InventoryDimensions
+  /** Why inventory is unavailable. Shown to the user. */
+  inventoryUnavailableReason?: string
 }>) {
-  const typesId = useId()
-  const groupsId = useId()
-  const tagsId = useId()
+  const pickerValue: ScopePickerValue = {
+    resource_types: definition.scope.resource_types,
+    resource_groups: definition.scope.resource_groups,
+    tag_filters: definition.scope.tag_filters as { key: string; value: string }[],
+  }
 
-  const set = (scope: Partial<ScopeSpec>) => {
-    onChange({ ...definition, scope: { ...definition.scope, ...scope } })
+  const handleChange = (next: ScopePickerValue) => {
+    const scope: ScopeSpec = {
+      ...definition.scope,
+      resource_types: next.resource_types,
+      resource_groups: next.resource_groups,
+      tag_filters: next.tag_filters,
+    }
+    onChange({ ...definition, scope })
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <Field>
-        <FieldLabel htmlFor={typesId}>Resource types</FieldLabel>
-        <Input
-          id={typesId}
-          defaultValue={definition.scope.resource_types.join(", ")}
-          onBlur={(event) =>
-            set({ resource_types: parseList(event.target.value) })
-          }
-          placeholder="Microsoft.Compute/virtualMachines"
-        />
-        <FieldDescription>
-          Comma separated, fully qualified.{" "}
-          <strong>Leave empty for every type</strong> — an empty dimension
-          imposes no constraint.
-        </FieldDescription>
-      </Field>
-
-      <Field>
-        <FieldLabel htmlFor={groupsId}>Resource groups</FieldLabel>
-        <Input
-          id={groupsId}
-          defaultValue={definition.scope.resource_groups.join(", ")}
-          onBlur={(event) =>
-            set({ resource_groups: parseList(event.target.value) })
-          }
-          placeholder="rg-prod-sea, rg-prod-eu"
-        />
-        <FieldDescription>
-          Comma separated. Leave empty for every resource group in the
-          subscription.
-        </FieldDescription>
-      </Field>
-
-      <Field>
-        <FieldLabel htmlFor={tagsId}>Tag filters</FieldLabel>
-        <Input
-          id={tagsId}
-          defaultValue={formatTagFilters(definition.scope.tag_filters)}
-          onBlur={(event) =>
-            set({ tag_filters: parseTagFilters(event.target.value) })
-          }
-          placeholder="env=prod, tier=web"
-        />
-        <FieldDescription>
-          <code>key=value</code>, comma separated. A resource matches if{" "}
-          <strong>any</strong> filter matches. Keys are compared ignoring case;
-          values are not.
-        </FieldDescription>
-      </Field>
-
-      <p className="max-w-prose text-xs text-muted-foreground">
-        There is no control here for choosing a named resource, and that is
-        deliberate: a template stores rules so the same one runs against every
-        subscription you connect. A block can narrow this default further — that
-        is its scope override, on step 5.
-      </p>
-    </div>
+    <ScopePicker
+      value={pickerValue}
+      onChange={handleChange}
+      inventory={inventory}
+      inventoryUnavailableReason={inventoryUnavailableReason}
+    />
   )
 }

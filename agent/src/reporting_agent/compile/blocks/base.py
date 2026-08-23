@@ -177,15 +177,15 @@ states the omitted count as a figure. A table longer than this is unreadable in 
 document, and a truncated table that did not say so would present a partial list as
 complete."""
 
-EMPTY_SCOPE_TEXT: Final[str] = "No resources matched this scope"
-NO_DATA_TEXT: Final[str] = "No values recorded for these resources in this period"
-"""What a block says when its scope matched and the snapshot carries nothing to plot.
+EMPTY_SCOPE_TEXT: Final[str] = "doc.notice.empty_scope"
+NO_DATA_TEXT: Final[str] = "doc.notice.no_data"
+"""String ids resolved through the Message_Catalog at compile time (Req 15.3).
 
-Distinct from :data:`EMPTY_SCOPE_TEXT` because the two are distinct facts — see
-:func:`no_data_table`. The verifier matches Req 27.11's exemption on the *empty-scope*
-text alone, so these two strings must never converge.
+The AST carries already-resolved strings because these have a compile-time node to carry
+them. The resolved text varies by pinned language, so the verifier's allowlist must derive
+from the same language. See :func:`empty_scope_table` and :func:`no_data_table`.
 """
-NO_GAPS_TEXT: Final[str] = "No gaps recorded for this collection"
+NO_GAPS_TEXT: Final[str] = "doc.notice.no_gaps"
 
 CAPTION_STYLE: Final[str] = "Caption"
 """The paragraph style a table's or chart's caption takes.
@@ -201,8 +201,8 @@ A `caption` travels as `Table.caption` and a notice row as a `TextCell`, so neit
 a style in the AST — both are applied by the renderer. See `render/themes.py`'s
 `RENDERER_APPLIED_STYLES`."""
 
-NOTICE_COLUMN_HEADER: Final[str] = "Scope"
-"""The header of the single column an empty-scope table carries.
+NOTICE_COLUMN_HEADER: Final[str] = "doc.table.scope"
+"""String id for the header of the single column an empty-scope table carries (Req 15.3).
 
 Non-empty because Req 21.4 requires **every** data-table column header to be a non-empty
 string the verifier can resolve a column by, and an empty-scope table is an ordinary data
@@ -212,12 +212,9 @@ Leaving it blank would have forced the renderer or the verifier to special-case 
 inspecting its contents, which is exactly the guessing the caption contract exists to
 avoid — and a one-column table with a blank header row also just looks broken in a
 delivered document."""
-OMITTED_ROW_LABEL: Final[str] = (
-    "Not every matched resource is listed above; this table is capped. "
-    "Resources in the subscription:"
-)
-"""The truncation row's label. **Carries no numeral** — see :func:`omitted_row`."""
-NOT_COMPARABLE_TEXT: Final[str] = "Not comparable — fidelity tiers differ between runs"
+OMITTED_ROW_LABEL: Final[str] = "doc.notice.omitted_rows"
+"""String id for the truncation row's label (Req 15.3). **Carries no numeral** — see :func:`omitted_row`."""
+NOT_COMPARABLE_TEXT: Final[str] = "doc.notice.not_comparable"
 
 MAX_CHART_SERIES: Final[int] = 5
 """`design-system.md`'s categorical cap, applied at compile time rather than left to the
@@ -741,7 +738,9 @@ def text_cell(cursor: BlockCursor, text: str) -> TextCell:
     return TextCell(path=cursor.path, text=text)
 
 
-def empty_scope_table(cursor: BlockCursor, style: str, caption: str | None) -> Table:
+def empty_scope_table(
+    cursor: BlockCursor, style: str, caption: str | None, *, messages: Messages
+) -> Table:
     """The one explicit row a block emits when its scope matched nothing (Req 3.7, 16.10).
 
     A **data** table with one column and one row, styled `Notice`, carrying **zero
@@ -755,11 +754,18 @@ def empty_scope_table(cursor: BlockCursor, style: str, caption: str | None) -> T
     indistinguishable from one that was never configured.
     """
     return _notice_table(
-        cursor, style, caption, key="empty-scope", text=EMPTY_SCOPE_TEXT
+        cursor,
+        style,
+        caption,
+        key="empty-scope",
+        text=messages.text(EMPTY_SCOPE_TEXT),
+        header=messages.text(NOTICE_COLUMN_HEADER),
     )
 
 
-def no_data_table(cursor: BlockCursor, style: str, caption: str | None) -> Table:
+def no_data_table(
+    cursor: BlockCursor, style: str, caption: str | None, *, messages: Messages
+) -> Table:
     """The row a block emits when its scope matched resources and none of them carry a
     value for what the block plots.
 
@@ -784,11 +790,24 @@ def no_data_table(cursor: BlockCursor, style: str, caption: str | None) -> Table
     it, and withholding the whole report over one chart would be the wrong trade. What the
     block owes the reader is an honest row, which is this.
     """
-    return _notice_table(cursor, style, caption, key="no-data", text=NO_DATA_TEXT)
+    return _notice_table(
+        cursor,
+        style,
+        caption,
+        key="no-data",
+        text=messages.text(NO_DATA_TEXT),
+        header=messages.text(NOTICE_COLUMN_HEADER),
+    )
 
 
 def _notice_table(
-    cursor: BlockCursor, style: str, caption: str | None, *, key: str, text: str
+    cursor: BlockCursor,
+    style: str,
+    caption: str | None,
+    *,
+    key: str,
+    text: str,
+    header: str,
 ) -> Table:
     """A **data** table of one column and one row, styled `Notice`, carrying zero figures.
 
@@ -801,7 +820,7 @@ def _notice_table(
     return Table(
         path=cursor.path,
         style=style,
-        columns=(Column(key="notice", header=NOTICE_COLUMN_HEADER),),
+        columns=(Column(key="notice", header=header),),
         rows=(
             Row(
                 path=row_cursor.path,
@@ -814,7 +833,7 @@ def _notice_table(
 
 
 def omitted_row(
-    cursor: BlockCursor, view: SnapshotView, shown: int, matched: int
+    cursor: BlockCursor, view: SnapshotView, shown: int, matched: int, *, messages: Messages
 ) -> Row | None:
     """The final row of a truncated table, stating its own truncation (Req 16.2).
 
@@ -852,7 +871,7 @@ def omitted_row(
         path=cursor.path,
         key="omitted",
         cells=(
-            text_cell(cursor.child("cells", 0), OMITTED_ROW_LABEL),
+            text_cell(cursor.child("cells", 0), messages.text(OMITTED_ROW_LABEL)),
             FigureCell(path=cursor.child("cells", 1).path, figure=figure),
         ),
     )

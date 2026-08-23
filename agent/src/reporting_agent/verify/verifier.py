@@ -52,6 +52,7 @@ from reporting_agent.compile.snapshot_view import SnapshotView
 from reporting_agent.verify import anchors as anchors_pass
 from reporting_agent.verify import charts as charts_pass
 from reporting_agent.verify import coverage as coverage_pass
+from reporting_agent.verify import facts as facts_pass
 from reporting_agent.verify import pdf as pdf_pass
 from reporting_agent.verify.allowlist import derive_allowlist
 from reporting_agent.verify.drift import DriftOutcome, primary_metric, requery_sample, select
@@ -270,28 +271,30 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     findings.extend(drift.findings)
     counts["drift_resources_requeried"] = drift.requeried
 
-    # --- 29: completeness, in both directions ------------------------------------------
-    unrendered, resolved = _completeness(
-        inputs.ledger, paragraphs=paragraphs, tables=tables
-    )
-    findings.extend(unrendered)
-    counts["ledger_entries_checked"] = len(inputs.ledger)
-    counts["ledger_entries_resolved"] = resolved
-    counts["ledger_entries_unrendered"] = len(unrendered)
-    gates.add("completeness")
-
-    # --- breadth 6, 14, 18: recorded, not yet implemented ------------------------------
-    #
-    # Each of the three is a stub returning no finding, and each is named for the task that
-    # replaces it. They are called — rather than left out with the gate names commented — so
-    # the gate assertion below stays satisfiable while the three passes land one at a time,
-    # and so a reader of this list can see exactly which gates are still promises.
-    findings.extend(_stub_facts_gate_awaiting_task_5_5(inputs))
+    # --- breadth 6: text-fact exact-string check -----------------------------------------
+    text_fact_result = facts_pass.check_text_facts(inputs.ledger, grids)
+    findings.extend(text_fact_result.findings)
+    counts["text_fact_count"] = len(inputs.ledger.text_facts())
+    counts["text_fact_entries_checked"] = text_fact_result.entries_checked
+    counts["text_fact_entries_resolved"] = text_fact_result.entries_resolved
     gates.add("facts")
+
+    # --- breadth 14, 18: toc and historical, still stubbed ------------------------------
     findings.extend(_stub_toc_gate_awaiting_task_8_2(inputs))
     gates.add("toc")
     findings.extend(_stub_historical_gate_awaiting_task_11_4(inputs))
     gates.add("historical")
+
+    # --- 29: completeness, in both directions ------------------------------------------
+    unrendered, resolved = _completeness(
+        inputs.ledger, paragraphs=paragraphs, tables=tables,
+        text_fact_pass=text_fact_result,
+    )
+    findings.extend(unrendered)
+    counts["ledger_entries_checked"] = len(inputs.ledger.entry_paths())
+    counts["ledger_entries_resolved"] = resolved
+    counts["ledger_entries_unrendered"] = len(unrendered)
+    gates.add("completeness")
 
     _assert_every_gate_ran(gates)
 
@@ -330,10 +333,10 @@ def _assert_every_gate_ran(gates: set[str]) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# The three gates the breadth-and-document spec declares, stubbed
+# The two remaining gates the breadth-and-document spec declares, stubbed
 # --------------------------------------------------------------------------- #
 #
-# `REQUIRED_GATES` names `facts`, `toc` and `historical` already, which is deliberate: the
+# `REQUIRED_GATES` names `toc` and `historical` already, which is deliberate: the
 # alternative — adding each name with the pass that implements it — lets a half-wired
 # verifier report `pass` on a document nothing checked, and that is precisely the outcome
 # `_assert_every_gate_ran` exists to make impossible.
@@ -343,20 +346,8 @@ def _assert_every_gate_ran(gates: set[str]) -> None:
 # a stub and which task replaces it. None of them reads `inputs`; the parameter is here so
 # the call site does not change shape when the real pass lands.
 #
-# Until then, none of the three can fail a verification, and that is the honest reading of
-# where the spec is — not a claim that the three properties hold.
-
-
-def _stub_facts_gate_awaiting_task_5_5(inputs: VerifyInputs) -> tuple[Finding, ...]:
-    """STUB. Replaced by task 5.5, which implements `verify/facts.py`.
-
-    That task adds `check_text_facts(ledger, grids)` and the three findings
-    `text_fact_mismatch`, `text_fact_anchor_missing` and `text_fact_unanchored`, and wires
-    this gate to it (breadth criteria 6.4, 6.6, 6.7, 6.8). It also adds `text_fact_count` to
-    the result and moves the completeness assertion onto `entry_paths()`.
-    """
-    del inputs
-    return ()
+# Until then, none of the two can fail a verification, and that is the honest reading of
+# where the spec is — not a claim that the two properties hold.
 
 
 def _stub_toc_gate_awaiting_task_8_2(inputs: VerifyInputs) -> tuple[Finding, ...]:
@@ -396,6 +387,7 @@ def _completeness(
     *,
     paragraphs: Sequence[object],
     tables: anchors_pass.AnchorPass,
+    text_fact_pass: facts_pass.TextFactPass,
 ) -> tuple[list[Finding], int]:
     """Every ledger entry, checked for its appearance in the document (Req 29.2).
 
@@ -405,6 +397,12 @@ def _completeness(
     resolve to the same one (Req 29.7). A naive `string in text` check reports one
     occurrence as satisfying both, and a report that printed a figure once instead of twice
     would verify clean.
+
+    Text facts are covered through their own gate (`check_text_facts`). A text fact that
+    resolved (its cell text matched `formatted`) counts as rendered. An unanchored text fact
+    or one whose cell did not match is `ledger_entry_unrendered` exactly as an unrendered
+    figure is — the facts gate already recorded the specific finding, and Req 29.8 says one
+    defect one finding.
     """
     anchors = ledger.anchors()
     by_block = _paragraph_text_by_block(paragraphs)
@@ -413,6 +411,7 @@ def _completeness(
     findings: list[Finding] = []
     resolved = 0
 
+    # --- figures (the original path) ---
     for path, figure in ledger.entries.items():
         key = str(path)
         anchor = anchors.get(path)
@@ -442,6 +441,13 @@ def _completeness(
             resolved += 1
             continue
         findings.append(_unrendered(key, figure, block_id=block_id))
+
+    # --- text facts: resolved by the facts gate, counted here for completeness ---
+    # A text fact that the facts gate checked AND resolved is rendered.
+    # One that the facts gate found a finding for is faulted (one defect, one finding).
+    # One that was unanchored is already reported by the facts gate — don't double.
+    # text_fact_pass.entries_resolved counts exactly those text facts whose cell matched.
+    resolved += text_fact_pass.entries_resolved
 
     return findings, resolved
 

@@ -46,6 +46,7 @@ from reporting_agent.compile.blocks.base import ProseRequest
 __all__ = [
     "MAX_OUTPUT_TOKENS",
     "SYSTEM_PROMPT",
+    "SYSTEM_PROMPT_ID",
     "BedrockConverse",
     "ProseGenerator",
     "build_messages",
@@ -83,6 +84,36 @@ and with no setting anywhere that disables it (Req 19.8). This text exists to ma
 common case pleasant, not to make the guarantee hold.
 """
 
+SYSTEM_PROMPT_ID: Final[str] = (
+    "Anda menulis ringkasan eksekutif dari laporan utilisasi infrastruktur.\n"
+    "\n"
+    "Tulis dua hingga empat paragraf pendek dalam prosa tentang apa yang ditunjukkan "
+    "oleh angka-angka di bawah ini: sumber daya mana yang sibuk, mana yang menganggur, "
+    "di mana tersedia ruang cadangan, dan apa arti kesenjangan yang tercatat bagi "
+    "kepercayaan terhadap laporan.\n"
+    "\n"
+    "Jangan menulis angka apa pun yang tidak ada dalam daftar angka yang diberikan "
+    "kepada Anda, dan lebih baik menggambarkan pola dalam kata-kata daripada "
+    "mengulangi sebuah angka. Jangan membuat pengukuran, total, perubahan persentase "
+    "atau peringkat. Jangan berspekulasi tentang penyebab yang tidak dapat Anda lihat "
+    "dalam data.\n"
+    "\n"
+    "Kembalikan prosa saja: tanpa heading, tanpa bullet list, tanpa markdown."
+)
+"""Indonesian variant of the system prompt (Req 15.7).
+
+Instructs the narrator in Indonesian where the pinned definition's `identity.language`
+is `id`. Supplies the narrator the context the templates spec permits and nothing
+further. As with the English prompt, this is a request not enforcement — the masking
+pass remains the mechanism that prevents fabricated numbers."""
+
+
+def _system_prompt_for(language: str) -> str:
+    """Return the appropriate narrator system prompt for the given language."""
+    if language == "id":
+        return SYSTEM_PROMPT_ID
+    return SYSTEM_PROMPT
+
 
 class BedrockConverse(Protocol):
     """The one operation this module calls. A protocol so the boundary is one method wide."""
@@ -102,9 +133,10 @@ class ProseGenerator:
 
     client: BedrockConverse
     model_id: str
+    language: str = "en"
 
     def narrate(self, request: ProseRequest) -> str:
-        return generate(request, client=self.client, model_id=self.model_id)
+        return generate(request, client=self.client, model_id=self.model_id, language=self.language)
 
 
 def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
@@ -135,7 +167,7 @@ def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
 
 
 def generate(
-    request: ProseRequest, *, client: BedrockConverse, model_id: str
+    request: ProseRequest, *, client: BedrockConverse, model_id: str, language: str = "en"
 ) -> str:
     """One single-shot Converse call, with **no tool list**.
 
@@ -147,7 +179,7 @@ def generate(
     try:
         response = client.converse(
             modelId=model_id,
-            system=[{"text": SYSTEM_PROMPT}],
+            system=[{"text": _system_prompt_for(language)}],
             messages=build_messages(request),
             inferenceConfig={"maxTokens": MAX_OUTPUT_TOKENS, "temperature": 0.2},
         )
@@ -183,7 +215,7 @@ def _text_of(response: Mapping[str, Any]) -> str:
     return "".join(pieces).strip()
 
 
-def prose_generator(model_id: str, *, region: str | None = None) -> ProseGenerator | None:
+def prose_generator(model_id: str, *, region: str | None = None, language: str = "en") -> ProseGenerator | None:
     """A generator over the configured Bedrock model, or `None` where none is reachable.
 
     `None` rather than a raise, and the distinction matters: a report with no narrative is a
@@ -207,4 +239,4 @@ def prose_generator(model_id: str, *, region: str | None = None) -> ProseGenerat
             type(exc).__name__,
         )
         return None
-    return ProseGenerator(client=client, model_id=model_id)
+    return ProseGenerator(client=client, model_id=model_id, language=language)

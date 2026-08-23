@@ -751,3 +751,86 @@ def test_numeric_strings_in_admits_exactly_what_stage_five_can_mask() -> None:
         {"10", "PT1H."}
     )
     assert numeric_strings_in([None, 42, "7%"]) == frozenset({"7%"})
+
+
+# --- text facts do NOT enter the masking ledger_strings --------------------------------
+
+
+def test_text_facts_only_ledger_produces_empty_ledger_strings() -> None:
+    """Req 6.10, task 5.5 — a document whose only ledger entries are text facts produces
+    an empty ledger_strings set.
+
+    The exclusion is structural: `ledger_strings_of` reads `_entries` (figures), and text
+    facts live in `_text_facts`. This test asserts the consequence rather than the
+    implementation, so it continues to hold if the implementation changes to a filter.
+    """
+    from reporting_agent.compile.ast import TextFact, compiling_against
+    from reporting_agent.compile.figures import FigureLedger
+    from reporting_agent.verify.masking import ledger_strings_of
+
+    ledger = FigureLedger()
+
+    # Insert text facts via the compiling_against context so provenance resolves.
+    fake_snapshot = {
+        "resources": {
+            "vm-1": {
+                "facts": [
+                    {"key": "backup_status", "value": "Succeeded", "value_kind": "text",
+                     "source": "recovery_services", "collected_at": "2026-07-15T09:00:00Z",
+                     "formatted": "Succeeded"},
+                    {"key": "vm_size", "value": "Standard_D4s_v3", "value_kind": "text",
+                     "source": "resource_graph", "collected_at": "2026-07-15T09:00:00Z",
+                     "formatted": "Standard_D4s_v3"},
+                ]
+            }
+        }
+    }
+
+    def _resolve_text(path: str) -> tuple[str, ...]:
+        """Simulate resolving a text-side snapshot_path."""
+        for rid, res in fake_snapshot["resources"].items():
+            for fact in res["facts"]:
+                sp = f"resources/{rid}/facts/{fact['key']}/value"
+                if sp == path:
+                    return (fact["value"],)
+        return ()
+
+    class FakeView:
+        def resolve_all(self, path: str) -> tuple[object, ...]:
+            return ()
+
+        def resolve_text_all(self, path: str) -> tuple[str, ...]:
+            return _resolve_text(path)
+
+    with compiling_against(FakeView()):
+        fact1 = TextFact(
+            path="block1:0",
+            key="backup_status",
+            value="Succeeded",
+            snapshot_path="resources/vm-1/facts/backup_status/value",
+            source="recovery_services",
+            collected_at="2026-07-15T09:00:00Z",
+            formatted="Succeeded",
+        )
+        fact2 = TextFact(
+            path="block1:1",
+            key="vm_size",
+            value="Standard_D4s_v3",
+            snapshot_path="resources/vm-1/facts/vm_size/value",
+            source="resource_graph",
+            collected_at="2026-07-15T09:00:00Z",
+            formatted="Standard_D4s_v3",
+        )
+
+    ledger.insert_text_fact(fact1)
+    ledger.insert_text_fact(fact2)
+
+    # The ledger holds two text facts and zero figures.
+    assert len(ledger) == 0, "figure count should be zero"
+    assert len(ledger.text_facts()) == 2
+
+    # ledger_strings_of reads .entries (figures only) — text facts are excluded.
+    result = ledger_strings_of(ledger.entries)
+    assert result == (), (
+        f"expected an empty tuple for a text-fact-only ledger, got {result!r}"
+    )

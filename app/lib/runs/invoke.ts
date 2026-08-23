@@ -5,11 +5,13 @@ import {
   MissingRuntimeConfigError,
   invokeAgentRuntime,
   type AgentInvokeContext,
+  type HistoricalCandidatePayload,
 } from "@/lib/aws/agentcore"
 import { requireEnv } from "@/lib/env"
 import { deriveProgressToken } from "@/lib/runs/progress-token"
 import type { ClaimedRun } from "@/lib/runs/claim"
 import { failClaimedRun, readRunStatus } from "@/lib/runs/claim"
+import { fetchHistoricalCandidates } from "@/lib/runs/historical"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 import { readVersionById } from "@/lib/templates/store"
 import {
@@ -347,6 +349,35 @@ export async function startRunInvocation(
     }
   }
 
+  // 5 — historical-trend candidates (Requirement 18.4).
+  //
+  //     Fetched at invoke time so the list reflects runs completed between
+  //     enqueue and claim. The result travels in the command payload, not in
+  //     `context`, which stays closed at twelve fields with its existing guard.
+  //     The agent's `compile/historical.py` receives it as a supplied list and
+  //     applies the pure selector — this query is the only database path.
+  let historicalCandidates: readonly HistoricalCandidatePayload[] | undefined
+  if (pinned !== undefined) {
+    const candidates = await fetchHistoricalCandidates(
+      run.userId,
+      pinned.templateId,
+      run.connectedSubscriptionId,
+      run.id,
+      run.periodStart
+    )
+    historicalCandidates = candidates.map((c) => ({
+      id: c.id,
+      period_start: c.periodStart,
+      period_end: c.periodEnd,
+      timezone: c.timezone,
+      status: c.status,
+      verification_id: c.verificationId,
+      verification_status: c.verificationStatus,
+      verification_created_at: c.verificationCreatedAt,
+      verification_snapshot_sha256: c.verificationSnapshotSha256,
+    }))
+  }
+
   try {
     const started = await startWithin(
       invokeAgentRuntime({
@@ -368,6 +399,7 @@ export async function startRunInvocation(
                 definition: pinned.definition,
                 period: { start: run.periodStart, end: run.periodEnd },
                 scope: run.scope,
+                historical_candidates: historicalCandidates,
               },
       }),
       run.id,

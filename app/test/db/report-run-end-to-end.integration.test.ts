@@ -638,6 +638,7 @@ describe.skipIf(!db.enabled)(
       expect(Object.keys(command).sort()).toEqual([
         "command",
         "definition",
+        "historical_candidates",
         "period",
         "scope",
         "template_version_id",

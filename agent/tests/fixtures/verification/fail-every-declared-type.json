@@ -2,7 +2,7 @@
   "attempt_id": "ver_01JTESTATTEMPT",
   "counts": {
     "advisory_findings_observed": 4,
-    "blocking_findings_observed": 16,
+    "blocking_findings_observed": 23,
     "ledger_entries_checked": 1480,
     "numeric_tokens_extracted": 1655
   },
@@ -94,6 +94,41 @@
       "message": "declared-type coverage for empty_scope",
       "severity": "blocking",
       "type": "empty_scope"
+    },
+    {
+      "message": "declared-type coverage for text_fact_mismatch",
+      "severity": "blocking",
+      "type": "text_fact_mismatch"
+    },
+    {
+      "message": "declared-type coverage for text_fact_anchor_missing",
+      "severity": "blocking",
+      "type": "text_fact_anchor_missing"
+    },
+    {
+      "message": "declared-type coverage for text_fact_unanchored",
+      "severity": "blocking",
+      "type": "text_fact_unanchored"
+    },
+    {
+      "message": "declared-type coverage for historical_point_unverified",
+      "severity": "blocking",
+      "type": "historical_point_unverified"
+    },
+    {
+      "message": "declared-type coverage for historical_point_overlapping",
+      "severity": "blocking",
+      "type": "historical_point_overlapping"
+    },
+    {
+      "message": "declared-type coverage for toc_page_mismatch",
+      "severity": "blocking",
+      "type": "toc_page_mismatch"
+    },
+    {
+      "message": "declared-type coverage for fact_source_missing",
+      "severity": "blocking",
+      "type": "fact_source_missing"
     },
     {
       "message": "declared-type coverage for archive_incomplete",

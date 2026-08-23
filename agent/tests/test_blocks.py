@@ -35,6 +35,14 @@ from reporting_agent.compile.blocks.base import (
     NO_GAPS_TEXT,
     OMITTED_ROW_LABEL,
 )
+from reporting_agent.compile.messages import load_messages
+
+# These constants are now string IDs. Tests compare against the resolved English text.
+_MESSAGES = load_messages("en")
+EMPTY_SCOPE_TEXT_RESOLVED = _MESSAGES.text(EMPTY_SCOPE_TEXT)
+NO_DATA_TEXT_RESOLVED = _MESSAGES.text(NO_DATA_TEXT)
+NO_GAPS_TEXT_RESOLVED = _MESSAGES.text(NO_GAPS_TEXT)
+OMITTED_ROW_LABEL_RESOLVED = _MESSAGES.text(OMITTED_ROW_LABEL)
 from reporting_agent.compile.blocks.tables import (
     COLUMN_ATTRIBUTES,
     resource_attribute_text,
@@ -129,7 +137,7 @@ def test_a_resource_table_caps_at_five_hundred_rows_and_states_the_truncation(la
     truncation = table.rows[-1]
     assert truncation.key == "omitted"
     assert [cell.text for cell in truncation.cells if isinstance(cell, TextCell)] == [
-        OMITTED_ROW_LABEL
+        OMITTED_ROW_LABEL_RESOLVED
     ]
 
     # The count is a FIGURE, addressed to the snapshot's own resource cardinality.
@@ -222,7 +230,7 @@ def test_gaps_and_coverage_over_an_empty_log_emits_an_explicit_no_gaps_row() -> 
 
     assert len(table.rows) == 1
     assert table.rows[0].key == "no-gaps"
-    assert NO_GAPS_TEXT in [
+    assert NO_GAPS_TEXT_RESOLVED in [
         cell.text for cell in table.rows[0].cells if isinstance(cell, TextCell)
     ]
     assert figure_cells_of(table) == []
@@ -350,7 +358,7 @@ def test_every_block_whose_scope_matches_nothing_still_renders_with_zero_figures
         assert str(node.path).startswith(f"{block_id}:"), block_id
         assert isinstance(node, Table), block_id
         assert [row.key for row in node.rows] == ["empty-scope"], block_id
-        assert node.rows[0].cells[0].text == EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
+        assert node.rows[0].cells[0].text == EMPTY_SCOPE_TEXT_RESOLVED  # type: ignore[union-attr]
 
     # Zero figures across the whole document, and therefore an empty ledger.
     assert document.figure_count == 0
@@ -639,8 +647,8 @@ def test_a_chart_whose_metric_no_resource_carries_says_so_rather_than_blaming_th
     assert charts_of(document.document) == []
     table = table_named(document.document, "spread")
     assert table.rows[0].key == "no-data"
-    assert table.rows[0].cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
-    assert table.rows[0].cells[0].text != EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
+    assert table.rows[0].cells[0].text == NO_DATA_TEXT_RESOLVED  # type: ignore[union-attr]
+    assert table.rows[0].cells[0].text != EMPTY_SCOPE_TEXT_RESOLVED  # type: ignore[union-attr]
 
 
 def test_a_timeseries_over_a_snapshot_with_no_day_values_says_so() -> None:
@@ -664,7 +672,7 @@ def test_a_timeseries_over_a_snapshot_with_no_day_values_says_so() -> None:
     assert charts_of(document.document) == []
     row = table_named(document.document, "trend").rows[0]
     assert row.key == "no-data"
-    assert row.cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
+    assert row.cells[0].text == NO_DATA_TEXT_RESOLVED  # type: ignore[union-attr]
     assert document.figure_count == 0
 
 
@@ -709,9 +717,9 @@ def test_the_two_notice_rows_say_two_different_things() -> None:
     empty_row = table_named(empty.document, "spread").rows[0]
     absent_row = table_named(absent.document, "spread").rows[0]
 
-    assert empty_row.cells[0].text == EMPTY_SCOPE_TEXT  # type: ignore[union-attr]
-    assert absent_row.cells[0].text == NO_DATA_TEXT  # type: ignore[union-attr]
-    assert EMPTY_SCOPE_TEXT != NO_DATA_TEXT
+    assert empty_row.cells[0].text == EMPTY_SCOPE_TEXT_RESOLVED  # type: ignore[union-attr]
+    assert absent_row.cells[0].text == NO_DATA_TEXT_RESOLVED  # type: ignore[union-attr]
+    assert EMPTY_SCOPE_TEXT != NO_DATA_TEXT_RESOLVED
     assert empty_row.key != absent_row.key
 
     # Both carry zero figures and keep the block in the document (Req 3.7, 16.11).

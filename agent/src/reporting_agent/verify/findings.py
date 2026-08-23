@@ -49,7 +49,14 @@ __all__ = [
     "BLOCKING_FINDING_TYPES",
     "DECLARED_FINDING_TYPES",
     "EXCERPT_MAX_CHARS",
+    "FINDING_FACT_SOURCE_MISSING",
+    "FINDING_HISTORICAL_POINT_OVERLAPPING",
+    "FINDING_HISTORICAL_POINT_UNVERIFIED",
     "FINDING_LIST_LIMIT",
+    "FINDING_TEXT_FACT_ANCHOR_MISSING",
+    "FINDING_TEXT_FACT_MISMATCH",
+    "FINDING_TEXT_FACT_UNANCHORED",
+    "FINDING_TOC_PAGE_MISMATCH",
     "MESSAGE_MAX_CHARS",
     "RESULT_SCHEMA_VERSION",
     "SEVERITY_ADVISORY",
@@ -82,7 +89,7 @@ SEVERITY_ADVISORY: Final[str] = "advisory"
 
 Severity = Literal["blocking", "advisory"]
 
-# --- the sixteen blocking types (Req 44.1's enumeration) ------------------------------
+# --- the twenty-three blocking types (Req 44.1's enumeration) -------------------------
 #
 # Each is asserted by at least one negative test in task 14, and task 14.8's meta-test
 # fails if any type declared here is asserted by none of them — so a type added to this
@@ -106,6 +113,16 @@ FINDING_PDF_FIGURE_MISSING: Final[str] = "pdf_figure_missing"
 FINDING_SCOPE_UNVERIFIED: Final[str] = "scope_unverified"
 FINDING_EMPTY_SCOPE: Final[str] = "empty_scope"
 
+# --- the seven blocking types the breadth-and-document spec adds ----------------------
+
+FINDING_TEXT_FACT_MISMATCH: Final[str] = "text_fact_mismatch"
+FINDING_TEXT_FACT_ANCHOR_MISSING: Final[str] = "text_fact_anchor_missing"
+FINDING_TEXT_FACT_UNANCHORED: Final[str] = "text_fact_unanchored"
+FINDING_HISTORICAL_POINT_UNVERIFIED: Final[str] = "historical_point_unverified"
+FINDING_HISTORICAL_POINT_OVERLAPPING: Final[str] = "historical_point_overlapping"
+FINDING_TOC_PAGE_MISMATCH: Final[str] = "toc_page_mismatch"
+FINDING_FACT_SOURCE_MISSING: Final[str] = "fact_source_missing"
+
 BLOCKING_FINDING_TYPES: Final[tuple[str, ...]] = (
     FINDING_UNMATCHED_PROSE_TOKEN,
     FINDING_TABLE_ANCHOR_MISSING,
@@ -123,6 +140,13 @@ BLOCKING_FINDING_TYPES: Final[tuple[str, ...]] = (
     FINDING_PDF_FIGURE_MISSING,
     FINDING_SCOPE_UNVERIFIED,
     FINDING_EMPTY_SCOPE,
+    FINDING_TEXT_FACT_MISMATCH,
+    FINDING_TEXT_FACT_ANCHOR_MISSING,
+    FINDING_TEXT_FACT_UNANCHORED,
+    FINDING_HISTORICAL_POINT_UNVERIFIED,
+    FINDING_HISTORICAL_POINT_OVERLAPPING,
+    FINDING_TOC_PAGE_MISMATCH,
+    FINDING_FACT_SOURCE_MISSING,
 )
 
 # --- the four advisory types ----------------------------------------------------------

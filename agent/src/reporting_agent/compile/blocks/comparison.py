@@ -46,16 +46,18 @@ from reporting_agent.compile.blocks.base import (
     text_cell,
 )
 from reporting_agent.compile.figures import BlockCursor
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import resolve
 
 __all__ = ["compile_comparison_delta"]
 
-_COLUMNS = (
-    Column(key="resource", header="Resource"),
-    Column(key="later", header="This run"),
-    Column(key="delta", header="Change"),
-    Column(key="note", header="Note"),
-)
+def _comparison_columns(messages: Messages) -> tuple[Column, ...]:
+    return (
+        Column(key="resource", header=messages.text("doc.table.resource")),
+        Column(key="later", header=messages.text("doc.table.this_run")),
+        Column(key="delta", header=messages.text("doc.table.change")),
+        Column(key="note", header=messages.text("doc.table.note")),
+    )
 """Four columns, and there is deliberately no "Earlier" one — see the module docstring."""
 
 
@@ -116,7 +118,7 @@ def compile_comparison_delta(
     )
 
     if not table.rows:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption),))
+        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
 
     # Widen what resolves for the duration of this block: every value this run's snapshot holds,
     # plus the compile-time deltas at their reserved addresses. A superset, so the rest of the
@@ -146,7 +148,7 @@ def _delta_table(
     node = Table(
         path=table_cursor.path,
         style=style,
-        columns=_COLUMNS,
+        columns=_comparison_columns(context.messages),
         rows=tuple(rows),
         caption=caption,
     )
@@ -235,7 +237,7 @@ def _delta_row(cursor: BlockCursor, context: BlockContext, row: DeltaRow) -> Row
 
     note = row.note
     if row.kind == DeltaKind.FIDELITY_DIFFERS:
-        note = f"{NOT_COMPARABLE_TEXT} ({row.earlier_tier} to {row.later_tier})"
+        note = f"{context.messages.text(NOT_COMPARABLE_TEXT)} ({row.earlier_tier} to {row.later_tier})"
     cells.append(text_cell(cursor.child("cells", 3), note))
 
     return Row(path=cursor.path, key=row.resource_id, cells=tuple(cells))  # type: ignore[arg-type]

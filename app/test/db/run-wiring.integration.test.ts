@@ -705,6 +705,13 @@ describe("Requirements 39.4, 39.6, 41.5 — the tick claims, gates and invokes",
       definition: FIXTURE_DEFINITION,
       period: PERIOD,
       scope: SCOPE,
+      // Requirement 18.4 — the historical-trend candidates travel in the command
+      // payload, never in `context`, which stays closed at the twelve fields
+      // asserted above. This fixture has no prior completed run for the template,
+      // so the list is empty rather than absent: a missing key and an empty list
+      // are different claims, and the runtime reads the latter as "asked, none
+      // eligible" rather than "not asked".
+      historical_candidates: [],
     })
     expect(command).not.toHaveProperty("prompt")
 

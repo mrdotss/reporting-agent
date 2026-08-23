@@ -37,6 +37,9 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, DesignSettings
+from reporting_agent.compile.messages import load_messages
+
+_EMPTY_SCOPE_RESOLVED = load_messages("en").text(EMPTY_SCOPE_TEXT)
 from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render import html as H
@@ -460,7 +463,7 @@ def test_an_empty_scope_block_is_emitted_with_its_notice_row_and_zero_figures() 
     _, outcome = emit(
         [df.block("t", "resource_table", {"columns": [df.CPU_AVG]}, scope_override=narrow)]
     )
-    assert EMPTY_SCOPE_TEXT in outcome.html
+    assert _EMPTY_SCOPE_RESOLVED in outcome.html
     assert outcome.figure_count == 0
     assert outcome.table_count == 1
     assert H.NOTICE_ROW_CLASS in outcome.html
@@ -634,7 +637,7 @@ def test_an_empty_chart_is_emitted_with_an_explicit_indication() -> None:
         ]
     )
     assert outcome.figure_count == 0
-    assert EMPTY_SCOPE_TEXT in outcome.html
+    assert _EMPTY_SCOPE_RESOLVED in outcome.html
 
 
 # --------------------------------------------------------------------------- #

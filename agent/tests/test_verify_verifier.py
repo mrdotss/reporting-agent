@@ -200,17 +200,17 @@ def test_a_gate_that_stops_being_recorded_fails_the_verification(clean, gate: st
     assert gate in raised.value.message
 
 
-def test_the_three_stubbed_gates_record_no_finding(clean) -> None:
+def test_the_two_stubbed_gates_record_no_finding(clean) -> None:
     """The stubs are stubs, asserted rather than assumed.
 
-    Each returns an empty tuple until its task lands — 5.5 for `facts`, 8.2 for `toc`, 11.4 for
-    `historical`. Naming them here means the task that replaces one has a test to delete, so
-    "wire the gate" cannot be marked done while the stub is still in the call path.
+    Each returns an empty tuple until its task lands — 8.2 for `toc`, 11.4 for
+    `historical`. The `facts` gate (task 5.5) is now a real pass. Naming the stubs here
+    means the task that replaces one has a test to delete, so "wire the gate" cannot be
+    marked done while the stub is still in the call path.
     """
     from reporting_agent.verify import verifier as V
 
     inputs = clean.inputs()
-    assert V._stub_facts_gate_awaiting_task_5_5(inputs) == ()
     assert V._stub_toc_gate_awaiting_task_8_2(inputs) == ()
     assert V._stub_historical_gate_awaiting_task_11_4(inputs) == ()
 

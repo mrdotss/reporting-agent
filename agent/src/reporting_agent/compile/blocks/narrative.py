@@ -97,7 +97,7 @@ def compile_executive_summary(
     headline = Table(
         path=table_cursor.path,
         style=context.design.table_style_name,
-        columns=(Column(key="field", header="Field"), Column(key="value", header="Value")),
+        columns=(Column(key="field", header=context.messages.text("doc.table.field")), Column(key="value", header=context.messages.text("doc.table.value"))),
         rows=tuple(rows),
         caption=caption_of(block),
     )

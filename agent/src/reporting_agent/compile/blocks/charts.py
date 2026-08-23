@@ -94,7 +94,7 @@ def compile_timeseries_chart(
     if not matched:
         return BlockOutput(
             nodes=(
-                empty_scope_table(chart_cursor, context.design.table_style_name, caption),
+                empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),
             )
         )
 
@@ -135,7 +135,7 @@ def compile_timeseries_chart(
         # document that blames the filter is making a claim the snapshot contradicts.
         return BlockOutput(
             nodes=(
-                no_data_table(chart_cursor, context.design.table_style_name, caption),
+                no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),
             )
         )
 
@@ -179,7 +179,7 @@ def compile_distribution_chart(
     if not matched:
         return BlockOutput(
             nodes=(
-                empty_scope_table(chart_cursor, context.design.table_style_name, caption),
+                empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),
             )
         )
 
@@ -194,7 +194,7 @@ def compile_distribution_chart(
         # timeseries branch above draws, and the same reason for drawing it.
         return BlockOutput(
             nodes=(
-                no_data_table(chart_cursor, context.design.table_style_name, caption),
+                no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),
             )
         )
 

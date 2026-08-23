@@ -166,6 +166,24 @@ export interface PreviewInvokeContext {
  * compile/render/verify pipeline; naming one here would let the app send a
  * command the runtime has no route for.
  */
+/**
+ * One historical-trend candidate in the invoke payload (Requirement 18.4).
+ *
+ * Matches the wire shape `compile/historical.py` receives. The field names use
+ * snake_case to match the agent's Python dataclass and the rest of the payload.
+ */
+export interface HistoricalCandidatePayload {
+  readonly id: string
+  readonly period_start: string
+  readonly period_end: string
+  readonly timezone: string
+  readonly status: string
+  readonly verification_id: string | null
+  readonly verification_status: string | null
+  readonly verification_created_at: string | null
+  readonly verification_snapshot_sha256: string | null
+}
+
 export type InvokeCommand =
   /**
    * `generate_report`, in the two shapes the runtime's contract admits.
@@ -204,6 +222,18 @@ export type InvokeCommand =
       /** Local calendar dates in the context's `timezone`, `YYYY-MM-DD`. */
       period: { start: string; end: string }
       scope: RunScope
+      /**
+       * Historical-trend candidates (Requirement 18.4).
+       *
+       * Up to 200 prior runs of the same template row and subscription, each
+       * carrying its latest verification. The agent's `compile/historical.py`
+       * receives this as a supplied candidate list and applies the pure selector.
+       *
+       * Optional: absent for snapshot-only reruns and for runs whose pinned
+       * definition declares no `historical_trend` block. The selector treats
+       * an absent list as an empty trend.
+       */
+      historical_candidates?: readonly HistoricalCandidatePayload[]
     }
   /**
    * A **snapshot-only** run: no pinned version, so no document.

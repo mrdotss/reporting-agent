@@ -30,6 +30,10 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, DesignSettings
+from reporting_agent.compile.messages import load_messages
+
+_MESSAGES = load_messages("en")
+_EMPTY_SCOPE_RESOLVED = _MESSAGES.text(EMPTY_SCOPE_TEXT)
 from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import RenderFailedError
@@ -557,7 +561,7 @@ def test_an_empty_chart_emits_both_the_node_and_its_companion_table() -> None:
     )
     xml = document_xml(outcome.docx_bytes)
     assert xml.count("<w:tbl>") == 1
-    assert EMPTY_SCOPE_TEXT in xml
+    assert _EMPTY_SCOPE_RESOLVED in xml
 
 
 def test_an_empty_charts_companion_table_carries_the_notice_row() -> None:
@@ -567,7 +571,7 @@ def test_an_empty_charts_companion_table_carries_the_notice_row() -> None:
     assert table.rows[0].key == "empty-scope"
     cell = table.rows[0].cells[0]
     assert isinstance(cell, TextCell)
-    assert cell.text == EMPTY_SCOPE_TEXT
+    assert cell.text == _EMPTY_SCOPE_RESOLVED
 
 
 def test_an_empty_charts_image_says_so() -> None:
