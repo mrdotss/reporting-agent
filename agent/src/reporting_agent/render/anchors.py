@@ -54,9 +54,11 @@ from docx.table import Table as DocxTable
 from reporting_agent.compile.ast import (
     ANCHOR_ID_MAX_LENGTH,
     Column,
+    FigureCell,
     FigurePath,
     Row,
     Table,
+    TextFactCell,
 )
 from reporting_agent.compile.figures import (
     ANCHOR_CHART,
@@ -75,8 +77,7 @@ __all__ = [
     "assert_header_row",
     "document_row_key",
     "read_table_caption",
-    "record_chart_anchor",
-    "record_figure_anchor",
+    "record_cell_anchor",
     "write_data_table_caption",
     "write_layout_table",
 ]
@@ -247,51 +248,90 @@ def document_row_key(row: Row, *, at: str) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def record_figure_anchor(
+_LEDGER_BEARING_CELLS: Final[tuple[type, ...]] = (FigureCell, TextFactCell)
+"""The cell types that carry a ledger entry, and therefore the cell types that get an anchor.
+
+Derived nowhere and declared here on purpose: `TextCell` and `EmptyCell` carry no ledger
+entry, so an anchor for either would be a claim about a document position holding no checked
+value. `render/docx.py` and `verify/facts.py` both need to know which cells are anchorable,
+and one tuple is what keeps them agreeing.
+"""
+
+
+def record_cell_anchor(
     ledger: FigureLedger,
-    path: FigurePath,
-    table_identity: str,
+    cell: object,
     *,
+    anchor_kind: str,
+    anchor_id: str,
     row_key: str,
     column_key: str,
 ) -> None:
-    """Record the anchor triple for one figure in a data-table cell (Req 21.3).
+    """Record the anchor triple for one ledger-bearing cell (Req 21.3, 6.9).
 
-    Onto the figure's **existing** ledger entry, which is why there is no second structure
-    to keep in step. The compile stage already recorded the table identity against every
-    figure inside the table (`BlockCursor.anchor_table`); this completes the triple with the
-    row and column, which only the renderer knows because only the renderer walks the
-    emitted grid.
+    **One construction site for both kinds.** The triple `{anchor_id, row_key, column_key}`
+    is built once, here, and routed to `record_anchor` or `record_text_fact_anchor` by the
+    cell's type. It replaced a pair of near-identical functions, and the reason is the one
+    the whole spec keeps running into: with two builders, a change to how an anchor is formed
+    applies to whichever one the author was looking at, and the other silently keeps the old
+    shape. The verifier resolves both kinds by the same triple, so the two cannot be allowed
+    to differ.
+
+    Onto the entry's **existing** ledger record, which is why there is no second structure to
+    keep in step. The compile stage already recorded the table identity against every entry
+    inside the table (`BlockCursor.anchor_table`); this completes the triple with the row and
+    the column, which only the renderer knows because only the renderer walks the emitted
+    grid.
 
     Both `row_key` and `column_key` are **strings the document carries** — the key column's
     emitted text and the column's header text — because those are the two the verifier can
     resolve against a `.docx`. See this module's docstring.
+
+    ## The parameter list, and why it is not `(ledger, node, row, cell)`
+
+    The task's shorthand for this function derives the triple as
+    `{table_id(node.path), row.key, column_key}`. Both of those derivations would be wrong
+    here, and each has its own failure:
+
+    * **The identity is not always `table_id(node.path)`.** A chart's companion table carries
+      the **chart's** `cht:<path>` identity so the verifier can pair the table with the image
+      by identity rather than by proximity (`render/docx.py::emit_table`'s `identity`
+      override). Deriving it from the node would give that table a `tbl:` identity nothing
+      pairs with.
+    * **The row key is not `Row.key`.** Req 21.5 defines it as the emitted text of the key
+      column, which is a resource *name*; `Row.key` is the compiler's internal resource *id*.
+      Recording the id would record a string absent from the document, and every anchor in
+      the table would fail to resolve. `AnchorRecorder.row_keys_for` computes it once per
+      table, with the uniqueness check attached, and passing it in is what stops this
+      function from re-deriving it and skipping that check.
+
+    So the caller supplies the two strings it already holds. That is a smaller surface than
+    the node and the row, not a larger one.
     """
-    ledger.record_anchor(
+    if isinstance(cell, FigureCell):
+        path: FigurePath = cell.figure.path
+        record = ledger.record_anchor
+    elif isinstance(cell, TextFactCell):
+        path = cell.fact.path
+        record = ledger.record_text_fact_anchor
+    else:
+        raise RenderFailedError(
+            f"a cell anchor was recorded for {type(cell).__name__}, which carries no ledger "
+            f"entry; only {' and '.join(t.__name__ for t in _LEDGER_BEARING_CELLS)} do"
+        )
+
+    if anchor_kind not in (ANCHOR_TABLE, ANCHOR_CHART):
+        raise RenderFailedError(
+            f"anchor kind {anchor_kind!r} for {path!r} is neither {ANCHOR_TABLE!r} nor "
+            f"{ANCHOR_CHART!r}; the verifier pairs an anchor with a table or with a chart "
+            f"and has no third case"
+        )
+
+    record(
         path,
         TableAnchor(
-            kind=ANCHOR_TABLE,
-            anchor_id=table_identity,
-            row_key=row_key,
-            column_key=column_key,
-        ),
-    )
-
-
-def record_chart_anchor(
-    ledger: FigureLedger,
-    path: FigurePath,
-    chart_identity: str,
-    *,
-    row_key: str,
-    column_key: str,
-) -> None:
-    """As :func:`record_figure_anchor`, for a figure in a chart's companion table."""
-    ledger.record_anchor(
-        path,
-        TableAnchor(
-            kind=ANCHOR_CHART,
-            anchor_id=chart_identity,
+            kind=anchor_kind,
+            anchor_id=anchor_id,
             row_key=row_key,
             column_key=column_key,
         ),

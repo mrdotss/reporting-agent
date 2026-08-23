@@ -403,10 +403,16 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
       seed % 2 === 0
         ? ["Percentage CPU|avg"]
         : ["Percentage CPU|avg", "Available Memory Bytes|avg"],
+    // `resource_name` is deliberately **absent**: Requirement 12.3 rejects an explicit column
+    // naming what the table already emits, and this generator's contract is that every
+    // definition it produces is valid. It used to emit `resource_name` and the new rule caught
+    // it immediately, which is the generator working as intended — a defect the generator
+    // itself introduces would make every other property in this file assert against an invalid
+    // definition.
     columns: (seed) =>
       seed % 3 === 0
-        ? ["resource_name"]
-        : ["resource_name", "Percentage CPU|avg"],
+        ? ["resource_group"]
+        : ["resource_group", "Percentage CPU|avg"],
     order_by: () => "Percentage CPU|avg",
     capacity_metric: () => "vCPUsAvailable",
     usage_metric: () => "Percentage CPU|avg",

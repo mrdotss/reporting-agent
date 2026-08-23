@@ -1614,6 +1614,16 @@ const SPEC_PURE_MODULES = [
   path.join("lib", "templates", "definition.ts"),
   path.join("lib", "templates", "draft.ts"),
   path.join("lib", "templates", "input.ts"),
+  // Pure by requirement, not merely in practice: Requirement 13.12's migration takes a
+  // definition and returns a definition, so the wizard can apply it on **open** — before
+  // anything is saved — and no path exists that could rewrite a stored version in place.
+  path.join("lib", "templates", "migrate.ts"),
+  // Pure by requirement as well: the option resolver serves both the inspector (a client
+  // component) and the load-time check (a server one), so every input arrives as an argument —
+  // the Metric_Catalog and the Fact_Declaration included. Reading the agent's
+  // `catalog/facts.v1.json` here would make a client-importable module depend on a path outside
+  // `app/`, which is the coupling `lib/templates/catalog.ts` confines to one server-only module.
+  path.join("lib", "templates", "options.ts"),
   path.join("lib", "templates", "period.ts"),
   path.join("lib", "templates", "scope-union.ts"),
   path.join("lib", "templates", "starters.ts"),

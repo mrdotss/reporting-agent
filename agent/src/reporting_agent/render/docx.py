@@ -65,6 +65,8 @@ from reporting_agent.compile.ast import (
     Table,
     Text,
     TextCell,
+    TextFact,
+    TextFactCell,
 )
 from reporting_agent.compile.blocks.base import (
     CAPTION_STYLE,
@@ -77,8 +79,7 @@ from reporting_agent.errors import RenderFailedError
 from reporting_agent.render.anchors import (
     AnchorRecorder,
     assert_header_row,
-    record_chart_anchor,
-    record_figure_anchor,
+    record_cell_anchor,
     write_data_table_caption,
     write_layout_table,
 )
@@ -154,6 +155,11 @@ class RenderOutcome:
     table_identities: tuple[str, ...]
     advisories: tuple[str, ...] = ()
     figures_emitted: int = 0
+    text_facts_emitted: int = 0
+    """Counted **separately** from `figures_emitted` (Req 6.15). A text fact is a checked
+    value and not a figure: it enters neither `figure_count` nor the unused-figure warning,
+    so a single total would make an unrendered figure and an unrendered fact
+    indistinguishable in the one number an operator reads first."""
     chart_hashes: Mapping[str, str] = field(default_factory=dict)
     chart_sidecars: Mapping[str, bytes] = field(default_factory=dict)
     """The chart data hash per chart identity, and the sidecar bytes to write beside each
@@ -172,6 +178,7 @@ class _Emitter:
     declared_styles: frozenset[str]
     advisories: list[str] = field(default_factory=list)
     figures_emitted: int = 0
+    text_facts_emitted: int = 0
     chart_hashes: dict[str, str] = field(default_factory=dict)
     chart_sidecars: dict[str, bytes] = field(default_factory=dict)
 
@@ -236,6 +243,45 @@ class _Emitter:
         run = paragraph.add_run(figure.formatted)
         run.style = self.document.styles[FIGURE_CHARACTER_STYLE]
         self.figures_emitted += 1
+
+    def write_text_fact_run(self, paragraph: DocxParagraph, fact: TextFact) -> None:
+        """One run, in exactly one paragraph, the `Figure` character style, `formatted` and
+        nothing else (Req 6.4, 6.9).
+
+        **The same character style a figure takes**, and that is deliberate rather than
+        convenient: what the style marks is *this text is a checked value*, which is exactly
+        as true of `Succeeded` as of `12.5%`. It is also what lets the token extractor find a
+        fact without re-parsing prose — a fact's value carries no digit in the common case, so
+        nothing about the text itself would identify it.
+
+        **Exactly one run** is the load-bearing part. `verify/facts.py` concatenates a cell's
+        runs in document order **with no character inserted between them** and compares the
+        result to `formatted` character for character. Two runs would still concatenate
+        correctly today, but every additional run is a place a later edit could insert a
+        space, and the comparison admits none — so the invariant is stated here, where the
+        runs are created, and asserted by the paragraph check below.
+
+        The paragraph must be empty when this is called. A cell's first paragraph is fresh
+        from `python-docx`, so a non-empty one means something already wrote into this cell,
+        and the concatenation would then include text that is not the fact.
+        """
+        if not fact.formatted:
+            raise RenderFailedError(
+                f"text fact {fact.path!r} carries no formatted string; "
+                f"`compile/format.py::format_text_fact` is the only path to one and this "
+                f"entry never took it"
+            )
+        if paragraph.runs:
+            raise RenderFailedError(
+                f"text fact {fact.path!r} is emitted into a paragraph that already carries "
+                f"{len(paragraph.runs)} run(s); the facts pass concatenates a cell's runs "
+                f"with no separator and compares the result to `formatted`, so any earlier "
+                f"text in this cell would be read as part of the fact"
+            )
+
+        run = paragraph.add_run(fact.formatted)
+        run.style = self.document.styles[FIGURE_CHARACTER_STYLE]
+        self.text_facts_emitted += 1
 
     # --- blocks ---------------------------------------------------------------
 
@@ -403,18 +449,20 @@ class _Emitter:
             cell = row.cells[column_ordinal]
             where = f"{at} cell {column_ordinal}"
 
-            if isinstance(cell, FigureCell):
+            if isinstance(cell, FigureCell | TextFactCell):
                 paragraph = docx_cell.paragraphs[0]
-                self.write_figure_run(paragraph, cell.figure)
-                # Req 21.3 — the anchor triple, completed here because only the renderer
-                # knows the emitted grid.
-                recorder = (
-                    record_chart_anchor if anchor_kind == ANCHOR_CHART else record_figure_anchor
-                )
-                recorder(
+                if isinstance(cell, FigureCell):
+                    self.write_figure_run(paragraph, cell.figure)
+                else:
+                    self.write_text_fact_run(paragraph, cell.fact)
+                # Req 21.3, 6.9 — the anchor triple, completed here because only the
+                # renderer knows the emitted grid, and built in **one** place for both
+                # kinds so a change to its shape cannot reach one and miss the other.
+                record_cell_anchor(
                     self.ledger,
-                    cell.figure.path,
-                    identity,
+                    cell,
+                    anchor_kind=anchor_kind,
+                    anchor_id=identity,
                     row_key=row_key,
                     # The **header text**, not `column.key`, for exactly the reason
                     # `document_row_key` records emitted text rather than `Row.key`: Req 27.1
@@ -433,7 +481,7 @@ class _Emitter:
             else:
                 raise RenderFailedError(
                     f"{where} is {type(cell).__name__}; a cell admits only FigureCell, "
-                    f"TextCell or EmptyCell"
+                    f"TextFactCell, TextCell or EmptyCell"
                 )
 
     def _notice_style_for(self, node: Table, row: Row) -> str | None:
@@ -625,6 +673,7 @@ def render_document(
         table_identities=emitter.recorder.identities(),
         advisories=tuple(emitter.advisories),
         figures_emitted=emitter.figures_emitted,
+        text_facts_emitted=emitter.text_facts_emitted,
         chart_hashes=dict(emitter.chart_hashes),
         chart_sidecars=dict(emitter.chart_sidecars),
     )

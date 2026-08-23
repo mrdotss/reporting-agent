@@ -85,6 +85,7 @@ __all__ = [
     "NumberFormat",
     "display_scale",
     "format_figure",
+    "format_text_fact",
     "unit_suffix",
 ]
 
@@ -346,6 +347,46 @@ def _render_digits(value: Decimal, scale: int, number_format: NumberFormat) -> s
         rendered = f"{integer_part}{number_format.decimal_separator}{fraction}"
 
     return f"-{rendered}" if negative else rendered
+
+
+def format_text_fact(value: str, *, at: str) -> str:
+    """The display string for one text fact: `value`, character for character (Req 6.12).
+
+    No case folding, no truncation, no separator substitution, no trimming, and **no
+    resolution against the Message_Catalog**. `Succeeded` reaches an Indonesian document as
+    `Succeeded`, because a fact's value is **collected data** and not fixed copy — the two
+    are different kinds of string and only one of them is translatable. `Berhasil` in that
+    cell would be a value Azure never returned, sitting in a position the verifier compares
+    against what Azure did return, so it would fail verification for a document that was
+    otherwise correct; and if the verifier translated too, the pair would agree with each
+    other about a value neither of them collected.
+
+    A function rather than an inline pass-through, and that is the whole reason it exists.
+    `formatted` is then assigned in exactly **one** module for both entry kinds, so rule 7
+    in `tests/test_boundaries.py` covers text facts by the same mechanism it covers figures
+    — and this module is the one place a reviewer looks to see whether a display string can
+    be transformed. An inline `formatted=fact.value` at the call site would be a second
+    display path that happens to be the identity today.
+
+    `at` describes the position for a refusal, and is passed rather than composed here
+    because the caller knows whether it holds an AST path or a snapshot pointer.
+
+    Refuses a non-`str` and an empty string rather than defaulting, matching
+    :func:`format_figure`: an empty display string is a cell a reader sees as absent data,
+    and a non-string is a value that reached the text side of the compiler through a path
+    that should not exist.
+    """
+    if not isinstance(value, str):
+        raise CompileFailedError(
+            f"{at}: a text fact's value must be a str, got {type(value).__name__}. "
+            f"A quantity belongs on a Figure, which carries the provenance a number needs."
+        )
+    if not value:
+        raise CompileFailedError(
+            f"{at}: a text fact's value is empty, so there is no display string to emit. "
+            f"An absent fact is a recorded gap, not a blank cell."
+        )
+    return value
 
 
 def format_figure(

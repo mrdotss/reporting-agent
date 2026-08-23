@@ -173,6 +173,28 @@ def test_the_runtime_cell_tuple_is_exactly_the_cell_unions_members() -> None:
     }
 
 
+def test_the_runtime_node_tuple_is_exactly_the_node_unions_members() -> None:
+    """The same drift, one level up, and it had already happened.
+
+    `Node` documents the positioned-node set; `_NODE_TYPES` is what `_child_nodes` checks
+    against while walking. Task 5.1 added `TextFact` and `TextFactCell` to the tuple and not
+    to the alias, so for two waves the two disagreed. Nothing broke, because the tuple is the
+    one consulted at run time — which is precisely why it went unnoticed, and why the
+    assertion belongs here rather than in a reviewer's memory.
+
+    Order-sensitive, like the `Cell` assertion: both are written out by hand, and a
+    set comparison would let one be reordered into a different reading of "every node, in
+    document-structure order" while reporting green.
+    """
+    assert A._NODE_TYPES == A.Node.__value__.__args__
+
+    # And the tuple is not empty of the two members whose absence started this, so a future
+    # edit that removes them from *both* places fails rather than passing by symmetry.
+    assert {"TextFact", "TextFactCell"} <= {
+        member.__name__ for member in A._NODE_TYPES
+    }
+
+
 def test_every_node_is_frozen_and_slotted() -> None:
     for name, value in vars(A).items():
         if not (

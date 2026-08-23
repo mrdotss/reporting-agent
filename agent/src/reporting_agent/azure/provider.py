@@ -69,7 +69,7 @@ from decimal import Decimal, InvalidOperation
 from typing import Final, cast
 
 from reporting_agent.azure.definitions import DefinitionProbe
-from reporting_agent.azure.facts import FactCollector
+from reporting_agent.azure.facts import FactArchiveContext, FactCollector
 from reporting_agent.azure.inventory import (
     DEALLOCATED_POWER_STATE_CODES,
     VIRTUAL_MACHINE_RESOURCE_TYPE,
@@ -395,6 +395,12 @@ class AzureProvider:
     actor_id: str
     run_id: str
     fidelity_tier: str = FIDELITY_BASELINE
+    fact_clock: Callable[[], datetime] | None = None
+    """Each fact response's receipt instant, or `None` for the wall clock.
+
+    A seam rather than a hard-coded `datetime.now`, because `collected_at` enters the
+    snapshot's canonical form and therefore its digest: a test that compares two digests over
+    identical inputs is otherwise comparing two instants. See :func:`provider_over_ports`."""
     on_close: Callable[[], None] | None = field(default=None, repr=False)
 
     # --- discover (Req 18.2, 18.9, 20.x) --------------------------------------------
@@ -495,6 +501,16 @@ class AzureProvider:
             self.metrics.archive_writer,
             declaration=self.catalog.facts,
             semaphore=self.metrics.semaphore_for(request["subscription_id"]),
+            **({} if self.fact_clock is None else {"clock": self.fact_clock}),
+            # Req 7.1 — every fact-producing response is archived in the pass that folds it.
+            # The **same** writer the metrics pass and the inventory pass use, so one run has
+            # one sequence and one `object_count`; a second writer would produce a second
+            # count and the replay refuses when the count and the objects disagree.
+            archive_context=FactArchiveContext(
+                actor_id=self.actor_id,
+                run_id=self.run_id,
+                catalog_version=self.catalog.catalog_version,
+            ),
         )
         result = await collector.collect(
             resources=request["resources"],
@@ -1308,6 +1324,7 @@ def provider_over_ports(
     fidelity_tier: str = FIDELITY_BASELINE,
     catalog: LoadedCatalog | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+    fact_clock: Callable[[], datetime] | None = None,
     on_close: Callable[[], None] | None = None,
 ) -> AzureProvider:
     """Assemble an :class:`AzureProvider` over five ports and one object store.
@@ -1320,6 +1337,13 @@ def provider_over_ports(
 
     `catalog` defaults to `load_catalog()`, the file shipped in the image (Req 32.8);
     a test supplying its own passes it explicitly rather than patching a module.
+
+    `fact_clock` supplies each fact response's receipt instant, and it is a seam for the same
+    reason `sleep` is. A fact's `collected_at` is **part of the snapshot's canonical form**, so
+    with the wall clock deciding it two runs over identical inputs produce different digests —
+    which is correct in production, where the instants genuinely differ, and makes any test
+    that compares one digest to another depend on how long the test took. `None` keeps the wall
+    clock, which is what a deployed run wants.
     """
     loaded = catalog if catalog is not None else load_catalog()
     # One writer for the whole run, shared by the inventory pages and the metric
@@ -1336,6 +1360,7 @@ def provider_over_ports(
             sleep=sleep,
         ),
         facts=facts_port,
+        fact_clock=fact_clock,
         logs=metrics_port,
         actor_id=actor_id,
         run_id=run_id,

@@ -5,6 +5,7 @@ import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
@@ -91,14 +92,28 @@ async function loadTemplate(userId: string, id: string) {
     const template = await getTemplate(userId, id)
     const version = (await readLatestVersion(userId, id)) ?? null
 
+    // The draft wins when there is one — it is by definition newer than the last
+    // saved version, which is the whole reason it is persisted separately.
+    const opened = template.draftDefinition ?? version?.definition ?? null
+
     return {
       template,
       version,
-      // The draft wins when there is one — it is by definition newer than the
-      // last saved version, which is the whole reason it is persisted
-      // separately.
-      initialDefinition:
-        template.draftDefinition ?? version?.definition ?? null,
+      // Requirement 13.12 — a stored `schema_version` 1 definition opens as a
+      // version-2 draft. Applied **here**, on open, and nowhere else:
+      //
+      //   * `toSchemaVersion2` is pure, so this rewrites what the wizard shows and
+      //     touches no row. The stored version is unchanged and every report pinned
+      //     to it goes on rendering exactly as delivered.
+      //   * a *save* then writes a **new** version row carrying `front_matter`,
+      //     because `insertVersion` only ever inserts. There is no branch anywhere
+      //     that upgrades a version in place, which is what makes "applies no write
+      //     to the existing version row" structural rather than remembered.
+      //   * `version` above is deliberately **not** migrated. It is what the
+      //     template's stored state is presented from, and showing a migrated
+      //     version there would tell a consultant the row already says something it
+      //     does not.
+      initialDefinition: opened === null ? null : toSchemaVersion2(opened),
     }
   } catch (thrown) {
     // Requirement 1.5 — another user's template is not found, and the answer is

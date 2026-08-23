@@ -102,9 +102,17 @@ app/
 ## Three things that will bite you
 
 **Auth is a custom DB-session implementation, not Auth.js.** argon2, a `sessions`
-table, an httpOnly cookie, and a 5-failures-in-15-minutes lockout. `next-auth` is
-*not* a dependency here. If you find a `vi.mock("next-auth/jwt")` anywhere, it is
+table, an httpOnly cookie, and a 5-failures-in-15-minutes lockout. Neither the
+Auth.js npm package nor its Drizzle adapter is a dependency here, and no module
+imports either one. If you find a `vi.mock` of an Auth.js JWT subpath anywhere, it is
 dead weight inherited from a sibling project — it mocks a module nothing imports.
+
+The package name is deliberately not written out above. `test/boundaries.static.test.ts`
+refuses **any** file under `app/` that contains it, prose included, because a stale
+textual reference is exactly what reads as evidence the dependency is live — the
+sibling project has two steering docs describing an Auth.js setup its code does not
+have. The guard assembles the name at runtime so it can scan itself; documentation
+just does without it.
 
 **The SSE relay is cosmetic.** `api/runs/[runId]/stream` is a live view over run
 state for a browser that happens to be watching. State arrives by progress callback,

@@ -35,6 +35,10 @@ from reporting_agent.compile.blocks.base import (
     NO_GAPS_TEXT,
     OMITTED_ROW_LABEL,
 )
+from reporting_agent.compile.blocks.tables import (
+    COLUMN_ATTRIBUTES,
+    resource_attribute_text,
+)
 from reporting_agent.compile.snapshot_view import SnapshotValue, build_snapshot_view
 from reporting_agent.errors import CompileFailedError, ErrorCode
 
@@ -1172,3 +1176,72 @@ def test_the_ledger_describes_the_tree_for_a_document_using_every_block_type() -
         assert document.ledger[path] is figure
     for anchor in document.ledger.anchors().values():
         assert anchor.anchor_id.startswith(("tbl:", "cht:"))
+
+
+# --------------------------------------------------------------------------- #
+# Req 12.3 — the column-attribute vocabulary is exactly what the compiler can emit
+# --------------------------------------------------------------------------- #
+def test_resource_attribute_text_answers_for_every_declared_attribute():
+    """Totality over `COLUMN_ATTRIBUTES`, asserted name by name.
+
+    This is the assertion that keeps the constant honest in the direction that matters. The
+    builder's `column_list` options come from this vocabulary (mirrored into
+    `app/lib/templates/options.ts`), so a name in the tuple with no branch in
+    `resource_attribute_text` is a column a consultant selects, saves, and then finds missing
+    from a delivered document — and the mirror guard cannot see it, because both halves would
+    agree on a name neither can emit.
+
+    Asserted against the **snapshot's own values** rather than against literals, so a branch
+    reading the wrong field fails here: returning `resource.resource_group` for `location`
+    would satisfy "answers for every attribute" and be wrong.
+    """
+    view = build_snapshot_view(
+        sf.build(resources=[sf.vm(resource_id="/subscriptions/s/x", name="prod-web-01")])
+    )
+    resource = view.resources[0]
+
+    expected = {
+        "resource_name": resource.name,
+        "resource_group": resource.resource_group,
+        "resource_type": resource.resource_type,
+        "location": resource.location,
+        "sku_name": resource.sku.name,
+        "power_state": resource.power_state,
+        "fidelity_tier": resource.fidelity_tier,
+    }
+    # The two lists are compared before the values, so adding a member to the tuple without
+    # extending this mapping fails as a missing case rather than as a silent skip.
+    assert sorted(expected) == sorted(COLUMN_ATTRIBUTES)
+
+    for attribute in COLUMN_ATTRIBUTES:
+        assert resource_attribute_text(resource, attribute) == expected[attribute]
+
+
+def test_resource_attribute_text_refuses_a_name_outside_the_vocabulary():
+    """A name the tuple does not carry raises, naming the declared set.
+
+    Refusing rather than returning `""` is the point: an empty string is a legitimate answer
+    for an attribute the inventory did not record, so a silent `""` for an *unknown* name would
+    be indistinguishable from an unresolved SKU and the column would simply be blank.
+    """
+    view = build_snapshot_view(
+        sf.build(resources=[sf.vm(resource_id="/subscriptions/s/x", name="prod-web-01")])
+    )
+    resource = view.resources[0]
+
+    for attribute in ("tags", "resource_id", "Percentage CPU", "resource_name ", ""):
+        with pytest.raises(ValueError, match="not a declared column attribute"):
+            resource_attribute_text(resource, attribute)
+
+
+def test_the_declared_attributes_are_a_tuple_of_unique_names_in_a_fixed_order():
+    """Order and uniqueness, because the mirror is compared order-sensitively.
+
+    A `list` would let a caller reorder the vocabulary in place and a duplicate would make the
+    app's option list show one attribute twice, so both are asserted rather than assumed from
+    the literal's appearance.
+    """
+    assert isinstance(COLUMN_ATTRIBUTES, tuple)
+    assert len(set(COLUMN_ATTRIBUTES)) == len(COLUMN_ATTRIBUTES)
+    assert COLUMN_ATTRIBUTES[0] == "resource_name"
+    assert set(COLUMN_ATTRIBUTES) >= {"resource_name", "fidelity_tier"}

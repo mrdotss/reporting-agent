@@ -76,17 +76,22 @@ from reporting_agent.providers.base import FactRecord, GapRecord, PlainData, Res
 __all__ = [
     "BACKUP_ABSENT_GAP_TYPE",
     "BACKUP_COVERED_RESOURCE_TYPES",
+    "BACKUP_REQUEST_TARGET",
     "MAX_FACT_KEY_LENGTH",
     "MAX_FACT_VALUE_LENGTH",
     "RECOVERY_SERVICES_VAULT_TYPE",
     "REPLICATION_ABSENT_GAP_TYPE",
     "REPLICATION_COVERED_RESOURCE_TYPES",
+    "REPLICATION_REQUEST_TARGET",
     "RESERVATION_ABSENT_GAP_TYPE",
     "RESERVATION_COVERED_RESOURCE_TYPES",
+    "RESERVATION_REQUEST_TARGET",
     "SOURCE_CAPACITY",
     "SOURCE_RECOVERY_SERVICES",
+    "FactArchiveContext",
     "FactCollector",
     "FactsResult",
+    "declared_keys",
     "narrowed_to_gap_type",
 ]
 
@@ -216,6 +221,70 @@ def narrowed_to_gap_type(
     )
 
 
+BACKUP_REQUEST_TARGET: Final[str] = (
+    "/providers/Microsoft.RecoveryServices/backupProtectedItems"
+)
+REPLICATION_REQUEST_TARGET: Final[str] = (
+    "/providers/Microsoft.RecoveryServices/vaults/replicationProtectedItems"
+)
+RESERVATION_REQUEST_TARGET: Final[str] = (
+    "/providers/Microsoft.Capacity/reservationOrders/reservations"
+)
+"""What was asked, recorded on every archived fact object.
+
+ARM paths rather than full URLs, the same discipline `azure/inventory.py`'s
+`RESOURCE_GRAPH_REQUEST_TARGET` keeps: a URL carries the subscription id, and an archived
+object is read by a replay that already knows the subscription.
+
+The replication target names the vault segment without a vault id, deliberately. One archived
+object covers **every** vault the run listed, because `azure/facts.py` folds the accumulated
+items as one response — so naming one vault would name whichever happened to be first.
+"""
+
+
+def declared_keys(declaration: FactDeclaration) -> tuple[str, ...]:
+    """Every declared key in `declaration`, sorted and deduplicated. **Pure.**
+
+    Read against a **narrowed** declaration, so the result is exactly the set of keys the
+    request being archived answers for — which is what `collect/archive.py::write_facts`
+    carries as `fact_keys` and what a replay narrows by. See that method on why the keys have
+    to travel rather than being re-derived from the gap type they were narrowed on.
+
+    Deduplicated because one key is declared per resource type and several types can declare
+    the same key; sorted so two runs archive byte-identical objects for one response.
+    """
+    return tuple(
+        sorted(
+            {
+                entry.key
+                for declared in declaration.resource_types
+                for entry in declared.facts
+            }
+        )
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class FactArchiveContext:
+    """What :meth:`FactCollector.collect` needs in order to archive a fact response.
+
+    One object rather than three more keyword arguments, mirroring
+    `azure/inventory.py`'s `InventoryArchiveContext` — and for the same reason: the three are
+    meaningless apart, and grouping them makes "archive the fact responses" one decision at
+    the call site rather than three that could disagree.
+
+    **Optional.** `FactCollector` takes `archive_context=None` and then archives nothing,
+    which is what keeps every existing caller — and every unit test about the fold — working
+    without a run id it has no use for. A run that collects facts and archives none is a run
+    whose replay reports `archive_incomplete` rather than a mismatch, which is the honest
+    outcome for an archive that was never written.
+    """
+
+    actor_id: str
+    run_id: str
+    catalog_version: str
+
+
 class FactCollector:
     """The fact pass over one run (Req 4.7, 4.8, 4.9, 5.1-5.5, 5.8-5.10).
 
@@ -229,13 +298,24 @@ class FactCollector:
     when the value was seen and a test drives it rather than the wall clock deciding what lands
     in a snapshot digest.
 
-    `archive` is held for task 4.4's `"facts"` archive kind, which is what makes a fact
-    re-derivable on replay. It is deliberately not written to here: `collect/archive.py` has no
-    `write_facts` yet, and a projected fact's page is already archived by
-    `azure/inventory.py` in the pass that produced it.
+    `archive` receives one `"facts"` object per folded response (Req 7.1), written **before**
+    the fold, so no record derived from a response exists before the response is archived. A
+    projected fact's page is archived by `azure/inventory.py` in the pass that produced it and
+    is not re-archived here — one response, one object, whichever pass issued it.
+
+    `archive_context` carries the actor, the run and the catalog version those objects need. It
+    is **optional**: with none, this collector folds exactly as before and writes nothing,
+    which keeps every unit test about the fold free of a run id it has no use for.
     """
 
-    __slots__ = ("archive", "clock", "declaration", "port", "semaphore")
+    __slots__ = (
+        "archive",
+        "archive_context",
+        "clock",
+        "declaration",
+        "port",
+        "semaphore",
+    )
 
     def __init__(
         self,
@@ -245,12 +325,14 @@ class FactCollector:
         declaration: FactDeclaration,
         semaphore: asyncio.Semaphore,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        archive_context: FactArchiveContext | None = None,
     ) -> None:
         self.port = port
         self.archive = archive
         self.declaration = declaration
         self.semaphore = semaphore
         self.clock = clock
+        self.archive_context = archive_context
 
     async def collect(
         self,
@@ -350,13 +432,23 @@ class FactCollector:
                 subscription_id=subscription_id
             )
         received_at = self._now()
+        body = _normalized(
+            response.body if response.ok else None,
+            id_paths=_BACKUP_RESOURCE_ID_PATHS,
+            value_paths=_BACKUP_VALUE_PATHS,
+        )
 
-        return fold_fact_response(
-            _normalized(
-                response.body if response.ok else None,
-                id_paths=_BACKUP_RESOURCE_ID_PATHS,
-                value_paths=_BACKUP_VALUE_PATHS,
-            ),
+        gaps = await self._archive(
+            source=SOURCE_RECOVERY_SERVICES,
+            request_target=BACKUP_REQUEST_TARGET,
+            declared=declared,
+            resource_ids=covered,
+            received_at=received_at,
+            body=body,
+        )
+
+        facts, fold_gaps = fold_fact_response(
+            body,
             kind=FACT_KIND_FACTS,
             source=SOURCE_RECOVERY_SERVICES,
             resource_ids=covered,
@@ -364,6 +456,7 @@ class FactCollector:
             resource_types=types_by_id,
             received_at=received_at,
         )
+        return facts, (*gaps, *fold_gaps)
 
     async def _collect_replication(
         self,
@@ -415,12 +508,25 @@ class FactCollector:
             items.extend(_items_of(response.body))
 
         received_at = self._now()
-        return fold_fact_response(
-            _normalized(
-                {"value": items} if readable else None,
-                id_paths=_REPLICATION_RESOURCE_ID_PATHS,
-                value_paths=_REPLICATION_VALUE_PATHS,
-            ),
+        body = _normalized(
+            {"value": items} if readable else None,
+            id_paths=_REPLICATION_RESOURCE_ID_PATHS,
+            value_paths=_REPLICATION_VALUE_PATHS,
+        )
+
+        # One object for every vault the run listed, because the accumulated items are folded
+        # as **one** response. Written after the last vault request and before the fold.
+        gaps = await self._archive(
+            source=SOURCE_RECOVERY_SERVICES,
+            request_target=REPLICATION_REQUEST_TARGET,
+            declared=declared,
+            resource_ids=covered,
+            received_at=received_at,
+            body=body,
+        )
+
+        facts, fold_gaps = fold_fact_response(
+            body,
             kind=FACT_KIND_FACTS,
             source=SOURCE_RECOVERY_SERVICES,
             resource_ids=covered,
@@ -428,6 +534,7 @@ class FactCollector:
             resource_types=types_by_id,
             received_at=received_at,
         )
+        return facts, (*gaps, *fold_gaps)
 
     async def _collect_reservations(
         self,
@@ -470,7 +577,16 @@ class FactCollector:
                 response.status,
             )
 
-        return fold_fact_response(
+        gaps = await self._archive(
+            source=SOURCE_CAPACITY,
+            request_target=RESERVATION_REQUEST_TARGET,
+            declared=declared,
+            resource_ids=covered,
+            received_at=received_at,
+            body=normalized,
+        )
+
+        facts, fold_gaps = fold_fact_response(
             normalized,
             kind=FACT_KIND_FACTS,
             source=SOURCE_CAPACITY,
@@ -479,6 +595,48 @@ class FactCollector:
             resource_types=types_by_id,
             received_at=received_at,
         )
+        return facts, (*gaps, *fold_gaps)
+
+    async def _archive(
+        self,
+        *,
+        source: str,
+        request_target: str,
+        declared: FactDeclaration,
+        resource_ids: Sequence[str],
+        received_at: str,
+        body: PlainData,
+    ) -> tuple[GapRecord, ...]:
+        """Archive one fact response, before it is folded (Req 7.1). Returns its gaps.
+
+        The ordering is the requirement: the object lands, and only then does any record
+        derived from it exist. Observable as the call order a recording object store sees,
+        which is how `tests/test_facts_archive.py` checks it rather than reading this comment.
+
+        `declared` is the **narrowed** declaration this source answers for, so `fact_keys`
+        names exactly the keys a replay must narrow to. Passing the full declaration here
+        would archive an object claiming the backup request answered for the replication key.
+
+        Returns `()` with no context — a collector built without one archives nothing, and a
+        write failure returns its `archive_write_failed` gaps rather than raising, so the fold
+        below runs either way.
+        """
+        context = self.archive_context
+        if context is None:
+            return ()
+
+        result = await self.archive.write_facts(
+            actor_id=context.actor_id,
+            run_id=context.run_id,
+            source=source,
+            request_target=request_target,
+            fact_keys=declared_keys(declared),
+            received_at=received_at,
+            catalog_version=context.catalog_version,
+            resource_ids=resource_ids,
+            raw_body=body,
+        )
+        return result.gaps
 
     def _now(self) -> str:
         """This response's receipt instant, RFC 3339 UTC, whole seconds (Req 4.3)."""

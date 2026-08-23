@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Final
 from zoneinfo import ZoneInfo
 
@@ -27,17 +27,18 @@ import pytest
 
 from fakes.azure_ports import (
     FakeDefinitionsPort,
+    FakeFactsPort,
     FakeInventoryPort,
     FakeMetricsPort,
     FakeSkuPort,
-    facts_port_answering_nothing,
+    empty_fact_list,
     raw_response_from_recorded,
 )
 from fakes.object_store import InMemoryObjectStore
 from fixtures import load_response
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.provider import FIDELITY_BASELINE, provider_over_ports
-from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
+from reporting_agent.catalog.loader import load_catalog
 from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.collect.buckets import day_buckets, resolve_window
 from reporting_agent.collect.pipeline import sku_from_plain, statistic_from_plain
@@ -45,8 +46,9 @@ from reporting_agent.collect.snapshot import (
     ResourceSnapshot,
     build_snapshot,
     content_hash,
+    fact_from_plain,
 )
-from reporting_agent.providers.base import CollectRequest, ScopeSpec
+from reporting_agent.providers.base import CollectRequest, FactRequest, ScopeSpec
 from reporting_agent.verify.findings import (
     FINDING_ARCHIVE_INCOMPLETE,
     FINDING_REPLAY_HASH_MISMATCH,
@@ -71,6 +73,13 @@ MEMORY: Final[str] = "Available Memory Bytes"
 SKU: Final[str] = "Standard_D4s_v5"
 JAKARTA: Final[ZoneInfo] = ZoneInfo("Asia/Jakarta")
 COLLECTED_AT: Final[datetime] = datetime(2026, 7, 2, 1, 30, tzinfo=UTC)
+
+FACT_RECEIVED_AT: Final[datetime] = datetime(2026, 7, 2, 1, 25, 15, tzinfo=UTC)
+"""When every fact response in this harness is received.
+
+Before `COLLECTED_AT`, because a fact is collected during the run whose `collected_at` marks
+its end — and `build_snapshot` bounds a fact's instant by the invocation's start, so an
+instant after the snapshot's would be refused rather than merely odd."""
 
 WINDOW: Final[dict[str, str]] = {
     "start": "2026-07-01",
@@ -174,7 +183,7 @@ class Collection:
 
     def __init__(self, *, batches: list[RawHttpResponse] | None = None) -> None:
         self.store = InMemoryObjectStore()
-        self.catalog = load_catalog(DEFAULT_CATALOG_PATH)
+        self.catalog = load_catalog()
         self.provider = provider_over_ports(
             inventory_port=FakeInventoryPort(
                 [
@@ -200,10 +209,40 @@ class Collection:
                 ),
                 fallback_responses=[],
             ),
-            facts_port=facts_port_answering_nothing(),
+            # A **real** backup answer for one of the two VMs, so the snapshot carries a
+            # fact and not only absences. With every source answering nothing, the
+            # re-derivation below would be proving that zero facts round-trip to zero facts —
+            # and the `received_at` and digest-mismatch assertions would both hold trivially,
+            # because nothing in the document would carry a fact's instant or its value.
+            facts_port=FakeFactsPort(
+                backup_responses=[
+                    raw(
+                        {
+                            "value": [
+                                {
+                                    "id": "/subscriptions/x/…/backupProtectedItems/item-1",
+                                    "properties": {
+                                        "sourceResourceId": WEB_01,
+                                        "lastBackupStatus": "Completed",
+                                        "lastRecoveryPoint": "2026-07-31T18:04:00Z",
+                                    },
+                                }
+                            ]
+                        }
+                    )
+                ],
+                reservation_responses=[empty_fact_list()],
+            ),
             object_store=self.store,
             actor_id=ACTOR_ID,
             run_id=RUN_ID,
+            # A fixed instant for every fact response. `collected_at` is part of the
+            # snapshot's canonical form, so with the wall clock deciding it this harness's
+            # digest would change between two runs — and
+            # `test_the_digest_is_identical_across_two_processes_with_different_hash_seeds`
+            # compares digests produced by two subprocesses, which would then differ for a
+            # reason that has nothing to do with a hash seed.
+            fact_clock=lambda: FACT_RECEIVED_AT,
             fidelity_tier=FIDELITY_BASELINE,
             catalog=self.catalog,
             sleep=self._sleep,
@@ -237,10 +276,29 @@ class Collection:
                     utc_offset="+07:00",
                 )
             )
-            return discovered, collected, resources
+            # The fact pass, because this harness claims to build "the snapshot the pipeline
+            # would build" and the pipeline runs it. Skipping it was invisible until task 4.4
+            # taught replay to fold an archived inventory page as fact-bearing: the archive
+            # then carried a page whose projected columns replay re-derived and this snapshot
+            # never had, so a correct replay reported eight `fact_unavailable` gaps as a
+            # digest mismatch. A harness that collects less than the run it stands in for
+            # fails the thing it is checking, not the thing it omitted.
+            facts = await self.provider.collect_facts(
+                FactRequest(
+                    resources=resources,
+                    inventory_pages=list(discovered.get("inventory_pages") or ()),
+                    subscription_id=SUBSCRIPTION,
+                )
+            )
+            return discovered, collected, resources, facts
 
-        discovered, collected, resources = asyncio.run(go())
-        self.gaps = [*discovered["gaps"], *collected["gaps"]]
+        discovered, collected, resources, facts = asyncio.run(go())
+        self.gaps = [*discovered["gaps"], *collected["gaps"], *facts["gaps"]]
+        facts_by_resource: dict[str, list[Any]] = {}
+        for record in facts["facts"]:
+            facts_by_resource.setdefault(record["resource_id"], []).append(
+                fact_from_plain(record)
+            )
 
         window = resolve_window(
             _date(WINDOW["start"]), _date(WINDOW["end"]), JAKARTA
@@ -278,14 +336,16 @@ class Collection:
                     )
                     for bucket in buckets
                 ),
+                facts=tuple(facts_by_resource.get(record["resource_id"], ())),
             )
             for record in resources
         ]
         self.document = build_snapshot(
             run_id=RUN_ID,
             # No lower bound on a fact's `collected_at`: this snapshot is built in a test
-            # rather than by a run, so there is no invocation instant to bound it against and
-            # this harness declares no fact anyway. `build_snapshot` takes it as a
+            # rather than by a run, so there is no invocation instant to bound it against —
+            # and the facts it now carries were stamped by the collector's own clock, which a
+            # fresh instant here would reject. `build_snapshot` takes it as a
             # required-but-nullable keyword so every call site states which it is.
             invocation_started_at=None,
             scope=self.scope(),
@@ -593,7 +653,15 @@ def test_a_carried_over_metric_not_selected_gap_survives_replay_exactly_once(
 def test_every_archived_object_is_folded_exactly_once(collection) -> None:
     """Property 4.5. A double fold doubles every count-weighted average's denominator and
     its numerator, so the averages survive — but the sample counts do not, and neither
-    does the digest."""
+    does the digest.
+
+    Since task 4.4 the double fold is caught **harder** than by a differing digest: folding a
+    fact response twice gives a resource two values for one key, which `ResourceSnapshot`
+    refuses outright. So there is no second digest to compare — the outcome is a mismatch with
+    no digest at all, which is a stronger statement than "the two digests differ" and the one
+    asserted here. `replay` still returns rather than raises, which is what stops a duplicated
+    S3 key from turning a verification into an unhandled exception.
+    """
     archived = collection.archived()
 
     once = replay(archived, plan=collection.plan())
@@ -604,7 +672,12 @@ def test_every_archived_object_is_folded_exactly_once(collection) -> None:
 
     assert once.outcome["objects_folded"] == len(archived)
     assert twice.outcome["objects_folded"] == len(archived) * 2
-    assert twice.outcome["recomputed_sha256"] != once.outcome["recomputed_sha256"]
+    assert [f["type"] for f in twice.findings] == [FINDING_REPLAY_HASH_MISMATCH]
+    assert twice.findings[0]["severity"] == SEVERITY_BLOCKING
+    assert "recomputed_sha256" not in twice.outcome
+    # And the single fold still produces one, so the assertion above is about the double fold
+    # rather than about replay having stopped producing digests.
+    assert once.outcome["recomputed_sha256"] == collection.document["snapshot_id"]
 
 
 def test_dropping_one_object_is_reported_as_an_incomplete_archive(collection) -> None:
@@ -771,3 +844,188 @@ def test_the_digest_is_identical_across_two_processes_with_different_hash_seeds(
     assert len(digests[0]) == 64, digests
     assert digests[0] == digests[1]
     assert digests[0] == local.document["snapshot_id"]
+
+
+# --------------------------------------------------------------------------- #
+# Task 4.4 — the facts re-derivation, and the two verdicts about a bad object
+# --------------------------------------------------------------------------- #
+
+
+def _facts_object_ordinals(collection: Collection) -> list[int]:
+    """The ordinals of the archived objects whose kind is `facts`."""
+    from reporting_agent.collect.archive import ARCHIVE_KIND_FACTS, archive_kind_of
+
+    found: list[int] = []
+    for ordinal, payload in collection.archived():
+        document = json.loads(gzip.decompress(payload))
+        if archive_kind_of(document) == ARCHIVE_KIND_FACTS:
+            found.append(ordinal)
+    return found
+
+
+def test_the_collection_actually_archived_fact_objects(collection) -> None:
+    """The anchor for every assertion below. With no `facts` object in the archive, dropping
+    one would drop nothing and the mismatch tests would pass by changing the input they meant
+    to change — which is exactly how this file read before task 4.4, against a catalog that
+    declared no facts."""
+    assert _facts_object_ordinals(collection), (
+        "the shipped catalog declares facts, so a real collection must archive at least one "
+        "`facts` object or the re-derivation below is not being exercised"
+    )
+
+
+def test_the_recomputed_snapshot_carries_the_re_derived_facts(collection) -> None:
+    """Req 7.3 — not only the same digest, the same facts, so a match cannot be an accident of
+    two documents that both carry none."""
+    result = replay(collection.archived(), plan=collection.plan())
+
+    assert result.document is not None
+    stored_facts = [
+        (resource["resource_id"], fact["key"], fact["value"])
+        for resource in collection.document["resources"]  # type: ignore[union-attr]
+        for fact in resource.get("facts", ())
+    ]
+    replayed_facts = [
+        (resource["resource_id"], fact["key"], fact["value"])
+        for resource in result.document["resources"]  # type: ignore[index]
+        for fact in resource.get("facts", ())
+    ]
+    assert replayed_facts == stored_facts
+
+
+def test_dropping_a_facts_object_is_an_incomplete_archive_not_a_mismatch(
+    collection,
+) -> None:
+    """The object count is what catches it first.
+
+    An object the sequence names being absent is Req 31.5's advisory, not an accusation of
+    non-determinism — and the ordering matters: a replay that folded what it had and *then*
+    compared digests would report `replay_hash_mismatch`, withholding a correct report on the
+    strength of a missing input.
+    """
+    ordinals = _facts_object_ordinals(collection)
+    kept = [
+        (ordinal, payload)
+        for ordinal, payload in collection.archived()
+        if ordinal != ordinals[0]
+    ]
+
+    result = replay(kept, plan=collection.plan())
+
+    assert result.outcome["possible"] is False
+    assert [f["type"] for f in result.findings] == [FINDING_ARCHIVE_INCOMPLETE]
+    assert all(f["severity"] == SEVERITY_ADVISORY for f in result.findings)
+
+
+def test_a_facts_object_present_but_empty_of_facts_is_a_digest_mismatch(
+    collection,
+) -> None:
+    """The other verdict, and the one the task names: a fact folded with **no** archived
+    response behind it produces a differing digest and `replay_hash_mismatch`.
+
+    Driven by emptying the response rather than removing the object, so the count still
+    matches and the replay proceeds all the way to the comparison — which is the only way to
+    reach the mismatch branch at all.
+    """
+    ordinals = _facts_object_ordinals(collection)
+    supplied: list[tuple[int, bytes]] = []
+    for ordinal, payload in collection.archived():
+        if ordinal == ordinals[0]:
+            document = json.loads(gzip.decompress(payload))
+            document["raw_response"] = {"value": []}
+            payload = gzip.compress(json.dumps(document).encode("utf-8"))
+        supplied.append((ordinal, payload))
+
+    result = replay(supplied, plan=collection.plan())
+
+    assert result.outcome["possible"] is True
+    assert [f["type"] for f in result.findings] == [FINDING_REPLAY_HASH_MISMATCH]
+    assert all(f["severity"] == SEVERITY_BLOCKING for f in result.findings)
+
+
+def test_an_undecodable_facts_object_is_advisory_and_names_its_ordinal(
+    collection,
+) -> None:
+    """Req 7.3 — an object that will not decompress is `archive_incomplete` naming the sequence
+    ordinal, with replay recorded as not possible and **no exception mid-fold**."""
+    ordinals = _facts_object_ordinals(collection)
+    supplied = [
+        (ordinal, b"not gzip at all" if ordinal == ordinals[0] else payload)
+        for ordinal, payload in collection.archived()
+    ]
+
+    result = replay(supplied, plan=collection.plan())
+
+    assert result.outcome["possible"] is False
+    assert len(result.findings) == 1
+    assert result.findings[0]["type"] == FINDING_ARCHIVE_INCOMPLETE
+    assert result.findings[0]["paragraph_ordinal"] == ordinals[0]
+
+
+def test_a_facts_objects_received_at_is_read_from_the_object_not_the_replay_instant(
+    collection,
+) -> None:
+    """The substitution that would report `REPLAY_MISMATCH` on every run in production and on
+    none in a test that happened to stamp the same instant twice.
+
+    A fact's `collected_at` is part of the canonical form the digest is taken over, so moving
+    the archived instant by one second has to move the recomputed digest — which is what proves
+    the value is being read from the object rather than produced at verification time.
+    """
+    ordinals = _facts_object_ordinals(collection)
+    supplied: list[tuple[int, bytes]] = []
+    moved = ""
+    for ordinal, payload in collection.archived():
+        if ordinal == ordinals[0]:
+            document = json.loads(gzip.decompress(payload))
+            original = str(document["received_at"])
+            # Derived rather than substituted textually: the collector stamps this from its
+            # own clock, which in this harness is the wall clock, so a hard-coded second
+            # would differ from the original only by luck.
+            moved = (
+                datetime.fromisoformat(original.replace("Z", "+00:00"))
+                + timedelta(seconds=1)
+            ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            assert moved != original, original
+            document["received_at"] = moved
+            payload = gzip.compress(json.dumps(document).encode("utf-8"))
+        supplied.append((ordinal, payload))
+
+    result = replay(supplied, plan=collection.plan())
+
+    assert result.document is not None
+    assert result.outcome["recomputed_sha256"] != collection.document["snapshot_id"]
+    # And the moved instant is the one that reached the re-derived fact, rather than being
+    # discarded in favour of a fresh one.
+    assert moved in json.dumps(result.document)
+
+
+def test_the_fact_gap_types_are_recomputed_rather_than_carried_over(collection) -> None:
+    """The partition, asserted where getting it wrong is visible.
+
+    Carry a recomputed type over and it appears twice; drop a carried-over one and it vanishes.
+    Both change the `collection_log` and therefore the digest — so a partition error shows up
+    as a mismatch on a reproducible snapshot, which is the failure this test exists to name.
+    """
+    from reporting_agent.collect.log import (
+        FACT_GAP_TYPES,
+        GAP_TYPE_ARCHIVE_WRITE_FAILED,
+    )
+
+    assert FACT_GAP_TYPES <= RECOMPUTED_GAP_TYPES
+    # The one fact-ish type that is **not** recomputed: replay does not re-run the write, so
+    # its failure is carried over like every other step replay cannot repeat.
+    assert GAP_TYPE_ARCHIVE_WRITE_FAILED not in RECOMPUTED_GAP_TYPES
+
+    stored = collection.document["gaps"]
+    fact_gaps = [gap for gap in stored if gap["gap_type"] in FACT_GAP_TYPES]
+    assert fact_gaps, "the collection recorded no fact gap, so this partition is untested"
+
+    result = replay(collection.archived(), plan=collection.plan())
+    assert result.document is not None
+    replayed = [
+        gap
+        for gap in result.document["gaps"]  # type: ignore[index]
+        if gap["gap_type"] in FACT_GAP_TYPES
+    ]
+    assert len(replayed) == len(fact_gaps)

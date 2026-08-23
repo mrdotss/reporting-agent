@@ -276,6 +276,41 @@ describe("insertVersion", () => {
     ])
   })
 
+  test("Requirement 13.12 — saving a migrated v1 writes v2 and leaves v1's row untouched", async () => {
+    // The version-1-to-2 migration's storage half. `lib/templates/migrate.ts` produces the
+    // definition; what this asserts is the *store's* obligation: a new row, and **no write**
+    // to the earlier one, so every report pinned to version 1 goes on rendering exactly as
+    // delivered.
+    //
+    // Asserted against the row's whole content rather than against its `version` alone,
+    // because the failure worth catching is an in-place upgrade — an `UPDATE ... SET
+    // definition = <v2>` on the existing row would leave the version numbers looking right
+    // and change what every pinned report renders.
+    const template = await createTemplate(ownerId, { name: "Migrated" })
+
+    const stored = { schema_version: 1, blocks: [{ type: "cover" }] }
+    const v1 = await insertVersion(ownerId, template.id, versionInput(stored))
+    const v1RowBefore = (await allVersionRows()).find((row) => row.id === v1.id)
+    expect(v1RowBefore).toBeDefined()
+
+    const migrated = {
+      schema_version: 2,
+      blocks: [],
+      front_matter: { cover: {}, document_control: {}, toc: {} },
+    }
+    const v2 = await insertVersion(ownerId, template.id, versionInput(migrated))
+
+    expect(v2.version).toBe(2)
+    expect((v2.definition as { schema_version: number }).schema_version).toBe(2)
+    expect(v2.definition).toHaveProperty("front_matter")
+
+    const rows = await allVersionRows()
+    expect(rows.map((row) => row.version)).toEqual([1, 2])
+    // Byte-for-byte the row that was there before: same definition, same digest, same
+    // created_at. Nothing about version 1 moved.
+    expect(rows.find((row) => row.id === v1.id)).toEqual(v1RowBefore)
+  })
+
   test("insertVersion points current_version_id at the newly inserted row", async () => {
     const template = await createTemplate(ownerId, { name: "Pointer" })
 

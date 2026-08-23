@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal
+from typing import Final
 
 from reporting_agent.compile.ast import Column, FigureCell, Row, Table
 from reporting_agent.compile.blocks.base import (
@@ -72,14 +73,81 @@ from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue
 
 __all__ = [
+    "COLUMN_ATTRIBUTES",
     "compile_capacity_vs_usage",
     "compile_kpi_row",
     "compile_resource_table",
     "compile_top_n_table",
+    "resource_attribute_text",
 ]
+
+# --- BEGIN COLUMN ATTRIBUTES (mirrored in app/lib/templates/options.ts) ---
+COLUMN_ATTRIBUTES: Final[tuple[str, ...]] = (
+    "resource_name",
+    "resource_group",
+    "resource_type",
+    "location",
+    "sku_name",
+    "power_state",
+    "fidelity_tier",
+)
+# --- END COLUMN ATTRIBUTES ---
+"""The resource attributes a data table can emit as a column, and **nothing else**.
+
+Every one of the seven is a field this module can actually read off a `ResourceView` —
+:func:`resource_attribute_text` is that reading, and it is total over this tuple. That
+totality is the reason the constant is declared here rather than in the app: the wizard's
+`column_list` options come from this vocabulary, and an attribute the builder could offer and
+the compiler could not emit would be a column a consultant selects, saves, and then finds
+missing from a delivered document.
+
+Mirrored **by value** into `app/lib/templates/options.ts` and compared by
+`app/test/mirror.static.test.ts`, the same treatment the block-type and block-config
+vocabularies get. A name present on one side only is a save-time option the compiler refuses,
+or an emittable column the builder never offers.
+
+Not a metric, and the distinction is the whole point of a separate list: an attribute is a
+**string** the inventory already carried, so it emits as a `TextCell` and carries no figure,
+no unit and no snapshot statistic. `fidelity_tier` is on both this list and
+:data:`_TIER_COLUMN`'s implicit path, which is why naming it explicitly while `show_fidelity`
+is set is a validation error rather than two identical columns."""
 
 _RESOURCE_COLUMN = Column(key="resource", header="Resource")
 _TIER_COLUMN = Column(key="fidelity_tier", header="Fidelity")
+
+
+def resource_attribute_text(resource: ResourceView, attribute: str) -> str:
+    """One resource attribute as the string a `TextCell` carries. **Pure.**
+
+    Total over :data:`COLUMN_ATTRIBUTES` and raising for anything else, so the constant cannot
+    drift away from what this function can answer: a name added to the tuple without a branch
+    here fails the guard in `tests/test_blocks.py` rather than emitting an empty column.
+
+    Returns `""` for an attribute the inventory did not record — `sku_name` on a resource whose
+    SKU never resolved, for instance. An empty string rather than a placeholder, because a
+    `TextCell` carrying `"—"` would put a character in the document that came from neither the
+    snapshot nor the template.
+    """
+    if attribute == "resource_name":
+        return resource.name
+    if attribute == "resource_group":
+        return resource.resource_group
+    if attribute == "resource_type":
+        return resource.resource_type
+    if attribute == "location":
+        return resource.location
+    if attribute == "sku_name":
+        return resource.sku.name
+    if attribute == "power_state":
+        return resource.power_state
+    if attribute == "fidelity_tier":
+        return resource.fidelity_tier
+    raise ValueError(
+        f"{attribute!r} is not a declared column attribute; the declared set is "
+        f"{list(COLUMN_ATTRIBUTES)}"
+    )
+
+
 _LOWEST = "lowest observed"
 _HIGHEST = "highest observed"
 

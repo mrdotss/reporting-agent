@@ -76,6 +76,7 @@ from reporting_agent.compile.format import (
     DEFAULT_NUMBER_FORMAT,
     NumberFormat,
     format_figure,
+    format_text_fact,
 )
 from reporting_agent.compile.snapshot_view import FactTextValue, SnapshotValue
 from reporting_agent.errors import CompileFailedError
@@ -660,13 +661,14 @@ class BlockCursor:
         `build_text_fact_ledger(ast)` anywhere and cannot be one without deleting this
         method — the same argument the module docstring makes for the numeric side.
 
-        **Nothing is formatted here**, and that is the one place the mirror is not
-        symmetrical. `formatted` is the value character for character: a fact carries no unit
-        suffix, no grouping and no estimator label, so there is nothing for
-        `compile/format.py` to decide. `format_text_fact` (task 5.3) exists so that the
-        assignment still happens in one module, not because there is a transformation to
-        apply — and `TextFact.__post_init__` refuses any `formatted` that differs, so a
-        future translation of a collected value fails at construction.
+        **Nothing is transformed here**, and that is the one place the mirror is not
+        symmetrical. A fact carries no unit suffix, no grouping and no estimator label, so
+        there is nothing for `compile/format.py` to decide — but the assignment still goes
+        through :func:`~reporting_agent.compile.format.format_text_fact`, so `formatted`
+        comes into existence in exactly one module for both entry kinds and rule 7 in
+        `tests/test_boundaries.py` covers this factory by the same mechanism it covers the
+        numeric one. `TextFact.__post_init__` then refuses any `formatted` that differs from
+        `value`, so a future translation of a collected value fails at construction as well.
         """
         path = self.path
         at = f"text fact {str(path)!r}"
@@ -686,7 +688,7 @@ class BlockCursor:
             snapshot_path=fact_value.pointer,
             source=fact_value.source,
             collected_at=fact_value.collected_at,
-            formatted=fact_value.value,
+            formatted=format_text_fact(fact_value.value, at=at),
         )
 
         self.ledger.insert_text_fact(fact)

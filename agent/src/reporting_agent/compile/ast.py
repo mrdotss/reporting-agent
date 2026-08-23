@@ -1021,11 +1021,13 @@ class Document:
 type Node = (
     Text
     | Figure
+    | TextFact
     | Paragraph
     | Row
     | FigureCell
     | TextCell
     | EmptyCell
+    | TextFactCell
     | Table
     | ChartPoint
     | Series
@@ -1036,7 +1038,14 @@ type Node = (
     | Document
 )
 """Every positioned node. `Column` and `FigureSource` are **descriptors**, not nodes:
-they hold no position and no children."""
+they hold no position and no children.
+
+Mirrored by :data:`_NODE_TYPES`, member for member and in the same order, and the two are
+asserted equal by `tests/test_ast_guard.py`. They had drifted: task 5.1 added `TextFact` and
+`TextFactCell` to the tuple and not to this alias, so the type that *documents* the node set
+disagreed with the tuple that *enforces* it. Harmless while the tuple is the one consulted at
+run time, and exactly the drift that becomes a bug the day something annotates against
+`Node`."""
 
 
 _NODE_TYPES: Final[tuple[type, ...]] = (
@@ -1058,6 +1067,9 @@ _NODE_TYPES: Final[tuple[type, ...]] = (
     LayoutRow,
     Document,
 )
+"""The runtime mirror of :data:`Node`. `_child_nodes` checks against this tuple, so a node
+type in the alias and absent here is a node the traversal walks straight past — and its
+ledger entries would then be missing from the closing invariant's tree side."""
 
 
 def child_nodes(node: object) -> tuple[object, ...]:

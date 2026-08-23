@@ -8,6 +8,7 @@ the string a consumer is required to emit verbatim.
 
 from __future__ import annotations
 
+import inspect
 from decimal import Decimal
 
 import pytest
@@ -19,6 +20,7 @@ from reporting_agent.compile.format import (
     NumberFormat,
     display_scale,
     format_figure,
+    format_text_fact,
     unit_suffix,
 )
 from reporting_agent.errors import CompileFailedError, ErrorCode
@@ -386,3 +388,101 @@ def test_no_bare_percentile_designation_survives_in_a_formatted_string() -> None
         Decimal("95.10"), unit="percent", catalog_scale=2, path=PATH
     )
     assert "p" not in without_label
+
+
+# --------------------------------------------------------------------------- #
+# `format_text_fact` — the identity, and that it is an identity on purpose
+# --------------------------------------------------------------------------- #
+
+
+TEXT_FACT_AT = "text fact 'resource-table-1:3:2'"
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        # The values this exists for, from the fact declaration's own vocabulary.
+        "Succeeded",
+        "Failed",
+        "Standard_D4s_v3",
+        "10.0.0.4",
+        "10.0.0.0/16",
+        "Windows Server 2022",
+        # Shapes a well-meaning formatter would be tempted to tidy, and must not.
+        "  leading and trailing  ",
+        "MiXeD CaSe",
+        "1,234.56",
+        "value\twith\ttabs",
+        "line\nbreak",
+        "a" * 512,
+        "Berhasil",
+        "\u00e9\u0142\u5b89",
+        "\U0001f680",
+    ],
+)
+def test_a_text_facts_display_string_is_the_value_character_for_character(
+    value: str,
+) -> None:
+    """Req 6.12 — no case folding, no truncation, no trimming, no separator substitution.
+
+    The parametrization is the assertion: every entry is a value some formatter would have
+    a plausible reason to change, and the expected result is always the input. `==` is
+    character-for-character here because both sides are `str` — there is no normalization
+    step to have gone wrong.
+    """
+    assert format_text_fact(value, at=TEXT_FACT_AT) == value
+
+
+def test_the_two_languages_get_the_same_string() -> None:
+    """Req 6.13 — `Succeeded` reaches an Indonesian document as `Succeeded`.
+
+    Stated as a test even though the function takes no language, because *that* is the
+    claim: there is no parameter a caller could pass to change the answer, so the two
+    languages cannot diverge. A signature is the strongest form this property has.
+    """
+    assert format_text_fact("Succeeded", at=TEXT_FACT_AT) == "Succeeded"
+    assert "language" not in inspect.signature(format_text_fact).parameters
+    assert set(inspect.signature(format_text_fact).parameters) == {"value", "at"}
+
+
+def test_the_result_is_idempotent() -> None:
+    """Formatting a formatted value changes nothing — which is what lets
+    `TextFact.__post_init__` require `formatted == value` without the two ever fighting."""
+    once = format_text_fact("Standard_E32-8s_v5", at=TEXT_FACT_AT)
+
+    assert format_text_fact(once, at=TEXT_FACT_AT) == once
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        pytest.param(Decimal("12.48"), id="a Decimal"),
+        pytest.param(12, id="an int"),
+        pytest.param(12.48, id="a float"),
+        pytest.param(None, id="None"),
+        pytest.param(["Succeeded"], id="a list"),
+    ],
+)
+def test_a_non_string_is_refused_rather_than_coerced(value: object) -> None:
+    """A quantity belongs on a `Figure`, which carries the provenance a number needs.
+
+    `str(value)` here would be the tempting coercion and it is the wrong one: it would put
+    a number in the document through the one path that applies no scale, no unit and no
+    estimator label — a figure with none of a figure's guarantees.
+    """
+    with pytest.raises(CompileFailedError) as raised:
+        format_text_fact(value, at=TEXT_FACT_AT)  # type: ignore[arg-type]
+
+    assert raised.value.code is ErrorCode.COMPILE_FAILED
+    assert TEXT_FACT_AT in str(raised.value)
+
+
+def test_an_empty_value_is_refused() -> None:
+    """An absent fact is a recorded gap, not a blank cell. A formatter that returned `""`
+    would put a cell in the document that a reader sees as missing data and the verifier
+    sees as matching."""
+    with pytest.raises(CompileFailedError) as raised:
+        format_text_fact("", at=TEXT_FACT_AT)
+
+    assert raised.value.code is ErrorCode.COMPILE_FAILED
+    assert TEXT_FACT_AT in str(raised.value)

@@ -1862,6 +1862,71 @@ function validateBlockConfig(
   }
 }
 
+/**
+ * The two column attributes a table already emits without being asked (Requirement 12.3).
+ *
+ * `resource_name` is always the first column (`tables.py`'s `_RESOURCE_COLUMN`) and
+ * `fidelity_tier` is emitted when `show_fidelity` is set (`_TIER_COLUMN`). Naming either
+ * explicitly would put **two** columns with one key in the emitted grid, and the verifier
+ * resolves a cell by `(row_key, column_key)` — so the second would be unreachable and every
+ * anchor into it would fail on a document that looks right.
+ *
+ * Declared here rather than in `lib/templates/options.ts` because the *rule* is the
+ * validator's: `options.ts` imports this to mark the pair as implicit in the picker, and the
+ * import goes that way round because a validator that imported the option builder would be a
+ * cycle. `COLUMN_ATTRIBUTES` itself lives in `options.ts`, mirrored from the compiler.
+ */
+export const IMPLICIT_TABLE_COLUMNS = [
+  "resource_name",
+  "fidelity_tier",
+] as const
+
+/** The two block types that carry a `columns` config field. */
+const COLUMN_LIST_BLOCK_TYPES = new Set(["resource_table", "top_n_table"])
+
+/**
+ * Requirement 12.3 — an explicit column naming what the table already emits.
+ *
+ * `resource_name` is always implicit, so naming it is always an error. `fidelity_tier` is
+ * implicit **only** when `show_fidelity` is set, so it is an error only then — a table that
+ * does not show the tier may legitimately name it as an ordinary column.
+ *
+ * Reported at the entry's own path, so the message names the offending column rather than the
+ * field that contains it.
+ */
+function validateImplicitColumns(
+  blockType: string,
+  config: Record<string, unknown>,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (!COLUMN_LIST_BLOCK_TYPES.has(blockType)) return
+
+  const columns = config.columns
+  if (!Array.isArray(columns)) return
+
+  const showsFidelity = Boolean(config.show_fidelity)
+
+  columns.forEach((entry, index) => {
+    if (typeof entry !== "string") return
+    if (!(IMPLICIT_TABLE_COLUMNS as readonly string[]).includes(entry)) return
+    if (entry === "fidelity_tier" && !showsFidelity) return
+
+    const because =
+      entry === "resource_name"
+        ? "every resource row already leads with the resource name"
+        : 'this block sets "show_fidelity", so the fidelity tier is already a column'
+
+    addIssue(
+      issues,
+      [...path, "columns", index],
+      `"${blockType}" already emits "${entry}" implicitly — ${because}. Naming it as an ` +
+        `explicit column would put two columns with one key in the table, and a cell is ` +
+        `resolved by (row key, column key), so the second would be unreachable.`
+    )
+  })
+}
+
 function validateLeafBlock(
   block: Record<string, unknown>,
   blockType: string,
@@ -1892,8 +1957,9 @@ function validateLeafBlock(
   //
   // Rejected rather than ignored, and **named by block id**, because the author put it there
   // deliberately: a silently dropped block is indistinguishable from one that was never
-  // configured, and the migration in `lib/templates/version.ts` is what lifts a v1 cover into
-  // the front matter rather than the validator quietly discarding it.
+  // configured, and `lib/templates/migrate.ts` is what lifts a v1 cover into the front matter
+  // rather than the validator quietly discarding it. (This comment named `version.ts` before
+  // that module existed — the migration was specified before it was written.)
   //
   // `cover` stays a declared type, so this check is about *placement at this version* and not
   // about the type existing. That is why it is here and not a change to `BLOCK_TYPES`.
@@ -1934,6 +2000,16 @@ function validateLeafBlock(
       [...path, "config"],
       issues
     )
+    // Requirement 12.3 — after the field-name pass, because it reads two fields together:
+    // whether `columns` names an implicit attribute depends on `show_fidelity`.
+    if (isPlainObject(block.config)) {
+      validateImplicitColumns(
+        blockType,
+        block.config,
+        [...path, "config"],
+        issues
+      )
+    }
   }
 
   if (block.scope_override !== undefined) {

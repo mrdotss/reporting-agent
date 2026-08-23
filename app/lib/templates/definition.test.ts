@@ -12,6 +12,7 @@ import {
   FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
   FRONT_MATTER_KEYS,
   IDENTITY_KEYS,
+  IMPLICIT_TABLE_COLUMNS,
   LANGUAGES,
   MAX_SUPPORTED_SCHEMA_VERSION,
   MIN_SCHEMA_VERSION,
@@ -2157,5 +2158,129 @@ describe("the version tables are declared as data, once", () => {
 
   test("the front matter's three sections are declared", () => {
     expect([...FRONT_MATTER_KEYS]).toEqual(["cover", "document_control", "toc"])
+  })
+})
+
+// --- Requirement 12.3 — an explicit column the table already emits ----------
+
+describe("Requirement 12.3 — a column naming what the table emits implicitly", () => {
+  /** `validDefinition()` with one table block carrying `config`. */
+  function withTable(config: Record<string, unknown>): TemplateDefinition {
+    const definition = validDefinition()
+    return {
+      ...definition,
+      blocks: [
+        ...definition.blocks,
+        { id: "table-1", type: "resource_table", config },
+      ],
+    } as TemplateDefinition
+  }
+
+  test("resource_name is rejected, at the offending entry's own path", () => {
+    const issues = collectDefinitionIssues(
+      withTable({ columns: ["resource_group", "resource_name"] })
+    )
+
+    // The path names the column, not the field that contains it: a message pointing at
+    // `config.columns` would leave a consultant with six columns and no idea which one.
+    expect(pathsOf(issues)).toEqual(["blocks.2.config.columns.1"])
+    expect(issues[0]!.message).toContain("resource_name")
+  })
+
+  test("the two implicit names are exactly the pair the compiler emits", () => {
+    // Mirrored intent rather than a restatement: `tables.py`'s `_RESOURCE_COLUMN` and
+    // `_TIER_COLUMN` are the two, and `test/mirror.static.test.ts` ties this pair to the
+    // agent-side attribute vocabulary.
+    expect([...IMPLICIT_TABLE_COLUMNS]).toEqual([
+      "resource_name",
+      "fidelity_tier",
+    ])
+  })
+
+  test("fidelity_tier is rejected only when show_fidelity is set", () => {
+    // The conditional half of the rule, and the one a blanket rejection gets wrong: a table
+    // that does not show the tier may name it as an ordinary column, so rejecting it always
+    // would forbid a legitimate document.
+    expect(
+      collectDefinitionIssues(
+        withTable({ columns: ["fidelity_tier"], show_fidelity: false })
+      )
+    ).toEqual([])
+
+    const issues = collectDefinitionIssues(
+      withTable({ columns: ["fidelity_tier"], show_fidelity: true })
+    )
+    expect(pathsOf(issues)).toEqual(["blocks.2.config.columns.0"])
+    expect(issues[0]!.message).toContain("show_fidelity")
+  })
+
+  test("resource_name is rejected even with show_fidelity unset", () => {
+    // Asserted separately because one shared `showsFidelity` guard over both names would pass
+    // every other test in this block while letting the always-implicit name through.
+    const issues = collectDefinitionIssues(
+      withTable({ columns: ["resource_name"], show_fidelity: false })
+    )
+
+    expect(pathsOf(issues)).toEqual(["blocks.2.config.columns.0"])
+  })
+
+  test("both offending columns are reported in one pass", () => {
+    const issues = collectDefinitionIssues(
+      withTable({
+        columns: ["resource_name", "location", "fidelity_tier"],
+        show_fidelity: true,
+      })
+    )
+
+    expect(pathsOf(issues)).toEqual([
+      "blocks.2.config.columns.0",
+      "blocks.2.config.columns.2",
+    ])
+  })
+
+  test("a block nested in a row column is reached", () => {
+    const definition = validDefinition()
+    const nested = {
+      ...definition,
+      blocks: [
+        {
+          id: "row-1",
+          type: "row",
+          columns: [
+            [
+              {
+                id: "table-1",
+                type: "resource_table",
+                config: { columns: ["resource_name"] },
+              },
+            ],
+            [{ id: "rich-2", type: "rich_text", config: { text: "x" } }],
+          ],
+        },
+      ],
+    }
+
+    expect(pathsOf(collectDefinitionIssues(nested))).toEqual([
+      "blocks.0.columns.0.0.config.columns.0",
+    ])
+  })
+
+  test("a block type with no columns field is untouched", () => {
+    // `heading` has no `columns` at all, so a rule reading the field name rather than the
+    // block type would report an issue on a config the schema already refuses — two answers
+    // for one wrong field.
+    const definition = validDefinition()
+    const issues = collectDefinitionIssues({
+      ...definition,
+      blocks: [
+        {
+          id: "kpi-1",
+          type: "kpi_row",
+          config: { metrics: ["resource_name"] },
+        },
+      ],
+    })
+
+    expect(pathsOf(issues)).not.toContain("blocks.0.config.metrics.0")
   })
 })

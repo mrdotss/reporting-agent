@@ -69,9 +69,10 @@ guards the three-package Azure Monitor pin over the same tree. One idiom, two gu
 from __future__ import annotations
 
 import ast
+import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
-from typing import NamedTuple
+from typing import Final, NamedTuple
 
 import pytest
 
@@ -1044,10 +1045,15 @@ def _called_name(node: ast.Call) -> str:
     return target.id if isinstance(target, ast.Name) else ""
 
 
-FIGURE_CONSTRUCTOR = "Figure"
-"""The only way a display string comes into existence is on a `Figure`, because
-`compile/ast.py`'s numeric-leaf guard makes `Figure` the only node that can hold a quantity
-at all. So the rule targets `Figure(formatted=...)` and `.formatted =`, and nothing else.
+FORMATTED_CONSTRUCTORS: Final[frozenset[str]] = frozenset({"Figure", "TextFact"})
+"""The two node types that carry a display string, and therefore the two constructions this
+rule watches: `Figure(formatted=...)`, `TextFact(formatted=...)`, and `.formatted =`.
+
+`Figure` because `compile/ast.py`'s numeric-leaf guard makes it the only node that can hold a
+quantity at all. `TextFact` because Req 6.12 gives it a `formatted` of its own, and a display
+string produced anywhere but `compile/format.py` is a second display path whichever kind of
+value it describes. Leaving `TextFact` out would have let an inline `formatted=fact.value`
+grow into a translation of a collected value, at the one call site rule 7 was not looking at.
 
 Three spellings are deliberately **not** offenders, and each would be a false positive with a
 cost. `record_finding(..., formatted=...)` quotes a string a figure already carries so a
@@ -1067,10 +1073,11 @@ def _formatted_assignment_offenders(modules: Iterable[Path]) -> list[str]:
         tree = _parse(path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Call):
-                if _called_name(node) != FIGURE_CONSTRUCTOR:
+                if _called_name(node) not in FORMATTED_CONSTRUCTORS:
                     continue
                 offenders.extend(
-                    f"{_label(path)}:{keyword.value.lineno} Figure(formatted=…)"
+                    f"{_label(path)}:{keyword.value.lineno} "
+                    f"{_called_name(node)}(formatted=…)"
                     for keyword in node.keywords
                     if keyword.arg == FORMATTED_FIELD
                 )
@@ -1116,6 +1123,10 @@ def test_a_figures_formatted_string_is_assigned_in_exactly_one_module() -> None:
         'figure = Figure(path=p, formatted="12.4%")',
         'figure = ast.Figure(path=p, formatted="12.4%")',
         'node.formatted = "12.4%"',
+        # Both spellings of the text-fact side. Without these the extension to
+        # `TextFact` would be a name in a frozenset that no case exercises.
+        'fact = TextFact(path=p, formatted="Succeeded")',
+        'fact = ast.TextFact(path=p, formatted="Berhasil")',
     ],
 )
 def test_the_scan_detects_a_second_display_path(source: str, tmp_path: Path) -> None:
@@ -1136,6 +1147,145 @@ def test_the_scan_detects_a_second_display_path(source: str, tmp_path: Path) -> 
 def test_the_scan_permits_reading_a_formatted_string(source: str, tmp_path: Path) -> None:
     module = _write(tmp_path, "permitted.py", source)
     assert not _formatted_assignment_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 7c — inside the owner, `formatted` comes from a formatter (Req 18.1, 6.12)
+# --------------------------------------------------------------------------- #
+#
+# Rule 7 exempts `compile/figures.py`, because something has to assign the field. That
+# exemption is a hole exactly the width of the owner module: rule 7 would report green on
+# `TextFact(formatted=fact_value.value)` written there, and that spelling is not a
+# hypothetical — it is what the factory did before task 5.3, and a mutation run is how the
+# gap surfaced.
+#
+# Why it matters, given the two spellings produce an identical string today: the reason
+# `format_text_fact` exists is that rule 14 forbids `compile/format.py` from resolving a
+# string id, so a future translation of a collected value has nowhere to live. An inline
+# assignment in the owner routes around that protection entirely — a `Messages.text(...)`
+# added in `figures.py` would be a translated fact and no rule would say so.
+#
+# So the value of every `formatted=` keyword in the owner must come from a formatter: either
+# the call itself, or a local bound from one. The numeric side binds a local (there are five
+# other arguments to compute first) and the text side calls inline, so both spellings are
+# admitted and neither is the only one.
+
+FORMATTER_FUNCTIONS: Final[frozenset[str]] = frozenset(
+    {"format_figure", "format_text_fact"}
+)
+"""The public surface of `compile/format.py` that returns a display string. `unit_suffix`
+and `display_scale` are deliberately absent: they return a fragment and a number, and a
+`formatted` assembled from a fragment in the owner would be the second display path this
+rule exists to prevent."""
+
+
+def _unformatted_owner_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every `formatted=` in these modules whose value did not come from a formatter.
+
+    Per enclosing function, so a local named `formatted` in one function cannot vouch for a
+    keyword in another. A nested function's assignments are visible to its enclosing scan as
+    well — which is more permissive, not less, and there are none on this path today.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        for func in ast.walk(_parse(path)):
+            if not isinstance(func, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+
+            from_formatter = {
+                target.id
+                for node in ast.walk(func)
+                if isinstance(node, ast.Assign)
+                and isinstance(node.value, ast.Call)
+                and _called_name(node.value) in FORMATTER_FUNCTIONS
+                for target in node.targets
+                if isinstance(target, ast.Name)
+            }
+
+            for node in ast.walk(func):
+                if (
+                    not isinstance(node, ast.Call)
+                    or _called_name(node) not in FORMATTED_CONSTRUCTORS
+                ):
+                    continue
+                for keyword in node.keywords:
+                    if keyword.arg != FORMATTED_FIELD:
+                        continue
+                    value = keyword.value
+                    if isinstance(value, ast.Call):
+                        if _called_name(value) in FORMATTER_FUNCTIONS:
+                            continue
+                    elif isinstance(value, ast.Name) and value.id in from_formatter:
+                        continue
+                    offenders.append(
+                        f"{_label(path)}:{value.lineno} "
+                        f"{_called_name(node)}(formatted=…) does not come from "
+                        f"{'/'.join(sorted(FORMATTER_FUNCTIONS))}"
+                    )
+    return offenders
+
+
+def test_the_owner_takes_every_display_string_from_the_formatter() -> None:
+    """The other half of rule 7: the one module allowed to assign the field may not compute
+    the value itself."""
+    owner = SRC_ROOT / FORMATTED_OWNER
+
+    assert owner.is_file(), f"{FORMATTED_OWNER} does not exist"
+
+    offenders = _unformatted_owner_offenders([owner])
+
+    assert not offenders, (
+        "every display string comes out of compile/format.py, including a text fact's — "
+        "an inline assignment here is a display path that rule 14's no-translation "
+        "guarantee does not reach: " + "; ".join(offenders)
+    )
+    # Both admitted spellings are actually present, so neither branch of the check above is
+    # dead. The numeric factory binds a local; the text factory calls inline.
+    source = owner.read_text(encoding="utf-8")
+    assert "formatted=formatted," in source
+    assert "formatted=format_text_fact(" in source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # The pre-5.3 spelling, and the mutant that survived until this rule landed.
+        "def f():\n    return TextFact(path=p, formatted=fact_value.value)\n",
+        'def f():\n    return Figure(path=p, formatted=f"{v}%")\n',
+        'def f():\n    return Figure(path=p, formatted=str(v) + "%")\n',
+        # A local, but bound from something that is not a formatter.
+        'def f():\n    s = translate(v)\n    return TextFact(path=p, formatted=s)\n',
+        # A local bound from a formatter in a *different* function does not vouch for this one.
+        (
+            "def a():\n    s = format_text_fact(v, at=at)\n"
+            "def b():\n    return TextFact(path=p, formatted=s)\n"
+        ),
+    ],
+)
+def test_the_owner_scan_detects_a_value_that_bypassed_the_formatter(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _unformatted_owner_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "def f():\n    return TextFact(path=p, formatted=format_text_fact(v, at=at))\n",
+        "def f():\n    s = format_figure(v, path=p)\n    return Figure(formatted=s)\n",
+        "def f():\n    return Figure(formatted=format_figure(v, path=p))\n",
+        # The module-qualified spelling of the same call.
+        "def f():\n    return Figure(formatted=fmt.format_figure(v, path=p))\n",
+        # Reading one is not assigning one, here as everywhere.
+        "def f():\n    return figure.formatted\n",
+    ],
+)
+def test_the_owner_scan_permits_a_value_from_the_formatter(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _unformatted_owner_offenders([module]), source
 
 
 # --------------------------------------------------------------------------- #
@@ -1975,6 +2125,158 @@ def test_the_toc_approach_scan_permits_the_constants_and_unrelated_none(
 ) -> None:
     module = _write(tmp_path, "permitted.py", source)
     assert not _toc_approach_offenders([module]), source
+
+
+# --------------------------------------------------------------------------- #
+# Rule 14 — the formatter cannot translate (Req 6.12, 6.13)
+# --------------------------------------------------------------------------- #
+#
+# `compile/format.py` produces every `formatted` string in the runtime (rule 7). Req 6.13
+# says a fact's value reaches the document as the string the API returned, in either
+# language — `Succeeded` stays `Succeeded` in an Indonesian report, because a fact's value
+# is **collected data** and the Message_Catalog is **fixed copy**, and those are different
+# kinds of string.
+#
+# The rule is structural rather than a test of behaviour, and the difference is the point.
+# A test can assert that `format_text_fact("Succeeded")` returns `Succeeded`; it cannot
+# assert that no future edit adds a lookup for some *other* value. Denying the module both
+# the catalog import and the vocabulary of string ids means there is nothing in scope to
+# resolve against — a translation would have to add an import first, and that is the line
+# this rule draws.
+#
+# Both halves matter. The import alone would be evaded by `from reporting_agent import
+# compile as c; c.messages.Messages(...)`; a bare string id alone would be a false positive
+# on prose. Together they say: this module names no catalog and no id.
+
+FORMATTER_MODULE = "compile/format.py"
+
+CATALOG_MODULES: Final[frozenset[str]] = frozenset(
+    {
+        "reporting_agent.compile.messages",
+        "reporting_agent.messages",
+    }
+)
+"""The two module paths that can resolve a string id. `compile/messages.py` holds
+`Messages.text`, and the `messages` package holds the catalog JSON it reads."""
+
+STRING_ID_PATTERN: Final[re.Pattern[str]] = re.compile(
+    r"^(?:doc|chart|ui)\.[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$"
+)
+"""The catalog's own id namespace, from `messages/catalog.v1.json` — a closed prefix set,
+lowercase ASCII, dotted. Anchored, so `doc.table.header` matches and the prose
+`see doc.table.header for the label` does not: this scans **string literals**, and a
+sentence containing an id is not an id."""
+
+
+def _catalog_import_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every import of a catalog module, in any of the three spellings."""
+    offenders: list[str] = []
+    for path in modules:
+        for node in ast.walk(_parse(path)):
+            if isinstance(node, ast.Import):
+                offenders.extend(
+                    f"{_label(path)}:{node.lineno} import {alias.name}"
+                    for alias in node.names
+                    if alias.name in CATALOG_MODULES
+                )
+            elif isinstance(node, ast.ImportFrom):
+                module = node.module or ""
+                if module in CATALOG_MODULES:
+                    offenders.append(f"{_label(path)}:{node.lineno} from {module}")
+                    continue
+                # `from reporting_agent.compile import messages` — the module arrives as a
+                # name rather than in the module path, which a check on `node.module`
+                # alone would miss entirely.
+                offenders.extend(
+                    f"{_label(path)}:{node.lineno} from {module} import {alias.name}"
+                    for alias in node.names
+                    if f"{module}.{alias.name}" in CATALOG_MODULES
+                )
+    return offenders
+
+
+def _string_id_offenders(modules: Iterable[Path]) -> list[str]:
+    """Every string literal that **is** a catalog id."""
+    offenders: list[str] = []
+    for path in modules:
+        for node in ast.walk(_parse(path)):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and STRING_ID_PATTERN.match(node.value)
+            ):
+                offenders.append(f"{_label(path)}:{node.lineno} {node.value!r}")
+    return offenders
+
+
+def test_the_formatter_imports_no_catalog_and_names_no_string_id() -> None:
+    """Req 6.12, 6.13 — the module that produces every display string has nothing in scope
+    to translate one with."""
+    module = SRC_ROOT / FORMATTER_MODULE
+
+    assert module.is_file(), (
+        f"{FORMATTER_MODULE} does not exist, so this rule scans nothing"
+    )
+
+    assert not _catalog_import_offenders([module]), (
+        f"{FORMATTER_MODULE} produces every `formatted` string, so it may not import a "
+        f"message catalog: a fact's value is collected data and translating it would put a "
+        f"string in the document that the API never returned — which the verifier then "
+        f"compares against the string it did return."
+    )
+    assert not _string_id_offenders([module]), (
+        f"{FORMATTER_MODULE} names a Message_Catalog string id. Fixed copy is resolved by "
+        f"the blocks; a display string is not."
+    )
+
+
+def test_the_formatter_actually_produces_a_text_facts_display_string() -> None:
+    """The anchor. Both scans above pass trivially on a module that formats nothing, so the
+    rule is pinned against the function it exists to constrain."""
+    from reporting_agent.compile.format import format_text_fact
+
+    assert format_text_fact("Succeeded", at="t") == "Succeeded"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "from reporting_agent.compile.messages import Messages",
+        "import reporting_agent.compile.messages",
+        "from reporting_agent.compile import messages",
+        "from reporting_agent.messages import CATALOG_PATH",
+        'label = "doc.table.header.resource"',
+        'label = "chart.axis.utilization_percent"',
+        'label = "ui.template.untitled_placeholder"',
+    ],
+)
+def test_the_translation_scan_detects_both_halves(source: str, tmp_path: Path) -> None:
+    module = _write(tmp_path, "offender.py", source)
+    assert _catalog_import_offenders([module]) or _string_id_offenders([module]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A near-miss import: same leading path, different module.
+        "from reporting_agent.compile.snapshot_view import DECIMAL_STRING_PATTERN",
+        "from reporting_agent.errors import CompileFailedError",
+        # Prose naming an id is not an id, and neither is a dotted attribute path.
+        '"""See doc.table.header for the label."""',
+        "scale = number_format.decimal_places",
+        # A single segment, an uppercase segment, and an unknown prefix are all outside
+        # the namespace — so the pattern cannot fire on an ordinary dotted string.
+        'unit = "percent"',
+        'key = "Doc.Table.Header"',
+        'metric = "microsoft.compute.percentage_cpu"',
+    ],
+)
+def test_the_translation_scan_permits_the_formatter_as_it_stands(
+    source: str, tmp_path: Path
+) -> None:
+    module = _write(tmp_path, "permitted.py", source)
+    assert not _catalog_import_offenders([module]), source
+    assert not _string_id_offenders([module]), source
 
 
 # --------------------------------------------------------------------------- #

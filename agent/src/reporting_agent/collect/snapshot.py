@@ -156,6 +156,7 @@ from reporting_agent.collect.buckets import Window
 from reporting_agent.collect.log import gap_sort_key
 from reporting_agent.collect.sketch import DDSketch, FixedHistogram, Sketch
 from reporting_agent.providers.base import (
+    FactRecord,
     GapRecord,
     PlainData,
     ResourceRecord,
@@ -201,6 +202,7 @@ __all__ = [
     "decimal_string",
     "derived_statistics",
     "exact_statistics",
+    "fact_from_plain",
     "find_float",
     "format_utc_offset",
     "guest_counter_statistics",
@@ -1418,6 +1420,52 @@ class ResourceDayBucket:
             "slot_count": int(self.slot_count),
             "statistics": _statistics_to_plain_data(self.statistics),
         }
+
+
+def fact_from_plain(record: FactRecord) -> FactEntry:
+    """One `FactRecord` back as the `FactEntry` the snapshot carries (Req 4.1-4.6).
+
+    The fact-side counterpart of :func:`statistic_from_plain`, and a much thinner one: there
+    is nothing to override and nothing to re-render. A fact's `value` is already its own
+    display form — a `text` fact is the string the API returned and a `numeric` fact arrives
+    as the fixed-precision decimal string `collect/factfold.py` produced — so `formatted` is
+    that same string, character for character, and `FactEntry.__post_init__` refuses any other
+    relationship between the two.
+
+    Nothing is defaulted. A record missing its `source`, its `value_kind` or its `collected_at`
+    reaches `FactEntry`, which raises and writes no snapshot object (Req 4.4): a fact whose
+    provenance is absent is an assertion rather than an observation, and substituting a
+    plausible value here is precisely how one would become the other.
+
+    ## Where Req 7.4's "recomputed through `compile/format.py`" landed, and why not here
+
+    This function is the **one** builder of a snapshot `FactEntry`, and `verify/replay.py`
+    calls this same function when it re-derives a fact from an archived response — so the
+    characters a fact carries are decided in one place on both sides of the archive, which is
+    the property Req 7.4 is protecting.
+
+    It is not routed through `compile/format.py::format_text_fact`, and that is a deliberate
+    departure. Two reasons, in order of weight:
+
+    * **`collect/` does not import `compile/`, anywhere.** The compiler consumes the snapshot;
+      inverting that direction for a function that is the identity would establish a dependency
+      the layering has so far kept out, in exchange for nothing observable.
+    * **They are two fields on two objects.** `FactEntry.formatted` is the snapshot's canonical
+      form of a collected value; `TextFact.formatted` is the string the renderer emits into the
+      document, and *that* one does go through `format_text_fact` (`compile/figures.py`, rule 7c
+      in `tests/test_boundaries.py`). Both equal the value character for character, each
+      asserted by its own `__post_init__`, so there is no drift for a single formatter to
+      prevent — only two places that would then both depend on it.
+    """
+    return FactEntry(
+        key=record["key"],
+        value=record["value"],
+        value_kind=record["value_kind"],
+        source=record["source"],
+        collected_at=record["collected_at"],
+        formatted=record["value"],
+        unit=record.get("unit"),
+    )
 
 
 @dataclass(frozen=True, slots=True)

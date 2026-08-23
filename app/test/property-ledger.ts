@@ -151,6 +151,12 @@ export const FOUNDATION_PROPERTIES: readonly PropertyDeclaration[] = [
  */
 export const BREADTH_PROPERTIES: Readonly<Record<number, PropertyDeclaration>> =
   {
+    8: {
+      label: "breadth Property 8",
+      title:
+        "Block-config options are drawn from the metric selection and the fact declaration",
+      modules: ["test/property/config-options.property.test.ts"],
+    },
     9: {
       label: "breadth Property 9",
       title:
@@ -192,6 +198,7 @@ export const MINIMUM_EXECUTIONS: Readonly<Record<string, number>> = {
   "lib/templates/definition.property.test.ts": 5,
   "lib/templates/period.property.test.ts": 6,
   "lib/templates/version.property.test.ts": 6,
+  "test/property/config-options.property.test.ts": 12,
   "test/property/number-format-defaults.property.test.ts": 9,
 }
 

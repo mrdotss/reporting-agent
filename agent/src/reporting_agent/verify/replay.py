@@ -54,12 +54,26 @@ from typing import Final, cast
 from zoneinfo import ZoneInfo
 
 from reporting_agent.azure.metrics import fold_batch_response, fold_fallback_response
-from reporting_agent.catalog.loader import DerivedEntry, LoadedCatalog, MetricEntry
+from reporting_agent.catalog.loader import (
+    DerivedEntry,
+    FactDeclaration,
+    LoadedCatalog,
+    MetricEntry,
+    ResourceTypeFacts,
+)
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
+from reporting_agent.collect.archive import (
+    ARCHIVE_KIND_FACTS,
+    ARCHIVE_KIND_INVENTORY,
+    ARCHIVE_KIND_METRICS,
+    archive_kind_of,
+)
 from reporting_agent.collect.buckets import Window, day_buckets, resolve_window
 from reporting_agent.collect.dayfold import DayFold
+from reporting_agent.collect.factfold import fold_fact_response
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
+    FACT_GAP_TYPES,
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_INTERVAL_COUNTS_MISSING,
     GAP_TYPE_INTERVAL_MALFORMED,
@@ -72,13 +86,21 @@ from reporting_agent.collect.log import (
     GAP_TYPE_SKU_CAPABILITY_MISSING,
 )
 from reporting_agent.collect.snapshot import (
+    FactEntry,
+    FactEntryError,
     ResourceDayBucket,
     ResourceSnapshot,
     SkuCapacity,
     StatisticEntry,
     build_snapshot,
+    fact_from_plain,
 )
-from reporting_agent.providers.base import GapRecord, ResourceRecord, ScopeSpec
+from reporting_agent.providers.base import (
+    GapRecord,
+    PlainData,
+    ResourceRecord,
+    ScopeSpec,
+)
 from reporting_agent.verify.findings import (
     FINDING_ARCHIVE_INCOMPLETE,
     FINDING_REPLAY_HASH_MISMATCH,
@@ -105,6 +127,16 @@ RECOMPUTED_GAP_TYPES: Final[frozenset[str]] = frozenset(
         GAP_TYPE_PERMISSION_DENIED,
         GAP_TYPE_RESOURCE_ABSENT_FROM_RESPONSE,
         GAP_TYPE_SKU_CAPABILITY_MISSING,
+        # Req 7.3 — the fact fold's four types, added when replay learned to re-derive a
+        # fact. Taken **from `collect/log.py`'s own set** rather than restated: the fold
+        # produces exactly the types that set declares, so a fifth fact gap type added there
+        # joins this partition automatically instead of being carried over *and* recomputed.
+        #
+        # `archive_write_failed` is deliberately **not** among them, and it is a fact gap in
+        # every other sense. It is produced by the archive write, which replay does not
+        # re-run and could not: the write already happened, and its failure is why there is
+        # anything to carry over at all.
+        *FACT_GAP_TYPES,
     }
 )
 """The gap types the fold and the finalize produce, and which a replay therefore recomputes
@@ -181,6 +213,25 @@ class ReplayPlan:
     archive_complete: bool
     archive_object_count: int
     objects_named: int
+    fact_declaration: FactDeclaration = field(default_factory=FactDeclaration)
+    """The fact declaration the run collected under (Req 7.4).
+
+    From the catalog handed to :func:`plan_from_snapshot`, which is the catalog the snapshot's
+    own `catalog_version` names. `value_kind`, `unit` and every declared key come from here
+    rather than from the archive, so an archived object cannot claim a key is numeric against a
+    declaration that says text.
+
+    Defaulted to an empty declaration so a plan built by a test that has no facts to re-derive
+    needs no argument — and an empty declaration folds nothing, which is the same outcome a
+    metric-only catalog produces."""
+
+    resource_types: Mapping[str, str] = field(default_factory=dict)
+    """Resource id to resource type, from the **stored snapshot's inventory records**.
+
+    Req 7.5's boundary, unchanged from the metric side: replay takes each resource's inventory
+    record from the plan, because the archive holds responses and no archive of them could
+    supply a resource's type. Deriving it from a fact response instead would be reading a fact
+    out of the snapshot and putting it back."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +277,10 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
     # snapshot nobody can derive from the archive.
     day_fold = DayFold(tz=plan.tz)
     fold_gaps: list[GapRecord] = []
+    # Req 7.3 — re-derived facts, per resource, accumulated across the objects that carry
+    # them. A resource's facts arrive from several objects: one per non-projectable source
+    # plus every inventory page that projected a column for it.
+    replayed_facts: dict[str, list[FactEntry]] = {}
     folded = 0
 
     for ordinal, payload in archived:
@@ -242,7 +297,11 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
                 ),
                 ordinal=ordinal,
             )
-        fold_gaps.extend(_fold_object(document, accumulators, day_fold))
+        fold_gaps.extend(
+            _fold_object(
+                document, accumulators, day_fold, plan=plan, facts=replayed_facts
+            )
+        )
         folded += 1
         # The decoded points go out of scope here, per object, rather than being collected
         # into a list the loop then aggregates over.
@@ -258,7 +317,39 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
             ),
         )
 
-    recomputed = _assemble(plan, accumulators, fold_gaps, day_fold)
+    try:
+        recomputed = _assemble(plan, accumulators, fold_gaps, day_fold, replayed_facts)
+    except (FactEntryError, ValueError) as exc:
+        # The folded objects do not assemble into a snapshot at all. Reachable, and the way
+        # it is reachable is the reason this is caught rather than allowed to propagate: an
+        # archive listing that returned one key twice folds one fact response twice, which
+        # gives a resource two values for one key, which `ResourceSnapshot` refuses — Req 4.x
+        # is right to refuse it, and a verification that *crashed* on it would turn a
+        # duplicated S3 key into an unhandled exception instead of a finding.
+        #
+        # Reported as a **mismatch**, blocking, and not as `archive_incomplete`: nothing is
+        # missing here. Every object the sequence names was supplied and folded; what they
+        # produce is not this snapshot, which is exactly what a mismatch says. No digest
+        # travels, because none was computed — `ReplayOutcome` leaves the field absent rather
+        # than emitting a placeholder for a claim the verifier cannot make.
+        return ReplayResult(
+            outcome={
+                "possible": True,
+                "stored_sha256": plan.stored_snapshot_id,
+                "objects_folded": folded,
+                "objects_named": plan.objects_named,
+            },
+            findings=(
+                record_finding(
+                    FINDING_REPLAY_HASH_MISMATCH,
+                    f"re-running the aggregation over {folded} archived object(s) produced "
+                    f"records the snapshot cannot carry, so no digest could be computed and "
+                    f"this snapshot is not reproducible from them: {exc}",
+                    expected=plan.stored_snapshot_id,
+                ),
+            ),
+        )
+
     digest = str(recomputed["snapshot_id"])
 
     outcome: ReplayOutcome = {
@@ -353,8 +444,48 @@ def _fold_object(
     document: Mapping[str, object],
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
     day_fold: DayFold,
+    *,
+    plan: ReplayPlan,
+    facts: dict[str, list[FactEntry]],
 ) -> list[GapRecord]:
-    """Fold one archived response, through the collector's own two folds.
+    """Fold one archived object, dispatching on its declared **kind** (Req 7.2).
+
+    Three kinds reach here and each has its own fold:
+
+    * **`metrics`, or no `kind` at all** — the metric path, unchanged. Absence is the metrics
+      claim, because every object written before the field existed is a metrics response.
+    * **`facts`** and **`inventory`** — the fact path, through `collect/factfold.py`'s
+      `fold_fact_response`. An inventory page is fact-bearing because a *projected* fact is a
+      column in the inventory query, so re-deriving that fact means re-folding that page.
+
+    Dispatch is on the declared field rather than on the shape of the body, for the reason
+    `archive_kind_of` documents: a metrics batch carries `values`, a fallback carries `value`
+    and a Resource Graph page carries `data`, so shape-sniffing works right up until two of
+    them resemble each other and a replay folds an object as the wrong kind — reporting a
+    mismatch on a reproducible snapshot.
+
+    An **unrecognised** kind folds nothing and records nothing. It is not an error here: the
+    object count still has to match, so an object this build cannot fold produces a differing
+    digest and `replay_hash_mismatch`, which is the honest outcome — this build cannot prove a
+    snapshot it cannot fully re-derive, and it should not claim the archive is incomplete when
+    every object the sequence names is present.
+    """
+    kind = archive_kind_of(document)
+
+    if kind in (ARCHIVE_KIND_FACTS, ARCHIVE_KIND_INVENTORY):
+        return _fold_fact_object(document, kind=kind, plan=plan, facts=facts)
+    if kind != ARCHIVE_KIND_METRICS:
+        return []
+
+    return _fold_metric_object(document, accumulators, day_fold)
+
+
+def _fold_metric_object(
+    document: Mapping[str, object],
+    accumulators: Mapping[tuple[str, str], MetricAccumulator],
+    day_fold: DayFold,
+) -> list[GapRecord]:
+    """Fold one archived metric response, through the collector's own two folds.
 
     The object body carries its own provenance — the grouping key, the grain, the window,
     the requested metric names and the resource ids travel with the response
@@ -400,11 +531,109 @@ def _fold_object(
     return gaps
 
 
+def _fold_fact_object(
+    document: Mapping[str, object],
+    *,
+    kind: str,
+    plan: ReplayPlan,
+    facts: dict[str, list[FactEntry]],
+) -> list[GapRecord]:
+    """Re-derive one archived fact response's records, through the collector's own fold.
+
+    ## `received_at` comes off the object, and that is not a detail
+
+    A fact's `collected_at` is part of the canonical form the digest is taken over. Stamping a
+    fresh instant here — the obvious thing, since this code runs at verification time — would
+    put a different string in every re-derived fact and report `REPLAY_MISMATCH` on **every
+    run**, however correct the collection was. The archived object records when its response
+    arrived precisely so this does not have to guess.
+
+    ## `value_kind`, `unit` and `formatted` are derived, not stored (Req 7.4)
+
+    None of the three is in the archive. `fold_fact_response` reads `value_kind` and `unit`
+    off the **declaration** — the one the archived `catalog_version` names, which is the same
+    catalog this plan was built from — and `fact_from_plain` derives `formatted`. Storing them
+    would put a value in the archive that the declaration also carries, and the two could then
+    disagree: an archive claiming a key is `numeric` against a declaration that says `text`
+    would fold the same characters two different ways.
+
+    ## The declaration is narrowed to the keys the object says it answers for
+
+    `fact_keys` travels on the object for exactly this. `_entry_is_answered_by` selects by
+    `source` alone, and `recovery_services` is one source covering two APIs — so a replay
+    handed the full declaration would fold the backup response against the replication key and
+    manufacture a `replication_not_enabled` absence that never happened. See
+    `collect/archive.py::write_facts`.
+
+    An inventory page carries no `fact_keys` (its objects predate the field and its facts are
+    selected by `projectable`, not by source), so it folds against the whole declaration —
+    which is what `azure/facts.py::_fold_pages` does on the live side.
+    """
+    raw = document.get("raw_response")
+    resource_ids = [
+        value for value in document.get("resource_ids") or [] if isinstance(value, str)
+    ]
+    if not resource_ids:
+        return []
+
+    received_at = str(document.get("received_at") or "")
+    if not received_at:
+        # No instant, no re-derivation: a fact stamped with a guess would differ from the
+        # stored one in the digest, and every run would report a mismatch.
+        return []
+
+    source = str(document.get("source") or "")
+    keys = [value for value in document.get("fact_keys") or [] if isinstance(value, str)]
+    declaration = (
+        _narrowed_to_keys(plan.fact_declaration, frozenset(keys))
+        if keys
+        else plan.fact_declaration
+    )
+
+    records, gaps = fold_fact_response(
+        cast("PlainData", raw),
+        kind=kind,
+        source=source,
+        resource_ids=resource_ids,
+        declaration=declaration,
+        resource_types=plan.resource_types,
+        received_at=received_at,
+    )
+
+    for record in records:
+        facts.setdefault(record["resource_id"], []).append(fact_from_plain(record))
+    return list(gaps)
+
+
+def _narrowed_to_keys(
+    declaration: FactDeclaration, keys: frozenset[str]
+) -> FactDeclaration:
+    """`declaration` holding only the entries whose key is in `keys`. **Pure.**
+
+    The replay-side counterpart of `azure/facts.py::narrowed_to_gap_type`, narrowing on the
+    keys the archived object records rather than on the gap type they were derived from. The
+    keys are the thing this needs; the derivation is the thing that could be re-done
+    differently on this side and produce a different key set.
+    """
+    return FactDeclaration(
+        resource_types=tuple(
+            ResourceTypeFacts(
+                resource_type=declared.resource_type,
+                facts=tuple(
+                    entry for entry in declared.facts if entry.key in keys
+                ),
+            )
+            for declared in declaration.resource_types
+        )
+    )
+
+
 def _assemble(
     plan: ReplayPlan,
     accumulators: Mapping[tuple[str, str], MetricAccumulator],
     fold_gaps: Sequence[GapRecord],
     day_fold: DayFold,
+    facts: Mapping[str, Sequence[FactEntry]],
 ) -> dict[str, object]:
     """Finalize every resource and build the snapshot, through the collector's own path."""
     gaps: list[GapRecord] = [*plan.gaps, *fold_gaps]
@@ -447,6 +676,12 @@ def _assemble(
                     )
                     for bucket in geometry
                 ),
+                # Req 7.3 — the re-derived facts, in the canonical order task 4.2 established.
+                # `ResourceSnapshot.to_plain_data` sorts them by key, so this hands them over
+                # in fold order and the canonicalization decides the bytes — the same division
+                # the statistics take, and the reason a fact folded from a *missing* object
+                # produces a differing digest rather than a differently ordered one.
+                facts=tuple(facts.get(resource.record["resource_id"], ())),
             )
         )
 
@@ -545,6 +780,11 @@ def plan_from_snapshot(
         archive_complete=bool(archive_map.get("complete")),
         archive_object_count=object_count,
         objects_named=object_count if objects_named is None else objects_named,
+        fact_declaration=catalog.facts,
+        resource_types={
+            resource.record["resource_id"]: resource.resource_type
+            for resource in plan_resources
+        },
     )
 
 

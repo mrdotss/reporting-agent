@@ -216,7 +216,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Contain no code path that converts a fact-collection failure into a value, and extend `tests/test_boundaries.py` with the guard that no module from a fact response to the Snapshot_Builder declares an `except` handler whose body neither records a typed gap nor re-raises
     - _Requirements: 4.8, 4.9, 5.4, 5.6, 5.7, 7.6_
 
-  - [ ] 4.4 The `facts` archive kind and replay's fact re-derivation
+  - [x] 4.4 The `facts` archive kind and replay's fact re-derivation
     - `collect/archive.py`: the `"facts"` object kind — `schema_version`, `kind`, `sequence`, `source`, `request_target`, `resource_ids`, `received_at`, `catalog_version`, `raw_response` — written **during the same pass that folds** the response and **completing before the next fact-producing request is issued**, which is observable as the call order a recording object-store double records rather than as an intention in a comment
     - `verify/replay.py`: `_fold_object` dispatches on `kind` — `"metrics"` or absent is today's path unchanged; `"facts"` and `"inventory"` call `fold_fact_response` with `received_at` taken **from the archived object**, because a `collected_at` stamped at the replay instant enters the canonical form and produces `REPLAY_MISMATCH` on every run however correct the collection was
     - Re-derived facts enter the recomputed snapshot in the canonical order of task 4.2 and the digest is compared byte for byte; a fact folded with no archived object produces a differing digest and `replay_hash_mismatch`; an absent, undecompressable or unparseable object is the **advisory** `archive_incomplete` naming the sequence ordinal with replay recorded as not possible and no exception mid-fold
@@ -256,13 +256,13 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `serialize()` gains `text_facts` and `text_fact_anchors` keys **omitted when empty**, following the omit-when-`None` convention `_figure_to_plain` already documents. Add a guard test asserting a document with no text facts serializes **byte-identically** to today and every committed `ledger_sha256` fixture is unchanged — "additive" is a claim about bytes here, not a description
     - _Requirements: 6.2, 6.9, 6.10, 18.9_
 
-  - [ ] 5.3 `compile/format.py::format_text_fact`, and the guard that formatting cannot translate
+  - [x] 5.3 `compile/format.py::format_text_fact`, and the guard that formatting cannot translate
     - `format_text_fact(value: str, *, at: str) -> str` returning `value` character for character: no case folding, no truncation, no separator substitution, and **no resolution against the Message_Catalog**. A function rather than an inline pass-through so `formatted` is still assigned in exactly one module and the existing single-formatting-path guard covers both entry kinds
     - `Succeeded` therefore reaches an Indonesian document as the string the API returned, because a fact's value is collected data and not fixed copy
     - Extend `tests/test_boundaries.py`: `compile/format.py` neither imports `compile/messages.py` nor names any string id, so the module that produces every `formatted` string **structurally cannot** translate one
     - _Requirements: 6.12, 6.13_
 
-  - [ ] 5.4 One anchor mechanism, one run per cell, and the HTML attributes
+  - [x] 5.4 One anchor mechanism, one run per cell, and the HTML attributes
     - `agent/.../render/anchors.py`: `_LEDGER_BEARING_CELLS = (FigureCell, TextFactCell)` and `record_cell_anchor(ledger, node, row, cell, *, column_key)` building the triple `{table_id(node.path), row.key, column_key}` **once** and routing it by the cell's type to `record_anchor` or `record_text_fact_anchor`, so a change to how an anchor is formed cannot apply to one kind and not the other
     - `render/docx.py` emits a `TextFact` as **exactly one run in exactly one paragraph** of that cell, in the theme's `Figure` character style — the same style a figure takes, because what the style marks is "this text is a checked value" and it is what lets the token extractor find it without re-parsing prose
     - `render/html.py` emits a fact's `source` and `collected_at` as attributes of the emitted element, so the provenance reveal presents a fact's source and instant as it presents a figure's `snapshot_path`
@@ -389,7 +389,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Assert no stored version row is written, updated or rewritten by this path — raising the schema version rewrites nothing
     - _Requirements: 13.11, 15.12, 16.10, 24.17_
 
-  - [ ] 7.5 Implement `app/lib/templates/migrate.ts` and the save that writes v2
+  - [x] 7.5 Implement `app/lib/templates/migrate.ts` and the save that writes v2
     - `toSchemaVersion2(definition)`, **pure**: lift a v1 `cover` block's config into `front_matter.cover`, remove that block from `blocks`, set `identity.language` to `en`, resolve the two separators from `en`, and set `schema_version` to `2`. Takes no store and performs no write
     - The wizard applies it when **opening** a v1 draft; the **save** writes a new `report_template_versions` row declaring v2 carrying the `front_matter` section and applies **no** write to the existing version row, leaving every report pinned to that earlier version rendering exactly as delivered
     - Migration is app-only and one-directional. That asymmetry with the agent is the design, not an omission
@@ -543,7 +543,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Invoke the runtime with the `list_inventory` **command** carrying the server-resolved Azure credentials in its `context` — never a prompt, and the app issues no Azure request and holds no Azure access token
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.8, 9.9_
 
-  - [ ] 12.3 Implement `lib/templates/options.ts` and its property
+  - [x] 12.3 Implement `lib/templates/options.ts` and its property
     - **Pure, no I/O**, shared by the inspector and by the load-time check: `ConfigFieldKind` over `metric_ref` | `metric_ref_list` | `column_list` | `enum` | `other`, `fieldKind(blockType, field)`, `MetricOption` / `AttributeOption` / `FactOption`, `OptionGroups` and `optionsFor(field, { definition, block, catalog, factDeclaration })`
     - `metric_ref` and `metric_ref_list` draw options from the **definition's metric selection alone**, not from the catalog: a block can display only a subset of what the run collects, and an option outside the selection guarantees a block carrying no figure. `column_list` draws from **three distinctly presented groups** — those same metrics, the resource attributes, and the fact keys the declaration declares for a resource type the block's resolved scope **can contain**
     - `COLUMN_ATTRIBUTES` as a new **mirrored** sentinel-delimited constant in `app/lib/templates/options.ts` and `agent/.../compile/blocks/tables.py`, drawn from what that module can actually emit today: `resource_name`, `resource_group`, `resource_type`, `location`, `sku_name`, `power_state`, `fidelity_tier`. `resource_table`'s implicit name column and its `show_fidelity` flag are **unchanged**, and naming `resource_name` or `fidelity_tier` as an explicit column while it is already implicit is a validation error naming the field, because a duplicate column key would make `(row_key, column_key)` address two cells

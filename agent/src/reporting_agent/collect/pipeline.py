@@ -131,6 +131,11 @@ from reporting_agent.collect.snapshot import (
     SkuCapacity,
     StatisticEntry,
     build_snapshot,
+    # Moved out of this module in task 4.4, and re-exported below so its existing callers
+    # and their tests are untouched: `verify/replay.py` re-derives facts from the archive and
+    # has to build the same `FactEntry` this pass builds, and replay may import only pure
+    # modules — which this orchestrator is not.
+    fact_from_plain,
     guest_counter_statistics,
     window_to_plain,
     write_once,
@@ -150,7 +155,6 @@ from reporting_agent.providers.base import (
     CollectRequest,
     DiscoverResult,
     FactCollectingProvider,
-    FactRecord,
     FactRequest,
     GapRecord,
     GuestCounterOutcome,
@@ -613,32 +617,6 @@ def _scale_of(text: str) -> int:
     """The scale a decimal string was rendered at: its count of fractional digits."""
     _, _, fraction = text.partition(".")
     return len(fraction)
-
-
-def fact_from_plain(record: FactRecord) -> FactEntry:
-    """One `FactRecord` back as the `FactEntry` the snapshot carries (Req 4.1-4.6).
-
-    The fact-side counterpart of :func:`statistic_from_plain`, and a much thinner one: there
-    is nothing to override and nothing to re-render. A fact's `value` is already its own
-    display form — a `text` fact is the string the API returned and a `numeric` fact arrives
-    as the fixed-precision decimal string `collect/factfold.py` produced — so `formatted` is
-    that same string, character for character, and `FactEntry.__post_init__` refuses any other
-    relationship between the two.
-
-    Nothing is defaulted. A record missing its `source`, its `value_kind` or its `collected_at`
-    reaches `FactEntry`, which raises and writes no snapshot object (Req 4.4): a fact whose
-    provenance is absent is an assertion rather than an observation, and substituting a
-    plausible value here is precisely how one would become the other.
-    """
-    return FactEntry(
-        key=record["key"],
-        value=record["value"],
-        value_kind=record["value_kind"],
-        source=record["source"],
-        collected_at=record["collected_at"],
-        formatted=record["value"],
-        unit=record.get("unit"),
-    )
 
 
 def statistic_from_plain(value: StatValue, *, fidelity_tier: str) -> StatisticEntry:

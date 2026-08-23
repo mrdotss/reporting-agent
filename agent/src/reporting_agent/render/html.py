@@ -18,6 +18,12 @@ Every figure element carries `data-snapshot-path` and, for an estimate, `data-es
 `compile/estimators.py` already produced one without a numeral in it, and a second composition
 here would be a second formatter's output in a string the UI presents as provenance.
 
+A **text fact** carries the same `data-snapshot-path` plus `data-fact-source` and
+`data-collected-at` (Req 6.9), because provenance means something different for a collected
+string: a figure's source is implicit in its metric, while two Azure APIs can answer for the
+same resource and only one of them was asked. So the reveal presents a fact's source and
+instant exactly where it presents a figure's snapshot path.
+
 ## What this emitter deliberately cannot say
 
 **No page number, no page count, no total-page indicator** (Req 24.4). The HTML emitter
@@ -55,6 +61,8 @@ from reporting_agent.compile.ast import (
     Table,
     Text,
     TextCell,
+    TextFact,
+    TextFactCell,
 )
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
 
@@ -129,6 +137,10 @@ class HtmlOutcome:
     html: str
     figure_count: int
     table_count: int
+    text_fact_count: int = 0
+    """Counted **separately** from `figure_count`, the same split the DOCX outcome and the
+    verification result make (Req 6.15). A preview showing every figure and no fact would
+    otherwise report a matching total."""
 
 
 @dataclass(slots=True)
@@ -136,6 +148,7 @@ class _Emitter:
     parts: list[str] = field(default_factory=list)
     figure_count: int = 0
     table_count: int = 0
+    text_fact_count: int = 0
 
     def write(self, markup: str) -> None:
         self.parts.append(markup)
@@ -177,6 +190,43 @@ class _Emitter:
 
         self.figure_count += 1
         return f"<span {' '.join(attributes)}>{html.escape(figure.formatted)}</span>"
+
+    def text_fact(self, fact: TextFact) -> str:
+        """One text-fact element, carrying its `formatted` string and its provenance (Req 6.9).
+
+        The same shape as :meth:`figure`, down to the class, because the provenance reveal is
+        one interaction: a reader clicks a checked value and is told where it came from. What
+        differs is *what provenance means* for a fact — a `source` naming the API that
+        answered and a `collected_at` naming when, alongside the `snapshot_path` a figure also
+        carries. A figure's source is implicit in its metric; a fact's is not, because two
+        Azure APIs can answer for the same resource and only one of them was asked.
+
+        `formatted` is emitted exactly as `format_text_fact` produced it, escaped for HTML —
+        which changes the bytes on the wire but not the text a reader or a copy-paste gets.
+        No case folding and no translation: see `compile/format.py`.
+        """
+        if not fact.formatted:
+            raise HtmlEmitFailed(
+                f"text fact {fact.path!r} carries no formatted string; "
+                f"`compile/format.py::format_text_fact` is the only path to one and this "
+                f"entry never took it"
+            )
+
+        attributes = [
+            f'class="{FIGURE_CLASS}"',
+            f'data-snapshot-path="{html.escape(fact.snapshot_path, quote=True)}"',
+            f'data-figure-path="{html.escape(str(fact.path), quote=True)}"',
+            f'data-fact-key="{html.escape(fact.key, quote=True)}"',
+            # The two Req 6.9 names. Unconditional rather than emitted when present:
+            # `TextFact.__post_init__` requires both non-empty, so an absent attribute here
+            # could only mean this emitter dropped one — and the reveal would then show a
+            # fact with no source, which is the one thing a fact must never present as.
+            f'data-fact-source="{html.escape(fact.source, quote=True)}"',
+            f'data-collected-at="{html.escape(fact.collected_at, quote=True)}"',
+        ]
+
+        self.text_fact_count += 1
+        return f"<span {' '.join(attributes)}>{html.escape(fact.formatted)}</span>"
 
     def inlines(self, items: tuple[object, ...], *, at: str) -> str:
         rendered: list[str] = []
@@ -289,6 +339,8 @@ class _Emitter:
             attribute = f' data-column-key="{html.escape(column.key, quote=True)}"'
             if isinstance(cell, FigureCell):
                 cells.append(f"<td{attribute}>{self.figure(cell.figure)}</td>")
+            elif isinstance(cell, TextFactCell):
+                cells.append(f"<td{attribute}>{self.text_fact(cell.fact)}</td>")
             elif isinstance(cell, TextCell):
                 cells.append(f"<td{attribute}>{html.escape(cell.text)}</td>")
             elif isinstance(cell, EmptyCell):
@@ -296,8 +348,8 @@ class _Emitter:
             else:
                 raise HtmlEmitFailed(
                     f"table {node.path!r} row {row.key!r} cell {ordinal} is "
-                    f"{type(cell).__name__}; a cell admits only FigureCell, TextCell or "
-                    f"EmptyCell"
+                    f"{type(cell).__name__}; a cell admits only FigureCell, TextFactCell, "
+                    f"TextCell or EmptyCell"
                 )
 
         return (
@@ -370,6 +422,7 @@ class _Emitter:
                 nested.block(child)
             self.figure_count += nested.figure_count
             self.table_count += nested.table_count
+            self.text_fact_count += nested.text_fact_count
             columns.append(
                 f'<div class="rpt-column" data-path='
                 f'"{html.escape(str(column.path), quote=True)}">'
@@ -431,5 +484,6 @@ def emit_html(document: object) -> HtmlOutcome:
     return HtmlOutcome(
         html=f'<div class="rpt-document">{"".join(emitter.parts)}</div>',
         figure_count=emitter.figure_count,
+        text_fact_count=emitter.text_fact_count,
         table_count=emitter.table_count,
     )

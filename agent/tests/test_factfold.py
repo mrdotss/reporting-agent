@@ -785,23 +785,32 @@ def test_the_shipped_declaration_folds_a_real_projected_row() -> None:
     assert set(gap_types(gaps)) <= {GAP_TYPE_FACT_UNAVAILABLE}
 
 
-def test_the_inventory_kind_is_spelled_the_way_the_archive_spells_it() -> None:
-    """The one string the two modules share, matched by value.
+def test_both_fact_kinds_are_spelled_the_way_the_archive_spells_them() -> None:
+    """The two strings the two modules share, matched by value.
 
-    An archived Resource Graph page and a Resource Graph page being folded are the **same
-    response**, so `archive_kind_of(document) == ARCHIVE_KIND_INVENTORY` and
-    `kind == FACT_KIND_INVENTORY` have to agree — a replay reads the kind off the archived
-    object and hands it straight to this fold.
+    A replay reads the `kind` off the archived object and hands it straight to this fold, so
+    the two vocabularies have to agree character for character on every kind a fact response
+    can arrive under. Both do now: task 4.4 added the `"facts"` archive kind, so a
+    non-projectable source's response is archived under the same word the fold selects on.
 
-    The other two do not correspond and must not be asserted equal: `ARCHIVE_KIND_METRICS` is
-    a metrics batch response, which this fold never sees, and `FACT_KIND_FACTS` covers the
-    non-projectable sources, whose responses are folded before they are archived under their
-    own kind. Asserting the whole sets equal would couple two vocabularies that are only
-    partly the same thing.
+    Until 4.4 this test asserted `FACT_KIND_FACTS not in ARCHIVE_KINDS`, and the assertion was
+    correct — there was no such archive kind. It is recorded here rather than quietly replaced
+    because the *reason* it flipped is the point: the correspondence widened from one kind to
+    two, and a reader who remembers the old assertion should be able to see why.
+
+    `ARCHIVE_KIND_METRICS` still has no counterpart and must not be asserted into one: a
+    metrics batch response is not a fact-bearing response and this fold never sees it. So the
+    relation asserted is containment in one direction, not set equality.
     """
-    from reporting_agent.collect.archive import ARCHIVE_KIND_INVENTORY, ARCHIVE_KINDS
+    from reporting_agent.collect.archive import (
+        ARCHIVE_KIND_FACTS,
+        ARCHIVE_KIND_INVENTORY,
+        ARCHIVE_KIND_METRICS,
+        ARCHIVE_KINDS,
+    )
 
     assert FACT_KIND_INVENTORY == ARCHIVE_KIND_INVENTORY
-    assert FACT_KIND_INVENTORY in ARCHIVE_KINDS
-    assert FACT_KIND_FACTS not in ARCHIVE_KINDS
+    assert FACT_KIND_FACTS == ARCHIVE_KIND_FACTS
+    assert set(FACT_KINDS) < set(ARCHIVE_KINDS)
+    assert ARCHIVE_KIND_METRICS not in FACT_KINDS
     assert FACT_KINDS == (FACT_KIND_INVENTORY, FACT_KIND_FACTS)

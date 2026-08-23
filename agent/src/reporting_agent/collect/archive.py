@@ -55,6 +55,7 @@ from reporting_agent.storage.base import JSON_CONTENT_TYPE, ObjectStore
 
 __all__ = [
     "ARCHIVE_KINDS",
+    "ARCHIVE_KIND_FACTS",
     "ARCHIVE_KIND_INVENTORY",
     "ARCHIVE_KIND_METRICS",
     "ARCHIVE_SCHEMA_VERSION",
@@ -62,6 +63,7 @@ __all__ = [
     "ArchiveWriter",
     "archive_key",
     "archive_kind_of",
+    "facts_archive_key",
     "inventory_archive_key",
 ]
 
@@ -85,8 +87,13 @@ that never lacked it is the only honest version of that."""
 
 ARCHIVE_KIND_METRICS: Final[str] = "metrics"
 ARCHIVE_KIND_INVENTORY: Final[str] = "inventory"
+ARCHIVE_KIND_FACTS: Final[str] = "facts"
 
-ARCHIVE_KINDS: Final[tuple[str, ...]] = (ARCHIVE_KIND_METRICS, ARCHIVE_KIND_INVENTORY)
+ARCHIVE_KINDS: Final[tuple[str, ...]] = (
+    ARCHIVE_KIND_METRICS,
+    ARCHIVE_KIND_INVENTORY,
+    ARCHIVE_KIND_FACTS,
+)
 """The object kinds the archive holds, and the closed set :func:`archive_kind_of` returns
 a member of."""
 
@@ -147,6 +154,27 @@ def inventory_archive_key(
     return (
         f"{actor_id}/snapshots/{run_id}/raw/"
         f"{sequence:06d}-{ARCHIVE_KIND_INVENTORY}-{safe_source}-{page_index:04d}.json.gz"
+    )
+
+
+def facts_archive_key(
+    *, actor_id: str, run_id: str, sequence: int, source: str
+) -> str:
+    """The object key for one archived fact response (Req 7.1). **Pure.**
+
+    Shares the `<seq:06d>-` prefix with :func:`archive_key` and
+    :func:`inventory_archive_key` for the reason that one documents: a replay lists the run's
+    `raw/` prefix and sorts the keys, so sorting by key has to equal sorting by sequence.
+
+    No page index, because a fact listing is not paged from this module's point of view —
+    `azure/facts.py` pages a vault list internally and folds the accumulated items as **one**
+    response, so one fold is one object. Two objects for one fold would be two inputs a
+    replay has to reassemble in order to reproduce a single set of records.
+    """
+    safe_source = source.replace("/", "_")
+    return (
+        f"{actor_id}/snapshots/{run_id}/raw/"
+        f"{sequence:06d}-{ARCHIVE_KIND_FACTS}-{safe_source}.json.gz"
     )
 
 
@@ -422,6 +450,129 @@ class ArchiveWriter:
                     f"this resource's inventory record and any projected fact were "
                     f"still kept, but this run's raw archive is incomplete and cannot "
                     f"be fully replayed.",
+                )
+                for resource_id in resource_ids
+            )
+            return ArchiveWriteResult(wrote=False, key=key, gaps=gaps)
+
+        with self._lock:
+            self._written += 1
+        return ArchiveWriteResult(wrote=True, key=key)
+
+    async def write_facts(
+        self,
+        *,
+        actor_id: str,
+        run_id: str,
+        source: str,
+        request_target: str,
+        fact_keys: Sequence[str],
+        received_at: str,
+        catalog_version: str,
+        resource_ids: Sequence[str],
+        raw_body: object,
+    ) -> ArchiveWriteResult:
+        """Write one **fact** response to the raw archive (Req 7.1, 7.2, 7.4).
+
+        Called by `azure/facts.py` **before** it folds the response it just received, in the
+        same pass, so the object lands before any record derived from it exists. A fact absent
+        from the archive is a fact a replay cannot re-derive, which makes the recomputed
+        snapshot differ and reports `REPLAY_MISMATCH` on a run that collected perfectly.
+
+        ## `raw_body` is the body **as the fold read it**
+
+        `azure/facts.py` normalizes each service's list into the `(resource_id, key)` item
+        shape `collect/factfold.py` reads, and it is that shape which is archived rather than
+        the untouched service envelope. The reason is Req 7.4's: the re-derivation has to be
+        *exact*, and it has to happen in `verify/replay.py`, which may import only pure
+        modules. Archiving the envelope instead would put a per-source normalization table on
+        replay's side of the boundary — three services, four path sets, two of them sharing
+        one `source` — and every one of those paths would then be a place the live fold and
+        the replay fold could read a different field out of the same bytes.
+
+        What is preserved is what a dispute is actually about: which value the service reported
+        for which resource under which declared key, each string read out of the response
+        verbatim. What is lost is the envelope around it. That is a real trade and it is the
+        one this field name should be read against.
+
+        ## `fact_keys` is not decoration, and it is not in this spec's field list
+
+        The task's object shape names nine fields and none of them says **which declared keys
+        this request answers for**. Without that, a replay cannot narrow the declaration the
+        way `azure/facts.py` narrows it — and `_entry_is_answered_by` selects on `source`
+        alone, so `recovery_services` covers *two* APIs. A replay handed the full declaration
+        would fold the backup response against the replication key and manufacture a
+        `replication_not_enabled` absence that never happened: a false gap, in a snapshot
+        whose digest then differs from the stored one, reported as a replay mismatch.
+
+        So the keys travel. This is `narrowed_to_gap_type`'s reasoning carried across the
+        archive boundary, and recording the keys is strictly better than recording the gap type
+        it was derived from — the keys are the thing replay needs, and the derivation is the
+        thing that could be re-done differently.
+
+        Never raises, exactly as :meth:`write` never does. On a store failure it records one
+        `archive_write_failed` gap per covered resource and flips `archive_incomplete`; the
+        caller folds the response regardless, because a run that cannot archive a fact response
+        is still a run that collected the fact.
+        """
+        if not resource_ids:
+            raise ValueError(
+                "resource_ids must be non-empty; a fact response covering no resource is "
+                "not one this method can archive"
+            )
+        if not fact_keys:
+            raise ValueError(
+                "fact_keys must be non-empty; a fact response answering for no declared "
+                "key names nothing a replay could re-derive from it"
+            )
+
+        sequence = self._next_sequence()
+        key = facts_archive_key(
+            actor_id=actor_id, run_id=run_id, sequence=sequence, source=source
+        )
+
+        document: dict[str, Any] = {
+            "schema_version": ARCHIVE_SCHEMA_VERSION,
+            "kind": ARCHIVE_KIND_FACTS,
+            "sequence": sequence,
+            "source": source,
+            "request_target": request_target,
+            # Sorted, so two runs over one subscription archive byte-identical objects for
+            # one response rather than objects that differ by the order a set iterated in.
+            "fact_keys": sorted(fact_keys),
+            "received_at": received_at,
+            "catalog_version": catalog_version,
+            "resource_ids": list(resource_ids),
+            "raw_response": raw_body,
+        }
+
+        try:
+            body_bytes = gzip.compress(
+                json.dumps(document, default=_json_default).encode("utf-8")
+            )
+            await self.store.put_bytes(
+                key, body_bytes, content_type=JSON_CONTENT_TYPE, tags=_TAGS
+            )
+        except Exception as exc:
+            self._incomplete = True
+            logger.warning(
+                "archive write failed for fact key %r (source %r, %d key(s), %d "
+                "resource(s)); folding the response anyway and marking this run's raw "
+                "archive incomplete: %s",
+                key,
+                source,
+                len(fact_keys),
+                len(resource_ids),
+                exc,
+            )
+            gaps = tuple(
+                record_gap(
+                    GAP_TYPE_ARCHIVE_WRITE_FAILED,
+                    resource_id,
+                    None,
+                    f"the raw archive write for fact key {key!r} failed: {exc}; this "
+                    f"resource's facts were still folded, but this run's raw archive is "
+                    f"incomplete and cannot be fully replayed.",
                 )
                 for resource_id in resource_ids
             )

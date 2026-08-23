@@ -15,12 +15,14 @@ import {
   MIN_SCHEMA_VERSION,
   NUMBER_FORMAT_KEYS,
   REQUIRED_IDENTITY_KEYS,
+  IMPLICIT_TABLE_COLUMNS,
   REQUIRED_TOP_LEVEL_KEYS,
 } from "@/lib/templates/definition"
 import {
   collectDefinitionIssues,
   type FieldIssue,
 } from "@/lib/templates/definition"
+import { COLUMN_ATTRIBUTES } from "@/lib/templates/options"
 import { definitionSha256 } from "@/lib/templates/version"
 
 /**
@@ -1117,5 +1119,100 @@ describe("Requirement 2.7 — one pass reports every violation", () => {
     expect(web.verdict).toBe("reject")
     expect(locationSet(web.offenders).size).toBe(6)
     expect(locationSet(agentVerdicts.get(file)?.offenders ?? []).size).toBe(6)
+  })
+})
+
+// --- Requirement 12.3 — the column-attribute vocabulary ---------------------
+
+const BEGIN_ATTRIBUTES_SENTINEL = "--- BEGIN COLUMN ATTRIBUTES"
+const END_ATTRIBUTES_SENTINEL = "--- END COLUMN ATTRIBUTES"
+
+const TS_ATTRIBUTES_DECLARATION = path.join(
+  appRoot,
+  "lib",
+  "templates",
+  "options.ts"
+)
+const PY_ATTRIBUTES_DECLARATION = path.join(
+  repoRoot,
+  "agent",
+  "src",
+  "reporting_agent",
+  "compile",
+  "blocks",
+  "tables.py"
+)
+
+function declaredColumnAttributes(absolutePath: string): readonly string[] {
+  return quotedStrings(
+    sentinelBody(
+      absolutePath,
+      BEGIN_ATTRIBUTES_SENTINEL,
+      END_ATTRIBUTES_SENTINEL
+    )
+  )
+}
+
+describe("Requirement 12.3 — the column-attribute vocabulary is mirrored", () => {
+  /**
+   * The third mirrored vocabulary, and the one with the sharpest failure mode.
+   *
+   * `lib/templates/options.ts` decides which attributes the builder **offers** and
+   * `compile/blocks/tables.py::resource_attribute_text` decides which it can **emit**. A name
+   * on one side only is therefore either a column a consultant selects, saves and then finds
+   * missing from a delivered document, or an emittable column nobody is ever offered. Neither
+   * shows up in either half's own suite, because each half is internally consistent.
+   *
+   * Order-sensitive, unlike the block-type comparison. This tuple is the order a picker
+   * presents the group in, and the agent's is the order its own guard walks — two orders would
+   * be two presentations of one vocabulary, which is the kind of difference nobody notices
+   * until a screenshot is compared to a document.
+   */
+  test("both halves declare the attributes between the sentinels", () => {
+    // The first failure to rule out: a guard that passes because it extracted nothing.
+    expect(declaredColumnAttributes(TS_ATTRIBUTES_DECLARATION).length).toBe(7)
+    expect(declaredColumnAttributes(PY_ATTRIBUTES_DECLARATION).length).toBe(7)
+  })
+
+  test("the two declarations are the same list in the same order", () => {
+    expect([...declaredColumnAttributes(TS_ATTRIBUTES_DECLARATION)]).toEqual([
+      ...declaredColumnAttributes(PY_ATTRIBUTES_DECLARATION),
+    ])
+  })
+
+  test("the TypeScript sentinel block is the module's actual COLUMN_ATTRIBUTES export", () => {
+    // Extraction is textual, so on its own it would pass if the sentinels wrapped a
+    // decorative comment and the module exported something else — the same hole the
+    // block-type comparison closes from the app side.
+    expect([...declaredColumnAttributes(TS_ATTRIBUTES_DECLARATION)]).toEqual([
+      ...COLUMN_ATTRIBUTES,
+    ])
+  })
+
+  test("the implicit pair is a subset of the declared attributes", () => {
+    // `IMPLICIT_TABLE_COLUMNS` lives in `definition.ts` because the *rule* is the validator's,
+    // and it names two members of this vocabulary. A name there and not here would be a
+    // validation error about a column no picker offers and no renderer emits.
+    for (const attribute of IMPLICIT_TABLE_COLUMNS) {
+      expect(COLUMN_ATTRIBUTES as readonly string[]).toContain(attribute)
+    }
+  })
+
+  test("the agent's mapping is total over the vocabulary", () => {
+    // Asserted from this side too, because the constant is only honest if every name in it can
+    // actually be read off a resource. The agent's own suite checks the behaviour; this checks
+    // that the function names every member, which is what stops a name being added to the
+    // tuple with no branch behind it.
+    const source = readFileSync(PY_ATTRIBUTES_DECLARATION, "utf8")
+    const mapping = source.slice(source.indexOf("def resource_attribute_text"))
+
+    for (const attribute of declaredColumnAttributes(
+      PY_ATTRIBUTES_DECLARATION
+    )) {
+      expect(
+        mapping,
+        `resource_attribute_text answers for no ${attribute}`
+      ).toContain(`"${attribute}"`)
+    }
   })
 })

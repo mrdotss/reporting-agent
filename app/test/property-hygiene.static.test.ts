@@ -168,6 +168,18 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
   // boundaries live in the single-action property, where the action is concrete.
   "lib/templates/composer.property.test.ts": 6,
   /**
+   * Property 8 of the breadth spec (block-config options). Three, in one array: an override
+   * that narrows the template default, one that widens it, and one that disjoins from it
+   * entirely.
+   *
+   * They are declared rather than left to the generator because the third is the one with the
+   * discriminating power — a block whose scope names only resource types the definition
+   * selected **no** metrics for — and it is the rarest of the three under a random override.
+   * The relation is a separate property argument for exactly that reason: a case naming a
+   * relation is readable, whereas a hand-written whole `Case` object would not be.
+   */
+  "test/property/config-options.property.test.ts": 3,
+  /**
    * Fifteen distinct declared cases across four arrays: three languages, six pairs of language
    * and declared separator, three colliding resolved pairs, and three version-1 shapes.
    */
@@ -175,7 +187,7 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
 }
 
 /** Recorded from the tree, so deleting a whole entry above is caught too. */
-const MINIMUM_DECLARED_CASES_TOTAL = 56
+const MINIMUM_DECLARED_CASES_TOTAL = 59
 
 /**
  * Requirement 42.7 — modifiers that stop a property from running or accept its
