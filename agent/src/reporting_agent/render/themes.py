@@ -95,6 +95,7 @@ __all__ = [
     "REQUIRED_PARAGRAPH_STYLES",
     "REQUIRED_STYLE_NAMES",
     "REQUIRED_TABLE_STYLES",
+    "SIGNATURE_ROW_HEIGHT_TWIPS",
     "SIGNATURE_TABLE_STYLE",
     "THEME_FILENAMES",
     "THEME_PRESETS",
@@ -602,7 +603,7 @@ _A4_WIDTH_TWIPS: Final[int] = 11906
 _A4_HEIGHT_TWIPS: Final[int] = 16838
 _MARGIN_TWIPS: Final[int] = 1134  # 2 cm
 
-_SIGNATURE_ROW_HEIGHT_TWIPS: Final[int] = 907  # 1.6 cm
+SIGNATURE_ROW_HEIGHT_TWIPS: Final[int] = 907  # 1.6 cm
 """The minimum height of an approvers-table row, and therefore of an unsigned signature box.
 
 `w:hRule="atLeast"`, so a supplied signature image taller than this grows the row rather than
@@ -851,7 +852,7 @@ def _data_table_styles(spec: ThemeSpec) -> str:
             f"{_borders(edges=dict.fromkeys(('top', 'left', 'bottom', 'right', 'insideH', 'insideV'), ('single', 4, spec.palette.rule)))}"
             f"{_cell_margins(vertical=80, horizontal=100)}"
             f"</w:tblPr>"
-            f'<w:trPr><w:trHeight w:val="{_SIGNATURE_ROW_HEIGHT_TWIPS}" w:hRule="atLeast"/></w:trPr>'
+            f'<w:trPr><w:trHeight w:val="{SIGNATURE_ROW_HEIGHT_TWIPS}" w:hRule="atLeast"/></w:trPr>'
             f"{_header_row_props(spec, underline=False)}"
         ),
     )

@@ -546,7 +546,17 @@ async def _drift(inputs: VerifyInputs) -> DriftOutcome:
 def _number_format(definition: Mapping[str, object]):
     from reporting_agent.compile.blocks.base import DesignSettings
 
-    return DesignSettings.from_plain(definition.get("design")).number_format
+    # Req 16.12 — re-verification reads number_format from the run's PINNED template
+    # version, resolving separators from that version's declared language. A later edit
+    # of the template's separators or language leaves this archived report verifying
+    # exactly as delivered.
+    identity = definition.get("identity")
+    language: str | None = None
+    if isinstance(identity, Mapping):
+        lang = identity.get("language")
+        if isinstance(lang, str) and lang in ("en", "id"):
+            language = lang
+    return DesignSettings.from_plain(definition.get("design"), language=language).number_format
 
 
 def _digest(payload: bytes) -> str:

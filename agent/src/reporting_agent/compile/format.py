@@ -86,6 +86,7 @@ __all__ = [
     "display_scale",
     "format_figure",
     "format_text_fact",
+    "number_format_from_definition",
     "unit_suffix",
 ]
 
@@ -225,6 +226,71 @@ DEFAULT_NUMBER_FORMAT: Final[NumberFormat] = NumberFormat()
 `lib/templates/starters.ts` writes and the fallback for a caller that has no template
 number format to hand (a preflight probe, a compare command reading two runs whose
 templates disagree)."""
+
+# Req 16.3 — the separators each language implies when the definition declares none.
+# Duplicated from `compile/definition.SEPARATOR_DEFAULTS` to avoid a circular import:
+# `definition.py` imports this module for `NumberFormat` and `DEFAULT_NUMBER_FORMAT`.
+_SEPARATOR_DEFAULTS: Final[dict[str, tuple[str, str]]] = {
+    "en": (".", ","),
+    "id": (",", "."),
+}
+_DEFAULT_LANGUAGE: Final[str] = "en"
+
+
+def number_format_from_definition(
+    raw_number_format: object,
+    *,
+    language: str | None = None,
+) -> NumberFormat:
+    """Build a `NumberFormat` from the pinned definition's `design.number_format` (Req 16.4).
+
+    Resolves the declared separators when they are present and fills from the language's
+    defaults when they are absent (Req 16.3). A `schema_version` 1 definition declares no
+    separators and no language, so both absent values resolve from `en`, which is
+    `DEFAULT_NUMBER_FORMAT`'s own pair — rendering byte-identically to the way it always did
+    (Req 16.10).
+
+    A `schema_version` 2 definition declares both separators explicitly (or has them
+    defaulted by the definition validator from its `identity.language`). When the stored
+    definition carries them they are used as-is; when it does not, language defaults apply.
+
+    Re-verification reads `number_format` from the run's **pinned** template version rather
+    than from the template's current definition, so a later separator edit leaves an archived
+    report verifying exactly as delivered (Req 16.12).
+    """
+    from collections.abc import Mapping
+
+    resolved_language = language if language in _SEPARATOR_DEFAULTS else _DEFAULT_LANGUAGE
+    decimal_default, grouping_default = _SEPARATOR_DEFAULTS[resolved_language]
+
+    if not isinstance(raw_number_format, Mapping):
+        return NumberFormat(
+            decimal_separator=decimal_default,
+            grouping_separator=grouping_default,
+        )
+
+    decimal_separator = raw_number_format.get("decimal_separator")
+    if not isinstance(decimal_separator, str) or not decimal_separator:
+        decimal_separator = decimal_default
+
+    grouping_separator = raw_number_format.get("grouping_separator")
+    if not isinstance(grouping_separator, str) or not grouping_separator:
+        grouping_separator = grouping_default
+
+    # If the resolved pair conflicts (equal separators), fall back to language defaults.
+    # In production this cannot happen: the definition validator rejects equal separators
+    # before a definition is saved. This guard exists for robustness against corrupted or
+    # hand-edited data that bypassed validation.
+    if decimal_separator == grouping_separator:
+        decimal_separator = decimal_default
+        grouping_separator = grouping_default
+
+    return NumberFormat(
+        decimal_places=int(raw_number_format.get("decimal_places", 1)),
+        group_thousands=bool(raw_number_format.get("group_thousands", True)),
+        decimal_separator=decimal_separator,
+        grouping_separator=grouping_separator,
+    )
 
 
 def unit_suffix(unit: str, *, at: str) -> str:

@@ -230,7 +230,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Extend the SDK boundary scan to cover `collect/factfold.py` and `collect/numeric.py`, and assert the scan fails on a directory that yields zero source files
     - _Requirements: 7.7, 7.9, 7.11_
 
-  - [ ] 4.6 Property test — a fact round-trips through the archive
+  - [x] 4.6 Property test — a fact round-trips through the archive
     - **Property 1: A fact round-trips through the archive**, identifier `facts_archive_round_trip`, in `agent/tests/property/test_facts_property.py`
     - **Validates: Requirements 4.1, 4.5, 4.6, 4.11, 4.12, 7.3, 7.7, 7.8, 7.11**
     - `hypothesis` over 1–40 resources across 1–7 declared types; 0–12 facts each drawn from that type's declaration, keys including a pair differing only by case and one non-ASCII key; text values including `Succeeded`, `Standard_D4s_v3`, `10.0.0.0/16` and a 512-character value; **numeric values as `Decimal` carrying at least one non-zero fractional digit**; 1–8 archived objects per source across the `inventory` and `facts` kinds; mutations from {none, alter one value, drop one object, corrupt one object's gzip, replace one value with an unparseable string}
@@ -278,7 +278,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Raise `COMPILE_FAILED` with `fact_source_missing` naming the resource id and the key where a `Fact` reaches the compiler with no `source` or no `collected_at`, writing no report artifact
     - _Requirements: 6.1, 6.5, 6.6, 6.7, 6.10, 6.11, 6.15_
 
-  - [ ] 5.6 Property test — a text fact's check catches what numeric masking cannot
+  - [x] 5.6 Property test — a text fact's check catches what numeric masking cannot
     - **Property 6: A text fact's check catches what numeric masking cannot**, identifier `text_fact_exact_string`, in `agent/tests/property/test_text_fact_property.py`
     - **Validates: Requirements 6.2, 6.4, 6.5, 6.6, 6.8, 6.10, 6.13**
     - `hypothesis` over 1–60 text facts per document across 1–8 data tables, values 1–512 characters from three pools — digit-free words, identifier-shaped tokens matching `[A-Za-z_][\w.\-]*[0-9][\w.\-]*`, and dotted or slashed addresses; mutations from {none, one character substituted, one deleted, one inserted, the whole value replaced, the rendered text removed, the table's caption altered}; and documents including one text fact emitted through the layout-table path
@@ -317,7 +317,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Resolve every id in the run's **pinned** template version's language, applying no later edit of the template's language to an archived run; a pinned `schema_version` 1 version carries no `identity.language`, so resolve in `en` and report no error code for that absent field
     - _Requirements: 15.3, 15.7, 15.8, 15.11, 15.12_
 
-  - [ ] 6.4 The Python literal guard, and the guard that guards itself
+  - [x] 6.4 The Python literal guard, and the guard that guards itself
     - **Depends on task 6.3, and runs in a later wave than it.** A guard is only writable once the
       thing it guards exists: measured against the tree as it stands before 6.3, this guard reports
       **29 offenders across 7 files** — `compile/blocks/base.py` 6 (`EMPTY_SCOPE_TEXT`,
@@ -334,9 +334,16 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Scanned: `agent/.../render/**` **and** `agent/.../compile/blocks/**`. That extension is the design's recorded **narrowing** of criterion 15.6 and it is additive: scanning only the stated set would leave `EMPTY_SCOPE_TEXT` and every `Column(header=…)` untouched by the guard that exists to catch them — record that in the module docstring
     - **The guard guards itself**: additionally assert that every dataclass in `compile/ast.py` carrying a `str` field named `text`, `header`, `caption`, `label` or `title` appears in the declared emitting set, so a new emitting site added without registering it fails the suite
     - Invoke it from `agent/Dockerfile` beside `--assert-build`, because `.dockerignore` excludes `tests/` and a guard that only ran in the suite could not stop an image carrying English copy in an Indonesian document
+    - **The build-time invocation moved to task 6.6.** Copying the test file into the image needs a second `.dockerignore` re-inclusion, and `tests/test_image_build.py` asserts exactly one — naming exactly the metric-definitions evidence, because anything broader ships the suite into the image. The guard itself is complete and passing as a suite test; 6.6 carries the move of its scan into a `src/` module with an `--assert-build` entry point, which is how the two neighbouring build checks already work and which satisfies both guards
     - _Requirements: 15.2, 15.6_
 
   - [ ] 6.5 The TypeScript literal guard
+    - **Resolved by task 6.7, which now declares that migration.** The scoping decision this
+      note left open was taken as a sibling task rather than by widening 6.3, because 6.3 is
+      complete and shipped. **This task runs after 6.7**, not merely in a later wave: with the
+      interface's copy unmigrated the guard cannot pass in any wave, and with it migrated the
+      guard is what keeps it migrated. The measurement below is retained as the record of what
+      6.7 inherited.
     - **Depends on an app-side migration that no task currently declares.** Task 6.3 migrates the
       agent's four places; its title says "the four places the literals actually are" and all four
       are under `agent/`. Nothing in this plan migrates `app/components/reports/**`, yet task 6.2
@@ -357,6 +364,24 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Do not flag `className`, `data-*`, element or attribute names. An offender is any flagged literal that is not a declared string id
     - Record in the module docstring what neither guard can do: a literal reaching a text position through a variable defined in another module escapes both. It is a lint with a closure property, not a proof — the closure being that within the scanned modules the catalog resolver is the only way to obtain a string for those positions, and that task 6.4's self-guard stops the declared site set from silently shrinking
     - _Requirements: 15.6, 15.9_
+
+  - [ ] 6.6 Finish the agent-side migration: the three literals no task reaches, and the parameter the catalog lacks
+    - **Recorded from measurement, not prediction.** Task 6.4's guard landed and reported six offenders on its first run. Three were constant definitions whose call sites task 6.3 had migrated, left behind with no remaining reference — deleted with 6.4 rather than allowlisted. The other three are live text-emitting sites and **no task in this plan migrates them**: `render/charts.py`'s `EMPTY_CHART_TEXT` (drawn into the empty-chart image), `render/charts.py`'s `OTHER_SERIES_LABEL`, and `render/docx.py`'s `PREVIEW_NOTICE_TEXT`. Task 6.4 predicted the last one by name and task 6.3's four places never included `render/docx.py`, so it has been an unowned offender since the guard was specified
+    - **`OTHER_SERIES_LABEL` needs a capability the catalog does not have.** It is used as `f"{OTHER_SERIES_LABEL} ({len(remainder)} series)"` — copy composed with a count. `Messages.text(string_id) -> str` performs a lookup and nothing else, so no id can express it, and concatenating two ids would put word order and pluralization beyond the catalog's reach in a language that does not follow `Other (3 series)`. So `Messages.text` gains **optional keyword parameters** applied to the resolved string, in **both** halves, with the placeholder set of the resolved message asserted to equal the parameter set exactly — a message carrying a placeholder no caller supplies, or a caller supplying a parameter the message does not carry, is `RENDER_FAILED` naming the id and both sets rather than a silently partial substitution
+    - **The threading is the work, and it is not small.** None of the three enclosing functions carries a `Messages`: `plotted_series(node)` has **eighteen call sites** (seven in `agent/src/`, including `report_pipeline.py`, and eleven in `tests/`), `_draw(axes, node, series_set, *, theme)` is called only from `render_chart` which already has one, and `_emit_preview_notice(document, emitter)` has none because `_Emitter` does not carry one either. Thread it rather than reaching for a module-level default
+    - **Decide whether `messages` stays optional while you are there.** `companion_table` and `render_chart` currently declare `messages: Messages | None = None`, so a caller that forgets one renders **English** with no failure — which is the exact outcome criterion 15.11 exists to prevent, reachable today by omission. Either make it required or state in the module why a default is safe; do not leave the question implicit
+    - **Invoke the guard at build time, which task 6.4 could not.** 6.4 requires the literal guard to run in the image "beside `--assert-build`", and the attempt copied `tests/test_message_literals.py` into the image behind a second `.dockerignore` re-inclusion. That contradicts an existing guard: `tests/test_image_build.py` asserts **exactly one** re-inclusion, naming exactly the metric-definitions evidence, because "anything broader ships the test suite into the image". Both intents are right and they collide, so the attempt was reverted rather than either guard loosened
+    - The resolution is the pattern the two neighbouring build checks already use — `python -m reporting_agent.render.themes --assert-build` and `python -m reporting_agent.catalog.evidence --assert-build` are **modules under `src/`**, not test files copied in. Move the AST scan into the package with an `--assert-build` entry point, leave `tests/test_message_literals.py` as a thin wrapper importing it, and invoke the module from the Dockerfile. The `.dockerignore` then needs no second re-inclusion and both guards hold. Where the module lives is a `structure.md` question and is why this was not decided inside 6.4
+    - Three new ids in both catalogs, and `app/test/mirror.static.test.ts` (task 16.2) is what will keep them in step once it exists
+    - _Requirements: 15.2, 15.3, 15.6, 15.11, 15.12_
+
+  - [ ] 6.7 Migrate the interface's copy, which task 6.5 needs and nothing declares
+    - **This is the scoping decision task 6.5 records rather than closes.** 6.5 writes a TypeScript literal guard over `app/components/reports/**` and, measured against the tree, that guard reports **91 offenders across 11 of 15 files** — `verification-panel.tsx` 38, `run-form.tsx` 13, `paper-render.tsx` 9, `run-list.tsx` 8, `snapshot-provenance.tsx` 8, `run-failure-notice.tsx` 4, `activity-timeline.tsx` 3, and 2 each in `download-card.tsx`, `figure-provenance.tsx`, `gap-list.tsx` and `run-progress.tsx`. Task 6.3 migrated the agent's four places and its title says so; nothing migrates the app's. 6.5 therefore cannot pass in **any** wave until this lands, which is why moving it later was recorded as necessary and not sufficient
+    - **Taken as a sibling task rather than by widening 6.3**, because 6.3 is complete and shipped: reopening a landed task to absorb 91 new call sites would make "done" mean something different after the fact, and the agent's document copy and the interface's chrome are answerable to different reviewers anyway
+    - The catalog declares **16 `ui.` ids** today, so this needs new ids as well as new call sites. Every id added here carries the `ui.` prefix, because task 6.2's rule is that the prefix says which half resolves an id, and these are resolved by the app
+    - Scope is `app/components/reports/**` only. The template builder's own copy is **not** in scope and is not an oversight: a consultant authoring a template works in their own interface language, while these surfaces present a **report**, whose language the pinned definition declares
+    - Where a report surface presents a figure, it continues to emit the ledger entry's `formatted` string verbatim — this task moves **chrome**, never a value
+    - _Requirements: 15.6, 15.9, 15.11_
 
 - [ ] 7. `schema_version` 2 in both halves, without rewriting an immutable row
   - [x] 7.1 Declare the version-conditional key sets in `app/lib/templates/definition.ts`
@@ -404,7 +429,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 16.2, 16.3, 16.10, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
 - [ ] 8. Front matter, the table of contents and the per-run values
-  - [ ] 8.1 Implement `render/front_matter.py`
+  - [x] 8.1 Implement `render/front_matter.py`
     - `emit_front_matter(document, *, front_matter, run, messages, cursor, ledger)` emitting **cover, then document control, then the table of contents, in that order, before every content block**. Not composable, not reorderable, no block accepted inside it
     - The cover carries the logo, the report title, the customer name, the period and the contact block. Where the definition's cover-page flag is false, emit **no cover content and no leading blank page**, retain the cover configuration in the definition, and emit the document control page and the table of contents unchanged — disabling the cover does not disable the front matter
     - The document control page carries the document title, the customer, the document name, the document number, the approvers table, the revision history table, the distribution list and the confidentiality notice, every fixed string resolved by id through `messages`
@@ -439,7 +464,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 13.1, 13.2, 13.3, 13.9, 13.16_
 
 - [ ] 9. The declared number format, end to end through render and verify
-  - [ ] 9.1 Supply the declared separators to the Formatter and the fidelity gate
+  - [x] 9.1 Supply the declared separators to the Formatter and the fidelity gate
     - `agent/.../compile/format.py`: build `NumberFormat` from the **pinned** definition's `design.number_format`, so this task supplies the declared values rather than introducing the capability — the structure already accepts both separators and defaults them to `.` and `,`
     - Grouping: where `group_thousands` is true, insert the declared `grouping_separator` between each group of three digits of the integer part counted **rightward from the decimal separator**, insert none where that integer part carries three digits or fewer, and insert none in the fractional part; where it is false, insert none
     - `agent/.../verify/pdf.py`: bound a located occurrence with the two separators the **pinned** definition declares — the module already reads both from the number format rather than assuming a period — and count an occurrence written with any other separator as **no** located occurrence for that ledger entry, so `pdf_figure_missing` is recorded per entry whose declared-format string has none
@@ -488,7 +513,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Integration test against real Postgres: the lateral join returning each run's latest verification across runs carrying one, several and none
     - _Requirements: 18.4, 18.5, 18.6_
 
-  - [ ] 11.2 Implement `compile/historical.py` — the pure selector
+  - [x] 11.2 Implement `compile/historical.py` — the pure selector
     - `PriorRunCandidate(run_id, period_start, period_end, timezone, status, verification_status, verification_created_at, verification_id, snapshot_sha256)`, `EXCLUSION_REASONS` over exactly the six declared values, `Exclusion(run_id, reason)` and `Selection(selected, exclusions)` with `selected` ordered by period start **ascending**
     - `select(candidates, *, compiling_period_start, lookback, metric, statistic, compiling_fidelity_tier, snapshot_for)` — **pure**: no clock, no network, no object store, with `snapshot_for` supplied and consulted only for a candidate the first four filters admitted
     - Filter order, declared because "exactly one typed reason per excluded candidate" needs a precedence and because the order bounds the snapshot loads: `status_not_completed` → `verification_not_passed` → `period_overlapping` → `beyond_lookback` → `metric_absent_in_snapshot` → `fidelity_tier_differs`. Steps 5 and 6 are last because they are the only two that read a snapshot, so at most `lookback` snapshots are ever loaded
@@ -565,7 +590,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Kills: a picker that stores the selected resource's id alongside its type; one storing a subscription-qualified group path; an endpoint returning full resource ids; one that prunes a stored value the current inventory does not list, which silently edits a rule on load
     - _Requirements: 9.5, 9.6, 9.7, 10.1, 10.2, 10.3, 10.4, 10.5, 10.6, 10.7, 10.8, 10.9, 10.10, 10.11, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
-  - [ ] 12.5 Build the metric picker over every catalog type
+  - [x] 12.5 Build the metric picker over every catalog type
     - `app/components/templates/metric-picker.tsx` extending the selection grid `step-metrics.tsx` presents today: one group per resource type the Metric_Catalog declares, sourced through the existing `GET /api/templates/catalog` and never from a list held in the app
     - **Two partitions in a fixed order** — first the groups for the resource types the definition's scope declares, then the groups for **every other type the catalog declares, present rather than hidden**, because a block `scope_override` may narrow to a type the template default does not name; and exactly **one** partition carrying every group where the scope declares no resource type. Groups ordered by resource type name and options by option name, both ascending in code-point order, so two renders of one catalog and one definition present one identical order
     - Present per option whether the catalog declares its statistics exact or estimated, the fractional-digit count it declares, and for a percentile the estimator label it declares; the `Template_Validator`'s existing persistence of the estimator label and fidelity tier for a percentile entry is unchanged
@@ -902,14 +927,36 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 6, "tasks": ["4.3", "5.2", "7.3", "7.6", "12.2"] },
     { "id": 7, "tasks": ["4.4", "5.3", "5.4", "7.5", "12.3"] },
     { "id": 8, "tasks": ["4.5", "5.5", "6.3", "7.4", "11.1", "12.4"] },
-    { "id": 9, "tasks": ["4.6", "5.6", "6.4", "6.5", "8.1", "9.1", "11.2", "12.5"] },
-    { "id": 10, "tasks": ["8.2", "9.2", "10.1", "11.3", "13.1"] },
-    { "id": 11, "tasks": ["8.3", "10.2", "11.4", "12.6", "12.7", "13.2", "13.4"] },
-    { "id": 12, "tasks": ["8.4", "11.5", "13.3", "13.5", "13.6"] },
-    { "id": 13, "tasks": ["15.1", "15.2", "15.3", "15.4", "15.5", "15.7", "15.8"] },
-    { "id": 14, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
-    { "id": 15, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
-    { "id": 16, "tasks": ["16.4"] }
+    { "id": 9, "tasks": ["4.6", "5.6", "6.4", "8.1", "9.1", "11.2", "12.5"] },
+    { "id": 10, "tasks": ["6.6"] },
+    { "id": 11, "tasks": ["8.2", "9.2", "10.1", "11.3", "13.1"] },
+    { "id": 12, "tasks": ["8.3", "10.2", "11.4", "12.6", "12.7", "13.2", "13.4"] },
+    { "id": 13, "tasks": ["8.4", "11.5", "13.3", "13.5", "13.6"] },
+    { "id": 14, "tasks": ["6.7"] },
+    { "id": 15, "tasks": ["6.5", "15.1", "15.2", "15.3", "15.4", "15.5", "15.7", "15.8"] },
+    { "id": 16, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
+    { "id": 17, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
+    { "id": 18, "tasks": ["16.4"] }
   ]
 }
 ```
+
+### Re-waving for tasks 6.6 and 6.7
+
+Recorded because the graph above changed after wave 9 ran, and the reason is the graph's own
+rule about write-disjointness rather than a preference:
+
+- **6.5 left wave 9.** It could not run there and never could have: its guard cannot pass
+  until 6.7 migrates the interface's copy. It now sits with the negative tests, immediately
+  after 6.7.
+- **6.6 takes a wave of its own, immediately after 9,** because task 6.4's guard is wired into
+  `agent/Dockerfile` beside `--assert-build`. While its three remaining offenders stand, the
+  image build fails — so this is the one piece of follow-up that cannot wait behind five
+  waves. It is alone in its wave because it writes `render/charts.py` and `render/docx.py`,
+  which collide with 10.1 and 8.2 in the wave that used to be 10.
+- **6.7 takes a wave of its own, after the report-page tasks,** because it rewrites copy across
+  `app/components/reports/**` and 13.1, 13.2, 13.4, 13.5 and 13.6 all write files in that
+  tree. Running it earlier would put two agents in the same components; running it later means
+  it migrates the copy those tasks leave behind, once, rather than racing them.
+- Every other wave is unchanged in membership and shifted in number only.
+

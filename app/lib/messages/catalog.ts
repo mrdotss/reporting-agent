@@ -142,6 +142,42 @@ export const MESSAGE_CATALOG = {
     en: "Contents",
     id: "Isi",
   },
+  "doc.front_matter.document_name": {
+    en: "Document name",
+    id: "Nama dokumen",
+  },
+  "doc.front_matter.document_number": {
+    en: "Document number",
+    id: "Nomor dokumen",
+  },
+  "doc.front_matter.confidentiality": {
+    en: "Confidentiality notice",
+    id: "Pemberitahuan kerahasiaan",
+  },
+  "doc.front_matter.distribution": {
+    en: "Distribution",
+    id: "Distribusi",
+  },
+  "doc.front_matter.revision_history": {
+    en: "Revision history",
+    id: "Riwayat revisi",
+  },
+  "doc.front_matter.approver_role": {
+    en: "Role",
+    id: "Peran",
+  },
+  "doc.front_matter.approver_company": {
+    en: "Company",
+    id: "Perusahaan",
+  },
+  "doc.front_matter.approver_name": {
+    en: "Name",
+    id: "Nama",
+  },
+  "doc.front_matter.approver_signature": {
+    en: "Signature",
+    id: "Tanda tangan",
+  },
   "doc.gap.archive_write_failed": {
     en: "A raw response could not be archived, so this run cannot be replayed in full.",
     id: "Sebuah respons mentah gagal diarsipkan, sehingga proses ini tidak dapat diputar ulang secara utuh.",

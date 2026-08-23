@@ -131,9 +131,17 @@ SPEC_PROPERTIES: dict[int, PropertyDeclaration] = {
 # number is within this spec's range and that every declared module exists, rather than
 # asserting the full set, because a spec in progress legitimately has fewer.
 BREADTH_PROPERTIES: dict[int, PropertyDeclaration] = {
+    1: PropertyDeclaration(
+        "A fact round-trips through the archive",
+        ("test_facts_property.py",),
+    ),
     5: PropertyDeclaration(
         "Every catalog entry is evidenced",
         ("test_catalog_evidence_property.py",),
+    ),
+    6: PropertyDeclaration(
+        "A text fact's check catches what numeric masking cannot",
+        ("test_text_fact_property.py",),
     ),
 }
 

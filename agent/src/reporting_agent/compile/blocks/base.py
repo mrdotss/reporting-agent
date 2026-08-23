@@ -63,7 +63,7 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.estimators import COMPARE_ESTIMATORS, DECLARED_ESTIMATORS
 from reporting_agent.compile.figures import BlockCursor, FigureLedger
-from reporting_agent.compile.format import NumberFormat
+from reporting_agent.compile.format import NumberFormat, number_format_from_definition
 from reporting_agent.compile.messages import Messages, load_messages
 from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import (
@@ -288,16 +288,11 @@ class DesignSettings:
         return table_style_name(self.table_style)
 
     @classmethod
-    def from_plain(cls, raw: object) -> DesignSettings:
+    def from_plain(cls, raw: object, *, language: str | None = None) -> DesignSettings:
         if not isinstance(raw, Mapping):
             return cls()
         number_format_raw = raw.get("number_format")
-        number_format = NumberFormat()
-        if isinstance(number_format_raw, Mapping):
-            number_format = NumberFormat(
-                decimal_places=int(number_format_raw.get("decimal_places", 1)),
-                group_thousands=bool(number_format_raw.get("group_thousands", True)),
-            )
+        number_format = number_format_from_definition(number_format_raw, language=language)
         logo = raw.get("logo")
         return cls(
             preset=str(raw.get("preset", "editorial")),

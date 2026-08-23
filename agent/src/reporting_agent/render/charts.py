@@ -100,9 +100,12 @@ SERIES_COLUMN_KEY: Final[str] = "series"
 X_COLUMN_KEY: Final[str] = "x"
 VALUE_COLUMN_KEY: Final[str] = "value"
 
-SERIES_COLUMN_HEADER: Final[str] = "Series"
-X_COLUMN_HEADER: Final[str] = "Point"
-VALUE_COLUMN_HEADER: Final[str] = "Value"
+# The three companion-table header constants that stood here — `SERIES_COLUMN_HEADER`,
+# `X_COLUMN_HEADER` and `VALUE_COLUMN_HEADER` — were removed when task 6.3 migrated their
+# call sites to `messages.text(...)`. Their definitions survived the migration with no
+# remaining reference, which `tests/test_message_literals.py` reported as English copy at a
+# text-emitting site on its first run. Deleted rather than allowlisted: the guard exists
+# precisely so an unused literal cannot sit here looking load-bearing.
 
 OTHER_SERIES_KEY: Final[str] = "__other__"
 OTHER_SERIES_LABEL: Final[str] = "Other"

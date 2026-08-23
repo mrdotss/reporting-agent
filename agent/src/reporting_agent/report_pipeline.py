@@ -100,6 +100,10 @@ from reporting_agent.collect.pipeline import (
     resolve_run_plan,
     run_collection,
 )
+from reporting_agent.compile.historical import (
+    PriorRunCandidate,
+    Selection,
+)
 from reporting_agent.errors import (
     AgentError,
     CompileFailedError,
@@ -130,6 +134,7 @@ __all__ = [
     "ReportOutcome",
     "requested_metric_union",
     "run_generate_report",
+    "select_historical_runs",
 ]
 
 logger = logging.getLogger(__name__)
@@ -409,6 +414,148 @@ def _derived_source_metrics(
             continue
         return tuple(source.name for source in derived.sources if source.kind == "metric")
     return ()
+
+
+# --------------------------------------------------------------------------- #
+# Historical-trend prior-run selection (Req 18.4–18.15)
+# --------------------------------------------------------------------------- #
+
+
+def _parse_historical_candidates(
+    payload: Mapping[str, PlainData],
+) -> list[PriorRunCandidate]:
+    """Parse `historical_candidates` from the invoke command payload.
+
+    Returns an empty list when the field is absent — the normal case for a run whose
+    pinned definition declares no `historical_trend` block, or for a snapshot-only run.
+    """
+    from reporting_agent.compile.historical import PriorRunCandidate
+
+    raw = payload.get("historical_candidates")
+    if not isinstance(raw, (list, tuple)):
+        return []
+    candidates: list[PriorRunCandidate] = []
+    for entry in raw:
+        if not isinstance(entry, Mapping):
+            continue
+        run_id = entry.get("id")
+        if not isinstance(run_id, str) or not run_id:
+            continue
+        candidates.append(
+            PriorRunCandidate(
+                run_id=run_id,
+                period_start=str(entry.get("period_start") or ""),
+                period_end=str(entry.get("period_end") or ""),
+                timezone=str(entry.get("timezone") or ""),
+                status=str(entry.get("status") or ""),
+                verification_status=(
+                    str(entry["verification_status"])
+                    if entry.get("verification_status") is not None
+                    else None
+                ),
+                verification_created_at=(
+                    str(entry["verification_created_at"])
+                    if entry.get("verification_created_at") is not None
+                    else None
+                ),
+                verification_id=(
+                    str(entry["verification_id"])
+                    if entry.get("verification_id") is not None
+                    else None
+                ),
+                snapshot_sha256=(
+                    str(entry["verification_snapshot_sha256"])
+                    if entry.get("verification_snapshot_sha256") is not None
+                    else None
+                ),
+            )
+        )
+    return candidates
+
+
+async def _load_historical_snapshots(
+    candidates: list[PriorRunCandidate],
+    *,
+    store: ObjectStore,
+    actor_id: str,
+    lookback: int,
+) -> Callable[[str], Mapping[str, object] | None]:
+    """Load at most ``lookback`` prior snapshots and return a ``snapshot_for`` callable.
+
+    Follows the same pattern as ``verify/replay.py``: the caller fetches and the pure
+    module folds. An unreadable snapshot returns ``None``, which the selector treats as
+    ``metric_absent_in_snapshot``.
+    """
+    # Only load snapshots for candidates that would pass the first two filters —
+    # we know their status and verification without a snapshot.
+    eligible_ids: list[str] = []
+    for c in candidates:
+        if c.status != "completed":
+            continue
+        if c.verification_status != "pass":
+            continue
+        eligible_ids.append(c.run_id)
+        if len(eligible_ids) >= lookback:
+            break
+
+    loaded: dict[str, Mapping[str, object]] = {}
+    for run_id in eligible_ids:
+        key = _snapshot_key(actor_id, run_id)
+        try:
+            snapshot = await store.get_json(key)
+            if isinstance(snapshot, Mapping):
+                loaded[run_id] = snapshot
+        except Exception as exc:
+            logger.warning(
+                "prior snapshot for run %s could not be loaded (%s); the selector will "
+                "treat this metric as absent",
+                run_id,
+                type(exc).__name__,
+            )
+
+    def snapshot_for(run_id: str) -> Mapping[str, object] | None:
+        return loaded.get(run_id)
+
+    return snapshot_for
+
+
+async def select_historical_runs(
+    payload: Mapping[str, PlainData],
+    *,
+    store: ObjectStore,
+    actor_id: str,
+    lookback: int,
+    metric: str,
+    statistic: str,
+    compiling_fidelity_tier: str,
+    compiling_period_start: str,
+) -> Selection:
+    """Parse candidates from the payload, load snapshots, and run the pure selector.
+
+    This is the pipeline's integration of ``compile/historical.py``'s pure ``select()``.
+    The caller (the future ``historical_trend`` block compiler, task 11.3) invokes this
+    rather than assembling the pieces, so the pattern of "caller fetches, pure module
+    folds" is encapsulated here alongside the snapshot-only verification path.
+    """
+    from reporting_agent.compile.historical import select
+
+    candidates = _parse_historical_candidates(payload)
+    if not candidates:
+        return Selection(selected=(), exclusions=())
+
+    snapshot_for = await _load_historical_snapshots(
+        candidates, store=store, actor_id=actor_id, lookback=lookback
+    )
+
+    return select(
+        candidates,
+        compiling_period_start=compiling_period_start,
+        lookback=lookback,
+        metric=metric,
+        statistic=statistic,
+        compiling_fidelity_tier=compiling_fidelity_tier,
+        snapshot_for=snapshot_for,
+    )
 
 
 # --------------------------------------------------------------------------- #

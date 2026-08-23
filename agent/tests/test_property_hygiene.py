@@ -170,12 +170,25 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # disagrees with the catalog in both directions at once. Both on the fixture carrying
     # block scope overrides, so the scope union is assembled from more than one place.
     "test_metric_narrowing_property.py": 2,
+    # breadth Property 1. Six declared examples across four functions:
+    # - test_fact_round_trips_through_archive: the four mandatory numerics (0.1, 462.81,
+    #   0.30000000000000004, 17-sig-digit) plus the storage-account-no-reservation-key case;
+    # - test_int_float_decimal_str_yield_equal_decimal: the numerics again;
+    # - test_zero_facts_emits_empty_array: resource with zero facts → "facts": [];
+    # - test_fold_count_one_per_object: storage account with zero reservation gaps.
+    "test_facts_property.py": 6,
+    # breadth Property 6. Twenty-four: the seven the task declares — `Succeeded`,
+    # `Failed`, `Standard_D4s_v3`, `10.0.0.4`, `Windows Server 2022`, `10.0.0.0/16` and
+    # the `Succeeded` -> `Failed` mutation — plus the per-pool and per-mutation cases the
+    # three value pools and seven mutation kinds need to be reached deterministically
+    # rather than by a lucky draw.
+    "test_text_fact_property.py": 24,
 }
 
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 114
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 144
 
 
 # --------------------------------------------------------------------------- #

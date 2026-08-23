@@ -60,16 +60,16 @@ from reporting_agent.compile.definition import (
     FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
     resolved_schema_version,
 )
-from reporting_agent.compile.messages import Messages, load_messages
-from reporting_agent.messages import DEFAULT_LANGUAGE
 from reporting_agent.compile.figures import (
     BlockCursor,
     FigureLedger,
     assert_ledger_matches_tree,
 )
+from reporting_agent.compile.messages import Messages, load_messages
 from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotView
 from reporting_agent.errors import CompileFailedError
+from reporting_agent.messages import DEFAULT_LANGUAGE
 
 __all__ = [
     "BLOCK_COMPILERS",
@@ -218,7 +218,6 @@ def compile_document(
     """
     schema_version = resolved_schema_version(definition.get("schema_version"))
     ledger = FigureLedger()
-    design = DesignSettings.from_plain(definition.get("design"))
     identity = definition.get("identity")
     report_title = ""
     if isinstance(identity, Mapping):
@@ -232,6 +231,10 @@ def compile_document(
         declared_lang = identity.get("language")
         if isinstance(declared_lang, str) and declared_lang in ("en", "id"):
             language = declared_lang
+
+    # Req 16.4 — build NumberFormat from the pinned definition's design.number_format,
+    # supplying the declared separators resolved from the definition's language.
+    design = DesignSettings.from_plain(definition.get("design"), language=language)
     messages = load_messages(language)
 
     period_raw = definition.get("period")
