@@ -100,6 +100,7 @@ from reporting_agent.collect.pipeline import (
     resolve_run_plan,
     run_collection,
 )
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.historical import (
     PriorRunCandidate,
     Selection,
@@ -579,12 +580,24 @@ async def _document_phases(
 ) -> AsyncIterator[Event]:
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.messages import load_messages
     from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.messages import DEFAULT_LANGUAGE
     from reporting_agent.render.docx import render_document
     from reporting_agent.render.html import emit_html
     from reporting_agent.render.pdf import convert_to_pdf
 
-    design = DesignSettings.from_plain(definition.get("design"))
+    # Resolve the run's pinned language from the definition — the same path
+    # compile_document uses, so the rendered document and the compiled one agree.
+    _identity = definition.get("identity")
+    _language = DEFAULT_LANGUAGE
+    if isinstance(_identity, Mapping):
+        _declared_lang = _identity.get("language")
+        if isinstance(_declared_lang, str) and _declared_lang in ("en", "id"):
+            _language = _declared_lang
+    messages = load_messages(_language)
+
+    design = DesignSettings.from_plain(definition.get("design"), language=_language)
     view = build_snapshot_view(collected.document)
     block_count = _block_count(definition)
 
@@ -611,7 +624,7 @@ async def _document_phases(
         )
     yield steps.end(compile_step["id"])
 
-    for event in _chart_events(compiled):
+    for event in _chart_events(compiled, messages=messages):
         yield event
     for event in _delta_events(compiled):
         yield event
@@ -625,7 +638,7 @@ async def _document_phases(
     )
     yield render_step
     rendered = await asyncio.to_thread(
-        render_document, compiled.document, ledger=compiled.ledger, design=design
+        render_document, compiled.document, ledger=compiled.ledger, design=design, messages=messages
     )
     converted = await asyncio.to_thread(convert_to_pdf, rendered.docx_bytes)
     yield steps.end(render_step["id"])
@@ -646,6 +659,7 @@ async def _document_phases(
         converted=converted,
         store=store,
         now=now,
+        messages=messages,
     )
     yield steps.end(verify_step["id"])
 
@@ -750,6 +764,7 @@ async def _verify(
     converted: Any,
     store: ObjectStore,
     now: Callable[[], datetime],
+    messages: Messages,
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -817,6 +832,7 @@ async def _verify(
             requery=None,
             drift_seed=collected.snapshot_id,
             catalog_scales=None,
+            messages=messages,
         )
     )
 
@@ -892,7 +908,7 @@ def _verification_event(result: Mapping[str, Any]) -> Event:
     return {"type": "verification", **result}
 
 
-def _chart_events(compiled: Any) -> list[Event]:
+def _chart_events(compiled: Any, *, messages: Messages) -> list[Event]:
     """One `chart` per chart node (Req 42.4).
 
     `encoding` comes from the node's own declaration rather than from the series count. The
@@ -912,7 +928,7 @@ def _chart_events(compiled: Any) -> list[Event]:
                 "encoding": node.encoding,
                 "title": node.title,
                 "unit": node.unit,
-                "data_hash": chart_data_hash(node),
+                "data_hash": chart_data_hash(node, messages=messages),
                 "series": [
                     {
                         "key": series.key,
@@ -926,7 +942,7 @@ def _chart_events(compiled: Any) -> list[Event]:
                             for point in series.points
                         ],
                     }
-                    for series in plotted_series(node)
+                    for series in plotted_series(node, messages=messages)
                 ],
             }
         )
@@ -1163,9 +1179,19 @@ async def _verify_stored(
     from docx import Document as open_docx
 
     from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.compile.messages import load_messages as _load_msgs
+    from reporting_agent.messages import DEFAULT_LANGUAGE
     from reporting_agent.render.pdf import digest_of
     from reporting_agent.verify.replay import plan_from_snapshot
     from reporting_agent.verify.verifier import VerifyInputs, verify
+
+    _id = definition.get("identity")
+    _lang = DEFAULT_LANGUAGE
+    if isinstance(_id, Mapping):
+        _dl = _id.get("language")
+        if isinstance(_dl, str) and _dl in ("en", "id"):
+            _lang = _dl
+    _msgs = _load_msgs(_lang)
 
     archived = await _fetch_archive(store, actor_id=actor_id, run_id=run_id)
     replay_plan = None
@@ -1201,6 +1227,7 @@ async def _verify_stored(
             replay_plan=replay_plan,
             requery=None,
             drift_seed=str(snapshot.get("snapshot_id") or ""),
+            messages=_msgs,
         )
     )
 

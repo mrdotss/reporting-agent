@@ -163,6 +163,19 @@ RUN python -m reporting_agent.render.themes --assert-build
 # disagreement in one run, so one fix pass clears the build.
 RUN python -m reporting_agent.catalog.evidence --assert-build
 
+# Fail the BUILD if any English literal reaches a text-emitting position in the render or
+# compile/blocks trees (Req 15.2, 15.6).
+#
+# Without this a string id that a developer forgot to resolve — or one they resolved but
+# then replaced with a hardcoded English literal — ships into the image and produces an
+# Indonesian document containing English copy. The verifier cannot catch it because the
+# string is not a figure, and the mirror guard covers id-set equality but not call-site
+# compliance. This is the remaining gate.
+#
+# Same shape as the three guards above: a module under src/ with an --assert-build entry
+# point, so .dockerignore needs no second re-inclusion.
+RUN python -m reporting_agent.compile.literals --assert-build
+
 # --- Pre-warm the LibreOffice user profile (Req 23.5) -------------------------
 #
 # A cold profile makes the first conversion of a container's life slow and

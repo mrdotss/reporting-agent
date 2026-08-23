@@ -237,11 +237,22 @@ def derive_allowlist(
     """
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.messages import load_messages
     from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.messages import DEFAULT_LANGUAGE
     from reporting_agent.render.docx import render_document
     from reporting_agent.verify.tokens import paragraph_texts
 
     try:
+        # Resolve language the same way the pipeline does.
+        _identity = definition.get("identity")
+        _language = DEFAULT_LANGUAGE
+        if isinstance(_identity, Mapping):
+            _declared_lang = _identity.get("language")
+            if isinstance(_declared_lang, str) and _declared_lang in ("en", "id"):
+                _language = _declared_lang
+        messages = load_messages(_language)
+
         view = build_snapshot_view(null_context_snapshot(snapshot))
         compiled = compile_document(
             definition,
@@ -257,7 +268,8 @@ def derive_allowlist(
         outcome = render_document(
             compiled.document,
             ledger=compiled.ledger,
-            design=DesignSettings.from_plain(definition.get("design")),
+            design=DesignSettings.from_plain(definition.get("design"), language=_language),
+            messages=messages,
             preview=False,
         )
     except VerificationFailedError:

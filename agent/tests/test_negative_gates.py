@@ -42,6 +42,7 @@ from reporting_agent.verify.findings import (
     FINDING_TABLE_ROWS_ABSENT,
     FINDING_UNMATCHED_PROSE_TOKEN,
 )
+import messages_factory as mf
 
 # Two VMs, so a data table carries two data rows. Req 44.3's transposition swaps columns
 # "across every data row", and a one-row table cannot distinguish that from a single swap.

@@ -28,6 +28,7 @@ from reporting_agent.compile.format import (
     number_format_from_definition,
 )
 from reporting_agent.compile.snapshot_view import build_snapshot_view
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.charts import companion_table
 from reporting_agent.verify.pdf import check_pdf, is_located
 
@@ -427,7 +428,7 @@ class TestChartsEmitFormattedVerbatim:
             pytest.skip("no chart in compiled document")
 
         chart_node = charts[0]
-        table = companion_table(chart_node, "Table Grid")
+        table = companion_table(chart_node, "Table Grid", messages=load_messages("en"))
 
         # Every FigureCell in the table must carry the figure's formatted string
         for row in table.rows:

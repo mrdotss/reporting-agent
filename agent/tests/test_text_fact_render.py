@@ -59,6 +59,7 @@ from reporting_agent.render import anchors as A
 from reporting_agent.render import docx as D
 from reporting_agent.render import html as H
 from reporting_agent.render.themes import FIGURE_CHARACTER_STYLE, load_theme
+import messages_factory as mf
 
 W: Final[str] = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -180,7 +181,8 @@ def one_fact_table(
 
 def render(table: Table, ledger: FigureLedger) -> D.RenderOutcome:
     return D.render_document(
-        Document(blocks=(table,)), ledger=ledger, design=DESIGN
+        Document(blocks=(table,)), ledger=ledger, design=DESIGN,
+    messages=mf.EN,
     )
 
 
@@ -400,6 +402,7 @@ def test_a_fact_emitted_into_an_occupied_paragraph_is_refused() -> None:
         document=document,
         ledger=ledger,
         design=DESIGN,
+        messages=mf.EN,
         recorder=A.AnchorRecorder(ledger=ledger),
         declared_styles=frozenset({FIGURE_CHARACTER_STYLE}),
     )
@@ -465,6 +468,7 @@ def test_a_fact_emitted_down_the_layout_path_records_no_anchor() -> None:
         document=document,
         ledger=ledger,
         design=DESIGN,
+        messages=mf.EN,
         recorder=A.AnchorRecorder(ledger=ledger),
         declared_styles=frozenset({FIGURE_CHARACTER_STYLE}),
     )

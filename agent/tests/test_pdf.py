@@ -36,7 +36,11 @@ from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import ErrorCode, PdfConversionFailedError
 from reporting_agent.render import pdf as P
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 
 SOFFICE: Final[str | None] = shutil.which(P.SOFFICE_BINARY)
 
@@ -78,6 +82,7 @@ def rendered_document() -> tuple[object, bytes]:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=mf.EN,
     )
     return compiled, outcome.docx_bytes
 

@@ -75,6 +75,7 @@ from reporting_agent.compile.blocks.base import (
     DesignSettings,
 )
 from reporting_agent.compile.figures import ANCHOR_CHART, ANCHOR_TABLE, FigureLedger
+from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render.anchors import (
     AnchorRecorder,
@@ -97,7 +98,7 @@ from reporting_agent.render.themes import (
 
 __all__ = [
     "FIXED_TIMESTAMP",
-    "PREVIEW_NOTICE_TEXT",
+    "PREVIEW_NOTICE_ID",
     "VOLATILE_PACKAGE_PARTS",
     "RenderOutcome",
     "render_document",
@@ -121,10 +122,9 @@ digests match apart from timestamps" is only a meaningful claim if the exclusion
 list rather than whatever happened to differ.
 """
 
-PREVIEW_NOTICE_TEXT: Final[str] = (
-    "Preview — rendered from a stored snapshot. Not a verified deliverable."
-)
-"""Emitted only in preview mode, in the theme's `PreviewNotice` style, so a
+PREVIEW_NOTICE_ID: Final[str] = "doc.preview.notice"
+"""Resolved through the message catalog so the notice appears in the run's pinned language.
+Emitted only in preview mode, in the theme's `PreviewNotice` style, so a
 "Render real preview" artifact still says what it is after it leaves the app."""
 
 _PAGE_SIZES: Final[Mapping[str, tuple[int, int]]] = {
@@ -174,6 +174,7 @@ class _Emitter:
     document: DocxDocument
     ledger: FigureLedger
     design: DesignSettings
+    messages: Messages
     recorder: AnchorRecorder
     declared_styles: frozenset[str]
     advisories: list[str] = field(default_factory=list)
@@ -336,7 +337,7 @@ class _Emitter:
         table. A second table emitter would be a second chance to get the caption wrong.
         """
         at = f"chart {node.path!r}"
-        artifacts = render_chart(node, table_style=self.design.table_style_name)
+        artifacts = render_chart(node, table_style=self.design.table_style_name, messages=self.messages)
 
         picture_paragraph = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
         run = picture_paragraph.add_run()
@@ -617,6 +618,7 @@ def render_document(
     *,
     ledger: FigureLedger,
     design: DesignSettings,
+    messages: Messages,
     preview: bool = False,
 ) -> RenderOutcome:
     """Emit `compiled` as `.docx` bytes, once (Req 20.1, 20.11).
@@ -624,6 +626,10 @@ def render_document(
     `compiled` is a :class:`~reporting_agent.compile.ast.Document`. `ledger` is the ledger
     that render produced — the same object, not a reconstruction, because the anchors this
     function records are written onto its entries.
+
+    `messages` is **required** rather than optional, because this function passes it to the
+    chart renderer and the preview notice. A default that silently fell back to English is
+    the exact defect criterion 15.11 closes.
 
     Returns bytes rather than writing them: Req 20.11 requires the completed document to be
     written as **one** artifact object, and the cleanest way to guarantee that is for the
@@ -642,12 +648,13 @@ def render_document(
         document=document,
         ledger=ledger,
         design=design,
+        messages=messages,
         recorder=AnchorRecorder(ledger=ledger),
         declared_styles=declared,
     )
 
     if preview:
-        _emit_preview_notice(document, emitter)
+        _emit_preview_notice(document, emitter, messages=messages)
 
     for ordinal, block in enumerate(compiled.blocks):
         try:
@@ -696,7 +703,7 @@ def _apply_page_size(document: DocxDocument, design: DesignSettings) -> None:
         section.page_height = Twips(height)
 
 
-def _emit_preview_notice(document: DocxDocument, emitter: _Emitter) -> None:
+def _emit_preview_notice(document: DocxDocument, emitter: _Emitter, *, messages: Messages) -> None:
     """Put the preview notice in every section's header, so it lands on **every page**.
 
     A leading body paragraph would say it once, on page one, and a preview PDF is a thing
@@ -732,7 +739,7 @@ def _emit_preview_notice(document: DocxDocument, emitter: _Emitter) -> None:
             for run in list(paragraph.runs):
                 run._element.getparent().remove(run._element)
             paragraph.style = style
-            paragraph.add_run(PREVIEW_NOTICE_TEXT)
+            paragraph.add_run(messages.text(PREVIEW_NOTICE_ID))
 
 
 def _fix_timestamps(document: DocxDocument) -> None:

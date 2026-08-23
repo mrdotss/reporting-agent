@@ -70,9 +70,9 @@ from reporting_agent.render import chartstyle as style
 
 __all__ = [
     "CHART_ALT_TEXT_PREFIX",
-    "EMPTY_CHART_TEXT",
+    "EMPTY_CHART_TEXT_ID",
     "OTHER_SERIES_KEY",
-    "OTHER_SERIES_LABEL",
+    "OTHER_SERIES_LABEL_ID",
     "QUALIFIER",
     "SERIES_COLUMN_KEY",
     "SIDECAR_SUFFIX",
@@ -92,9 +92,10 @@ rather than as a bare token while still carrying the identity verbatim."""
 
 SIDECAR_SUFFIX: Final[str] = ".chart.json"
 
-EMPTY_CHART_TEXT: Final[str] = "This chart carries no plotted values"
-"""Req 22.13 — an explicit indication, never an omission. A chart that vanished is
-indistinguishable in the delivered document from a chart the author never configured."""
+EMPTY_CHART_TEXT_ID: Final[str] = "doc.chart.empty"
+"""Req 22.13 — resolved through the message catalog so the indication appears in the
+document's pinned language. A chart that vanished is indistinguishable in the delivered
+document from a chart the author never configured."""
 
 SERIES_COLUMN_KEY: Final[str] = "series"
 X_COLUMN_KEY: Final[str] = "x"
@@ -108,7 +109,7 @@ VALUE_COLUMN_KEY: Final[str] = "value"
 # precisely so an unused literal cannot sit here looking load-bearing.
 
 OTHER_SERIES_KEY: Final[str] = "__other__"
-OTHER_SERIES_LABEL: Final[str] = "Other"
+OTHER_SERIES_LABEL_ID: Final[str] = "doc.chart.other_series"
 QUALIFIER: Final[str] = " \u00b7"
 """Separates an aggregated point's originating series key from its own x label."""
 """Req 22.9's aggregate. A reserved key rather than a label match, so a real series
@@ -138,7 +139,7 @@ class ChartArtifacts:
 # --------------------------------------------------------------------------- #
 
 
-def plotted_series(node: Chart) -> tuple[Series, ...]:
+def plotted_series(node: Chart, *, messages: Messages) -> tuple[Series, ...]:
     """The series actually plotted, applying Req 22.9's five-series cap.
 
     At or below the cap, every series. Above it, the **four largest by the node's declared
@@ -150,8 +151,12 @@ def plotted_series(node: Chart) -> tuple[Series, ...]:
     The aggregate is **not** a computed sum. Summing peer series would produce a number with
     no snapshot address — exactly the thing this package exists to prevent — so the aggregate
     carries the *points of the remaining series concatenated*, each still its own figure. The
-    series is labelled "Other" and coloured `--cat-other`; a reader sees that the remainder is
-    plotted together, not that it was added up.
+    series is labelled through the message catalog and coloured `--cat-other`; a reader sees
+    that the remainder is plotted together, not that it was added up.
+
+    `messages` is **required** rather than defaulting to English, because an omitted parameter
+    silently renders English copy in an Indonesian document — exactly the outcome criterion
+    15.11 exists to prevent. Every call site supplies the run's pinned messages explicitly.
     """
     if len(node.series) <= style.CATEGORICAL_LIMIT:
         return node.series
@@ -175,16 +180,16 @@ def plotted_series(node: Chart) -> tuple[Series, ...]:
     aggregate = Series(
         path=remainder[0].path,
         key=OTHER_SERIES_KEY,
-        label=f"{OTHER_SERIES_LABEL} ({len(remainder)} series)",
+        label=messages.text(OTHER_SERIES_LABEL_ID, count=len(remainder)),
         points=aggregated_points,
     )
     return (*plotted, aggregate)
 
 
-def _figures_in(node: Chart) -> tuple[tuple[Series, tuple[Figure, ...]], ...]:
+def _figures_in(node: Chart, *, messages: Messages) -> tuple[tuple[Series, tuple[Figure, ...]], ...]:
     return tuple(
         (series, tuple(point.y for point in series.points))
-        for series in plotted_series(node)
+        for series in plotted_series(node, messages=messages)
     )
 
 
@@ -193,7 +198,7 @@ def _figures_in(node: Chart) -> tuple[tuple[Series, tuple[Figure, ...]], ...]:
 # --------------------------------------------------------------------------- #
 
 
-def chart_data_hash(node: Chart) -> str:
+def chart_data_hash(node: Chart, *, messages: Messages) -> str:
     """SHA-256 over the ordered plotted contributions.
 
     Each point contributes its **series stable key**, its **x key** and the ledger's
@@ -207,7 +212,7 @@ def chart_data_hash(node: Chart) -> str:
     """
     contributions = [
         [series.key, point.x, str(point.y.value)]
-        for series in plotted_series(node)
+        for series in plotted_series(node, messages=messages)
         for point in series.points
     ]
     payload = json.dumps(
@@ -216,7 +221,7 @@ def chart_data_hash(node: Chart) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def sidecar_bytes(node: Chart, *, data_hash: str) -> bytes:
+def sidecar_bytes(node: Chart, *, data_hash: str, messages: Messages) -> bytes:
     """The sidecar recorded beside the embedded image.
 
     Carries the identity, the hash, and the plotted series keys — enough for the verifier to
@@ -228,8 +233,8 @@ def sidecar_bytes(node: Chart, *, data_hash: str) -> bytes:
         "encoding": node.encoding,
         "unit": node.unit,
         "data_hash": data_hash,
-        "series": [series.key for series in plotted_series(node)],
-        "point_count": sum(len(series.points) for series in plotted_series(node)),
+        "series": [series.key for series in plotted_series(node, messages=messages)],
+        "point_count": sum(len(series.points) for series in plotted_series(node, messages=messages)),
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
         "utf-8"
@@ -241,7 +246,7 @@ def sidecar_bytes(node: Chart, *, data_hash: str) -> bytes:
 # --------------------------------------------------------------------------- #
 
 
-def companion_table(node: Chart, table_style: str, *, messages: Messages | None = None) -> Table:
+def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Table:
     """Every plotted point of every plotted series, as a data table.
 
     No sampling, no thinning, no re-rounding (Req 22.1): the cell text is the ledger's
@@ -255,10 +260,12 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages | None 
     A chart with nothing to plot gets the explicit no-resources-matched row (Req 22.13),
     keyed the way `render/docx.py` recognises a notice row so it is styled as information
     rather than as a failure.
+
+    `messages` is **required** rather than optional. A `None` default silently renders
+    English copy, which is the exact outcome criterion 15.11 exists to prevent — reachable
+    today by omission. Every call site supplies the run's pinned messages explicitly, and
+    the tests are what make the update cheap.
     """
-    if messages is None:
-        from reporting_agent.compile.messages import load_messages
-        messages = load_messages()
 
     columns = (
         Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.period")),
@@ -266,7 +273,7 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages | None 
         Column(key=VALUE_COLUMN_KEY, header=messages.text("doc.table.value")),
     )
 
-    series_set = plotted_series(node)
+    series_set = plotted_series(node, messages=messages)
     if not any(series.points for series in series_set):
         # One column, so the notice reads as a notice rather than as a row with two blanks.
         return Table(
@@ -321,16 +328,16 @@ def _figure_cell(figure: Figure):
 # --------------------------------------------------------------------------- #
 
 
-def render_chart(node: Chart, *, table_style: str, theme: str = "light", messages: Messages | None = None) -> ChartArtifacts:
+def render_chart(node: Chart, *, table_style: str, theme: str = "light", messages: Messages) -> ChartArtifacts:
     """Emit one chart's image, sidecar and companion table.
 
     The image is drawn under :func:`chartstyle.frozen_rc_params` in a `rc_context`, so the
     style is applied for this call and not left on the global state — where it would make the
     emitted bytes depend on whether some other module had already changed an rcParam.
+
+    `messages` is **required** — see :func:`companion_table` for the reasoning. A default
+    that silently falls back to English is the exact defect criterion 15.11 exists to close.
     """
-    if messages is None:
-        from reporting_agent.compile.messages import load_messages
-        messages = load_messages()
 
     if node.encoding not in style.CHART_ENCODINGS:  # pragma: no cover - AST validates
         raise RenderFailedError(
@@ -338,14 +345,14 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
             f"{style.CHART_ENCODINGS}"
         )
 
-    data_hash = chart_data_hash(node)
-    series_set = plotted_series(node)
+    data_hash = chart_data_hash(node, messages=messages)
+    series_set = plotted_series(node, messages=messages)
 
     with rc_context(style.frozen_rc_params()):
         figure = MplFigure(figsize=style.CHART_SIZE_INCHES, dpi=style.CHART_DPI)
         axes = figure.add_subplot(111)
         try:
-            _draw(axes, node, series_set, theme=theme)
+            _draw(axes, node, series_set, theme=theme, messages=messages)
             buffer = io.BytesIO()
             figure.savefig(
                 buffer,
@@ -363,7 +370,7 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
 
     return ChartArtifacts(
         image_png=image,
-        sidecar_json=sidecar_bytes(node, data_hash=data_hash),
+        sidecar_json=sidecar_bytes(node, data_hash=data_hash, messages=messages),
         table=companion_table(node, table_style, messages=messages),
         data_hash=data_hash,
         identity=node.anchor_id,
@@ -385,7 +392,7 @@ def _colour_for(series: Series, siblings: tuple[str, ...], node: Chart, theme: s
     return style.hex_for_token(style.color_for_key(series.key, siblings), theme)
 
 
-def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str) -> None:
+def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, messages: Messages) -> None:
     """Draw the plotted set.
 
     `float(...)` on a plotted decimal string happens here and nowhere else. The result
@@ -405,7 +412,7 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str) -> N
         axes.text(
             0.5,
             0.5,
-            EMPTY_CHART_TEXT,
+            messages.text(EMPTY_CHART_TEXT_ID),
             transform=axes.transAxes,
             ha="center",
             va="center",

@@ -44,6 +44,9 @@ from reporting_agent.compile.figures import walk_figures
 from reporting_agent.compile.messages import load_messages
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 from reporting_agent.verify.anchors import check_tables, read_grids
 from reporting_agent.verify.findings import FINDING_LEDGER_ENTRY_UNRENDERED
 
@@ -407,6 +410,7 @@ def test_every_ledger_entry_appears_in_the_rendered_document(pair) -> None:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(definition["design"]),
+        messages=mf.EN,
     )
     grids = read_grids(open_docx(io.BytesIO(outcome.docx_bytes)))
 

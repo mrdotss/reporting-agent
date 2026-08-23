@@ -51,7 +51,11 @@ from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.figures import ANCHOR_TABLE, FigureLedger, TableAnchor
 from reporting_agent.compile.snapshot_view import SnapshotValue, build_snapshot_view
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 from reporting_agent.verify.anchors import (
     TableGrid,
     check_tables,
@@ -510,6 +514,7 @@ def documents(draw: st.DrawFn, *, nested: bool = True) -> tuple[object, object, 
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=mf.EN,
     )
     return compiled, outcome, outcome.docx_bytes
 
@@ -584,7 +589,8 @@ def test_a_document_holding_both_kinds_of_table_partitions_them() -> None:
     )
     compiled = compile_document(definition, view=view)
     outcome = render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings.from_plain(DESIGN)
+        compiled.document, ledger=compiled.ledger, design=DesignSettings.from_plain(DESIGN),
+    messages=mf.EN,
     )
     document = open_docx(io.BytesIO(outcome.docx_bytes))
 

@@ -62,6 +62,14 @@ export const MESSAGE_CATALOG = {
     en: "over time",
     id: "sepanjang waktu",
   },
+  "doc.chart.empty": {
+    en: "This chart carries no plotted values",
+    id: "Bagan ini tidak memuat nilai yang diplot",
+  },
+  "doc.chart.other_series": {
+    en: "Other ({count} series)",
+    id: "Lainnya ({count} seri)",
+  },
   "doc.basis.capacity": {
     en: "capacity",
     id: "kapasitas",
@@ -302,6 +310,10 @@ export const MESSAGE_CATALOG = {
     en: "Not every matched resource is listed above; this table is capped. Resources in the subscription:",
     id: "Tidak semua sumber daya yang cocok tercantum di atas; tabel ini dibatasi. Sumber daya dalam langganan:",
   },
+  "doc.preview.notice": {
+    en: "Preview — rendered from a stored snapshot. Not a verified deliverable.",
+    id: "Pratinjau — dirender dari snapshot tersimpan. Bukan dokumen terverifikasi yang dikirimkan.",
+  },
   "doc.provenance.archived_responses": {
     en: "Archived raw responses",
     id: "Respons mentah terarsip",
@@ -524,10 +536,81 @@ export function isMessageId(value: unknown): value is MessageId {
  * is safe to make silently. Returning the id would print `ui.download.pdf` on a
  * button; returning the English value would put English in an Indonesian
  * interface, which criterion 15.5 forbids.
+ *
+ * When `params` is supplied, the resolved string is interpolated by replacing
+ * `{key}` placeholders with the corresponding values. The placeholder set of the
+ * message must exactly equal the parameter set: a message carrying a placeholder
+ * no caller supplies, or a caller supplying a parameter the message does not
+ * carry, throws a `MessageInterpolationError` naming the id and both sets.
  */
 export function messageText(
   id: MessageId,
-  language: Language
+  language: Language,
+  params?: Record<string, string | number>
 ): string | undefined {
-  return MESSAGE_CATALOG[id]?.[language]
+  const value = MESSAGE_CATALOG[id]?.[language]
+  if (value === undefined) return undefined
+  if (!params) return value
+  const messagePlaceholders = extractPlaceholders(value)
+  const callerParameters = new Set(Object.keys(params))
+  if (!setsEqual(messagePlaceholders, callerParameters)) {
+    throw new MessageInterpolationError(
+      id,
+      messagePlaceholders,
+      callerParameters
+    )
+  }
+  return value.replace(/\{([^}]+)\}/g, (_, key: string) =>
+    String(params[key])
+  )
+}
+
+/**
+ * Extract `{name}` placeholder names from a template string.
+ */
+function extractPlaceholders(template: string): Set<string> {
+  const result = new Set<string>()
+  const re = /\{([^}]+)\}/g
+  let match: RegExpExecArray | null
+  while ((match = re.exec(template)) !== null) {
+    result.add(match[1])
+  }
+  return result
+}
+
+function setsEqual(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false
+  for (const item of a) {
+    if (!b.has(item)) return false
+  }
+  return true
+}
+
+/**
+ * The caller's keyword parameters do not exactly match the message's placeholders.
+ *
+ * Mirrors the agent's `MessageInterpolationError` — same failure, same data,
+ * different language.
+ */
+export class MessageInterpolationError extends Error {
+  readonly stringId: string
+  readonly messagePlaceholders: Set<string>
+  readonly callerParameters: Set<string>
+
+  constructor(
+    stringId: string,
+    messagePlaceholders: Set<string>,
+    callerParameters: Set<string>
+  ) {
+    super(
+      `interpolation mismatch for '${stringId}': ` +
+        `the message carries placeholders [${[...messagePlaceholders].sort().join(", ")}] ` +
+        `but the caller supplied parameters [${[...callerParameters].sort().join(", ")}]. ` +
+        `The two sets must be exactly equal.`
+    )
+    this.name = "MessageInterpolationError"
+    this.stringId = stringId
+    this.messagePlaceholders = messagePlaceholders
+    this.callerParameters = callerParameters
+  }
 }

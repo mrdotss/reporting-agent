@@ -67,6 +67,7 @@ def render(blocks, *, view=None):
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=_MESSAGES,
     )
     return compiled, outcome
 
@@ -163,10 +164,10 @@ def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> Non
     let the image assert something the table could not confirm."""
     compiled, _ = render([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
     node = first_chart(compiled)
-    plotted = [point for series in C.plotted_series(node) for point in series.points]
+    plotted = [point for series in C.plotted_series(node, messages=_MESSAGES) for point in series.points]
     assert plotted, "the fixture must plot something"
 
-    table = C.companion_table(node, TABLE_STYLE)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
     assert len(table.rows) == len(plotted)
 
     # The cell text is the ledger's formatted string, verbatim.
@@ -183,7 +184,7 @@ def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
     """Req 22.6 — no plotted value is computed from a snapshot value a second time."""
     compiled, _ = render([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
     node = first_chart(compiled)
-    for series in C.plotted_series(node):
+    for series in C.plotted_series(node, messages=_MESSAGES):
         for point in series.points:
             assert point.y.path in compiled.ledger
             assert compiled.ledger[point.y.path] is point.y
@@ -242,6 +243,7 @@ def test_the_identity_is_derived_from_the_ast_path_alone() -> None:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=_MESSAGES,
     )
     assert first.table_identities == second.table_identities
 
@@ -266,9 +268,9 @@ def test_a_chart_figure_records_a_chart_kind_anchor() -> None:
 def test_the_hash_is_stable_across_calls_and_recorded_in_the_sidecar() -> None:
     compiled, outcome = render([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
     node = first_chart(compiled)
-    expected = C.chart_data_hash(node)
+    expected = C.chart_data_hash(node, messages=_MESSAGES)
 
-    assert C.chart_data_hash(node) == expected
+    assert C.chart_data_hash(node, messages=_MESSAGES) == expected
     assert outcome.chart_hashes[node.anchor_id] == expected
 
     sidecar = json.loads(outcome.chart_sidecars[f"{node.anchor_id}{C.SIDECAR_SUFFIX}"])
@@ -279,7 +281,7 @@ def test_the_hash_is_stable_across_calls_and_recorded_in_the_sidecar() -> None:
 def test_the_hash_covers_the_series_key_the_x_key_and_the_decimal_string() -> None:
     """Each contribution named by Req 22.3, proven by changing one at a time."""
     node, _ = synthetic_chart(series_count=1, points_per_series=2)
-    baseline = C.chart_data_hash(node)
+    baseline = C.chart_data_hash(node, messages=_MESSAGES)
 
     renamed = Chart(
         path=node.path,
@@ -296,7 +298,7 @@ def test_the_hash_covers_the_series_key_the_x_key_and_the_decimal_string() -> No
             ),
         ),
     )
-    assert C.chart_data_hash(renamed) != baseline
+    assert C.chart_data_hash(renamed, messages=_MESSAGES) != baseline
 
     moved = Chart(
         path=node.path,
@@ -320,7 +322,7 @@ def test_the_hash_covers_the_series_key_the_x_key_and_the_decimal_string() -> No
             ),
         ),
     )
-    assert C.chart_data_hash(moved) != baseline
+    assert C.chart_data_hash(moved, messages=_MESSAGES) != baseline
 
 
 def test_the_hash_ignores_the_label_and_the_title() -> None:
@@ -341,7 +343,7 @@ def test_the_hash_ignores_the_label_and_the_title() -> None:
             ),
         ),
     )
-    assert C.chart_data_hash(relabelled) == C.chart_data_hash(node)
+    assert C.chart_data_hash(relabelled, messages=_MESSAGES) == C.chart_data_hash(node, messages=_MESSAGES)
 
 
 def test_the_hash_depends_on_plotted_order() -> None:
@@ -364,7 +366,7 @@ def test_the_hash_depends_on_plotted_order() -> None:
             ),
         ),
     )
-    assert C.chart_data_hash(reordered) != C.chart_data_hash(node)
+    assert C.chart_data_hash(reordered, messages=_MESSAGES) != C.chart_data_hash(node, messages=_MESSAGES)
 
 
 def test_the_hash_input_is_structured_rather_than_concatenated() -> None:
@@ -392,18 +394,18 @@ def test_the_hash_input_is_structured_rather_than_concatenated() -> None:
             ),
         ),
     )
-    assert C.chart_data_hash(forged) != C.chart_data_hash(first)
+    assert C.chart_data_hash(forged, messages=_MESSAGES) != C.chart_data_hash(first, messages=_MESSAGES)
 
 
 def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
     node, _ = synthetic_chart(series_count=9, points_per_series=2)
-    plotted = C.plotted_series(node)
-    table = C.companion_table(node, TABLE_STYLE)
+    plotted = C.plotted_series(node, messages=_MESSAGES)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
     hashed_points = sum(len(series.points) for series in plotted)
     assert len(table.rows) == hashed_points
 
-    sidecar = json.loads(C.sidecar_bytes(node, data_hash=C.chart_data_hash(node)))
+    sidecar = json.loads(C.sidecar_bytes(node, data_hash=C.chart_data_hash(node, messages=_MESSAGES), messages=_MESSAGES))
     assert sidecar["point_count"] == hashed_points
     assert sidecar["series"] == [series.key for series in plotted]
 
@@ -416,25 +418,25 @@ def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
 @pytest.mark.parametrize("series_count", [1, 2, 3, 4, 5])
 def test_at_or_below_the_cap_every_series_is_plotted(series_count: int) -> None:
     node, _ = synthetic_chart(series_count=series_count, points_per_series=2)
-    assert len(C.plotted_series(node)) == series_count
-    assert all(series.key != C.OTHER_SERIES_KEY for series in C.plotted_series(node))
+    assert len(C.plotted_series(node, messages=_MESSAGES)) == series_count
+    assert all(series.key != C.OTHER_SERIES_KEY for series in C.plotted_series(node, messages=_MESSAGES))
 
 
 def test_above_the_cap_four_are_plotted_plus_one_aggregate() -> None:
     node, _ = synthetic_chart(series_count=9, points_per_series=2)
-    plotted = C.plotted_series(node)
+    plotted = C.plotted_series(node, messages=_MESSAGES)
 
     assert len(plotted) == S.CATEGORICAL_LIMIT
     assert [series.key for series in plotted[:4]] == [f"metric-{index}" for index in range(4)]
     assert plotted[-1].key == C.OTHER_SERIES_KEY
-    assert C.OTHER_SERIES_LABEL in plotted[-1].label
+    assert _MESSAGES.text(C.OTHER_SERIES_LABEL_ID, count=5) == plotted[-1].label
 
 
 def test_the_aggregate_carries_the_remaining_points_rather_than_a_sum() -> None:
     """Summing peer series would produce a number with no snapshot address — exactly what
     this package exists to prevent. So the aggregate plots the remainder's own figures."""
     node, ledger = synthetic_chart(series_count=7, points_per_series=3)
-    aggregate = C.plotted_series(node)[-1]
+    aggregate = C.plotted_series(node, messages=_MESSAGES)[-1]
 
     remainder_points = [
         point for series in node.series[4:] for point in series.points
@@ -446,7 +448,7 @@ def test_the_aggregate_carries_the_remaining_points_rather_than_a_sum() -> None:
 
 def test_the_aggregate_uses_the_muted_token_rather_than_a_sixth_hue() -> None:
     node, _ = synthetic_chart(series_count=9, points_per_series=1)
-    plotted = C.plotted_series(node)
+    plotted = C.plotted_series(node, messages=_MESSAGES)
     siblings = tuple(series.key for series in plotted)
     colour = C._colour_for(plotted[-1], siblings, node, "light")
     assert colour == S.hex_for_token(S.CAT_OTHER, "light")
@@ -457,7 +459,7 @@ def test_the_declared_order_is_preserved_rather_than_re_ranked() -> None:
     key. Re-ranking here would be a second ordering rule that could disagree with the one
     the document's own table used."""
     node, _ = synthetic_chart(series_count=9, points_per_series=1)
-    assert [series.key for series in C.plotted_series(node)[:4]] == [
+    assert [series.key for series in C.plotted_series(node, messages=_MESSAGES)[:4]] == [
         series.key for series in node.series[:4]
     ]
 
@@ -566,7 +568,7 @@ def test_an_empty_chart_emits_both_the_node_and_its_companion_table() -> None:
 
 def test_an_empty_charts_companion_table_carries_the_notice_row() -> None:
     node, _ = synthetic_chart(series_count=1, points_per_series=0)
-    table = C.companion_table(node, TABLE_STYLE)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
     assert len(table.rows) == 1
     assert table.rows[0].key == "empty-scope"
     cell = table.rows[0].cells[0]
@@ -577,15 +579,15 @@ def test_an_empty_charts_companion_table_carries_the_notice_row() -> None:
 def test_an_empty_charts_image_says_so() -> None:
     """Req 22.13 asks for an explicit indication on the chart node, not only in the table."""
     node, ledger = synthetic_chart(series_count=1, points_per_series=0)
-    artifacts = C.render_chart(node, table_style=TABLE_STYLE)
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
     assert artifacts.image_png[:8] == b"\x89PNG\r\n\x1a\n"
-    assert artifacts.data_hash == C.chart_data_hash(node)
+    assert artifacts.data_hash == C.chart_data_hash(node, messages=_MESSAGES)
     assert ledger is not None
 
 
 def test_an_empty_chart_still_hashes_deterministically() -> None:
     node, _ = synthetic_chart(series_count=1, points_per_series=0)
-    assert C.chart_data_hash(node) == C.chart_data_hash(node)
+    assert C.chart_data_hash(node, messages=_MESSAGES) == C.chart_data_hash(node, messages=_MESSAGES)
 
 
 # --------------------------------------------------------------------------- #
@@ -597,8 +599,8 @@ def test_an_empty_chart_still_hashes_deterministically() -> None:
 def test_two_renders_of_one_chart_node_produce_identical_bytes(chart_type: str) -> None:
     """The chart data hash and the `.docx` byte-equality guarantee both rest on this."""
     node, _ = synthetic_chart(series_count=3, points_per_series=4, chart_type=chart_type)
-    first = C.render_chart(node, table_style=TABLE_STYLE)
-    second = C.render_chart(node, table_style=TABLE_STYLE)
+    first = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    second = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
     assert first.image_png == second.image_png
     assert first.sidecar_json == second.sidecar_json
     assert first.data_hash == second.data_hash
@@ -608,7 +610,7 @@ def test_the_png_carries_no_creation_timestamp() -> None:
     """matplotlib writes a `Software` chunk and a creation date by default, which alone would
     make two renders differ — with no visible cause."""
     node, _ = synthetic_chart(series_count=1, points_per_series=2)
-    payload = C.render_chart(node, table_style=TABLE_STYLE).image_png
+    payload = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES).image_png
     assert b"matplotlib" not in payload.lower()
     assert b"Creation Time" not in payload
 
@@ -624,6 +626,7 @@ def test_the_document_containing_a_chart_is_byte_identical_across_renders() -> N
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=_MESSAGES,
     )
 
     def parts(payload: bytes) -> dict[str, bytes]:
@@ -644,7 +647,7 @@ def test_the_frozen_rc_params_are_applied_without_mutating_global_state() -> Non
 
     before = dict(matplotlib.rcParams)
     node, _ = synthetic_chart(series_count=2, points_per_series=2)
-    C.render_chart(node, table_style=TABLE_STYLE)
+    C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
     after = dict(matplotlib.rcParams)
     changed = {
         key for key in before if str(before[key]) != str(after.get(key))
@@ -703,7 +706,7 @@ def test_an_undeclared_encoding_is_refused() -> None:
     node, _ = synthetic_chart(series_count=1, points_per_series=1)
     object.__setattr__(node, "encoding", "ordinal")
     with pytest.raises(RenderFailedError, match="encoding"):
-        C.render_chart(node, table_style=TABLE_STYLE)
+        C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
 
 
 def test_the_aggregate_qualifies_each_point_with_its_originating_series() -> None:
@@ -715,7 +718,7 @@ def test_the_aggregate_qualifies_each_point_with_its_originating_series() -> Non
     reads better: "metric-4 · day-0" says which series the value belongs to.
     """
     node, _ = synthetic_chart(series_count=9, points_per_series=2)
-    aggregate = C.plotted_series(node)[-1]
+    aggregate = C.plotted_series(node, messages=_MESSAGES)[-1]
 
     xs = [point.x for point in aggregate.points]
     assert len(set(xs)) == len(xs), xs
@@ -724,7 +727,7 @@ def test_the_aggregate_qualifies_each_point_with_its_originating_series() -> Non
         assert any(value.startswith(series.key) for value in xs), index
 
     # And the companion table therefore builds at all, with unique keys.
-    table = C.companion_table(node, TABLE_STYLE)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
     keys = [row.key for row in table.rows]
     assert len(set(keys)) == len(keys)
 
@@ -734,7 +737,7 @@ def test_every_companion_table_row_key_is_unique_and_readable() -> None:
     duplicate row key surfaces as a RENDER_FAILED late in a run rather than here."""
     for series_count in (1, 2, 5, 6, 12):
         node, _ = synthetic_chart(series_count=series_count, points_per_series=3)
-        table = C.companion_table(node, TABLE_STYLE)
+        table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
         keys = [row.key for row in table.rows]
         assert len(set(keys)) == len(keys), (series_count, keys)
 
@@ -753,13 +756,40 @@ def test_a_chart_document_renders_and_its_row_keys_survive_the_emitter() -> None
     node, ledger = synthetic_chart(series_count=9, points_per_series=3)
     from reporting_agent.compile.ast import Document
 
-    artifacts = C.render_chart(node, table_style=TABLE_STYLE)
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
     outcome = D.render_document(
         Document(blocks=(artifacts.table,)),
         ledger=ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=_MESSAGES,
     )
     assert outcome.table_identities == (artifacts.table.anchor_id,)
     assert outcome.figures_emitted == sum(
-        len(series.points) for series in C.plotted_series(node)
+        len(series.points) for series in C.plotted_series(node, messages=_MESSAGES)
     )
+
+
+# --------------------------------------------------------------------------- #
+# Req 15.11 — an Indonesian render produces the Indonesian series label
+# --------------------------------------------------------------------------- #
+
+_MESSAGES_ID = load_messages("id")
+
+
+def test_indonesian_render_produces_indonesian_series_label() -> None:
+    """An Indonesian document uses the Indonesian aggregate label with the count in the
+    position that language puts it (Req 15.11).
+
+    This is the entire point of the interpolation Part A added: without it the label was
+    hardcoded English. A test in only one language cannot prove the parameter reached the
+    right place.
+    """
+    node, _ = synthetic_chart(series_count=9, points_per_series=2)
+    plotted = C.plotted_series(node, messages=_MESSAGES_ID)
+
+    aggregate = plotted[-1]
+    # 9 series minus 4 plotted = 5 in the aggregate
+    expected_label = _MESSAGES_ID.text(C.OTHER_SERIES_LABEL_ID, count=5)
+    assert expected_label == "Lainnya (5 seri)"
+    assert aggregate.label == expected_label
+    assert aggregate.key == C.OTHER_SERIES_KEY

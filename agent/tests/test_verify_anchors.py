@@ -34,7 +34,10 @@ from reporting_agent.compile.figures import (
 )
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render.anchors import write_data_table_caption, write_layout_table
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.docx import render_document
+
+_MESSAGES = load_messages("en")
 from reporting_agent.verify.anchors import (
     AnchorPass,
     TableGrid,
@@ -87,6 +90,7 @@ def render(blocks: list[dict], **kwargs: object):
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(design),
+    messages=_MESSAGES,
     )
     return compiled, outcome.docx_bytes
 

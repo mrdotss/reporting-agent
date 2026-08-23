@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import re
+import string
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,7 @@ from reporting_agent.messages import (
 )
 
 __all__ = [
+    "MessageInterpolationError",
     "Messages",
     "MissingMessageError",
     "load_messages",
@@ -52,6 +54,48 @@ __all__ = [
 ]
 
 _ID_RE: Final[re.Pattern[str]] = re.compile(MESSAGE_ID_PATTERN)
+_FORMATTER: Final[string.Formatter] = string.Formatter()
+
+
+def _placeholder_names(template: str) -> frozenset[str]:
+    """The set of named placeholders in `template`, extracted structurally via
+    `string.Formatter().parse` rather than a regex.
+
+    Positional placeholders (unnamed or numeric) are not supported — every
+    placeholder must be a named keyword, because the parameter set must be
+    enumerable for the exact-match assertion.
+    """
+    return frozenset(
+        field_name
+        for _, field_name, _, _ in _FORMATTER.parse(template)
+        if field_name is not None
+    )
+
+
+class MessageInterpolationError(RenderFailedError):
+    """The caller's keyword parameters do not exactly match the message's placeholders.
+
+    A `RenderFailedError` subclass, same reasoning as `MissingMessageError` — a
+    partially interpolated string in a delivered document is a wrong artifact, not
+    a degraded one.
+    """
+
+    def __init__(
+        self,
+        string_id: str,
+        *,
+        message_placeholders: frozenset[str],
+        caller_parameters: frozenset[str],
+    ) -> None:
+        super().__init__(
+            f"interpolation mismatch for {string_id!r}: "
+            f"the message carries placeholders {sorted(message_placeholders)} "
+            f"but the caller supplied parameters {sorted(caller_parameters)}. "
+            f"The two sets must be exactly equal."
+        )
+        self.string_id = string_id
+        self.message_placeholders = message_placeholders
+        self.caller_parameters = caller_parameters
 
 
 class MissingMessageError(RenderFailedError):
@@ -89,8 +133,18 @@ class Messages:
     language: str
     _table: Mapping[str, str]
 
-    def text(self, string_id: str) -> str:
-        """The declared copy for `string_id`, or raise :class:`MissingMessageError`.
+    def text(self, string_id: str, **kwargs: object) -> str:
+        """The declared copy for `string_id`, optionally interpolated with `kwargs`.
+
+        When no keyword arguments are supplied, behaves exactly as before: returns the
+        resolved string or raises :class:`MissingMessageError`.
+
+        When keyword arguments are supplied, the resolved string is interpolated with them
+        via :meth:`str.format_map`. The placeholder set of the message must **exactly
+        equal** the parameter set: a message carrying a placeholder no caller supplies, or
+        a caller supplying a parameter the message does not carry, raises
+        :class:`MessageInterpolationError` naming the id and both sets. Partial
+        substitution is never performed.
 
         Raises rather than returning a default for any of the three ways this can go wrong,
         because all three produce a wrong document rather than a missing one: an id the
@@ -100,7 +154,17 @@ class Messages:
         value = self._table.get(string_id)
         if value is None:
             raise MissingMessageError(string_id, self.language)
-        return value
+        if not kwargs:
+            return value
+        message_placeholders = _placeholder_names(value)
+        caller_parameters = frozenset(kwargs)
+        if message_placeholders != caller_parameters:
+            raise MessageInterpolationError(
+                string_id,
+                message_placeholders=message_placeholders,
+                caller_parameters=caller_parameters,
+            )
+        return value.format_map(kwargs)
 
     def has(self, string_id: str) -> bool:
         """Whether `string_id` resolves in this language, for a caller deciding whether to

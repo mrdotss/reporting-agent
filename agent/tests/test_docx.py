@@ -107,6 +107,7 @@ def render(blocks, *, design: Mapping[str, object] | None = None, view=None, **k
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(design_object),
+        messages=_MESSAGES,
     )
     return compiled, outcome
 
@@ -239,7 +240,7 @@ def test_a_figure_in_prose_is_its_own_run_beside_the_prose() -> None:
                 ),
             )
         )
-        outcome = D.render_document(document, ledger=ledger, design=DesignSettings())
+        outcome = D.render_document(document, ledger=ledger, design=DesignSettings(), messages=_MESSAGES)
 
     assert runs_with_style(outcome.docx_bytes, FIGURE_CHARACTER_STYLE) == [figure.formatted]
     # And the prose is a separate, unstyled run.
@@ -287,7 +288,7 @@ def test_a_figure_carrying_no_formatted_string_is_refused() -> None:
             blocks=(Paragraph(path=figure_path("p", 0), style="Body Text", inlines=(figure,)),)
         )
         with pytest.raises(RenderFailedError, match="no formatted string"):
-            D.render_document(document, ledger=ledger, design=DesignSettings())
+            D.render_document(document, ledger=ledger, design=DesignSettings(), messages=_MESSAGES)
 
 
 # --------------------------------------------------------------------------- #
@@ -310,7 +311,7 @@ def test_a_non_figure_in_an_inline_position_is_refused_naming_the_path() -> None
     object.__setattr__(document.blocks[0], "inlines", (Sneaky(),))
 
     with pytest.raises(RenderFailedError) as raised:
-        D.render_document(document, ledger=FigureLedger(), design=DesignSettings())
+        D.render_document(document, ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES)
     assert "Sneaky" in raised.value.message
     assert "p:0" in raised.value.message
     assert raised.value.code is ErrorCode.RENDER_FAILED
@@ -326,7 +327,7 @@ def test_an_unknown_block_type_is_refused_rather_than_skipped() -> None:
     document = Document(blocks=())
     object.__setattr__(document, "blocks", (Mystery(),))
     with pytest.raises(RenderFailedError, match="no emitter is declared"):
-        D.render_document(document, ledger=FigureLedger(), design=DesignSettings())
+        D.render_document(document, ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES)
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +364,7 @@ def test_a_style_the_theme_does_not_declare_is_terminal_render_failed() -> None:
         blocks=(Paragraph(path=figure_path("p", 0), style="Heading 7", inlines=()),)
     )
     with pytest.raises(RenderFailedError) as raised:
-        D.render_document(document, ledger=FigureLedger(), design=DesignSettings())
+        D.render_document(document, ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES)
     assert "Heading 7" in raised.value.message
     assert "editorial" in raised.value.message
     assert raised.value.terminal is True
@@ -573,7 +574,7 @@ def test_no_anchor_is_recorded_for_a_figure_outside_a_data_table() -> None:
         document = Document(
             blocks=(Paragraph(path=figure_path("p", 0), style="Body Text", inlines=(figure,)),)
         )
-        outcome = D.render_document(document, ledger=ledger, design=DesignSettings())
+        outcome = D.render_document(document, ledger=ledger, design=DesignSettings(), messages=_MESSAGES)
 
     assert runs_with_style(outcome.docx_bytes, FIGURE_CHARACTER_STYLE) == [figure.formatted]
     assert ledger.anchors() == {}
@@ -700,7 +701,7 @@ def test_repeated_row_keys_are_refused_naming_the_table() -> None:
 def test_a_table_identity_is_derived_from_the_ast_path_alone() -> None:
     compiled, first = render([df.block("t", "resource_table", {"columns": [df.CPU_AVG]})])
     second = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings()
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), messages=_MESSAGES
     )
     assert first.table_identities == second.table_identities
     assert first.table_identities == ("tbl:t:0",)
@@ -828,7 +829,7 @@ def test_a_layout_row_inside_a_layout_cell_is_refused() -> None:
     )
     with pytest.raises(RenderFailedError, match="nesting is one level deep"):
         D.render_document(
-            Document(blocks=(outer,)), ledger=FigureLedger(), design=DesignSettings()
+            Document(blocks=(outer,)), ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES
         )
 
 
@@ -861,7 +862,7 @@ def test_a_page_break_inside_a_layout_cell_is_refused() -> None:
     )
     with pytest.raises(RenderFailedError, match="applies to the cell"):
         D.render_document(
-            Document(blocks=(row,)), ledger=FigureLedger(), design=DesignSettings()
+            Document(blocks=(row,)), ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES
         )
 
 
@@ -890,7 +891,7 @@ def test_a_short_row_is_padded_rather_than_refused() -> None:
         ),
     )
     outcome = D.render_document(
-        Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings()
+        Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES
     )
     grid = row_texts(tables(outcome.docx_bytes)[0])
     assert grid[0] == ["A", "B", "C"]
@@ -916,7 +917,7 @@ def test_a_row_with_more_cells_than_columns_is_refused() -> None:
     )
     with pytest.raises(RenderFailedError, match="cannot be addressed"):
         D.render_document(
-            Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings()
+            Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES
         )
 
 
@@ -939,7 +940,7 @@ def test_an_empty_cell_emits_nothing_rather_than_a_zero() -> None:
         ),
     )
     outcome = D.render_document(
-        Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings()
+        Document(blocks=(node,)), ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES
     )
     assert row_texts(tables(outcome.docx_bytes)[0])[1] == ["vm-1", ""]
     assert "0" not in "".join(all_text(outcome.docx_bytes))
@@ -964,7 +965,7 @@ _EVERYTHING = [
 def test_two_emissions_of_one_ast_are_byte_identical() -> None:
     compiled, first = render(_EVERYTHING)
     second = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings()
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), messages=_MESSAGES
     )
     assert first.docx_bytes == second.docx_bytes
 
@@ -993,7 +994,7 @@ def test_every_part_except_the_volatile_one_is_byte_identical_across_renders() -
     """The stronger form: not just equal digests, equal parts, with the exclusion named."""
     compiled, first = render(_EVERYTHING)
     second = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings()
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), messages=_MESSAGES
     )
 
     def parts(payload: bytes) -> dict[str, bytes]:
@@ -1052,7 +1053,7 @@ def test_the_renderer_returns_bytes_rather_than_writing_them() -> None:
 
 def test_a_non_document_argument_is_refused() -> None:
     with pytest.raises(RenderFailedError, match="compiled Document"):
-        D.render_document({}, ledger=FigureLedger(), design=DesignSettings())
+        D.render_document({}, ledger=FigureLedger(), design=DesignSettings(), messages=_MESSAGES)
 
 
 # --------------------------------------------------------------------------- #
@@ -1089,6 +1090,7 @@ def test_an_undeclared_page_size_is_refused() -> None:
             compiled.document,
             ledger=compiled.ledger,
             design=DesignSettings(page_size="Legal"),
+            messages=_MESSAGES,
         )
 
 
@@ -1121,16 +1123,17 @@ def test_preview_mode_emits_the_notice_and_normal_mode_does_not() -> None:
     """
     compiled, _ = render([df.block("p", "rich_text", {"text": "Body."})])
     preview = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True, messages=_MESSAGES
     )
     plain = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=False
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=False, messages=_MESSAGES
     )
 
-    assert D.PREVIEW_NOTICE_TEXT in header_texts(preview.docx_bytes)
-    assert D.PREVIEW_NOTICE_TEXT not in all_text(preview.docx_bytes)
-    assert D.PREVIEW_NOTICE_TEXT not in header_texts(plain.docx_bytes)
-    assert D.PREVIEW_NOTICE_TEXT not in all_text(plain.docx_bytes)
+    _preview_notice_en = _MESSAGES.text(D.PREVIEW_NOTICE_ID)
+    assert _preview_notice_en in header_texts(preview.docx_bytes)
+    assert _preview_notice_en not in all_text(preview.docx_bytes)
+    assert _preview_notice_en not in header_texts(plain.docx_bytes)
+    assert _preview_notice_en not in all_text(plain.docx_bytes)
 
 
 def test_the_preview_notice_reaches_every_page_including_the_first() -> None:
@@ -1146,15 +1149,15 @@ def test_the_preview_notice_reaches_every_page_including_the_first() -> None:
 
     compiled, _ = render([df.block("p", "rich_text", {"text": "Body."})])
     preview = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(), preview=True, messages=_MESSAGES
     )
 
     document = open_docx(io.BytesIO(preview.docx_bytes))
     for section in document.sections:
         assert section.header.is_linked_to_previous is False
-        assert D.PREVIEW_NOTICE_TEXT in [p.text for p in section.header.paragraphs]
+        assert _MESSAGES.text(D.PREVIEW_NOTICE_ID) in [p.text for p in section.header.paragraphs]
         if section.different_first_page_header_footer:
-            assert D.PREVIEW_NOTICE_TEXT in [
+            assert _MESSAGES.text(D.PREVIEW_NOTICE_ID) in [
                 p.text for p in section.first_page_header.paragraphs
             ]
 
@@ -1174,10 +1177,10 @@ def test_the_preview_does_not_override_the_themes_first_page_header_setting() ->
         design = DesignSettings(preset=preset)
 
         preview = D.render_document(
-            compiled.document, ledger=compiled.ledger, design=design, preview=True
+            compiled.document, ledger=compiled.ledger, design=design, preview=True, messages=_MESSAGES
         )
         plain = D.render_document(
-            compiled.document, ledger=compiled.ledger, design=design, preview=False
+            compiled.document, ledger=compiled.ledger, design=design, preview=False, messages=_MESSAGES
         )
 
         previewed = [
@@ -1195,7 +1198,7 @@ def test_the_preview_does_not_override_the_themes_first_page_header_setting() ->
 def test_every_preset_renders_the_same_document(preset: str) -> None:
     compiled, _ = render(_EVERYTHING)
     outcome = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(preset=preset)
+        compiled.document, ledger=compiled.ledger, design=DesignSettings(preset=preset), messages=_MESSAGES
     )
     assert outcome.figures_emitted == len(compiled.ledger)
     assert outcome.docx_bytes[:2] == b"PK"
@@ -1295,6 +1298,7 @@ def test_a_figure_beside_a_case_transforming_style_survives_conversion(
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings(preset="technical"),
+        messages=_MESSAGES,
     )
     source = tmp_path / "caps.docx"
     source.write_bytes(outcome.docx_bytes)

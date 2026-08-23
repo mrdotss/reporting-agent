@@ -21,6 +21,7 @@ import pytest
 # import, so nothing under `reporting_agent` may be imported above it.
 from negatives import Negative
 from pipeline_harness import definition, df, report_objects, types_of
+import messages_factory as mf
 
 TWO_VMS: Final[tuple[str, ...]] = ("prod-web-01", "prod-sql-01")
 

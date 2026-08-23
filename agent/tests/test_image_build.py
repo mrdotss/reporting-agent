@@ -207,6 +207,7 @@ def test_the_profile_is_group_writable_for_an_arbitrary_uid(dockerfile_body: str
         "python -m reporting_agent.render.themes --assert-build",
         "python -m reporting_agent.compile.ast --assert-build",
         "python -m reporting_agent.catalog.evidence --assert-build",
+        "python -m reporting_agent.compile.literals --assert-build",
     ],
 )
 def test_the_build_runs_the_guard(assertion: str, dockerfile_body: str) -> None:

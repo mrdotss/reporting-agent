@@ -48,7 +48,9 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from reporting_agent.compile.figures import ANCHOR_CHART, ANCHOR_TABLE, FigureLedger
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.snapshot_view import SnapshotView
+from reporting_agent.errors import VerificationFailedError
 from reporting_agent.verify import anchors as anchors_pass
 from reporting_agent.verify import charts as charts_pass
 from reporting_agent.verify import coverage as coverage_pass
@@ -139,6 +141,7 @@ class VerifyInputs:
     drift_seed: str = ""
     subscription_display_name: str = ""
     catalog_scales: Mapping[str, int] | None = None
+    messages: Messages | None = None
 
 
 async def verify(inputs: VerifyInputs) -> VerificationResult:
@@ -198,6 +201,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         grids=grids,
         sidecars=inputs.chart_sidecars,
         table_pass=tables,
+        messages=inputs.messages,
     )
     findings.extend(charts.findings)
     counts["charts_checked"] = charts.charts_checked
@@ -321,8 +325,6 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
 def _assert_every_gate_ran(gates: set[str]) -> None:
     """Req 25.5, 25.11 — `pass` is a claim about the gates as well as the findings."""
     if gates != REQUIRED_GATES:
-        from reporting_agent.errors import VerificationFailedError
-
         raise VerificationFailedError(
             "the verification did not evaluate every gate REQUIRED_GATES declares "
             "(requirements 26 through 33, plus facts, toc and historical); "

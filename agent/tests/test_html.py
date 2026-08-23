@@ -44,6 +44,9 @@ from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render import html as H
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 
 W: Final[str] = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 
@@ -108,6 +111,7 @@ def test_the_two_emitters_walk_one_tree_and_agree_on_figure_count() -> None:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=mf.EN,
     )
     assert html_outcome.figure_count == docx_outcome.figures_emitted == len(compiled.ledger)
 
@@ -383,6 +387,7 @@ def test_both_surfaces_emit_the_same_headers_rows_and_cell_strings() -> None:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DESIGN),
+        messages=mf.EN,
     ).docx_bytes
 
     html_grids = _html_tables(markup)

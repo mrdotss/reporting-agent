@@ -27,7 +27,11 @@ from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import VerificationFailedError
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 from reporting_agent.verify.findings import (
     FINDING_EMPTY_SCOPE,
     FINDING_LEDGER_ENTRY_UNRENDERED,
@@ -72,6 +76,7 @@ class Verification:
             self.compiled.document,
             ledger=self.compiled.ledger,
             design=DesignSettings.from_plain(DESIGN),
+            messages=mf.EN,
         )
         self.pdf_bytes = b"%PDF-1.7 " + self.outcome.docx_bytes[:16]
         self.pdf_text = " ".join(

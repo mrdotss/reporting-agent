@@ -40,6 +40,7 @@ from typing import Final
 
 from reporting_agent.compile.ast import Chart, child_nodes
 from reporting_agent.verify.anchors import AnchorPass, TableGrid
+from reporting_agent.compile.messages import Messages
 from reporting_agent.verify.findings import (
     FINDING_CHART_HASH_MISMATCH,
     FINDING_CHART_TABLE_MISSING,
@@ -131,6 +132,7 @@ def check_charts(
     grids: Sequence[TableGrid],
     sidecars: Mapping[str, bytes],
     table_pass: AnchorPass,
+    messages: Messages | None = None,
 ) -> ChartPass:
     """Check every chart node of `ast` (Req 30.7), never stopping at the first failure.
 
@@ -141,6 +143,9 @@ def check_charts(
     anchored check means.
     """
     from reporting_agent.render.charts import chart_data_hash
+    from reporting_agent.compile.messages import load_messages
+    if messages is None:
+        messages = load_messages()
 
     identities = {grid.identity for grid in grids}
     findings: list[Finding] = []
@@ -168,7 +173,7 @@ def check_charts(
                 )
             )
 
-        recomputed = chart_data_hash(node)
+        recomputed = chart_data_hash(node, messages=messages)
         observed = sidecar_digest(sidecars.get(f"{identity}{SIDECAR_SUFFIX}"))
         if observed == recomputed:
             hashes_matched += 1

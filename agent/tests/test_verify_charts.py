@@ -27,7 +27,11 @@ from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render.charts import SIDECAR_SUFFIX as RENDER_SIDECAR_SUFFIX
+from reporting_agent.compile.messages import load_messages
 from reporting_agent.render.docx import render_document
+import messages_factory as mf
+
+_MESSAGES = load_messages("en")
 from reporting_agent.verify.anchors import AnchorPass, TableGrid, check_tables, read_grids
 from reporting_agent.verify.charts import (
     SIDECAR_SUFFIX,
@@ -69,6 +73,7 @@ def rendered():
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(DEFAULT_DESIGN),
+        messages=mf.EN,
     )
     grids = read_grids(open_docx(io.BytesIO(outcome.docx_bytes)))
     return compiled, outcome, grids

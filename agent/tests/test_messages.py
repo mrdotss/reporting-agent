@@ -322,3 +322,124 @@ def test_block_context_carries_a_messages_instance() -> None:
     assert "messages" in BlockContext.__dataclass_fields__
     annotation = BlockContext.__dataclass_fields__["messages"].type
     assert annotation in (Messages, "Messages"), annotation
+
+
+# --- interpolation ------------------------------------------------------------------
+
+
+def test_text_with_no_parameters_returns_the_plain_string() -> None:
+    """Backward compatibility: existing call sites pass no kwargs and get the same result."""
+    messages = message_table("en", {"doc.chart.other_series": "Other ({count} series)"})
+
+    result = messages.text("doc.chart.other_series")
+
+    # With no kwargs, the raw template is returned — placeholders included.
+    assert result == "Other ({count} series)"
+
+
+def test_text_with_matching_parameters_interpolates() -> None:
+    messages = message_table("en", {"doc.chart.other_series": "Other ({count} series)"})
+
+    result = messages.text("doc.chart.other_series", count=3)
+
+    assert result == "Other (3 series)"
+
+
+def test_text_interpolation_works_with_indonesian() -> None:
+    messages = message_table("id", {"doc.chart.other_series": "Lainnya ({count} seri)"})
+
+    result = messages.text("doc.chart.other_series", count=7)
+
+    assert result == "Lainnya (7 seri)"
+
+
+def test_text_interpolation_rejects_extra_caller_parameter() -> None:
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    messages = message_table("en", {"doc.chart.other_series": "Other ({count} series)"})
+
+    with pytest.raises(MessageInterpolationError) as raised:
+        messages.text("doc.chart.other_series", count=3, extra="bad")
+
+    assert raised.value.string_id == "doc.chart.other_series"
+    assert raised.value.message_placeholders == frozenset({"count"})
+    assert raised.value.caller_parameters == frozenset({"count", "extra"})
+
+
+def test_text_interpolation_rejects_missing_caller_parameter() -> None:
+    """When kwargs are passed but are missing a required placeholder, it raises."""
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    messages = message_table("en", {"doc.x.y": "Hello {a} and {b}"})
+
+    with pytest.raises(MessageInterpolationError) as raised:
+        messages.text("doc.x.y", a="1")
+
+    assert raised.value.message_placeholders == frozenset({"a", "b"})
+    assert raised.value.caller_parameters == frozenset({"a"})
+
+
+def test_text_interpolation_rejects_wrong_parameter_name() -> None:
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    messages = message_table("en", {"doc.chart.other_series": "Other ({count} series)"})
+
+    with pytest.raises(MessageInterpolationError) as raised:
+        messages.text("doc.chart.other_series", name="wrong")
+
+    assert raised.value.string_id == "doc.chart.other_series"
+    assert raised.value.message_placeholders == frozenset({"count"})
+    assert raised.value.caller_parameters == frozenset({"name"})
+
+
+def test_text_interpolation_rejects_subset_of_required_parameters() -> None:
+    """A message with two placeholders rejects a caller supplying only one — same as
+    above but with a different message to verify generality."""
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    messages = message_table("en", {"doc.x.y": "Values: {a}, {b}, {c}"})
+
+    with pytest.raises(MessageInterpolationError):
+        messages.text("doc.x.y", a="1", b="2")
+
+
+def test_text_interpolation_on_a_message_with_no_placeholders_rejects_any_param() -> None:
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    messages = message_table("en", {"doc.chart.empty": "This chart carries no plotted values"})
+
+    with pytest.raises(MessageInterpolationError) as raised:
+        messages.text("doc.chart.empty", count=5)
+
+    assert raised.value.message_placeholders == frozenset()
+    assert raised.value.caller_parameters == frozenset({"count"})
+
+
+def test_interpolation_error_is_a_render_failed_error() -> None:
+    from reporting_agent.compile.messages import MessageInterpolationError
+
+    assert issubclass(MessageInterpolationError, RenderFailedError)
+
+
+def test_the_shipped_catalog_other_series_interpolates_in_both_languages() -> None:
+    """Integration: the real catalog's doc.chart.other_series works end-to-end."""
+    en = load_messages("en")
+    id_ = load_messages("id")
+
+    assert en.text("doc.chart.other_series", count=5) == "Other (5 series)"
+    assert id_.text("doc.chart.other_series", count=5) == "Lainnya (5 seri)"
+
+
+def test_the_three_new_ids_are_declared_in_the_shipped_catalog() -> None:
+    """The three ids this task adds are present and carry expected values."""
+    en = load_messages("en")
+    id_ = load_messages("id")
+
+    assert en.text("doc.chart.empty") == "This chart carries no plotted values"
+    assert en.text("doc.preview.notice") == (
+        "Preview \u2014 rendered from a stored snapshot. Not a verified deliverable."
+    )
+    # doc.chart.other_series requires interpolation for its intended use,
+    # but text() without params still returns the raw template
+    assert "{count}" in en.text("doc.chart.other_series")
+    assert "{count}" in id_.text("doc.chart.other_series")

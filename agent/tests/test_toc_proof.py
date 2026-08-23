@@ -47,6 +47,7 @@ from reporting_agent.render.toc import (
     TOC_APPROACH_NONE,
     TOC_APPROACH_TWO_PASS,
 )
+import messages_factory as mf
 
 MIN_PAGES: Final[int] = 8
 MIN_HEADINGS: Final[int] = 6

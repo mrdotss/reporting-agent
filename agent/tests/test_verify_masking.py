@@ -614,6 +614,7 @@ def _chrome_tokens(definition: dict, view: object) -> frozenset[str]:
     """
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.messages import load_messages
     from reporting_agent.render.docx import render_document
 
     class _Comparison:
@@ -627,6 +628,7 @@ def _chrome_tokens(definition: dict, view: object) -> frozenset[str]:
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(definition.get("design")),
+        messages=load_messages("en"),
     )
     document = Document(io.BytesIO(outcome.docx_bytes))
     order = masking_order(compiled.ledger.formatted_values())

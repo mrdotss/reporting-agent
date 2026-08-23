@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Final
 
 import pytest
+import messages_factory as mf
 
 # Pipeline harness must be imported first — it sets env vars that reporting_agent.main
 # reads at import time.

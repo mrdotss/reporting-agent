@@ -29,6 +29,14 @@
       "en": "over time",
       "id": "sepanjang waktu"
     },
+    "doc.chart.empty": {
+      "en": "This chart carries no plotted values",
+      "id": "Bagan ini tidak memuat nilai yang diplot"
+    },
+    "doc.chart.other_series": {
+      "en": "Other ({count} series)",
+      "id": "Lainnya ({count} seri)"
+    },
     "doc.basis.capacity": {
       "en": "capacity",
       "id": "kapasitas"
@@ -268,6 +276,10 @@
     "doc.notice.omitted_rows": {
       "en": "Not every matched resource is listed above; this table is capped. Resources in the subscription:",
       "id": "Tidak semua sumber daya yang cocok tercantum di atas; tabel ini dibatasi. Sumber daya dalam langganan:"
+    },
+    "doc.preview.notice": {
+      "en": "Preview — rendered from a stored snapshot. Not a verified deliverable.",
+      "id": "Pratinjau — dirender dari snapshot tersimpan. Bukan dokumen terverifikasi yang dikirimkan."
     },
     "doc.provenance.archived_responses": {
       "en": "Archived raw responses",

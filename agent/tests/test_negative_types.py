@@ -58,6 +58,7 @@ from reporting_agent.verify.findings import (
     FINDING_TABLE_COLUMN_UNRESOLVED,
     FINDING_TABLE_ROW_UNRESOLVED,
 )
+import messages_factory as mf
 
 TWO_VMS: Final[tuple[str, ...]] = ("prod-web-01", "prod-sql-01")
 

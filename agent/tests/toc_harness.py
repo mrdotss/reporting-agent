@@ -74,6 +74,7 @@ from reporting_agent.render.toc import (
     TOC_APPROACHES,
 )
 from reporting_agent.verify.tokens import pdf_page_texts
+import messages_factory as mf
 
 __all__ = [
     "FIXTURE_DIR",
@@ -512,7 +513,8 @@ def _base_docx(
     compiled = compile_document(dict(definition), view=view)
     design = DesignSettings.from_plain(definition.get("design"))
     outcome = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=design
+        compiled.document, ledger=compiled.ledger, design=design,
+    messages=mf.EN,
     )
     return outcome.docx_bytes
 
