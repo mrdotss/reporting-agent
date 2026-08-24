@@ -1,9 +1,9 @@
 """The meta-test over the sixteen blocking finding types (Req 44.1, 44.12, 44.14, 44.15).
 
-The negative suite's own gate. Every test in `test_negative_gates.py` and
-`test_negative_types.py` declares the blocking finding types it expects; this module reads
-those declarations and fails if any of the sixteen types the glossary declares is asserted by
-none of them.
+The negative suite's own gate. Every test in `test_negative_gates.py`,
+`test_negative_types.py` and `test_negative_wave15.py` declares the blocking finding types it
+expects; this module reads those declarations and fails if any of the blocking types the
+glossary declares is asserted by none of them.
 
 That is what keeps the suite honest as the code changes. A blocking type added to
 `verify/findings.py` in a later change has, by default, no test observing it fail — it is
@@ -28,6 +28,7 @@ from typing import Final
 # which has an answer before a single test runs.
 import test_negative_gates
 import test_negative_types
+import test_negative_wave15
 from negatives import DECLARED
 from reporting_agent.verify.findings import (
     BLOCKING_FINDING_TYPES,
@@ -36,7 +37,11 @@ from reporting_agent.verify.findings import (
     severity_of,
 )
 
-NEGATIVE_MODULES: Final[tuple[object, ...]] = (test_negative_gates, test_negative_types)
+NEGATIVE_MODULES: Final[tuple[object, ...]] = (
+    test_negative_gates,
+    test_negative_types,
+    test_negative_wave15,
+)
 
 EXPECTED_BLOCKING_COUNT: Final[int] = 24
 """Req 44.1 names the number, so the number is asserted rather than derived.

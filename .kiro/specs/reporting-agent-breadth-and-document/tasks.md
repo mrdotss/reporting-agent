@@ -616,6 +616,39 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Every option keyboard-reachable with a visible `--ring` focus indicator and selections and removals announced through an `aria-live="polite"` region
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 8.1, 8.7, 8.8_
 
+  - [ ] 12.8 Compile a `fact`-kind column, which 12.6 specified and did not implement
+    - **12.6's own text requires this "at compile time"** — "a `fact` column emits two columns
+      at compile time — `<key>` and `<key>.observed_at`" — and named `definition.py` as one of
+      the two places the `kind` enum is mirrored. 12.6 shipped the app-side inspector and the
+      `kind` enum on both halves; it did not implement the agent-side compiler this task's own
+      description specifies. `compile/blocks/tables.py::compile_resource_table` reads only
+      `entry.kind == "metric"` (lines 347, 370); a `ColumnEntry(kind="fact")` is parsed and
+      validated by `read_column_entries` and then never consumed. There is no path in production
+      from "a template names a fact column" to a `TextFact` appearing in a rendered table
+    - Found during wave 15: task 15.1/15.2's negative tests needed a `TextFact` inside a
+      compiled `resource_table` to mutate, and could not get one through any real definition —
+      they inject one via the `compiled` hook instead, which is sound for what those two tasks
+      assert (the verifier's handling of a text-fact mismatch) but is not evidence the compiler
+      path exists. `tests/test_text_fact_render.py` tests the render primitive once a `TextFact`
+      exists on a `Table` node; nothing tests `compile_resource_table` producing one from a
+      `fact`-kind column entry, because nothing could — grep confirms zero existing tests name
+      both `kind` and `fact` together in `test_tables.py` or `test_blocks.py`
+    - Implement `compile_resource_table` reading `entry.kind == "fact"`: resolve the key against
+      the row's `FactTextValue` (the same accessor `compile/snapshot_view.py`'s walk already
+      produces for the facts a resource carries), mint the `TextFact` through `BlockCursor
+      .text_fact()` — the same factory `render/tables.py` already renders correctly — and emit
+      **two** columns as 12.6 specifies: `<key>` carrying the fact's value, `<key>.observed_at`
+      carrying its `collected_at` as a second `TextFact` with its own anchor. A resource missing
+      that fact records `fact_unavailable` per the collector's own convention (see 4.3) rather
+      than emitting an empty cell or raising
+    - Assert two facts with differing `collected_at` instants produce two distinct instant
+      columns and no table-level instant column, matching 12.6's own stated reasoning for why
+      the second column exists at all
+    - Add the test 12.6 needed and did not get: a `resource_table` definition naming a real
+      `fact`-kind column, compiled through the real pipeline, asserting the rendered table
+      carries a genuine `TextFact` anchored to a real cell — not one injected past the compiler
+    - _Requirements: 12.6 (the compile-time clause specifically), 6.2, 6.3_
+
   - [x] 12.7 Make saving the identity step name the template
     - `app/components/templates/step-identity.tsx` writes the submitted value to the draft definition's `identity.name` and **then** invokes `renameTemplate` against `report_templates.name` — **two separate writes in that order**, not one atomic write — and reports the step as saved only where both succeeded. Today the component writes `definition.identity.name` alone (line 37) while its field is labelled `Template name` (line 44) and the list reads `report_templates.name`, so nothing calls `lib/actions/templates.renameTemplate` and every template reads `Untitled template` forever
     - Invoke the rename only where the submitted value differs **character for character** from the stored `report_templates.name`; where it is equal, invoke none and report the step as saved
@@ -702,30 +735,30 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     inferred from a missing event. None may be skipped or marked as an expected failure, and all of
     them run before a change in this spec is committed.
 
-  - [ ] 15.1 A numeric fact's rendered value changed
+  - [x] 15.1 A numeric fact's rendered value changed
     - Mutation: one digit of exactly one **numeric fact**'s rendered value changed so the mutated string equals no ledger `formatted` value, leaving the ledger, the anchor set and every other rendered character unchanged
     - Expected blocking set `{table_cell_mismatch}`, naming the table identity, the row key, the column key and the expected and observed strings; `report_runs.status` `failed` carrying `error_code` `VERIFICATION_FAILED`; and no download control
     - Proves a numeric fact is proven exactly as a metric figure is — there is no second numeric path
     - _Requirements: 24.1, 24.2, 24.3, 24.4_
 
-  - [ ] 15.2 A text fact's rendered value changed from `Succeeded` to `Failed`
+  - [x] 15.2 A text fact's rendered value changed from `Succeeded` to `Failed`
     - Mutation: that value alone, leaving the ledger and every other rendered character unchanged
     - Expected blocking set `{text_fact_mismatch}`, naming the table identity, the row key, the column key, the fact key and both strings verbatim
     - **And additionally**: assert the numeric masking stages record **zero** `unmatched_prose_token` findings for that mutation, so the test **fails** against an implementation relying on numeric masking to catch it and thereby demonstrates why `TextFact` exists at all
     - _Requirements: 24.1, 24.2, 24.3, 24.5_
 
-  - [ ] 15.3 A fact-producing response removed from the archive
+  - [x] 15.3 A fact-producing response removed from the archive
     - Mutation: remove one fact-producing response from a stored run's archive, leaving the stored `snapshot_id`, the archive sequence and every other archived object unchanged
     - Expected blocking set `{replay_hash_mismatch}` carrying the recomputed digest and the stored digest, with the terminal code `REPLAY_MISMATCH`
     - Proves a fact silently omitted from the archive fails replay rather than producing a snapshot that quietly omits it
     - _Requirements: 24.1, 24.2, 24.3, 24.6_
 
-  - [ ] 15.4 An `id` document declaring a comma, converted with a period
+  - [x] 15.4 An `id` document declaring a comma, converted with a period
     - Fixture: a document whose pinned definition declares `identity.language` `id` and a comma `decimal_separator`; convert such that its figures are written with a **period** decimal separator
     - Expected blocking set `{pdf_figure_missing}`, naming at least one ledger entry whose declared-format `formatted` string carries a **comma**, together with that entry's AST path
     - _Requirements: 24.1, 24.2, 24.3, 24.7_
 
-  - [ ] 15.5 An `en` document declaring a period, converted with a comma
+  - [x] 15.5 An `en` document declaring a period, converted with a comma
     - Fixture: a document whose pinned definition declares `identity.language` `en` and a period `decimal_separator`; convert such that its figures are written with a **comma**
     - Expected blocking set `{pdf_figure_missing}`, naming at least one ledger entry whose declared-format `formatted` string carries a **period**
     - The second direction is what makes 15.4 an **agreement** check rather than a comma rule
@@ -737,13 +770,13 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Assert the replaced test name appears nowhere in the suite, so the retirement is complete rather than leaving two tests asserting contradictory rules
     - _Requirements: 24.9, 24.10_
 
-  - [ ] 15.7 A short trend is a labelled normal outcome — the one test that asserts a pass
+  - [x] 15.7 A short trend is a labelled normal outcome — the one test that asserts a pass
     - Fixture: a `historical_trend` block declaring a lookback of **6** against a subscription and template for which exactly **2** completed and verification-passed prior runs exist. **No mutation**
     - Expected blocking set **`{}`** with status `pass`: exactly **2** plotted points, the explicit statement naming **2 plotted and 6 requested**, and no third point
     - Asserted on the same unmutated fixture every other test in this section observes passing first, so a short trend is a labelled normal outcome rather than a failure and never a fabricated six
     - _Requirements: 24.1, 24.11_
 
-  - [ ] 15.8 A historical point injected from a run whose verification failed
+  - [x] 15.8 A historical point injected from a run whose verification failed
     - Two halves: the **resolver** selects no point from a candidate run whose latest verification status is `fail`; and a point sourced from such a run **injected** into the compiled document records `historical_point_unverified` naming that run id and the entry's AST path
     - Expected blocking set `{historical_point_unverified}`. The injection is expressible because `Figure.__post_init__` accepts a `/prior_runs/<id>` pointer with a matching `source_run_id` — if construction refused it the negative test could not exist and the gate would never have been observed failing
     - _Requirements: 24.1, 24.2, 24.3, 24.12_
@@ -943,9 +976,10 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 13, "tasks": ["8.4", "11.5", "11.6", "13.3", "13.5", "13.6"] },
     { "id": 14, "tasks": ["6.7", "11.7"] },
     { "id": 15, "tasks": ["6.5", "15.1", "15.2", "15.3", "15.4", "15.5", "15.7", "15.8"] },
-    { "id": 16, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
-    { "id": 17, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
-    { "id": 18, "tasks": ["16.4"] }
+    { "id": 16, "tasks": ["12.8"] },
+    { "id": 17, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
+    { "id": 18, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
+    { "id": 19, "tasks": ["16.4"] }
   ]
 }
 ```
@@ -1024,4 +1058,28 @@ and `agent/src/reporting_agent/verify/{allowlist,masking}.py`, none of which 6.7
 confined to `app/components/reports/**`. It could equally have taken a wave of its own; it joins
 6.7's instead because nothing forces it later and there is no reason to spend an extra wave on a
 task with no collision.
+
+### Adding task 12.8
+
+12.6 was ticked in wave 13. Its own text specifies a compile-time behaviour — "a `fact` column
+emits two columns at compile time" — that the wave-13 dispatch never implemented:
+`compile/blocks/tables.py::compile_resource_table` reads only `entry.kind == "metric"`, and a
+`ColumnEntry(kind="fact")` is parsed by `read_column_entries` and then consumed by nothing.
+Grep confirms zero existing tests name `kind` and `fact` together in `test_tables.py` or
+`test_blocks.py`, so this was not a case of an untested edge — nothing exercised the path at all.
+
+Found during wave 15, not by a dedicated audit: tasks 15.1 and 15.2 needed a `TextFact` inside a
+compiled `resource_table` to mutate, and the wave-15 sub-agent could not obtain one through any
+real definition — it injects one via the `compiled` hook instead. That workaround is sound for
+what 15.1/15.2 actually assert (the verifier's handling of a text-fact mismatch, independent of
+where the fact came from), so their tests are not wrong. But the workaround's own docstring
+recorded the gap as "arrives with a later task," and no such task existed. Recorded here so the
+next reader does not have to re-derive that.
+
+**12.8 takes its own wave (16), between 15 and 17.** It writes only
+`compile/blocks/tables.py` and its own tests — no task in wave 15 or wave 17 touches that file,
+so it could have joined either; it takes its own wave because closing it before wave 17's
+`TextFact`-anchor negative tests (15.11, 15.12, 15.13) means those tests can exercise a real
+compiled fact column rather than another hand-injected one, which is the more honest test of the
+three now that a real path exists.
 
