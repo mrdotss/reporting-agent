@@ -534,6 +534,30 @@ export const reportRuns = pgTable(
       (): AnyPgColumn => reportTemplateVersions.id
     ),
 
+    /**
+     * The customer name printed on the cover and document-control pages
+     * (Requirement 13.7). Nullable because a run pinned to a `schema_version` 1
+     * version legitimately carries neither per-run front-matter value, and
+     * `NOT NULL` would demand writing values into rows that never had them.
+     *
+     * The invariant is enforced at the boundary: `lib/actions/runs.ts` rejects a
+     * v2-pinned request missing this value, naming the absent field and inserting
+     * no row.
+     */
+    customerName: text("customer_name"),
+
+    /**
+     * The revision history row for this run's document-control page
+     * (Requirement 13.7). A single jsonb object carrying `revision`, `note` and
+     * `author`. Nullable for the same reason as `customer_name`: a run pinned to
+     * a `schema_version` 1 version has no front matter to populate.
+     */
+    revisionHistoryRow: jsonb("revision_history_row").$type<{
+      revision: string
+      note: string
+      author: string
+    }>(),
+
     createdAt: instant("created_at").notNull().defaultNow(),
   },
   (table) => [

@@ -122,6 +122,10 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
 )
 # --- END BLOCK TYPES ---
 
+# --- BEGIN COLUMN KINDS (mirrored in app/lib/templates/blocks.ts) ---
+COLUMN_KINDS: Final[tuple[str, ...]] = ("metric", "attribute", "fact")
+# --- END COLUMN KINDS ---
+
 # --- BEGIN BLOCK CONFIG (mirrored in app/lib/templates/blocks.ts) ---
 BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "cover": {
@@ -225,6 +229,7 @@ __all__ = [
     "BLOCK_ID_MAX_LENGTH",
     "BLOCK_ID_MIN_LENGTH",
     "BLOCK_TYPES",
+    "COLUMN_KINDS",
     "DENSITY_VALUES",
     "DESCRIPTION_MAX_LENGTH",
     "DESIGN_PRESETS",

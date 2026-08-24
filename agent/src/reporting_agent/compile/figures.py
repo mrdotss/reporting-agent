@@ -91,6 +91,7 @@ __all__ = [
     "LedgerNode",
     "TableAnchor",
     "assert_ledger_matches_tree",
+    "stored_ledger_compile_layer",
     "walk_figures",
     "walk_ledger_nodes",
 ]
@@ -393,6 +394,58 @@ class FigureLedger:
         """SHA-256 over :meth:`serialize`, as 64 lowercase hexadecimal characters."""
         return hashlib.sha256(self.serialize()).hexdigest()
 
+    def serialize_compile_layer(self) -> bytes:
+        """The compile-derivable subset of the ledger, as RFC 8785 canonical bytes.
+
+        Re-verification's claim is "the figures in this document still trace to this
+        snapshot". That claim lives entirely in the compile layer:
+
+        * Every Figure — its ``value``, ``formatted``, ``unit``, ``estimator``,
+          ``snapshot_path``, and the AST path keying it — is a pure function of the
+          pinned template version plus the snapshot.
+        * The *existence* and ``anchor_id`` of each anchor is compile-derived: the block
+          compiler calls ``anchor_table``/``anchor_chart`` which records the anchor with
+          ``kind`` and ``anchor_id`` but leaves ``row_key``/``column_key`` as ``None``.
+        * ``row_key`` and ``column_key`` are populated later by
+          ``render/anchors.py::record_cell_anchor``, after a figure lands in a specific
+          grid position during the render pass. They are NOT derivable from the snapshot.
+
+        Comparing only this projection is therefore comparing *exactly* what a recompile
+        from (template_version + snapshot) can reproduce. It is NOT a weakening:
+
+        * The render-populated fields are verified by a stronger mechanism — the
+          anchored-cell pass (``verify/anchors.py``) checks each anchor's position against
+          the STORED ``.docx`` whose SHA-256 matches the recorded ``docx_sha256``. That
+          check runs against the actual delivered artifact, not a re-derivation of it.
+        * A figure whose ``formatted``, ``snapshot_path``, ``value`` or any other
+          compile-derived field changed is still caught by this comparison.
+        * The stored ledger (``serialize()``) still carries the full anchor data including
+          ``row_key``/``column_key``, because the first verification and the anchored-cell
+          pass both need them. This method does not alter what is stored.
+        """
+        document: dict[str, object] = {
+            "schema_version": 1,
+            "entries": {
+                str(path): _figure_to_plain(self._entries[path])
+                for path in sorted(self._entries)
+            },
+            "anchors": {
+                str(path): _anchor_compile_layer(self._anchors[path])
+                for path in sorted(self._anchors)
+            },
+        }
+        if self._text_facts:
+            document["text_facts"] = {
+                str(path): _text_fact_to_plain(self._text_facts[path])
+                for path in sorted(self._text_facts)
+            }
+        if self._text_fact_anchors:
+            document["text_fact_anchors"] = {
+                str(path): _anchor_compile_layer(self._text_fact_anchors[path])
+                for path in sorted(self._text_fact_anchors)
+            }
+        return rfc8785.dumps(document)
+
 
 def _figure_to_plain(figure: Figure) -> dict[str, object]:
     """One ledger entry as plain data.
@@ -468,6 +521,71 @@ def _anchor_to_plain(anchor: TableAnchor) -> dict[str, object]:
     if anchor.column_key is not None:
         plain["column_key"] = anchor.column_key
     return plain
+
+
+def _anchor_compile_layer(anchor: TableAnchor) -> dict[str, object]:
+    """The compile-derivable fields of an anchor — ``kind`` and ``anchor_id`` only.
+
+    ``row_key`` and ``column_key`` are populated by the render pass
+    (``render/anchors.py::record_cell_anchor``) after a figure lands in a specific grid
+    cell. They are not derivable from (template_version + snapshot) alone, so a recompile
+    without render cannot reproduce them. Excluding them here is what makes the
+    compile-layer comparison succeed on a correct report while still catching any mutation
+    to the compile-derived content.
+    """
+    return {"kind": anchor.kind, "anchor_id": anchor.anchor_id}
+
+
+def stored_ledger_compile_layer(stored_bytes: bytes) -> bytes:
+    """Project a stored ledger artifact to its compile-derivable layer.
+
+    The stored ``ledger.json`` is serialized AFTER the render step populates ``row_key``
+    and ``column_key`` on anchors (via ``render/anchors.py::record_cell_anchor``).
+    Re-verification only recompiles — no render — so the recompiled ledger lacks those
+    fields. This function strips them from the stored artifact so both sides of the
+    comparison describe the same layer.
+
+    **What is included (the compile layer):**
+
+    * ``entries`` — every Figure's ``value``, ``formatted``, ``unit``, ``estimator``,
+      ``snapshot_path``, ``statistic``, ``fidelity_tier``, ``metric``, ``resource_id``,
+      ``window``, ``estimator_label``, ``formula``, ``derived_from``. All are pure
+      functions of (pinned template version + snapshot).
+    * ``anchors`` — ``kind`` and ``anchor_id`` per entry. Both are assigned by the block
+      compiler (``BlockCursor.anchor_table`` / ``anchor_chart``) from the AST path alone.
+    * ``text_facts`` — the full text-fact entries, all compile-derived.
+    * ``text_fact_anchors`` — same treatment as ``anchors``: ``kind`` + ``anchor_id`` only.
+
+    **What is excluded (the render layer):**
+
+    * ``row_key`` and ``column_key`` on anchors and text-fact anchors. These are populated
+      by the render pass after a figure lands in a specific grid cell. They depend on table
+      layout decisions (column ordering, row grouping) that are render-time, not
+      compile-time. They are verified by a STRONGER mechanism — the anchored-cell pass
+      (``verify/anchors.py``) checks each anchor's grid position against the STORED
+      ``.docx`` whose SHA-256 matches the recorded ``docx_sha256``.
+
+    Returns RFC 8785 canonical bytes for byte-comparison against
+    ``FigureLedger.serialize_compile_layer()``.
+    """
+    import json
+
+    doc = json.loads(stored_bytes)
+
+    # Strip row_key/column_key from anchors.
+    if "anchors" in doc:
+        doc["anchors"] = {
+            path: {"kind": anchor["kind"], "anchor_id": anchor["anchor_id"]}
+            for path, anchor in doc["anchors"].items()
+        }
+    # Strip row_key/column_key from text_fact_anchors.
+    if "text_fact_anchors" in doc:
+        doc["text_fact_anchors"] = {
+            path: {"kind": anchor["kind"], "anchor_id": anchor["anchor_id"]}
+            for path, anchor in doc["text_fact_anchors"].items()
+        }
+
+    return rfc8785.dumps(doc)
 
 
 # --- the cursor ---------------------------------------------------------------------

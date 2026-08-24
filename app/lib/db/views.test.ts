@@ -574,6 +574,8 @@ function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
     gapCount: null,
     templateVersionId: null,
     createdAt: new Date("2026-08-01T03:00:00.000Z"),
+    customerName: null,
+    revisionHistoryRow: null,
     ...overrides,
   }
 }
@@ -596,11 +598,12 @@ function completedReportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
   })
 }
 
-/** Requirements 37.5, 43.4 — the seventeen keys (was fourteen), sorted, spelled out. */
+/** Requirements 37.5, 43.4 — the nineteen keys (was seventeen), sorted, spelled out. */
 const RUN_VIEW_KEYS = [
   "artifactKeys",
   "connectedSubscriptionId",
   "createdAt",
+  "customerName",
   "errorCode",
   "errorMessage",
   "gapCount",
@@ -608,6 +611,7 @@ const RUN_VIEW_KEYS = [
   "periodEnd",
   "periodStart",
   "resourceCount",
+  "revisionHistoryRow",
   "snapshotId",
   "status",
   "templateName",
@@ -701,7 +705,7 @@ const idLike = fc.string({
 // --- The projection ---------------------------------------------------------
 
 describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
-  test("carries the seventeen values the browser is allowed to see", () => {
+  test("carries the nineteen values the browser is allowed to see", () => {
     const view = toRunView(reportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED)
 
     expect(view).toEqual({
@@ -722,6 +726,8 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
       templateName: null,
       templateVersion: null,
       verificationStatus: null,
+      customerName: null,
+      revisionHistoryRow: null,
     })
   })
 
@@ -752,6 +758,8 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
       templateName: TEMPLATE_NAME,
       templateVersion: TEMPLATE_VERSION,
       verificationStatus: "pass",
+      customerName: null,
+      revisionHistoryRow: null,
     })
   })
 
@@ -997,7 +1005,7 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11, 43.4, 43.6"
     expect(row.progressTotal).toBe(PROGRESS_TOTAL)
   })
 
-  test("the projected key set is exactly the seventeen reviewed keys, as a set equality", () => {
+  test("the projected key set is exactly the nineteen reviewed keys, as a set equality", () => {
     // Requirements 37.11, 43.4. Hard-coded above, so a newly added
     // `report_runs` column — or a newly added `RunViewExtras` field — cannot
     // reach the browser without an explicit change to that list. A set
@@ -1567,7 +1575,7 @@ function reportVerificationRow(
   }
 }
 
-/** Requirement 43.9 — the twelve keys, sorted, spelled out. */
+/** Requirement 43.9 — the fourteen keys, sorted, spelled out. */
 const VERIFICATION_VIEW_KEYS = [
   "advisoryFindings",
   "blockingFindings",
@@ -1576,11 +1584,13 @@ const VERIFICATION_VIEW_KEYS = [
   "docxSha256",
   "driftSample",
   "figureCount",
+  "historicalPoints",
   "id",
   "pdfSha256",
   "replay",
   "snapshotSha256",
   "status",
+  "textFactCount",
 ]
 
 /** Omitted under both spellings — see `toVerificationView`'s docstring for why each. */
@@ -1648,7 +1658,7 @@ describe("toFindingView — Requirement 43.9", () => {
 // --- toVerificationView -------------------------------------------------------
 
 describe("toVerificationView — Requirements 36.1, 43.9", () => {
-  test("carries the twelve values the browser is allowed to see", () => {
+  test("carries the fourteen values the browser is allowed to see", () => {
     const view = toVerificationView(reportVerificationRow())
 
     expect(view).toEqual({
@@ -1675,6 +1685,8 @@ describe("toVerificationView — Requirements 36.1, 43.9", () => {
       advisoryFindings: [toFindingView(ADVISORY_FINDING)],
       counts: { ledger_entries_checked: 1480, ledger_entries_unrendered: 1 },
       createdAt: "2026-08-01T04:00:00.000Z",
+      textFactCount: 0,
+      historicalPoints: [],
     })
   })
 
@@ -1745,7 +1757,7 @@ describe("Projection_Guard — VerificationView, Requirements 36.1, 43.4, 43.6, 
     expect(new Set(dropped).size).toBe(dropped.length)
   })
 
-  test("the projected key set is exactly the twelve reviewed keys, as a set equality", () => {
+  test("the projected key set is exactly the fourteen reviewed keys, as a set equality", () => {
     expect(
       Object.keys(toVerificationView(reportVerificationRow())).sort()
     ).toEqual(VERIFICATION_VIEW_KEYS)

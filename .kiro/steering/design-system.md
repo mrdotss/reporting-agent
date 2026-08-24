@@ -322,6 +322,48 @@ lightness is already spent, on the ladder above. So:
   the chart and the delta table. Colour that shifts between two views of the same
   data is worse than no colour.
 
+#### Inline value labels take `--foreground`, not the series colour. It was measured, and it failed.
+
+The standing WCAG contrast gate (`agent/tests/test_chartstyle.py`) found two real
+failures on its first run:
+
+| series | surface | theme | measured | floor |
+|---|---|---|---|---|
+| `--cat-2` (violet, L 0.64) | `--background` | light | **3.476:1** | 4.5:1 |
+| `--cat-5` (green, L 0.56) | `--background` | dark | **4.440:1** | 4.5:1 |
+
+Both clear the **3:1 graphical-object** floor (WCAG 1.4.11) — the marks are fine.
+They miss **4.5:1 for text** (WCAG 1.4.3), which is what an inline value label is:
+a specific numeral the reader must be able to read, not a decoration whose absence
+could be inferred from axis position.
+
+**Moving the palette was rejected.** The lightness ladder is measured and
+load-bearing: even 0.06 steps, one rank order across both themes, CVD worst case
+0.083 against a 0.06 floor the palette was already changed once to reach.
+Optimising each theme independently inverted the visual hierarchy on theme toggle
+and was rejected (see above). There is no token edit that fixes the text contrast
+without reopening a problem already closed.
+
+**The fix: render every inline value label in `--foreground`.** The categorical
+palette carries identity on the **mark** (line, bar, marker) — a graphical object,
+correctly checked at 3:1. The numeral beside it is text whose job is to be read;
+its identity is established by proximity to the mark it annotates, not by sharing
+the mark's hue.
+
+`--foreground` on `--background`:
+- light: `oklch(0.148 0.004 228.8)` on white → **~16.7:1**
+- dark: `oklch(0.987 0.002 197.1)` on `oklch(0.148 0.004 228.8)` → **~19.5:1**
+
+Both exceed the floor by a factor of three. `design-system.md` already argues colour
+is a **redundant** channel — "every series carries a direct label" — so the label's
+typographic legibility is the invariant, and this is how the invariant is enforced
+without constraining the palette.
+
+The gate still asserts **both** floors: 3:1 for every categorical token as a
+graphical object, and 4.5:1 for `--foreground` as the colour inline value labels
+actually use. `chartstyle.value_label_color(theme)` is the accessor; `charts.py`
+calls it for every `annotate(...)` that renders a figure's `formatted` string.
+
 ### Non-negotiables for every chart
 - **Never rely on colour alone.** Every series carries a **direct label** at the
   line end or on the bar — legends are a fallback, not the mechanism. Pair colour

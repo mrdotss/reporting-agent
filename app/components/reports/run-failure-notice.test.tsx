@@ -58,6 +58,8 @@ function view(over: Partial<RunView> = {}): RunView {
     templateName: null,
     templateVersion: null,
     verificationStatus: null,
+    customerName: null,
+    revisionHistoryRow: null,
     ...over,
   }
 }

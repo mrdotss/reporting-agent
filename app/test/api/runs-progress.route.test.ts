@@ -114,6 +114,8 @@ function row(over: Partial<ReportRun> = {}): ReportRun {
     gapCount: null,
     templateVersionId: null,
     createdAt: new Date("2026-08-15T09:50:00Z"),
+    customerName: null,
+    revisionHistoryRow: null,
     ...over,
   }
 }

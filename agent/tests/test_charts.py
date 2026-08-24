@@ -521,6 +521,7 @@ def test_destructive_appears_on_no_series_gridline_or_label() -> None:
     used = {C._colour_for(series, siblings, node, "light") for series in node.series}
     used.add(S.grid_color("light"))
     used.add(S.axis_label_color("light"))
+    used.add(S.value_label_color("light"))
     assert used.isdisjoint(forbidden)
 
 

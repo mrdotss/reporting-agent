@@ -58,6 +58,7 @@ from reporting_agent.verify import facts as facts_pass
 from reporting_agent.verify import pdf as pdf_pass
 from reporting_agent.verify.allowlist import derive_allowlist
 from reporting_agent.verify.drift import DriftOutcome, primary_metric, requery_sample, select
+from reporting_agent.verify import historical as historical_pass
 from reporting_agent.verify import toc as toc_pass
 from reporting_agent.verify.findings import (
     FINDING_LEDGER_ENTRY_UNRENDERED,
@@ -143,6 +144,7 @@ class VerifyInputs:
     subscription_display_name: str = ""
     catalog_scales: Mapping[str, int] | None = None
     messages: Messages | None = None
+    historical: Mapping[str, historical_pass.HistoricalRunInfo] = field(default_factory=dict)
 
 
 async def verify(inputs: VerifyInputs) -> VerificationResult:
@@ -298,8 +300,12 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     counts["text_fact_entries_resolved"] = text_fact_result.entries_resolved
     gates.add("facts")
 
-    # --- breadth 18: historical, still stubbed ------------------------------------------
-    findings.extend(_stub_historical_gate_awaiting_task_11_4(inputs))
+    # --- breadth 18: historical ---------------------------------------------------------
+    historical_result = historical_pass.check_historical(
+        inputs.ledger, historical=inputs.historical
+    )
+    findings.extend(historical_result.findings)
+    counts["historical_points_checked"] = len(historical_result.historical_points)
     gates.add("historical")
 
     # --- 29: completeness, in both directions ------------------------------------------
@@ -319,7 +325,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     counts["blocking_findings_observed"] = len(blocking)
     counts["advisory_findings_observed"] = len(findings) - len(blocking)
 
-    return build_result(
+    result = build_result(
         attempt_id=inputs.attempt_id,
         run_id=inputs.run_id,
         template_version_id=inputs.template_version_id,
@@ -334,6 +340,13 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         findings=findings,
     )
 
+    # Record historical points on the result so a reader can trace each plotted period
+    # to the verification that proved it (Req 18.11, 19.9). Shape matches
+    # VerificationView.historicalPoints: readonly { runId: string; snapshotSha256: string }[].
+    result["historical_points"] = list(historical_result.historical_points)  # type: ignore[typeddict-unknown-key]
+
+    return result
+
 
 def _assert_every_gate_ran(gates: set[str]) -> None:
     """Req 25.5, 25.11 — `pass` is a claim about the gates as well as the findings."""
@@ -345,31 +358,6 @@ def _assert_every_gate_ran(gates: set[str]) -> None:
             f"{sorted(gates - REQUIRED_GATES)}. An incomplete verification is a fail, "
             "never a partial pass."
         )
-
-
-# --------------------------------------------------------------------------- #
-# The remaining gate the breadth-and-document spec declares, still stubbed
-# --------------------------------------------------------------------------- #
-#
-# `REQUIRED_GATES` names `historical` already, which is deliberate: the alternative —
-# adding each name with the pass that implements it — lets a half-wired verifier report
-# `pass` on a document nothing checked, and that is precisely the outcome
-# `_assert_every_gate_ran` exists to make impossible.
-#
-# The stub is named `_stub_<gate>_gate_awaiting_task_<n>`, so its call site says both
-# that it is a stub and which task replaces it. It does not read `inputs`; the
-# parameter is here so the call site does not change shape when the real pass lands.
-
-
-def _stub_historical_gate_awaiting_task_11_4(inputs: VerifyInputs) -> tuple[Finding, ...]:
-    """STUB. Replaced by task 11.4, which implements `verify/historical.py`.
-
-    That task reads a `historical` input mapping each source run id to its verification
-    status and resolved period, and records `historical_point_unverified` and
-    `historical_point_overlapping` (breadth criteria 18.11, 18.12).
-    """
-    del inputs
-    return ()
 
 
 # --------------------------------------------------------------------------- #

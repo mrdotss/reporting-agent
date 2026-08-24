@@ -1118,11 +1118,19 @@ async def run_verify_report(
     recompiled = compile_document(
         definition, view=view, prose=_StoredProse(prose), catalog_scales=None
     )
-    if recompiled.ledger.serialize() != stored_ledger:
+
+    # Compare the compile-derivable layer only. The stored ledger includes render-populated
+    # fields (row_key, column_key on anchors) that a recompile without render cannot
+    # reproduce — and should not: those fields are verified by the anchored-cell pass
+    # against the stored .docx, which is stronger than re-derivation.
+    from reporting_agent.compile.figures import stored_ledger_compile_layer
+
+    if recompiled.ledger.serialize_compile_layer() != stored_ledger_compile_layer(stored_ledger):
         raise VerificationFailedError(
             "the ledger recompiled from the pinned version and the stored snapshot is not "
-            "byte-identical to the stored ledger; the two describe different documents and "
-            "no re-verification of this report is meaningful"
+            "byte-identical to the stored ledger's compile layer; the figures trace to a "
+            "different snapshot or template version and no re-verification of this report "
+            "is meaningful"
         )
 
     yield steps.end(step["id"])

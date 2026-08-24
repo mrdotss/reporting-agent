@@ -69,6 +69,7 @@ from reporting_agent.compile.messages import Messages
 from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
 
 __all__ = [
+    "EMITTED_CLASS_NAMES",
     "EMPTY_CELL_TEXT",
     "FIGURE_CLASS",
     "NOTICE_ROW_CLASS",
@@ -79,14 +80,64 @@ __all__ = [
     "emit_toc_html",
 ]
 
-FIGURE_CLASS: Final[str] = "rpt-figure"
+# --- BEGIN EMITTED_CLASS_NAMES ---
+EMITTED_CLASS_NAMES: Final[tuple[str, ...]] = (
+    "rpt-document",
+    "rpt-block",
+    "rpt-break",
+    "rpt-table",
+    "rpt-row",
+    "rpt-notice",
+    "rpt-chart",
+    "rpt-chart-period",
+    "rpt-series-set",
+    "rpt-series",
+    "rpt-point",
+    "rpt-figure",
+    "rpt-column",
+    "rpt-layout-row",
+    "rpt-toc",
+    "rpt-toc-list",
+    "rpt-toc-entry",
+)
+# --- END EMITTED_CLASS_NAMES ---
+"""Every class name the HTML emitter may write into a ``class`` attribute.
+
+Thirteen names, declared **once**. Every emit site below takes its class from this
+collection rather than from an inline literal. `agent/tests/test_html_classes.py`
+asserts no `class="rpt-` literal appears in this file outside this declaration, and
+that a runtime-produced document's class set is a subset of this tuple.
+
+`rpt-paper` is deliberately NOT in this collection — `paper-render.tsx` emits it as
+its own wrapper; an extra stylesheet rule is never a failure and a missing one is.
+"""
+
+_CLS_DOCUMENT: Final[str] = EMITTED_CLASS_NAMES[0]   # rpt-document
+_CLS_BLOCK: Final[str] = EMITTED_CLASS_NAMES[1]      # rpt-block
+_CLS_BREAK: Final[str] = EMITTED_CLASS_NAMES[2]      # rpt-break
+_CLS_TABLE: Final[str] = EMITTED_CLASS_NAMES[3]      # rpt-table
+_CLS_ROW: Final[str] = EMITTED_CLASS_NAMES[4]        # rpt-row
+_CLS_NOTICE: Final[str] = EMITTED_CLASS_NAMES[5]     # rpt-notice
+_CLS_CHART: Final[str] = EMITTED_CLASS_NAMES[6]      # rpt-chart
+_CLS_CHART_PERIOD: Final[str] = EMITTED_CLASS_NAMES[7]  # rpt-chart-period
+_CLS_SERIES_SET: Final[str] = EMITTED_CLASS_NAMES[8] # rpt-series-set
+_CLS_SERIES: Final[str] = EMITTED_CLASS_NAMES[9]     # rpt-series
+_CLS_POINT: Final[str] = EMITTED_CLASS_NAMES[10]     # rpt-point
+_CLS_FIGURE: Final[str] = EMITTED_CLASS_NAMES[11]    # rpt-figure
+_CLS_COLUMN: Final[str] = EMITTED_CLASS_NAMES[12]    # rpt-column
+_CLS_LAYOUT_ROW: Final[str] = EMITTED_CLASS_NAMES[13]  # rpt-layout-row
+_CLS_TOC_NAV: Final[str] = EMITTED_CLASS_NAMES[14]     # rpt-toc
+_CLS_TOC_LIST: Final[str] = EMITTED_CLASS_NAMES[15]    # rpt-toc-list
+_CLS_TOC_ENTRY: Final[str] = EMITTED_CLASS_NAMES[16]   # rpt-toc-entry
+
+FIGURE_CLASS: Final[str] = _CLS_FIGURE
 """The class every figure element carries.
 
 `design-system.md` requires every figure in the monospace face with **tabular** numerals
 (Req 24.3), which is a stylesheet's job — but the hook has to be reliable, so it is one class
 name emitted at every figure position rather than an inline style repeated per element."""
 
-NOTICE_ROW_CLASS: Final[str] = "rpt-notice"
+NOTICE_ROW_CLASS: Final[str] = _CLS_NOTICE
 """The explicit no-data row. Styled in mist neutrals rather than `--destructive`: an empty
 result is information, not an error."""
 
@@ -277,7 +328,7 @@ class _Emitter:
         tag, extra = _paragraph_tag(node.style)
         body = self.inlines(node.inlines, at=f"paragraph {node.path!r}")
         self.write(
-            f'<{tag} class="rpt-block" data-style="{html.escape(node.style, quote=True)}"'
+            f'<{tag} class="{_CLS_BLOCK}" data-style="{html.escape(node.style, quote=True)}"'
             f'{extra} data-path="{html.escape(str(node.path), quote=True)}">{body}</{tag}>'
         )
 
@@ -289,7 +340,7 @@ class _Emitter:
         rule says "the author asked for a break", which is the fact the AST actually carries.
         """
         self.write(
-            f'<hr class="rpt-break" data-path="{html.escape(str(node.path), quote=True)}" />'
+            f'<hr class="{_CLS_BREAK}" data-path="{html.escape(str(node.path), quote=True)}" />'
         )
 
     def table(self, node: Table) -> None:
@@ -321,15 +372,15 @@ class _Emitter:
             f"<caption>{html.escape(node.caption)}</caption>" if node.caption else ""
         )
         self.write(
-            f'<table class="rpt-table" data-style="{html.escape(node.style, quote=True)}"'
+            f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">{caption}'
             f"{''.join(rows)}</table>"
         )
 
     def row(self, node: Table, row: Row) -> str:
-        classes = ["rpt-row"]
+        classes = [_CLS_ROW]
         if row.key in _NOTICE_ROW_KEYS:
-            classes.append(NOTICE_ROW_CLASS)
+            classes.append(_CLS_NOTICE)
 
         cells: list[str] = []
         for ordinal, column in enumerate(node.columns):
@@ -377,39 +428,40 @@ class _Emitter:
             series_markup.append(self.series(series))
 
         indication = (
-            f'<p class="{NOTICE_ROW_CLASS}">{html.escape(self.messages.text(EMPTY_SCOPE_TEXT))}</p>'
+            f'<p class="{_CLS_NOTICE}">{html.escape(self.messages.text(EMPTY_SCOPE_TEXT))}</p>'
             if not any(series.points for series in node.series)
             else ""
         )
 
         period_markup = (
-            f'<p class="rpt-chart-period">{html.escape(node.period_label)}</p>'
+            f'<p class="{_CLS_CHART_PERIOD}">{html.escape(node.period_label)}</p>'
             if node.period_label
             else ""
         )
 
         self.write(
-            f'<figure class="rpt-chart" data-chart-type='
+            f'<figure class="{_CLS_CHART}" data-chart-type='
             f'"{html.escape(node.chart_type, quote=True)}"'
             f' data-encoding="{html.escape(node.encoding, quote=True)}"'
             f' data-unit="{html.escape(node.unit, quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
             f"<figcaption>{html.escape(node.title)}</figcaption>"
-            f'{period_markup}{indication}<div class="rpt-series-set">{"".join(series_markup)}</div>'
+            f'{period_markup}{indication}<div class="{_CLS_SERIES_SET}">{"".join(series_markup)}</div>'
             f"</figure>"
         )
 
     def series(self, series: Series) -> str:
-        points = "".join(self.point(point) for point in series.points)
+        point_markups = [self.point(point) for point in series.points]
+        points = " \u00b7 ".join(point_markups)
         return (
-            f'<div class="rpt-series" data-series-key='
+            f'<div class="{_CLS_SERIES}" data-series-key='
             f'"{html.escape(series.key, quote=True)}"'
             f' data-series-label="{html.escape(series.label, quote=True)}">{points}</div>'
         )
 
     def point(self, point: ChartPoint) -> str:
         return (
-            f'<span class="rpt-point" data-x="{html.escape(point.x, quote=True)}">'
+            f'<span class="{_CLS_POINT}" data-x="{html.escape(point.x, quote=True)}">'
             f"{self.figure(point.y)}</span>"
         )
 
@@ -434,13 +486,13 @@ class _Emitter:
             self.table_count += nested.table_count
             self.text_fact_count += nested.text_fact_count
             columns.append(
-                f'<div class="rpt-column" data-path='
+                f'<div class="{_CLS_COLUMN}" data-path='
                 f'"{html.escape(str(column.path), quote=True)}">'
                 f"{''.join(nested.parts)}</div>"
             )
 
         self.write(
-            f'<div class="rpt-layout-row" data-columns="{len(node.columns)}"'
+            f'<div class="{_CLS_LAYOUT_ROW}" data-columns="{len(node.columns)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
             f"{''.join(columns)}</div>"
         )
@@ -468,7 +520,7 @@ def _paragraph_tag(style: str) -> tuple[str, str]:
     if style in ("Caption",):
         return tag, ' data-role="caption"'
     if style in ("Notice", "PreviewNotice"):
-        return tag, f' class="{NOTICE_ROW_CLASS}"'
+        return tag, f' class="{_CLS_NOTICE}"'
     return tag, ""
 
 
@@ -492,7 +544,7 @@ def emit_html(document: object, *, messages: Messages) -> HtmlOutcome:
         emitter.block(block)
 
     return HtmlOutcome(
-        html=f'<div class="rpt-document">{"".join(emitter.parts)}</div>',
+        html=f'<div class="{_CLS_DOCUMENT}">{"".join(emitter.parts)}</div>',
         figure_count=emitter.figure_count,
         text_fact_count=emitter.text_fact_count,
         table_count=emitter.table_count,
@@ -513,6 +565,12 @@ _HEADING_LEVEL_MAP: Final[dict[str, int]] = {
     "Heading 2": 2,
     "Heading 3": 3,
 }
+
+
+# TOC-specific class names — derived from EMITTED_CLASS_NAMES like all others.
+_TOC_CLS_ENTRY: Final[str] = _CLS_TOC_ENTRY
+_TOC_CLS_NAV: Final[str] = _CLS_TOC_NAV
+_TOC_CLS_LIST: Final[str] = _CLS_TOC_LIST
 
 
 def emit_toc_html(document: object) -> str:
@@ -552,11 +610,11 @@ def emit_toc_html(document: object) -> str:
     items: list[str] = []
     for level, text in headings:
         items.append(
-            f'<li class="rpt-toc-entry" data-level="{level}">'
+            f'<li class="{_TOC_CLS_ENTRY}" data-level="{level}">'
             f"{html.escape(text)}</li>"
         )
 
     return (
-        f'<nav class="rpt-toc" aria-label="Table of contents">'
-        f'<ol class="rpt-toc-list">{"".join(items)}</ol></nav>'
+        f'<nav class="{_TOC_CLS_NAV}" aria-label="Table of contents">'
+        f'<ol class="{_TOC_CLS_LIST}">{"".join(items)}</ol></nav>'
     )

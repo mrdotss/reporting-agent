@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "identity": {
+    "name": "Columns v1 bare metric ref"
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "scope": {
+    "resource_types": ["Microsoft.Compute/virtualMachines"],
+    "resource_groups": [],
+    "tag_filters": [],
+    "sort": null,
+    "top_n": null
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "corporate",
+    "table_style": "hairline"
+  },
+  "blocks": [
+    {
+      "config": {
+        "columns": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
+      "id": "b-resources-v1",
+      "type": "resource_table"
+    }
+  ]
+}

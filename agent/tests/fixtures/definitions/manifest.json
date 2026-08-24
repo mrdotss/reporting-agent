@@ -804,6 +804,20 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-columns-v1-bare-metric-ref.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "489c195c8b7f7a83067b7ed5d80e8354879a9879a6182a7d3f614244a992e2fa",
+      "offenders": []
+    },
+    {
+      "file": "accept-columns-v2-typed.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "2e820e91205b734ca0794c1616f3e6cc090ba285a8d7f12df135229e1674f970",
+      "offenders": []
     }
   ]
 }

@@ -588,7 +588,7 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
                         textcoords="offset points",
                         ha="center",
                         va="bottom",
-                        color=style.axis_label_color(theme),
+                        color=style.value_label_color(theme),
                         fontsize=style.CHART_LABEL_SIZE,
                         fontfamily="monospace",
                     )
@@ -619,7 +619,7 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
                     textcoords="offset points",
                     ha="left" if horizontal else "center",
                     va="center" if horizontal else "bottom",
-                    color=style.axis_label_color(theme),
+                    color=style.value_label_color(theme),
                     fontsize=style.CHART_LABEL_SIZE,
                     fontfamily="monospace",
                 )

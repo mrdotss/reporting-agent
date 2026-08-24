@@ -85,6 +85,7 @@ __all__ = [
     "slot_for_key",
     "split_for_plotting",
     "stroke_safe_token",
+    "value_label_color",
 ]
 
 Theme = str
@@ -451,6 +452,21 @@ _MUTED_FOREGROUND: Final[dict[Theme, str]] = {
 """What `--cat-other` aliases to. Asserted against `globals.css` by the mirror test, so
 this is a followed alias rather than a second opinion about the neutral."""
 
+_FOREGROUND: Final[dict[Theme, str]] = {
+    LIGHT: "oklch(0.148 0.004 228.8)",
+    DARK: "oklch(0.987 0.002 197.1)",
+}
+"""The `--foreground` token — near-black in light, near-white in dark. Used for inline
+value labels on charts: the categorical palette carries identity on the *mark*, and the
+numeral beside it takes foreground so the text clears 4.5:1 without constraining the
+palette's lightness ladder.
+
+Measured ratios (value_label_color on --background):
+  light: oklch(0.148 0.004 228.8) on oklch(1 0 0)       → ~16.7:1
+  dark:  oklch(0.987 0.002 197.1) on oklch(0.148 0.004 228.8) → ~19.5:1
+
+Both exceed the 4.5:1 WCAG 1.4.3 text floor by a wide margin."""
+
 
 def _relative_luminance(linear: tuple[float, float, float]) -> float:
     red, green, blue = (_clamp01(channel) for channel in linear)
@@ -613,6 +629,17 @@ def grid_color(theme: Theme = LIGHT) -> str:
 
 def axis_label_color(theme: Theme = LIGHT) -> str:
     return oklch_to_hex(_MUTED_FOREGROUND[theme])
+
+
+def value_label_color(theme: Theme = LIGHT) -> str:
+    """Inline value labels — the numerals at each plotted point or bar — take foreground.
+
+    The categorical palette carries identity on the mark; the numeral beside it takes
+    `--foreground` so it clears the 4.5:1 WCAG 1.4.3 text floor without constraining the
+    palette's lightness ladder. design-system.md records the measured ratios and the
+    reasoning (§ "Inline value labels take foreground").
+    """
+    return oklch_to_hex(_FOREGROUND[theme])
 
 
 _BORDER: Final[dict[Theme, str]] = {

@@ -71,6 +71,12 @@ type BlockConfigSchema = {
   readonly enums: Readonly<Record<string, readonly string[]>>
 }
 
+// --- BEGIN COLUMN KINDS (mirrored in agent/src/reporting_agent/compile/definition.py) ---
+export const COLUMN_KINDS = ["metric", "attribute", "fact"] as const
+// --- END COLUMN KINDS ---
+
+export type ColumnKind = (typeof COLUMN_KINDS)[number]
+
 // --- BEGIN BLOCK CONFIG (mirrored in agent/src/reporting_agent/compile/definition.py) ---
 export const BLOCK_CONFIG = {
   // Req 16.13 — the compiler derives the report title, the subscription's

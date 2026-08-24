@@ -43,6 +43,13 @@
       "when": 1787403309539,
       "tag": "0005_talented_living_lightning",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1787540778156,
+      "tag": "0006_bent_oracle",
+      "breakpoints": true
     }
   ]
 }

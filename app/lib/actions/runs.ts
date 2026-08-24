@@ -25,6 +25,7 @@ import { unionScope } from "@/lib/templates/scope-union"
 import { readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
 import type { TemplateDefinition } from "@/lib/templates/definition"
+import { MAX_SUPPORTED_SCHEMA_VERSION } from "@/lib/templates/definition"
 import {
   deriveProgressToken,
   progressTokenHash,
@@ -116,6 +117,15 @@ export type EnqueueRejection =
       readonly kind: "resolved_period"
       readonly code: PeriodRejectionCode
       readonly message: string
+    }
+  /**
+   * Requirement 13.14 — the pinned version's `schema_version` is 2 or above and
+   * the request is missing one or both per-run front-matter values (customer name
+   * and/or revision history row). Names every absent field.
+   */
+  | {
+      readonly kind: "front_matter_values_missing"
+      readonly missingFields: readonly string[]
     }
 
 /**
@@ -385,6 +395,34 @@ export async function enqueueRun(
     )
   }
 
+  // 4b — per-run front-matter values, required at schema_version >= 2
+  //       (Requirement 13.14). The invariant lives at this boundary, not in a
+  //       CHECK: a CHECK constrained on the pinned version's schema_version needs
+  //       a join a CHECK cannot perform.
+  const schemaVersion =
+    typeof definition.schema_version === "number"
+      ? definition.schema_version
+      : 1
+
+  if (schemaVersion >= 2) {
+    const missingFields: string[] = []
+    if (input.customerName === undefined) {
+      missingFields.push("customerName")
+    }
+    if (input.revisionHistoryRow === undefined) {
+      missingFields.push("revisionHistoryRow")
+    }
+
+    if (missingFields.length > 0) {
+      throw new EnqueueRejectedError(
+        { kind: "front_matter_values_missing", missingFields },
+        `A run pinning a schema_version ${schemaVersion} template requires ` +
+          `per-run front-matter values, but ${missingFields.join(" and ")} ` +
+          `${missingFields.length === 1 ? "is" : "are"} absent.`
+      )
+    }
+  }
+
   // 5 — the collection scope, as the union of the definition's template default
   //     and every block `scope_override` (Requirement 3.3).
   //
@@ -437,6 +475,9 @@ export async function enqueueRun(
         scope,
         status: "queued",
         dedupeKey,
+        // Requirement 13.7 — per-run front-matter values, nullable for v1 pins.
+        customerName: input.customerName ?? null,
+        revisionHistoryRow: input.revisionHistoryRow ?? null,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick
         // recomputes the token from this run's id when it invokes.
         progressTokenHash: progressTokenHash(deriveProgressToken(runId)),

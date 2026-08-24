@@ -1,0 +1,75 @@
+{
+  "schema_version": 2,
+  "identity": {
+    "name": "Columns v2 typed shape",
+    "language": "en"
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "scope": {
+    "resource_types": ["Microsoft.Compute/virtualMachines"],
+    "resource_groups": [],
+    "tag_filters": [],
+    "sort": null,
+    "top_n": null
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "corporate",
+    "table_style": "hairline"
+  },
+  "front_matter": {
+    "cover": {
+      "contact_block": "Test Consulting",
+      "logo": null,
+      "subtitle": null
+    },
+    "document_control": {
+      "approvers": [],
+      "confidentiality_notice_id": "doc.confidentiality.internal",
+      "distribution": "Internal",
+      "document_name": "Test Report",
+      "document_number_pattern": "TEST-{run}"
+    },
+    "toc": {
+      "enabled": false,
+      "max_level": 3
+    }
+  },
+  "blocks": [
+    {
+      "config": {
+        "columns": [
+          {
+            "kind": "metric",
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          },
+          {
+            "kind": "attribute",
+            "attribute": "resource_group"
+          }
+        ]
+      },
+      "id": "b-resources-v2",
+      "type": "resource_table"
+    }
+  ]
+}

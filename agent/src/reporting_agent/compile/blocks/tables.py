@@ -46,6 +46,7 @@ whole report.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final
 
@@ -75,10 +76,13 @@ from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue
 
 __all__ = [
     "COLUMN_ATTRIBUTES",
+    "COLUMN_KINDS",
+    "ColumnEntry",
     "compile_capacity_vs_usage",
     "compile_kpi_row",
     "compile_resource_table",
     "compile_top_n_table",
+    "read_column_entries",
     "resource_attribute_text",
 ]
 
@@ -151,6 +155,89 @@ def resource_attribute_text(resource: ResourceView, attribute: str) -> str:
         f"{attribute!r} is not a declared column attribute; the declared set is "
         f"{list(COLUMN_ATTRIBUTES)}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Typed column entries (Requirement 12.6)
+# ---------------------------------------------------------------------------
+
+# --- BEGIN COLUMN KINDS (mirrored in app/lib/templates/blocks.ts) ---
+COLUMN_KINDS: Final[tuple[str, ...]] = ("metric", "attribute", "fact")
+# --- END COLUMN KINDS ---
+
+
+@dataclass(frozen=True, slots=True)
+class ColumnEntry:
+    """One entry in a block's ``columns`` config, carrying a ``kind`` discriminator.
+
+    A v1 definition's bare metric-ref objects (``{"metric": ..., "statistic": ...}`` with no
+    ``kind`` field) parse as ``kind="metric"``, so no stored row changes meaning.
+
+    A ``fact`` entry emits **two** columns at compile time — ``<key>`` and
+    ``<key>.observed_at`` — the second carrying that fact's ``collected_at`` as a ``TextFact``
+    with its own anchor.
+    """
+
+    kind: str  # One of COLUMN_KINDS
+    # Metric:
+    metric_ref: MetricRef | None = None
+    # Attribute:
+    attribute: str | None = None
+    # Fact:
+    fact_key: str | None = None
+
+
+def read_column_entries(block: BlockSpec, field_name: str) -> tuple[ColumnEntry, ...]:
+    """A config field holding a list of typed column entries.
+
+    Accepts **both** the v2 shape (objects with ``kind``) and the v1 shape (bare metric-ref
+    objects with no ``kind`` field, parsed as ``kind="metric"``). A bare **string** in a v1
+    definition is read as a metric ref's ``key`` — the validator upstream already rejects it,
+    so this only needs to avoid crashing during load.
+
+    An empty list is refused, same as ``read_metric_refs``.
+    """
+    from collections.abc import Mapping as _Mapping
+
+    raw = block.config.get(field_name)
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        raise block.fail(f"config.{field_name} must be an array of column entries")
+
+    entries: list[ColumnEntry] = []
+    for index, item in enumerate(raw):
+        at = f"config.{field_name}[{index}]"
+
+        if not isinstance(item, _Mapping):
+            raise block.fail(f"{at} must be an object, got {type(item).__name__}")
+
+        kind = item.get("kind")
+
+        if kind == "attribute":
+            attr = item.get("attribute")
+            if not isinstance(attr, str) or not attr:
+                raise block.fail(f"{at} (kind=attribute) names no attribute")
+            if attr not in COLUMN_ATTRIBUTES:
+                raise block.fail(
+                    f"{at} names attribute {attr!r} which is not in {list(COLUMN_ATTRIBUTES)}"
+                )
+            entries.append(ColumnEntry(kind="attribute", attribute=attr))
+
+        elif kind == "fact":
+            fact_key = item.get("fact_key")
+            if not isinstance(fact_key, str) or not fact_key:
+                raise block.fail(f"{at} (kind=fact) names no fact_key")
+            entries.append(ColumnEntry(kind="fact", fact_key=fact_key))
+
+        else:
+            # kind == "metric" OR absent (v1 compatibility: bare metric-ref object)
+            ref = read_metric_ref(item, block, at)
+            entries.append(ColumnEntry(kind="metric", metric_ref=ref))
+
+    if not entries:
+        raise block.fail(
+            f"config.{field_name} is empty; a block with no column has nothing to show"
+        )
+    return tuple(entries)
 
 
 _LOWEST = "lowest observed"
@@ -256,8 +343,10 @@ def compile_resource_table(
     the order the scope declared. A second ordering decision here would be a second thing
     that can disagree with the ranking the table's caption describes.
     """
+    entries = read_column_entries(block, "columns")
+    refs = tuple(e.metric_ref for e in entries if e.kind == "metric" and e.metric_ref is not None)
     return _resource_rows_table(
-        context, block, cursor, read_metric_refs(block, "columns")
+        context, block, cursor, refs
     )
 
 
@@ -277,7 +366,8 @@ def compile_top_n_table(
     metric columns, deduplicated, so the reason for the order is the first number a reader
     meets.
     """
-    columns = read_metric_refs(block, "columns")
+    entries = read_column_entries(block, "columns")
+    columns = tuple(e.metric_ref for e in entries if e.kind == "metric" and e.metric_ref is not None)
     order_by = read_metric_ref(
         block.config.get("order_by"), block, "config.order_by"
     )

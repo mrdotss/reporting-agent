@@ -15,3 +15,6 @@ agent/deploy/*.json
 # the wrong thing to leave trackable on that argument.
 agent/.env
 agent/.env.bak.*
+
+# kiro-cli editor state, not project config
+.kiro/settings/

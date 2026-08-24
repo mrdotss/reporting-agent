@@ -205,25 +205,29 @@ def test_a_gate_that_stops_being_recorded_fails_the_verification(clean, gate: st
     assert gate in raised.value.message
 
 
-def test_the_two_stubbed_gates_record_no_finding(clean) -> None:
-    """The remaining stub is a stub, and the toc gate is real.
+def test_the_toc_and_historical_gates_are_real(clean) -> None:
+    """Both the toc and historical gates are real passes, not stubs.
 
-    The `toc` gate (task 8.2) is now wired as a real pass — it replaces the former stub.
-    The `historical` gate (task 11.4) remains stubbed until that task lands. Naming the
-    stub here means the task that replaces it has a test to update, so "wire the gate"
-    cannot be marked done while the stub is still in the call path.
+    The `toc` gate (task 8.2) returns a TocPass. The `historical` gate (task 11.4) calls
+    ``check_historical`` on the ledger. With no historical entries in the ledger and an
+    empty ``historical`` mapping, it records no finding and no points.
     """
-    from reporting_agent.verify import verifier as V
     from reporting_agent.verify import toc as toc_pass
+    from reporting_agent.verify import historical as historical_pass
 
     inputs = clean.inputs()
-    # The toc gate is real now — it returns a TocPass, not a bare tuple.
+    # The toc gate is real — it returns a TocPass, not a bare tuple.
     toc_result = toc_pass.check_toc(
         inputs.pdf_bytes, paragraphs=[], document=inputs.document
     )
     assert isinstance(toc_result.findings, tuple)
-    # The historical stub still returns no finding.
-    assert V._stub_historical_gate_awaiting_task_11_4(inputs) == ()
+    # The historical gate is real — it returns a HistoricalPass with no findings when
+    # the ledger has no historical entries.
+    historical_result = historical_pass.check_historical(
+        inputs.ledger, historical={}
+    )
+    assert historical_result.findings == ()
+    assert historical_result.historical_points == ()
 
 
 # --------------------------------------------------------------------------- #

@@ -1216,3 +1216,103 @@ describe("Requirement 12.3 — the column-attribute vocabulary is mirrored", () 
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// Wave 12's two additions to the mirrored set. Both are held here rather than in
+// either task, because two concurrent tasks needed this file and a shared writer
+// is a collision waiting to happen.
+// ---------------------------------------------------------------------------
+
+const TS_COLUMN_KINDS = path.join(appRoot, "lib", "templates", "blocks.ts")
+const PY_COLUMN_KINDS = PY_DECLARATION
+const BEGIN_COLUMN_KINDS = "--- BEGIN COLUMN KINDS"
+const END_COLUMN_KINDS = "--- END COLUMN KINDS"
+
+const PY_CLASS_NAMES = path.join(
+  repoRoot,
+  "agent",
+  "src",
+  "reporting_agent",
+  "render",
+  "html.py"
+)
+const TS_CLASS_NAMES = path.join(
+  appRoot,
+  "components",
+  "reports",
+  "paper-classes.ts"
+)
+const BEGIN_CLASS_NAMES = "--- BEGIN EMITTED_CLASS_NAMES"
+const END_CLASS_NAMES = "--- END EMITTED_CLASS_NAMES"
+
+function quotedStringsBetween(
+  absolutePath: string,
+  beginSentinel: string,
+  endSentinel: string
+): ReadonlySet<string> {
+  const body = sentinelBody(absolutePath, beginSentinel, endSentinel)
+  const found = new Set<string>()
+  for (const match of body.matchAll(QUOTED_STRING)) {
+    const value = match[1] ?? match[2]
+    if (value) found.add(value)
+  }
+  return found
+}
+
+describe("Requirement 12.9 — the `columns` kind enum is mirrored", () => {
+  test("both halves declare exactly metric, attribute and fact", () => {
+    // A bare string could not distinguish a fact key from an attribute key from a
+    // metric key without inferring from its spelling — the exact inference
+    // `value_kind` exists to avoid one layer down. So the kind is declared data, and
+    // declared data in two languages is a thing that can drift.
+    const expected = new Set(["metric", "attribute", "fact"])
+
+    expect(
+      quotedStringsBetween(TS_COLUMN_KINDS, BEGIN_COLUMN_KINDS, END_COLUMN_KINDS)
+    ).toEqual(expected)
+    expect(
+      quotedStringsBetween(PY_COLUMN_KINDS, BEGIN_COLUMN_KINDS, END_COLUMN_KINDS)
+    ).toEqual(expected)
+  })
+})
+
+describe("Requirement 22.7 — the emitted class collection is mirrored", () => {
+  test("the emitter's declaration and the app's mirror are the same set", () => {
+    // EXACT set equality in both directions, and that direction matters: the agent
+    // emits these classes and the app styles them, so a name in the emitter with no
+    // mirror entry is an unstyled element in the paper preview, and a name in the
+    // mirror with no emitter entry is a rule for something nobody writes.
+    //
+    // This assertion is why it exists: task 8.2 added the table-of-contents emission
+    // to html.py a wave after the spec text listed "the thirteen names", so the
+    // emitter legitimately grew to sixteen. Nothing compared the two sets, and
+    // `paper-stylesheet.static.test.ts` reads the MIRROR — so it found a rule for each
+    // of the thirteen it knew about and passed while three emitted classes had
+    // neither a mirror entry nor a stylesheet rule. A subset check on either side
+    // would have passed too.
+    const emitted = quotedStringsBetween(
+      PY_CLASS_NAMES,
+      BEGIN_CLASS_NAMES,
+      END_CLASS_NAMES
+    )
+    const mirrored = quotedStringsBetween(
+      TS_CLASS_NAMES,
+      BEGIN_CLASS_NAMES,
+      END_CLASS_NAMES
+    )
+
+    const emitterOnly = [...emitted].filter((n) => !mirrored.has(n)).sort()
+    const mirrorOnly = [...mirrored].filter((n) => !emitted.has(n)).sort()
+
+    expect(
+      emitterOnly,
+      `render/html.py emits these classes with no entry in paper-classes.ts, so the ` +
+        `paper preview renders them unstyled and paper-stylesheet.static.test.ts ` +
+        `cannot see they are missing a rule`
+    ).toEqual([])
+    expect(
+      mirrorOnly,
+      `paper-classes.ts declares these classes the emitter never writes`
+    ).toEqual([])
+  })
+})

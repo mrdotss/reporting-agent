@@ -231,3 +231,138 @@
     --color-cat-5: var(--cat-5);
     --color-cat-other: var(--cat-other);
 }
+
+/* ==========================================================================
+   Report paper preview — the rpt-* class rules.
+
+   APPENDED, and additive only: no token above is altered and nothing above is
+   reformatted. The HTML emitter in agent/src/reporting_agent/render/html.py
+   declares these thirteen class names, and this block styles them for the
+   in-app paper preview.
+
+   `rpt-paper` is deliberately absent: paper-render.tsx emits it as its own
+   wrapper and the emitter never writes it.
+
+   `--destructive` appears in NO rpt- rule.
+   ========================================================================== */
+
+.rpt-document {
+    font-family: var(--font-sans);
+    line-height: 1.6;
+}
+
+.rpt-block {
+    margin-block: 0.75em;
+}
+
+.rpt-break {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin-block: 1.5em;
+}
+
+.rpt-table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-block: 1em;
+}
+
+.rpt-table td,
+.rpt-table th {
+    border: 1px solid var(--border);
+    padding: 0.375rem 0.5rem;
+    text-align: start;
+}
+
+.rpt-row {
+    /* Row baseline — no special styling beyond table cell rules. */
+}
+
+.rpt-notice {
+    color: var(--muted-foreground);
+}
+
+.rpt-chart {
+    margin-block: 1.5em;
+}
+
+.rpt-series-set {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.rpt-series {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0;
+}
+
+.rpt-point {
+    /* Inline within a series — spacing handled by the · separator text node. */
+}
+
+.rpt-figure {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+}
+
+.rpt-figure + .rpt-figure {
+    margin-inline-start: 0.5ch;
+}
+
+.rpt-column {
+    /* Layout-row column — styled by the layout-row's grid/flex. */
+}
+
+.rpt-layout-row {
+    display: grid;
+    gap: 1rem;
+}
+
+.rpt-layout-row[data-columns="2"] {
+    grid-template-columns: 1fr 1fr;
+}
+
+.rpt-layout-row[data-columns="3"] {
+    grid-template-columns: 1fr 1fr 1fr;
+}
+
+/* Table of contents — a heading-hierarchy navigation aid carrying no page number
+   (Req 14.8, design-system.md). Hierarchy expressed via left indent scaled by
+   data-level; no numerals, no chromatic accent, mist neutrals only. */
+
+.rpt-toc {
+    margin-block: 1.5em;
+}
+
+.rpt-toc-list {
+    list-style: none;
+    padding-inline-start: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+}
+
+.rpt-toc-entry {
+    color: var(--foreground);
+    padding-block: 0.125em;
+}
+
+.rpt-toc-entry[data-level="2"] {
+    padding-inline-start: 1.25em;
+}
+
+.rpt-toc-entry[data-level="3"] {
+    padding-inline-start: 2.5em;
+    color: var(--muted-foreground);
+    font-size: 0.875em;
+}
+
+.rpt-chart-period {
+    color: var(--muted-foreground);
+    font-size: 0.875em;
+    margin-block: 0.25em 0;
+}

@@ -28,6 +28,36 @@ import { z } from "zod"
  * users end up racing for one primary key.
  */
 
+// --- Front-matter per-run values (Requirement 13.7) -------------------------
+
+/**
+ * The customer name for the cover and document-control pages. Bounded to reject
+ * a pathological string while accepting any plausible business name.
+ */
+export const MAX_CUSTOMER_NAME_LENGTH = 200
+
+/**
+ * The revision note for the revision history table. Bounded but generous — a
+ * note is one line, and 500 characters is more than a line needs.
+ */
+export const MAX_REVISION_NOTE_LENGTH = 500
+
+/**
+ * The strict schema for one revision-history row: `revision`, `note` and
+ * `author`, all non-empty bounded strings.
+ *
+ * `.strict()` so an undeclared key is rejected rather than silently stripped.
+ */
+export const revisionHistoryRowSchema = z
+  .object({
+    revision: z.string().trim().min(1).max(100),
+    note: z.string().trim().min(1).max(MAX_REVISION_NOTE_LENGTH),
+    author: z.string().trim().min(1).max(200),
+  })
+  .strict()
+
+export type RevisionHistoryRow = z.output<typeof revisionHistoryRowSchema>
+
 // --- The period -------------------------------------------------------------
 
 /**
@@ -108,6 +138,25 @@ export const runCreateInputSchema = z
       .max(RUN_ID_PARAM_MAX_LENGTH),
 
     timezone: timezoneSchema.default("Asia/Jakarta"),
+
+    /**
+     * The customer name for the front-matter cover and document-control pages
+     * (Requirement 13.7). Optional in the schema because the version is resolved
+     * at insert and the schema cannot know yet whether it is v2; `enqueueRun`
+     * rejects a v2-pinned request missing it.
+     */
+    customerName: z
+      .string()
+      .trim()
+      .min(1)
+      .max(MAX_CUSTOMER_NAME_LENGTH)
+      .optional(),
+
+    /**
+     * The revision-history row for the document-control page (Requirement 13.7).
+     * Optional for the same reason as `customerName`.
+     */
+    revisionHistoryRow: revisionHistoryRowSchema.optional(),
   })
   .strict()
 

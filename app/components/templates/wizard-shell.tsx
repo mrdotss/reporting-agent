@@ -11,7 +11,10 @@ import {
 
 import { StepBlocks } from "@/components/templates/step-blocks"
 import { StepDesign } from "@/components/templates/step-design"
-import { StepIdentity } from "@/components/templates/step-identity"
+import {
+  StepIdentity,
+  type IdentitySaveResult,
+} from "@/components/templates/step-identity"
 import { StepMetrics } from "@/components/templates/step-metrics"
 import { StepPeriod } from "@/components/templates/step-period"
 import { StepPreview } from "@/components/templates/step-preview"
@@ -153,6 +156,12 @@ export function WizardShell({
   const [save, setSave] = useState<SaveState>({ kind: "idle" })
   const [publish, setPublish] = useState<PublishState>({ kind: "idle" })
 
+  // Requirement 23 — track the stored `report_templates.name` for rename logic.
+  const [storedName, setStoredName] = useState(template.name)
+  const [identitySave, setIdentitySave] = useState<IdentitySaveResult>({
+    kind: "idle",
+  })
+
   const issues = useMemo(() => issuesByStep(definition), [definition])
   const problems = useMemo(() => completionProblems(definition), [definition])
 
@@ -198,6 +207,83 @@ export function WizardShell({
     }
   }, [template.id])
 
+  // --- Requirement 23: identity step save with rename ----------------------
+
+  const renameIfNeeded = useCallback(
+    async (name: string): Promise<boolean> => {
+      const trimmed = name.trim()
+      // Skip rename when name matches stored name character for character.
+      if (trimmed === storedName) return true
+
+      try {
+        const response = await fetch(`/api/templates/${template.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: trimmed }),
+        })
+        if (!response.ok) return false
+        setStoredName(trimmed)
+        return true
+      } catch {
+        return false
+      }
+    },
+    [storedName, template.id]
+  )
+
+  const saveIdentityStep = useCallback(async () => {
+    const trimmed = latest.current.identity.name.trim()
+
+    // Validation: 1-120 chars after trim. Refuse both writes.
+    if (trimmed.length < 1 || trimmed.length > 120) {
+      setIdentitySave({ kind: "idle" })
+      return
+    }
+
+    setIdentitySave({ kind: "saving" })
+
+    // 1. Write the draft definition
+    const draftOk = await persistDraft()
+    if (!draftOk) {
+      setIdentitySave({
+        kind: "failed",
+        message:
+          "The draft was not saved. Nothing you have entered was lost.",
+      })
+      return
+    }
+
+    // 2. Invoke rename (only if different)
+    const renameOk = await renameIfNeeded(trimmed)
+    if (!renameOk) {
+      setIdentitySave({
+        kind: "draft_saved_rename_failed",
+        message:
+          "The draft was saved, but the template name was not updated.",
+      })
+      return
+    }
+
+    setIdentitySave({ kind: "saved" })
+  }, [persistDraft, renameIfNeeded])
+
+  const retryRename = useCallback(async () => {
+    const trimmed = latest.current.identity.name.trim()
+    if (trimmed.length < 1 || trimmed.length > 120) return
+
+    setIdentitySave({ kind: "saving" })
+    const ok = await renameIfNeeded(trimmed)
+    if (ok) {
+      setIdentitySave({ kind: "saved" })
+    } else {
+      setIdentitySave({
+        kind: "draft_saved_rename_failed",
+        message:
+          "The draft was saved, but the template name was not updated.",
+      })
+    }
+  }, [renameIfNeeded])
+
   const goTo = useCallback(
     async (target: WizardStep) => {
       // Requirement 11.4 — a step transition persists the draft. Deliberately
@@ -205,12 +291,19 @@ export function WizardShell({
       // stuck, and a failed one is reported in place while the consultant carries
       // on. Nothing is lost either way, because the draft lives in this
       // component until it is persisted.
-      void persistDraft()
+      //
+      // Requirement 23 — when leaving the identity step, also invoke the rename
+      // so the template list stays in sync.
+      if (step.id === "identity") {
+        void saveIdentityStep()
+      } else {
+        void persistDraft()
+      }
 
       setStep(target)
       setHighestReached((reached) => Math.max(reached, target.number))
     },
-    [persistDraft]
+    [persistDraft, saveIdentityStep, step.id]
   )
 
   const advance = useCallback(() => {
@@ -272,6 +365,7 @@ export function WizardShell({
     }
   }, [problems, publish.kind, router, template.id])
 
+  // eslint-disable-next-line react-hooks/refs
   const stepBody = renderStep({
     step,
     definition,
@@ -282,6 +376,10 @@ export function WizardShell({
     templateId: template.id,
     previewSubscriptionId,
     hasCompletedRun,
+    storedName,
+    identitySave,
+    saveIdentityStep,
+    retryRename,
   })
 
   return (
@@ -367,11 +465,19 @@ export function WizardShell({
           <Button
             type="button"
             variant="outline"
-            onClick={() => void persistDraft()}
-            disabled={save.kind === "saving"}
+            onClick={() =>
+              void (step.id === "identity"
+                ? saveIdentityStep()
+                : persistDraft())
+            }
+            disabled={
+              save.kind === "saving" || identitySave.kind === "saving"
+            }
           >
             <FloppyDiskIcon aria-hidden="true" />
-            {save.kind === "saving" ? "Saving…" : "Save draft"}
+            {save.kind === "saving" || identitySave.kind === "saving"
+              ? "Saving…"
+              : "Save draft"}
           </Button>
 
           {step.number === WIZARD_STEP_COUNT ? (
@@ -527,6 +633,10 @@ function renderStep({
   templateId,
   previewSubscriptionId,
   hasCompletedRun,
+  storedName,
+  identitySave,
+  saveIdentityStep,
+  retryRename,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
@@ -537,10 +647,24 @@ function renderStep({
   templateId: string
   previewSubscriptionId: string | null
   hasCompletedRun: boolean
+  storedName: string
+  identitySave: IdentitySaveResult
+  saveIdentityStep: () => void
+  retryRename: () => void
 }>) {
   switch (step.id) {
     case "identity":
-      return <StepIdentity definition={definition} onChange={setDefinition} />
+      return (
+        <StepIdentity
+          definition={definition}
+          onChange={setDefinition}
+          templateId={templateId}
+          storedName={storedName}
+          saveState={identitySave}
+          onSave={saveIdentityStep}
+          onRetryRename={retryRename}
+        />
+      )
     case "scope":
       return <StepScope definition={definition} onChange={setDefinition} />
     case "period":

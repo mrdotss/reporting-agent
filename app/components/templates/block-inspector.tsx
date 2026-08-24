@@ -1,10 +1,16 @@
 "use client"
 
 import { ScopeEditor } from "@/components/templates/scope-editor"
+import { ConfigPicker } from "@/components/templates/config-picker"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { BLOCK_CONFIG, type BlockType } from "@/lib/templates/blocks"
 import { blockTypeLabel } from "@/lib/templates/composer"
+import {
+  fieldKind,
+  type ConfigReferenceIssue,
+  type OptionsInput,
+} from "@/lib/templates/options"
 import type {
   LeafBlock,
   ScopeSpec,
@@ -102,11 +108,15 @@ export function BlockInspector({
   templateDefault,
   onPatchConfig,
   onPatchScope,
+  optionsInput = null,
+  issues = [],
 }: Readonly<{
   block: TemplateBlock | null
   templateDefault: ScopeSpec
   onPatchConfig: (blockId: string, config: Record<string, unknown>) => void
   onPatchScope: (blockId: string, scope: ScopeSpec | null) => void
+  optionsInput?: OptionsInput | null
+  issues?: readonly ConfigReferenceIssue[]
 }>) {
   if (block === null) {
     return (
@@ -133,6 +143,14 @@ export function BlockInspector({
     onPatchConfig(block.id, {
       ...(block as LeafBlock).config,
       [name]: parseFieldValue(raw),
+    })
+  }
+
+  const patchPickerField = (name: string, value: unknown) => {
+    if (isRow) return
+    onPatchConfig(block.id, {
+      ...(block as LeafBlock).config,
+      [name]: value,
     })
   }
 
@@ -169,6 +187,38 @@ export function BlockInspector({
             const enumValues = (
               schema.enums as Record<string, readonly string[]>
             )[name]
+            const kind = fieldKind(block.type, name)
+
+            // Metric-valued fields use the ConfigPicker — no free-text control
+            if (
+              (kind === "metric_ref" ||
+                kind === "metric_ref_list" ||
+                kind === "column_list") &&
+              optionsInput !== null
+            ) {
+              return (
+                <Field key={name}>
+                  <FieldLabel htmlFor={`${block.id}-${name}`}>
+                    <span className="font-mono text-xs">{name}</span>
+                    {required ? null : (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · optional
+                      </span>
+                    )}
+                  </FieldLabel>
+                  <ConfigPicker
+                    blockId={block.id}
+                    blockType={block.type}
+                    field={name}
+                    value={config[name]}
+                    input={optionsInput}
+                    issues={issues}
+                    onChange={patchPickerField}
+                  />
+                </Field>
+              )
+            }
 
             return (
               <Field key={name}>
@@ -204,10 +254,13 @@ export function BlockInspector({
             )
           })}
 
-          <FieldDescription>
-            A field carrying a list is edited as JSON for now. The validator
-            decides whether the value is acceptable — this pane does not guess.
-          </FieldDescription>
+          {/* Narrowed description: only for fields whose kind is `other` */}
+          {fields.some((name) => fieldKind(block.type, name) === "other" && !(schema.enums as Record<string, readonly string[]>)[name]) && (
+            <FieldDescription>
+              The validator decides whether the value is acceptable — this pane
+              does not guess.
+            </FieldDescription>
+          )}
         </div>
       )}
 

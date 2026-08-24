@@ -25,6 +25,7 @@ one exists precisely for the case where somebody edits one side.
 from __future__ import annotations
 
 import json
+import math
 import re
 import shutil
 import subprocess
@@ -219,6 +220,13 @@ def test_the_aggregate_alias_is_followed_rather_than_duplicated(theme: str) -> N
     assert C.hex_for_token(C.CAT_OTHER, theme) == C.oklch_to_hex(
         _declared("--muted-foreground", theme)
     )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_the_foreground_value_matches_the_stylesheet(theme: str) -> None:
+    """The value `value_label_color` resolves must be what the stylesheet declares for
+    `--foreground`, or the document's inline labels would disagree with the app's."""
+    assert C._FOREGROUND[theme] == _declared("--foreground", theme)
 
 
 def test_cat_one_is_the_products_accent_in_light_mode() -> None:
@@ -475,3 +483,174 @@ def test_the_excluded_ramp_steps_genuinely_fail(theme: str) -> None:
             C.contrast_ratio(value, surface) for surface in C.SURFACE_VALUES[theme].values()
         )
         assert worst < C.MINIMUM_SURFACE_CONTRAST, (theme, token, worst)
+
+
+# --------------------------------------------------------------------------- #
+# WCAG 2.1 contrast — a standing gate (Req 17.10)
+# --------------------------------------------------------------------------- #
+#
+# design-system.md requires ≥3:1 for graphical objects (WCAG 1.4.11) and ≥4.5:1
+# for inline value text (WCAG 1.4.3), checked against BOTH `--background` AND
+# `--card`, in BOTH light and dark.
+#
+# This is the same posture `app/test/palette.static.test.ts` takes for the CVD
+# margins — a standing gate rather than a step somebody remembers, because the
+# palette was changed once already because measurement disagreed with the design.
+
+WCAG_GRAPHICAL_OBJECT_FLOOR: Final[float] = 3.0
+"""WCAG 2.1 SC 1.4.11 — graphical objects (plotted marks, lines, fill edges)."""
+
+WCAG_TEXT_FLOOR: Final[float] = 4.5
+"""WCAG 2.1 SC 1.4.3 — text (inline value labels rendered in the series colour)."""
+
+
+def _relative_luminance_from_oklch(value: str) -> float:
+    """WCAG 2.1 relative luminance, computed from an oklch() token.
+
+    The WCAG formula defines relative luminance as 0.2126*R + 0.7152*G + 0.0722*B where
+    R, G, B are *linear* sRGB values. Our pipeline goes oklch → oklab → linear sRGB and
+    then applies those coefficients directly, which is correct: the WCAG formula's
+    per-channel linearization step is exactly the inverse of the sRGB transfer, so going
+    linear → gamma → linear would only add rounding.
+
+    This helper exists to validate the conversion independently of `contrast_ratio`,
+    which uses the same internal pipeline. If the helper and the contrast function agree
+    on a value whose correct answer is known, both are correct.
+    """
+    l, c, h = C.parse_oklch(value)
+    lab = (l, c * math.cos(math.radians(h)), c * math.sin(math.radians(h)))
+    # OKLab → linear sRGB (Björn Ottosson's matrix)
+    l_ = lab[0] + 0.3963377774 * lab[1] + 0.2158037573 * lab[2]
+    m_ = lab[0] - 0.1055613458 * lab[1] - 0.0638541728 * lab[2]
+    s_ = lab[0] - 0.0894841775 * lab[1] - 1.2914855480 * lab[2]
+    long_, medium, short = l_**3, m_**3, s_**3
+    r = max(0.0, min(1.0, 4.0767416621 * long_ - 3.3077115913 * medium + 0.2309699292 * short))
+    g = max(0.0, min(1.0, -1.2684380046 * long_ + 2.6097574011 * medium - 0.3413193965 * short))
+    b = max(0.0, min(1.0, -0.0041960863 * long_ - 0.7034186147 * medium + 1.7076147010 * short))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def test_luminance_conversion_validated_against_known_pair() -> None:
+    """Validate the OKLCH → relative luminance pipeline against a pair whose ratio is
+    independently verifiable: `--cat-1` in light mode (oklch(0.52 0.105 223.128)) against
+    pure white (oklch(1 0 0), luminance 1.0).
+
+    White has luminance 1.0 by definition, so the contrast ratio is:
+        (1.0 + 0.05) / (L_cat1 + 0.05)
+
+    We compute it two ways — through `contrast_ratio` and through our independent
+    luminance helper — and assert they agree and produce a specific range. The computed
+    value is ~5.19:1, well above the 4.5:1 text floor and the 3.0:1 graphical floor.
+    """
+    cat_1_light = C.CATEGORICAL_VALUES["light"]["--cat-1"]  # oklch(0.52 0.105 223.128)
+    white = "oklch(1 0 0)"
+
+    # 1. White has luminance 1.0
+    assert _relative_luminance_from_oklch(white) == pytest.approx(1.0, abs=1e-6)
+
+    # 2. Black has luminance 0.0
+    assert _relative_luminance_from_oklch("oklch(0 0 0)") == pytest.approx(0.0, abs=1e-6)
+
+    # 3. Compute the ratio from the helper
+    lum_cat_1 = _relative_luminance_from_oklch(cat_1_light)
+    helper_ratio = (1.0 + 0.05) / (lum_cat_1 + 0.05)
+
+    # 4. The module's own contrast_ratio must agree
+    module_ratio = C.contrast_ratio(cat_1_light, white)
+    assert module_ratio == pytest.approx(helper_ratio, rel=1e-6), (
+        f"contrast_ratio disagrees with independent luminance computation: "
+        f"{module_ratio:.4f} vs {helper_ratio:.4f}"
+    )
+
+    # 5. The ratio must be in a specific range — this pins the conversion against a
+    #    value we can check by hand. `--cat-1` light is a mid-dark teal; against white
+    #    the ratio is approximately 5.19:1.
+    assert 5.0 < module_ratio < 5.5, (
+        f"--cat-1 light against white should be ~5.19:1, got {module_ratio:.4f}"
+    )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_every_categorical_series_clears_3_to_1_for_graphical_objects(theme: str) -> None:
+    """WCAG 1.4.11: graphical objects (plotted marks, line segments, area edges) must
+    achieve ≥3:1 against the surface they sit on.
+
+    Checked against BOTH `--background` AND `--card`, because a chart inside a card sits
+    on `--card`, which in dark mode is 0.07L lighter than `--background` — enough to take
+    a marginal series below the floor.
+
+    Fails naming the series token, the surface token and the theme.
+    """
+    for token, value in C.CATEGORICAL_VALUES[theme].items():
+        for surface_name, surface_value in C.SURFACE_VALUES[theme].items():
+            ratio = C.contrast_ratio(value, surface_value)
+            assert ratio >= WCAG_GRAPHICAL_OBJECT_FLOOR, (
+                f"{token} on {surface_name} in {theme} mode: "
+                f"{ratio:.3f}:1 < {WCAG_GRAPHICAL_OBJECT_FLOOR}:1"
+            )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_inline_value_labels_clear_4_5_to_1_in_foreground(theme: str) -> None:
+    """WCAG 1.4.3: text (the direct labels rendered at each plotted point or bar segment)
+    must achieve ≥4.5:1 against the surface.
+
+    Inline value labels are rendered in `--foreground` (via `value_label_color`), NOT in
+    the series colour. The categorical palette carries identity on the *mark* (a graphical
+    object at 3:1); the numeral beside it takes foreground so it clears the text floor
+    without constraining the palette's lightness ladder.
+
+    Measured ratios that motivated this decision:
+      --cat-2 on --background in light: 3.476:1 < 4.5:1 (would fail as series-coloured text)
+      --cat-5 on --background in dark:  4.440:1 < 4.5:1 (would fail as series-coloured text)
+
+    Moving the palette was rejected: the ladder is measured and load-bearing (even 0.06
+    steps, one rank order across both themes, CVD worst case 0.083 against a 0.06 floor).
+    Rendering labels in foreground is the correct fix — design-system.md already states
+    colour is a redundant channel and every series carries a direct label.
+
+    Fails naming the surface token and the theme.
+    """
+    foreground_value = C._FOREGROUND[theme]
+    for surface_name, surface_value in C.SURFACE_VALUES[theme].items():
+        ratio = C.contrast_ratio(foreground_value, surface_value)
+        assert ratio >= WCAG_TEXT_FLOOR, (
+            f"--foreground on {surface_name} in {theme} mode: "
+            f"{ratio:.3f}:1 < {WCAG_TEXT_FLOOR}:1 (inline value label)"
+        )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_stroke_safe_sequential_steps_clear_3_to_1_naming_the_surface(theme: str) -> None:
+    """WCAG 1.4.11 for the sequential ramp's stroke-safe subset — same as the existing
+    test but with failure messages naming the surface.
+
+    A sequential chart plots one ordered quantity, so its one stroke is rendered from the
+    stroke-safe subset. Fills are unrestricted: a pale low end is a feature of a
+    sequential scale, not a defect.
+    """
+    for token in C.SEQUENTIAL_STROKE_SAFE[theme]:
+        value = C.SEQUENTIAL_VALUES[theme][token]
+        for surface_name, surface_value in C.SURFACE_VALUES[theme].items():
+            ratio = C.contrast_ratio(value, surface_value)
+            assert ratio >= WCAG_GRAPHICAL_OBJECT_FLOOR, (
+                f"{token} on {surface_name} in {theme} mode: "
+                f"{ratio:.3f}:1 < {WCAG_GRAPHICAL_OBJECT_FLOOR}:1"
+            )
+
+
+@pytest.mark.parametrize("theme", ["light", "dark"])
+def test_cat_other_clears_both_contrast_floors(theme: str) -> None:
+    """The aggregate series `--cat-other` (mapped to `--muted-foreground`) is used for
+    both plotted marks AND inline labels on an 'Other (N series)' aggregate, so it must
+    clear both 3:1 and 4.5:1.
+
+    Fails naming the surface and the theme.
+    """
+    value = C._MUTED_FOREGROUND[theme]
+    for surface_name, surface_value in C.SURFACE_VALUES[theme].items():
+        ratio = C.contrast_ratio(value, surface_value)
+        assert ratio >= WCAG_TEXT_FLOOR, (
+            f"--cat-other on {surface_name} in {theme} mode: "
+            f"{ratio:.3f}:1 < {WCAG_TEXT_FLOOR}:1"
+        )

@@ -562,6 +562,8 @@ describe("the row state type is a projection of report_runs", () => {
       gapCount: null,
       templateVersionId: null,
       createdAt: new Date(),
+      customerName: null,
+      revisionHistoryRow: null,
     }
 
     const projected: RelayRowState = row

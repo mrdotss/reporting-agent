@@ -126,6 +126,16 @@ export function toConnectedSubscriptionView(
 // --- RunView ----------------------------------------------------------------
 
 /**
+ * The browser-safe shape of a `report_runs.revision_history_row` jsonb value.
+ * A simple pass-through: all three fields are non-secret bounded strings.
+ */
+export type RevisionHistoryRowView = {
+  revision: string
+  note: string
+  author: string
+}
+
+/**
  * The one artifact this spec's pipeline produces, and the only object
  * `artifactKeys` can name.
  */
@@ -181,7 +191,7 @@ export function reportArtifactKey(
 }
 
 /**
- * Requirements 37.5, 43.4 — exactly these **seventeen** keys (was fourteen),
+ * Requirements 37.5, 43.4 — exactly these **nineteen** keys (was seventeen),
  * and the set is **closed**.
  *
  * `report_runs` carries twenty-three columns. Eleven pass through unchanged,
@@ -268,6 +278,17 @@ export type RunView = {
    * field mirrors.
    */
   verificationStatus: VerificationStatus | null
+  /**
+   * The customer name printed on the cover and document-control pages
+   * (Requirement 13.7), or `null` for a run pinned to a `schema_version` 1
+   * version.
+   */
+  customerName: string | null
+  /**
+   * The revision history row for the document-control page (Requirement 13.7),
+   * or `null` for a run pinned to a `schema_version` 1 version.
+   */
+  revisionHistoryRow: RevisionHistoryRowView | null
 }
 
 /**
@@ -407,6 +428,8 @@ export function toRunView(row: ReportRun, extras: RunViewExtras): RunView {
     templateName: extras.templateName,
     templateVersion: extras.templateVersion,
     verificationStatus: extras.verificationStatus,
+    customerName: row.customerName ?? null,
+    revisionHistoryRow: row.revisionHistoryRow ?? null,
   }
 }
 
@@ -655,7 +678,8 @@ function toDriftSampleView(driftSample: DriftSample): DriftSampleView {
 }
 
 /**
- * Requirement 43.9 — exactly these twelve keys, and the set is **closed**.
+ * Requirement 43.9 — exactly these **fourteen** keys (was twelve), and the set
+ * is **closed**.
  *
  * `report_verifications` carries thirteen columns; this drops **`run_id`**
  * (the caller already knows which run's verification it read),
@@ -676,6 +700,11 @@ function toDriftSampleView(driftSample: DriftSample): DriftSampleView {
  * findings drive the fail state, advisory findings never do — so the
  * partition this view performs once is the partition the panel would
  * otherwise have to recompute on every render.
+ *
+ * `textFactCount` and `historicalPoints` are **not columns** on
+ * `report_verifications` — they travel in the existing `counts` and `findings`
+ * jsonb (Requirement 13.7), extracted here so the Verification_Panel reads
+ * them as named fields rather than probing a bag.
  */
 export type VerificationView = {
   id: string
@@ -690,10 +719,35 @@ export type VerificationView = {
   advisoryFindings: FindingView[]
   counts: VerificationCounts
   createdAt: string
+  /** The count of text-fact entries checked (Requirement 6.15), distinct from figureCount. */
+  textFactCount: number
+  /** Each historical point's source run and snapshot hash (Requirement 19.9). */
+  historicalPoints: readonly { runId: string; snapshotSha256: string }[]
 }
 
 /** Project a `report_verifications` row (Requirements 36.1, 43.9). */
 export function toVerificationView(row: ReportVerification): VerificationView {
+  // Extract textFactCount from the counts jsonb (Requirement 6.15).
+  const textFactCount: number =
+    (row.counts as Record<string, unknown>)?.text_fact_count === undefined
+      ? 0
+      : Number((row.counts as Record<string, unknown>).text_fact_count) || 0
+
+  // Extract historical points from counts jsonb (Requirement 19.9).
+  const rawPoints = (row.counts as Record<string, unknown>)
+    ?.historical_points as
+    | readonly { run_id: string; snapshot_sha256: string }[]
+    | undefined
+  const historicalPoints: readonly {
+    runId: string
+    snapshotSha256: string
+  }[] = Array.isArray(rawPoints)
+    ? rawPoints.map((p) => ({
+        runId: p.run_id,
+        snapshotSha256: p.snapshot_sha256,
+      }))
+    : []
+
   return {
     id: row.id,
     status: row.status,
@@ -711,5 +765,7 @@ export function toVerificationView(row: ReportVerification): VerificationView {
       .map(toFindingView),
     counts: row.counts,
     createdAt: row.createdAt.toISOString(),
+    textFactCount,
+    historicalPoints,
   }
 }
