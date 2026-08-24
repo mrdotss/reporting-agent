@@ -2,7 +2,7 @@
   "attempt_id": "ver_01JTESTATTEMPT",
   "counts": {
     "advisory_findings_observed": 4,
-    "blocking_findings_observed": 23,
+    "blocking_findings_observed": 24,
     "ledger_entries_checked": 1480,
     "numeric_tokens_extracted": 1655
   },
@@ -129,6 +129,11 @@
       "message": "declared-type coverage for fact_source_missing",
       "severity": "blocking",
       "type": "fact_source_missing"
+    },
+    {
+      "message": "declared-type coverage for derived_count_mismatch",
+      "severity": "blocking",
+      "type": "derived_count_mismatch"
     },
     {
       "message": "declared-type coverage for archive_incomplete",

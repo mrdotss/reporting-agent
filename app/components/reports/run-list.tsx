@@ -4,6 +4,7 @@ import { FileTextIcon } from "@phosphor-icons/react/ssr"
 import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { Card, CardContent } from "@/components/ui/card"
 import type { ConnectedSubscriptionView, RunView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
 import { periodLine } from "@/lib/runs/presentation"
 
 /**
@@ -35,7 +36,7 @@ function subscriptionLabel(
   // A run outlives its connection — `report_runs` rows are audit artifacts and are never
   // deleted with the subscription they targeted — so an absent entry is an ordinary
   // state, not a bug. Saying so is better than rendering an empty cell.
-  return subscription?.displayName ?? "Subscription removed"
+  return subscription?.displayName ?? (messageText("ui.run_list.subscription_removed", "en") ?? "Subscription removed")
 }
 
 export function RunList({
@@ -63,14 +64,11 @@ export function RunList({
 
         <div className="flex flex-col gap-1">
           <h2 className="font-heading text-base font-medium tracking-tight">
-            No reports yet
+            {messageText("ui.run_list.empty_heading", "en")}
           </h2>
 
           <p className="max-w-prose text-sm text-muted-foreground">
-            A run collects utilization for every resource in scope over a period
-            you choose, then writes one immutable snapshot. It takes 8 to 12
-            minutes at a few hundred resources, and closing the tab does not
-            affect it.
+            {messageText("ui.run_list.empty_description", "en")}
           </p>
         </div>
       </div>
@@ -80,7 +78,7 @@ export function RunList({
   return (
     <ul
       data-slot="run-list"
-      aria-label="Report runs"
+      aria-label={messageText("ui.run_list.aria_label", "en") ?? "Report runs"}
       className="flex flex-col gap-3"
     >
       {runs.map((run) => (
@@ -105,7 +103,7 @@ export function RunList({
               <dl className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-8">
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-                    Period
+                    {messageText("ui.run_list.period", "en")}
                   </dt>
                   {/* The zone travels with the dates: "July" means July there. */}
                   <dd className="font-mono tabular-nums">{periodLine(run)}</dd>
@@ -113,7 +111,7 @@ export function RunList({
 
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-                    Resources
+                    {messageText("ui.run_list.resources", "en")}
                   </dt>
                   <dd className="font-mono tabular-nums">
                     {run.resourceCount ?? "—"}
@@ -122,7 +120,7 @@ export function RunList({
 
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-                    Gaps
+                    {messageText("ui.run_list.gaps", "en")}
                   </dt>
                   <dd className="font-mono tabular-nums">
                     {run.gapCount ?? "—"}
@@ -131,7 +129,7 @@ export function RunList({
 
                 <div className="flex flex-col gap-0.5">
                   <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-                    Started
+                    {messageText("ui.run_list.started", "en")}
                   </dt>
                   {/*
                     The UTC calendar date and minute, with the zone named. Not
@@ -141,7 +139,7 @@ export function RunList({
                   <dd className="font-mono tabular-nums">
                     {run.createdAt.slice(0, 16).replace("T", " ")}
                     <span className="ml-1 text-xs text-muted-foreground">
-                      UTC
+                      {messageText("ui.run_list.utc_suffix", "en")}
                     </span>
                   </dd>
                 </div>

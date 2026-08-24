@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react"
 
 import { CopyDigest } from "@/components/reports/copy-digest"
+import { messageText } from "@/lib/messages/catalog"
 
 /**
  * The provenance reveal — hover **or** focus, identical content (Requirement 38).
@@ -145,12 +146,12 @@ export function FigureProvenance({
           // with nothing composed to fill the gap. The figure above still shows
           // its `formatted` string unchanged.
           <span className="text-xs text-muted-foreground">
-            Provenance unavailable for this figure.
+            {messageText("ui.provenance.unavailable", "en")}
           </span>
         ) : (
           <>
             <span className="flex items-center gap-1.5 text-xs">
-              <span className="text-muted-foreground">Snapshot path</span>
+              <span className="text-muted-foreground">{messageText("ui.provenance.snapshot_path", "en")}</span>
               <CopyDigest
                 value={provenance.snapshotPath}
                 label="snapshot path"

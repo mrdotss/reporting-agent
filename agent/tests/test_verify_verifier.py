@@ -154,7 +154,7 @@ def test_the_gate_set_is_the_eight_of_requirements_26_to_33_plus_the_breadth_spe
     Without this the claim is unfalsifiable: a verifier that quietly skipped the PDF gate
     would report `pass` and nothing would say otherwise.
 
-    The last three are the breadth-and-document spec's, and they are in the set **before** the
+    The last four are the breadth-and-document spec's, and they are in the set **before** the
     passes that implement them. That is the point: raising the set with each pass would let a
     half-wired verifier report `pass` on text facts, page numbers and historical points that
     nothing checked, and this assertion is what a task removing a gate name has to argue with.
@@ -171,8 +171,9 @@ def test_the_gate_set_is_the_eight_of_requirements_26_to_33_plus_the_breadth_spe
         "facts",
         "toc",
         "historical",
+        "derived_counts",
     }
-    assert len(REQUIRED_GATES) == 11
+    assert len(REQUIRED_GATES) == 12
 
 
 def test_every_gate_in_the_required_set_is_recorded_by_a_real_verification(clean) -> None:

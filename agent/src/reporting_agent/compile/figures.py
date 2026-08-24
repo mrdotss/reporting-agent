@@ -60,6 +60,8 @@ from typing import Final
 import rfc8785
 
 from reporting_agent.compile.ast import (
+    DERIVED_COUNT_KINDS,
+    DerivedCount,
     Figure,
     FigurePath,
     FigureSource,
@@ -166,6 +168,7 @@ class FigureLedger:
     _tables: dict[str, FigurePath] = field(default_factory=dict)
     _text_facts: dict[FigurePath, TextFact] = field(default_factory=dict)
     _text_fact_anchors: dict[FigurePath, TableAnchor] = field(default_factory=dict)
+    _derived_counts: dict[FigurePath, DerivedCount] = field(default_factory=dict)
 
     def __getitem__(self, path: FigurePath | str) -> Figure:
         try:
@@ -262,6 +265,32 @@ class FigureLedger:
 
     def text_fact_anchors(self) -> Mapping[FigurePath, TableAnchor]:
         return MappingProxyType(self._text_fact_anchors)
+
+    def insert_derived_count(self, count: DerivedCount) -> None:
+        """Record a compile-derived count in the ledger (Req 19.10).
+
+        The path must not collide with any existing entry kind. A ``DerivedCount`` is never
+        a tree node — it lives in the ledger only, so the completeness assertion does not
+        look for it in the tree, and the tree walk does not look for it in the ledger.
+        """
+        if not isinstance(count, DerivedCount):
+            raise CompileFailedError(
+                f"insert_derived_count expects a DerivedCount, got {type(count).__name__}"
+            )
+        if count.path in self._derived_counts:
+            raise CompileFailedError(
+                f"two derived counts resolve to the ledger key {count.path!r}"
+            )
+        if count.path in self._entries or count.path in self._text_facts:
+            raise CompileFailedError(
+                f"the ledger key {count.path!r} already holds a figure or text fact; "
+                f"a derived count must have its own unique path"
+            )
+        self._derived_counts[count.path] = count
+
+    def derived_counts(self) -> Mapping[FigurePath, DerivedCount]:
+        """A read-only view of the derived-count entries, in insertion order."""
+        return MappingProxyType(self._derived_counts)
 
     def entry_paths(self) -> tuple[FigurePath, ...]:
         """Every ledger entry path of **both** kinds, in document order.
@@ -388,6 +417,11 @@ class FigureLedger:
                 str(path): _anchor_to_plain(self._text_fact_anchors[path])
                 for path in sorted(self._text_fact_anchors)
             }
+        if self._derived_counts:
+            document["derived_counts"] = {
+                str(path): _derived_count_to_plain(self._derived_counts[path])
+                for path in sorted(self._derived_counts)
+            }
         return rfc8785.dumps(document)
 
     def digest(self) -> str:
@@ -443,6 +477,11 @@ class FigureLedger:
             document["text_fact_anchors"] = {
                 str(path): _anchor_compile_layer(self._text_fact_anchors[path])
                 for path in sorted(self._text_fact_anchors)
+            }
+        if self._derived_counts:
+            document["derived_counts"] = {
+                str(path): _derived_count_to_plain(self._derived_counts[path])
+                for path in sorted(self._derived_counts)
             }
         return rfc8785.dumps(document)
 
@@ -511,6 +550,16 @@ def _text_fact_to_plain(fact: TextFact) -> dict[str, object]:
         "source": fact.source,
         "collected_at": fact.collected_at,
         "formatted": fact.formatted,
+    }
+
+
+def _derived_count_to_plain(count: DerivedCount) -> dict[str, object]:
+    """One derived-count entry as plain data."""
+    return {
+        "path": str(count.path),
+        "formatted": count.formatted,
+        "derivation_kind": count.derivation_kind,
+        "block_id": count.block_id,
     }
 
 
@@ -855,6 +904,31 @@ class BlockCursor:
                     candidate, TableAnchor(kind=ANCHOR_CHART, anchor_id=anchor_id)
                 )
         return anchor_id
+
+    def derived_count(
+        self,
+        derivation_kind: str,
+        value: int,
+    ) -> DerivedCount:
+        """Mint and register a compile-derived count in the ledger (Req 19.10).
+
+        The **only** factory for DerivedCount. Takes a `derivation_kind` from
+        :data:`~reporting_agent.compile.ast.DERIVED_COUNT_KINDS` and the computed integer
+        value. The `DerivedCount`'s `__post_init__` validates the kind is in the closed set,
+        so no caller can invent a new one without editing `ast.py`.
+
+        The path is minted from this cursor, giving the count a unique ledger key. The
+        value is stored as a string in `formatted`, which is what masking stage 1 sees.
+        """
+        path = self.path
+        count = DerivedCount(
+            path=path,
+            formatted=str(value),
+            derivation_kind=derivation_kind,
+            block_id=self.block_id,
+        )
+        self.ledger.insert_derived_count(count)
+        return count
 
 
 # --- the assertion-only walk and the closing invariant -------------------------------

@@ -7,6 +7,7 @@ import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import type { RunView } from "@/lib/db/views"
 import type { RunGap } from "@/lib/runs/gaps"
 import { RUN_STATUS_PRESENTATION } from "@/lib/runs/presentation"
+import { messageText } from "@/lib/messages/catalog"
 import { useRunStream } from "@/hooks/useRunStream"
 
 /**
@@ -73,8 +74,7 @@ export function RunProgress({
             data-slot="relay-reconnecting"
             className="text-xs text-muted-foreground"
           >
-            Reconnecting the live view. The run continues either way — its state
-            is recorded, not streamed.
+            {messageText("ui.run_progress.reconnecting", "en")}
           </span>
         ) : null}
       </div>
@@ -105,7 +105,7 @@ export function RunProgress({
       {finished ? (
         <section className="flex flex-col gap-3">
           <h2 className="font-heading text-sm font-medium tracking-tight">
-            Collection gaps
+            {messageText("ui.run_progress.collection_gaps", "en")}
           </h2>
 
           {/*

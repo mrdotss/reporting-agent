@@ -152,13 +152,11 @@ def pipeline_with_candidates():
     main_pipe.payload = patched_payload  # type: ignore[assignment]
 
     events, error = main_pipe.run()
-    # The historical_trend block is now active and emitting figures. Verification failures
-    # are expected to be PartialCoverageError (non-terminal) OR the run produces a passing
-    # verification. VerificationFailedError means the historical figures don't verify —
-    # which could happen if the chart figures from the prior snapshot don't match what the
-    # verifier expects. Let's capture whatever we get.
-    assert error is None or isinstance(error, (PartialCoverageError, VerificationFailedError)), (
-        f"pipeline with candidates failed unexpectedly: {error}"
+    # With the DerivedCount mechanism (task 11.7), the historical_trend block's counts
+    # are verified through the ledger rather than the allowlist, so this MUST pass
+    # verification. PartialCoverageError is non-terminal (collection gaps recorded).
+    assert error is None or isinstance(error, PartialCoverageError), (
+        f"pipeline with candidates failed: {error}"
     )
     return main_pipe, events, error
 
@@ -183,31 +181,29 @@ class TestHistoricalSelectionOnDeliveredPath:
         assert verifications[0]["status"] == "pass"
 
     def test_pipeline_with_candidates_completes(self, pipeline_with_candidates) -> None:
-        """With real candidates, the selection resolves and the block emits figures.
+        """With real candidates, the historical block emits figures and verification passes.
 
-        The verification may fail because chart figure verification is strict — the key
-        assertion is that the block IS now active (it emits a verification event) rather
-        than silently producing zero points.
+        This is the acceptance bar for task 11.6/11.7: a table-and-trend template with one
+        real prior candidate MUST re-verify successfully end to end.
         """
         _, events, error = pipeline_with_candidates
-        types = [e["type"] for e in events]
-        assert "verification" in types
+        # Must be non-terminal (PartialCoverageError) or clean
+        assert error is None or isinstance(error, PartialCoverageError)
+        verifications = [e for e in events if e["type"] == "verification"]
+        assert verifications[0]["status"] == "pass"
 
     def test_pipeline_with_candidates_activates_the_block(
         self, pipeline_with_candidates
     ) -> None:
         """The historical_trend block produces chart events when candidates are available.
 
-        This is the evidence that activation worked: with zero candidates, no chart event
-        for the trend block appears. With candidates and a loadable prior snapshot, the
-        block emits a chart.
+        With candidates and a loadable prior snapshot, the block emits a chart — the
+        evidence that activation worked.
         """
         _, events, _ = pipeline_with_candidates
         chart_events = [e for e in events if e.get("type") == "chart"]
-        # At least one chart event should be present (from the historical trend)
-        # If the block emits zero points, there would be no chart event for it
-        # Either way, the block is now active — verification events prove it
-        assert any(e.get("type") == "verification" for e in events)
+        # A chart event must be present (from the historical trend block)
+        assert len(chart_events) >= 1, "historical_trend block should emit a chart event"
 
 
 # --------------------------------------------------------------------------- #
@@ -221,20 +217,14 @@ class TestHistoricalPersistence:
     ) -> None:
         """historical.json is persisted beside prose.json when the block has candidates.
 
-        Even if verification fails (blocking chart figures), the historical.json IS written
-        because persistence happens alongside the compile, not after verification.
-        Actually — write_report_artifacts runs AFTER verification passes. So if verification
-        fails, there's no historical.json. This test checks whether it was written.
+        With the DerivedCount mechanism, verification passes, so artifacts are uploaded
+        and historical.json is present.
         """
         pipe, _, error = pipeline_with_candidates
         prefix = report_prefix(ACTOR_ID, RUN_ID)
         hist_key = f"{prefix}historical.json"
-        if isinstance(error, VerificationFailedError):
-            # Verification failed, so artifacts weren't uploaded — historical.json absent
-            # This is correct behaviour: we don't store artifacts for failing runs
-            assert hist_key not in pipe.store.keys()
-        else:
-            assert hist_key in pipe.store.keys()
+        # Verification passes, so artifacts were uploaded — historical.json is present
+        assert hist_key in pipe.store.keys()
 
     def test_historical_json_not_written_without_trend_block(self) -> None:
         """A definition without historical_trend produces no historical.json."""
@@ -377,46 +367,40 @@ class TestReVerificationReplaysSelection:
         verifications = [e for e in events if e["type"] == "verification"]
         assert verifications[0]["status"] == "pass"
 
-    def test_corrupted_historical_selection_fails_reverification(self) -> None:
-        """Mutation check: a run compiled with historical selections, re-verified with
-        different (corrupted) selections, produces a ledger mismatch.
+    def test_corrupted_historical_selection_fails_reverification(
+        self, pipeline_with_candidates
+    ) -> None:
+        """Mutation check: corrupting the persisted selected run id in historical.json
+        makes re-verification FAIL.
 
-        We simulate this by storing a historical.json with a selection for a key that
-        DIFFERS from what was originally compiled (empty → non-empty), then re-verifying.
-        The recompile produces figures the original compile did not, and the comparison
-        fails.
+        The pipeline_with_candidates fixture produced a passing run with actual historical
+        points. We corrupt the stored historical.json to reference a different run id,
+        then re-verify. The recompile either resolves zero points (different run id not
+        loadable) or resolves different points, producing a ledger that differs from the
+        stored one.
         """
-        pipe = Pipeline(definition=_historical_definition())
-        events, error = pipe.run()
-        assert error is None or isinstance(error, PartialCoverageError)
-
-        # The original compile had empty historical selections (no candidates).
-        # Now store a FAKE historical.json that claims there was a selected run.
+        pipe, _, _ = pipeline_with_candidates
         prefix = report_prefix(ACTOR_ID, RUN_ID)
+        hist_key = f"{prefix}historical.json"
+        assert hist_key in pipe.store.keys(), "historical.json must exist for this test"
+
+        # Read the real historical.json and corrupt the run id
+        raw_bytes = pipe.store.get(hist_key).body
+        raw = json.loads(raw_bytes)
+
+        # Corrupt: change every selected run_id to a non-existent one
         from fakes.object_store import StoredObject
 
-        fake_bundle = {
-            "schema_version": 1,
-            "selections": {
-                "Percentage CPU|avg|6": {
-                    "selected": [
-                        {
-                            "run_id": "FAKE_RUN_THAT_NEVER_EXISTED",
-                            "period_start": "2026-06-01",
-                            "period_end": "2026-06-30",
-                            "timezone": "Asia/Jakarta",
-                            "status": "completed",
-                            "verification_status": "pass",
-                            "verification_created_at": "2026-06-30T10:00:00Z",
-                            "verification_id": "v-fake",
-                            "snapshot_sha256": "c" * 64,
-                        }
-                    ]
-                }
-            },
-        }
-        pipe.store._objects[f"{prefix}historical.json"] = StoredObject(
-            body=json.dumps(fake_bundle).encode("utf-8"),
+        corrupted = copy.deepcopy(raw)
+        if "selections" in corrupted:
+            for key, sel in corrupted["selections"].items():
+                if isinstance(sel, dict) and "selected" in sel:
+                    for candidate in sel["selected"]:
+                        if isinstance(candidate, dict):
+                            candidate["run_id"] = "CORRUPTED_RUN_NEVER_EXISTED"
+
+        pipe.store._objects[hist_key] = StoredObject(
+            body=json.dumps(corrupted).encode("utf-8"),
             content_type="application/json",
             tags={},
         )
@@ -428,28 +412,12 @@ class TestReVerificationReplaysSelection:
         }
         events, error = _run_verify(pipe.store, payload)
 
-        # Should still pass — the fake run's snapshot doesn't exist, so the recompile
-        # resolves to zero historical points again (same as original). The fake selection
-        # is stored but unloadable, so it falls through to the same zero-point outcome.
-        # This is correct: the mutation check proves the PIN is needed, not that any
-        # arbitrary corruption breaks things.
-        # The real mutation that matters: if the ORIGINAL compile had historical data
-        # and we REMOVE it from the pin, the recompile can't match.
-        # Since we can't easily produce a passing pipeline with actual historical points
-        # in this test harness (chart verification complexity), we instead verify the
-        # inverse: adding fake data to the pin when none was compiled ALSO fails.
-        # Actually — if the fake snapshot can't be loaded, the historical source returns
-        # None for that run_id, so the block still emits zero points. The ledger matches.
-        # This means we need to actually provide a loadable fake snapshot.
-        # For now, assert the property holds in one direction.
-        if error is not None:
-            # If it fails, that proves the pin is load-bearing
-            assert isinstance(error, VerificationFailedError)
-        else:
-            # If it passes, it's because the fake snapshot couldn't be loaded
-            # (the run_id doesn't have a stored snapshot), so zero points again.
-            # This is expected — mutation check requires a LOADABLE prior snapshot.
-            pass
+        # The corrupted run id means the recompile cannot load the prior snapshot,
+        # so it produces zero historical points instead of the original non-zero count.
+        # The compile layer comparison then fails.
+        assert isinstance(error, VerificationFailedError), (
+            f"corrupted historical selection must fail re-verification, got: {error}"
+        )
 
     def test_original_passes_after_mutation_check(self, pipeline_with_trend) -> None:
         """Confirms the uncorrupted store still passes (not a flaky fixture)."""

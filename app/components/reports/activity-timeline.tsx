@@ -1,5 +1,6 @@
 import { CheckCircleIcon, CircleDashedIcon } from "@phosphor-icons/react/ssr"
 
+import { messageText } from "@/lib/messages/catalog"
 import type { RunStep } from "@/hooks/useRunStream"
 
 /**
@@ -49,7 +50,7 @@ export function ActivityTimeline({
   return (
     <ol
       data-slot="activity-timeline"
-      aria-label="Run activity"
+      aria-label={messageText("ui.activity.label", "en") ?? "Run activity"}
       className="flex flex-col gap-3"
     >
       {steps.map((step) => (

@@ -244,14 +244,23 @@ def compile_historical_trend(
         cursor.anchor_chart(chart_cursor.path)
         nodes.append(chart)
 
-    # Req 19.2 — the statement naming counts and exclusion reasons
+    # Req 19.2, 19.10 — the statement naming counts and exclusion reasons.
+    # Register derived counts in the ledger so their formatted values are masked by
+    # masking stage 1 (alongside figure formatted values). The verifier re-derives them
+    # independently from the ledger/definition.
+    statement_cursor = cursor.child("nodes", len(nodes))
+    count_cursor = statement_cursor.child("derived_counts", 0)
+    count_cursor.derived_count("historical_points_emitted", count_plotted)
+    lookback_cursor = statement_cursor.child("derived_counts", 1)
+    lookback_cursor.derived_count("historical_lookback", count_requested)
+
     trend_statement = messages.text(
         "doc.historical.trend_statement",
         count=str(count_plotted),
         requested=str(count_requested),
         exclusions=exclusion_summary,
     )
-    nodes.append(text_paragraph(cursor.child("nodes", len(nodes)), "Body Text", trend_statement))
+    nodes.append(text_paragraph(statement_cursor, "Body Text", trend_statement))
 
     # Req 19.7 — the verification-note statement
     verification_note = messages.text("doc.historical.verification_note")

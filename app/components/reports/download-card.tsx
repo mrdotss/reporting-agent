@@ -4,6 +4,7 @@ import { useCallback, useState } from "react"
 import { DownloadSimpleIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
+import { messageText } from "@/lib/messages/catalog"
 import { DOWNLOADABLE_LEAF_NAMES } from "@/lib/runs/artifacts"
 
 /**
@@ -111,13 +112,11 @@ export function DownloadCard({
     >
       <div className="flex flex-col gap-0.5">
         <h2 className="font-heading text-sm font-medium tracking-tight">
-          Download
+          {messageText("ui.download.heading", "en")}
         </h2>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          Every figure in these documents traced to the snapshot named above.
-          Links are minted when you press the button and expire within five
-          minutes.
+          {messageText("ui.download.description", "en")}
         </p>
       </div>
 

@@ -97,10 +97,10 @@ def _result(findings: list[Finding], **overrides: Any) -> dict[str, Any]:
 # --- the partition --------------------------------------------------------------------
 
 
-def test_the_partition_is_twenty_three_blocking_and_four_advisory() -> None:
-    assert len(BLOCKING_FINDING_TYPES) == 23
+def test_the_partition_is_twenty_four_blocking_and_four_advisory() -> None:
+    assert len(BLOCKING_FINDING_TYPES) == 24
     assert len(ADVISORY_FINDING_TYPES) == 4
-    assert len(DECLARED_FINDING_TYPES) == 27
+    assert len(DECLARED_FINDING_TYPES) == 28
     assert not set(BLOCKING_FINDING_TYPES) & set(ADVISORY_FINDING_TYPES)
 
 

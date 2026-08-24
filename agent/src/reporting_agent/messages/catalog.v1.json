@@ -484,6 +484,330 @@
     "doc.historical.verification_note": {
       "en": "Each historical point was verified against its own run's verification record. The replay of this run re-verified this run's snapshot alone.",
       "id": "Setiap titik historis telah diverifikasi terhadap catatan verifikasi prosesnya sendiri. Pemutaran ulang proses ini hanya memverifikasi ulang snapshot proses ini."
+    },
+    "ui.activity.label": {
+      "en": "Run activity",
+      "id": "Aktivitas proses"
+    },
+    "ui.download.heading": {
+      "en": "Download",
+      "id": "Unduh"
+    },
+    "ui.download.description": {
+      "en": "Every figure in these documents traced to the snapshot named above. Links are minted when you press the button and expire within five minutes.",
+      "id": "Setiap angka dalam dokumen ini terlacak ke snapshot yang disebutkan di atas. Tautan dibuat saat Anda menekan tombol dan kedaluwarsa dalam lima menit."
+    },
+    "ui.download.preparing": {
+      "en": "Preparing…",
+      "id": "Menyiapkan…"
+    },
+    "ui.fidelity.baseline_title": {
+      "en": "Platform metrics only. Averages, minima and maxima are exact. Percentiles are estimates and are labelled as such wherever they appear. Per-volume disk free space and guest-observed memory are not available at this tier.",
+      "id": "Hanya metrik platform. Rata-rata, minimum dan maksimum bersifat eksak. Persentil merupakan estimasi dan diberi label demikian di setiap kemunculannya. Ruang disk bebas per volume dan memori yang teramati guest tidak tersedia pada tingkat ini."
+    },
+    "ui.fidelity.enhanced_title": {
+      "en": "Azure Monitor Agent and a Data Collection Rule are in place, so percentiles are true, disk free space is per volume, and memory is guest-observed.",
+      "id": "Azure Monitor Agent beserta Data Collection Rule telah dipasang, sehingga persentil bersifat benar, ruang disk bebas per volume, dan memori teramati dari guest."
+    },
+    "ui.finding.empty_advisory": {
+      "en": "No advisory findings.",
+      "id": "Tidak ada temuan saran."
+    },
+    "ui.finding.advisory_heading": {
+      "en": "Advisory findings",
+      "id": "Temuan saran"
+    },
+    "ui.finding.advisory_note": {
+      "en": "Recorded for review. None of these affected the verification status.",
+      "id": "Dicatat untuk ditinjau. Tidak ada yang memengaruhi status verifikasi."
+    },
+    "ui.finding.blocking_heading": {
+      "en": "Blocking findings",
+      "id": "Temuan pemblokir"
+    },
+    "ui.finding.blocking_empty": {
+      "en": "The verification failed but recorded no blocking finding, which is itself a defect worth reporting.",
+      "id": "Verifikasi gagal tetapi tidak mencatat temuan pemblokir, yang merupakan cacat yang patut dilaporkan."
+    },
+    "ui.provenance.snapshot_path": {
+      "en": "Snapshot path",
+      "id": "Jalur snapshot"
+    },
+    "ui.provenance.unavailable": {
+      "en": "Provenance unavailable for this figure.",
+      "id": "Asal data tidak tersedia untuk angka ini."
+    },
+    "ui.run_form.subscription_label": {
+      "en": "Subscription",
+      "id": "Langganan"
+    },
+    "ui.run_form.template_label": {
+      "en": "Template",
+      "id": "Templat"
+    },
+    "ui.run_form.submit": {
+      "en": "Request a report",
+      "id": "Minta laporan"
+    },
+    "ui.run_form.submitting": {
+      "en": "Requesting…",
+      "id": "Meminta…"
+    },
+    "ui.run_form.no_subscriptions": {
+      "en": "Connect an Azure subscription before requesting a report. Nothing can be collected until read at subscription scope has been proved.",
+      "id": "Hubungkan langganan Azure sebelum meminta laporan. Tidak ada yang dapat dikumpulkan hingga pembacaan pada cakupan langganan terbukti."
+    },
+    "ui.run_form.duration_hint": {
+      "en": "A run takes 8 to 12 minutes at a few hundred resources. It is recorded rather than streamed, so closing this tab does not affect it.",
+      "id": "Sebuah proses membutuhkan 8 hingga 12 menit pada beberapa ratus sumber daya. Hasilnya dicatat bukan dialirkan, jadi menutup tab ini tidak berpengaruh."
+    },
+    "ui.run_list.empty_heading": {
+      "en": "No reports yet",
+      "id": "Belum ada laporan"
+    },
+    "ui.run_list.empty_description": {
+      "en": "A run collects utilization for every resource in scope over a period you choose, then writes one immutable snapshot. It takes 8 to 12 minutes at a few hundred resources, and closing the tab does not affect it.",
+      "id": "Sebuah proses mengumpulkan utilisasi untuk setiap sumber daya dalam cakupan selama periode yang Anda pilih, lalu menulis satu snapshot yang tidak dapat diubah. Prosesnya membutuhkan 8 hingga 12 menit pada beberapa ratus sumber daya, dan menutup tab tidak berpengaruh."
+    },
+    "ui.run_list.period": {
+      "en": "Period",
+      "id": "Periode"
+    },
+    "ui.run_list.resources": {
+      "en": "Resources",
+      "id": "Sumber daya"
+    },
+    "ui.run_list.gaps": {
+      "en": "Gaps",
+      "id": "Celah"
+    },
+    "ui.run_list.started": {
+      "en": "Started",
+      "id": "Dimulai"
+    },
+    "ui.run_list.subscription_removed": {
+      "en": "Subscription removed",
+      "id": "Langganan dihapus"
+    },
+    "ui.run_progress.completed": {
+      "en": "This run completed.",
+      "id": "Proses ini selesai."
+    },
+    "ui.run_progress.failed": {
+      "en": "This run failed.",
+      "id": "Proses ini gagal."
+    },
+    "ui.run_progress.duration_hint": {
+      "en": "This usually takes 8 to 12 minutes.",
+      "id": "Proses ini biasanya membutuhkan 8 hingga 12 menit."
+    },
+    "ui.run_progress.reconnecting": {
+      "en": "Reconnecting the live view. The run continues either way — its state is recorded, not streamed.",
+      "id": "Menghubungkan kembali tampilan langsung. Proses tetap berjalan — statusnya dicatat, bukan dialirkan."
+    },
+    "ui.run_progress.collection_gaps": {
+      "en": "Collection gaps",
+      "id": "Celah pengumpulan"
+    },
+    "ui.snapshot.no_snapshot": {
+      "en": "This run produced no snapshot, so there is nothing to trace its figures to.",
+      "id": "Proses ini tidak menghasilkan snapshot, sehingga tidak ada yang dapat ditelusuri angkanya."
+    },
+    "ui.snapshot.label_snapshot": {
+      "en": "Snapshot",
+      "id": "Cuplikan"
+    },
+    "ui.snapshot.label_grain": {
+      "en": "Grain",
+      "id": "Granularitas"
+    },
+    "ui.snapshot.label_window": {
+      "en": "Window",
+      "id": "Jendela"
+    },
+    "ui.snapshot.label_timezone": {
+      "en": "Timezone",
+      "id": "Zona waktu"
+    },
+    "ui.snapshot.label_collected_utc": {
+      "en": "Collected (UTC)",
+      "id": "Dikumpulkan (UTC)"
+    },
+    "ui.snapshot.label_resources": {
+      "en": "Resources",
+      "id": "Sumber daya"
+    },
+    "ui.snapshot.label_gaps_recorded": {
+      "en": "Gaps recorded",
+      "id": "Celah tercatat"
+    },
+    "ui.snapshot.label_fidelity": {
+      "en": "Fidelity",
+      "id": "Ketelitian"
+    },
+    "ui.snapshot.copy_snapshot_id": {
+      "en": "Copy the snapshot id",
+      "id": "Salin ID snapshot"
+    },
+    "ui.verification.absent_description": {
+      "en": "This report carries no completed verification, so nothing here is presented as proven and no document is offered for download. A report is delivered only behind a passing verification.",
+      "id": "Laporan ini tidak memiliki verifikasi yang selesai, sehingga tidak ada yang disajikan sebagai terbukti dan tidak ada dokumen yang ditawarkan untuk diunduh. Laporan hanya dikirim setelah verifikasi berhasil."
+    },
+    "ui.verification.not_delivered_heading": {
+      "en": "Not delivered",
+      "id": "Tidak dikirimkan"
+    },
+    "ui.verification.replay_heading": {
+      "en": "Deterministic replay",
+      "id": "Pemutaran ulang deterministik"
+    },
+    "ui.verification.replay_not_possible": {
+      "en": "Not possible for this run — the archived responses it would have re-folded are unavailable, so neither a match nor a mismatch is reported.",
+      "id": "Tidak memungkinkan untuk proses ini — respons terarsip yang akan dihimpun ulang tidak tersedia, sehingga tidak ada kecocokan maupun ketidakcocokan yang dilaporkan."
+    },
+    "ui.verification.drift_heading": {
+      "en": "Sampled drift (advisory)",
+      "id": "Penyimpangan tersampel (saran)"
+    },
+    "ui.verification.drift_empty": {
+      "en": "No drift sample was recorded for this verification.",
+      "id": "Tidak ada sampel penyimpangan yang dicatat untuk verifikasi ini."
+    },
+    "ui.failure.subscription_label": {
+      "en": "Subscription",
+      "id": "Langganan"
+    },
+    "ui.failure.period_label": {
+      "en": "Period",
+      "id": "Periode"
+    },
+    "ui.failure.no_artifact": {
+      "en": "No report was produced, and there is nothing to download.",
+      "id": "Tidak ada laporan yang dihasilkan, dan tidak ada yang dapat diunduh."
+    },
+    "ui.failure.artifact_produced": {
+      "en": "An artifact was produced before the failure.",
+      "id": "Sebuah artefak dihasilkan sebelum kegagalan."
+    },
+    "ui.failure.what_to_check": {
+      "en": "What to check",
+      "id": "Yang perlu diperiksa"
+    },
+    "ui.failure.runtime_reported": {
+      "en": "What the runtime reported",
+      "id": "Yang dilaporkan runtime"
+    },
+    "ui.gap_list.pagination": {
+      "en": "Showing {shownGroups} of {totalGroups} groups ({shownEntries} of {totalEntries} entries).",
+      "id": "Menampilkan {shownGroups} dari {totalGroups} grup ({shownEntries} dari {totalEntries} entri)."
+    },
+    "ui.preview.approximation_notice": {
+      "en": "This approximates {divergences}. The delivered result is the .pdf below. Hover or focus any figure to see where it came from.",
+      "id": "Ini memperkirakan {divergences}. Hasil yang dikirimkan adalah .pdf di bawah. Arahkan atau fokuskan angka mana pun untuk melihat asalnya."
+    },
+    "ui.preview.delivered_notice": {
+      "en": "The delivered result is the .pdf below. Hover or focus any figure to see where it came from.",
+      "id": "Hasil yang dikirimkan adalah .pdf di bawah. Arahkan atau fokuskan angka mana pun untuk melihat asalnya."
+    },
+    "ui.preview.heading_approximation": {
+      "en": "Reading view — an approximation of the delivered page",
+      "id": "Tampilan baca — perkiraan halaman yang dikirimkan"
+    },
+    "ui.preview.heading_extract": {
+      "en": "Reading view — a text extract",
+      "id": "Tampilan baca — ekstrak teks"
+    },
+    "ui.run_form.no_selectable_hint": {
+      "en": "None of your subscriptions can start a run yet. Each one needs a proved subscription-scope Reader assignment and a client secret Azure still accepts.",
+      "id": "Tidak ada langganan Anda yang bisa memulai proses. Masing-masing membutuhkan penugasan Reader lingkup langganan yang telah dibuktikan dan secret klien yang masih diterima Azure."
+    },
+    "ui.run_form.no_templates_hint": {
+      "en": "You have no templates. The three starters are created with your account; if none is listed, author one in the wizard.",
+      "id": "Anda tidak memiliki templat. Tiga templat awal dibuat bersama akun Anda; jika tidak ada yang tercantum, buat satu di wizard."
+    },
+    "ui.run_form.no_template_versions_hint": {
+      "en": "None of your templates has a saved version yet. A template gets its first version when the wizard's last step completes.",
+      "id": "Belum ada templat Anda yang memiliki versi tersimpan. Templat mendapat versi pertamanya saat langkah terakhir wizard selesai."
+    },
+    "ui.run_form.pinned_version_hint": {
+      "en": "Pins version {version}",
+      "id": "Menggunakan versi {version}"
+    },
+    "ui.run_form.period_explanation": {
+      "en": "The collection window comes from the template's own period rule and resolves when the run is enqueued, in {timezone}. A period is local: \"July 2026\" means July in that zone, not July in UTC.",
+      "id": "Jendela pengumpulan berasal dari aturan periode templat dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: \"Juli 2026\" berarti Juli di zona tersebut, bukan Juli dalam UTC."
+    },
+    "ui.run_list.aria_label": {
+      "en": "Report runs",
+      "id": "Proses laporan"
+    },
+    "ui.run_list.utc_suffix": {
+      "en": "UTC",
+      "id": "UTC"
+    },
+    "ui.snapshot.range_to": {
+      "en": "to",
+      "id": "hingga"
+    },
+    "ui.verification.digest_snapshot": {
+      "en": "Snapshot",
+      "id": "Cuplikan"
+    },
+    "ui.verification.digest_docx": {
+      "en": "Document (.docx)",
+      "id": "Dokumen (.docx)"
+    },
+    "ui.verification.digest_pdf": {
+      "en": "Document (.pdf)",
+      "id": "Dokumen (.pdf)"
+    },
+    "ui.verification.pass_summary": {
+      "en": "{count} figures · every figure traced to snapshot {digest} · verified",
+      "id": "{count} angka · setiap angka terlacak ke snapshot {digest} · terverifikasi"
+    },
+    "ui.verification.fail_summary": {
+      "en": "{count} blocking {noun}. The report was not delivered — no document is offered for download, because no document could be proven against the snapshot.",
+      "id": "{count} temuan pemblokir {noun}. Laporan tidak dikirimkan — tidak ada dokumen yang ditawarkan untuk diunduh, karena tidak ada dokumen yang dapat dibuktikan terhadap snapshot."
+    },
+    "ui.verification.fail_noun_singular": {
+      "en": "finding",
+      "id": "temuan"
+    },
+    "ui.verification.fail_noun_plural": {
+      "en": "findings",
+      "id": "temuan"
+    },
+    "ui.verification.pass_aria": {
+      "en": "Verification passed. {count} figures traced to the snapshot.",
+      "id": "Verifikasi berhasil. {count} angka terlacak ke snapshot."
+    },
+    "ui.verification.fail_aria": {
+      "en": "Verification failed with {count} blocking {noun}. The report was not delivered.",
+      "id": "Verifikasi gagal dengan {count} temuan pemblokir {noun}. Laporan tidak dikirimkan."
+    },
+    "ui.verification.replay_folded": {
+      "en": "{folded} of {named} archived objects re-folded.",
+      "id": "{folded} dari {named} objek arsip dihimpun ulang."
+    },
+    "ui.verification.replay_recomputed_label": {
+      "en": "recomputed",
+      "id": "dihitung ulang"
+    },
+    "ui.verification.replay_stored_label": {
+      "en": "· stored",
+      "id": "· tersimpan"
+    },
+    "ui.verification.drift_summary": {
+      "en": "{n} resources re-queried · method {method} · seed",
+      "id": "{n} sumber daya dikueri ulang · metode {method} · benih"
+    },
+    "ui.verification.drift_no_seed": {
+      "en": "No drift sample seed was recorded.",
+      "id": "Tidak ada benih sampel penyimpangan yang dicatat."
+    },
+    "ui.verification.drift_not_requeried": {
+      "en": "{count} selected resources answered nothing and are recorded as not re-queried rather than as agreeing.",
+      "id": "{count} sumber daya terpilih tidak menjawab apa pun dan dicatat sebagai tidak dikueri ulang alih-alih sebagai menyetujui."
     }
   }
 }

@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge"
+import { messageText } from "@/lib/messages/catalog"
 
 /**
  * A resource's — or a connection's — `fidelity_tier`, as one badge with its
@@ -25,19 +26,12 @@ const TIER_COPY: Readonly<
   Record<string, { readonly label: string; readonly title: string }>
 > = Object.freeze({
   baseline: {
-    label: "baseline fidelity",
-    title:
-      "Platform metrics only. Averages, minima and maxima are exact. " +
-      "Percentiles are estimates and are labelled as such wherever they " +
-      "appear. Per-volume disk free space and guest-observed memory are not " +
-      "available at this tier.",
+    label: messageText("ui.fidelity.baseline", "en") + " fidelity",
+    title: messageText("ui.fidelity.baseline_title", "en") ?? "",
   },
   enhanced: {
-    label: "enhanced fidelity",
-    title:
-      "Azure Monitor Agent and a Data Collection Rule are in place, so " +
-      "percentiles are true, disk free space is per volume, and memory is " +
-      "guest-observed.",
+    label: messageText("ui.fidelity.enhanced", "en") + " fidelity",
+    title: messageText("ui.fidelity.enhanced_title", "en") ?? "",
   },
 })
 

@@ -1055,6 +1055,13 @@ string produced anywhere but `compile/format.py` is a second display path whiche
 value it describes. Leaving `TextFact` out would have let an inline `formatted=fact.value`
 grow into a translation of a collected value, at the one call site rule 7 was not looking at.
 
+`DerivedCount` is deliberately **not** watched here. Its `formatted` is always `str(value)`
+where `value` is a compile-derived integer (a count) — not a measurement that needs scale,
+unit suffix, or locale-aware formatting. It never goes through `compile/format.py` because
+there is nothing to format: the integer IS its own display, and routing it through a formatter
+would add a dependency for zero value. The structural refusal is different: no caller can
+supply the integer directly — only `BlockCursor.derived_count` constructs it.
+
 Three spellings are deliberately **not** offenders, and each would be a false positive with a
 cost. `record_finding(..., formatted=...)` quotes a string a figure already carries so a
 reviewer can read the finding without opening the document. `_check_anchor(formatted=...)`

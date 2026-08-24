@@ -54,6 +54,7 @@ from reporting_agent.errors import VerificationFailedError
 from reporting_agent.verify import anchors as anchors_pass
 from reporting_agent.verify import charts as charts_pass
 from reporting_agent.verify import coverage as coverage_pass
+from reporting_agent.verify import derived_counts as derived_counts_pass
 from reporting_agent.verify import facts as facts_pass
 from reporting_agent.verify import pdf as pdf_pass
 from reporting_agent.verify.allowlist import derive_allowlist
@@ -92,6 +93,7 @@ REQUIRED_GATES: Final[frozenset[str]] = frozenset(
         "facts",  # breadth 6 — the text-fact exact-string check
         "toc",  # breadth 14 — the table of contents' page numbers
         "historical",  # breadth 18 — a plotted point came from a verified prior run
+        "derived_counts",  # breadth 19 — compile-derived integers re-derive from the ledger
     }
 )
 """The gates of requirements 26 through 33, plus the three the breadth-and-document spec adds.
@@ -236,7 +238,9 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         subscription_display_name=inputs.subscription_display_name,
         catalog_scales=inputs.catalog_scales,
     )
-    ledger_strings = ledger_strings_of(inputs.ledger.entries)
+    ledger_strings = ledger_strings_of(
+        (*inputs.ledger.entries.values(), *inputs.ledger.derived_counts().values())
+    )
     prose = scan_paragraphs(
         paragraphs, ledger_strings=ledger_strings, allowlist=allowlist,
         proven_toc_numerals=toc_result.proven_toc_numerals,
@@ -307,6 +311,14 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     findings.extend(historical_result.findings)
     counts["historical_points_checked"] = len(historical_result.historical_points)
     gates.add("historical")
+
+    # --- breadth 19: derived_counts -----------------------------------------------------
+    dc_result = derived_counts_pass.check_derived_counts(
+        inputs.ledger, definition=inputs.definition,
+    )
+    findings.extend(dc_result.findings)
+    counts["derived_counts_checked"] = dc_result.counts_checked
+    gates.add("derived_counts")
 
     # --- 29: completeness, in both directions ------------------------------------------
     unrendered, resolved = _completeness(

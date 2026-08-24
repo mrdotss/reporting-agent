@@ -287,7 +287,7 @@ function InnerGroupList({
           data-slot="gap-overflow"
           className="text-xs text-muted-foreground/70 italic"
         >
-          Showing {capped.length} of {innerGroups.length} groups ({shownEntryCount} of {totalCount} entries).
+          {messageText("ui.gap_list.pagination", "en", { shownGroups: String(capped.length), totalGroups: String(innerGroups.length), shownEntries: String(shownEntryCount), totalEntries: String(totalCount) })}
         </p>
       ) : null}
     </div>

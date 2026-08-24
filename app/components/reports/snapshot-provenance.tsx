@@ -1,6 +1,8 @@
 import { CopyButton } from "@/components/subscriptions/copy-button"
 import { FidelityBadge } from "@/components/reports/fidelity-badge"
 import type { RunView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
+import type { Language } from "@/lib/messages/language"
 import type { RunProvenance } from "@/lib/runs/gaps"
 
 /**
@@ -59,10 +61,12 @@ function Row({
 export function SnapshotProvenance({
   run,
   provenance,
+  language = "en",
 }: Readonly<{
   run: RunView
   /** `null` when the run produced no snapshot, or when its object was unreadable. */
   provenance: RunProvenance | null
+  language?: Language
 }>) {
   if (run.snapshotId === null) {
     return (
@@ -70,8 +74,7 @@ export function SnapshotProvenance({
         data-slot="snapshot-provenance-absent"
         className="text-sm text-muted-foreground"
       >
-        This run produced no snapshot, so there is nothing to trace its figures
-        to.
+        {messageText("ui.snapshot.no_snapshot", language ?? "en")}
       </p>
     )
   }
@@ -83,7 +86,7 @@ export function SnapshotProvenance({
       data-slot="snapshot-provenance"
       className="grid grid-cols-1 gap-4 sm:grid-cols-2"
     >
-      <Row label="Snapshot">
+      <Row label={messageText("ui.snapshot.label_snapshot", language ?? "en") ?? "Snapshot"}>
         <span
           data-slot="snapshot-id"
           // The full digest in `title`, so a reader can see it without copying, and the
@@ -94,23 +97,23 @@ export function SnapshotProvenance({
           {run.snapshotId.slice(0, SNAPSHOT_ID_VISIBLE)}…
         </span>
 
-        <CopyButton value={run.snapshotId} label="Copy the snapshot id" />
+        <CopyButton value={run.snapshotId} label={messageText("ui.snapshot.copy_snapshot_id", language ?? "en") ?? "Copy the snapshot id"} />
       </Row>
 
       {provenance?.grain === undefined || provenance.grain === null ? null : (
-        <Row label="Grain">
+        <Row label={messageText("ui.snapshot.label_grain", language ?? "en") ?? "Grain"}>
           <span data-slot="snapshot-grain">{provenance.grain}</span>
         </Row>
       )}
 
-      <Row label="Window">
+      <Row label={messageText("ui.snapshot.label_window", language ?? "en") ?? "Window"}>
         <span data-slot="snapshot-window">
-          {provenance?.localStart ?? run.periodStart} to{" "}
+          {provenance?.localStart ?? run.periodStart} {messageText("ui.snapshot.range_to", language ?? "en")}{" "}
           {provenance?.localEnd ?? run.periodEnd}
         </span>
       </Row>
 
-      <Row label="Timezone">
+      <Row label={messageText("ui.snapshot.label_timezone", language ?? "en") ?? "Timezone"}>
         <span data-slot="snapshot-timezone">
           {provenance?.timezone ?? run.timezone}
           {provenance?.utcOffset === undefined ||
@@ -130,29 +133,29 @@ export function SnapshotProvenance({
       {provenance?.startUtc === undefined ||
       provenance.startUtc === null ||
       provenance.endUtc === null ? null : (
-        <Row label="Collected (UTC)">
+        <Row label={messageText("ui.snapshot.label_collected_utc", language ?? "en") ?? "Collected (UTC)"}>
           {/*
             Half-open on the UTC side: `endUtc` is midnight of the local day *after*
             the last one, and is excluded. Stated so nobody reads it as an extra day.
           */}
           <span data-slot="snapshot-window-utc" className="break-all">
-            {provenance.startUtc} to {provenance.endUtc}
+            {provenance.startUtc} {messageText("ui.snapshot.range_to", language ?? "en")} {provenance.endUtc}
           </span>
         </Row>
       )}
 
-      <Row label="Resources">
+      <Row label={messageText("ui.snapshot.label_resources", language ?? "en") ?? "Resources"}>
         <span data-slot="snapshot-resource-count">
           {run.resourceCount ?? "—"}
         </span>
       </Row>
 
-      <Row label="Gaps recorded">
+      <Row label={messageText("ui.snapshot.label_gaps_recorded", language ?? "en") ?? "Gaps recorded"}>
         <span data-slot="snapshot-gap-count">{run.gapCount ?? "—"}</span>
       </Row>
 
       {tiers.length === 0 ? null : (
-        <Row label="Fidelity">
+        <Row label={messageText("ui.snapshot.label_fidelity", language ?? "en") ?? "Fidelity"}>
           <span className="flex flex-wrap items-center gap-1.5">
             {tiers.map(([tier, count]) => (
               <FidelityBadge key={tier} tier={tier} count={count} />

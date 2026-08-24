@@ -5,6 +5,8 @@ import { SealCheckIcon, SealWarningIcon, SealIcon } from "@phosphor-icons/react"
 import { CopyDigest } from "@/components/reports/copy-digest"
 import { FindingList } from "@/components/reports/finding-list"
 import type { VerificationView } from "@/lib/db/views"
+import { messageText, type MessageId } from "@/lib/messages/catalog"
+import type { Language } from "@/lib/messages/language"
 
 /**
  * The verification, presented as an audit certificate (Requirement 39).
@@ -46,11 +48,16 @@ function grouped(count: number): string {
   return count.toLocaleString("en-US")
 }
 
+const FAIL_NOUN_SINGULAR: MessageId = "ui.verification.fail_noun_singular"
+const FAIL_NOUN_PLURAL: MessageId = "ui.verification.fail_noun_plural"
+
 export function VerificationPanel({
   verification,
+  language = "en",
 }: Readonly<{
   /** The stored row, or `null` when the run carries none (Requirement 39.8). */
   verification: VerificationView | null
+  language?: Language
 }>) {
   // Requirement 39.8 — no verification, or a status that is neither pass nor
   // fail, presents "not verified": no pass statement, no digest presented as
@@ -77,14 +84,12 @@ export function VerificationPanel({
             id="verification-heading"
             className="font-heading text-sm font-medium tracking-tight"
           >
-            Not verified
+            {messageText("ui.verification.failed", language ?? "en")}
           </h2>
         </div>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          This report carries no completed verification, so nothing here is
-          presented as proven and no document is offered for download. A report
-          is delivered only behind a passing verification.
+          {messageText("ui.verification.absent_description", language ?? "en")}
         </p>
       </section>
     )
@@ -115,10 +120,8 @@ export function VerificationPanel({
         className="sr-only"
       >
         {passed
-          ? `Verification passed. ${grouped(verification.figureCount)} figures traced to the snapshot.`
-          : `Verification failed with ${grouped(blockingCount)} blocking ${
-              blockingCount === 1 ? "finding" : "findings"
-            }. The report was not delivered.`}
+          ? messageText("ui.verification.pass_aria", language ?? "en", { count: grouped(verification.figureCount) })
+          : messageText("ui.verification.fail_aria", language ?? "en", { count: grouped(blockingCount), noun: messageText(blockingCount === 1 ? FAIL_NOUN_SINGULAR : FAIL_NOUN_PLURAL, language ?? "en") ?? "" })}
       </p>
 
       <div className="flex items-start gap-2">
@@ -136,7 +139,7 @@ export function VerificationPanel({
             id="verification-heading"
             className="font-heading text-sm font-medium tracking-tight"
           >
-            {passed ? "Verified" : "Not delivered"}
+            {passed ? messageText("ui.verification.passed", language ?? "en") : messageText("ui.verification.not_delivered_heading", language ?? "en")}
           </h2>
 
           {passed ? (
@@ -144,25 +147,13 @@ export function VerificationPanel({
             // digest as **one statement**, in mist neutrals.
             <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
               <span className="font-mono tabular-nums">
-                {grouped(verification.figureCount)}
-              </span>{" "}
-              figures · every figure traced to snapshot{" "}
-              <CopyDigest
-                value={verification.snapshotSha256}
-                label="snapshot digest"
-              />{" "}
-              · verified
+                {messageText("ui.verification.pass_summary", language ?? "en", { count: grouped(verification.figureCount), digest: verification.snapshotSha256.slice(0, 12) })}
+              </span>
             </p>
           ) : (
             // Requirement 39.3 — the count, and the plain statement.
             <p className="max-w-prose text-sm text-destructive">
-              <span className="font-mono tabular-nums">
-                {grouped(blockingCount)}
-              </span>{" "}
-              blocking {blockingCount === 1 ? "finding" : "findings"}. The
-              report was <strong>not delivered</strong> — no document is offered
-              for download, because no document could be proven against the
-              snapshot.
+              {messageText("ui.verification.fail_summary", language ?? "en", { count: grouped(blockingCount), noun: messageText(blockingCount === 1 ? FAIL_NOUN_SINGULAR : FAIL_NOUN_PLURAL, language ?? "en") ?? "" })}
             </p>
           )}
         </div>
@@ -174,7 +165,7 @@ export function VerificationPanel({
         className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3"
       >
         <div className="flex flex-col gap-0.5">
-          <dt className="text-muted-foreground">Snapshot</dt>
+          <dt className="text-muted-foreground">{messageText("ui.verification.digest_snapshot", language ?? "en")}</dt>
           <dd>
             <CopyDigest
               value={verification.snapshotSha256}
@@ -183,13 +174,13 @@ export function VerificationPanel({
           </dd>
         </div>
         <div className="flex flex-col gap-0.5">
-          <dt className="text-muted-foreground">Document (.docx)</dt>
+          <dt className="text-muted-foreground">{messageText("ui.verification.digest_docx", language ?? "en")}</dt>
           <dd>
             <CopyDigest value={verification.docxSha256} label="docx digest" />
           </dd>
         </div>
         <div className="flex flex-col gap-0.5">
-          <dt className="text-muted-foreground">Document (.pdf)</dt>
+          <dt className="text-muted-foreground">{messageText("ui.verification.digest_pdf", language ?? "en")}</dt>
           <dd>
             <CopyDigest value={verification.pdfSha256} label="pdf digest" />
           </dd>
@@ -202,40 +193,31 @@ export function VerificationPanel({
           data-slot="replay-outcome"
           className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2"
         >
-          <p className="text-xs font-medium">Deterministic replay</p>
+          <p className="text-xs font-medium">{messageText("ui.verification.replay_heading", language ?? "en")}</p>
 
           {!verification.replay.possible ? (
             // Requirement 39.4 — "replay was not possible" rather than a pass or
             // a failure. Those are three outcomes and reporting the first as
             // either of the others is a false claim about what was checked.
             <p className="text-xs text-muted-foreground">
-              Not possible for this run — the archived responses it would have
-              re-folded are unavailable, so neither a match nor a mismatch is
-              reported.
+              {messageText("ui.verification.replay_not_possible", language ?? "en")}
             </p>
           ) : (
             <>
               <p className="text-xs text-muted-foreground">
-                <span className="font-mono tabular-nums">
-                  {grouped(verification.replay.objectsFolded)}
-                </span>{" "}
-                of{" "}
-                <span className="font-mono tabular-nums">
-                  {grouped(verification.replay.objectsNamed)}
-                </span>{" "}
-                archived objects re-folded.
+                {messageText("ui.verification.replay_folded", language ?? "en", { folded: grouped(verification.replay.objectsFolded), named: grouped(verification.replay.objectsNamed) })}
               </p>
 
               {verification.replay.recomputedSha256 === undefined ? null : (
                 <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                  recomputed{" "}
+                  {messageText("ui.verification.replay_recomputed_label", language ?? "en")}{" "}
                   <CopyDigest
                     value={verification.replay.recomputedSha256}
                     label="recomputed snapshot digest"
                   />
                   {verification.replay.storedSha256 === undefined ? null : (
                     <>
-                      · stored{" "}
+                      {" "}{messageText("ui.verification.replay_stored_label", language ?? "en")}{" "}
                       <CopyDigest
                         value={verification.replay.storedSha256}
                         label="stored snapshot digest"
@@ -252,23 +234,16 @@ export function VerificationPanel({
           data-slot="drift-sample"
           className="flex flex-col gap-1 rounded-lg border border-border px-3 py-2"
         >
-          <p className="text-xs font-medium">Sampled drift (advisory)</p>
+          <p className="text-xs font-medium">{messageText("ui.verification.drift_heading", language ?? "en")}</p>
 
           {verification.driftSample.n === 0 && !verification.driftSample.seed ? (
             <p className="text-xs text-muted-foreground">
-              No drift sample was recorded for this verification.
+              {messageText("ui.verification.drift_empty", language ?? "en")}
             </p>
           ) : (
             <>
               <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="font-mono tabular-nums">
-                  {grouped(verification.driftSample.n)}
-                </span>{" "}
-                resources re-queried · method{" "}
-                <span className="break-all font-mono">
-                  {verification.driftSample.method}
-                </span>{" "}
-                · seed{" "}
+                {messageText("ui.verification.drift_summary", language ?? "en", { n: grouped(verification.driftSample.n), method: verification.driftSample.method })}{" "}
                 {verification.driftSample.seed ? (
                   <CopyDigest
                     value={verification.driftSample.seed}
@@ -276,18 +251,14 @@ export function VerificationPanel({
                   />
                 ) : (
                   <span className="text-muted-foreground">
-                    No drift sample seed was recorded.
+                    {messageText("ui.verification.drift_no_seed", language ?? "en")}
                   </span>
                 )}
               </p>
 
               {verification.driftSample.notRequeried.length === 0 ? null : (
                 <p className="text-xs text-muted-foreground">
-                  <span className="font-mono tabular-nums">
-                    {grouped(verification.driftSample.notRequeried.length)}
-                  </span>{" "}
-                  selected resources answered nothing and are recorded as not
-                  re-queried rather than as agreeing.
+                  {messageText("ui.verification.drift_not_requeried", language ?? "en", { count: grouped(verification.driftSample.notRequeried.length) })}
                 </p>
               )}
             </>
@@ -299,13 +270,13 @@ export function VerificationPanel({
       {passed ? null : (
         <div className="flex flex-col gap-2">
           <h3 className="text-xs font-medium text-destructive">
-            Blocking findings
+            {messageText("ui.finding.blocking_heading", language ?? "en")}
           </h3>
 
           <FindingList
             findings={verification.blockingFindings}
             blocking
-            emptyText="The verification failed but recorded no blocking finding, which is itself a defect worth reporting."
+            emptyText={messageText("ui.finding.blocking_empty", language ?? "en") ?? ""}
           />
         </div>
       )}
@@ -316,16 +287,16 @@ export function VerificationPanel({
         rather than leaving the reader to infer it from the styling.
       */}
       <div className="flex flex-col gap-2">
-        <h3 className="text-xs font-medium">Advisory findings</h3>
+        <h3 className="text-xs font-medium">{messageText("ui.finding.advisory_heading", language ?? "en")}</h3>
 
         <p className="text-xs text-muted-foreground">
-          Recorded for review. None of these affected the verification status.
+          {messageText("ui.finding.advisory_note", language ?? "en")}
         </p>
 
         <FindingList
           findings={verification.advisoryFindings}
           blocking={false}
-          emptyText="No advisory findings."
+          emptyText={messageText("ui.finding.empty_advisory", language ?? "en") ?? ""}
         />
       </div>
     </section>

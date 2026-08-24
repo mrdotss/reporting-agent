@@ -89,6 +89,7 @@ __all__ = [
     "CHART_ENCODINGS",
     "CHART_ID_PREFIX",
     "CHART_TYPES",
+    "DERIVED_COUNT_KINDS",
     "FIGURE_ADMITTING_ANNOTATIONS",
     "FIGURE_PATH_PATTERN",
     "MAX_LAYOUT_COLUMNS",
@@ -105,6 +106,7 @@ __all__ = [
     "ChartPoint",
     "Column",
     "DecimalString",
+    "DerivedCount",
     "Document",
     "EmptyCell",
     "Figure",
@@ -778,6 +780,107 @@ class TextFactCell:
                 f"TextFactCell admits a TextFact alone, so a bare string cannot reach a "
                 f"fact position and skip its provenance check"
             )
+
+
+# --- compile-derived counts (ledger-only, not a tree node) --------------------------
+
+DERIVED_COUNT_KINDS: Final[tuple[str, ...]] = (
+    "historical_points_emitted",
+    "historical_lookback",
+)
+"""The closed set of derivation kinds a :class:`DerivedCount` may carry.
+
+Each names a specific computation the **verifier** re-derives from the ledger or the
+definition, independently of the compiler's claim. A kind not in this set is refused at
+construction, which is what closes the route: a template, a model, or an arbitrary caller
+cannot invent a new derivation kind and have it accepted.
+
+* ``historical_points_emitted`` — count of chart points the block actually emitted,
+  re-derivable by counting ledger entries whose path starts with the block's chart anchor.
+* ``historical_lookback`` — the ``lookback`` config integer on the block, re-derivable by
+  reading the definition.
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class DerivedCount:
+    """A compile-derived integer whose provenance is "re-derivable from this compile's
+    own ledger or the block's own config" (Req 19.10).
+
+    **Not a tree node, not an Inline, not a Cell.** It exists solely in the
+    :class:`~reporting_agent.compile.figures.FigureLedger` as a third entry kind, providing
+    its ``formatted`` value to masking stage 1 so the verifier's soundness pass masks it
+    the same way it masks figures. A separate verification pass then **re-derives** the
+    value from the ledger/definition and asserts it matches — so the compiler's claim is
+    checked, not trusted.
+
+    **Why it cannot be a Figure:** a Figure's ``__post_init__`` re-resolves ``snapshot_path``
+    against the snapshot, and a compile-derived count has no snapshot position.
+
+    **Why it cannot be a TextFact:** TextFact resolves against the snapshot's *text* side,
+    and a count is not a collected fact.
+
+    **Why it must not carry a numeric annotation:** ``tests/test_ast_guard.py`` asserts
+    ``Figure`` is the only dataclass here mentioning a numeric type. ``DerivedCount`` stores
+    its value as a **string** — the formatted representation — not as ``int`` or
+    ``DecimalString``. The guard therefore sees it as non-numeric, and any future edit adding
+    ``count: int`` to this class fails the guard immediately.
+
+    **Structural refusal to misuse:** ``derivation_kind`` comes from :data:`DERIVED_COUNT_KINDS`,
+    a closed set checked at construction. There is no factory that accepts an arbitrary integer
+    — the :meth:`~reporting_agent.compile.figures.BlockCursor.derived_count` method takes a
+    ``derivation_kind`` and computes the value itself from the ledger/config, so a caller cannot
+    supply a number that disagrees with what the ledger actually contains.
+    """
+
+    path: FigurePath
+    formatted: str
+    """The string representation of the count (e.g. ``"3"``). This is what masking stage 1
+    sees and what the verifier checks."""
+    derivation_kind: str
+    """One of :data:`DERIVED_COUNT_KINDS`."""
+    block_id: str
+    """The block this count belongs to, so the verifier can scope its re-derivation."""
+
+    def __post_init__(self) -> None:
+        at = f"derived count {self.path!r}"
+        if not FIGURE_PATH_PATTERN.match(str(self.path)):
+            raise CompileFailedError(
+                f"{at}: path does not match {FIGURE_PATH_PATTERN.pattern}"
+            )
+        _require_text(self.formatted, "formatted", at)
+        _require_text(self.derivation_kind, "derivation_kind", at)
+        _require_text(self.block_id, "block_id", at)
+        if self.derivation_kind not in DERIVED_COUNT_KINDS:
+            raise CompileFailedError(
+                f"{at}: derivation_kind {self.derivation_kind!r} is not one of "
+                f"{list(DERIVED_COUNT_KINDS)}; a new derivation kind must be added to "
+                f"DERIVED_COUNT_KINDS in compile/ast.py and a verification re-derivation "
+                f"must be implemented before it can be used"
+            )
+        # Refuse non-digit formatted values — a DerivedCount carries an integer
+        if not self.formatted.isdigit():
+            raise CompileFailedError(
+                f"{at}: formatted {self.formatted!r} is not a non-negative integer string; "
+                f"a DerivedCount carries an integer count derived from the compile"
+            )
+
+
+def _derived_count_setattr(self: DerivedCount, name: str, value: object) -> None:
+    raise FigureImmutableError(
+        f"derived count {self.path!r} is immutable; cannot set {name!r}. The ledger "
+        f"holds this same object, so an edit here would agree with the ledger."
+    )
+
+
+def _derived_count_delattr(self: DerivedCount, name: str) -> None:
+    raise FigureImmutableError(
+        f"derived count {self.path!r} is immutable; cannot delete {name!r}"
+    )
+
+
+DerivedCount.__setattr__ = _derived_count_setattr  # type: ignore[method-assign, assignment]
+DerivedCount.__delattr__ = _derived_count_delattr  # type: ignore[method-assign, assignment]
 
 
 type Cell = FigureCell | TextCell | EmptyCell | TextFactCell

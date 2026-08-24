@@ -38,7 +38,7 @@ from reporting_agent.verify.findings import (
 
 NEGATIVE_MODULES: Final[tuple[object, ...]] = (test_negative_gates, test_negative_types)
 
-EXPECTED_BLOCKING_COUNT: Final[int] = 23
+EXPECTED_BLOCKING_COUNT: Final[int] = 24
 """Req 44.1 names the number, so the number is asserted rather than derived.
 
 A count read from `BLOCKING_FINDING_TYPES` would agree with itself whatever that tuple said,

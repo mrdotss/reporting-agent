@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { InfoIcon } from "@phosphor-icons/react"
 
 import { FigureProvenance } from "@/components/reports/figure-provenance"
+import { messageText } from "@/lib/messages/catalog"
 import { PAPER_CLAIM } from "@/lib/reports/paper-claim"
 import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
 
@@ -463,26 +464,14 @@ export function PaperRender({
         <div className="flex flex-col gap-0.5">
           <p className="text-sm font-medium">
             {PAPER_CLAIM === "approximation"
-              ? "Reading view — an approximation of the delivered page"
-              : "Reading view — a text extract"}
+              ? messageText("ui.preview.heading_approximation", "en")
+              : messageText("ui.preview.heading_extract", "en")}
           </p>
 
           <p className="max-w-prose text-xs text-muted-foreground">
-            {PAPER_CLAIM === "approximation" ? (
-              <>
-                This approximates {PREVIEW_DIVERGENCES[0]},{" "}
-                {PREVIEW_DIVERGENCES[1]} and {PREVIEW_DIVERGENCES[2]}. The
-                delivered result is the{" "}
-                <code className="font-mono">.pdf</code> below. Hover or focus
-                any figure to see where it came from.
-              </>
-            ) : (
-              <>
-                The delivered result is the{" "}
-                <code className="font-mono">.pdf</code> below. Hover or focus
-                any figure to see where it came from.
-              </>
-            )}
+            {PAPER_CLAIM === "approximation"
+              ? messageText("ui.preview.approximation_notice", "en", { divergences: PREVIEW_DIVERGENCES.join(", ") })
+              : messageText("ui.preview.delivered_notice", "en")}
           </p>
         </div>
       </div>

@@ -122,6 +122,7 @@ FINDING_HISTORICAL_POINT_UNVERIFIED: Final[str] = "historical_point_unverified"
 FINDING_HISTORICAL_POINT_OVERLAPPING: Final[str] = "historical_point_overlapping"
 FINDING_TOC_PAGE_MISMATCH: Final[str] = "toc_page_mismatch"
 FINDING_FACT_SOURCE_MISSING: Final[str] = "fact_source_missing"
+FINDING_DERIVED_COUNT_MISMATCH: Final[str] = "derived_count_mismatch"
 
 BLOCKING_FINDING_TYPES: Final[tuple[str, ...]] = (
     FINDING_UNMATCHED_PROSE_TOKEN,
@@ -147,6 +148,7 @@ BLOCKING_FINDING_TYPES: Final[tuple[str, ...]] = (
     FINDING_HISTORICAL_POINT_OVERLAPPING,
     FINDING_TOC_PAGE_MISMATCH,
     FINDING_FACT_SOURCE_MISSING,
+    FINDING_DERIVED_COUNT_MISMATCH,
 )
 
 # --- the four advisory types ----------------------------------------------------------

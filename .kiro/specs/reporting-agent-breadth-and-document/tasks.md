@@ -337,28 +337,21 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - **The build-time invocation moved to task 6.6.** Copying the test file into the image needs a second `.dockerignore` re-inclusion, and `tests/test_image_build.py` asserts exactly one — naming exactly the metric-definitions evidence, because anything broader ships the suite into the image. The guard itself is complete and passing as a suite test; 6.6 carries the move of its scan into a `src/` module with an `--assert-build` entry point, which is how the two neighbouring build checks already work and which satisfies both guards
     - _Requirements: 15.2, 15.6_
 
-  - [ ] 6.5 The TypeScript literal guard
+  - [x] 6.5 The TypeScript literal guard
     - **Resolved by task 6.7, which now declares that migration.** The scoping decision this
       note left open was taken as a sibling task rather than by widening 6.3, because 6.3 is
       complete and shipped. **This task runs after 6.7**, not merely in a later wave: with the
       interface's copy unmigrated the guard cannot pass in any wave, and with it migrated the
-      guard is what keeps it migrated. The measurement below is retained as the record of what
-      6.7 inherited.
-    - **Depends on an app-side migration that no task currently declares.** Task 6.3 migrates the
-      agent's four places; its title says "the four places the literals actually are" and all four
-      are under `agent/`. Nothing in this plan migrates `app/components/reports/**`, yet task 6.2
-      states that `ui.` ids are "resolved by the app" and this guard checks those files against the
-      declared id set. Measured against the current tree the guard reports **91 offenders across 11
-      of 15 files** — `verification-panel.tsx` 38, `run-form.tsx` 13, `paper-render.tsx` 9,
-      `run-list.tsx` 8, `snapshot-provenance.tsx` 8, `run-failure-notice.tsx` 4,
-      `activity-timeline.tsx` 3, and 2 each in `download-card.tsx`, `figure-provenance.tsx`,
-      `gap-list.tsx` and `run-progress.tsx`. The catalog declares 16 `ui.` ids today, so closing
-      this needs new ids as well as new call sites.
-    - **Resolve that before starting this task**, either by extending 6.3 to a fifth place or by
-      adding a sibling task for the interface's copy. Moving this task to a later wave is necessary
-      and not sufficient: with no migration anywhere in the plan, this guard cannot pass in any
-      wave. Recorded here rather than closed by inventing a task, because which of the two it
-      should be is a scoping decision.
+      guard is what keeps it migrated.
+    - **MEASURED TO ZERO.** The TypeScript AST-based literal-detection scan (`ts.createSourceFile`)
+      found **40 offenders across 6 files** on its first run, after task 6.7 had already migrated
+      ~54 literals. All 40 were migrated to 28 new `ui.*` catalog ids (many were fragments of
+      sentences that composed into single parameterised entries). Combined with 6.7's prior
+      migration, the app's report surfaces are now fully catalog-resolved.
+    - The scan covers three literal kinds: every `ts.JsxText` node with non-whitespace content,
+      every string literal inside a `ts.JsxExpression` that is a JSX child, and every string
+      literal assigned to `aria-label`, `title`, `alt` or `placeholder`. It does not flag
+      `className`, `data-*`, element names, or structural attributes.
     - `app/test/message-literals.static.test.ts` using the `typescript` package's own `ts.createSourceFile` — already a dev dependency since `pnpm typecheck` runs `tsc`, so no new dependency — over `app/components/reports/**`, parsed with position info so `getText` works
     - Flag every `ts.JsxText` node with non-whitespace content; every string literal inside a `ts.JsxExpression` that is a **child** rather than an attribute value; and every string literal assigned to `aria-label`, `title`, `alt` or `placeholder` — those **are** user-facing copy, so this is deliberately stricter than criterion 15.6's "excluding attribute names"
     - Do not flag `className`, `data-*`, element or attribute names. An offender is any flagged literal that is not a declared string id
@@ -375,7 +368,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Three new ids in both catalogs, and `app/test/mirror.static.test.ts` (task 16.2) is what will keep them in step once it exists
     - _Requirements: 15.2, 15.3, 15.6, 15.11, 15.12_
 
-  - [ ] 6.7 Migrate the interface's copy, which task 6.5 needs and nothing declares
+  - [x] 6.7 Migrate the interface's copy, which task 6.5 needs and nothing declares
     - **This is the scoping decision task 6.5 records rather than closes.** 6.5 writes a TypeScript literal guard over `app/components/reports/**` and, measured against the tree, that guard reports **91 offenders across 11 of 15 files** — `verification-panel.tsx` 38, `run-form.tsx` 13, `paper-render.tsx` 9, `run-list.tsx` 8, `snapshot-provenance.tsx` 8, `run-failure-notice.tsx` 4, `activity-timeline.tsx` 3, and 2 each in `download-card.tsx`, `figure-provenance.tsx`, `gap-list.tsx` and `run-progress.tsx`. Task 6.3 migrated the agent's four places and its title says so; nothing migrates the app's. 6.5 therefore cannot pass in **any** wave until this lands, which is why moving it later was recorded as necessary and not sufficient
     - **Taken as a sibling task rather than by widening 6.3**, because 6.3 is complete and shipped: reopening a landed task to absorb 91 new call sites would make "done" mean something different after the fact, and the agent's document copy and the interface's chrome are answerable to different reviewers anyway
     - The catalog declares **16 `ui.` ids** today, so this needs new ids as well as new call sites. Every id added here carries the `ui.` prefix, because task 6.2's rule is that the prefix says which half resolves an id, and these are resolved by the app
@@ -550,14 +543,14 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Kills: a selector filtering on `status` alone, which admits a completed run whose verification failed; one taking the newest N **before** filtering, which returns fewer than N eligible while eligible older runs exist; one admitting overlapping periods, which plots one interval twice as two periods; one padding to the lookback, which fabricates a period; one whose order depends on the query's row order; one keyed on the identical `template_version_id`, which empties every trend on the next template edit; one that silently drops an ineligible candidate without recording why
     - _Requirements: 18.4, 18.5, 18.6, 18.7, 18.10, 18.13, 18.14, 18.15, 19.1, 19.3, 19.4, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
-  - [ ] 11.6 Activate the `historical_trend` block on the delivered path, and pin its selection
+  - [x] 11.6 Activate the `historical_trend` block on the delivered path, and pin its selection
     - **PARTIALLY DONE, left unticked because the acceptance bar below was not met.** `report_pipeline.py` now walks the pinned definition for `historical_trend` blocks, calls `select_historical_runs` once per `(metric, statistic, lookback)` key, and passes the mapping plus a `HistoricalSource` into `compile_document` on both the delivered and re-verify paths. `historical.json` is persisted beside `prose.json` and replayed through `_StoredSelection`, mirroring `_StoredProse`. `VerifyInputs.historical` is now populated from that same selection data (`_historical_verify_inputs`), closing a real verification-gate gap: without it, `verify/historical.py`'s gate saw no verification record for any prior run and blocked every activated report on a spurious `historical_point_unverified` finding. That fix is tested and stands.
     - **NOT DONE: a table-and-trend template still cannot re-verify successfully with real prior-run data**, which is this task's actual acceptance bar. With the verification-gate fix above applied, activating the block with one real candidate now surfaces a SECOND finding — `unmatched_prose_token` — because `charts.py`'s `trend_statement` interpolates `count_plotted`/`count_requested` directly into free-text prose admitted through the static-text allowlist (`verify/allowlist.py::derive_allowlist`), and that allowlist's soundness argument ("the null-context render emits the same statement with the same counts") was only ever true because nothing could previously activate the block, so both the null context and the real path always saw `count=0`. Activation breaks that premise: the null context can never produce a non-zero count, by construction, while a real run now can.
     - Investigated and ruled out during this session: making the counts `Figure`s (refused structurally — `BlockCursor.figure()` only accepts a `SnapshotValue`, and a compile-derived count is not one); making them `TextFact`s (refused — that type declares no field admitting a quantity, by the same AST guard rule `Figure` is checked under); reusing the `_NullComparison` pattern from `comparison_delta` (does not transfer — confirmed by reading `verify/masking.py::_mask_literals`, which matches by exact substring (`text.find`), not by shape, so a synthetic null-context count only ever masks that one specific value and a real run with a different count still fails).
     - **This task stays open until task 11.7 lands.** Do not re-tick it on the strength of the verify-input fix alone — the mutation check specified two bullets above (a table-and-trend template re-verifying successfully) is the bar, and it is not yet cleared.
     - _Requirements: 18.4, 18.8, 18.10, 18.11, 18.12, 19.5, 19.6, 19.8, 19.9_
 
-  - [ ] 11.7 Give a compile-derived count a real provenance node, and retire the trend-statement allowlist entry
+  - [x] 11.7 Give a compile-derived count a real provenance node, and retire the trend-statement allowlist entry
     - **The gap 11.6 could not close within its own scope.** `compile/blocks/charts.py`'s `historical_trend` statement is the only place in the codebase interpolating a live, compile-derived integer into allowlisted static prose, and activating the block (11.6) proved the allowlist mechanism unsound for this specific shape: the null-context derivation can only ever produce `count=0`, and masking is exact-substring, so no null-context trick closes the gap. This is why the codebase has no precedent to copy from — `narrative.py`'s `resource_count` is model-prompt input, verified by the ordinary soundness pass against a `TextFact`/ledger match, never by an allowlist, which is the mechanism this task should end up using too.
     - Add a new AST leaf — or extend an existing one — that can carry a number whose provenance is **"derived from this compile's own ledger," not "read from the snapshot at this JSON pointer."** `Figure.__post_init__` and `TextFact`'s guard both refuse this on purpose (Req boundary tests in `test_ast_guard.py`/`test_boundaries.py`); whatever is added must be equally refusable to misuse — no route by which a template, a model or a caller-supplied string can populate the same field a genuine derived count uses.
     - The verifier's soundness pass must mask the new node's value by matching it against what the ledger *actually contains* — the true count of points this block emitted, and the true requested/lookback value from the block's own config — not by a second allowlist entry with the same soundness problem this task exists to remove.

@@ -11,6 +11,7 @@ import type {
   RunView,
   TemplateView,
 } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 
 /**
@@ -188,8 +189,7 @@ export function RunForm({
         data-slot="run-form-no-subscriptions"
         className="text-sm text-muted-foreground"
       >
-        Connect an Azure subscription before requesting a report. Nothing can be
-        collected until read at subscription scope has been proved.
+        {messageText("ui.run_form.no_subscriptions", "en")}
       </p>
     )
   }
@@ -207,7 +207,7 @@ export function RunForm({
       className="flex flex-col gap-4 rounded-xl border border-border px-4 py-4"
     >
       <Field>
-        <FieldLabel htmlFor={subscriptionFieldId}>Subscription</FieldLabel>
+        <FieldLabel htmlFor={subscriptionFieldId}>{messageText("ui.run_form.subscription_label", "en")}</FieldLabel>
 
         {/*
           A native `<select>` styled to match `Input`. The registry's Select is not in
@@ -242,15 +242,13 @@ export function RunForm({
 
         {selectable.length === 0 ? (
           <FieldDescription>
-            None of your subscriptions can start a run yet. Each one needs a
-            proved subscription-scope Reader assignment and a client secret
-            Azure still accepts.
+            {messageText("ui.run_form.no_selectable_hint", "en")}
           </FieldDescription>
         ) : null}
       </Field>
 
       <Field>
-        <FieldLabel htmlFor={templateFieldId}>Template</FieldLabel>
+        <FieldLabel htmlFor={templateFieldId}>{messageText("ui.run_form.template_label", "en")}</FieldLabel>
 
         <select
           id={templateFieldId}
@@ -274,13 +272,11 @@ export function RunForm({
 
         {templates.length === 0 ? (
           <FieldDescription>
-            You have no templates. The three starters are created with your
-            account; if none is listed, author one in the wizard.
+            {messageText("ui.run_form.no_templates_hint", "en")}
           </FieldDescription>
         ) : runnable.length === 0 ? (
           <FieldDescription>
-            None of your templates has a saved version yet. A template gets its
-            first version when the wizard&rsquo;s last step completes.
+            {messageText("ui.run_form.no_template_versions_hint", "en")}
           </FieldDescription>
         ) : null}
       </Field>
@@ -296,7 +292,7 @@ export function RunForm({
             they were looking at. Truncated for the line and shown in the mono
             face, the same treatment every other digest in the app gets.
           */}
-          Pins version {selectedTemplate.currentVersion} ·{" "}
+          {messageText("ui.run_form.pinned_version_hint", "en", { version: String(selectedTemplate.currentVersion) })}{" "}
           <span className="font-mono">
             {selectedTemplate.currentVersionSha256.slice(0, 12)}
           </span>
@@ -310,9 +306,7 @@ export function RunForm({
           is what stops a consultant looking for the date fields that used to be
           here.
         */}
-        The collection window comes from the template&rsquo;s own period rule
-        and resolves when the run is enqueued, in {timezone}. A period is local:
-        &ldquo;July 2026&rdquo; means July in that zone, not July in UTC.
+        {messageText("ui.run_form.period_explanation", "en", { timezone })}
       </FieldDescription>
 
       {error === null ? null : (
@@ -330,13 +324,12 @@ export function RunForm({
       <div className="flex justify-start">
         <Button type="submit" disabled={!canSubmit}>
           <PlayIcon aria-hidden="true" />
-          {submitting ? "Requesting…" : "Request a report"}
+          {submitting ? messageText("ui.run_form.submitting", "en") : messageText("ui.run_form.submit", "en")}
         </Button>
       </div>
 
       <p className="text-xs text-muted-foreground">
-        A run takes 8 to 12 minutes at a few hundred resources. It is recorded
-        rather than streamed, so closing this tab does not affect it.
+        {messageText("ui.run_form.duration_hint", "en")}
       </p>
     </form>
   )

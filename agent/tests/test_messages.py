@@ -119,14 +119,17 @@ def test_the_two_languages_are_actually_different_copy() -> None:
     one mechanical shortcut: a wholesale copy.
 
     A handful of ids legitimately match — `baseline` and `enhanced` are the tier names the
-    snapshot records, and a translated tier name would no longer name the tier — so this
-    asserts a proportion rather than universal difference, and names the exempt ids.
+    snapshot records, and a translated tier name would no longer name the tier; `UTC` is the
+    timezone abbreviation, and Indonesian technical writing keeps it untranslated for the same
+    reason — so this asserts a proportion rather than universal difference, and names the
+    exempt ids.
     """
     shared_by_design = {
         "doc.fidelity.baseline",
         "doc.fidelity.enhanced",
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
+        "ui.run_list.utc_suffix",
     }
     messages = raw_catalog()["messages"]
     identical = {

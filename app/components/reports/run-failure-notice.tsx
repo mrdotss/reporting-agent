@@ -1,6 +1,8 @@
 import { SealWarningIcon } from "@phosphor-icons/react/ssr"
 
 import type { RunView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
+import type { Language } from "@/lib/messages/language"
 import { periodLine, runFailurePresentation } from "@/lib/runs/presentation"
 
 /**
@@ -40,6 +42,7 @@ import { periodLine, runFailurePresentation } from "@/lib/runs/presentation"
 export function RunFailureNotice({
   run,
   subscriptionLabel,
+  language = "en",
 }: Readonly<{
   run: RunView
   /**
@@ -50,6 +53,7 @@ export function RunFailureNotice({
    * *masked* id is what a browser may hold.
    */
   subscriptionLabel: string
+  language?: Language
 }>) {
   const failure = runFailurePresentation(run)
   if (failure === null) return null
@@ -83,14 +87,14 @@ export function RunFailureNotice({
       <dl className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-8">
         <div className="flex flex-col gap-0.5">
           <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-            Subscription
+            {messageText("ui.failure.subscription_label", language ?? "en")}
           </dt>
           <dd className="font-mono tabular-nums">{subscriptionLabel}</dd>
         </div>
 
         <div className="flex flex-col gap-0.5">
           <dt className="text-xs tracking-widest text-muted-foreground uppercase">
-            Period
+            {messageText("ui.failure.period_label", language ?? "en")}
           </dt>
           {/* The zone is named, because "July" means July there and not in UTC. */}
           <dd className="font-mono tabular-nums">{periodLine(run)}</dd>
@@ -103,14 +107,14 @@ export function RunFailureNotice({
       */}
       <p data-slot="no-artifact" className="text-sm">
         {failure.artifactProduced
-          ? "An artifact was produced before the failure."
-          : "No report was produced, and there is nothing to download."}
+          ? messageText("ui.failure.artifact_produced", language ?? "en")
+          : messageText("ui.failure.no_artifact", language ?? "en")}
       </p>
 
       {failure.causes.length === 0 ? null : (
         <div className="flex flex-col gap-1.5">
           <h3 className="text-xs tracking-widest text-muted-foreground uppercase">
-            What to check
+            {messageText("ui.failure.what_to_check", language ?? "en")}
           </h3>
 
           <ul
@@ -132,7 +136,7 @@ export function RunFailureNotice({
         // while the headline above is the same sentence every time for a given code.
         <details className="text-sm">
           <summary className="cursor-pointer text-muted-foreground">
-            What the runtime reported
+            {messageText("ui.failure.runtime_reported", language ?? "en")}
           </summary>
 
           <p className="mt-1.5 max-w-prose text-muted-foreground">
