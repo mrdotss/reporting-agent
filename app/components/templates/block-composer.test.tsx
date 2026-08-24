@@ -106,13 +106,13 @@ describe("Requirement 12.3 — Enter appends, selects and focuses", () => {
 
     fireEvent.click(
       container.querySelector(
-        "[data-slot='palette-entry'][data-block-type='cover']"
+        "[data-slot='palette-entry'][data-block-type='heading']"
       )!
     )
 
     expect(onChange).toHaveBeenCalledOnce()
     const next = onChange.mock.calls[0]![0] as TemplateDefinition
-    expect(next.blocks.map((block) => block.type)).toEqual(["cover"])
+    expect(next.blocks.map((block) => block.type)).toEqual(["heading"])
   })
 
   test("the insert is announced", () => {
@@ -120,7 +120,7 @@ describe("Requirement 12.3 — Enter appends, selects and focuses", () => {
 
     fireEvent.click(
       container.querySelector(
-        "[data-slot='palette-entry'][data-block-type='cover']"
+        "[data-slot='palette-entry'][data-block-type='heading']"
       )!
     )
 

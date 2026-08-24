@@ -267,6 +267,7 @@ async def write_report_artifacts(
     ledger_bytes: bytes,
     ast: object,
     prose: object,
+    historical: object | None = None,
     html: str,
     chart_images: Mapping[str, bytes] | None = None,
     chart_sidecars: Mapping[str, bytes] | None = None,
@@ -313,6 +314,10 @@ async def write_report_artifacts(
     await write_json_artifact(
         store, reports_key(actor_id, run_id, "prose.json"), prose, actor_id=actor_id
     )
+    if historical is not None:
+        await write_json_artifact(
+            store, reports_key(actor_id, run_id, "historical.json"), historical, actor_id=actor_id
+        )
     await store.put_bytes(
         reports_key(actor_id, run_id, "document.html"),
         html.encode("utf-8"),

@@ -7,7 +7,6 @@ import {
   ChartBarIcon,
   ChartLineIcon,
   ColumnsIcon,
-  FileDashedIcon,
   GaugeIcon,
   type Icon,
   ListChecksIcon,
@@ -80,16 +79,20 @@ type PaletteGroup = {
  * questions — "how is the page laid out", "what figures does it carry", "what
  * does it say", "what proves it".
  */
+/**
+ * Requirement 13.3 — the palette's first entry is a **content** block, and
+ * there is **no palette entry** for the cover, the document control page or
+ * the table of contents.
+ *
+ * Those three are configured in the fixed front-matter section
+ * (`front-matter-form.tsx`) above the canvas, never as a reorderable item.
+ * `cover` stays a declared block type in `BLOCK_TYPES` (for v1 backward
+ * compatibility — Req 13.11), but it is **not** in this palette.
+ */
 export const PALETTE_GROUPS: readonly PaletteGroup[] = [
   {
     name: "Structure",
     entries: [
-      {
-        type: "cover",
-        icon: FileDashedIcon,
-        emits:
-          "A title page carrying the report title, the customer and the window.",
-      },
       {
         type: "heading",
         icon: TextHOneIcon,

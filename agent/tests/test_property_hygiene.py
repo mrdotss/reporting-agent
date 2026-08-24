@@ -189,12 +189,20 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # three value pools and seven mutation kinds need to be reached deterministically
     # rather than by a lucky draw.
     "test_text_fact_property.py": 24,
+    # breadth Property 3. Three declared examples on test_declared_examples_and_general_property:
+    # - two runs of identical period with equal verification instants, asserting the id
+    #   tie-break (greater id wins, loser excluded as period_overlapping);
+    # - a candidate whose latest verification is `fail`, asserting exclusion as
+    #   verification_not_passed;
+    # - two runs under different template versions of the same template row, asserting
+    #   inclusion (no template_version_id filtering).
+    "test_historical_property.py": 3,
 }
 
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 158
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 161
 
 
 # --------------------------------------------------------------------------- #

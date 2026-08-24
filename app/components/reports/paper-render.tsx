@@ -4,6 +4,7 @@ import { useMemo } from "react"
 import { InfoIcon } from "@phosphor-icons/react"
 
 import { FigureProvenance } from "@/components/reports/figure-provenance"
+import { PAPER_CLAIM } from "@/lib/reports/paper-claim"
 import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
 
 /**
@@ -31,7 +32,6 @@ import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
  * That is worth having deliberately: a join is a second thing that can be
  * missing, stale or keyed wrong, and Requirement 38.1 wants the figure and its
  * provenance to be one fact. They are one element.
-
  *
  * ## The label is the same permanent one the canvas carries
  *
@@ -43,6 +43,24 @@ import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
  * What this surface must **not** say is that the HTML is what the consultant
  * will receive (Requirement 14.6) — the presigned `.pdf` is, and the label says
  * so.
+ *
+ * ## Table-aware figure extraction
+ *
+ * The prior implementation split the HTML string at each figure boundary and
+ * rendered segments as sibling `<span dangerouslySetInnerHTML>` elements. When a
+ * table row had multiple figure cells, the `<td>` boundaries tore across separate
+ * spans — each fragment carried unclosed tags that HTML5 error recovery removed
+ * from table context. This is not a jsdom quirk; it is standard parser behavior
+ * in every browser.
+ *
+ * The fix: when a figure falls inside a `<table>`, parse the ENTIRE table as one
+ * DOM block, replacing figure spans in-place with React components rendered into
+ * real `<td>` elements. The table's `<tr>/<td>` ancestry is never broken because
+ * the table HTML is never split into sibling spans.
+ *
+ * For non-table content (charts, prose), the original segment-splitting approach
+ * is safe — a `<span>` boundary inside `<div>`/`<figure>`/`<p>` does not trigger
+ * HTML5 error recovery since those elements nest freely.
  */
 
 /** The class `render/html.py` marks every figure with. */
@@ -54,14 +72,16 @@ const SNAPSHOT_PATH_ATTRIBUTE = "data-snapshot-path"
 /** Present only where the value is an estimate (Requirement 38.3). */
 const ESTIMATOR_ATTRIBUTE = "data-estimator-label"
 
+type FigureData = {
+  readonly formatted: string
+  readonly snapshotPath: string
+  readonly estimator: string | null
+}
+
 type Segment =
   | { readonly kind: "html"; readonly html: string }
-  | {
-      readonly kind: "figure"
-      readonly formatted: string
-      readonly snapshotPath: string
-      readonly estimator: string | null
-    }
+  | { readonly kind: "figure"; readonly formatted: string; readonly snapshotPath: string; readonly estimator: string | null }
+  | { readonly kind: "table"; readonly tableHtml: string; readonly figures: readonly FigureData[] }
 
 /** One attribute's value off a matched element, or `null`. */
 function attribute(element: string, name: string): string | null {
@@ -90,37 +110,92 @@ function decodeEntities(value: string): string {
     .replaceAll("&amp;", "&")
 }
 
+/** The figure-matching regex — matches the figure span element. */
+const FIGURE_PATTERN = new RegExp(
+  `<span[^>]*class="(?:[^"]*\\s)?${FIGURE_CLASS}(?:\\s[^"]*)?"[^>]*>([\\s\\S]*?)</span>`,
+  "g"
+)
+
+/** Extract figure data from a matched element string. */
+function extractFigure(element: string, content: string): FigureData {
+  return {
+    formatted: decodeEntities(content),
+    snapshotPath: attribute(element, SNAPSHOT_PATH_ATTRIBUTE) ?? "",
+    estimator: attribute(element, ESTIMATOR_ATTRIBUTE),
+  }
+}
+
 /**
- * Split emitted HTML into markup runs and figure slots.
+ * A unique placeholder that cannot appear in emitter output.
+ * Used to mark figure positions within table HTML so they can be replaced
+ * with React components during rendering.
+ */
+const FIGURE_PLACEHOLDER = "\uFFFDFIGURE\uFFFD"
+
+/**
+ * Split emitted HTML into segments, keeping tables intact.
  *
- * A regex over one element shape rather than a DOM parse, and the trade is
- * deliberate: `DOMParser` would give a tree this component then has to walk and
- * re-serialize, which is a second rendering of the emitter's output and exactly
- * the "layout definition of its own" Requirement 38.1 forbids. Matching the
- * figure element and passing everything between matches through untouched keeps
- * this file ignorant of every other tag.
+ * Tables are parsed as whole blocks with figure data extracted separately.
+ * Figure placeholders within the table HTML are rendered as React components
+ * in their correct DOM positions (inside real `<td>` elements).
  *
- * **This is the risky part of the file**, and worth naming: it treats the
- * emitter's output as a string. The dependency is narrow — the figure element's
- * shape, nothing else about the markup — but it is real, and if the emitter
- * changes how it marks a figure this stops finding them. It does not degrade
- * silently: an unmatched rendering shows the figures as plain text with no
- * reveal, which is visibly wrong rather than subtly wrong.
+ * Non-table content uses the original per-figure splitting (safe because
+ * `<span>` boundaries inside `<div>`/`<figure>`/`<p>` do not cause HTML5
+ * error recovery).
  */
 export function splitOnFigures(html: string): readonly Segment[] {
-  // The class value is a space-separated token list, so the match requires
-  // `rpt-figure` bounded by a quote or a space on both sides. `\b` is **not**
-  // sufficient and the difference is not academic: `-` is a non-word character,
-  // so `\brpt-figure\b` matches inside `rpt-figure-caption` and would turn a
-  // caption into a figure slot with no snapshot path — which then renders as
-  // "provenance unavailable" on a piece of chrome that never had any.
-  const pattern = new RegExp(
-    `<span[^>]*class="(?:[^"]*\\s)?${FIGURE_CLASS}(?:\\s[^"]*)?"[^>]*>([\\s\\S]*?)</span>`,
-    "g"
-  )
-
+  // First, find all table boundaries
+  const tablePattern = /<table[\s\S]*?<\/table>/gi
   const segments: Segment[] = []
   let cursor = 0
+
+  for (const tableMatch of html.matchAll(tablePattern)) {
+    const tableStart = tableMatch.index
+    const tableEnd = tableStart + tableMatch[0].length
+
+    // Process non-table content before this table using the original splitting
+    if (tableStart > cursor) {
+      const before = html.slice(cursor, tableStart)
+      splitNonTableContent(before, segments)
+    }
+
+    // Process the table as a single block
+    const tableHtml = tableMatch[0]
+    const figures: FigureData[] = []
+
+    // Replace each figure in the table with a placeholder, extracting data
+    const modifiedTable = tableHtml.replace(FIGURE_PATTERN, (match, content) => {
+      figures.push(extractFigure(match, content ?? ""))
+      return `<span class="${FIGURE_CLASS}" data-figure-placeholder="true">${FIGURE_PLACEHOLDER}${figures.length - 1}</span>`
+    })
+
+    if (figures.length > 0) {
+      segments.push({ kind: "table", tableHtml: modifiedTable, figures })
+    } else {
+      // Table with no figures — just pass through as HTML
+      segments.push({ kind: "html", html: tableHtml })
+    }
+
+    cursor = tableEnd
+  }
+
+  // Process any remaining non-table content
+  if (cursor < html.length) {
+    const remaining = html.slice(cursor)
+    splitNonTableContent(remaining, segments)
+  }
+
+  return segments
+}
+
+/**
+ * Split non-table HTML content at figure boundaries (the original approach).
+ * Safe for non-table content because `<span>` boundaries inside `<div>`,
+ * `<figure>`, `<p>` etc. do not trigger HTML5 error recovery.
+ */
+function splitNonTableContent(html: string, segments: Segment[]): void {
+  let cursor = 0
+  const pattern = new RegExp(FIGURE_PATTERN.source, "g")
 
   for (const match of html.matchAll(pattern)) {
     const start = match.index
@@ -129,15 +204,10 @@ export function splitOnFigures(html: string): readonly Segment[] {
     }
 
     const element = match[0]
-
     segments.push({
       kind: "figure",
       formatted: decodeEntities(match[1] ?? ""),
       snapshotPath: attribute(element, SNAPSHOT_PATH_ATTRIBUTE) ?? "",
-      // Requirement 38.3 — absent for an exact value, and the emitter omits the
-      // attribute entirely in that case rather than writing an empty one. So
-      // `null` here means "not an estimate", which is exactly what the reveal
-      // needs to decide whether to show a caveat at all.
       estimator: attribute(element, ESTIMATOR_ATTRIBUTE),
     })
 
@@ -147,8 +217,231 @@ export function splitOnFigures(html: string): readonly Segment[] {
   if (cursor < html.length) {
     segments.push({ kind: "html", html: html.slice(cursor) })
   }
+}
 
-  return segments
+/**
+ * Render a table segment: parse the placeholder-bearing HTML into a real DOM
+ * structure, then render each cell's content with figure components in place.
+ */
+function TableSegment({
+  tableHtml,
+  figures,
+}: Readonly<{ tableHtml: string; figures: readonly FigureData[] }>) {
+  // Parse the table into a structure we can render with React
+  const parsed = useMemo(() => parseTableWithPlaceholders(tableHtml, figures), [tableHtml, figures])
+
+  return (
+    <table
+      {...parsed.tableAttrs}
+      dangerouslySetInnerHTML={undefined}
+    >
+      {parsed.sections.map((section, si) => {
+        const SectionTag = section.tag as "thead" | "tbody" | "tfoot"
+        return (
+          <SectionTag key={si}>
+            {section.rows.map((row, ri) => (
+              <tr key={ri} {...row.attrs}>
+                {row.cells.map((cell, ci) => {
+                  const CellTag = cell.tag as "th" | "td"
+                  return (
+                    <CellTag key={ci} {...cell.attrs}>
+                      {cell.contents.map((content, idx) =>
+                        content.kind === "html" ? (
+                          <span key={idx} dangerouslySetInnerHTML={{ __html: content.html }} />
+                        ) : (
+                          <FigureProvenance
+                            key={idx}
+                            formatted={content.figure.formatted}
+                            provenance={
+                              content.figure.snapshotPath === ""
+                                ? null
+                                : {
+                                    snapshotPath: content.figure.snapshotPath,
+                                    estimator: content.figure.estimator,
+                                  }
+                            }
+                          />
+                        )
+                      )}
+                    </CellTag>
+                  )
+                })}
+              </tr>
+            ))}
+          </SectionTag>
+        )
+      })}
+    </table>
+  )
+}
+
+// --- Table parsing types ---
+
+type CellContent =
+  | { kind: "html"; html: string }
+  | { kind: "figure"; figure: FigureData }
+
+type ParsedCell = {
+  tag: "td" | "th"
+  attrs: Record<string, string>
+  contents: CellContent[]
+}
+
+type ParsedRow = {
+  attrs: Record<string, string>
+  cells: ParsedCell[]
+}
+
+type ParsedSection = {
+  tag: "thead" | "tbody" | "tfoot"
+  rows: ParsedRow[]
+}
+
+type ParsedTable = {
+  tableAttrs: Record<string, string>
+  sections: ParsedSection[]
+}
+
+/** Extract attributes from an opening tag string. */
+function extractAttrs(tag: string): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  const attrPattern = /([a-z][a-z0-9-]*)="([^"]*)"/gi
+  for (const m of tag.matchAll(attrPattern)) {
+    const name = m[1]
+    // Skip class for now — we'll handle it specially if needed
+    if (name === "class") {
+      attrs.className = m[2]
+    } else {
+      // Convert data-* attributes to their camelCase equivalent for React
+      attrs[name] = m[2]
+    }
+  }
+  return attrs
+}
+
+/** Parse a scope attribute value — converts data-x-y to data-x-y (React allows this). */
+function parseTableWithPlaceholders(tableHtml: string, figures: readonly FigureData[]): ParsedTable {
+  // Use DOMParser approach — parse the table HTML into a real DOM tree
+  // and walk it to extract the structure.
+  //
+  // This is NOT a second layout definition: it reads the emitter's markup
+  // structurally to preserve its DOM hierarchy, rather than deciding what
+  // that hierarchy should be. The structure comes from the emitter; this
+  // code follows it.
+
+  const parser = typeof DOMParser !== "undefined" ? new DOMParser() : null
+  if (!parser) {
+    // SSR fallback — shouldn't happen for this client component
+    return { tableAttrs: {}, sections: [] }
+  }
+
+  const doc = parser.parseFromString(tableHtml, "text/html")
+  const table = doc.querySelector("table")
+  if (!table) {
+    return { tableAttrs: {}, sections: [] }
+  }
+
+  const tableAttrs = domAttrsToReact(table)
+  const sections: ParsedSection[] = []
+
+  for (const child of table.children) {
+    const tag = child.tagName.toLowerCase()
+    if (tag !== "thead" && tag !== "tbody" && tag !== "tfoot") continue
+
+    const rows: ParsedRow[] = []
+    for (const tr of child.querySelectorAll(":scope > tr")) {
+      const attrs = domAttrsToReact(tr)
+      const cells: ParsedCell[] = []
+
+      for (const cell of tr.children) {
+        const cellTag = cell.tagName.toLowerCase()
+        if (cellTag !== "td" && cellTag !== "th") continue
+
+        const cellAttrs = domAttrsToReact(cell)
+        const contents = parseCellContents(cell, figures)
+        cells.push({ tag: cellTag as "td" | "th", attrs: cellAttrs, contents })
+      }
+
+      rows.push({ attrs, cells })
+    }
+
+    sections.push({ tag: tag as "thead" | "tbody" | "tfoot", rows })
+  }
+
+  return { tableAttrs, sections }
+}
+
+/** Convert a DOM element's attributes to a React-compatible props object. */
+function domAttrsToReact(el: Element): Record<string, string> {
+  const attrs: Record<string, string> = {}
+  for (const attr of el.attributes) {
+    if (attr.name === "class") {
+      attrs.className = attr.value
+    } else if (attr.name === "scope") {
+      attrs.scope = attr.value
+    } else {
+      // data-* attributes pass through as-is in React
+      attrs[attr.name] = attr.value
+    }
+  }
+  return attrs
+}
+
+/** Parse a cell's content, finding figure placeholders and returning mixed content. */
+function parseCellContents(cell: Element, figures: readonly FigureData[]): CellContent[] {
+  const contents: CellContent[] = []
+  const placeholderPattern = new RegExp(
+    `\uFFFDFIGURE\uFFFD(\\d+)`,
+    "g"
+  )
+
+  // Get the cell's innerHTML and split on figure placeholders
+  const cellHtml = cell.innerHTML
+
+  // Check if there are any placeholders
+  const matches = [...cellHtml.matchAll(placeholderPattern)]
+
+  if (matches.length === 0) {
+    // No figures — render the whole cell as HTML
+    if (cellHtml.trim()) {
+      contents.push({ kind: "html", html: cellHtml })
+    }
+    return contents
+  }
+
+  let cursor = 0
+  for (const match of matches) {
+    const start = match.index
+
+    // Find the enclosing placeholder span
+    // The placeholder is inside: <span class="rpt-figure" data-figure-placeholder="true">\0FIGURE\0N</span>
+    // We need to find the opening tag before the placeholder text
+    const beforePlaceholder = cellHtml.lastIndexOf("<span", start)
+    const afterPlaceholder = cellHtml.indexOf("</span>", start) + "</span>".length
+
+    if (beforePlaceholder > cursor) {
+      const htmlBefore = cellHtml.slice(cursor, beforePlaceholder)
+      if (htmlBefore.trim()) {
+        contents.push({ kind: "html", html: htmlBefore })
+      }
+    }
+
+    const figureIndex = parseInt(match[1], 10)
+    if (figureIndex < figures.length) {
+      contents.push({ kind: "figure", figure: figures[figureIndex] })
+    }
+
+    cursor = afterPlaceholder
+  }
+
+  if (cursor < cellHtml.length) {
+    const remaining = cellHtml.slice(cursor)
+    if (remaining.trim()) {
+      contents.push({ kind: "html", html: remaining })
+    }
+  }
+
+  return contents
 }
 
 export function PaperRender({
@@ -169,14 +462,27 @@ export function PaperRender({
 
         <div className="flex flex-col gap-0.5">
           <p className="text-sm font-medium">
-            Reading view — an approximation of the page
+            {PAPER_CLAIM === "approximation"
+              ? "Reading view — an approximation of the delivered page"
+              : "Reading view — a text extract"}
           </p>
 
           <p className="max-w-prose text-xs text-muted-foreground">
-            This approximates {PREVIEW_DIVERGENCES[0]}, {PREVIEW_DIVERGENCES[1]}{" "}
-            and {PREVIEW_DIVERGENCES[2]}. The delivered result is the{" "}
-            <code className="font-mono">.pdf</code> below. Hover or focus any
-            figure to see where it came from.
+            {PAPER_CLAIM === "approximation" ? (
+              <>
+                This approximates {PREVIEW_DIVERGENCES[0]},{" "}
+                {PREVIEW_DIVERGENCES[1]} and {PREVIEW_DIVERGENCES[2]}. The
+                delivered result is the{" "}
+                <code className="font-mono">.pdf</code> below. Hover or focus
+                any figure to see where it came from.
+              </>
+            ) : (
+              <>
+                The delivered result is the{" "}
+                <code className="font-mono">.pdf</code> below. Hover or focus
+                any figure to see where it came from.
+              </>
+            )}
           </p>
         </div>
       </div>
@@ -189,21 +495,13 @@ export function PaperRender({
           segment.kind === "html" ? (
             <span
               key={index}
-              // The emitter's markup, passed through. Escaping is
-              // `render/html.py`'s — see `paper-preview.tsx`'s note, which
-              // applies identically here.
               dangerouslySetInnerHTML={{ __html: segment.html }}
             />
-          ) : (
+          ) : segment.kind === "figure" ? (
             <FigureProvenance
               key={index}
               formatted={segment.formatted}
               provenance={
-                // Requirement 38.8 — a figure whose element carries no snapshot
-                // path reveals that provenance is unavailable, with nothing
-                // composed to fill the gap, and its `formatted` string is
-                // presented unchanged. The emitter raises rather than produce
-                // one, so reaching this means the markup was not the emitter's.
                 segment.snapshotPath === ""
                   ? null
                   : {
@@ -211,6 +509,12 @@ export function PaperRender({
                       estimator: segment.estimator,
                     }
               }
+            />
+          ) : (
+            <TableSegment
+              key={index}
+              tableHtml={segment.tableHtml}
+              figures={segment.figures}
             />
           )
         )}

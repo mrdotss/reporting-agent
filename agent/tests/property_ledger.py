@@ -139,6 +139,10 @@ BREADTH_PROPERTIES: dict[int, PropertyDeclaration] = {
         "Formatting and verification agree on the declared format",
         ("test_number_format_property.py",),
     ),
+    3: PropertyDeclaration(
+        "Historical run selection is newest-N, non-overlapping and verified",
+        ("test_historical_property.py",),
+    ),
     5: PropertyDeclaration(
         "Every catalog entry is evidenced",
         ("test_catalog_evidence_property.py",),

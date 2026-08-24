@@ -81,9 +81,15 @@ describe("Requirement 38.1 — figures are found in the emitter's markup", () =>
         `<td>${EXACT_FIGURE}</td></tr></table>`
     )
 
-    expect(
-      segments.filter((segment) => segment.kind === "figure")
-    ).toHaveLength(3)
+    // Figures outside tables are returned as kind:"figure" segments.
+    // Figures inside tables are returned inside kind:"table" segments (to
+    // preserve table DOM structure — see paper-render.tsx module docstring).
+    const directFigures = segments.filter((s) => s.kind === "figure")
+    const tableFigures = segments
+      .filter((s): s is { kind: "table"; tableHtml: string; figures: readonly { formatted: string; snapshotPath: string; estimator: string | null }[] } => s.kind === "table")
+      .flatMap((s) => s.figures)
+
+    expect(directFigures.length + tableFigures.length).toBe(3)
   })
 
   test("figures are returned in document order", () => {

@@ -1,5 +1,6 @@
 import type { Icon } from "@phosphor-icons/react/lib"
 import {
+  CalendarDotsIcon,
   EyeIcon,
   LockKeyIcon,
   ShieldCheckIcon,
@@ -102,6 +103,18 @@ const EXPLAINER_POINTS: readonly ExplainerPoint[] = [
       "the generated script and template assign exactly one role, and nothing " +
       "this product does can create, modify, resize or delete a resource in " +
       "the subscription.",
+  },
+  {
+    icon: CalendarDotsIcon,
+    heading: "Reservation data requires an additional role",
+    body:
+      "Reservation term and expiry information requires the " +
+      "Reservations Reader role, assigned at the tenant scope. " +
+      "Reservations are tenant-level resources with their own RBAC " +
+      "separate from subscriptions, so Reader at subscription scope " +
+      "does not grant access to them. Without this role the report " +
+      "records a gap for reservation fields — the remaining data is " +
+      "unaffected.",
   },
 ]
 

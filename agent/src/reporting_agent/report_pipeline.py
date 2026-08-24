@@ -101,6 +101,7 @@ from reporting_agent.collect.pipeline import (
     run_collection,
 )
 from reporting_agent.compile.messages import Messages
+from reporting_agent.compile.blocks.base import HistoricalSelectionKey
 from reporting_agent.compile.historical import (
     PriorRunCandidate,
     Selection,
@@ -123,6 +124,7 @@ from reporting_agent.events import (
 from reporting_agent.progress import ProgressReporter
 from reporting_agent.providers.base import PlainData
 from reporting_agent.storage.base import ObjectStore
+from reporting_agent.verify import historical as historical_pass
 from reporting_agent.verify.findings import (
     FINDING_REPLAY_HASH_MISMATCH,
     SEVERITY_BLOCKING,
@@ -239,6 +241,64 @@ async def run_generate_report(
 
     store = collection_kwargs.get("object_store") or _s3_store(artifact_bucket, aws_region)
 
+    # --- historical selection (Req 18.4, 18.8) -----------------------------------------
+    # Walk the pinned definition for `historical_trend` blocks, collect their distinct
+    # (metric, statistic, lookback) keys, and call `select_historical_runs` once per key.
+    # The selection is persisted as `historical.json` beside `prose.json` (the same pinned-
+    # input reasoning: verify_report cannot re-derive it because the verify payload carries
+    # no candidate list).
+    actor_id = plan.actor_id
+    hist_keys = _historical_selection_keys(definition)
+    historical_selections: dict[HistoricalSelectionKey, Selection] = {}
+    historical_source: _HistoricalSourceFromStore | None = None
+
+    if hist_keys:
+        period_raw = definition.get("period")
+        _period_start = ""
+        if isinstance(period_raw, Mapping):
+            _period_start = str(period_raw.get("start") or payload.get("period", {}).get("start") or "")  # type: ignore[union-attr]
+        if not _period_start:
+            _p = payload.get("period")
+            if isinstance(_p, Mapping):
+                _period_start = str(_p.get("start") or "")
+
+        fidelity_tier = str(context.get("fidelity_tier") or "baseline")
+
+        for key in hist_keys:
+            metric, statistic, lookback = key
+            selection = await select_historical_runs(
+                payload,
+                store=store,
+                actor_id=actor_id,
+                lookback=lookback,
+                metric=metric,
+                statistic=statistic,
+                compiling_fidelity_tier=fidelity_tier,
+                compiling_period_start=_period_start,
+            )
+            historical_selections[key] = selection
+
+        # Build a HistoricalSource from the loaded prior snapshots.
+        # Collect all selected run ids across all selections.
+        selected_ids: set[str] = set()
+        for sel in historical_selections.values():
+            for c in sel.selected:
+                selected_ids.add(c.run_id)
+
+        if selected_ids:
+            from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+            loaded_views: dict[str, Any] = {}
+            for run_id in selected_ids:
+                key = _snapshot_key(actor_id, run_id)
+                try:
+                    snap = await store.get_json(key)
+                    if isinstance(snap, Mapping):
+                        loaded_views[run_id] = build_snapshot_view(snap)
+                except Exception:
+                    pass
+            historical_source = _HistoricalSourceFromStore(loaded_views)
+
     async for event in _document_phases(
         prose=prose if prose is not None else _prose_provider(prose_model_id, aws_region),
         definition=definition,
@@ -251,6 +311,8 @@ async def run_generate_report(
         artifact_bucket=artifact_bucket,
         sink=sink,
         now=now,
+        historical_selections=historical_selections or None,
+        historical_source=historical_source,
     ):
         yield event
 
@@ -564,6 +626,37 @@ async def select_historical_runs(
 # --------------------------------------------------------------------------- #
 
 
+def _historical_verify_inputs(
+    historical_selections: Mapping[HistoricalSelectionKey, Selection] | None,
+) -> Mapping[str, historical_pass.HistoricalRunInfo]:
+    """Derive `VerifyInputs.historical` from the same selection already computed for compile.
+
+    `verify/historical.py`'s gate reads `VerifyInputs.historical` — a mapping from source
+    run id to `{verification_status, period_start, period_end}` — and treats a run id
+    **absent** from it as `verification_status="unknown"`, which is a **blocking**
+    `historical_point_unverified` finding (Req 18.11). Every field the gate needs is
+    already sitting on the `PriorRunCandidate` tuples inside `historical_selections`: the
+    selector admitted only `status="completed"` candidates whose latest verification
+    passed (`compile/historical.py::select`), so re-deriving the map here is exactly one
+    read of data this run already fetched, not a second Azure call and not a second
+    decision about which runs are eligible.
+
+    Without this, activating `historical_trend` breaks verification for every run that
+    plots a real prior run: the block compiles and renders real figures, and the gate
+    that is supposed to prove them correctly refuses every one, because nothing ever told
+    it the run it is being asked to trust was verified at all.
+    """
+    inputs: dict[str, historical_pass.HistoricalRunInfo] = {}
+    for selection in (historical_selections or {}).values():
+        for candidate in selection.selected:
+            inputs[candidate.run_id] = historical_pass.HistoricalRunInfo(
+                verification_status=candidate.verification_status or "",
+                period_start=candidate.period_start,
+                period_end=candidate.period_end,
+            )
+    return inputs
+
+
 async def _document_phases(
     *,
     prose: Any | None,
@@ -577,6 +670,8 @@ async def _document_phases(
     artifact_bucket: str,
     sink: ReportOutcome,
     now: Callable[[], datetime],
+    historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
+    historical_source: _HistoricalSourceFromStore | None = None,
 ) -> AsyncIterator[Event]:
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
@@ -613,7 +708,9 @@ async def _document_phases(
     # way, and yielding from a `finally` while an exception unwinds an async generator is
     # the one shape that turns a clean failure into a `RuntimeError`.
     compiled = await asyncio.to_thread(
-        compile_document, definition, view=view, prose=prose
+        compile_document, definition, view=view, prose=prose,
+        historical=historical_source,
+        historical_selections=historical_selections,
     )
     if block_count:
         yield steps.progress(
@@ -660,6 +757,7 @@ async def _document_phases(
         store=store,
         now=now,
         messages=messages,
+        historical=_historical_verify_inputs(historical_selections),
     )
     yield steps.end(verify_step["id"])
 
@@ -702,6 +800,7 @@ async def _document_phases(
         ledger_bytes=compiled.ledger.serialize(),
         ast=ast_to_plain(compiled.document),
         prose=_prose_bundle(compiled),
+        historical=_historical_bundle(historical_selections),
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
@@ -765,6 +864,7 @@ async def _verify(
     store: ObjectStore,
     now: Callable[[], datetime],
     messages: Messages,
+    historical: Mapping[str, historical_pass.HistoricalRunInfo] | None = None,
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -833,6 +933,7 @@ async def _verify(
             drift_seed=collected.snapshot_id,
             catalog_scales=None,
             messages=messages,
+            historical=historical or {},
         )
     )
 
@@ -991,6 +1092,41 @@ def _prose_bundle(compiled: Any) -> dict[str, Any]:
     }
 
 
+def _historical_bundle(
+    selections: Mapping[HistoricalSelectionKey, Selection] | None,
+) -> dict[str, Any] | None:
+    """`historical.json` — the pinned historical selection, persisted for recompilation.
+
+    Same reasoning as `_prose_bundle` / `_StoredProse`: a compile is a pure function of
+    (template version, snapshot, prose bundle, historical selection). The selection depends
+    on `historical_candidates` from the generate_report payload, which verify_report does
+    not carry. Without this pin, a template using `historical_trend` blocks fails
+    re-verification with a ledger mismatch on a correct report.
+    """
+    if not selections:
+        return None
+    serialized: dict[str, Any] = {}
+    for (metric, statistic, lookback), selection in selections.items():
+        key_str = f"{metric}|{statistic}|{lookback}"
+        serialized[key_str] = {
+            "selected": [
+                {
+                    "run_id": c.run_id,
+                    "period_start": c.period_start,
+                    "period_end": c.period_end,
+                    "timezone": c.timezone,
+                    "status": c.status,
+                    "verification_status": c.verification_status,
+                    "verification_created_at": c.verification_created_at,
+                    "verification_id": c.verification_id,
+                    "snapshot_sha256": c.snapshot_sha256,
+                }
+                for c in selection.selected
+            ],
+        }
+    return {"schema_version": 1, "selections": serialized}
+
+
 # --------------------------------------------------------------------------- #
 # Helpers
 # --------------------------------------------------------------------------- #
@@ -1010,6 +1146,51 @@ def _block_count(definition: Mapping[str, PlainData]) -> int:
         if isinstance(columns, Sequence):
             total += sum(len(column) for column in columns if isinstance(column, Sequence))
     return total
+
+
+def _historical_selection_keys(
+    definition: Mapping[str, PlainData],
+) -> set[HistoricalSelectionKey]:
+    """Extract distinct `(metric, statistic, lookback)` keys from `historical_trend` blocks.
+
+    Returns the empty set when the definition has no such block — which is the normal case
+    and the one where no selection work is needed.
+    """
+    blocks = definition.get("blocks")
+    if not isinstance(blocks, Sequence):
+        return set()
+    keys: set[HistoricalSelectionKey] = set()
+    for block in blocks:
+        if not isinstance(block, Mapping):
+            continue
+        if block.get("type") == "historical_trend":
+            config = block.get("config")
+            if not isinstance(config, Mapping):
+                continue
+            metric = config.get("metric")
+            statistic = config.get("statistic")
+            lookback = config.get("lookback")
+            if isinstance(metric, str) and isinstance(statistic, str) and isinstance(lookback, int):
+                keys.add((metric, statistic, lookback))
+        # Also look inside row columns
+        columns = block.get("columns")
+        if isinstance(columns, Sequence):
+            for column in columns:
+                if not isinstance(column, Sequence):
+                    continue
+                for child in column:
+                    if not isinstance(child, Mapping):
+                        continue
+                    if child.get("type") == "historical_trend":
+                        config = child.get("config")
+                        if not isinstance(config, Mapping):
+                            continue
+                        metric = config.get("metric")
+                        statistic = config.get("statistic")
+                        lookback = config.get("lookback")
+                        if isinstance(metric, str) and isinstance(statistic, str) and isinstance(lookback, int):
+                            keys.add((metric, statistic, lookback))
+    return keys
 
 
 async def _report(
@@ -1113,10 +1294,35 @@ async def run_verify_report(
     stored_ledger = await _require_object(store, f"{prefix}ledger.json")
     snapshot = await store.get_json(_snapshot_key(actor_id, run_id))
     prose = await _optional_json(store, f"{prefix}prose.json")
+    historical_raw = await _optional_json(store, f"{prefix}historical.json")
 
     view = build_snapshot_view(snapshot)
+
+    # Replay historical selection: load _StoredSelection and build a HistoricalSource
+    # from the selected prior snapshots, exactly as the generate path does.
+    stored_selection = _StoredSelection(historical_raw)
+    hist_selections = stored_selection.selections or None
+    hist_source: _HistoricalSourceFromStore | None = None
+    if hist_selections:
+        selected_ids: set[str] = set()
+        for sel in hist_selections.values():
+            for c in sel.selected:
+                selected_ids.add(c.run_id)
+        if selected_ids:
+            loaded_views: dict[str, Any] = {}
+            for prior_run_id in selected_ids:
+                try:
+                    snap = await store.get_json(_snapshot_key(actor_id, prior_run_id))
+                    if isinstance(snap, Mapping):
+                        loaded_views[prior_run_id] = build_snapshot_view(snap)
+                except Exception:
+                    pass
+            hist_source = _HistoricalSourceFromStore(loaded_views)
+
     recompiled = compile_document(
-        definition, view=view, prose=_StoredProse(prose), catalog_scales=None
+        definition, view=view, prose=_StoredProse(prose), catalog_scales=None,
+        historical=hist_source,
+        historical_selections=hist_selections,
     )
 
     # Compare the compile-derivable layer only. The stored ledger includes render-populated
@@ -1147,6 +1353,7 @@ async def run_verify_report(
         pdf_bytes=pdf_bytes,
         store=store,
         actor_id=actor_id,
+        historical_selections=hist_selections,
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)
     yield _verification_event(result)
@@ -1170,6 +1377,97 @@ class _StoredProse:
         return self._blocks.get(request.block_id, "")
 
 
+class _StoredSelection:
+    """The persisted historical selection, replayed into a recompile.
+
+    Mirrors `_StoredProse` exactly: a compile is a pure function of (template version,
+    snapshot, prose bundle, historical selection). The selection depends on the
+    `historical_candidates` list from the generate_report payload; the verify_report
+    payload carries only the definition and run_id. Without this pin, a recompile cannot
+    reproduce figures from historical_trend blocks, and the ledger comparison fails on a
+    correct report.
+    """
+
+    __slots__ = ("_selections",)
+
+    def __init__(self, bundle: Mapping[str, Any] | None) -> None:
+        self._selections: dict[HistoricalSelectionKey, Selection] = {}
+        if bundle is None:
+            return
+        raw = bundle.get("selections")
+        if not isinstance(raw, Mapping):
+            return
+        for key_str, sel_raw in raw.items():
+            # Key is stored as "metric|statistic|lookback"
+            parts = key_str.split("|")
+            if len(parts) != 3:
+                continue
+            try:
+                lookback = int(parts[2])
+            except (ValueError, TypeError):
+                continue
+            key: HistoricalSelectionKey = (parts[0], parts[1], lookback)
+            # Reconstruct the Selection from its serialized form
+            selected: list[PriorRunCandidate] = []
+            for entry in (sel_raw.get("selected") or []) if isinstance(sel_raw, Mapping) else []:
+                if not isinstance(entry, Mapping):
+                    continue
+                run_id = entry.get("run_id")
+                if not isinstance(run_id, str):
+                    continue
+                selected.append(
+                    PriorRunCandidate(
+                        run_id=run_id,
+                        period_start=str(entry.get("period_start") or ""),
+                        period_end=str(entry.get("period_end") or ""),
+                        timezone=str(entry.get("timezone") or ""),
+                        status=str(entry.get("status") or ""),
+                        verification_status=(
+                            str(entry["verification_status"])
+                            if entry.get("verification_status") is not None
+                            else None
+                        ),
+                        verification_created_at=(
+                            str(entry["verification_created_at"])
+                            if entry.get("verification_created_at") is not None
+                            else None
+                        ),
+                        verification_id=(
+                            str(entry["verification_id"])
+                            if entry.get("verification_id") is not None
+                            else None
+                        ),
+                        snapshot_sha256=(
+                            str(entry["snapshot_sha256"])
+                            if entry.get("snapshot_sha256") is not None
+                            else None
+                        ),
+                    )
+                )
+            self._selections[key] = Selection(selected=tuple(selected), exclusions=())
+
+    @property
+    def selections(self) -> dict[HistoricalSelectionKey, Selection]:
+        return self._selections
+
+
+class _HistoricalSourceFromStore:
+    """A `HistoricalSource` backed by pre-loaded snapshot views.
+
+    The same role as `tests/test_render_guards.py::FakeHistorical` but used in production:
+    maps run ids to their already-loaded `SnapshotView`, so the compiler can resolve prior
+    values without any network call.
+    """
+
+    __slots__ = ("_views",)
+
+    def __init__(self, views: dict[str, Any]) -> None:
+        self._views = views
+
+    def snapshot_view_for(self, run_id: str) -> Any | None:
+        return self._views.get(run_id)
+
+
 async def _verify_stored(
     *,
     attempt_id: str,
@@ -1183,6 +1481,7 @@ async def _verify_stored(
     pdf_bytes: bytes,
     store: ObjectStore,
     actor_id: str,
+    historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
 ) -> Mapping[str, Any]:
     from docx import Document as open_docx
 
@@ -1236,6 +1535,7 @@ async def _verify_stored(
             requery=None,
             drift_seed=str(snapshot.get("snapshot_id") or ""),
             messages=_msgs,
+            historical=_historical_verify_inputs(historical_selections),
         )
     )
 

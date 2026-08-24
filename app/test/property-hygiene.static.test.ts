@@ -1255,3 +1255,34 @@ describe("Requirement 45.8 — each property records four values, observably", (
     expect(rendered).toContain("+5 declared") // Requirement 45.5, in addition
   })
 })
+
+// ---------------------------------------------------------------------------
+// Requirement 22.10 — the paper rendering's deciding test must be present, not
+// skipped, and not marked as an expected failure. Without this, the fallback to
+// "text_extract" that Requirement 22.8 declares is entered on a test nobody ran
+// rather than on a proven condition.
+// ---------------------------------------------------------------------------
+
+describe("Requirement 22.10 — the deciding test is present and not disabled", () => {
+  const DECIDING_TEST = "test/paper-render.dom.test.tsx"
+
+  test("the deciding test file exists", () => {
+    expect(
+      existsSync(path.join(projectRoot, DECIDING_TEST)),
+      `${DECIDING_TEST} is absent; the paper rendering's claim (Requirement 22.8) ` +
+        `falls back to "text_extract" on a condition nobody proved`
+    ).toBe(true)
+  })
+
+  test("no forbidden modifier appears in the deciding test", () => {
+    const source = parseModule(DECIDING_TEST)
+    const offenders = modifierOffenders(DECIDING_TEST, source)
+
+    expect(
+      offenders,
+      `the deciding test carries a skip or expected-failure marker; the ` +
+        `paper rendering's claim cannot be "approximation" on a test that ` +
+        `does not run`
+    ).toEqual([])
+  })
+})

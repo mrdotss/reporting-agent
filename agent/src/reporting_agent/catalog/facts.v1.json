@@ -57,14 +57,16 @@
           "value_kind": "text",
           "source": "capacity",
           "projectable": false,
-          "absent_gap_type": "no_reservations"
+          "absent_gap_type": "no_reservations",
+          "additional_role": "Reservations Reader"
         },
         {
           "key": "reservation_expires_at",
           "value_kind": "text",
           "source": "capacity",
           "projectable": false,
-          "absent_gap_type": "no_reservations"
+          "absent_gap_type": "no_reservations",
+          "additional_role": "Reservations Reader"
         }
       ]
     },

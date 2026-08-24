@@ -254,24 +254,43 @@ export function VerificationPanel({
         >
           <p className="text-xs font-medium">Sampled drift (advisory)</p>
 
-          <p className="text-xs text-muted-foreground">
-            <span className="font-mono tabular-nums">
-              {grouped(verification.driftSample.n)}
-            </span>{" "}
-            resources re-queried · method{" "}
-            <span className="font-mono">{verification.driftSample.method}</span>{" "}
-            · seed{" "}
-            <span className="font-mono">{verification.driftSample.seed}</span>
-          </p>
-
-          {verification.driftSample.notRequeried.length === 0 ? null : (
+          {verification.driftSample.n === 0 && !verification.driftSample.seed ? (
             <p className="text-xs text-muted-foreground">
-              <span className="font-mono tabular-nums">
-                {grouped(verification.driftSample.notRequeried.length)}
-              </span>{" "}
-              selected resources answered nothing and are recorded as not
-              re-queried rather than as agreeing.
+              No drift sample was recorded for this verification.
             </p>
+          ) : (
+            <>
+              <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="font-mono tabular-nums">
+                  {grouped(verification.driftSample.n)}
+                </span>{" "}
+                resources re-queried · method{" "}
+                <span className="break-all font-mono">
+                  {verification.driftSample.method}
+                </span>{" "}
+                · seed{" "}
+                {verification.driftSample.seed ? (
+                  <CopyDigest
+                    value={verification.driftSample.seed}
+                    label="drift sample seed"
+                  />
+                ) : (
+                  <span className="text-muted-foreground">
+                    No drift sample seed was recorded.
+                  </span>
+                )}
+              </p>
+
+              {verification.driftSample.notRequeried.length === 0 ? null : (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-mono tabular-nums">
+                    {grouped(verification.driftSample.notRequeried.length)}
+                  </span>{" "}
+                  selected resources answered nothing and are recorded as not
+                  re-queried rather than as agreeing.
+                </p>
+              )}
+            </>
           )}
         </div>
       </div>

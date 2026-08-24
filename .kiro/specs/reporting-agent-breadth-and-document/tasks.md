@@ -457,7 +457,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `app/test/migrations.static.test.ts` passes unchanged: nothing is dropped, no column changes type or nullability, and no enum value is added
     - _Requirements: 13.7, 13.14, 6.15, 19.9_
 
-  - [ ] 8.4 Build the fixed front-matter section of the builder
+  - [x] 8.4 Build the fixed front-matter section of the builder
     - `app/components/templates/front-matter-form.tsx`: the cover, document-control and table-of-contents configuration as a **fixed section** the canvas shows above the content, never a reorderable item
     - `components/templates/block-palette.tsx`: the palette's first entry is a **content** block, and there is **no palette entry** for the cover, the document control page or the table of contents
     - Present the signature slots as per-role uploads with the explicit statement that an unsupplied signature renders a ruled box and never the typed name; present the document-number pattern with its closed placeholder set enumerated, and validate it on the step rather than at save
@@ -541,7 +541,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Wire it as the `"historical"` gate from task 1.5
     - _Requirements: 18.11, 18.12, 19.9_
 
-  - [ ] 11.5 Property test — historical run selection is newest-N, non-overlapping and verified
+  - [x] 11.5 Property test — historical run selection is newest-N, non-overlapping and verified
     - **Property 3: Historical run selection is newest-N, non-overlapping and verified**, identifier `historical_selection`, in `agent/tests/property/test_historical_property.py`
     - **Validates: Requirements 18.4, 18.5, 18.6, 18.7, 18.10, 18.13, 18.14, 18.15, 19.1, 19.3, 19.4**
     - `hypothesis` over prior-run counts 0–40; lookbacks 2–24; statuses including `completed` and `failed`; verification outcomes including `pass`, `fail` and **absent**, with 1–3 verifications per run at equal and differing creation instants; periods including exactly adjacent pairs, one-day-overlapping pairs and identical pairs; snapshots including some carrying no value for the declared `(metric, statistic)` and some carrying a differing `fidelity_tier`; and other template rows and other subscription ids mixed in
@@ -551,14 +551,19 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 18.4, 18.5, 18.6, 18.7, 18.10, 18.13, 18.14, 18.15, 19.1, 19.3, 19.4, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
   - [ ] 11.6 Activate the `historical_trend` block on the delivered path, and pin its selection
-    - **The block has emitted zero points in every run since task 11.3 shipped it.** Not a dark branch — a dark feature, behind a registered compiler, a validator fixture and passing compile tests. Three separate breaks, each individually invisible: `compile_document` had no `historical` parameter at all, so `BlockContext.historical` defaulted to `None` at all five of its call sites; the block read its selection off `getattr(context, "_historical_selection", None)`, a name appearing exactly once in the tree — that read — with no writer, on a `frozen=True, slots=True` dataclass that has no `__dict__` and so could not carry it; and `report_pipeline.select_historical_runs`, written for exactly this and exported in `__all__`, is called by nothing. Commit `d2fad23` fixed the middle break — the selection is now a real `BlockContext.historical_selections` field keyed by `(metric, statistic, lookback)`, since nothing restricts a definition to one `historical_trend` block and one selection per document would hand the second block the first's prior runs. **This task closes the other two.**
-    - `report_pipeline.py`, the delivered path: walk the pinned definition for `historical_trend` blocks, collect the distinct `(metric, statistic, lookback)` keys, call `select_historical_runs` **once per key** rather than once per block, and pass the resulting mapping plus a `HistoricalSource` over the loaded prior snapshots into `compile_document`. Selection stays **data computed upstream**: choosing prior runs needs the payload's candidate list and each candidate's stored snapshot, which is I/O, and `BlockContext` holds no client, no clock and no network so replay stays deterministic — the same "caller fetches, pure module folds" split `prose` and `comparison` already take
-    - **Pin the selection, because a recompile cannot re-derive it.** The selection depends on `historical_candidates` supplied in the `generate_report` payload, and the `verify_report` payload carries only `definition` and `run_id`. Persist it as `historical.json` beside `prose.json` under the run's artifact prefix and replay it at re-verification through a `_StoredSelection` reader, exactly as `_StoredProse` replays the model's text and for the identical reason: a compile is a pure function of its pinned inputs, and asking the source again would make a byte-identical ledger depend on re-deriving something that is not re-derivable. Prior *snapshots* need no pinning — they are immutable by product rule and re-fetchable by run id, the same as this run's own snapshot
-    - **Without the pin, activating this block breaks `verify_report` for every template that uses it**: the stored ledger would carry historical figures the recompile cannot reproduce, and the compile-layer comparison from commit `151665f` would fail on a report that is correct. Assert that a table-and-trend template re-verifies successfully, and — the mutation that proves the assertion is connected — that corrupting one persisted selected run id makes re-verification FAIL rather than silently plotting a different period
-    - The zero-candidate path stays an ordinary compile outcome: no error code, no `collection_log` gap, and the block still emits its "no prior runs" statement rather than vanishing, per criteria 19.5 and 19.6. Assert a run with `historical_candidates` absent from the payload behaves identically to one with an empty list — an activated feature must not turn a missing optional field into a failure
-    - `render_preview` and `thumbnails.py` also call `compile_document`: decide per call site whether a preview resolves prior runs or renders the zero-point statement, and assert whichever is chosen. A preview that silently differs from the delivered document on this block is the HTML-preview divergence `design-system.md` already warns about, so if the answer is "previews plot nothing", the preview must say so rather than look like a short trend
-    - Guard that the wiring cannot rot back: assert every `compile_document` call site that could carry historical data passes it, so a sixth call site added later is a red test rather than a fourth silent break. The three breaks above were each invisible individually and none of them failed anything
+    - **PARTIALLY DONE, left unticked because the acceptance bar below was not met.** `report_pipeline.py` now walks the pinned definition for `historical_trend` blocks, calls `select_historical_runs` once per `(metric, statistic, lookback)` key, and passes the mapping plus a `HistoricalSource` into `compile_document` on both the delivered and re-verify paths. `historical.json` is persisted beside `prose.json` and replayed through `_StoredSelection`, mirroring `_StoredProse`. `VerifyInputs.historical` is now populated from that same selection data (`_historical_verify_inputs`), closing a real verification-gate gap: without it, `verify/historical.py`'s gate saw no verification record for any prior run and blocked every activated report on a spurious `historical_point_unverified` finding. That fix is tested and stands.
+    - **NOT DONE: a table-and-trend template still cannot re-verify successfully with real prior-run data**, which is this task's actual acceptance bar. With the verification-gate fix above applied, activating the block with one real candidate now surfaces a SECOND finding — `unmatched_prose_token` — because `charts.py`'s `trend_statement` interpolates `count_plotted`/`count_requested` directly into free-text prose admitted through the static-text allowlist (`verify/allowlist.py::derive_allowlist`), and that allowlist's soundness argument ("the null-context render emits the same statement with the same counts") was only ever true because nothing could previously activate the block, so both the null context and the real path always saw `count=0`. Activation breaks that premise: the null context can never produce a non-zero count, by construction, while a real run now can.
+    - Investigated and ruled out during this session: making the counts `Figure`s (refused structurally — `BlockCursor.figure()` only accepts a `SnapshotValue`, and a compile-derived count is not one); making them `TextFact`s (refused — that type declares no field admitting a quantity, by the same AST guard rule `Figure` is checked under); reusing the `_NullComparison` pattern from `comparison_delta` (does not transfer — confirmed by reading `verify/masking.py::_mask_literals`, which matches by exact substring (`text.find`), not by shape, so a synthetic null-context count only ever masks that one specific value and a real run with a different count still fails).
+    - **This task stays open until task 11.7 lands.** Do not re-tick it on the strength of the verify-input fix alone — the mutation check specified two bullets above (a table-and-trend template re-verifying successfully) is the bar, and it is not yet cleared.
     - _Requirements: 18.4, 18.8, 18.10, 18.11, 18.12, 19.5, 19.6, 19.8, 19.9_
+
+  - [ ] 11.7 Give a compile-derived count a real provenance node, and retire the trend-statement allowlist entry
+    - **The gap 11.6 could not close within its own scope.** `compile/blocks/charts.py`'s `historical_trend` statement is the only place in the codebase interpolating a live, compile-derived integer into allowlisted static prose, and activating the block (11.6) proved the allowlist mechanism unsound for this specific shape: the null-context derivation can only ever produce `count=0`, and masking is exact-substring, so no null-context trick closes the gap. This is why the codebase has no precedent to copy from — `narrative.py`'s `resource_count` is model-prompt input, verified by the ordinary soundness pass against a `TextFact`/ledger match, never by an allowlist, which is the mechanism this task should end up using too.
+    - Add a new AST leaf — or extend an existing one — that can carry a number whose provenance is **"derived from this compile's own ledger," not "read from the snapshot at this JSON pointer."** `Figure.__post_init__` and `TextFact`'s guard both refuse this on purpose (Req boundary tests in `test_ast_guard.py`/`test_boundaries.py`); whatever is added must be equally refusable to misuse — no route by which a template, a model or a caller-supplied string can populate the same field a genuine derived count uses.
+    - The verifier's soundness pass must mask the new node's value by matching it against what the ledger *actually contains* — the true count of points this block emitted, and the true requested/lookback value from the block's own config — not by a second allowlist entry with the same soundness problem this task exists to remove.
+    - Delete `derive_allowlist`'s reliance on the trend statement's count once the new mechanism verifies it directly; the allowlist path for this statement becomes dead code and should be removed, not left as an alternate unused route.
+    - Re-run 11.6's abandoned acceptance test: a table-and-trend template with one real prior candidate must re-verify successfully, and corrupting the persisted selected run id must still make re-verification fail (the mutation check 11.6 specified). Only then does 11.6 get ticked.
+    - _Requirements: 18.10 (Criterion 19.10's mechanism), 19.2, 19.7_
 
 - [ ] 12. The inventory endpoint and the three pickers
   - The app's **pure** modules land before the components that use them: `lib/templates/options.ts`,
@@ -652,7 +657,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Present a run's gap copy in the **pinned** definition's language, resolved by string id
     - _Requirements: 20.5, 20.6, 20.7, 20.8, 20.9, 20.10, 20.13, 20.14, 15.9_
 
-  - [ ] 13.3 Make the verification panel fit its box, and assert it by presented text
+  - [x] 13.3 Make the verification panel fit its box, and assert it by presented text
     - `components/reports/verification-panel.tsx`: present the drift sample seed through `components/reports/copy-digest.tsx` rather than the bare `<span className="font-mono">` at line 264, so every hash and every seed the panel displays goes through the **same** truncating copy control
     - Take the truncation length from `copy-digest.tsx`'s single declared `TRUNCATE_TO = 12` (line 29) rather than declaring a second constant; the control places the **complete untruncated recorded string** on the clipboard, and a value of 12 characters or fewer presents complete with that same complete string copied
     - Present every hash, seed and finding locating field either truncated through the control or with line breaking permitted at any character, and present no such value as an unbroken run of more than 12 characters that line breaking cannot divide, so its container requires no horizontal scrolling at a viewport width of **360 CSS pixels**. Truncate no locating field to the point that a finding ceases to identify where the disagreement is
@@ -672,7 +677,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `app/test/globals-preset.static.test.ts`: parse `globals.css`, extract every `--*` custom property declared in `:root` and `.dark` that the preset shipped, and compare each against a **committed fixture of its current value**, failing on a changed value, a removed declaration or a reordered block and naming the token; additionally assert the file still contains `@import "shadcn/tailwind.css"`, because pruning it breaks the build, and that no appended `rpt-` rule mentions `destructive`. **No task re-runs `shadcn init` and no task regenerates `app/components.json`**
     - _Requirements: 22.1, 22.2, 22.3, 22.4, 22.5, 22.7, 22.11, 22.12_
 
-  - [ ] 13.5 Decide the paper rendering's claim with an executing assertion
+  - [x] 13.5 Decide the paper rendering's claim with an executing assertion
     - `app/lib/reports/paper-claim.ts`: `export const PAPER_CLAIM: "approximation" | "text_extract" = "approximation"`, because a component cannot observe a test result and criterion 22.8 makes the view's claim conditional on one passing
     - `components/reports/paper-render.tsx` reads it: `approximation` renders the permanent preview label plus "an approximation of the delivered page"; `text_extract` renders "a text extract", makes **no** claim about approximating the page, and presents the presigned `.pdf` as the delivered result. Both branches present the permanent preview label and **no page number and no page count**, and both present the presigned `.pdf` as the delivered result
     - `app/test/paper-render.dom.test.tsx` is the deciding test: render a paper rendering carrying a data table and a **three-point** chart series; assert each of that table's cells presents in its own `<td>` carrying its own `data-column-key`; assert the three figures present as **three separated text values** rather than as `0.20%0.22%0.20%`; assert `PAPER_CLAIM === "approximation"`; and assert **no element width**, because the environment performs no layout and a width assertion would report a pass for a rendering that concatenated everything. Asserting the claim and the rendering against each other in one run is what "decided by an executing assertion" means mechanically — setting the claim to `approximation` while the rendering is broken becomes impossible, while setting it to `text_extract` while the test passes stays permitted, because a more conservative claim is always allowed
@@ -680,7 +685,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Every figure's text presented as that ledger entry's `formatted` string character for character; every figure and every numeric fact in the monospace face with tabular figures and **no numeral animated**; and a `Fact`'s `snapshot_path`, `source` and `collected_at` revealed within 200 milliseconds on hover **and** on keyboard focus, through the same reveal and dismissal behaviour a figure already uses, with `collected_at` presented as the **identical** string the `Docx_Renderer` emits, taken from the Formatter
     - _Requirements: 22.6, 22.8, 22.9, 22.10, 22.11, 8.2, 8.5, 8.6, 8.9_
 
-  - [ ] 13.6 Settle the reservation-facts decision in the declaration, rather than shipping the gap silently
+  - [x] 13.6 Settle the reservation-facts decision in the declaration, rather than shipping the gap silently
     - Reader at subscription scope does **not** grant `Microsoft.Capacity/reservationOrders/read`, so on most connections the reservation request is rejected and a consultant sees a `fact_unavailable` gap for `reservation_term` and `reservation_expires_at` on every resource. Both branches are already correct and tested in task 4.3; what is undecided is whether the two keys ship at all
     - Take one of exactly two options and record which in the commit message: **(a)** keep the two keys in `catalog/facts.v1.json` and add the onboarding copy that names the additional role assignment which removes the gap — a string id in the catalog plus a line in `app/components/subscriptions/reader-role-explainer.tsx`; or **(b)** remove the two entries from the declaration for this release, which is a **one-line data edit and changes no code**
     - Whichever is taken, add the test that fixes it: for (a) that the explainer names the role and that the two keys are declared; for (b) that the declaration names no `capacity` source and that no `no_reservations` or reservation-keyed `fact_unavailable` gap can be produced
@@ -943,7 +948,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 11, "tasks": ["8.2", "9.2", "10.1", "11.3", "13.1"] },
     { "id": 12, "tasks": ["8.3", "10.2", "11.4", "12.6", "12.7", "13.2", "13.4"] },
     { "id": 13, "tasks": ["8.4", "11.5", "11.6", "13.3", "13.5", "13.6"] },
-    { "id": 14, "tasks": ["6.7"] },
+    { "id": 14, "tasks": ["6.7", "11.7"] },
     { "id": 15, "tasks": ["6.5", "15.1", "15.2", "15.3", "15.4", "15.5", "15.7", "15.8"] },
     { "id": 16, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
     { "id": 17, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
@@ -998,4 +1003,32 @@ Two consequences for how this spec should be read:
   deliberately: 11.5 property-tests the pure selector while 11.6 wires that selector's result
   into the delivered path, so the wave that proves the selection correct is the wave that makes
   it reach a document.
+
+### Adding task 11.7, and leaving 11.6 unticked
+
+Wave 13 ran 11.6 and it stayed **unticked**, which has not happened elsewhere in this spec — every
+other task either completed or was deferred whole. Recorded because the reason is a genuine gate,
+not a scheduling slip: 11.6's own acceptance bar was "a table-and-trend template re-verifies
+successfully," and activating the block with a real prior candidate surfaced a second failure
+the task's own text did not anticipate. `derive_allowlist`'s soundness argument for the trend
+statement's live count — "the null-context render emits the same statement with the same
+counts" — was true only because nothing could activate the block before 11.6; activation itself
+falsifies it, since the null context can only ever produce `count=0`.
+
+Three candidate fixes were tried and rejected **in code**, not on paper, before concluding a new
+task was needed: a `Figure` (refused by `BlockCursor.figure()`'s own signature, which accepts
+only a `SnapshotValue`); a `TextFact` (refused by the same numeric-annotation guard `Figure` is
+checked under — the type declares no field that could carry the count); and reusing
+`comparison_delta`'s `_NullComparison` pattern (does not transfer — `verify/masking.py`'s
+allowlist stage matches by exact substring, so a synthetic null-context count only masks that
+one value, and any real run with a different count still fails). That third rejection is the one
+worth remembering: the null-context trick that already solved this shape of problem once for
+`comparison_delta` looks like it should solve it again here, and doesn't, because the earlier
+case never had a *variable* number to hide.
+
+**11.7 joins wave 14, beside 6.7.** It writes `agent/src/reporting_agent/compile/blocks/charts.py`
+and `agent/src/reporting_agent/verify/{allowlist,masking}.py`, none of which 6.7 touches — 6.7 is
+confined to `app/components/reports/**`. It could equally have taken a wave of its own; it joins
+6.7's instead because nothing forces it later and there is no reason to spend an extra wave on a
+task with no collision.
 
