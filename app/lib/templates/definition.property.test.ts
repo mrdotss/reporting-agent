@@ -420,6 +420,12 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
     run_b: () => "run-later",
     level: (seed) => 1 + (seed % 4),
     text: (seed) => `Static prose, paragraph ${seed}.`,
+    // historical_trend — `metric` and `statistic` are placeholders here; the
+    // `leaf()` builder overrides them with values drawn from the definition's
+    // own metric selection (the schema rejects a metric absent from it).
+    metric: () => "Percentage CPU",
+    statistic: () => "avg",
+    lookback: (seed) => 2 + (seed % 23),
   }
 
 type BlockConfigSchemaShape = {
@@ -770,6 +776,15 @@ function buildValidCase(draw: DefinitionDraw): ValidCase {
       id: nextId(),
       type: leafDraw.type,
       config: configFor(leafDraw.type, leafDraw.seed, leafDraw.optionalMask),
+    }
+    // Requirement 18.1 — `historical_trend` config names a metric and statistic
+    // that must already appear in the definition's own metric selection.  Draw
+    // from it deterministically so the generated definition stays valid.
+    if (leafDraw.type === "historical_trend" && block.config !== undefined) {
+      const entries = Object.values(draw.metrics).flat()
+      const picked = entries[leafDraw.seed % entries.length]
+      block.config.metric = picked.metric ?? picked.derived ?? entries[0].metric
+      block.config.statistic = picked.statistic
     }
     if (leafDraw.scopeOverride !== null)
       block.scope_override = selectable(leafDraw.scopeOverride)

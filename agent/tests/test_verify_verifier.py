@@ -206,17 +206,23 @@ def test_a_gate_that_stops_being_recorded_fails_the_verification(clean, gate: st
 
 
 def test_the_two_stubbed_gates_record_no_finding(clean) -> None:
-    """The stubs are stubs, asserted rather than assumed.
+    """The remaining stub is a stub, and the toc gate is real.
 
-    Each returns an empty tuple until its task lands — 8.2 for `toc`, 11.4 for
-    `historical`. The `facts` gate (task 5.5) is now a real pass. Naming the stubs here
-    means the task that replaces one has a test to delete, so "wire the gate" cannot be
-    marked done while the stub is still in the call path.
+    The `toc` gate (task 8.2) is now wired as a real pass — it replaces the former stub.
+    The `historical` gate (task 11.4) remains stubbed until that task lands. Naming the
+    stub here means the task that replaces it has a test to update, so "wire the gate"
+    cannot be marked done while the stub is still in the call path.
     """
     from reporting_agent.verify import verifier as V
+    from reporting_agent.verify import toc as toc_pass
 
     inputs = clean.inputs()
-    assert V._stub_toc_gate_awaiting_task_8_2(inputs) == ()
+    # The toc gate is real now — it returns a TocPass, not a bare tuple.
+    toc_result = toc_pass.check_toc(
+        inputs.pdf_bytes, paragraphs=[], document=inputs.document
+    )
+    assert isinstance(toc_result.findings, tuple)
+    # The historical stub still returns no finding.
     assert V._stub_historical_gate_awaiting_task_11_4(inputs) == ()
 
 

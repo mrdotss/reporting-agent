@@ -89,8 +89,8 @@ const END_CONFIG_SENTINEL = "--- END BLOCK CONFIG"
 /** Every single- or double-quoted string literal on a line. */
 const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
 
-/** The sixteen types, as a fact about the requirement rather than about the files. */
-const EXPECTED_TYPE_COUNT = 16
+/** The seventeen types, as a fact about the requirement rather than about the files. */
+const EXPECTED_TYPE_COUNT = 17
 
 function read(absolutePath: string): string {
   expect(
@@ -298,14 +298,14 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 describe("Requirements 2.5, 2.6 — the block-type vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the sixteen declared types", () => {
+  test("the TypeScript declaration is the seventeen declared types", () => {
     const declared = declaredBlockTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_TYPE_COUNT)
   })
 
-  test("the Python declaration is the sixteen declared types", () => {
+  test("the Python declaration is the seventeen declared types", () => {
     const declared = declaredBlockTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])

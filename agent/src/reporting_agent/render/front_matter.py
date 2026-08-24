@@ -29,8 +29,10 @@ run's language.
 
 ## TOC emission
 
-Table-of-contents emission is deferred to task 8.2. This module emits cover and document
-control only; the TOC slot is called out but not filled.
+Table-of-contents entries are emitted at levels 1-3 by :func:`_emit_toc` as pass 1 of
+the two-pass approach: heading text + tab, no page number. Pass 2 is handled by
+``render/toc.py::apply_toc_page_numbers`` which operates on the serialized docx bytes
+after conversion to measure actual positions and fill in page numbers.
 
 ## Call site in render/docx.py
 
@@ -274,8 +276,6 @@ def emit_front_matter(
 
     A per-run value that is absent is `RENDER_FAILED` naming that value, with no report
     artifact and no substituted placeholder in its position (Req 13.15).
-
-    TOC emission is deferred to task 8.2.
     """
     # --- validate per-run values (clause c) ------------------------------------------
     _require_run_value(run.customer_name, "customer_name")
@@ -301,9 +301,18 @@ def emit_front_matter(
         doc_number=doc_number,
     )
 
-    # --- table of contents -----------------------------------------------------------
-    # TOC emission is deferred to task 8.2. This function emits cover + document control
-    # only. The TOC slot is acknowledged but not filled.
+    # --- table of contents (Req 14.3, 14.5, 14.11) -----------------------------------
+    # Emit entries for pass 1 of the two-pass approach: heading text + tab, no page
+    # number. Pass 2 (apply_toc_page_numbers in render/toc.py) operates on the serialized
+    # docx bytes after conversion to measure actual page positions, then re-emits with
+    # the measured numbers as literal text.
+    from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document, TOC_LABEL_ID
+    if should_emit_toc() and front_matter.toc.enabled:
+        _emit_toc(
+            document,
+            heading_entries=toc_entries_from_document(cursor) if cursor is not None else (),
+            messages=messages,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -521,3 +530,38 @@ def _find_approver(
         if entry.role == role:
             return entry
     return None
+
+
+
+def _emit_toc(
+    document: DocxDocument,
+    *,
+    heading_entries: tuple[tuple[str, int], ...],
+    messages: Messages,
+) -> None:
+    """Emit the table of contents section (Req 14.3, 14.5, 14.11).
+
+    Emits a TOC section heading followed by one entry per heading block at levels 1-3
+    in document order. Each entry carries the heading's text and a tab stop; the page
+    number position is left empty for pass 1 of the two-pass approach. Pass 2
+    (``render.toc.apply_toc_page_numbers``) fills it after measuring actual page
+    positions from the converted PDF.
+
+    Followed by a page break so content starts on a fresh page.
+    """
+    from reporting_agent.render.toc import TOC_LABEL_ID
+    from reporting_agent.render.themes import TOC_ENTRY_STYLE
+
+    # Section heading — styled Title so it doesn't appear in its own TOC.
+    toc_label = messages.text(TOC_LABEL_ID)
+    document.add_paragraph(toc_label, style="Title")
+
+    # One entry per heading, at levels 1-3. The text + tab is emitted whether or not
+    # a number follows, so pass 1 lays out to exactly the height pass 2 will.
+    for heading_text, _level in heading_entries:
+        paragraph = document.add_paragraph(style=TOC_ENTRY_STYLE)
+        paragraph.add_run(heading_text)
+        paragraph.add_run().add_tab()
+
+    # Page break after the TOC section.
+    _add_page_break(document)

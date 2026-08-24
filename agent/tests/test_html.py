@@ -82,7 +82,7 @@ def compiled_document(blocks=None, *, view=None):
 
 def emit(blocks=None, *, view=None):
     compiled = compiled_document(blocks, view=view)
-    return compiled, H.emit_html(compiled.document)
+    return compiled, H.emit_html(compiled.document, messages=mf.EN)
 
 
 def figure_spans(markup: str) -> list[str]:
@@ -106,7 +106,7 @@ def test_the_emitter_walks_the_document_it_is_handed() -> None:
 
 def test_the_two_emitters_walk_one_tree_and_agree_on_figure_count() -> None:
     compiled = compiled_document()
-    html_outcome = H.emit_html(compiled.document)
+    html_outcome = H.emit_html(compiled.document, messages=mf.EN)
     docx_outcome = render_document(
         compiled.document,
         ledger=compiled.ledger,
@@ -119,7 +119,7 @@ def test_the_two_emitters_walk_one_tree_and_agree_on_figure_count() -> None:
 def test_emitting_twice_from_one_tree_produces_identical_markup() -> None:
     """No hidden state, no clock, no ordering that depends on anything but the tree."""
     compiled = compiled_document()
-    assert H.emit_html(compiled.document).html == H.emit_html(compiled.document).html
+    assert H.emit_html(compiled.document, messages=mf.EN).html == H.emit_html(compiled.document, messages=mf.EN).html
 
 
 def test_blocks_are_emitted_in_the_order_the_ast_declares() -> None:
@@ -239,7 +239,7 @@ def test_a_figure_with_no_formatted_string_is_refused() -> None:
             blocks=(Paragraph(path=figure_path("p", 0), style="Body Text", inlines=(figure,)),)
         )
         with pytest.raises(H.HtmlEmitFailed, match="no formatted string"):
-            H.emit_html(document)
+            H.emit_html(document, messages=mf.EN)
 
 
 def test_a_figure_with_no_snapshot_path_is_refused() -> None:
@@ -255,7 +255,7 @@ def test_a_figure_with_no_snapshot_path_is_refused() -> None:
             blocks=(Paragraph(path=figure_path("p", 0), style="Body Text", inlines=(figure,)),)
         )
         with pytest.raises(H.HtmlEmitFailed, match="no snapshot path"):
-            H.emit_html(document)
+            H.emit_html(document, messages=mf.EN)
 
 
 def test_a_formatted_string_containing_markup_is_escaped() -> None:
@@ -272,7 +272,7 @@ def test_a_formatted_string_containing_markup_is_escaped() -> None:
         document = Document(
             blocks=(Paragraph(path=figure_path("p", 0), style="Body Text", inlines=(figure,)),)
         )
-        markup = H.emit_html(document).html
+        markup = H.emit_html(document, messages=mf.EN).html
     assert "<script>" not in markup
     assert "&lt;script&gt;" in markup
 
@@ -382,7 +382,7 @@ def test_both_surfaces_emit_the_same_headers_rows_and_cell_strings() -> None:
     the grids. Anything that only inspected the HTML would be checking self-consistency.
     """
     compiled = compiled_document()
-    markup = H.emit_html(compiled.document).html
+    markup = H.emit_html(compiled.document, messages=mf.EN).html
     docx = render_document(
         compiled.document,
         ledger=compiled.ledger,
@@ -433,7 +433,7 @@ def test_an_empty_cell_emits_an_empty_cell_and_not_a_zero() -> None:
             ),
         ),
     )
-    markup = H.emit_html(Document(blocks=(node,))).html
+    markup = H.emit_html(Document(blocks=(node,)), messages=mf.EN).html
     assert _html_tables(markup) == [[["A", "B"], ["vm-1", ""]]]
 
 
@@ -454,7 +454,7 @@ def test_a_short_row_is_padded_the_way_the_docx_pads_it() -> None:
             ),
         ),
     )
-    markup = H.emit_html(Document(blocks=(node,))).html
+    markup = H.emit_html(Document(blocks=(node,)), messages=mf.EN).html
     assert _html_tables(markup) == [[["A", "B", "C"], ["just one", "", ""]]]
 
 
@@ -500,7 +500,7 @@ def test_the_notice_row_is_matched_by_key_not_by_text() -> None:
             ),
         ),
     )
-    markup = H.emit_html(Document(blocks=(node,))).html
+    markup = H.emit_html(Document(blocks=(node,)), messages=mf.EN).html
     assert H.NOTICE_ROW_CLASS in markup
 
 
@@ -672,7 +672,7 @@ def test_an_unknown_node_type_emits_nothing_at_all() -> None:
     )
 
     with pytest.raises(H.HtmlEmitFailed) as raised:
-        H.emit_html(document)
+        H.emit_html(document, messages=mf.EN)
 
     # `str(...)` rather than `.message`: this is deliberately a plain exception, not an
     # `AgentError`, so it carries no code, no `terminal` flag and no `message` attribute.
@@ -725,7 +725,7 @@ def test_the_html_emitter_adds_no_exception_class_to_the_error_code_vocabulary()
 
 def test_a_non_document_argument_is_refused() -> None:
     with pytest.raises(H.HtmlEmitFailed, match="compiled Document"):
-        H.emit_html({})
+        H.emit_html({}, messages=mf.EN)
 
 
 def test_an_unknown_cell_type_is_refused() -> None:
@@ -740,7 +740,7 @@ def test_an_unknown_cell_type_is_refused() -> None:
     )
     object.__setattr__(node.rows[0], "cells", (Weird(),))
     with pytest.raises(H.HtmlEmitFailed, match="admits only FigureCell"):
-        H.emit_html(Document(blocks=(node,)))
+        H.emit_html(Document(blocks=(node,)), messages=mf.EN)
 
 
 def test_an_unknown_inline_type_is_refused() -> None:
@@ -750,7 +750,7 @@ def test_an_unknown_inline_type_is_refused() -> None:
     paragraph = Paragraph(path=figure_path("p", 0), style="Body Text", inlines=())
     object.__setattr__(paragraph, "inlines", (Weird(),))
     with pytest.raises(H.HtmlEmitFailed, match="admits only Text or Figure"):
-        H.emit_html(Document(blocks=(paragraph,)))
+        H.emit_html(Document(blocks=(paragraph,)), messages=mf.EN)
 
 
 def test_a_layout_row_inside_a_layout_column_is_still_emitted() -> None:
@@ -775,7 +775,7 @@ def test_a_layout_row_inside_a_layout_column_is_still_emitted() -> None:
             LayoutColumn(path=figure_path("outer", 0, 1)),
         ),
     )
-    markup = H.emit_html(Document(blocks=(outer,))).html
+    markup = H.emit_html(Document(blocks=(outer,)), messages=mf.EN).html
     assert markup.count('class="rpt-layout-row"') == 2
 
 
@@ -827,6 +827,6 @@ def test_every_declared_block_type_emits_without_error() -> None:
             return view
 
     compiled = compile_document(definition, view=view, comparison_source=Comparison())
-    outcome = H.emit_html(compiled.document)
+    outcome = H.emit_html(compiled.document, messages=mf.EN)
     assert outcome.figure_count == len(compiled.ledger) > 0
     assert outcome.table_count > 0

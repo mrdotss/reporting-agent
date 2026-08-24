@@ -284,6 +284,7 @@ def scan_paragraphs(
     *,
     ledger_strings: Iterable[str],
     allowlist: Iterable[str],
+    proven_toc_numerals: Mapping[int, frozenset[str]] = {},
 ) -> tuple[Finding, ...]:
     """One `unmatched_prose_token` finding per survivor, over every paragraph.
 
@@ -298,6 +299,18 @@ def scan_paragraphs(
     for an extraction but the wrong one for a reader being told where to look; this is
     the only place the two differ, and it is derived here rather than carried on
     `ExtractedParagraph` because it is a property of the report, not of the document.
+
+    Parameters
+    ----------
+    proven_toc_numerals
+        A mapping from paragraph ordinal to the set of page-number strings that the
+        Toc_Verifier compared and found correct for that paragraph.  Defaults to ``{}``.
+
+        **The narrowing (Req 14.9, 14.12):** a numeral is admitted ONLY in the paragraph
+        whose comparison produced it.  An allowlist entry would admit its string anywhere
+        in the document, so a stray ``7`` in prose would pass and criterion 14.12 would be
+        unimplementable.  A numeral in a page-number position the Toc_Verifier compared to
+        nothing stays ``unmatched_prose_token``.
     """
     ledger_order = masking_order(ledger_strings)
     allowlist_order = masking_order(allowlist)
@@ -310,14 +323,23 @@ def scan_paragraphs(
         counters[scope] = counters.get(scope, 0) + 1
         if not paragraph.text:
             continue
+
+        # The set of page-number strings proven correct for THIS specific paragraph.
+        admitted_numerals = proven_toc_numerals.get(paragraph.ordinal, frozenset())
+
         for survivor in survivors_in(
             paragraph,
             ledger_strings=ledger_order,
             allowlist=allowlist_order,
             scoped_ordinal=counters[scope],
         ):
+            # If this survivor is a proven TOC page number for this paragraph, skip it.
+            survivor_text = str(survivor)
+            if survivor_text in admitted_numerals:
+                continue
+
             locating: dict[str, object] = {
-                "substring": str(survivor),
+                "substring": survivor_text,
                 "paragraph_ordinal": survivor.ordinal,
             }
             if survivor.block_id is not None:

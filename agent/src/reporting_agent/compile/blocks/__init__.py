@@ -2,7 +2,7 @@
 
 ## The registry is exhaustive by assertion, not by convention
 
-:data:`BLOCK_COMPILERS` must cover **exactly** the sixteen types
+:data:`BLOCK_COMPILERS` must cover **exactly** the seventeen types
 `compile/definition.py` declares, and an import-time assertion says so. A block type with no
 compiler would otherwise reach :func:`compile_block` and be skipped — and a silently skipped
 block is a document missing a section the author configured, which is the failure Req 2.3
@@ -100,6 +100,7 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
     "page_break": compile_page_break,
     "heading": compile_heading,
     "rich_text": compile_rich_text,
+    "historical_trend": charts.compile_historical_trend,
 }
 """Every declared block type but `row`, which needs the child compiler and is dispatched
 separately in :func:`compile_block`."""

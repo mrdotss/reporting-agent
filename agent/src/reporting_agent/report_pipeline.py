@@ -705,7 +705,7 @@ async def _document_phases(
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
-        html=emit_html(compiled.document).html,
+        html=emit_html(compiled.document, messages=messages).html,
         chart_sidecars=dict(rendered.chart_sidecars),
     )
     yield steps.end(upload_step["id"])
@@ -1314,7 +1314,9 @@ async def run_render_preview(
     )
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.messages import load_messages
     from reporting_agent.compile.snapshot_view import build_snapshot_view
+    from reporting_agent.messages import DEFAULT_LANGUAGE
     from reporting_agent.render.docx import render_document
     from reporting_agent.render.html import emit_html
     from reporting_agent.render.pdf import convert_to_pdf
@@ -1342,6 +1344,22 @@ async def run_render_preview(
     )
     yield step
     compiled = compile_document(definition, view=build_snapshot_view(snapshot))
+
+    # The pinned language, resolved the same way the delivered path resolves it at line
+    # ~590 — so a preview of an Indonesian template is Indonesian. This was MISSING until
+    # wave 11: task 6.6 made `messages` required on `render_document` and `emit_html`, and
+    # this call site was the one the change did not reach, because no test drives
+    # `run_render_preview`. A production-only call site with no caller in the suite is the
+    # "an injected seam is an untested seam" case `tech.md` records, and it is why the
+    # green suite at that commit proved less than it appeared to.
+    _preview_identity = definition.get("identity")
+    _preview_language = DEFAULT_LANGUAGE
+    if isinstance(_preview_identity, Mapping):
+        _declared = _preview_identity.get("language")
+        if isinstance(_declared, str) and _declared in ("en", "id"):
+            _preview_language = _declared
+    preview_messages = load_messages(_preview_language)
+
     # `preview=True` is what puts the per-page notice in against each theme's
     # `PreviewNotice` style, so the artifact says what it is even after it leaves the app.
     rendered = render_document(
@@ -1349,6 +1367,7 @@ async def run_render_preview(
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(definition.get("design")),
         preview=True,
+        messages=preview_messages,
     )
     converted = convert_to_pdf(rendered.docx_bytes)
     tags = owner_tags(actor_id)
@@ -1367,7 +1386,7 @@ async def run_render_preview(
     # what keeps the number of layout definitions at two.
     await store.put_bytes(
         preview_html_key(actor_id, preview_id),
-        emit_html(compiled.document).html.encode("utf-8"),
+        emit_html(compiled.document, messages=preview_messages).html.encode("utf-8"),
         content_type=HTML_CONTENT_TYPE,
         tags=tags,
     )

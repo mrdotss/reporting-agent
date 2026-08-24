@@ -65,6 +65,8 @@ from reporting_agent.compile.ast import (
     TextFactCell,
 )
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
+from reporting_agent.compile.messages import Messages
+from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
 
 __all__ = [
     "EMPTY_CELL_TEXT",
@@ -74,6 +76,7 @@ __all__ = [
     "HtmlEmitFailed",
     "HtmlOutcome",
     "emit_html",
+    "emit_toc_html",
 ]
 
 FIGURE_CLASS: Final[str] = "rpt-figure"
@@ -145,6 +148,7 @@ class HtmlOutcome:
 
 @dataclass(slots=True)
 class _Emitter:
+    messages: Messages
     parts: list[str] = field(default_factory=list)
     figure_count: int = 0
     table_count: int = 0
@@ -373,8 +377,14 @@ class _Emitter:
             series_markup.append(self.series(series))
 
         indication = (
-            f'<p class="{NOTICE_ROW_CLASS}">{html.escape(EMPTY_SCOPE_TEXT)}</p>'
+            f'<p class="{NOTICE_ROW_CLASS}">{html.escape(self.messages.text(EMPTY_SCOPE_TEXT))}</p>'
             if not any(series.points for series in node.series)
+            else ""
+        )
+
+        period_markup = (
+            f'<p class="rpt-chart-period">{html.escape(node.period_label)}</p>'
+            if node.period_label
             else ""
         )
 
@@ -385,7 +395,7 @@ class _Emitter:
             f' data-unit="{html.escape(node.unit, quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
             f"<figcaption>{html.escape(node.title)}</figcaption>"
-            f'{indication}<div class="rpt-series-set">{"".join(series_markup)}</div>'
+            f'{period_markup}{indication}<div class="rpt-series-set">{"".join(series_markup)}</div>'
             f"</figure>"
         )
 
@@ -417,7 +427,7 @@ class _Emitter:
                 raise HtmlEmitFailed(
                     f"layout row {node.path!r} column is {type(column).__name__}"
                 )
-            nested = _Emitter()
+            nested = _Emitter(messages=self.messages)
             for child in column.blocks:
                 nested.block(child)
             self.figure_count += nested.figure_count
@@ -462,7 +472,7 @@ def _paragraph_tag(style: str) -> tuple[str, str]:
     return tag, ""
 
 
-def emit_html(document: object) -> HtmlOutcome:
+def emit_html(document: object, *, messages: Messages) -> HtmlOutcome:
     """Emit `document` as an HTML fragment (Req 24.1).
 
     A **fragment**, not a page: no `<html>`, no `<head>`, no stylesheet link. The app owns the
@@ -477,7 +487,7 @@ def emit_html(document: object) -> HtmlOutcome:
             f"emit_html takes a compiled Document, got {type(document).__name__}"
         )
 
-    emitter = _Emitter()
+    emitter = _Emitter(messages=messages)
     for block in document.blocks:
         emitter.block(block)
 
@@ -486,4 +496,67 @@ def emit_html(document: object) -> HtmlOutcome:
         figure_count=emitter.figure_count,
         text_fact_count=emitter.text_fact_count,
         table_count=emitter.table_count,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Table of contents — a list of headings, carrying NO page number (Req 14.8)
+# ---------------------------------------------------------------------------
+
+# Heading styles eligible for the TOC: levels 1 through 3 (Req 14.11).
+_TOC_HEADING_STYLES: Final[frozenset[str]] = frozenset(
+    {"Heading 1", "Heading 2", "Heading 3"}
+)
+
+_HEADING_LEVEL_MAP: Final[dict[str, int]] = {
+    "Heading 1": 1,
+    "Heading 2": 2,
+    "Heading 3": 3,
+}
+
+
+def emit_toc_html(document: object) -> str:
+    """Emit the table of contents as a list of headings carrying **no page number**.
+
+    The HTML emitter determines no pagination (Req 14.8, templates spec 14.3), so
+    no page number, no page count, and no total-page indicator is emitted. The TOC
+    is a navigation aid showing heading hierarchy alone.
+
+    Returns an empty string if ``ADOPTED_APPROACH`` is ``none`` — no TOC section at all.
+    Returns an empty string if there are no headings at levels 1-3.
+    """
+    if ADOPTED_APPROACH == TOC_APPROACH_NONE:
+        return ""
+
+    if not isinstance(document, Document):
+        return ""
+
+    headings: list[tuple[int, str]] = []
+    for block in document.blocks:
+        if isinstance(block, Paragraph) and block.style in _TOC_HEADING_STYLES:
+            # Extract the text from inlines.
+            text_parts: list[str] = []
+            for inline in block.inlines:
+                if isinstance(inline, Text):
+                    text_parts.append(inline.text)
+                elif isinstance(inline, Figure):
+                    text_parts.append(inline.formatted or "")
+            heading_text = "".join(text_parts).strip()
+            if heading_text:
+                level = _HEADING_LEVEL_MAP.get(block.style, 1)
+                headings.append((level, heading_text))
+
+    if not headings:
+        return ""
+
+    items: list[str] = []
+    for level, text in headings:
+        items.append(
+            f'<li class="rpt-toc-entry" data-level="{level}">'
+            f"{html.escape(text)}</li>"
+        )
+
+    return (
+        f'<nav class="rpt-toc" aria-label="Table of contents">'
+        f'<ol class="rpt-toc-list">{"".join(items)}</ol></nav>'
     )

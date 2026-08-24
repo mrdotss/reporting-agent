@@ -561,6 +561,10 @@ _FROZEN_RC_PARAMS: Final[Mapping[str, object]] = {
     "axes.facecolor": "white",
     "savefig.facecolor": "white",
     "savefig.transparent": False,
+    # --- legend (Req 17.3, 17.9 determinism) ---------------------------------
+    "legend.fontsize": CHART_LABEL_SIZE,
+    "legend.framealpha": 0.8,
+    "legend.loc": "upper right",
 }
 """One block, applied through a context manager at use rather than mutated globally.
 

@@ -506,6 +506,18 @@ export const MESSAGE_CATALOG = {
     en: "Unmatched numerals",
     id: "Angka tidak berpasangan",
   },
+  "doc.historical.trend_statement": {
+    en: "Historical trend: {count} of {requested} prior periods plotted. {exclusions}",
+    id: "Tren historis: {count} dari {requested} periode sebelumnya diplot. {exclusions}",
+  },
+  "doc.historical.no_prior_runs": {
+    en: "No prior verified period is available for this trend.",
+    id: "Tidak ada periode terverifikasi sebelumnya yang tersedia untuk tren ini.",
+  },
+  "doc.historical.verification_note": {
+    en: "Each historical point was verified against its own run's verification record. The replay of this run re-verified this run's snapshot alone.",
+    id: "Setiap titik historis telah diverifikasi terhadap catatan verifikasi prosesnya sendiri. Pemutaran ulang proses ini hanya memverifikasi ulang snapshot proses ini.",
+  },
 } as const satisfies Record<string, Record<Language, string>>
 // --- END MESSAGE CATALOG ---
 

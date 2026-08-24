@@ -44,10 +44,11 @@ export const BLOCK_TYPES = [
   "page_break",
   "heading",
   "rich_text",
+  "historical_trend",
 ] as const
 // --- END BLOCK TYPES ---
 
-/** One of the sixteen declared block types (Requirement 6.1). */
+/** One of the seventeen declared block types (Requirement 6.1). */
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 /**
@@ -223,6 +224,15 @@ export const BLOCK_CONFIG = {
   rich_text: {
     required: ["text"],
     optional: [],
+    enums: {},
+  },
+
+  // Req 18.1 — one chart over prior verified runs' values for a single
+  // metric+statistic pair. `lookback` is 2–24 inclusive. The block's config
+  // metric and statistic must already be in the definition's metric selection.
+  historical_trend: {
+    required: ["metric", "statistic", "lookback"],
+    optional: ["caption"],
     enums: {},
   },
 } as const satisfies Record<BlockType, BlockConfigSchema>

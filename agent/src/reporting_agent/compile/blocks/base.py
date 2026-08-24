@@ -101,6 +101,7 @@ __all__ = [
     "ComparisonSource",
     "Deferred",
     "DesignSettings",
+    "HistoricalSource",
     "MetricRef",
     "ProseProvider",
     "ProseRequest",
@@ -434,6 +435,16 @@ class ComparisonSource(Protocol):
     def snapshot_for(self, run_id: str) -> SnapshotView | None: ...
 
 
+class HistoricalSource(Protocol):
+    """Resolves a prior run's stored snapshot view, for `historical_trend` (Req 18.8).
+
+    A protocol rather than a concrete reader, following the same reasoning as
+    `ComparisonSource`: compiled from stored snapshots and no Azure call.
+    """
+
+    def snapshot_view_for(self, run_id: str) -> SnapshotView | None: ...
+
+
 @dataclass(frozen=True, slots=True)
 class Deferred:
     """A block that cannot be finished until every other block has compiled (Req 16.12).
@@ -511,6 +522,7 @@ class BlockContext:
     metrics: Mapping[str, Sequence[Mapping[str, object]]] = field(default_factory=dict)
     prose: ProseProvider | None = None
     comparison: ComparisonSource | None = None
+    historical: HistoricalSource | None = None
     catalog_scales: Mapping[str, int] | None = None
     """Per-metric fractional-digit counts, when a caller has the loaded catalog to hand.
 

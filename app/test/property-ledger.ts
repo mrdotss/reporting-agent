@@ -151,6 +151,11 @@ export const FOUNDATION_PROPERTIES: readonly PropertyDeclaration[] = [
  */
 export const BREADTH_PROPERTIES: Readonly<Record<number, PropertyDeclaration>> =
   {
+    4: {
+      label: "breadth Property 4",
+      title: "Gap grouping is lossless",
+      modules: ["test/property/gap-groups.property.test.ts"],
+    },
     7: {
       label: "breadth Property 7",
       title: "A picked scope stays a rule",
@@ -204,6 +209,7 @@ export const MINIMUM_EXECUTIONS: Readonly<Record<string, number>> = {
   "lib/templates/period.property.test.ts": 6,
   "lib/templates/version.property.test.ts": 6,
   "test/property/config-options.property.test.ts": 12,
+  "test/property/gap-groups.property.test.ts": 5,
   "test/property/scope-picker.property.test.ts": 8,
   "test/property/number-format-defaults.property.test.ts": 9,
 }

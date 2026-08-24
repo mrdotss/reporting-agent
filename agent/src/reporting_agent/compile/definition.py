@@ -118,6 +118,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "page_break",
     "heading",
     "rich_text",
+    "historical_trend",
 )
 # --- END BLOCK TYPES ---
 
@@ -201,6 +202,11 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "rich_text": {
         "required": ["text"],
         "optional": [],
+        "enums": {},
+    },
+    "historical_trend": {
+        "required": ["metric", "statistic", "lookback"],
+        "optional": ["caption"],
         "enums": {},
     },
 }

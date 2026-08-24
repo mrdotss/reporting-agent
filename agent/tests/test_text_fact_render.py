@@ -503,7 +503,7 @@ def test_the_html_cell_carries_the_facts_source_and_collected_at() -> None:
     ledger = FigureLedger()
     table, fact = one_fact_table(ledger)
 
-    outcome = H.emit_html(Document(blocks=(table,)))
+    outcome = H.emit_html(Document(blocks=(table,)), messages=mf.EN)
 
     assert f'data-fact-source="{FACT_SOURCE}"' in outcome.html
     assert f'data-collected-at="{COLLECTED_AT}"' in outcome.html
@@ -518,7 +518,7 @@ def test_the_html_counts_facts_separately_from_figures() -> None:
     ledger = FigureLedger()
     table, _ = one_fact_table(ledger)
 
-    outcome = H.emit_html(Document(blocks=(table,)))
+    outcome = H.emit_html(Document(blocks=(table,)), messages=mf.EN)
 
     assert outcome.text_fact_count == 1
     assert outcome.figure_count == 0
@@ -531,7 +531,7 @@ def test_the_html_escapes_a_facts_value_and_its_attributes() -> None:
     ledger = FigureLedger()
     table, _ = one_fact_table(ledger, value='<script>"x"</script>')
 
-    outcome = H.emit_html(Document(blocks=(table,)))
+    outcome = H.emit_html(Document(blocks=(table,)), messages=mf.EN)
 
     assert "<script>" not in outcome.html
     assert "&lt;script&gt;" in outcome.html

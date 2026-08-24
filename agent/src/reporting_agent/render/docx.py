@@ -335,6 +335,11 @@ class _Emitter:
         The companion table goes through :meth:`emit_table`, so it takes the same caption
         writer, the same header assertion and the same anchor recorder as any other data
         table. A second table emitter would be a second chance to get the caption wrong.
+
+        When the chart carries a ``period_label``, it is emitted as a caption paragraph
+        between the image and the table (Req 17.12). The string is identical to the one
+        rendered inside the chart image, so the document and the chart cannot disagree
+        about the period plotted.
         """
         at = f"chart {node.path!r}"
         artifacts = render_chart(node, table_style=self.design.table_style_name, messages=self.messages)
@@ -343,6 +348,11 @@ class _Emitter:
         run = picture_paragraph.add_run()
         run.add_picture(io.BytesIO(artifacts.image_png), width=Inches(_CHART_WIDTH_INCHES))
         _set_picture_alt_text(picture_paragraph, artifacts.identity)
+
+        # Req 17.12 — present the period_label identically to how the chart image renders it.
+        if node.period_label:
+            period_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
+            period_para.add_run(node.period_label)
 
         self.chart_hashes[artifacts.identity] = artifacts.data_hash
         self.chart_sidecars[f"{artifacts.identity}{SIDECAR_SUFFIX}"] = artifacts.sidecar_json

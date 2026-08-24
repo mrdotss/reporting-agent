@@ -135,6 +135,10 @@ BREADTH_PROPERTIES: dict[int, PropertyDeclaration] = {
         "A fact round-trips through the archive",
         ("test_facts_property.py",),
     ),
+    2: PropertyDeclaration(
+        "Formatting and verification agree on the declared format",
+        ("test_number_format_property.py",),
+    ),
     5: PropertyDeclaration(
         "Every catalog entry is evidenced",
         ("test_catalog_evidence_property.py",),

@@ -439,7 +439,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Add `agent/tests/test_document_number.py` asserting two renders of one run resolve one identical number and that the two-runs-one-period case is distinguished as criterion 13.16 declares — criterion 25.9 declares this a test rather than a property
     - _Requirements: 13.4, 13.5, 13.6, 13.8, 13.9, 13.15, 13.16, 15.3, 25.9_
 
-  - [ ] 8.2 Build the table of contents from the adopted approach, and verify its page numbers
+  - [x] 8.2 Build the table of contents from the adopted approach, and verify its page numbers
     - `render/toc.py`: emit a table of contents **only** where `ADOPTED_APPROACH` names a candidate the evaluation recorded `correct`; where it is `none`, emit **no table of contents at all** and no page-number position anywhere. Emit no entry whose page number the builder did not determine, and no placeholder page number, no zero and no instruction to the reader in a page-number position
     - One entry per heading block at levels 1 through 3 and none deeper, in document order, each naming that heading's text and the page carrying that heading's **first rendered character**
     - `render/html.py` emits the table of contents as a **list of headings carrying no page number and no page count**, because the HTML emitter determines no pagination
@@ -473,7 +473,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `render/charts.py` and `app/components/reports/*` emit every numeral from a ledger entry's `formatted` string **verbatim**, applying no locale-dependent formatting of their own
     - _Requirements: 16.4, 16.5, 16.6, 16.7, 16.8, 16.11, 16.12_
 
-  - [ ] 9.2 Present the separators in the design step, and property-test the agreement
+  - [x] 9.2 Present the separators in the design step, and property-test the agreement
     - `app/components/templates/step-design.tsx`: present the declared separators as controls and a **sample figure formatted in the declared format**, so a consultant sees `462,81 GB` before a run rather than after one
     - **Property 2: Formatting and verification agree on the declared format**, identifier `number_format_agreement`, in `agent/tests/property/test_number_format_property.py`
     - **Validates: Requirements 16.1, 16.2, 16.3, 16.4, 16.5, 16.6, 16.7, 16.11**
@@ -484,7 +484,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 16.1, 16.2, 16.3, 16.4, 16.5, 16.6, 16.7, 16.9, 16.11, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
 - [ ] 10. Chart appearance, without touching verification
-  - [ ] 10.1 Extend `render/charts.py` and keep the hash input closed
+  - [x] 10.1 Extend `render/charts.py` and keep the hash input closed
     - Axis titles and units for every plotted axis resolved from the Message_Catalog and the Metric_Catalog, emitting **no** axis carrying neither a title nor a unit; gridlines from the `--border` and `--muted-foreground` tokens, never competing with a plotted mark; a legend naming every series where a chart carries more than one, **in addition to** the direct label every series already carries; a chart title; and the period as the run's resolved local start and end dates with the resolved UTC offset shown
     - `label_indices(points) -> frozenset[int]`, **pure and total**: 24 or fewer points ⇒ every one; otherwise exactly four — first, last, series maximum, series minimum — selecting the **earlier point by period start** where two carry one equal extreme. Every emitted label is that point's ledger entry `formatted` string **verbatim**
     - The companion data table records **every** plotted point whether or not it carries a direct label, so thinning removes a label and never a figure — and the table is what the anchored pass checks, so a thinned label costs no verification coverage
@@ -522,7 +522,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - `report_pipeline.py` loads at most `lookback` prior snapshots and hands them to the selector, the same shape `verify/replay.py` already has where the caller fetches and the pure module folds
     - _Requirements: 18.4, 18.5, 18.6, 18.7, 18.10, 18.13, 18.14, 18.15_
 
-  - [ ] 11.3 Compile the `historical_trend` block and its two provenance fields
+  - [x] 11.3 Compile the `historical_trend` block and its two provenance fields
     - `app/lib/templates/blocks.ts` and `agent/.../compile/definition.py`: add `historical_trend` between the block-type sentinels, taking `BLOCK_TYPES` from sixteen to **seventeen** and adding nothing else, with a config schema over a metric, a statistic and a `lookback` integer from **2 to 24 inclusive**; reject a config naming a metric or statistic absent from the definition's metric selection
     - `PRIOR_RUN_NAMESPACE = "prior_runs"` and `HistoricalResolver` installed for the duration of the block through `compiling_against`, resolving the compiling snapshot's own pointers **plus** a prior run's under `/prior_runs/<run_id>` — a superset for that block alone, the same shape `compile/blocks/comparison.py`'s `DeltaResolver` already takes, so the rest of the document is unaffected
     - A historical point is a `Figure` whose `snapshot_path` is `/prior_runs/<run_id>/resources/<i>/statistics/<j>/value` carrying `source_run_id` and `source_snapshot_sha256` from task 5.1, **redundant with the pointer prefix by construction and deliberately so**: `__post_init__` requires them to agree, so the disagreement negative test 15.8 injects is caught two ways, and construction **succeeds** for a point sourced from a failed run so that the injection is expressible and the gate can be observed failing at all
@@ -619,7 +619,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - _Requirements: 23.1, 23.2, 23.3, 23.4, 23.5, 23.6, 23.7, 23.8, 23.9, 23.10, 23.11, 23.12_
 
 - [ ] 13. The report page — grouping, the panel, and the paper stylesheet
-  - [ ] 13.1 Implement `lib/runs/gap-groups.ts` and its property
+  - [x] 13.1 Implement `lib/runs/gap-groups.ts` and its property
     - `app/lib/runs/gap-groups.ts`, **no `import "server-only"`** — deliberately, and it is the one module in this spec where that is the right call: the expansion control is a client component and the grouping must run where the entries are rendered. It touches no SDK and no secret, so the boundary rule is satisfied by what it does not import
     - `NO_METRIC_KEY = "\u0000no-metric"` and `UNATTRIBUTED_RESOURCE_KEY = "\u0000unattributed"`. The `\u0000` spelling is the reason both work: a NUL cannot appear in an Azure metric name or resource id so neither key can collide, and NUL sorts before every printable character in code-point order, so "the no-metric key sorting before every metric" is a **consequence of the sentinel's spelling** rather than a special case in the comparator
     - `GapRange`, `GapInnerGroup`, `GapTypeGroup` and `groupGaps(gaps, { grain, utcOffset })` — group first by `gapType`, then within each type by `(resourceId, metric)`, taking a fact gap's fact key as occupying the metric position. Totality is the point: `RunGap.metric` is `string | null` and `record_gap` accepts `str | None`, so a `region_unreachable`, a `permission_denied` and every fact gap carries no metric and a key without the sentinel is **undefined** for them

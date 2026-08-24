@@ -58,6 +58,7 @@ from reporting_agent.verify import facts as facts_pass
 from reporting_agent.verify import pdf as pdf_pass
 from reporting_agent.verify.allowlist import derive_allowlist
 from reporting_agent.verify.drift import DriftOutcome, primary_metric, requery_sample, select
+from reporting_agent.verify import toc as toc_pass
 from reporting_agent.verify.findings import (
     FINDING_LEDGER_ENTRY_UNRENDERED,
     SEVERITY_BLOCKING,
@@ -214,6 +215,19 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     # context (Req 28.7). A failure to derive one propagates: an allowlist that could not be
     # derived must never let prose pass unchecked, and passing an empty one would do exactly
     # that in reverse — it would flag every piece of template chrome instead.
+    #
+    # The TOC gate runs BEFORE the prose gate (breadth criteria 14.9, 14.12) and returns
+    # `proven_toc_numerals` keyed by paragraph ordinal — a numeral is admitted ONLY in the
+    # paragraph whose comparison produced it, not document-wide.
+    toc_result = toc_pass.check_toc(
+        inputs.pdf_bytes,
+        paragraphs=paragraphs,
+        document=inputs.document,
+    )
+    findings.extend(toc_result.findings)
+    counts["toc_entries_checked"] = toc_result.entries_checked
+    gates.add("toc")
+
     allowlist = derive_allowlist(
         inputs.definition,
         inputs.snapshot,
@@ -222,7 +236,8 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     )
     ledger_strings = ledger_strings_of(inputs.ledger.entries)
     prose = scan_paragraphs(
-        paragraphs, ledger_strings=ledger_strings, allowlist=allowlist
+        paragraphs, ledger_strings=ledger_strings, allowlist=allowlist,
+        proven_toc_numerals=toc_result.proven_toc_numerals,
     )
     findings.extend(prose)
     counts["unmatched_prose_tokens"] = len(prose)
@@ -283,9 +298,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     counts["text_fact_entries_resolved"] = text_fact_result.entries_resolved
     gates.add("facts")
 
-    # --- breadth 14, 18: toc and historical, still stubbed ------------------------------
-    findings.extend(_stub_toc_gate_awaiting_task_8_2(inputs))
-    gates.add("toc")
+    # --- breadth 18: historical, still stubbed ------------------------------------------
     findings.extend(_stub_historical_gate_awaiting_task_11_4(inputs))
     gates.add("historical")
 
@@ -335,37 +348,17 @@ def _assert_every_gate_ran(gates: set[str]) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# The two remaining gates the breadth-and-document spec declares, stubbed
+# The remaining gate the breadth-and-document spec declares, still stubbed
 # --------------------------------------------------------------------------- #
 #
-# `REQUIRED_GATES` names `toc` and `historical` already, which is deliberate: the
-# alternative — adding each name with the pass that implements it — lets a half-wired
-# verifier report `pass` on a document nothing checked, and that is precisely the outcome
+# `REQUIRED_GATES` names `historical` already, which is deliberate: the alternative —
+# adding each name with the pass that implements it — lets a half-wired verifier report
+# `pass` on a document nothing checked, and that is precisely the outcome
 # `_assert_every_gate_ran` exists to make impossible.
 #
-# So each gate is registered now against a stub that records **no finding at all**. Every
-# stub is named `_stub_<gate>_gate_awaiting_task_<n>`, so its call site says both that it is
-# a stub and which task replaces it. None of them reads `inputs`; the parameter is here so
-# the call site does not change shape when the real pass lands.
-#
-# Until then, none of the two can fail a verification, and that is the honest reading of
-# where the spec is — not a claim that the two properties hold.
-
-
-def _stub_toc_gate_awaiting_task_8_2(inputs: VerifyInputs) -> tuple[Finding, ...]:
-    """STUB. Replaced by task 8.2, which implements `verify/toc.py`.
-
-    That task reads the produced `.pdf` — the one whose SHA-256 equals the recorded
-    `pdf_sha256` — through `verify/tokens.pdf_page_texts`, records `toc_page_mismatch` on a
-    disagreement (breadth criteria 14.6, 14.7), and returns the `proven_toc_numerals` mapping
-    that `masking.scan_paragraphs` admits per paragraph ordinal. It therefore has to run
-    **before** the prose gate, which this stub's position does not.
-
-    Task 1.5's own bullet numbers this task 8.3; 8.3 is the Postgres columns, and 8.2 is the
-    task that says "wire it as the `toc` gate from task 1.5".
-    """
-    del inputs
-    return ()
+# The stub is named `_stub_<gate>_gate_awaiting_task_<n>`, so its call site says both
+# that it is a stub and which task replaces it. It does not read `inputs`; the
+# parameter is here so the call site does not change shape when the real pass lands.
 
 
 def _stub_historical_gate_awaiting_task_11_4(inputs: VerifyInputs) -> tuple[Finding, ...]:

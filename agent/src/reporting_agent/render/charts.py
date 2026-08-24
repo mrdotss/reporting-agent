@@ -81,6 +81,7 @@ __all__ = [
     "ChartArtifacts",
     "chart_data_hash",
     "companion_table",
+    "label_indices",
     "plotted_series",
     "render_chart",
     "sidecar_bytes",
@@ -194,6 +195,59 @@ def _figures_in(node: Chart, *, messages: Messages) -> tuple[tuple[Series, tuple
 
 
 # --------------------------------------------------------------------------- #
+# Direct value label selection (Req 17.4)
+# --------------------------------------------------------------------------- #
+
+_LABEL_THRESHOLD: Final[int] = 24
+
+
+def label_indices(points: tuple[ChartPoint, ...]) -> frozenset[int]:
+    """Which points carry a direct value label (criterion 17.4).
+
+    <= 24 points: every one. Otherwise exactly four — first, last, series maximum, series
+    minimum — selecting the **earlier point by period start** where two carry one equal
+    extreme. Pure, total, and deterministic, so the same series always labels the same
+    points.
+
+    Every emitted label is that point's ledger entry ``formatted`` string verbatim.
+
+    The companion data table records **every** plotted point whether or not that point
+    carries a direct label, so thinning removes a label and never a figure — and the table
+    is what the anchored pass checks, so a thinned label costs no verification coverage.
+    """
+    if len(points) <= _LABEL_THRESHOLD:
+        return frozenset(range(len(points)))
+
+    if not points:
+        return frozenset()
+
+    # Always include first and last
+    indices: set[int] = {0, len(points) - 1}
+
+    # Find the maximum — select the earlier index on ties
+    max_value = Decimal(str(points[0].y.value))
+    max_index = 0
+    for i in range(1, len(points)):
+        v = Decimal(str(points[i].y.value))
+        if v > max_value:
+            max_value = v
+            max_index = i
+    indices.add(max_index)
+
+    # Find the minimum — select the earlier index on ties
+    min_value = Decimal(str(points[0].y.value))
+    min_index = 0
+    for i in range(1, len(points)):
+        v = Decimal(str(points[i].y.value))
+        if v < min_value:
+            min_value = v
+            min_index = i
+    indices.add(min_index)
+
+    return frozenset(indices)
+
+
+# --------------------------------------------------------------------------- #
 # The chart data hash (Req 22.3)
 # --------------------------------------------------------------------------- #
 
@@ -209,6 +263,25 @@ def chart_data_hash(node: Chart, *, messages: Messages) -> str:
     Computed from the plotted set — the same set the image draws and the companion table
     lists — which is what makes "the image, the table and the hash describe one plotted set"
     a checkable claim rather than an intention.
+
+    **Absent from the hash input by construction:**
+
+    - the ``formatted`` string (presentation, not data)
+    - the label presence (whether a point carries a direct label)
+    - colour assignment (palette token, hex, categorical or sequential)
+    - marker shape and dash pattern
+    - axis titles (resolved from the message catalog)
+    - the ``unit`` field on the chart node
+    - legend presence or absence
+    - period label (resolved from the Formatter)
+    - chart title and caption
+    - gridline style
+
+    Appearance is absent because the input is exactly
+    ``(series.key, point.x, point.y.value)`` — the ledger's decimal string, not its
+    formatted string, not any rendering attribute. "Appearance changes and verification
+    does not" is a fact about this function's signature: widening the input would make a
+    style change fire the chart-hash-mismatch finding.
     """
     contributions = [
         [series.key, point.x, str(point.y.value)]
@@ -345,6 +418,13 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
             f"{style.CHART_ENCODINGS}"
         )
 
+    # Req 17.11 — an absent unit for a plotted axis is RENDER_FAILED.
+    if not node.unit:
+        raise RenderFailedError(
+            f"chart {node.path!r}: no unit declared for the plotted axis; "
+            f"an untitled unitless axis is a refusal (Req 17.11)."
+        )
+
     data_hash = chart_data_hash(node, messages=messages)
     series_set = plotted_series(node, messages=messages)
 
@@ -378,6 +458,24 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
     )
 
 
+def _resolve_axis_title(label_id: str, *, node: Chart, axis: str, messages: Messages) -> str:
+    """Resolve an axis title from the message catalog.
+
+    An absent string id (empty string) is accepted when the axis carries a unit — the axis
+    is rendered with the unit alone. But if the id IS provided and the catalog has no
+    value for it in this language, ``MissingMessageError`` (a ``RenderFailedError`` subclass)
+    propagates, naming that axis, the string id and the metric (Req 17.11).
+
+    An untitled unitless axis — no string id AND no unit — is caught in ``render_chart``
+    before this function is reached.
+    """
+    if not label_id:
+        return ""
+    # MissingMessageError is a RenderFailedError subclass, so this naturally
+    # raises RENDER_FAILED if the catalog has no value.
+    return messages.text(label_id)
+
+
 def _colour_for(series: Series, siblings: tuple[str, ...], node: Chart, theme: str) -> str:
     """The concrete colour for one series, from the node's **declared** encoding.
 
@@ -400,8 +498,30 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
     (Req 22.6), which is what keeps a float off the path from a snapshot value to a
     displayed string.
     """
-    axes.set_title(node.title)
-    axes.set_ylabel(node.unit)
+    # --- Axis titles (Req 17.1, 17.11) ----------------------------------------
+    # Resolved from the message catalog. An absent id with a unit is acceptable;
+    # a present id with no catalog value raises RENDER_FAILED.
+    x_axis_title = _resolve_axis_title(node.x_axis_label_id, node=node, axis="x", messages=messages)
+    y_axis_title = _resolve_axis_title(node.y_axis_label_id, node=node, axis="y", messages=messages)
+
+    # --- Chart title with period (Req 17.5) ------------------------------------
+    title_text = node.title
+    if node.period_label:
+        title_text = f"{node.title}\n{node.period_label}"
+
+    axes.set_title(title_text, fontfamily=style.CHART_FONT, fontsize=style.CHART_TITLE_SIZE)
+
+    # Y-axis: combine title and unit
+    if y_axis_title:
+        axes.set_ylabel(f"{y_axis_title} ({node.unit})")
+    else:
+        axes.set_ylabel(node.unit)
+
+    # X-axis: title if present
+    if x_axis_title:
+        axes.set_xlabel(x_axis_title)
+
+    # --- Gridlines (Req 17.2) -------------------------------------------------
     axes.grid(True, axis="y", color=style.grid_color(theme), linewidth=style.CHART_GRID_WIDTH)
     axes.tick_params(colors=style.axis_label_color(theme))
     for spine in axes.spines.values():
@@ -431,6 +551,9 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
         # The one float boundary in this module.
         values = [float(Decimal(str(point.y.value))) for point in series.points]
 
+        # Determine which points get direct labels (Req 17.4)
+        labelled = label_indices(series.points)
+
         if node.chart_type in ("line", "area"):
             marker = style.marker_for_key(series.key, siblings)
             dashes = style.dash_for_key(series.key, siblings)
@@ -455,6 +578,20 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
                 va="center",
                 fontsize=style.CHART_LABEL_SIZE,
             )
+            # Direct value labels at labelled indices (Req 17.4)
+            for index in sorted(labelled):
+                if index < len(values):
+                    axes.annotate(
+                        series.points[index].y.formatted,
+                        xy=(index, values[index]),
+                        xytext=(0, 5),
+                        textcoords="offset points",
+                        ha="center",
+                        va="bottom",
+                        color=style.axis_label_color(theme),
+                        fontsize=style.CHART_LABEL_SIZE,
+                        fontfamily="monospace",
+                    )
             axes.set_xticks(range(len(labels)))
             axes.set_xticklabels(labels, rotation=45, ha="right")
         else:
@@ -469,8 +606,12 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
                 axes.bar(positions, values, width=width, color=colour, label=series.label)
                 axes.set_xticks(range(len(labels)))
                 axes.set_xticklabels(labels, rotation=45, ha="right")
-            # Req 22.10 — a direct value label on every bar.
-            for position, value, point in zip(positions, values, series.points, strict=True):
+            # Req 17.4 — a direct value label on labelled bars.
+            for index, (position, value, point) in enumerate(
+                zip(positions, values, series.points, strict=True)
+            ):
+                if index not in labelled:
+                    continue
                 axes.annotate(
                     point.y.formatted,
                     xy=(value, position) if horizontal else (position, value),
@@ -480,7 +621,16 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
                     va="center" if horizontal else "bottom",
                     color=style.axis_label_color(theme),
                     fontsize=style.CHART_LABEL_SIZE,
+                    fontfamily="monospace",
                 )
+
+    # --- Legend (Req 17.3) — only when more than one series --------------------
+    if len(series_set) > 1:
+        axes.legend(
+            loc="upper right",
+            fontsize=style.CHART_LABEL_SIZE,
+            framealpha=0.8,
+        )
 
     # Fixed rather than tight_layout(): `tight_layout` measures rendered text, so its result
     # depends on font metrics and would make the emitted bytes host-dependent.

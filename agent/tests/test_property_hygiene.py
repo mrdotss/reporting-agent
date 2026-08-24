@@ -177,6 +177,12 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
     # - test_zero_facts_emits_empty_array: resource with zero facts → "facts": [];
     # - test_fold_count_one_per_object: storage account with zero reservation gaps.
     "test_facts_property.py": 6,
+    # breadth Property 2. Fifteen: the two format pairs x the three values the task
+    # declares as CORRECT outputs rather than failures (`0,58%` and `462,81 GB` among
+    # them), plus the schema_version 1 case asserting the `en` defaults resolve to `.`
+    # and `,`. Attached rather than left to generation because the point of each is a
+    # specific separator pair a random draw would reach only by luck.
+    "test_number_format_property.py": 14,
     # breadth Property 6. Twenty-four: the seven the task declares — `Succeeded`,
     # `Failed`, `Standard_D4s_v3`, `10.0.0.4`, `Windows Server 2022`, `10.0.0.0/16` and
     # the `Succeeded` -> `Failed` mutation — plus the per-pool and per-mutation cases the
@@ -188,7 +194,7 @@ MINIMUM_DECLARED_EXAMPLES: dict[str, int] = {
 # The sum of the map, restated so the total is pinned as well as each part. Recorded from
 # the tree rather than computed from the map, so a whole entry deleted from the map is
 # caught by the same assertion that catches an example deleted from a module.
-MINIMUM_DECLARED_EXAMPLES_TOTAL = 144
+MINIMUM_DECLARED_EXAMPLES_TOTAL = 158
 
 
 # --------------------------------------------------------------------------- #

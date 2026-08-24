@@ -141,6 +141,7 @@ export const BLOCK_TYPE_LABELS = {
   page_break: "Page break",
   heading: "Heading",
   rich_text: "Rich text",
+  historical_trend: "Historical trend",
 } as const satisfies Record<BlockType, string>
 
 /** The label for `type`, or the raw type for an undeclared one. */

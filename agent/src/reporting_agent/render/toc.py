@@ -83,6 +83,11 @@ __all__ = [
     "TOC_APPROACH_LIBREOFFICE_INDEX",
     "TOC_APPROACH_NONE",
     "TOC_APPROACH_TWO_PASS",
+    "TOC_HEADING_STYLES",
+    "TOC_LABEL_ID",
+    "apply_toc_page_numbers",
+    "should_emit_toc",
+    "toc_entries_from_document",
 ]
 
 # --- the candidate set (Req 14.1) ----------------------------------------------------
@@ -155,3 +160,232 @@ content: the two-pass approach performs **two** LibreOffice conversions, each bo
 correctly."""
 
 assert ADOPTED_APPROACH in TOC_APPROACHES
+
+
+
+# --- the builder (Req 14.3, 14.4, 14.5, 14.11) ------------------------------------
+#
+# Emits a table of contents ONLY where ADOPTED_APPROACH names a candidate the evaluation
+# recorded `correct`. Where it is `none`, emits NO table of contents at all and no
+# page-number position anywhere.
+
+# Heading styles eligible for the TOC: levels 1 through 3 only (Req 14.11).
+TOC_HEADING_STYLES: Final[frozenset[str]] = frozenset(
+    {"Heading 1", "Heading 2", "Heading 3"}
+)
+
+TOC_LABEL_ID: Final[str] = "doc.front_matter.toc_heading"
+"""The string id for the TOC section heading, resolved through the message catalog."""
+
+
+def should_emit_toc() -> bool:
+    """Whether a table of contents should be emitted (Req 14.3).
+
+    True only where ADOPTED_APPROACH names a candidate whose evaluation verdict was
+    ``correct``. Where it is ``none``, no TOC is emitted at all.
+    """
+    return ADOPTED_APPROACH != TOC_APPROACH_NONE
+
+
+def toc_entries_from_document(document: object) -> tuple[tuple[str, int], ...]:
+    """Extract heading entries from a compiled Document for the TOC (Req 14.5, 14.11).
+
+    Returns a tuple of ``(heading_text, level)`` pairs in document order, for headings
+    at levels 1 through 3 only.  Deeper headings are excluded.
+
+    ``level`` is 1, 2 or 3 corresponding to ``Heading 1``, ``Heading 2``, ``Heading 3``.
+    """
+    from reporting_agent.compile.ast import Document as CompiledDocument, Paragraph, Text, Figure
+
+    if not isinstance(document, CompiledDocument):
+        return ()
+
+    _LEVEL_MAP = {"Heading 1": 1, "Heading 2": 2, "Heading 3": 3}
+    entries: list[tuple[str, int]] = []
+
+    for block in document.blocks:
+        if isinstance(block, Paragraph) and block.style in TOC_HEADING_STYLES:
+            text_parts: list[str] = []
+            for inline in block.inlines:
+                if isinstance(inline, Text):
+                    text_parts.append(inline.text)
+                elif isinstance(inline, Figure):
+                    text_parts.append(inline.formatted or "")
+            heading_text = "".join(text_parts).strip()
+            if heading_text:
+                level = _LEVEL_MAP[block.style]
+                entries.append((heading_text, level))
+
+    return tuple(entries)
+
+
+
+# --- the two-pass production builder (Req 14.3, 14.4, 14.5) -----------------------
+
+def apply_toc_page_numbers(
+    docx_bytes: bytes,
+    *,
+    headings: tuple[str, ...],
+) -> tuple[bytes, bytes]:
+    """Two-pass TOC page-number resolution (Req 14.3, 14.4, 14.5).
+
+    Takes the rendered ``.docx`` bytes — which already carry the TOC section from
+    ``emit_front_matter`` with headings but no page numbers — and applies the two-pass
+    approach that the evaluation recorded as ``correct``:
+
+    1. Convert pass 1 to PDF and measure which page each heading landed on.
+    2. Re-emit the TOC entries with those measured numbers as literal text.
+    3. Convert again — this is pass 2, whose PDF is the artifact.
+
+    Returns ``(final_docx_bytes, final_pdf_bytes)``.
+
+    Raises :class:`~reporting_agent.errors.RenderFailedError` if the approach is ``none``
+    (the caller should check :func:`should_emit_toc` first).
+
+    Uses the same mechanics as ``toc_harness._prepend_toc`` and the same heading-finding
+    logic as ``toc_harness._observed_pages``, brought into production for real delivery.
+    """
+    import io
+    import re
+
+    from docx.enum.text import WD_BREAK
+
+    from reporting_agent.render.pdf import convert_to_pdf
+    from reporting_agent.render.themes import TOC_ENTRY_STYLE
+    from reporting_agent.verify.tokens import pdf_page_texts
+
+    if ADOPTED_APPROACH == TOC_APPROACH_NONE:
+        from reporting_agent.errors import RenderFailedError
+        raise RenderFailedError(
+            "apply_toc_page_numbers called but ADOPTED_APPROACH is 'none'; "
+            "the caller must check should_emit_toc() first"
+        )
+
+    # --- Pass 1: convert the document with empty page-number positions ---------------
+    pass1_pdf = convert_to_pdf(docx_bytes)
+
+    import tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        tmp.write(pass1_pdf.pdf_bytes)
+        tmp.flush()
+        pages = pdf_page_texts(tmp.name)
+
+    # Identify TOC pages (where multiple headings appear with numbers or without).
+    toc_page_indices = _identify_toc_pages(pages, headings)
+
+    # Measure where each heading actually landed (first character page).
+    measured: dict[str, int] = {}
+    for heading in headings:
+        page = _find_heading_page(pages, heading, toc_page_indices)
+        if page is not None:
+            measured[heading] = page
+
+    # --- Pass 2: re-emit the TOC section with measured page numbers ------------------
+    from docx import Document as open_docx_cls
+
+    document = open_docx_cls(io.BytesIO(docx_bytes))
+    body = document.element.body
+
+    from docx.oxml.ns import qn
+    w_p = qn("w:p")
+    w_ppr = qn("w:pPr")
+    w_pstyle = qn("w:pStyle")
+    w_val = qn("w:val")
+    w_t = qn("w:t")
+    w_r = qn("w:r")
+    w_tab = qn("w:tab")
+
+    # Find TOC entry paragraphs (styled TOC_ENTRY_STYLE) and fill page numbers.
+    for p_element in body.iter(w_p):
+        ppr = p_element.find(w_ppr)
+        if ppr is None:
+            continue
+        pstyle = ppr.find(w_pstyle)
+        if pstyle is None:
+            continue
+        style_val = pstyle.get(w_val, "")
+        if style_val != TOC_ENTRY_STYLE:
+            continue
+
+        # Read the heading text from this entry (the runs before the tab).
+        entry_text_parts: list[str] = []
+        for r_el in p_element.findall(w_r):
+            # Stop at the tab run.
+            if r_el.find(w_tab) is not None:
+                break
+            for t_el in r_el.findall(w_t):
+                if t_el.text:
+                    entry_text_parts.append(t_el.text)
+        entry_text = "".join(entry_text_parts).strip()
+
+        if entry_text in measured:
+            # Find the last run (after the tab) and set the page number.
+            runs = p_element.findall(w_r)
+            # The pattern from _prepend_toc: text run, tab run, then optionally a
+            # number run. We need to add a number run after the tab.
+            # Find the tab run.
+            tab_found = False
+            for r_el in runs:
+                if r_el.find(w_tab) is not None:
+                    tab_found = True
+                    continue
+                if tab_found:
+                    # There's already a run after the tab — update it.
+                    for t_el in r_el.findall(w_t):
+                        t_el.text = str(measured[entry_text])
+                    break
+            else:
+                if tab_found:
+                    # No run after tab — create one.
+                    from lxml import etree
+                    new_run = etree.SubElement(p_element, w_r)
+                    new_t = etree.SubElement(new_run, w_t)
+                    new_t.text = str(measured[entry_text])
+
+    buffer = io.BytesIO()
+    document.save(buffer)
+    final_docx_bytes = buffer.getvalue()
+
+    # Convert pass 2
+    pass2_pdf = convert_to_pdf(final_docx_bytes)
+
+    return final_docx_bytes, pass2_pdf.pdf_bytes
+
+
+def _identify_toc_pages(
+    pages: tuple[str, ...], headings: tuple[str, ...]
+) -> frozenset[int]:
+    """Identify 0-based page indices that are the TOC section."""
+    import re
+    indices: set[int] = set()
+    for index, page_text in enumerate(pages):
+        count = 0
+        for heading in headings:
+            # A heading followed by optional leader + optional digits.
+            if heading in page_text:
+                count += 1
+        if count >= 2:
+            indices.add(index)
+    return frozenset(indices)
+
+
+def _find_heading_page(
+    pages: tuple[str, ...], text: str, toc_page_indices: frozenset[int]
+) -> int | None:
+    """The 1-based page carrying text's first rendered character, skipping TOC pages."""
+    for index, page_text in enumerate(pages):
+        if index in toc_page_indices:
+            continue
+        if text in page_text:
+            return index + 1
+    # Prefix fallback for page-straddling headings.
+    for length in range(len(text) - 1, 0, -1):
+        prefix = text[:length].strip()
+        if not prefix:
+            break
+        for index, page_text in enumerate(pages):
+            if index in toc_page_indices:
+                continue
+            if page_text.endswith(prefix):
+                return index + 1
+    return None

@@ -165,6 +165,15 @@
       "type": "row"
     },
     {
+      "config": {
+        "metric": "Percentage CPU",
+        "statistic": "avg",
+        "lookback": 6
+      },
+      "id": "b-historical",
+      "type": "historical_trend"
+    },
+    {
       "config": {},
       "id": "b-methodology",
       "type": "appendix_methodology"

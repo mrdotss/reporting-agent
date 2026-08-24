@@ -180,6 +180,16 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
    */
   "test/property/config-options.property.test.ts": 3,
   /**
+   * breadth Property 4 (`gap_grouping_lossless`). Four, shared by all five of that
+   * module's properties and counted once: the 512-entry shape a live run actually
+   * produced (8 metrics of 1 resource in one gapType, asserting at most 9 rows before
+   * expansion while the counts still sum to 512), an entry carrying a null metric, an
+   * entry carrying an empty resourceId, and a group whose starts are one grain step
+   * apart except for one hole — the case that must record NO range. Each pins a
+   * totality rule a random draw reaches only by luck.
+   */
+  "test/property/gap-groups.property.test.ts": 4,
+  /**
    * breadth Property 7 (`scope_stays_a_rule`). Two, exactly the two the task
    * declares: an inventory whose resource group name contains a
    * subscription-like identifier substring, and a definition carrying a
@@ -198,7 +208,7 @@ const MINIMUM_DECLARED_CASES: Readonly<Record<string, number>> = {
 }
 
 /** Recorded from the tree, so deleting a whole entry above is caught too. */
-const MINIMUM_DECLARED_CASES_TOTAL = 59
+const MINIMUM_DECLARED_CASES_TOTAL = 63
 
 /**
  * Requirement 42.7 — modifiers that stop a property from running or accept its

@@ -554,6 +554,8 @@ class BlockCursor:
         *,
         catalog_scale: int | _Unset | None = UNSET,
         number_format: NumberFormat | None = None,
+        source_run_id: str | None = None,
+        source_snapshot_sha256: str | None = None,
     ) -> Figure:
         """Mint the figure at this cursor's path, and record it. **The only factory.**
 
@@ -644,6 +646,8 @@ class BlockCursor:
                 for source in snapshot_value.derived_from
             ),
             formula=snapshot_value.formula or None,
+            source_run_id=source_run_id,
+            source_snapshot_sha256=source_snapshot_sha256,
         )
 
         self.ledger.insert(figure)
