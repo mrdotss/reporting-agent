@@ -47,8 +47,10 @@ from reporting_agent.compile.blocks.base import (
     BlockSpec,
     Deferred,
     DesignSettings,
+    HistoricalSelectionKey,
     ProseProvider,
 )
+from reporting_agent.compile.historical import Selection
 from reporting_agent.compile.blocks.structure import (
     compile_cover,
     compile_heading,
@@ -202,6 +204,8 @@ def compile_document(
     subscription_display_name: str = "",
     prose: ProseProvider | None = None,
     comparison_source: object | None = None,
+    historical: object | None = None,
+    historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     catalog_scales: Mapping[str, int] | None = None,
 ) -> CompiledDocument:
     """Compile a validated definition against one snapshot.
@@ -253,6 +257,8 @@ def compile_document(
         metrics=dict(metrics_raw) if isinstance(metrics_raw, Mapping) else {},
         prose=prose,
         comparison=comparison_source,  # type: ignore[arg-type]
+        historical=historical,  # type: ignore[arg-type]
+        historical_selections=historical_selections,
         catalog_scales=catalog_scales,
     )
 

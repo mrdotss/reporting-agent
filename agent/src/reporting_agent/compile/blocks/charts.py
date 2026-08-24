@@ -151,11 +151,18 @@ def compile_historical_trend(
         )
     lookback: int = lookback_raw
 
-    # Get the selection result from context. If no historical source is available,
-    # the block emits zero points (normal compile outcome).
-    selection: Selection | None = getattr(context, "_historical_selection", None)
-    if selection is None:
-        selection = Selection(selected=(), exclusions=())
+    # Which prior runs to plot is decided upstream, where the payload's candidate list and
+    # the prior snapshots are reachable, and handed down as data — this stage holds no
+    # client and no network. Keyed by this block's own config, so a second
+    # `historical_trend` block on a different metric gets its own selection rather than
+    # inheriting this one's.
+    #
+    # A missing selection means no caller supplied one. The block then plots nothing and
+    # says so below; it never vanishes.
+    selections = context.historical_selections or {}
+    selection: Selection = selections.get(
+        (metric, statistic, lookback)
+    ) or Selection(selected=(), exclusions=())
 
     selected = selection.selected
 

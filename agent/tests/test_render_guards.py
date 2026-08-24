@@ -503,13 +503,16 @@ def _compile_and_render_historical_trend_with_points():
         exclusions=(),
     )
 
-    # Build a context with _historical_selection accessible: use a wrapper
+    # The selection travels on the context as a real, typed field, keyed by this block's
+    # own (metric, statistic, lookback). It used to be read off `_historical_selection`,
+    # an attribute nothing could set — which forced this guard to build a proxy object to
+    # fake it. A guard that fakes an unsettable attribute passes whether or not production
+    # can supply the value, so the proxy is gone and this now exercises the real path.
     ledger = FigureLedger()
     design = DesignSettings.from_plain(DEFAULT_DESIGN)
     default_scope = scope_rules_from_plain(df.scope())
 
-    # Create a normal BlockContext, then wrap it in a proxy that adds the attribute
-    real_context = BlockContext(
+    context = BlockContext(
         view=current_view,
         ledger=ledger,
         design=design,
@@ -517,20 +520,8 @@ def _compile_and_render_historical_trend_with_points():
         messages=_MESSAGES,
         metrics={sf.VM_TYPE: [df.CPU_AVG]},
         historical=historical_source,
+        historical_selections={(sf.CPU, "avg", 6): selection},
     )
-
-    # Proxy that delegates everything to real_context but adds _historical_selection
-    class ContextProxy:
-        def __init__(self, ctx, sel):
-            object.__setattr__(self, '_ctx', ctx)
-            object.__setattr__(self, '_historical_selection', sel)
-
-        def __getattr__(self, name):
-            if name == '_historical_selection':
-                return object.__getattribute__(self, '_historical_selection')
-            return getattr(object.__getattribute__(self, '_ctx'), name)
-
-    proxy = ContextProxy(real_context, selection)
 
     block_spec = BlockSpec(
         id="ht",
@@ -541,7 +532,7 @@ def _compile_and_render_historical_trend_with_points():
     cursor = BlockCursor(block_id="ht", ledger=ledger)
 
     with compiling_against(current_view):
-        output = compile_historical_trend(proxy, block_spec, cursor)
+        output = compile_historical_trend(context, block_spec, cursor)
 
     # Build a Document from the output and render it
     document = Document(blocks=output.nodes)

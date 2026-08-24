@@ -64,6 +64,7 @@ from reporting_agent.compile.ast import (
 from reporting_agent.compile.estimators import COMPARE_ESTIMATORS, DECLARED_ESTIMATORS
 from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.format import NumberFormat, number_format_from_definition
+from reporting_agent.compile.historical import Selection
 from reporting_agent.compile.messages import Messages, load_messages
 from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import (
@@ -445,6 +446,15 @@ class HistoricalSource(Protocol):
     def snapshot_view_for(self, run_id: str) -> SnapshotView | None: ...
 
 
+HistoricalSelectionKey = tuple[str, str, int]
+"""`(metric, statistic, lookback)` — the config a `historical_trend` block selects on.
+
+The key is the block's own three config values rather than its block id, so two blocks
+asking for the same metric, statistic and lookback share one selection instead of paying
+for the same prior-snapshot reads twice.
+"""
+
+
 @dataclass(frozen=True, slots=True)
 class Deferred:
     """A block that cannot be finished until every other block has compiled (Req 16.12).
@@ -523,6 +533,32 @@ class BlockContext:
     prose: ProseProvider | None = None
     comparison: ComparisonSource | None = None
     historical: HistoricalSource | None = None
+    historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None
+    """Which prior runs each `historical_trend` block plots, decided upstream.
+
+    Keyed by `(metric, statistic, lookback)` — the three config values the selector reads —
+    because a definition may hold **several** `historical_trend` blocks and nothing
+    restricts them to one metric. A single `Selection` on this context would silently give
+    the second block the first block's prior runs.
+
+    **Why this is data rather than something the block computes.** Choosing the prior runs
+    needs the candidate list from the invoke payload and each candidate's stored snapshot,
+    which is object-store I/O — and this dataclass holds no client, no clock and no network,
+    so replay re-runs the stage over stored inputs and produces a bit-identical ledger.
+    `report_pipeline.select_historical_runs` does the fetching and hands the pure
+    `compile/historical.py::select` result down as a value, the same "caller fetches, pure
+    module folds" split `prose` and `comparison` already follow.
+
+    `None` — the default — means no caller supplied a selection, and every
+    `historical_trend` block then plots nothing. That is a normal compile outcome, not a
+    failure: the block still emits its "no prior runs" statement rather than vanishing.
+
+    This replaced a `getattr(context, "_historical_selection", None)` read against an
+    attribute nothing could ever set: there was no writer anywhere in the tree, and a
+    frozen `slots=True` dataclass has no `__dict__`, so it resolved to `None` in every run
+    and the selection path was unreachable code. A guard rendering the block had to build a
+    proxy object to fake the attribute, which is how long an unsettable read can survive.
+    """
     catalog_scales: Mapping[str, int] | None = None
     """Per-metric fractional-digit counts, when a caller has the loaded catalog to hand.
 
