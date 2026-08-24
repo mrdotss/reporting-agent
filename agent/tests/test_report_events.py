@@ -141,8 +141,9 @@ def test_the_inventory_listing_command_adds_no_event_type_either() -> None:
     assert types_of(events) == ["done"], "nothing precedes and nothing follows `done`"
     done = one(events, "done")
     assert done["status"] == "completed"
-    # The four dimension keys reach `done`, and every emitted type is still declared.
-    assert {"resource_types", "resource_groups", "tag_keys", "tag_values"} <= set(done)
+    # The four dimension keys reach `done`, and NOTHING ELSE — exact equality, not subset,
+    # so a new key (legitimate or leaked) forces a deliberate edit here (Req 15.11).
+    assert set(done) == {"type", "run_id", "status", "resource_types", "resource_groups", "tag_keys", "tag_values"}
     assert done["tag_values"]["truncated"] is True
     for kind in types_of(events):
         assert kind in EVENT_TYPES
@@ -314,3 +315,106 @@ def test_the_declared_heartbeat_constants_bound_the_relays_window() -> None:
     assert HEARTBEAT_TOLERANCE_S == 5.0
     assert HEARTBEAT_INTERVAL_S + HEARTBEAT_TOLERANCE_S <= MAX_EVENT_GAP_S
     assert MAX_EVENT_GAP_S <= 30.0
+
+
+# --------------------------------------------------------------------------- #
+# Positive secret guard (Req 15.11) — no event carries a secret key or value
+# --------------------------------------------------------------------------- #
+
+# The canonical secret identifiers, reusing the same key names and distinctive values
+# as `test_run_wiring.py`'s Req 15.6 integration gate.  Values are long and
+# distinctive enough that a match in the serialized event stream cannot be a
+# coincidence.
+_SECRET_KEYS: Final[frozenset[str]] = frozenset(
+    {"progress_token", "client_secret", "tenant_id", "client_id"}
+)
+_SECRET_VALUES: Final[tuple[tuple[str, str], ...]] = (
+    ("client_secret", "not-a-real-client-secret-Zq7Z~x0LmN4pR8sT2vW6yA9cE3gH5jK"),
+    ("progress_token", "not-a-real-progress-token-b7e2d4c6a8f0192837465564738291a0"),
+    ("tenant_id", "tenant-0d4f1a2b-not-a-real-tenant-id"),
+    ("client_id", "client-9e8d7c6b-not-a-real-client-id"),
+)
+
+
+def _assert_no_secret_in_events(events: list[dict[str, Any]]) -> None:
+    """Assert no event carries a secret field name as a key or a secret value anywhere.
+
+    Checks both keys (a token leaked under an innocuous name is still a breach) and
+    values (serialized to catch nesting at any depth).
+    """
+    import json
+
+    serialized = json.dumps(events)
+    for name, value in _SECRET_VALUES:
+        assert value not in serialized, (
+            f"secret value of {name!r} appeared in serialized events"
+        )
+    for event in events:
+        leaked_keys = _SECRET_KEYS & set(event)
+        assert not leaked_keys, (
+            f"secret key(s) {leaked_keys} appeared as top-level event keys in "
+            f"event type={event.get('type')!r}"
+        )
+
+
+def test_no_secret_key_or_value_reaches_any_event_on_list_inventory() -> None:
+    """Req 15.11 — positive guard: inject known secrets into the context and assert none
+    survive into any event. The subset-to-equality fix on `done`'s key set is the
+    structural guard; this is the value guard that catches a token leaked under an
+    innocuous key name."""
+    async def handler(invocation, steps) -> AsyncIterator[dict[str, Any]]:
+        del steps
+        invocation.outcome.update(
+            {
+                "resource_types": {"values": [], "truncated": False},
+                "resource_groups": {"values": [], "truncated": False},
+                "tag_keys": {"values": [], "truncated": False},
+                "tag_values": {"values": [], "truncated": False},
+            }
+        )
+        for event in ():
+            yield event
+
+    events = drain(
+        run_invocation(
+            parse_invocation(
+                payload(
+                    command=COMMAND_LIST_INVENTORY,
+                    context={
+                        "actor_id": "usr_01HQZX8QW9K7YB4T2C3M5N6P7Q",
+                        "subscription_id": "3f2b0000-0000-0000-0000-000000000000",
+                        "client_secret": _SECRET_VALUES[0][1],
+                        "progress_token": _SECRET_VALUES[1][1],
+                        "tenant_id": _SECRET_VALUES[2][1],
+                        "client_id": _SECRET_VALUES[3][1],
+                    },
+                )
+            ),
+            handlers={COMMAND_LIST_INVENTORY: handler},
+        )
+    )
+
+    _assert_no_secret_in_events(events)
+
+
+def test_no_secret_key_or_value_reaches_any_event_on_generate_report() -> None:
+    """Same guard for the generate_report path."""
+    events = drain(
+        run_invocation(
+            parse_invocation(
+                payload(
+                    context={
+                        "actor_id": "usr_01HQZX8QW9K7YB4T2C3M5N6P7Q",
+                        "subscription_id": "3f2b0000-0000-0000-0000-000000000000",
+                        "client_secret": _SECRET_VALUES[0][1],
+                        "progress_token": _SECRET_VALUES[1][1],
+                        "tenant_id": _SECRET_VALUES[2][1],
+                        "client_id": _SECRET_VALUES[3][1],
+                    },
+                )
+            ),
+            handlers={COMMAND_GENERATE_REPORT: handler_yielding()},
+        )
+    )
+
+    _assert_no_secret_in_events(events)

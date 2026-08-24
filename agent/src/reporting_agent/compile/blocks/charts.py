@@ -272,9 +272,9 @@ def _find_historical_value(
     snapshot exposes for this (metric, statistic) pair.
     """
     for resource in view.resources:
-        for stat in resource.statistics:
-            if stat.metric == metric and stat.statistic == statistic:
-                return stat
+        value = view.stat(resource.resource_id, metric, statistic)
+        if value is not None:
+            return value
     return None
 
 

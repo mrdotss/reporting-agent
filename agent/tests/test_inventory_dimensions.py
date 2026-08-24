@@ -518,7 +518,7 @@ def test_the_four_dimension_keys_reach_done() -> None:
     assert types_of(events) == ["tool", "tool", "done"]
     done = one(events, "done")
     assert done["status"] == "completed"
-    assert set(INVENTORY_DIMENSIONS) <= set(done)
+    assert set(done) == {"type", "run_id", "status"} | set(INVENTORY_DIMENSIONS)
     assert done["tag_values"] == {"values": ["dev", "prod"], "truncated": False}
     assert done["resource_types"] == {
         "values": ["Microsoft.Compute/virtualMachines"],
@@ -756,3 +756,61 @@ def test_a_list_inventory_payload_with_no_subscription_id_builds_no_client_at_al
 
     for name in INVENTORY_DIMENSIONS:
         assert name not in one(events, "done")
+
+
+# --------------------------------------------------------------------------- #
+# Positive secret guard (Req 15.11) — no event carries a secret key or value
+# --------------------------------------------------------------------------- #
+
+# The canonical secret identifiers, reusing the same key names and distinctive values
+# as `test_run_wiring.py`'s Req 15.6 integration gate.
+_SECRET_KEYS: Final[frozenset[str]] = frozenset(
+    {"progress_token", "client_secret", "tenant_id", "client_id"}
+)
+_SECRET_VALUES: Final[tuple[tuple[str, str], ...]] = (
+    ("client_secret", "not-a-real-client-secret-Zq7Z~x0LmN4pR8sT2vW6yA9cE3gH5jK"),
+    ("progress_token", "not-a-real-progress-token-b7e2d4c6a8f0192837465564738291a0"),
+    ("tenant_id", "tenant-0d4f1a2b-not-a-real-tenant-id"),
+    ("client_id", "client-9e8d7c6b-not-a-real-client-id"),
+)
+
+
+def _assert_no_secret_in_events(events: list[dict[str, Any]]) -> None:
+    """Assert no event carries a secret field name as a key or a secret value anywhere."""
+    import json
+
+    serialized = json.dumps(events)
+    for name, value in _SECRET_VALUES:
+        assert value not in serialized, (
+            f"secret value of {name!r} appeared in serialized events"
+        )
+    for event in events:
+        leaked_keys = _SECRET_KEYS & set(event)
+        assert not leaked_keys, (
+            f"secret key(s) {leaked_keys} appeared as top-level event keys in "
+            f"event type={event.get('type')!r}"
+        )
+
+
+def test_no_secret_key_or_value_reaches_any_event_on_list_inventory() -> None:
+    """Req 15.11 — positive guard: inject known secrets into the context and assert none
+    survive into any event, either as a key name or as a value at any depth."""
+    events = drain(
+        run_invocation(
+            parse_invocation(
+                payload(
+                    context={
+                        "actor_id": ACTOR,
+                        "subscription_id": SUBSCRIPTION,
+                        "client_secret": _SECRET_VALUES[0][1],
+                        "progress_token": _SECRET_VALUES[1][1],
+                        "tenant_id": _SECRET_VALUES[2][1],
+                        "client_id": _SECRET_VALUES[3][1],
+                    },
+                )
+            ),
+            handlers={COMMAND_LIST_INVENTORY: stub_handler(aggregate())},
+        )
+    )
+
+    _assert_no_secret_in_events(events)
