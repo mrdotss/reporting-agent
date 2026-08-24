@@ -109,6 +109,52 @@ class TestLiteralsEntryPoint:
         assert "OTHER_SERIES_LABEL" in details
         assert "PREVIEW_NOTICE_TEXT" in details
 
+    def test_the_scanner_detects_unresolved_id_references(self, tmp_path: Path) -> None:
+        """The id-resolution guard detects an imported id constant used outside .text().
+
+        This is the guard-the-guard fixture for the id-resolution rule: the real tree is
+        clean (test_the_real_tree_is_clean) AND this proves the guard catches the exact
+        defect pattern that motivated it — an id-shaped constant emitted raw through a
+        generic writer.
+        """
+        from reporting_agent.compile.literals import run_guard
+
+        render_dir = tmp_path / "src" / "render"
+        render_dir.mkdir(parents=True)
+        blocks_dir = tmp_path / "src" / "compile" / "blocks"
+        blocks_dir.mkdir(parents=True)
+
+        # The motivating defect: EMPTY_SCOPE_TEXT used in an f-string
+        (render_dir / "html.py").write_text(
+            textwrap.dedent("""\
+                import html
+                from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
+
+                NOTICE_ROW_CLASS = "rpt-notice"
+
+                class Emitter:
+                    def chart(self, node):
+                        self.write(f'<p class="{NOTICE_ROW_CLASS}">{html.escape(EMPTY_SCOPE_TEXT)}</p>')
+            """),
+            encoding="utf-8",
+        )
+
+        (blocks_dir / "__init__.py").write_text("", encoding="utf-8")
+
+        offenders = run_guard(
+            render_root=render_dir,
+            compile_blocks_root=blocks_dir,
+            base=tmp_path,
+        )
+
+        # At least one offender must be the id-resolution violation
+        id_violations = [o for o in offenders if "outside .text()" in o[2]]
+        assert len(id_violations) == 1, (
+            f"Expected 1 id-resolution violation, got {len(id_violations)}:\n"
+            + "\n".join(f"  {p}:{l}: {d}" for p, l, d in offenders)
+        )
+        assert "EMPTY_SCOPE_TEXT" in id_violations[0][2]
+
     def test_entry_point_exits_zero_on_clean_tree(self, tmp_path: Path) -> None:
         """On a tree where every emitting site uses valid string ids, exit 0."""
         render_dir = tmp_path / "reporting_agent" / "render"

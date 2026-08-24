@@ -273,6 +273,178 @@ def _extract_string_value(node: ast.expr) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# Id-resolution guard: a message-id constant must only appear as a .text() arg
+# ---------------------------------------------------------------------------
+
+# Modules known to export id-shaped Final[str] constants matching _FINAL_NAME_RE.
+# The guard follows imports from these modules to identify id-shaped names in each file.
+_ID_EXPORTING_MODULES: Final[frozenset[str]] = frozenset(
+    {
+        "reporting_agent.compile.blocks.base",
+    }
+)
+
+
+def _is_text_call_arg(node: ast.Name, parent: ast.AST) -> bool:
+    """Return True if *node* appears as a positional argument to a `*.text(...)` call.
+
+    Acceptable patterns:
+        messages.text(NAME)
+        self.messages.text(NAME)
+        context.messages.text(NAME)
+        any_expr.text(NAME)
+        text(NAME)           # bare function named `text`
+    """
+    if not isinstance(parent, ast.Call):
+        return False
+    # Check that node is among the positional args of the call
+    if node not in parent.args:
+        return False
+    # Check the callable is `.text` or bare `text`
+    func = parent.func
+    if isinstance(func, ast.Attribute) and func.attr == "text":
+        return True
+    if isinstance(func, ast.Name) and func.id == "text":
+        return True
+    return False
+
+
+def _collect_id_shaped_names(tree: ast.AST) -> set[str]:
+    """Collect names in *tree* that are id-shaped message constants.
+
+    Two sources:
+    1. Local `Final[str]` definitions matching _FINAL_NAME_RE whose value is a valid id.
+    2. Imports from known id-exporting modules whose imported name matches _FINAL_NAME_RE.
+    """
+    names: set[str] = set()
+
+    for node in ast.iter_child_nodes(tree):
+        # Source 1: local definitions (same logic as _scan_final_str_names, but we collect
+        # the names whose values ARE valid ids — the inverse condition)
+        if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            name = node.target.id
+            if not _FINAL_NAME_RE.search(name):
+                continue
+            ann = node.annotation
+            is_final_str = (
+                isinstance(ann, ast.Subscript)
+                and isinstance(ann.value, ast.Name)
+                and ann.value.id == "Final"
+                and isinstance(ann.slice, ast.Name)
+                and ann.slice.id == "str"
+            )
+            if not is_final_str:
+                continue
+            if node.value is not None:
+                value_str = _extract_string_value(node.value)
+                if value_str is not None and _MESSAGE_ID_RE.match(value_str):
+                    names.add(name)
+
+        # Source 2: imports from known modules
+        if isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            # Match both absolute and relative tail
+            is_id_module = (
+                module in _ID_EXPORTING_MODULES
+                or module.endswith(".blocks.base")
+            )
+            if not is_id_module:
+                continue
+            for alias in node.names:
+                imported_name = alias.asname if alias.asname else alias.name
+                if _FINAL_NAME_RE.search(imported_name):
+                    names.add(imported_name)
+
+    return names
+
+
+def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
+    """Map id(child) -> parent for every node in tree."""
+    parents: dict[int, ast.AST] = {}
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            parents[id(child)] = node
+    return parents
+
+
+def _scan_unresolved_id_references(
+    tree: ast.AST, path: Path, *, base: Path
+) -> list[Offender]:
+    """Find references to id-shaped constants that are NOT passed to a .text() call.
+
+    The rule: a reference to an id-shaped Final[str] constant must appear only as an
+    argument to a message-resolution call (.text(NAME)), and never in any other expression
+    position. An id is a thing you resolve, never a thing you emit.
+    """
+    id_names = _collect_id_shaped_names(tree)
+    if not id_names:
+        return []
+
+    try:
+        rel = path.relative_to(base).as_posix()
+    except ValueError:
+        rel = str(path)
+
+    parent_map = _build_parent_map(tree)
+    offenders: list[Offender] = []
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Name):
+            continue
+        if node.id not in id_names:
+            continue
+        # Skip the definition site itself (AnnAssign target or import)
+        parent = parent_map.get(id(node))
+        if parent is None:
+            continue
+        if isinstance(parent, ast.AnnAssign) and parent.target is node:
+            continue
+        if isinstance(parent, (ast.Import, ast.ImportFrom, ast.alias)):
+            continue
+
+        # Check if this is a .text() argument
+        if _is_text_call_arg(node, parent):
+            continue
+
+        offenders.append(
+            (rel, node.lineno, f"id-constant {node.id!r} used outside .text() resolution")
+        )
+
+    return offenders
+
+
+def run_id_resolution_guard(
+    *,
+    render_root: Path | None = None,
+    compile_blocks_root: Path | None = None,
+    base: Path | None = None,
+) -> list[Offender]:
+    """Run the id-resolution guard over render/** and compile/blocks/**.
+
+    Checks that every reference to an id-shaped message constant appears only as an
+    argument to a .text() call. Parameters allow overriding roots for testing.
+    """
+    r_root = render_root or RENDER_ROOT
+    cb_root = compile_blocks_root or COMPILE_BLOCKS_ROOT
+    resolve_base = base or SRC_ROOT.parent
+
+    all_offenders: list[Offender] = []
+
+    files: list[Path] = []
+    for d in [r_root, cb_root]:
+        if d.is_dir():
+            files.extend(_source_files(d))
+
+    for path in files:
+        tree = _parse(path)
+        all_offenders.extend(
+            _scan_unresolved_id_references(tree, path, base=resolve_base)
+        )
+
+    return all_offenders
+
+
+# ---------------------------------------------------------------------------
 # The guard guards itself
 # ---------------------------------------------------------------------------
 
@@ -356,6 +528,7 @@ def run_guard(
         all_offenders.extend(_scan_call_sites(tree, path, base=resolve_base))
         all_offenders.extend(_scan_dot_text_assignments(tree, path, base=resolve_base))
         all_offenders.extend(_scan_final_str_names(tree, path, base=resolve_base))
+        all_offenders.extend(_scan_unresolved_id_references(tree, path, base=resolve_base))
 
     return all_offenders
 
@@ -412,7 +585,7 @@ def _main(argv: Sequence[str]) -> int:
     if offenders:
         lines = [f"  {path}:{line}: {detail}" for path, line, detail in offenders]
         print(
-            f"FAIL: {len(offenders)} English literal(s) at text-emitting sites:\n"
+            f"FAIL: {len(offenders)} literal/id-resolution violation(s):\n"
             + "\n".join(lines),
             file=sys.stderr,
         )
