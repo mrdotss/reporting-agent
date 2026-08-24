@@ -550,6 +550,16 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Kills: a selector filtering on `status` alone, which admits a completed run whose verification failed; one taking the newest N **before** filtering, which returns fewer than N eligible while eligible older runs exist; one admitting overlapping periods, which plots one interval twice as two periods; one padding to the lookback, which fabricates a period; one whose order depends on the query's row order; one keyed on the identical `template_version_id`, which empties every trend on the next template edit; one that silently drops an ineligible candidate without recording why
     - _Requirements: 18.4, 18.5, 18.6, 18.7, 18.10, 18.13, 18.14, 18.15, 19.1, 19.3, 19.4, 25.1, 25.3, 25.4, 25.5, 25.8, 25.10_
 
+  - [ ] 11.6 Activate the `historical_trend` block on the delivered path, and pin its selection
+    - **The block has emitted zero points in every run since task 11.3 shipped it.** Not a dark branch — a dark feature, behind a registered compiler, a validator fixture and passing compile tests. Three separate breaks, each individually invisible: `compile_document` had no `historical` parameter at all, so `BlockContext.historical` defaulted to `None` at all five of its call sites; the block read its selection off `getattr(context, "_historical_selection", None)`, a name appearing exactly once in the tree — that read — with no writer, on a `frozen=True, slots=True` dataclass that has no `__dict__` and so could not carry it; and `report_pipeline.select_historical_runs`, written for exactly this and exported in `__all__`, is called by nothing. Commit `d2fad23` fixed the middle break — the selection is now a real `BlockContext.historical_selections` field keyed by `(metric, statistic, lookback)`, since nothing restricts a definition to one `historical_trend` block and one selection per document would hand the second block the first's prior runs. **This task closes the other two.**
+    - `report_pipeline.py`, the delivered path: walk the pinned definition for `historical_trend` blocks, collect the distinct `(metric, statistic, lookback)` keys, call `select_historical_runs` **once per key** rather than once per block, and pass the resulting mapping plus a `HistoricalSource` over the loaded prior snapshots into `compile_document`. Selection stays **data computed upstream**: choosing prior runs needs the payload's candidate list and each candidate's stored snapshot, which is I/O, and `BlockContext` holds no client, no clock and no network so replay stays deterministic — the same "caller fetches, pure module folds" split `prose` and `comparison` already take
+    - **Pin the selection, because a recompile cannot re-derive it.** The selection depends on `historical_candidates` supplied in the `generate_report` payload, and the `verify_report` payload carries only `definition` and `run_id`. Persist it as `historical.json` beside `prose.json` under the run's artifact prefix and replay it at re-verification through a `_StoredSelection` reader, exactly as `_StoredProse` replays the model's text and for the identical reason: a compile is a pure function of its pinned inputs, and asking the source again would make a byte-identical ledger depend on re-deriving something that is not re-derivable. Prior *snapshots* need no pinning — they are immutable by product rule and re-fetchable by run id, the same as this run's own snapshot
+    - **Without the pin, activating this block breaks `verify_report` for every template that uses it**: the stored ledger would carry historical figures the recompile cannot reproduce, and the compile-layer comparison from commit `151665f` would fail on a report that is correct. Assert that a table-and-trend template re-verifies successfully, and — the mutation that proves the assertion is connected — that corrupting one persisted selected run id makes re-verification FAIL rather than silently plotting a different period
+    - The zero-candidate path stays an ordinary compile outcome: no error code, no `collection_log` gap, and the block still emits its "no prior runs" statement rather than vanishing, per criteria 19.5 and 19.6. Assert a run with `historical_candidates` absent from the payload behaves identically to one with an empty list — an activated feature must not turn a missing optional field into a failure
+    - `render_preview` and `thumbnails.py` also call `compile_document`: decide per call site whether a preview resolves prior runs or renders the zero-point statement, and assert whichever is chosen. A preview that silently differs from the delivered document on this block is the HTML-preview divergence `design-system.md` already warns about, so if the answer is "previews plot nothing", the preview must say so rather than look like a short trend
+    - Guard that the wiring cannot rot back: assert every `compile_document` call site that could carry historical data passes it, so a sixth call site added later is a red test rather than a fourth silent break. The three breaks above were each invisible individually and none of them failed anything
+    - _Requirements: 18.4, 18.8, 18.10, 18.11, 18.12, 19.5, 19.6, 19.8, 19.9_
+
 - [ ] 12. The inventory endpoint and the three pickers
   - The app's **pure** modules land before the components that use them: `lib/templates/options.ts`,
     `lib/subscriptions/inventory-cache.ts`, `lib/templates/migrate.ts` (task 7.5).
@@ -932,7 +942,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 10, "tasks": ["6.6"] },
     { "id": 11, "tasks": ["8.2", "9.2", "10.1", "11.3", "13.1"] },
     { "id": 12, "tasks": ["8.3", "10.2", "11.4", "12.6", "12.7", "13.2", "13.4"] },
-    { "id": 13, "tasks": ["8.4", "11.5", "13.3", "13.5", "13.6"] },
+    { "id": 13, "tasks": ["8.4", "11.5", "11.6", "13.3", "13.5", "13.6"] },
     { "id": 14, "tasks": ["6.7"] },
     { "id": 15, "tasks": ["6.5", "15.1", "15.2", "15.3", "15.4", "15.5", "15.7", "15.8"] },
     { "id": 16, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
@@ -960,4 +970,32 @@ rule about write-disjointness rather than a preference:
   tree. Running it earlier would put two agents in the same components; running it later means
   it migrates the copy those tasks leave behind, once, rather than racing them.
 - Every other wave is unchanged in membership and shifted in number only.
+
+### Adding task 11.6
+
+Recorded for the same reason as the re-waving above — the graph changed after a wave ran, and
+the cause is worth keeping.
+
+**11.6 exists because a guard found the `historical_trend` block had never been wired.** It was
+not discovered by reading the spec or by a failing test; it was discovered by adding the first
+guard that ever *rendered* the block, during the guard-coverage remediation after wave 12. That
+guard immediately raised `AttributeError: 'ResourceView' object has no attribute 'statistics'`
+from the block's own compiler, and investigating the traceback turned up three independent
+breaks — a missing `compile_document` parameter, a selection read against an attribute a frozen
+`slots=True` dataclass cannot carry, and a pipeline selector no caller calls. Each was invisible
+on its own and none of them failed anything, which is why task 11.3 could be ticked in wave 11
+with the block dark.
+
+Two consequences for how this spec should be read:
+
+- **A ticked task is evidence its guards passed, not that its feature runs.** 11.3 asserted
+  compilation and validation, both correctly, and neither of those touches the wiring that
+  carries a selection from the payload to the block. Where a task's acceptance criteria and its
+  delivered behaviour can come apart like that, the criteria need a path that renders.
+- **11.6 joins wave 13 rather than taking its own wave.** It writes `report_pipeline.py` and
+  `compile/blocks/**`, and no task in that wave — 8.4, 11.5, 13.3, 13.5, 13.6 — writes either;
+  the report-page tasks are confined to `app/components/reports/**`. It sits beside **11.5**
+  deliberately: 11.5 property-tests the pure selector while 11.6 wires that selector's result
+  into the delivered path, so the wave that proves the selection correct is the wave that makes
+  it reach a document.
 
