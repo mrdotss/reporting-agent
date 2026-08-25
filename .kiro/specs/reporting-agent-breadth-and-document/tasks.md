@@ -616,7 +616,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Every option keyboard-reachable with a visible `--ring` focus indicator and selections and removals announced through an `aria-live="polite"` region
     - _Requirements: 12.1, 12.2, 12.3, 12.4, 12.5, 12.6, 12.7, 12.8, 12.9, 12.10, 8.1, 8.7, 8.8_
 
-  - [ ] 12.8 Compile a `fact`-kind column, which 12.6 specified and did not implement
+  - [x] 12.8 Compile a `fact`-kind column, which 12.6 specified and did not implement
     - **12.6's own text requires this "at compile time"** — "a `fact` column emits two columns
       at compile time — `<key>` and `<key>.observed_at`" — and named `definition.py` as one of
       the two places the `kind` enum is mirrored. 12.6 shipped the app-side inspector and the

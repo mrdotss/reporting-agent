@@ -50,7 +50,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final
 
-from reporting_agent.compile.ast import Column, FigureCell, Row, Table
+from reporting_agent.compile.ast import Column, FigureCell, Row, Table, TextFactCell
 from reporting_agent.compile.blocks.base import (
     MAX_TABLE_ROWS,
     BlockContext,
@@ -72,7 +72,7 @@ from reporting_agent.compile.blocks.base import (
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import resolve
-from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue
+from reporting_agent.compile.snapshot_view import FactTextValue, ResourceView, SnapshotValue
 
 __all__ = [
     "COLUMN_ATTRIBUTES",
@@ -258,6 +258,37 @@ def _metric_columns(refs: Sequence[MetricRef]) -> tuple[Column, ...]:
     return tuple(Column(key=ref.key, header=ref.label) for ref in refs)
 
 
+def _fact_columns(fact_keys: Sequence[str]) -> tuple[Column, ...]:
+    """Two columns per fact key: <key> (the value) and <key>.observed_at (its timestamp)."""
+    result: list[Column] = []
+    for key in fact_keys:
+        result.append(Column(key=key, header=key))
+        result.append(Column(key=f"{key}.observed_at", header=f"{key}.observed_at"))
+    return tuple(result)
+
+
+def _observed_at_fact_value(fact: FactTextValue) -> FactTextValue:
+    """A `FactTextValue` for the `collected_at` timestamp of an existing fact.
+
+    Derives from the same snapshot position. The pointer addresses the `collected_at`
+    field (indexed by the walk alongside the value field), so `resolve_text_all` can
+    prove provenance independently. This is what makes two differing `collected_at`
+    instants produce two distinct instant columns — the spec's stated reason for the
+    second column's existence.
+    """
+    # The original pointer is .../facts/N/value; the timestamp lives at .../facts/N/collected_at
+    observed_pointer = fact.pointer.rsplit("/", 1)[0] + "/collected_at"
+    return FactTextValue(
+        key=f"{fact.key}.observed_at",
+        value=fact.collected_at,
+        source=fact.source,
+        collected_at=fact.collected_at,
+        pointer=observed_pointer,
+        resource_id=fact.resource_id,
+        unit=None,
+    )
+
+
 def _resource_row(
     cursor: BlockCursor,
     context: BlockContext,
@@ -265,8 +296,10 @@ def _resource_row(
     refs: Sequence[MetricRef],
     *,
     with_tier: bool,
+    fact_keys: Sequence[str] = (),
 ) -> Row:
-    """One resource's row: its name, optionally its tier, then one cell per metric."""
+    """One resource's row: its name, optionally its tier, then one cell per metric,
+    then two cells per fact key (value + observed_at)."""
     cells: list[object] = [
         text_cell(cursor.child("cells", 0), resource.name),
     ]
@@ -282,6 +315,30 @@ def _resource_row(
             else _figure_cell(cell_cursor, context, value)
         )
 
+    if fact_keys:
+        # Resolve all facts for this resource once; index by key for O(1) lookup.
+        resource_facts = {
+            f.key: f for f in context.view.facts_for(resource.resource_id)
+        }
+        for key in fact_keys:
+            fact = resource_facts.get(key)
+            if fact is None:
+                # fact_unavailable: the resource does not carry this fact. EmptyCell,
+                # never a zero, never a raise (Req 4.3).
+                cells.append(empty_cell(cursor.child("cells", len(cells))))
+                cells.append(empty_cell(cursor.child("cells", len(cells))))
+            else:
+                # Value column: a TextFactCell anchored to the fact's value.
+                value_cursor = cursor.child("cells", len(cells))
+                text_fact = value_cursor.child("fact", 0).text_fact(fact)
+                cells.append(TextFactCell(path=value_cursor.path, fact=text_fact))
+
+                # Observed_at column: a TextFactCell anchored to the fact's collected_at.
+                obs_cursor = cursor.child("cells", len(cells))
+                obs_fact_value = _observed_at_fact_value(fact)
+                obs_text_fact = obs_cursor.child("fact", 0).text_fact(obs_fact_value)
+                cells.append(TextFactCell(path=obs_cursor.path, fact=obs_text_fact))
+
     return Row(path=cursor.path, key=resource.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
 
 
@@ -290,6 +347,8 @@ def _resource_rows_table(
     block: BlockSpec,
     cursor: BlockCursor,
     refs: Sequence[MetricRef],
+    *,
+    fact_keys: Sequence[str] = (),
 ) -> BlockOutput:
     """The shared body of `resource_table` and `top_n_table`."""
     table_cursor = cursor.child("nodes", 0)
@@ -305,7 +364,8 @@ def _resource_rows_table(
 
     rows: list[Row] = [
         _resource_row(
-            table_cursor.child("rows", ordinal), context, resource, refs, with_tier=with_tier
+            table_cursor.child("rows", ordinal), context, resource, refs,
+            with_tier=with_tier, fact_keys=fact_keys,
         )
         for ordinal, resource in enumerate(shown)
     ]
@@ -321,6 +381,7 @@ def _resource_rows_table(
         _resource_column(context.messages),
         *((_tier_column(context.messages),) if with_tier else ()),
         *_metric_columns(refs),
+        *_fact_columns(fact_keys),
     )
     table = Table(
         path=table_cursor.path,
@@ -345,8 +406,9 @@ def compile_resource_table(
     """
     entries = read_column_entries(block, "columns")
     refs = tuple(e.metric_ref for e in entries if e.kind == "metric" and e.metric_ref is not None)
+    fact_keys = tuple(e.fact_key for e in entries if e.kind == "fact" and e.fact_key is not None)
     return _resource_rows_table(
-        context, block, cursor, refs
+        context, block, cursor, refs, fact_keys=fact_keys,
     )
 
 
@@ -368,12 +430,13 @@ def compile_top_n_table(
     """
     entries = read_column_entries(block, "columns")
     columns = tuple(e.metric_ref for e in entries if e.kind == "metric" and e.metric_ref is not None)
+    fact_keys = tuple(e.fact_key for e in entries if e.kind == "fact" and e.fact_key is not None)
     order_by = read_metric_ref(
         block.config.get("order_by"), block, "config.order_by"
     )
 
     ordered = (order_by, *(ref for ref in columns if ref.key != order_by.key))
-    return _resource_rows_table(context, block, cursor, ordered)
+    return _resource_rows_table(context, block, cursor, ordered, fact_keys=fact_keys)
 
 
 def compile_kpi_row(

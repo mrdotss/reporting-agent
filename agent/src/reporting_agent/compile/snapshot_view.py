@@ -309,11 +309,11 @@ class FactTextValue:
                     f"every field a `TextFact` proves itself with is present or the fact "
                     f"is not readable"
                 )
-        if not self.pointer.endswith("/value"):
+        if not (self.pointer.endswith("/value") or self.pointer.endswith("/collected_at")):
             raise CompileFailedError(
-                f"a fact's pointer must address its own `value` field, got "
-                f"{self.pointer!r}; a pointer naming the fact object would resolve to a "
-                f"mapping rather than to the string the document prints"
+                f"a fact's pointer must address its own `value` or `collected_at` field, "
+                f"got {self.pointer!r}; a pointer naming the fact object would resolve to "
+                f"a mapping rather than to the string the document prints"
             )
 
 
@@ -803,11 +803,14 @@ class SnapshotView:
         Exact comparison on the resource id, matching :meth:`resource`: a snapshot resource
         id is the id Azure returned, and re-normalizing it here would be a second reading of
         the same string.
+
+        Returns only **primary** fact entries (pointer ending in `/value`), not the derived
+        `collected_at` entries also indexed for provenance re-resolution.
         """
         return tuple(
             fact
             for fact in self._facts_by_pointer.values()
-            if fact.resource_id == resource_id
+            if fact.resource_id == resource_id and fact.pointer.endswith("/value")
         )
 
 
@@ -876,6 +879,21 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
                 pointer=fact_at,
                 resource_id=resource.resource_id,
                 unit=raw_fact.get("unit") if isinstance(raw_fact.get("unit"), str) else None,
+            )
+
+            # Index the `collected_at` field as a second text value at its own pointer,
+            # so `resolve_text_all` can prove the provenance of a fact's timestamp when
+            # it appears in a `<key>.observed_at` column (Req 12.6).
+            collected_at_pointer = pointer("resources", index, "facts", position, "collected_at")
+            collected_at_str = _require_str(raw_fact, "collected_at", collected_at_pointer)
+            facts_by_pointer[collected_at_pointer] = FactTextValue(
+                key=f"{_require_str(raw_fact, 'key', fact_at)}.observed_at",
+                value=collected_at_str,
+                source=_require_str(raw_fact, "source", fact_at),
+                collected_at=collected_at_str,
+                pointer=collected_at_pointer,
+                resource_id=resource.resource_id,
+                unit=None,
             )
 
         for position, raw_stat in enumerate(_list_at(raw_resource, "statistics", at)):

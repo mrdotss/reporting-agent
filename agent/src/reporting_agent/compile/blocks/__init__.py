@@ -342,9 +342,9 @@ def _phase_one(
         if spec.type == "cover" and not design.cover_page:
             continue
 
-        cursor_before = context.ledger.paths()
+        cursor_before = context.ledger.entry_paths()
         output, produced = compile_block(context, spec)
-        factory_calls += len(context.ledger.paths()) - len(cursor_before)
+        factory_calls += len(context.ledger.entry_paths()) - len(cursor_before)
 
         nodes_by_block.update(produced)
         emitted.append(

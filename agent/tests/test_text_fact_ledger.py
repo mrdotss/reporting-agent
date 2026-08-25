@@ -584,7 +584,7 @@ def test_a_fact_value_missing_any_field_it_proves_itself_with_is_refused(
 def test_a_fact_pointer_must_address_the_value_field_itself() -> None:
     """A pointer naming the fact object would resolve to a mapping rather than to the string
     the document prints, and the node's own re-resolution would then find nothing."""
-    with pytest.raises(CompileFailedError, match="must address its own `value` field"):
+    with pytest.raises(CompileFailedError, match="must address its own `value` or `collected_at` field"):
         FactTextValue(
             key="os_type",
             value="Linux",

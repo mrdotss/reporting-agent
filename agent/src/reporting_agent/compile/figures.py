@@ -876,8 +876,8 @@ class BlockCursor:
         return fact
 
     def anchor_table(self, path: FigurePath) -> str:
-        """Record the table anchor for every figure already inside `path`'s subtree, and
-        return the anchor id.
+        """Record the table anchor for every figure and text fact already inside `path`'s
+        subtree, and return the anchor id.
 
         Called by the block compiler once the table node exists. The anchor is recorded
         **onto existing ledger entries** — there is no separate anchor collection to keep
@@ -889,6 +889,11 @@ class BlockCursor:
         for candidate in self.ledger.paths():
             if str(candidate).startswith(prefix):
                 self.ledger.record_anchor(
+                    candidate, TableAnchor(kind=ANCHOR_TABLE, anchor_id=anchor_id)
+                )
+        for candidate in self.ledger.text_facts():
+            if str(candidate).startswith(prefix):
+                self.ledger.record_text_fact_anchor(
                     candidate, TableAnchor(kind=ANCHOR_TABLE, anchor_id=anchor_id)
                 )
         return anchor_id
