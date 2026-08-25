@@ -828,6 +828,15 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Assert that no negative test in this section is skipped, marked as an expected failure, or excluded from the suite that runs before a change in this spec is committed, because a gate whose negative test does not run is a gate that has never been observed failing
     - _Requirements: 24.17, 24.18_
 
+  - [ ] 15.17 A `DerivedCount` mismatched against what its own ledger contains
+    - **The gap wave 18's extended meta-test surfaced rather than exempted.** `derived_count_mismatch` — the finding type `verify/derived_counts.py::check_derived_counts` records, added in wave 14 (task 11.7) as the sound replacement for the allowlist mechanism that could not verify a compile-derived count — has never had a negative test. No task before this one assigned writing it, so the meta-test correctly fails naming it as the sole unexercised type in `BLOCKING_FINDING_TYPES`
+    - `check_derived_counts` re-derives each `DerivedCount` from the ledger's own content and the block's config, then compares against the stored `formatted` value — it trusts nothing the compiler wrote down. The two production minting sites are both in `compile/blocks/charts.py::compile_historical_trend`: `historical_points_emitted` (the count of plotted points) and `historical_lookback` (the block's configured lookback). Either is a valid mutation target
+    - Mutation: compile a `historical_trend` block with at least one real, verification-passed prior candidate (the same fixture shape tasks 15.7/15.8/15.9 already establish), then corrupt the stored `DerivedCount.formatted` value for one of the two counts so it disagrees with what the ledger's own point count or the block's own config actually contains — leaving the ledger's other entries, the anchor set and every other rendered character unchanged
+    - Expected blocking set `{derived_count_mismatch}`, naming the block id, the derivation kind, the stored value and the expected value re-derived from the ledger — the same four fields `check_derived_counts`'s finding already records, so the test's assertions read directly off that function rather than restating a guess at its shape
+    - Add to `agent/tests/test_negative_wave15.py`, in that file's idiom, following the three shared preconditions the wave-15 section preamble states for every test here: the unmutated fixture passes first with zero blocking findings; the recorded blocking types equal exactly `{derived_count_mismatch}`; and zero download is observed (zero `report_file` events, no artifact written, empty `outcome.artifacts`)
+    - Once this test declares and passes, `test_every_blocking_type_is_asserted_by_at_least_one_negative_test` should pass with **zero** exemptions taken beyond the two `15.16` already named — assert this explicitly rather than assuming it: run the full meta-test after adding this test and confirm it is green, not merely that this one new test is green in isolation
+    - _Requirements: 19.10, 24.1, 24.2, 24.3_
+
 - [ ] 16. Guards, mirrors, hygiene, the regression gate and one end-to-end run
   - [x] 16.1 Complete and assert the static guards in both halves
     - `agent/tests/test_boundaries.py`, consolidated: the SDK boundary scan extended to `collect/factfold.py`, `collect/numeric.py`, `compile/historical.py`, `compile/messages.py`, `verify/facts.py`, `verify/toc.py`, `verify/historical.py`, `render/front_matter.py` and `render/toc.py`; the **replay-purity closure** walk now including `collect/factfold.py`, `collect/numeric.py` and `catalog/loader.py` and still reaching no `azure.*`, `boto3`, `httpx` or `storage.s3`; the **no-clock-on-the-replay-path** guard over `collect/factfold.py` and `verify/replay.py`; the **one-numeric-leaf-reader** guard from task 1.1; the **no-bare-suppression-on-the-fact-path** guard from task 4.3; and `compile/format.py` importing no message catalog from task 5.3
@@ -979,7 +988,8 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     { "id": 16, "tasks": ["12.8"] },
     { "id": 17, "tasks": ["15.6", "15.9", "15.10", "15.11", "15.12", "15.13", "15.14", "15.15"] },
     { "id": 18, "tasks": ["15.16", "16.1", "16.2", "16.3"] },
-    { "id": 19, "tasks": ["16.4"] }
+    { "id": 19, "tasks": ["15.17"] },
+    { "id": 20, "tasks": ["16.4"] }
   ]
 }
 ```
@@ -1083,3 +1093,25 @@ so it could have joined either; it takes its own wave because closing it before 
 compiled fact column rather than another hand-injected one, which is the more honest test of the
 three now that a real path exists.
 
+### Adding task 15.17
+
+Wave 18 extended `test_negative_enumeration.py` to the real 24 blocking types (task 15.16) and
+was explicitly instructed not to add a third exemption for whichever type still had no test. It
+found exactly one: `derived_count_mismatch`, from `verify/derived_counts.py`, added in wave 14
+(task 11.7) as the sound replacement for the allowlist mechanism that could not verify a
+compile-derived count. No task before 15.16 assigned writing that type's negative test, so the
+meta-test correctly went red naming it — a deliberate, reported gap rather than a defect.
+
+**15.17 closes that gap the same way every other type in this section got one**: a fixture, one
+mutation, the declared blocking set, checked against `check_derived_counts`'s own re-derivation
+so the test's assertions do not restate a guess at the finding's shape. It could have been
+folded into 15.16 itself, but 15.16 is about the meta-test's own completeness, not about writing
+a new gate's first test — the same reasoning that kept `12.8` a separate task from `12.6` rather
+than reopening a task already shipped.
+
+**15.17 takes its own wave (19), between 18 and the closing 20 (16.4).** It writes only
+`test_negative_wave15.py` and its own fixtures — nothing in wave 18 or in 16.4 touches that file.
+It runs before 16.4 on purpose: 16.4's own text requires `.venv/bin/pytest` clean, and a suite
+carrying one deliberately-red meta-test does not meet that bar. Closing 15.17 first means 16.4 —
+the spec's closing end-to-end task — inherits a suite that is green for the right reason rather
+than green because one gate's coverage was never finished.
