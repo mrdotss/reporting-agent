@@ -31,6 +31,7 @@ from pipeline_harness import Pipeline, definition, df, report_objects, types_of
 from reporting_agent.collect.archive import ARCHIVE_KIND_METRICS, archive_kind_of
 from reporting_agent.errors import ErrorCode
 from reporting_agent.verify.findings import (
+    FINDING_DERIVED_COUNT_MISMATCH,
     FINDING_FACT_SOURCE_MISSING,
     FINDING_HISTORICAL_POINT_OVERLAPPING,
     FINDING_HISTORICAL_POINT_UNVERIFIED,
@@ -1211,3 +1212,226 @@ def test_15_15_id_language_no_catalog_value() -> None:
     assert en_value  # the 'en' value exists
     # But it was never returned — the error was raised instead
     assert exc_info2.value.code.value == ErrorCode.RENDER_FAILED.value
+
+
+# ---------------------------------------------------------------------------
+# 15.17 — A DerivedCount mismatched against what its own ledger contains
+#          → {derived_count_mismatch}
+# ---------------------------------------------------------------------------
+
+declare(
+    "test_15_17_derived_count_mismatch",
+    FINDING_DERIVED_COUNT_MISMATCH,
+)
+
+
+def test_15_17_derived_count_mismatch() -> None:
+    """Req 19.10, 24.1–24.3: a DerivedCount's stored formatted value disagrees with
+    what the verifier re-derives from the ledger/definition.
+
+    Mutation: compile a historical_trend block with 2 real prior candidates (so DerivedCounts
+    for both historical_points_emitted and historical_lookback are emitted), then corrupt
+    the historical_lookback's formatted value to '999' while the definition's config still
+    says lookback=6. The verifier re-derives 6 from the definition and records the mismatch.
+
+    The '6' in the rendered document is NOT flagged as unmatched_prose_token because the
+    null-context allowlist derivation (Req 28.7) renders the same template with no candidates,
+    producing '0 plotted and 6 requested' — admitting '6' as static template chrome.
+    """
+    from dataclasses import replace as dc_replace
+
+    from fakes.object_store import StoredObject
+    from pipeline_harness import ACTOR_ID, RUN_ID
+    from reporting_agent.collect.snapshot import snapshot_key
+    from reporting_agent.compile.ast import DerivedCount
+
+    LOOKBACK = 6
+
+    defn = definition(
+        blocks=[
+            df.block("res", "resource_table", {"columns": [df.CPU_AVG, df.CPU_MAX]}),
+            df.block(
+                "trend",
+                "historical_trend",
+                {"metric": "Percentage CPU", "statistic": "avg", "lookback": LOOKBACK},
+            ),
+        ]
+    )
+
+    # Produce a real snapshot to reuse as "prior run" data
+    prior_pipe = Pipeline(definition=defn)
+    prior_pipe.run()
+    snap_key = snapshot_key(ACTOR_ID, RUN_ID)
+    snap_body = prior_pipe.store.get(snap_key)
+    assert snap_body is not None
+
+    PRIOR_1 = "run_prior_june"
+    PRIOR_2 = "run_prior_may"
+
+    def corrupt_lookback_count(compiled: Any, view: Any) -> None:
+        """Corrupt the historical_lookback DerivedCount's formatted value.
+
+        Replaces the entry in the ledger's _derived_counts dict with a new DerivedCount
+        whose formatted='999', while the definition still says lookback=6.
+        """
+        for path, count in list(compiled.ledger._derived_counts.items()):
+            if count.derivation_kind == "historical_lookback":
+                compiled.ledger._derived_counts[path] = dc_replace(
+                    count, formatted="999"
+                )
+                break
+        else:
+            raise AssertionError(
+                "no DerivedCount with derivation_kind='historical_lookback' found in the "
+                "ledger — compile_historical_trend did not emit one"
+            )
+
+    run = Negative(
+        resources=TWO_VMS,
+        definition=defn,
+        compiled=corrupt_lookback_count,
+    )
+
+    # Store prior snapshots in the run's pipeline (accessed via baseline + run)
+    # The Negative class creates a fresh pipeline for baseline and run, so we must use
+    # a different approach: drive the full pipeline with historical_candidates via the
+    # Pipeline class directly for the baseline assertion, then use Negative for the mutation.
+
+    # --- Baseline assertion: the unmutated fixture passes ---
+    baseline_pipe = Pipeline(definition=defn)
+    baseline_pipe.store._objects[snapshot_key(ACTOR_ID, PRIOR_1)] = StoredObject(
+        body=snap_body.body, content_type=snap_body.content_type, tags=snap_body.tags,
+    )
+    baseline_pipe.store._objects[snapshot_key(ACTOR_ID, PRIOR_2)] = StoredObject(
+        body=snap_body.body, content_type=snap_body.content_type, tags=snap_body.tags,
+    )
+    original_baseline_payload = baseline_pipe.payload
+
+    def patched_baseline_payload() -> dict[str, Any]:
+        p = original_baseline_payload()
+        p["historical_candidates"] = [
+            {
+                "id": PRIOR_1,
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "timezone": "Asia/Jakarta",
+                "status": "completed",
+                "verification_status": "pass",
+                "verification_created_at": "2026-06-30T10:00:00Z",
+                "verification_id": f"v-{PRIOR_1}",
+                "verification_snapshot_sha256": "a" * 64,
+            },
+            {
+                "id": PRIOR_2,
+                "period_start": "2026-05-01",
+                "period_end": "2026-05-31",
+                "timezone": "Asia/Jakarta",
+                "status": "completed",
+                "verification_status": "pass",
+                "verification_created_at": "2026-05-31T10:00:00Z",
+                "verification_id": f"v-{PRIOR_2}",
+                "verification_snapshot_sha256": "b" * 64,
+            },
+        ]
+        return p
+
+    baseline_pipe.payload = patched_baseline_payload  # type: ignore[assignment]
+    from reporting_agent.errors import PartialCoverageError
+    _, baseline_error = baseline_pipe.run()
+    assert baseline_error is None or isinstance(baseline_error, PartialCoverageError), (
+        f"baseline pipeline failed: {baseline_error}"
+    )
+    baseline_result = baseline_pipe.outcome.verification
+    assert baseline_result is not None, "unmutated fixture produced no verification"
+    assert baseline_result["status"] == "pass", (
+        f"unmutated fixture does not pass: {baseline_result['findings']}"
+    )
+    from negatives import blocking_types
+    assert blocking_types(baseline_result) == set(), baseline_result["findings"]
+
+    # --- Mutated run: use Pipeline directly with the compiled hook ---
+    import unittest.mock as mock
+    from contextlib import ExitStack
+    import reporting_agent.compile.blocks as blocks_module
+
+    main_pipe = Pipeline(definition=defn)
+    main_pipe.store._objects[snapshot_key(ACTOR_ID, PRIOR_1)] = StoredObject(
+        body=snap_body.body, content_type=snap_body.content_type, tags=snap_body.tags,
+    )
+    main_pipe.store._objects[snapshot_key(ACTOR_ID, PRIOR_2)] = StoredObject(
+        body=snap_body.body, content_type=snap_body.content_type, tags=snap_body.tags,
+    )
+
+    original_main_payload = main_pipe.payload
+
+    def patched_main_payload() -> dict[str, Any]:
+        p = original_main_payload()
+        p["historical_candidates"] = [
+            {
+                "id": PRIOR_1,
+                "period_start": "2026-06-01",
+                "period_end": "2026-06-30",
+                "timezone": "Asia/Jakarta",
+                "status": "completed",
+                "verification_status": "pass",
+                "verification_created_at": "2026-06-30T10:00:00Z",
+                "verification_id": f"v-{PRIOR_1}",
+                "verification_snapshot_sha256": "a" * 64,
+            },
+            {
+                "id": PRIOR_2,
+                "period_start": "2026-05-01",
+                "period_end": "2026-05-31",
+                "timezone": "Asia/Jakarta",
+                "status": "completed",
+                "verification_status": "pass",
+                "verification_created_at": "2026-05-31T10:00:00Z",
+                "verification_id": f"v-{PRIOR_2}",
+                "verification_snapshot_sha256": "b" * 64,
+            },
+        ]
+        return p
+
+    main_pipe.payload = patched_main_payload  # type: ignore[assignment]
+
+    # Patch compile_document to apply the mutation
+    real_compile = blocks_module.compile_document
+    compiles = 0
+
+    def compile_document_mutated(*args: Any, **kwargs: Any):
+        nonlocal compiles
+        outcome = real_compile(*args, **kwargs)
+        compiles += 1
+        if compiles == 1:
+            corrupt_lookback_count(outcome, kwargs.get("view"))
+        return outcome
+
+    with mock.patch.object(blocks_module, "compile_document", compile_document_mutated):
+        events, error = main_pipe.run()
+
+    result = main_pipe.outcome.verification
+    assert result is not None, f"pipeline raised: {error!r}"
+
+    # Exactly {derived_count_mismatch}
+    assert_blocking(result, declared("test_15_17_derived_count_mismatch"))
+
+    # Zero download observed
+    assert types_of(events).count("report_file") == 0, types_of(events)
+    assert main_pipe.outcome.artifacts == (), main_pipe.outcome.artifacts
+    delivered = [
+        key
+        for key in report_objects(main_pipe.store)
+        if not key.rsplit("/", 1)[-1].startswith("verification-")
+    ]
+    assert delivered == [], (
+        f"a failing run left {delivered} under its report prefix"
+    )
+
+    # Locating fields — Req 24.2
+    finding = next(
+        f for f in result["findings"] if f["type"] == FINDING_DERIVED_COUNT_MISMATCH
+    )
+    assert finding["block_id"] == "trend"
+    assert finding["derivation_kind"] == "historical_lookback"
+    assert finding["stored"] == "999"
+    assert finding["expected"] == str(LOOKBACK)
