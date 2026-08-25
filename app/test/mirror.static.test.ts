@@ -26,7 +26,17 @@ import { COLUMN_ATTRIBUTES } from "@/lib/templates/options"
 import { definitionSha256 } from "@/lib/templates/version"
 
 /**
- * The block-definition mirror guard — declaration half (Requirements 2.5, 2.6).
+ * The cross-language mirror guard — six comparisons through one shared mechanism.
+ *
+ * Three cross-language mirrors became six over the course of this spec: the block-type
+ * vocabulary and its per-type config, the schema-version declarations, the column-attribute
+ * vocabulary, the message-catalog id sets and values, the `columns` kind enum, and the
+ * emitted HTML class collection against `paper-classes.ts`. All six use one mechanism —
+ * sentinel-delimited textual extraction on both sides with no language parser — and if a
+ * seventh mirror need ever appears the right move is a **generated schema** (one source
+ * compiled to both languages at build time) rather than a seventh hand-written comparison.
+ *
+ * ---
  *
  * One block-type vocabulary and one per-type config schema, declared twice:
  * `app/lib/templates/blocks.ts` and `agent/src/reporting_agent/compile/definition.py`
@@ -1313,6 +1323,234 @@ describe("Requirement 22.7 — the emitted class collection is mirrored", () => 
     expect(
       mirrorOnly,
       `paper-classes.ts declares these classes the emitter never writes`
+    ).toEqual([])
+  })
+})
+
+// ===========================================================================
+// Mirror_Guard — message-catalog id sets AND values (Requirements 15.5, 15.10)
+// ===========================================================================
+
+/**
+ * The fifth mirrored vocabulary. `app/lib/messages/catalog.ts` between the
+ * `--- BEGIN MESSAGE CATALOG` sentinels and `agent/src/reporting_agent/messages/catalog.v1.json`
+ * must carry identical id sets AND identical values for every shared id in every declared
+ * language. A diverging value puts one string in the delivered document and a different one in
+ * the interface presenting that same run — with nothing red anywhere.
+ *
+ * This reads the app side's sentinel body textually (extracting quoted keys and string values
+ * from the JS object literal) and the agent side's JSON file directly.
+ */
+
+const TS_CATALOG_DECLARATION = path.join(
+  appRoot,
+  "lib",
+  "messages",
+  "catalog.ts"
+)
+const AGENT_CATALOG_JSON = path.join(
+  repoRoot,
+  "agent",
+  "src",
+  "reporting_agent",
+  "messages",
+  "catalog.v1.json"
+)
+
+const BEGIN_CATALOG_SENTINEL = "--- BEGIN MESSAGE CATALOG"
+const END_CATALOG_SENTINEL = "--- END MESSAGE CATALOG"
+
+type CatalogEntry = Record<string, string>
+type ParsedCatalog = Map<string, CatalogEntry>
+
+/**
+ * Parse the app's sentinel-delimited message catalog body into a map of id → {lang: value}.
+ *
+ * The body is a JS object literal like:
+ * ```
+ * "chart.axis.resource": {
+ *   en: "Resource",
+ *   id: "Sumber daya",
+ * },
+ * ```
+ *
+ * We extract top-level quoted keys and for each one, extract the `{...}` block and read its
+ * key-value pairs (bare or quoted keys to quoted values). Values may contain apostrophes
+ * and escaped quotes, so the regex is careful to match only the outermost quotes of each
+ * string literal.
+ */
+function parseTsCatalogBody(body: string): ParsedCatalog {
+  const result: ParsedCatalog = new Map()
+
+  // Match top-level message id keys — double-quoted strings followed by a colon and brace.
+  // The app catalog consistently uses double quotes for id keys.
+  const idPattern = /"([^"\n]+)"\s*:\s*\{/g
+
+  for (const match of body.matchAll(idPattern)) {
+    const id = match[1]
+    const openIndex = match.index + match[0].length - 1
+    // Only process if this looks like a message id (contains a dot)
+    if (!id.includes(".")) continue
+
+    let braceBody: string
+    try {
+      braceBody = matchBalanced(body, openIndex, "{", "}")
+    } catch {
+      continue
+    }
+
+    // Extract language key → value pairs from the inner brace body.
+    // The app catalog uses bare language keys (en, id) with double-quoted values.
+    // Values may contain apostrophes and escaped double quotes (\\").
+    // We match: `lang: "value"` where value can contain anything except an unescaped quote.
+    const entry: CatalogEntry = {}
+    const kvPattern = /\b([a-z]+)\s*:\s*"((?:[^"\\]|\\.)*)"/g
+    for (const kv of braceBody.matchAll(kvPattern)) {
+      const lang = kv[1]
+      // Unescape the value: replace \" with "
+      const value = kv[2].replace(/\\"/g, '"')
+      if (lang) entry[lang] = value
+    }
+
+    if (Object.keys(entry).length > 0) {
+      result.set(id, entry)
+    }
+  }
+
+  return result
+}
+
+/** Parse the agent's JSON catalog file into a map of id → {lang: value}. */
+function parseAgentCatalog(): ParsedCatalog {
+  const where = path.relative(repoRoot, AGENT_CATALOG_JSON)
+  expect(
+    existsSync(AGENT_CATALOG_JSON),
+    `${where} is missing — the agent's message catalog is absent or unparseable`
+  ).toBe(true)
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(readFileSync(AGENT_CATALOG_JSON, "utf8"))
+  } catch (err) {
+    expect.fail(
+      `${where} is unparseable as JSON: ${err instanceof Error ? err.message : String(err)}`
+    )
+  }
+
+  expect(raw, `${where} is not an object`).toBeTypeOf("object")
+  const { messages } = raw as { messages?: unknown }
+  expect(
+    messages !== null && typeof messages === "object",
+    `${where} declares no 'messages' object — the agent's catalog is absent or unparseable`
+  ).toBe(true)
+
+  const result: ParsedCatalog = new Map()
+  for (const [id, entry] of Object.entries(messages as Record<string, unknown>)) {
+    if (entry !== null && typeof entry === "object") {
+      const values: CatalogEntry = {}
+      for (const [lang, value] of Object.entries(entry as Record<string, unknown>)) {
+        if (typeof value === "string") values[lang] = value
+      }
+      result.set(id, values)
+    }
+  }
+
+  return result
+}
+
+describe("Requirements 15.5, 15.10 — the message-catalog id sets and values are mirrored", () => {
+  let tsCatalog: ParsedCatalog
+  let agentCatalog: ParsedCatalog
+
+  const tsWhere = path.relative(repoRoot, TS_CATALOG_DECLARATION)
+  const agentWhere = path.relative(repoRoot, AGENT_CATALOG_JSON)
+
+  // Parse both sides outside the tests so failures in extraction are reported clearly.
+  try {
+    const body = sentinelBody(
+      TS_CATALOG_DECLARATION,
+      BEGIN_CATALOG_SENTINEL,
+      END_CATALOG_SENTINEL
+    )
+    tsCatalog = parseTsCatalogBody(body)
+  } catch (err) {
+    tsCatalog = new Map()
+    // Will be caught by the non-empty assertion below
+  }
+
+  agentCatalog = parseAgentCatalog()
+
+  test("neither side's declaration is absent or empty", () => {
+    expect(
+      tsCatalog.size,
+      `${tsWhere}'s sentinel block is absent or declares no ids — the app's catalog ` +
+        `declaration is absent or unparseable`
+    ).toBeGreaterThan(0)
+    expect(
+      agentCatalog.size,
+      `${agentWhere} declares no message ids — the agent's catalog declaration ` +
+        `is absent or unparseable`
+    ).toBeGreaterThan(0)
+  })
+
+  test("the id sets are equal, naming EVERY differing key", () => {
+    const tsIds = new Set(tsCatalog.keys())
+    const agentIds = new Set(agentCatalog.keys())
+
+    const tsOnly = [...tsIds].filter((id) => !agentIds.has(id)).sort()
+    const agentOnly = [...agentIds].filter((id) => !tsIds.has(id)).sort()
+
+    const differences: string[] = []
+    for (const id of tsOnly) {
+      differences.push(`"${id}": app only (absent from agent catalog)`)
+    }
+    for (const id of agentOnly) {
+      differences.push(`"${id}": agent only (absent from app catalog)`)
+    }
+
+    expect(
+      differences,
+      "the message-catalog id sets differ between the two halves — a definition the " +
+        "app can resolve and the agent cannot (or vice versa) breaks at render time"
+    ).toEqual([])
+  })
+
+  test("every shared id carries identical values in both halves, naming EVERY divergence", () => {
+    const divergent: string[] = []
+
+    for (const [id, tsEntry] of tsCatalog) {
+      const agentEntry = agentCatalog.get(id)
+      if (agentEntry === undefined) continue // caught by the id-set test
+
+      // Check all languages declared on either side
+      const allLangs = new Set([
+        ...Object.keys(tsEntry),
+        ...Object.keys(agentEntry),
+      ])
+
+      for (const lang of allLangs) {
+        const tsValue = tsEntry[lang]
+        const agentValue = agentEntry[lang]
+
+        if (tsValue === undefined && agentValue !== undefined) {
+          divergent.push(
+            `"${id}"[${lang}]: absent in app, agent has ${JSON.stringify(agentValue)}`
+          )
+        } else if (tsValue !== undefined && agentValue === undefined) {
+          divergent.push(
+            `"${id}"[${lang}]: app has ${JSON.stringify(tsValue)}, absent in agent`
+          )
+        } else if (tsValue !== agentValue) {
+          divergent.push(
+            `"${id}"[${lang}]: app ${JSON.stringify(tsValue)} vs agent ${JSON.stringify(agentValue)}`
+          )
+        }
+      }
+    }
+
+    expect(
+      divergent,
+      "a diverging value puts different copy in the document vs the interface for one run"
     ).toEqual([])
   })
 })

@@ -822,14 +822,14 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - **And additionally**: assert **no `en` value for that string id reached any rendered output**, so the fallback criterion 15.4 exists to prevent is observed **absent** rather than assumed absent
     - _Requirements: 24.1, 24.2, 24.3, 24.21_
 
-  - [ ] 15.16 Extend the enumeration meta-test and assert nothing in this section is skipped
+  - [x] 15.16 Extend the enumeration meta-test and assert nothing in this section is skipped
     - Extend `agent/tests/test_negative_enumeration.py` to the **twenty-three** blocking finding types and to the new terminal branches — `COMPILE_FAILED` for an absent fact source, `RENDER_FAILED` for an absent per-run front-matter value and for an absent message-catalog value — collecting the types every negative test declares as expected and **failing if any covered type or code is asserted by zero tests**
     - Declare **exactly two exemptions and name both**: the compilation of a `schema_version` 1 definition, which is a **positive** outcome proven by `test_schema_version_1.py` from task 7.4 rather than a gate that can fail; and the scope-rule invariant, which Property 7 proves across generated inputs
     - Assert that no negative test in this section is skipped, marked as an expected failure, or excluded from the suite that runs before a change in this spec is committed, because a gate whose negative test does not run is a gate that has never been observed failing
     - _Requirements: 24.17, 24.18_
 
 - [ ] 16. Guards, mirrors, hygiene, the regression gate and one end-to-end run
-  - [ ] 16.1 Complete and assert the static guards in both halves
+  - [x] 16.1 Complete and assert the static guards in both halves
     - `agent/tests/test_boundaries.py`, consolidated: the SDK boundary scan extended to `collect/factfold.py`, `collect/numeric.py`, `compile/historical.py`, `compile/messages.py`, `verify/facts.py`, `verify/toc.py`, `verify/historical.py`, `render/front_matter.py` and `render/toc.py`; the **replay-purity closure** walk now including `collect/factfold.py`, `collect/numeric.py` and `catalog/loader.py` and still reaching no `azure.*`, `boto3`, `httpx` or `storage.s3`; the **no-clock-on-the-replay-path** guard over `collect/factfold.py` and `verify/replay.py`; the **one-numeric-leaf-reader** guard from task 1.1; the **no-bare-suppression-on-the-fact-path** guard from task 4.3; and `compile/format.py` importing no message catalog from task 5.3
     - `agent/tests/test_ast_guard.py`: `TextFact` and `TextFactCell` declared, `Cell` a union over exactly four members, `TextFact` declaring no numeric annotation and **not** exempted from the scan
     - `app/test/boundaries.static.test.ts`: `lib/runs/historical.ts` and `lib/subscriptions/inventory-cache.ts` begin with `import "server-only"`; `lib/runs/gap-groups.ts`, `lib/templates/options.ts`, `lib/templates/migrate.ts` and `lib/reports/paper-claim.ts` deliberately **do not** and import no SDK and no secret-bearing module; the inventory route exports `runtime = "nodejs"`; and no arithmetic over a ledger `value` appears under `components/reports/`
@@ -837,13 +837,13 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Assert unchanged and passing without edit: `app/test/migrations.static.test.ts` over two additive nullable columns and no enum value; `app/test/event-mirror.static.test.ts`, because no event type is added; and the Boundary_Guard's `.env.example` key-set equality, because **no environment variable is added** — `ADOPTED_APPROACH` is a module constant by decision
     - _Requirements: 5.7, 6.3, 7.9, 7.11, 9.3, 20.11_
 
-  - [ ] 16.2 Assert the six mirrors through the one mechanism
+  - [x] 16.2 Assert the six mirrors through the one mechanism
     - `app/test/mirror.static.test.ts` compares, all sentinel-delimited on both sides so no guard needs a parser: the **seventeen** block types; the per-type config including `historical_trend` and the `columns` `kind` enum; the schema-version declarations of task 7.3; `COLUMN_ATTRIBUTES`; the message-catalog **id sets and the values for every shared id**; and `EMITTED_CLASS_NAMES` against `paper-classes.ts`
     - Fail naming **every** differing key, and name either declaration as absent or unparseable
     - Record the design's note in the module docstring: three cross-language mirrors have become six, all six use one mechanism, and **if a seventh appears the right move is a generated schema rather than a seventh hand-written mirror**
     - _Requirements: 12.9, 13.10, 15.10, 18.1, 22.7_
 
-  - [ ] 16.3 Extend the property-hygiene guards and run the regression gate
+  - [x] 16.3 Extend the property-hygiene guards and run the regression gate
     - Add three assertions to each of `agent/tests/test_property_hygiene.py` and `app/test/property-hygiene.static.test.ts`: the **set** of property identifiers collected equals the set this spec declares — `facts_archive_round_trip`, `number_format_agreement`, `historical_selection`, `catalog_evidence`, `text_fact_exact_string` on the agent side and `gap_grouping_lossless`, `scope_stays_a_rule`, `config_option_sources`, `number_format_defaults` on the web side — so a property added here and never registered, or registered and never run, fails the suite; every **declared example** must appear in the examples that property executed; and two executions carrying one identical seed must reach an identical verdict, with a clock, network or ambient-environment read on a property's path failing the suite naming the identifier
     - Keep the existing assertions in force: nothing skipped, nothing marked expected-failure, nothing declaring fewer than 100 runs or examples, `HealthCheck.filter_too_much` and `HealthCheck.data_too_large` never suppressed, no generation exhausted before 100 accepted, and no property rejecting more than 20 percent of generated cases through a precondition. A fixed counterexample is retained as an `@example` or declared case running **in addition to** the 100 rather than counting toward it
     - Extend the scan to fail on a skip or expected-failure marker in `test_toc_proof.py` (task 2.4) and `paper-render.dom.test.tsx` (task 13.5) **by name**

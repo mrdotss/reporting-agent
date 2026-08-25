@@ -66,6 +66,7 @@ export type PropertyDeclaration = {
   readonly label: string
   readonly title: string
   readonly modules: readonly string[]
+  readonly identifier?: string
 }
 
 /**
@@ -155,23 +156,27 @@ export const BREADTH_PROPERTIES: Readonly<Record<number, PropertyDeclaration>> =
       label: "breadth Property 4",
       title: "Gap grouping is lossless",
       modules: ["test/property/gap-groups.property.test.ts"],
+      identifier: "gap_grouping_lossless",
     },
     7: {
       label: "breadth Property 7",
       title: "A picked scope stays a rule",
       modules: ["test/property/scope-picker.property.test.ts"],
+      identifier: "scope_stays_a_rule",
     },
     8: {
       label: "breadth Property 8",
       title:
         "Block-config options are drawn from the metric selection and the fact declaration",
       modules: ["test/property/config-options.property.test.ts"],
+      identifier: "config_option_sources",
     },
     9: {
       label: "breadth Property 9",
       title:
         "The number-format defaults are language-derived and never overwrite a declaration",
       modules: ["test/property/number-format-defaults.property.test.ts"],
+      identifier: "number_format_defaults",
     },
   }
 

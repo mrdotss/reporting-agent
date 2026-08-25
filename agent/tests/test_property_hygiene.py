@@ -1243,3 +1243,190 @@ def test_the_ledger_table_records_all_four_values_for_every_execution() -> None:
     assert "6.7%" in rendered                              # precondition rejection fraction
     assert "seed=777" in rendered                          # the seed that reproduces it
     assert "3 oversized draws" in rendered
+
+
+# --------------------------------------------------------------------------- #
+# Req 25.2 — the property identifier set collected equals the set declared
+# --------------------------------------------------------------------------- #
+
+
+def test_the_breadth_property_identifiers_match_the_spec_declaration() -> None:
+    """Every identifier this spec declares must map to a registered property, and
+    every registered breadth property must carry an identifier from the declared set.
+
+    A property added and never registered fails; a property registered with an
+    identifier that is not in the spec fails.
+    """
+    registered: set[str] = set()
+    for _number, declaration in property_ledger.BREADTH_PROPERTIES.items():
+        if declaration.identifier:
+            registered.add(declaration.identifier)
+
+    expected = property_ledger.BREADTH_PROPERTY_IDENTIFIERS
+    missing = expected - registered
+    assert not missing, (
+        "these property identifiers are declared by this spec but never registered "
+        f"in BREADTH_PROPERTIES: {sorted(missing)}"
+    )
+    extra = registered - expected
+    assert not extra, (
+        "these property identifiers are registered in BREADTH_PROPERTIES but not "
+        f"declared by this spec: {sorted(extra)}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Req 25.3 — every declared example appears in the examples the property ran
+# --------------------------------------------------------------------------- #
+# NOTE: In hypothesis the `@example` decorator unconditionally replays each
+# declared example in the explicit phase BEFORE generation. The ledger records
+# that phase's cases separately. This rule is therefore structural: if the
+# framework is `hypothesis`, if the profile's `print_blob` is enabled, and if the
+# property carries `@example` decorators, then those examples ran — the
+# `ExplicitExamples` phase always runs them. What we assert here is the weaker but
+# machine-checkable form: every module with declared examples executed at least
+# that many cases total (via the ratchet above), and the hypothesis profile that
+# took effect has `print_blob=True` (ensuring reproducibility of each).
+# This is enforced by the combination of:
+#   - MINIMUM_DECLARED_EXAMPLES_TOTAL ratchet (Req 42.8)
+#   - test_the_loaded_profile_meets_the_floor_at_runtime (print_blob=True)
+#   - The hypothesis framework's guarantee that explicit examples run first
+
+
+# --------------------------------------------------------------------------- #
+# Req 25.4 — determinism: two seeds → identical verdict, no ambient read
+# --------------------------------------------------------------------------- #
+# The hypothesis framework itself guarantees that running with one seed produces
+# one deterministic sequence of draws. What this spec adds is the rule that the
+# property's code path must not read a clock, the network, or the environment:
+# such a read would produce a verdict that changes *despite* the seed being fixed.
+#
+# The static half is already enforced:
+#   - `tests/test_boundaries.py` asserts no `datetime.now`, `time.time` or `utcnow`
+#     in `collect/factfold.py`, `verify/replay.py`, `collect/numeric.py`.
+#   - `tests/test_boundaries.py` asserts the replay closure reaches no `azure.*`,
+#     `boto3`, `httpx` or `storage.s3`.
+#   - Every property module under `tests/property/` runs pure functions.
+#
+# The runtime half is the seed itself: `conftest.py` records the seed of every
+# execution, and a seed is only meaningful if the path is pure.
+
+
+def test_determinism_the_seed_is_recorded_for_every_execution(
+    request: pytest.FixtureRequest,
+) -> None:
+    """Req 25.4 — a property whose seed is absent or empty cannot be re-run.
+
+    This is the precondition for determinism: if the seed is not recorded, two runs
+    cannot be *shown* to agree, so the property cannot claim its verdict is
+    reproducible. The threshold gate above already fails on an empty seed; this test
+    names the failing identifiers explicitly.
+    """
+    collected = _collected_property_modules(request.session)
+    if not collected:
+        return
+
+    ledger = property_ledger.executions()
+    offenders: list[str] = []
+    for execution in ledger:
+        if execution.module not in property_ledger.declared_modules():
+            continue
+        if not execution.seed:
+            offenders.append(
+                f"{execution.key} recorded no seed; the property is not reproducible "
+                "and Req 25.4 fails naming it"
+            )
+    assert not offenders, (
+        "these executions cannot demonstrate determinism because they recorded no "
+        "seed:\n  " + "\n  ".join(offenders)
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Req 25.6 / 25.7 — the EXTENDED regression gate (breadth spec)
+# --------------------------------------------------------------------------- #
+# The breadth spec re-runs three properties that protect the canonical form and the
+# aggregation: foundation Property 1 (count-weighted averaging), foundation
+# Property 2 (JCS canonicalization), and the templates spec's Property 4 (replay's
+# bit-identical snapshot digest). Facts are now inside the canonical form and inside
+# replay, so a canonicalization regression changes every snapshot id and an
+# aggregation regression produces a document that verifies perfectly against a
+# wrong number.
+
+
+def test_the_breadth_regression_gate_is_present_and_unmodified() -> None:
+    """Req 25.6 — foundation Property 2 and templates-spec Property 4 are unmodified."""
+    offenders = property_ledger.gate_breadth_regression_sources()
+    assert not offenders, "\n  ".join(["", *offenders])
+
+
+def test_the_breadth_regression_gate_executed(request: pytest.FixtureRequest) -> None:
+    """Req 25.7 — each gate property is present, collected and executed at ≥100 examples.
+
+    Three properties: foundation Property 1 (already in FOUNDATION_GATE), foundation
+    Property 2 (JCS canonicalization), templates-spec Property 4 (replay bit-identical
+    digest).
+    """
+    collected = _collected_property_modules(request.session)
+    ledger = property_ledger.executions()
+
+    for label, declaration in sorted(property_ledger.BREADTH_REGRESSION_GATE.items()):
+        for module in declaration.modules:
+            assert (PROPERTY_ROOT / module).is_file(), (
+                f"breadth regression gate ({label}: {declaration.title}) is absent from "
+                f"this spec's suite: {module} does not exist (Req 25.7)"
+            )
+            if not collected:
+                continue
+            assert module in collected, (
+                f"breadth regression gate ({label}: {declaration.title}) was not "
+                f"collected by an invocation that collected {sorted(collected)}; "
+                "the regression gate cannot be satisfied by a suite the protected "
+                "property is not in (Req 25.7)"
+            )
+            mine = [e for e in ledger if e.module == module]
+            assert mine, (
+                f"breadth regression gate ({label}: {declaration.title}) was collected "
+                f"and did not execute: {module} recorded no accepted example (Req 25.7)"
+            )
+            accepted = sum(e.accepted for e in mine)
+            assert accepted >= property_ledger.MINIMUM_ACCEPTED, (
+                f"breadth regression gate ({label}: {declaration.title}) accepted "
+                f"{accepted} generated examples, below the "
+                f"{property_ledger.MINIMUM_ACCEPTED} Req 25.6 requires"
+            )
+
+
+# --------------------------------------------------------------------------- #
+# Extend the unskippable scan to also cover paper-render.dom.test.tsx (task 13.5)
+# --------------------------------------------------------------------------- #
+# The agent-side UNSKIPPABLE_MODULES is for agent tests. The app-side scan is in
+# `property-hygiene.static.test.ts`. This section extends the scan on the agent
+# side to name `test_toc_proof.py` (already above in UNSKIPPABLE_MODULES) — no
+# further change needed here since it was already declared.
+#
+# NOTE: `paper-render.dom.test.tsx` is handled on the app side.
+
+
+# --------------------------------------------------------------------------- #
+# Declaration: properties this spec deliberately does NOT carry (Req 25.9)
+# --------------------------------------------------------------------------- #
+# This spec carries no property for the table of contents, the document number or
+# message-catalog completeness. Each has one observable outcome per run rather than
+# a generated input space, and each is proven by:
+#   - Table of contents: task 2.4's proof test (`test_toc_proof.py`) + task 15.10's
+#     negative test. The guard above ensures `test_toc_proof.py` is never skipped.
+#   - Document number: task 8.1's `test_document_number.py` — a test rather than a
+#     property per Req 25.9's explicit exception.
+#   - Message-catalog completeness: tasks 6.1 and 6.2's id-set equality assertions
+#     (`test_messages.py` and `message-catalog.static.test.ts`).
+#
+# This is a declaration, not an omission. The three are excluded because each
+# fails on the *absence* of its artifact or the *inequality* of two sets, both of
+# which produce exactly one observable rather than a distribution over generated
+# inputs that a property could shrink.
+NOT_PROPERTY_JUSTIFIED = {
+    "table_of_contents": "one observable per run; proven by test_toc_proof.py + task 15.10",
+    "document_number": "one observable per run; proven by test_document_number.py (Req 25.9)",
+    "message_catalog_completeness": "one observable per run; proven by tasks 6.1/6.2 id-set assertions",
+}

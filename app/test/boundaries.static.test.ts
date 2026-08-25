@@ -2265,6 +2265,8 @@ const SWEPT_DIRECTORIES = [
   "lib/auth",
   "lib/aws",
   "lib/db",
+  "lib/runs",
+  "lib/reports",
   "lib/subscriptions",
   "lib/templates",
   "lib/verifications",
@@ -2297,6 +2299,8 @@ describe("Requirement 6.11 — no sweep in this file may pass over nothing", () 
       ...SOURCE_DIRECTORIES.filter((directory) => directory !== "hooks"),
       ...SERVER_ONLY_DIRECTORIES,
       "lib/db",
+      "lib/runs",
+      "lib/reports",
       "lib/subscriptions",
       TEMPLATE_COMPONENT_DIRECTORY,
       REPORT_COMPONENT_DIRECTORY.split(path.sep).join("/"),
@@ -2329,5 +2333,113 @@ describe("Requirement 6.11 — no sweep in this file may pass over nothing", () 
     expect(isSourceFileName("only.test.ts")).toBe(false)
     expect(isSourceFileName("only.test.tsx")).toBe(false)
     expect(isSourceFileName("real.ts")).toBe(true)
+  })
+})
+
+// ===========================================================================
+// Task 16.1 — the breadth spec's data-layer and pure-module guards
+//
+// Three groups, each closing a hole:
+//   F  `lib/runs/historical.ts` carries the server-only marker (Req 6.1)
+//   G  pure modules under lib/runs/ and lib/reports/ that deliberately do NOT
+//      import server-only, SDK or secret-bearing modules (Req 6.3)
+//   H  the inventory route explicitly declares Node runtime (Req 6.7)
+// ===========================================================================
+
+// --- Group F: new server-only module ---------------------------------------
+
+const BREADTH_SERVER_ONLY_MODULES = [
+  path.join("lib", "runs", "historical.ts"),
+] as const
+
+/**
+ * Pure modules under `lib/runs/` and `lib/reports/` that **must not** carry the
+ * server-only marker and must import no SDK or secret-bearing module. Each is
+ * rendered by a client component (the gap list, the template options picker, the
+ * paper claim button) and marking it would make those components unbuildable.
+ */
+const BREADTH_PURE_MODULES = [
+  path.join("lib", "runs", "gap-groups.ts"),
+  path.join("lib", "templates", "options.ts"),
+  path.join("lib", "templates", "migrate.ts"),
+  path.join("lib", "reports", "paper-claim.ts"),
+] as const
+
+describe("Requirements 6.1, 6.3 — breadth spec's server-only and pure modules", () => {
+  test.each(BREADTH_SERVER_ONLY_MODULES)(
+    "%s begins with the server-only marker",
+    (modulePath) => {
+      expect(firstCodeLine(modulePath)).toBe(SERVER_ONLY_MARKER)
+    }
+  )
+
+  test.each(BREADTH_SERVER_ONLY_MODULES)(
+    "%s exists",
+    (modulePath) => {
+      expect(
+        existsSync(path.join(projectRoot, modulePath)),
+        `${modulePath} must exist — guard would pass vacuously without it`
+      ).toBe(true)
+    }
+  )
+
+  test.each(BREADTH_PURE_MODULES)(
+    "%s is pure — no server-only, no SDK, no connection",
+    (modulePath) => {
+      const source = readProjectFile(modulePath)
+
+      expect(
+        hasServerOnlyMarker(modulePath),
+        `${modulePath} carries the marker but is imported by client components`
+      ).toBe(false)
+      expect(
+        requiresServerOnly(source),
+        `${modulePath} imports an SDK or @/lib/crypto — move the import behind a ` +
+          `server-only module`
+      ).toBe(false)
+      expect(
+        opensConnection(source),
+        `${modulePath} opens a database connection — it must stay pure`
+      ).toBe(false)
+    }
+  )
+
+  test("the scanned directories are not empty", () => {
+    expect(
+      listSourceFiles("lib/runs").length,
+      "lib/runs is absent or holds no source file"
+    ).toBeGreaterThan(0)
+    expect(
+      listSourceFiles("lib/reports").length,
+      "lib/reports is absent or holds no source file"
+    ).toBeGreaterThan(0)
+  })
+})
+
+// --- Group H: the inventory route declares Node runtime --------------------
+
+const INVENTORY_ROUTE = path.join(
+  "app",
+  "api",
+  "subscriptions",
+  "[id]",
+  "inventory",
+  "route.ts"
+)
+
+describe("Requirement 6.7 — the inventory route runs on the Node runtime", () => {
+  test("the inventory route exists", () => {
+    expect(
+      existsSync(path.join(projectRoot, INVENTORY_ROUTE)),
+      `${INVENTORY_ROUTE} must exist — guard would pass vacuously without it`
+    ).toBe(true)
+  })
+
+  test("it declares the Node runtime", () => {
+    expect(declaresNodeRuntime(readProjectFile(INVENTORY_ROUTE))).toBe(true)
+  })
+
+  test("the route handler listing reaches it", () => {
+    expect(listRouteHandlers()).toContain(INVENTORY_ROUTE)
   })
 })

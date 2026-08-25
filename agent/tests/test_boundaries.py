@@ -2974,3 +2974,60 @@ def test_the_sdk_boundary_scan_fails_on_an_empty_directory(tmp_path: Path) -> No
         assert not reached, (
             f"package {package}/ should not be reachable in an empty tree"
         )
+
+
+# --------------------------------------------------------------------------- #
+# Rule 16 — explicit per-file SDK boundary assertions (Req 5.7, 6.3, 7.9)
+# --------------------------------------------------------------------------- #
+#
+# The SDK boundary scan already reaches these modules through their parent
+# directories (all are in `SDK_SCAN_PACKAGES`). This rule is the **explicit**
+# assertion the task requires — it names each file and fails if the scan does
+# not actually see it. Like rule 15c, it is belt and braces: a directory-level
+# assertion would pass if the directory held other files and one of these was
+# renamed out of the scan.
+
+EXPLICITLY_GUARDED_MODULES: tuple[str, ...] = (
+    "collect/factfold.py",
+    "collect/numeric.py",
+    "compile/historical.py",
+    "compile/messages.py",
+    "verify/facts.py",
+    "verify/toc.py",
+    "verify/historical.py",
+    "render/front_matter.py",
+    "render/toc.py",
+)
+"""Every module task 16.1 names for the SDK boundary scan extension."""
+
+
+def test_the_sdk_boundary_scan_explicitly_reaches_every_named_module() -> None:
+    """Req 5.7, 6.3, 7.9. Each of these must be present and reached by rule 1."""
+    scanned = set(_modules_outside_azure_package())
+
+    for relative in EXPLICITLY_GUARDED_MODULES:
+        path = SRC_ROOT / relative
+        assert path.is_file(), (
+            f"{relative} does not exist — it is declared as guarded by the SDK "
+            "boundary scan and must be present"
+        )
+        assert path in scanned, (
+            f"{relative} is not in the SDK boundary scan — an Azure SDK import "
+            "would not be caught"
+        )
+
+
+def test_every_explicitly_guarded_module_imports_no_azure_sdk() -> None:
+    """The per-file assertion that rule 1 already covers at directory level.
+
+    This fails naming the **file** rather than the directory, so the failure message
+    says which module broke rather than which package it was under.
+    """
+    for relative in EXPLICITLY_GUARDED_MODULES:
+        path = SRC_ROOT / relative
+        if not path.is_file():
+            continue
+        offenders = _import_offenders([path], _is_azure_sdk_import)
+        assert not offenders, (
+            f"{relative} imports an Azure SDK: " + "; ".join(offenders)
+        )

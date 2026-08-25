@@ -69,6 +69,7 @@ class PropertyDeclaration:
 
     title: str
     modules: tuple[str, ...]
+    identifier: str = ""
 
 
 # --------------------------------------------------------------------------- #
@@ -117,6 +118,21 @@ SPEC_PROPERTIES: dict[int, PropertyDeclaration] = {
 }
 
 # --------------------------------------------------------------------------- #
+# Breadth-and-document spec: declared property identifiers (Req 25.2)
+# --------------------------------------------------------------------------- #
+# The identifiers below are the authoritative set this spec declares. The hygiene
+# guard asserts the set collected equals the set declared. A property added here
+# and never registered fails; one registered here and never run fails.
+
+BREADTH_PROPERTY_IDENTIFIERS: frozenset[str] = frozenset({
+    "facts_archive_round_trip",
+    "number_format_agreement",
+    "historical_selection",
+    "catalog_evidence",
+    "text_fact_exact_string",
+})
+
+# --------------------------------------------------------------------------- #
 # The breadth-and-document spec's own properties
 # --------------------------------------------------------------------------- #
 # A **separate map** from `SPEC_PROPERTIES`, and not a continuation of it, because the two
@@ -134,22 +150,27 @@ BREADTH_PROPERTIES: dict[int, PropertyDeclaration] = {
     1: PropertyDeclaration(
         "A fact round-trips through the archive",
         ("test_facts_property.py",),
+        identifier="facts_archive_round_trip",
     ),
     2: PropertyDeclaration(
         "Formatting and verification agree on the declared format",
         ("test_number_format_property.py",),
+        identifier="number_format_agreement",
     ),
     3: PropertyDeclaration(
         "Historical run selection is newest-N, non-overlapping and verified",
         ("test_historical_property.py",),
+        identifier="historical_selection",
     ),
     5: PropertyDeclaration(
         "Every catalog entry is evidenced",
         ("test_catalog_evidence_property.py",),
+        identifier="catalog_evidence",
     ),
     6: PropertyDeclaration(
         "A text fact's check catches what numeric masking cannot",
         ("test_text_fact_property.py",),
+        identifier="text_fact_exact_string",
     ),
 }
 
@@ -176,6 +197,36 @@ FOUNDATION_GATE: dict[int, PropertyDeclaration] = {
     6: PropertyDeclaration(
         "Local-day bucketing at the Asia/Jakarta UTC+07:00 offset",
         ("test_buckets_property.py",),
+    ),
+}
+
+# --------------------------------------------------------------------------- #
+# Breadth spec's EXTENDED regression gate (Req 25.2, 25.6, 25.7)
+# --------------------------------------------------------------------------- #
+# The breadth-and-document spec additionally runs foundation Property 2 (JCS
+# canonicalization) and the templates spec's Property 4 (replay's bit-identical
+# snapshot digest) because facts are now inside the canonical form and inside
+# replay: a canonicalization regression changes every snapshot id and an aggregation
+# regression produces a document that verifies perfectly against a wrong number.
+BREADTH_REGRESSION_GATE: dict[str, PropertyDeclaration] = {
+    "foundation_2": PropertyDeclaration(
+        "JCS canonicalization and content addressing are stable",
+        ("test_snapshot_property.py",),
+    ),
+    "templates_4": PropertyDeclaration(
+        "Replay produces a bit-identical snapshot digest",
+        ("test_replay_property.py",),
+    ),
+}
+
+# Digests for the extended gate modules — same reasoning as FOUNDATION_SOURCE_DIGESTS:
+# editing either is allowed, but the digest must move deliberately.
+BREADTH_REGRESSION_SOURCE_DIGESTS: dict[str, str] = {
+    "test_snapshot_property.py": (
+        "0b3b7c987b997a9b4730da685d1d2cd9e39c3d1f6e10b06848e66cfa7fcd6752"
+    ),
+    "test_replay_property.py": (
+        "e931f9c491f10b8c97a6ad339a8f687ae8bf8874adb8cc660c55fcf5988cb48e"
     ),
 }
 
@@ -504,6 +555,28 @@ def gate_foundation_sources(root: Path = PROPERTY_ROOT) -> list[str]:
                 f"{_foundation_number(module)} with its generators, assertions and "
                 "declared examples unmodified (Req 45.2); changing that file is a change "
                 "to a foundation property and the digest above has to move with it"
+            )
+    return offenders
+
+
+def gate_breadth_regression_sources(root: Path = PROPERTY_ROOT) -> list[str]:
+    """Req 25.6 — the breadth regression gate modules are byte-for-byte unmodified."""
+    offenders: list[str] = []
+    for module, expected in BREADTH_REGRESSION_SOURCE_DIGESTS.items():
+        path = root / module
+        if not path.is_file():
+            offenders.append(
+                f"{module} is absent, so the breadth regression gate cannot run the "
+                f"property it protects (Req 25.6)"
+            )
+            continue
+        actual = source_digest(module, root)
+        if actual != expected:
+            offenders.append(
+                f"{module} no longer matches the digest recorded for it: expected "
+                f"{expected}, found {actual}. The breadth spec re-runs this property with "
+                "its generators, assertions and declared examples unmodified (Req 25.6); "
+                "changing it is a change to the property and the digest has to move with it"
             )
     return offenders
 
