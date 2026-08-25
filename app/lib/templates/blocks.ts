@@ -69,6 +69,15 @@ type BlockConfigSchema = {
   readonly required: readonly string[]
   readonly optional: readonly string[]
   readonly enums: Readonly<Record<string, readonly string[]>>
+  /**
+   * The required **string** fields whose compilers demand content, so a blank one is
+   * a save-time rejection rather than a run-time failure. See the note above
+   * `BLOCK_CONFIG` for why this lives here and not in the emptiness rule.
+   *
+   * Optional, and absent on most types: a type with no such field reads identically
+   * whether it omits the key or spells out `[]`, on both sides of the mirror.
+   */
+  readonly non_empty?: readonly string[]
 }
 
 // --- BEGIN COLUMN KINDS (mirrored in agent/src/reporting_agent/compile/definition.py) ---
@@ -78,6 +87,18 @@ export const COLUMN_KINDS = ["metric", "attribute", "fact"] as const
 export type ColumnKind = (typeof COLUMN_KINDS)[number]
 
 // --- BEGIN BLOCK CONFIG (mirrored in agent/src/reporting_agent/compile/definition.py) ---
+// `non_empty` names the required string fields whose compilers demand content, and it
+// exists because `isEmptyContainer` deliberately cannot decide that. An empty string's
+// meaning is a fact about the individual field: `heading.text: ""` is a legitimately
+// blank heading, while `rich_text.text: ""` saved cleanly and then failed the run
+// minutes later in the agent's `compile_rich_text`. Telling those apart needs per-field
+// knowledge, and this table is already the authority on block configuration — putting
+// it in the emptiness rule would make that rule a third authority to drift from.
+//
+// Declared only on the types that have such a field; both validators default to empty,
+// so an absent `non_empty` and an explicit `[]` mean the same thing. A list of field
+// names rather than a nested per-field flag so the Mirror_Guard reads it with the same
+// `extractArrayField` it already uses for `required` and `optional`.
 export const BLOCK_CONFIG = {
   // Req 16.13 — the compiler derives the report title, the subscription's
   // display name and the run's resolved local dates on its own, and emits no
@@ -129,6 +150,7 @@ export const BLOCK_CONFIG = {
     required: ["columns", "order_by"],
     optional: ["caption", "show_fidelity"],
     enums: { order_by_direction: ["descending", "ascending"] },
+    non_empty: ["order_by"],
   },
 
   // Req 16.14 — the compiler decides `encoding` (`categorical` vs
@@ -175,6 +197,7 @@ export const BLOCK_CONFIG = {
     required: ["run_a", "run_b"],
     optional: ["caption"],
     enums: {},
+    non_empty: ["run_a", "run_b"],
   },
 
   // Req 16.4, 16.5 — snapshot provenance and the collection record only. No
@@ -231,6 +254,7 @@ export const BLOCK_CONFIG = {
     required: ["text"],
     optional: [],
     enums: {},
+    non_empty: ["text"],
   },
 
   // Req 18.1 — one chart over prior verified runs' values for a single

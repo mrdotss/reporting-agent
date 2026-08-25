@@ -2717,14 +2717,41 @@ function validateRequiredConfigIsFilled(
  * unfinished. Telling those apart needs per-field knowledge, and encoding per-field
  * knowledge here would make this a third authority on block configuration to drift
  * from `BLOCK_CONFIG` and from the block compilers — the exact defect the caller
- * exists to close. So this refuses only what is unambiguous, and a blank string is
- * left to the compiler that knows what its field means.
+ * exists to close. So this refuses only what is unambiguous.
+ *
+ * **Where the per-field knowledge actually lives.** `BLOCK_CONFIG`'s `non_empty` names
+ * the required string fields whose compilers demand content, and the caller consults it
+ * through {@link nonEmptyFields} alongside this function. That keeps this rule's
+ * boundary exactly where this comment puts it while still catching
+ * `rich_text.text: ""` — which used to save cleanly and fail the run in the agent's
+ * `compile_rich_text`, minutes later, with the author long gone. `heading.text: ""` is
+ * in no `non_empty` list and is still accepted, which the shared corpus pins as a
+ * fixture rather than leaving to this comment.
  *
  * `0` and `false` are not empty either: they are values, and a numeric config field
  * legitimately holding zero must not be refused.
  *
  * Mirrors `_is_empty_container` in the agent's `compile/definition.py`.
  */
+/**
+ * The required string fields of one block type whose compilers demand content.
+ *
+ * Reads `BLOCK_CONFIG`'s optional `non_empty` key, defaulting to an empty list so a
+ * type that declares none behaves identically whether it omits the key or spells out
+ * `[]`. The narrowing lives here rather than at the call site for the reason
+ * `_config_schema` gives on the Python side: the table is deliberately a plain literal
+ * the Mirror_Guard can read as text, so exactly one place should widen it.
+ */
+function nonEmptyFields(
+  blockType: Exclude<BlockType, "row">
+): readonly string[] {
+  const schema = BLOCK_CONFIG[blockType] as {
+    readonly non_empty?: readonly string[]
+  }
+
+  return schema.non_empty ?? []
+}
+
 function isEmptyContainer(value: unknown): boolean {
   if (Array.isArray(value)) return value.length === 0
   if (isPlainObject(value)) return Object.keys(value).length === 0
@@ -2763,7 +2790,21 @@ function emptyRequiredConfigFields(
           for (const fieldName of BLOCK_CONFIG[
             blockType as Exclude<BlockType, "row">
           ].required) {
-            if (fieldName in config && isEmptyContainer(config[fieldName])) {
+            if (!(fieldName in config)) continue
+            const value = config[fieldName]
+            // Two kinds of empty, deliberately kept apart. A container that selected
+            // nothing is unambiguous in every block that has one. A blank string is
+            // only empty where `BLOCK_CONFIG` says the field's compiler demands
+            // content — `heading.text: ""` is a valid blank heading and stays
+            // accepted. Read through the helper so a type that declares no
+            // `non_empty` key behaves as an empty list rather than throwing.
+            if (
+              isEmptyContainer(value) ||
+              (nonEmptyFields(blockType as Exclude<BlockType, "row">).includes(
+                fieldName
+              ) &&
+                value === "")
+            ) {
               found.push({
                 path: [...blockPath, "config", fieldName],
                 blockType,

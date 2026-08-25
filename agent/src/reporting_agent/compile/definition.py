@@ -127,6 +127,20 @@ COLUMN_KINDS: Final[tuple[str, ...]] = ("metric", "attribute", "fact")
 # --- END COLUMN KINDS ---
 
 # --- BEGIN BLOCK CONFIG (mirrored in app/lib/templates/blocks.ts) ---
+# `non_empty` names the required string fields whose compilers demand content, and it
+# exists because `_is_empty_container` deliberately cannot decide that. An empty
+# string's meaning is a fact about the individual field: `heading.text: ""` is a
+# legitimately blank heading, while `rich_text.text: ""` saved cleanly and then failed
+# the run minutes later at `compile_rich_text`. Telling those apart needs per-field
+# knowledge, and this table is already the authority on block configuration — putting
+# it in the emptiness rule instead would make that rule a third authority to drift
+# from, which is the thing it says in its own docstring it must not become.
+#
+# Declared only on the types that have such a field; both readers default to empty, so
+# an absent `non_empty` and an explicit `[]` mean the same thing. A list of field names
+# rather than a nested per-field flag so the Mirror_Guard reads it with the same
+# `extractArrayField` it already uses for `required` and `optional` — a new shape would
+# have needed a new parser on both sides, which is more mirror to keep honest.
 BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "cover": {
         "required": [],
@@ -152,6 +166,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "required": ["columns", "order_by"],
         "optional": ["caption", "show_fidelity"],
         "enums": {"order_by_direction": ["descending", "ascending"]},
+        "non_empty": ["order_by"],
     },
     "timeseries_chart": {
         "required": ["metrics"],
@@ -177,6 +192,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "required": ["run_a", "run_b"],
         "optional": ["caption"],
         "enums": {},
+        "non_empty": ["run_a", "run_b"],
     },
     "verification_record": {
         "required": [],
@@ -207,6 +223,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "required": ["text"],
         "optional": [],
         "enums": {},
+        "non_empty": ["text"],
     },
     "historical_trend": {
         "required": ["metric", "statistic", "lookback"],
@@ -1195,7 +1212,9 @@ def _validate_metrics(metrics: object, path: Path, walk: _Walk) -> None:
 
 def _config_schema(
     block_type: str,
-) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, tuple[str, ...]]]:
+) -> tuple[
+    tuple[str, ...], tuple[str, ...], dict[str, tuple[str, ...]], tuple[str, ...]
+]:
     """One declared type's config schema, narrowed out of `BLOCK_CONFIG`'s
     guard-readable literal shape.
 
@@ -1204,18 +1223,25 @@ def _config_schema(
     literal rather than becoming a `TypedDict` or a frozen dataclass whose
     construction the guard would then have to parse. This function is where that
     deliberately loose shape is narrowed once, so no caller repeats the widening.
+
+    The fourth element is `non_empty` — the required string fields whose compilers
+    demand content. It defaults to an empty tuple, so a type that declares no such
+    field reads the same whether it omits the key or spells out `[]`.
     """
     schema = BLOCK_CONFIG[block_type]
     raw_required = schema["required"]
     raw_optional = schema["optional"]
     raw_enums = schema["enums"]
+    raw_non_empty = schema.get("non_empty", [])
     assert isinstance(raw_required, list), block_type
     assert isinstance(raw_optional, list), block_type
     assert isinstance(raw_enums, dict), block_type
+    assert isinstance(raw_non_empty, list), block_type
     return (
         tuple(str(name) for name in raw_required),
         tuple(str(name) for name in raw_optional),
         {str(key): tuple(str(value) for value in values) for key, values in raw_enums.items()},
+        tuple(str(name) for name in raw_non_empty),
     )
 
 
@@ -1226,7 +1252,7 @@ def _validate_block_config(
         walk.add(path, "config must be an object.", block_id)
         return
 
-    required, optional, enums = _config_schema(block_type)
+    required, optional, enums, _non_empty = _config_schema(block_type)
     allowed_field_names = {*required, *optional, *enums}
 
     for field_name in required:
@@ -2233,8 +2259,10 @@ def _validate_required_config_is_filled(
             path,
             f'"{block_type}" requires the config field "{field_name}" to carry a '
             f"value; it is present but empty. A block with no metric has nothing to "
-            f"show, and an empty table reads as an empty scope, which means something "
-            f"else entirely to a reader.",
+            f"show, an empty table reads as an empty scope — which means something "
+            f"else entirely to a reader — and a blank string in a field whose "
+            f"compiler demands content fails the run minutes after the save looked "
+            f"clean.",
             block_id,
         )
 
@@ -2255,8 +2283,15 @@ def _is_empty_container(value: object) -> bool:
     unfinished. Telling those apart needs per-field knowledge, and encoding per-field
     knowledge here would make this a third authority on block configuration to drift
     from `BLOCK_CONFIG` and from the block compilers — the exact defect the caller
-    exists to close. So this refuses only what is unambiguous, and a blank string is
-    left to the compiler that knows what its field means.
+    exists to close. So this refuses only what is unambiguous.
+
+    **Where the per-field knowledge actually lives.** `BLOCK_CONFIG`'s `non_empty`
+    names the required string fields whose compilers demand content, and the caller
+    consults it alongside this function. That keeps this rule's boundary exactly where
+    this docstring puts it while still catching `rich_text.text: ""` — which used to
+    save cleanly and fail the run at `compile_rich_text`, minutes later, with the
+    author long gone. `heading.text: ""` is not in any `non_empty` list and is still
+    accepted, which the corpus pins as a fixture rather than leaving to this comment.
 
     `0` and `False` are not empty either: they are values, and a numeric config field
     legitimately holding zero must not be refused.
@@ -2290,10 +2325,20 @@ def _empty_required_config_fields(
             if isinstance(block_type, str) and block_type in _NON_ROW_BLOCK_TYPE_SET:
                 config = block.get("config")
                 if _is_plain_object(config):
-                    required, _optional, _enums = _config_schema(block_type)
+                    required, _optional, _enums, non_empty = _config_schema(
+                        block_type
+                    )
                     for field_name in required:
-                        if field_name in config and _is_empty_container(
-                            config[field_name]
+                        if field_name not in config:
+                            continue
+                        value = config[field_name]
+                        # Two kinds of empty, deliberately kept apart. A container that
+                        # selected nothing is unambiguous in every block that has one.
+                        # A blank string is only empty where `BLOCK_CONFIG` says the
+                        # field's compiler demands content — `heading.text: ""` is a
+                        # valid blank heading and stays accepted.
+                        if _is_empty_container(value) or (
+                            field_name in non_empty and value == ""
                         ):
                             found.append(
                                 (

@@ -258,6 +258,7 @@ type ParsedBlockConfig = {
   readonly required: readonly string[]
   readonly optional: readonly string[]
   readonly enums: Readonly<Record<string, readonly string[]>>
+  readonly nonEmpty: readonly string[]
 }
 
 /**
@@ -292,6 +293,11 @@ function parseBlockConfigs(
       required: extractArrayField(section, "required") ?? [],
       optional: extractArrayField(section, "optional") ?? [],
       enums: extractEnums(section),
+      // Absent on most types, and `?? []` is the whole default: a type that
+      // declares no non-empty string field reads the same as one spelling out
+      // `[]`, on both sides, so the set comparison below cannot be tripped by
+      // the two files making that choice differently.
+      nonEmpty: extractArrayField(section, "non_empty") ?? [],
     })
   }
 
@@ -366,6 +372,38 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
     expect(missing).toEqual([])
   })
 
+  test("every non_empty field is also a required field, on both sides", () => {
+    // A `non_empty` naming a field that is not required would be silently inert:
+    // the rule only consults the list while walking `required`, so a typo
+    // (`["txt"]` for `["text"]`) would read as "no field needs content" and the
+    // save-then-fail-at-compile path it was added to close would quietly reopen.
+    // Checked against both parsed tables rather than one, because each validator
+    // reads its own — the mirror equality above says they agree, and this says
+    // what they agree on is coherent.
+    const dangling: string[] = []
+
+    for (const [label, configs] of [
+      ["ts", tsConfigs],
+      ["py", pyConfigs],
+    ] as const) {
+      for (const typeName of allTypes) {
+        const parsed = configs.get(typeName)
+        if (parsed === undefined) continue
+
+        for (const fieldName of parsed.nonEmpty) {
+          if (!parsed.required.includes(fieldName)) {
+            dangling.push(
+              `${label} ${typeName}.non_empty names "${fieldName}", ` +
+                `which is not in required=[${[...parsed.required].sort().join(", ")}]`
+            )
+          }
+        }
+      }
+    }
+
+    expect(dangling).toEqual([])
+  })
+
   test("required fields, optional fields and enum values agree for every type", () => {
     // One assertion covering every type and every field, so a failure names
     // *every* differing type and field (Req 2.6) rather than only the first
@@ -388,6 +426,13 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
         mismatches.push(
           `${typeName}.optional: ts=[${[...ts.optional].sort().join(", ")}] ` +
             `py=[${[...py.optional].sort().join(", ")}]`
+        )
+      }
+
+      if (!sameSet(ts.nonEmpty, py.nonEmpty)) {
+        mismatches.push(
+          `${typeName}.non_empty: ts=[${[...ts.nonEmpty].sort().join(", ")}] ` +
+            `py=[${[...py.nonEmpty].sort().join(", ")}]`
         )
       }
 
@@ -432,6 +477,7 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
             readonly required: readonly string[]
             readonly optional: readonly string[]
             readonly enums: Readonly<Record<string, readonly string[]>>
+            readonly non_empty?: readonly string[]
           }
         >
       )[typeName]
@@ -449,6 +495,13 @@ describe("Requirements 2.5, 2.6 — every type's config schema is mirrored", () 
       }
       if (!sameSet(Object.keys(extracted.enums), Object.keys(actual.enums))) {
         mismatches.push(`${typeName}.enums keys: sentinel vs export differ`)
+      }
+      // Without this, a `non_empty` added to the sentinel text but not to the real
+      // export — or the reverse — would pass every check above. The key exists to
+      // decide whether a save is rejected, so an unguarded copy of it is exactly
+      // the drift this file exists to refuse.
+      if (!sameSet(extracted.nonEmpty, actual.non_empty ?? [])) {
+        mismatches.push(`${typeName}.non_empty: sentinel vs export differ`)
       }
     }
 

@@ -818,6 +818,81 @@
       "verdict": "accept",
       "definition_sha256": "2e820e91205b734ca0794c1616f3e6cc090ba285a8d7f12df135229e1674f970",
       "offenders": []
+    },
+    {
+      "file": "reject-rich-text-text-empty-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "98d576a587b9001df9c5c6732321c176deaeec0eac6cc8225c71df0e398afa94",
+      "offenders": [
+        {
+          "block_id": "prose",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "text"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-top-n-table-order-by-empty-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "c10399789339b29754fd24769d742b67ba66d3045d4e82c445393b23248a93ae",
+      "offenders": [
+        {
+          "block_id": "topn",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "order_by"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-comparison-delta-run-a-empty-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "77a401b70e65d8953fe48b344f535c3dc76f8b8f3a781e5f5b044c2a1b9c6c3f",
+      "offenders": [
+        {
+          "block_id": "delta",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "run_a"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-comparison-delta-run-b-empty-string.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "8c68e11e9d355ed51c7f2bcd56f748f8f788e5905987c36a17364ec00d5efab2",
+      "offenders": [
+        {
+          "block_id": "delta",
+          "path": [
+            "blocks",
+            0,
+            "config",
+            "run_b"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "accept-heading-blank-text.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "d2ee22f7fd48959588f7ab75799b77f746542f9eeb0655bfd052d6a8ee5b85a8",
+      "offenders": []
     }
   ]
 }

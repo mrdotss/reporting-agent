@@ -479,6 +479,27 @@ const hostileStringArb: fc.Arbitrary<string> = fc
   )
   .map(([fragments, free]) => fragments.join("") + free)
 
+/**
+ * The same hostile alphabet, but never the empty string.
+ *
+ * For the config fields `BLOCK_CONFIG` lists under `non_empty` — `rich_text.text`
+ * among them — where a blank value is a *rejection*, not a valid definition. This
+ * generator promises valid definitions, so it must not emit one the validator
+ * refuses.
+ *
+ * `heading.text` deliberately keeps the plain arbitrary above and can still be
+ * `""`, which is the asymmetry the whole `non_empty` mechanism exists to express: a
+ * blank heading is a legitimately blank heading, and blank prose is an unfinished
+ * block that used to save cleanly and fail the run at `compile_rich_text`.
+ *
+ * Mapped rather than `.filter`ed so no case is rejected by a precondition — the
+ * property ledger records the rejection fraction, and a filter here would spend it
+ * on a value this generator has no reason to draw in the first place.
+ */
+const nonEmptyHostileStringArb: fc.Arbitrary<string> = hostileStringArb.map(
+  (value) => (value === "" ? "prose" : value)
+)
+
 const hostileKeyArb: fc.Arbitrary<string> = fc.oneof(
   hostileStringArb,
   fc.constantFrom(
@@ -600,7 +621,7 @@ const definitionArb: fc.Arbitrary<TemplateDefinition> = fc
     description: hostileStringArb,
     reportTitle: hostileStringArb,
     headingText: hostileStringArb,
-    prose: hostileStringArb,
+    prose: nonEmptyHostileStringArb,
     statistic: fc.constantFrom("avg", "min", "max"),
     preset: fc.constantFrom(...DESIGN_PRESETS),
     density: fc.constantFrom(...DENSITY_VALUES),
