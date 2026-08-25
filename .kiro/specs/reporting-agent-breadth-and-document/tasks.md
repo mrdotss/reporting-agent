@@ -764,7 +764,7 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - The second direction is what makes 15.4 an **agreement** check rather than a comma rule
     - _Requirements: 24.1, 24.2, 24.3, 24.8_
 
-  - [ ] 15.6 Retire the one-directional N5 and keep the locale companion in force
+  - [x] 15.6 Retire the one-directional N5 and keep the locale companion in force
     - **Delete** `test_n5_a_comma_decimal_conversion_fails_the_fidelity_gate` in `agent/tests/test_negative_gates.py` (line 406), which asserts `pdf_figure_missing` and that the offending `formatted` string contains a period, and replace it with the pair above — so the assertion becomes *the document's separator disagrees with the definition's* rather than *commas are wrong*
     - **Retain** `test_the_conversion_locale_alone_rewrites_nothing_in_this_renderers_output` (line 446) and extend it to **both** declared formats, because it is what records that this renderer emits every figure as a literal text run and that a locale therefore has nothing to reformat
     - Assert the replaced test name appears nowhere in the suite, so the retirement is complete rather than leaving two tests asserting contradictory rules
@@ -781,42 +781,42 @@ path in the agent, no task adds a `.docx` upload, and no task introduces a templ
     - Expected blocking set `{historical_point_unverified}`. The injection is expressible because `Figure.__post_init__` accepts a `/prior_runs/<id>` pointer with a matching `source_run_id` — if construction refused it the negative test could not exist and the gate would never have been observed failing
     - _Requirements: 24.1, 24.2, 24.3, 24.12_
 
-  - [ ] 15.9 Historical points injected from two runs whose periods overlap
+  - [x] 15.9 Historical points injected from two runs whose periods overlap
     - Two halves: the **resolver** selects at most one of two candidates whose resolved local periods overlap; and points sourced from **both** injected into the compiled document record `historical_point_overlapping` naming both run ids and both periods
     - Expected blocking set `{historical_point_overlapping}`
     - _Requirements: 24.1, 24.2, 24.3, 24.13_
 
-  - [ ] 15.10 A table of contents naming the wrong page
+  - [x] 15.10 A table of contents naming the wrong page
     - Fixture: a document of at least 8 pages whose table of contents names, for at least one entry, a page other than the page that entry's heading appears on
     - Expected blocking set `{toc_page_mismatch}`, naming that entry's heading text, the page named and the page observed
     - Where `ADOPTED_APPROACH` is `none` no table of contents is emitted, so this test constructs its document by writing the entries directly against the harness of task 2.2 rather than through the builder, and asserts the verifier's behaviour independently of which candidate was adopted
     - _Requirements: 24.1, 24.2, 24.3, 24.14_
 
-  - [ ] 15.11 A `TextFact` emitted outside a data-table cell
+  - [x] 15.11 A `TextFact` emitted outside a data-table cell
     - Mutation: drive a purpose-built emitter down `write_layout_table` with a `TextFactCell` in the tree, so no `w:tblCaption` is written and `AnchorRecorder` records nothing
     - Expected blocking set `{text_fact_unanchored}`, naming that entry's AST path
     - Proves the type system stops a `TextFact` occupying a non-cell **AST** position and does not stop a **renderer** emitting one down the layout path — which is a renderer defect of exactly the class this finding exists to catch
     - _Requirements: 24.1, 24.2, 24.3, 24.15_
 
-  - [ ] 15.12 A `Fact` compiled with no `source` or no `collected_at`
+  - [x] 15.12 A `Fact` compiled with no `source` or no `collected_at`
     - Fixture: a snapshot carrying such a `Fact`, compiled
     - Expected blocking set `{fact_source_missing}` naming that fact's resource id and key, with the terminal code `COMPILE_FAILED` and **no report artifact written**
     - Proves a fact whose provenance is absent is an assertion rather than an observation
     - _Requirements: 24.1, 24.2, 24.3, 24.16_
 
-  - [ ] 15.13 A table identity altered so a `TextFact`'s anchor resolves to no cell
+  - [x] 15.13 A table identity altered so a `TextFact`'s anchor resolves to no cell
     - Mutation: alter the table identity in the caption of a rendered data table carrying exactly one ledger entry — a `TextFact` — leaving the ledger and every other rendered character unchanged
     - Expected blocking set `{text_fact_anchor_missing}` naming that entry's AST path **and its anchor**
     - Exists so the blocking type criterion 6.7 declares carries a test that observes it rather than failing the enumeration meta-test of 15.16
     - _Requirements: 24.1, 24.2, 24.3, 24.19_
 
-  - [ ] 15.14 A `schema_version` 2 run missing one per-run front-matter value
+  - [x] 15.14 A `schema_version` 2 run missing one per-run front-matter value
     - Fixture: a run whose pinned version declares `schema_version` 2 and for which one per-run value is absent
     - Terminal `RENDER_FAILED` **naming that value**, with no report artifact and **no substituted placeholder** in that value's position
     - **And additionally**: assert **no object exists** at that run's `.docx` and `.pdf` artifact keys, so an absent cover value is observed as a refusal rather than as invented copy
     - _Requirements: 24.1, 24.2, 24.3, 24.20_
 
-  - [ ] 15.15 An `id` run for which the catalog declares no `id` value
+  - [x] 15.15 An `id` run for which the catalog declares no `id` value
     - Fixture: a run whose pinned version declares `identity.language` `id` and for which the Message_Catalog declares no `id` value for one string id that render resolves
     - Terminal `RENDER_FAILED` naming that string id **and** that language, with no report artifact
     - **And additionally**: assert **no `en` value for that string id reached any rendered output**, so the fallback criterion 15.4 exists to prevent is observed **absent** rather than assumed absent

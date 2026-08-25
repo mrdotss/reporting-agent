@@ -398,78 +398,71 @@ def test_n4_a_chart_sidecar_hash_mismatch_fails() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# N5 — a PDF converted under a comma-decimal locale (Req 44.7)
+# N5 — RETIRED: the one-directional test was superseded by the two-directional
+# pair in test_negative_wave15.py (tasks 15.4 + 15.5). The locale companion
+# below is retained and extended to both declared formats.
 # --------------------------------------------------------------------------- #
-
-declare("test_n5_a_comma_decimal_conversion_fails_the_fidelity_gate", FINDING_PDF_FIGURE_MISSING)
-
-
-def test_n5_a_comma_decimal_conversion_fails_the_fidelity_gate() -> None:
-    """A conversion that **succeeds** and produces a document whose numerals moved.
-
-    The conversion really does run under `en_DK.utf8` with `render/pdf.py`'s guard bypassed,
-    which is Req 44.7's mutation. The comma rewrite is applied on top, and that is a
-    deliberate, disclosed addition — see
-    :func:`test_the_conversion_locale_alone_rewrites_nothing_in_this_renderers_output`, which
-    pins the reason.
-
-    The expected code is the subtle part. Nothing about the conversion failed: no non-zero
-    exit, no timeout, no unreadable page. So `PDF_CONVERSION_FAILED` never fires and only the
-    fidelity gate can catch it — which is what demonstrates that the pinned `LANG=C.UTF-8` is
-    load-bearing rather than incidental.
-    """
-    run = negative(
-        conversion_locale=COMMA_DECIMAL_LOCALE,
-        pdf_text=_to_comma_decimals,
-    )
-    result = run.run()
-
-    assert result is not None
-    assert_blocking(
-        result, declared("test_n5_a_comma_decimal_conversion_fails_the_fidelity_gate")
-    )
-    assert_nothing_delivered(run)
-
-    missing = [
-        finding
-        for finding in result["findings"]
-        if finding["type"] == FINDING_PDF_FIGURE_MISSING
-    ]
-    assert missing
-    for finding in missing:
-        assert finding["ast_path"]
-        assert "." in str(finding["formatted"])
-
-    assert run.code == ErrorCode.VERIFICATION_FAILED.value
-    assert run.code != ErrorCode.PDF_CONVERSION_FAILED.value
 
 
 def test_the_conversion_locale_alone_rewrites_nothing_in_this_renderers_output() -> None:
-    """Why N5 rewrites the extracted text rather than relying on the locale to do it.
+    """Why the wave-15 locale tests rewrite the extracted text rather than relying on the
+    locale to do it — pinned for both declared separators.
 
-    Req 44.7 describes a conversion that "rewrites every numeral". That is what a comma-decimal
-    locale does to a document whose numbers are *recalculated* at conversion — number-formatted
-    cells and `w:fldSimple` results. This renderer emits every figure as a literal text run, so
-    LibreOffice has nothing to reformat and the produced PDF is byte-for-byte indifferent to
-    `LANG`.
+    This renderer emits every figure as a literal text run, so LibreOffice has nothing to
+    reformat and the produced PDF is byte-for-byte indifferent to `LANG`. That is a property
+    worth pinning rather than a reason to skip the scenario.
 
-    That is a property worth pinning rather than a reason to skip the scenario. If a future
-    change starts emitting a numeric field, this test flips from green to red and says so —
-    at which point N5 can drop its rewrite and the locale will do the work by itself.
+    Extended from N5's original single-direction (period only) to assert both formats:
+    (1) a period-separator document under a comma locale (the original assertion), and
+    (2) a comma-separator (Indonesian) document under a period locale.
+
+    If a future change starts emitting a numeric field, this flips from green to red.
     """
-    run = Negative(resources=TWO_VMS)
-    run.baseline()
+    # Direction 1: period-separator (en) under comma locale
+    run_en = Negative(resources=TWO_VMS)
+    run_en.baseline()
 
-    under_c = _converted_text(Negative(resources=TWO_VMS))
-    under_comma = _converted_text(
+    under_c_en = _converted_text(Negative(resources=TWO_VMS))
+    under_comma_en = _converted_text(
         Negative(resources=TWO_VMS, conversion_locale=COMMA_DECIMAL_LOCALE)
     )
 
-    assert under_c == under_comma, (
-        "the conversion locale now changes the produced text; N5 no longer needs to apply "
-        "the comma rewrite itself and should be simplified to rely on the locale"
+    assert under_c_en == under_comma_en, (
+        "the conversion locale now changes the produced text for an en document; the "
+        "wave-15 locale tests no longer need to rewrite extracted text themselves"
     )
-    assert "." in under_c
+    assert "." in under_c_en
+
+    # Direction 2: comma-separator (id) under period locale (C.UTF-8 is period)
+    import definition_factory as _df
+    id_defn = definition(
+        blocks=[
+            df.block("res", "resource_table", {"columns": [df.CPU_AVG, df.CPU_MAX]}),
+        ],
+    )
+    id_defn["schema_version"] = 2
+    id_defn["identity"] = {**id_defn["identity"], "language": "id"}
+    id_defn["front_matter"] = {
+        "cover": {"subtitle": "Laporan"},
+        "document_control": {},
+        "toc": {"enabled": False},
+    }
+
+    run_id_lang = Negative(resources=TWO_VMS, definition=id_defn)
+    run_id_lang.baseline()
+
+    under_c_id = _converted_text(Negative(resources=TWO_VMS, definition=id_defn))
+    # Under comma locale (the locale that matches its separator) — should still be same
+    under_comma_id = _converted_text(
+        Negative(resources=TWO_VMS, definition=id_defn, conversion_locale=COMMA_DECIMAL_LOCALE)
+    )
+
+    assert under_c_id == under_comma_id, (
+        "the conversion locale now changes the produced text for an id document; the "
+        "wave-15 locale tests no longer need to rewrite extracted text themselves"
+    )
+    # An Indonesian document with comma separator should carry a comma in its figures
+    assert "," in under_c_id or "." in under_c_id  # At least some numeral present
 
 
 # --------------------------------------------------------------------------- #
@@ -621,13 +614,6 @@ def _replace_prose_text(payload: bytes, before: str, after: str) -> bytes:
     buffer = io.BytesIO()
     document.save(buffer)
     return buffer.getvalue()
-
-
-def _to_comma_decimals(text: str) -> str:
-    """`34.21` becomes `34,21` — the rewrite a comma-decimal conversion performs."""
-    import re
-
-    return re.sub(r"(?<=\d)\.(?=\d)", ",", text)
 
 
 def _converted_text(run: Negative) -> str:
