@@ -1258,9 +1258,23 @@ function reportTemplateRow(
 const TEMPLATE_CURRENT_VERSION: TemplateViewCurrentVersion = {
   version: 3,
   definitionSha256: TEMPLATE_VERSION_SHA,
+  schemaVersion: 2,
 }
 
-/** Requirement 43.9 — the eight keys, sorted, spelled out. */
+/**
+ * Requirement 43.9 — the nine keys, sorted, spelled out.
+ *
+ * **`schemaVersion` was added deliberately, and this list is the record of it.**
+ * The run form has to ask for the per-run front-matter values a `schema_version >= 2`
+ * template requires (Requirement 13.7), and it could not tell v1 from v2 through this
+ * projection — so it asked for neither and `enqueueRun` rejected every v2 run
+ * (Requirement 13.14). Widening a closed set is the change; loosening this assertion
+ * to accommodate it silently would have been the bug.
+ *
+ * It is a `schema_version` *number*, never the `definition` it was read from: the
+ * blob does not cross this boundary, and `TemplateViewCurrentVersion` stays a `Pick`
+ * that excludes it.
+ */
 const TEMPLATE_VIEW_KEYS = [
   "createdAt",
   "currentVersion",
@@ -1269,6 +1283,7 @@ const TEMPLATE_VIEW_KEYS = [
   "hasDraft",
   "id",
   "name",
+  "schemaVersion",
   "updatedAt",
 ]
 
@@ -1276,6 +1291,10 @@ const TEMPLATE_VIEW_KEYS = [
 const TEMPLATE_FORBIDDEN_KEYS = [
   "user_id",
   "userId",
+  // The jsonb `schemaVersion` is derived from. It is read as a scalar — in SQL for a
+  // list query, off an already-loaded row otherwise — and never projected itself.
+  "definition",
+  "schema_version",
   "current_version_id",
   "currentVersionId",
   "draft_definition",
@@ -1287,7 +1306,7 @@ const TEMPLATE_FORBIDDEN_KEYS = [
 // --- The projection ---------------------------------------------------------
 
 describe("toTemplateView — Requirement 43.9", () => {
-  test("carries the eight values the browser is allowed to see, with a current version", () => {
+  test("carries the nine values the browser is allowed to see, with a current version", () => {
     const view = toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
 
     expect(view).toEqual({
@@ -1297,9 +1316,23 @@ describe("toTemplateView — Requirement 43.9", () => {
       currentVersion: 3,
       currentVersionSha256: TEMPLATE_VERSION_SHA,
       hasDraft: false,
+      schemaVersion: 2,
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-02T00:00:00.000Z",
     })
+  })
+
+  test("a v1 template's schemaVersion is 1, not absent", () => {
+    // The distinction the form turns on. A v1 template must read as 1 rather than
+    // undefined, so `schemaVersion >= 2` is a comparison against a number at every
+    // call rather than one that quietly short-circuits.
+    const view = toTemplateView(reportTemplateRow(), {
+      version: 1,
+      definitionSha256: TEMPLATE_VERSION_SHA,
+      schemaVersion: 1,
+    })
+
+    expect(view.schemaVersion).toBe(1)
   })
 
   test("a template with no version yet carries null for both version fields", () => {
@@ -1312,6 +1345,10 @@ describe("toTemplateView — Requirement 43.9", () => {
 
     expect(view.currentVersion).toBeNull()
     expect(view.currentVersionSha256).toBeNull()
+    // But schemaVersion is a number, not null: a template with no version cannot be
+    // run at all, and the form's `>= 2` comparison should not have to special-case a
+    // third state on top of the two it already handles.
+    expect(view.schemaVersion).toBe(1)
   })
 
   test("hasDraft reflects only whether draft_definition is non-null, never its content", () => {

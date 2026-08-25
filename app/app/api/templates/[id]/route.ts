@@ -22,6 +22,7 @@ import {
   toTemplateView,
   type TemplateVersionView,
   type TemplateView,
+  templateViewCurrentVersion,
 } from "@/lib/db/views"
 import {
   templateIdParamSchema,
@@ -170,7 +171,10 @@ export async function GET(
     const version = (await readLatestVersion(user.id, params.data.id)) ?? null
 
     return json(200, {
-      template: toTemplateView(template, version),
+      template: toTemplateView(
+        template,
+        version === null ? null : templateViewCurrentVersion(version)
+      ),
       draftDefinition: template.draftDefinition,
       currentVersion: version === null ? null : toTemplateVersionView(version),
     } satisfies ReadResponseBody)
@@ -230,7 +234,10 @@ export async function PATCH(
     const version = (await readLatestVersion(user.id, params.data.id)) ?? null
 
     return json(200, {
-      template: toTemplateView(template, version),
+      template: toTemplateView(
+        template,
+        version === null ? null : templateViewCurrentVersion(version)
+      ),
     } satisfies PatchResponseBody)
   } catch (thrown) {
     return storeFailure("PATCH", thrown)

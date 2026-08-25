@@ -3,7 +3,9 @@ import { notFound } from "next/navigation"
 
 import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
-import { toTemplateView } from "@/lib/db/views"
+import { toTemplateView,
+  templateViewCurrentVersion,
+} from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
@@ -77,7 +79,12 @@ export default async function EditTemplatePage({ params }: PageProps) {
 
   return (
     <WizardShell
-      template={toTemplateView(loaded.template, loaded.version)}
+      template={toTemplateView(
+        loaded.template,
+        loaded.version === null
+          ? null
+          : templateViewCurrentVersion(loaded.version)
+      )}
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
       thumbnails={themeThumbnails()}

@@ -2422,6 +2422,28 @@ function resolveSchemaVersion(value: unknown): SchemaVersion {
 }
 
 /**
+ * The `schema_version` a definition **already in memory** declares, conservatively.
+ *
+ * The exported reader for callers that hold a parsed definition and need only this
+ * one number off it — the template routes and the edit page, which have just saved
+ * or read a version row and would otherwise each re-implement the extraction. It
+ * delegates to {@link resolveSchemaVersion}, so "which version does this definition
+ * claim" has one answer in this module rather than one per caller.
+ *
+ * **Not the reader for a list query.** A caller that does not already hold the
+ * definition should project `definition->>'schema_version'` in SQL instead — see
+ * `lib/templates/store.ts#readLatestVersionForView`. Selecting a whole block tree
+ * to reach one integer is the cost this function must not be used to hide.
+ */
+export function declaredSchemaVersion(definition: unknown): SchemaVersion {
+  return resolveSchemaVersion(
+    typeof definition === "object" && definition !== null
+      ? (definition as { readonly schema_version?: unknown }).schema_version
+      : undefined
+  )
+}
+
+/**
  * The `identity.language` a definition pins, or `null` when it declares none — which is every
  * v1 definition, where every string id resolves in `en` (Requirement 15.12).
  *

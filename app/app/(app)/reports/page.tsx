@@ -7,7 +7,7 @@ import { NO_RUN_VIEW_EXTRAS, toRunView, toTemplateView } from "@/lib/db/views"
 import { resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
-import { listTemplates, readLatestVersion } from "@/lib/templates/store"
+import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 
 /**
  * `/reports` — request a run, and see the ones already requested
@@ -50,9 +50,15 @@ export default async function ReportsPage() {
   // The **highest existing** version per template, which is what the enqueue
   // pins (Requirement 9.6) — not the cached `current_version_id`, so the version
   // number the form shows is the one a run would actually use.
+  //
+  // `readLatestVersionForView` rather than `readLatestVersion`: the form needs the
+  // definition's `schema_version` to know whether to ask for the per-run
+  // front-matter values a v2 template requires (Requirement 13.14), and that read
+  // projects the one scalar in SQL instead of pulling N whole block trees over to
+  // decide N option labels.
   const templates = await Promise.all(
     templateRows.map(async (row) =>
-      toTemplateView(row, (await readLatestVersion(user.id, row.id)) ?? null)
+      toTemplateView(row, (await readLatestVersionForView(user.id, row.id)) ?? null)
     )
   )
 

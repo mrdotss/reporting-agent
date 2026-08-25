@@ -6,7 +6,7 @@ import { NewTemplateButton } from "@/components/templates/new-template-button"
 import { Card, CardContent } from "@/components/ui/card"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView, type TemplateView } from "@/lib/db/views"
-import { listTemplates, readLatestVersion } from "@/lib/templates/store"
+import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 
 /**
  * `/templates` — every template this user owns (Requirements 1.4, 10.2).
@@ -22,7 +22,7 @@ import { listTemplates, readLatestVersion } from "@/lib/templates/store"
  *
  * ## The version shown is the one a run would pin
  *
- * `readLatestVersion` resolves the **highest existing** version rather than
+ * `readLatestVersionForView` resolves the **highest existing** version rather than
  * reading `current_version_id`, matching what the enqueue does (Requirement 9.6).
  * The two agree in ordinary operation; showing the pointer instead would mean a
  * consultant who just saved version 4 sees version 3 beside a template that runs
@@ -94,7 +94,7 @@ export default async function TemplatesPage() {
   // ordering has to be kept consistent with the store's own.
   const templates = await Promise.all(
     rows.map(async (row) =>
-      toTemplateView(row, (await readLatestVersion(user.id, row.id)) ?? null)
+      toTemplateView(row, (await readLatestVersionForView(user.id, row.id)) ?? null)
     )
   )
 

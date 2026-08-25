@@ -43,6 +43,18 @@ export const MAX_CUSTOMER_NAME_LENGTH = 200
 export const MAX_REVISION_NOTE_LENGTH = 500
 
 /**
+ * The revision label ("1.0", "Rev B") and the author name.
+ *
+ * Named rather than inline in the schema below, for the reason stated at the top of
+ * this module: the run form renders these bounds as `maxLength`, so a constant here
+ * is what stops the field and the route describing different rules. They were inline
+ * while no surface collected them; the form that collects them is what made the
+ * duplication reachable.
+ */
+export const MAX_REVISION_LENGTH = 100
+export const MAX_REVISION_AUTHOR_LENGTH = 200
+
+/**
  * The strict schema for one revision-history row: `revision`, `note` and
  * `author`, all non-empty bounded strings.
  *
@@ -50,9 +62,9 @@ export const MAX_REVISION_NOTE_LENGTH = 500
  */
 export const revisionHistoryRowSchema = z
   .object({
-    revision: z.string().trim().min(1).max(100),
+    revision: z.string().trim().min(1).max(MAX_REVISION_LENGTH),
     note: z.string().trim().min(1).max(MAX_REVISION_NOTE_LENGTH),
-    author: z.string().trim().min(1).max(200),
+    author: z.string().trim().min(1).max(MAX_REVISION_AUTHOR_LENGTH),
   })
   .strict()
 
@@ -161,6 +173,62 @@ export const runCreateInputSchema = z
   .strict()
 
 export type RunCreateInput = z.output<typeof runCreateInputSchema>
+
+/**
+ * Build the `POST /api/runs` body for one submission.
+ *
+ * **This function is the fix for a defect, and its existence is the point.** The run
+ * form built its body inline and sent three fields; `enqueueRun` requires two more
+ * once the pinned version turns out to declare `schema_version >= 2` (Requirement
+ * 13.14). Both halves were correct about their own side and nothing compared them, so
+ * every v2 run was rejected — visibly in the server log, invisibly in the browser,
+ * because `internalError()` is fixed text.
+ *
+ * Extracting it puts the body's shape somewhere **both** a jsdom component test and a
+ * node integration test can reach: the form's own suite asserts what it sends, and
+ * `test/db/run-form-enqueue-round-trip.integration.test.ts` feeds the output of *this*
+ * function to the real `enqueueRun`. Those two tests are only worth something together
+ * — the first describes the form, the second proves the form's output is what the
+ * enqueue accepts, which is the assertion that was missing.
+ *
+ * `frontMatter` is `null` for a v1 template, and the two keys are then **absent**
+ * rather than empty. `runCreateInputSchema` is `.strict()` with both fields
+ * `.optional()`, so a blank string would fail its own `min(1)` and a v1 run would
+ * start failing for a page it does not have.
+ *
+ * Values are trimmed here, once. The schema trims too, but a caller that gates its
+ * submit button on "is this non-empty" and then sends untrimmed text is deciding with
+ * a different value than it sends — and three spaces would pass the gate.
+ */
+export function buildRunCreateBody(fields: {
+  readonly connectedSubscriptionId: string
+  readonly templateId: string
+  readonly timezone: string
+  readonly frontMatter: {
+    readonly customerName: string
+    readonly revision: string
+    readonly note: string
+    readonly author: string
+  } | null
+}): Record<string, unknown> {
+  const base = {
+    connectedSubscriptionId: fields.connectedSubscriptionId,
+    templateId: fields.templateId,
+    timezone: fields.timezone,
+  }
+
+  if (fields.frontMatter === null) return base
+
+  return {
+    ...base,
+    customerName: fields.frontMatter.customerName.trim(),
+    revisionHistoryRow: {
+      revision: fields.frontMatter.revision.trim(),
+      note: fields.frontMatter.note.trim(),
+      author: fields.frontMatter.author.trim(),
+    },
+  }
+}
 
 /**
  * `GET /api/runs/[runId]` and `GET /api/runs/[runId]/stream` — a path parameter is

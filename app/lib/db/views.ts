@@ -11,6 +11,10 @@ import type {
   VerificationStatus,
 } from "@/lib/db/schema"
 import { maskSubscriptionId } from "@/lib/validation/mask"
+import {
+  declaredSchemaVersion,
+  MIN_SCHEMA_VERSION,
+} from "@/lib/templates/definition"
 import type {
   DriftSample,
   Finding,
@@ -473,6 +477,19 @@ export type TemplateView = {
   currentVersionSha256: string | null
   /** Whether `draft_definition` is non-null — never the draft's own content. */
   hasDraft: boolean
+  /**
+   * The `schema_version` the pinned version's definition declares, or
+   * {@link MIN_SCHEMA_VERSION} when there is no version yet.
+   *
+   * Here because the run form has to ask for the per-run front-matter values a
+   * `schema_version >= 2` template needs — a customer name and a revision-history
+   * row (Requirement 13.7) — and it could not previously tell v1 from v2, so it
+   * asked for neither and `enqueueRun` rejected every v2 run it submitted
+   * (Requirement 13.14). A number rather than an `isV2` boolean: the enqueue
+   * compares `>= 2` against a version that is expected to grow, and a boolean
+   * would have to be recomputed here the day a v3 lands.
+   */
+  schemaVersion: number
   createdAt: string
   updatedAt: string
 }
@@ -485,11 +502,53 @@ export type TemplateView = {
  * A `Pick` rather than the full row, so a caller reading only these two
  * columns (rather than the version's `definition` jsonb blob, which this view
  * never needs) is not made to look like it forgot to select the rest.
+ *
+ * **`schemaVersion` is added as a scalar rather than by widening the `Pick` to
+ * carry `definition`.** The version the form needs lives *inside* that jsonb, and
+ * the temptation is to select the blob and read one key off it in TypeScript —
+ * which would put an arbitrarily large block tree through a list query that
+ * renders a `<select>`. `readLatestVersionForView` projects
+ * `definition->>'schema_version'` in SQL instead, so the value crosses as one
+ * number and the blob stays where it is.
+ *
+ * It is **required, not optional-defaulting-to-1**. An optional field would let a
+ * caller that forgot it silently describe a v2 template as v1 — which is the exact
+ * shape of the defect this field exists to fix, reintroduced one layer up. Required
+ * means the compiler names every call site that has to answer.
  */
 export type TemplateViewCurrentVersion = Pick<
   ReportTemplateVersion,
   "version" | "definitionSha256"
->
+> & {
+  readonly schemaVersion: number
+}
+
+/**
+ * Build a {@link TemplateViewCurrentVersion} from a version row **already read in
+ * full**, deriving `schemaVersion` from the `definition` that row carries.
+ *
+ * For the callers that legitimately hold the whole row — the template routes just
+ * after a save, and the edit page, which needs the definition itself to render the
+ * builder. They pay no extra query and select nothing new; this only spares each of
+ * them re-implementing the same extraction inline.
+ *
+ * A list screen must **not** reach for this. Holding the row is the precondition,
+ * not the goal: a caller that would have to select `definition` in order to call
+ * this should call `readLatestVersionForView` instead, which reads the one scalar
+ * in SQL.
+ */
+export function templateViewCurrentVersion(
+  row: Pick<
+    ReportTemplateVersion,
+    "version" | "definitionSha256" | "definition"
+  >
+): TemplateViewCurrentVersion {
+  return {
+    version: row.version,
+    definitionSha256: row.definitionSha256,
+    schemaVersion: declaredSchemaVersion(row.definition),
+  }
+}
 
 /**
  * Project a `report_templates` row, plus its current version's number and
@@ -512,6 +571,7 @@ export function toTemplateView(
     currentVersion: currentVersion?.version ?? null,
     currentVersionSha256: currentVersion?.definitionSha256 ?? null,
     hasDraft: row.draftDefinition !== null,
+    schemaVersion: currentVersion?.schemaVersion ?? MIN_SCHEMA_VERSION,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }

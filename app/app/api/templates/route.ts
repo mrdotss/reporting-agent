@@ -14,12 +14,14 @@ import {
   type ApiErrorBody,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
-import { toTemplateView, type TemplateView } from "@/lib/db/views"
+import { toTemplateView, type TemplateView,
+  templateViewCurrentVersion,
+} from "@/lib/db/views"
 import {
   templateCreateInputSchema,
   templateQuerySchema,
 } from "@/lib/templates/input"
-import { listTemplates, readLatestVersion } from "@/lib/templates/store"
+import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 
 /**
  * `POST /api/templates` and `GET /api/templates` (Requirements 1.4, 1.9, 9.2,
@@ -115,7 +117,7 @@ export async function POST(request: Request): Promise<Response> {
     )
 
     return json(201, {
-      template: toTemplateView(template, version),
+      template: toTemplateView(template, templateViewCurrentVersion(version)),
     } satisfies CreateResponseBody)
   } catch (thrown) {
     if (thrown instanceof TemplateInvalidError)
@@ -136,7 +138,7 @@ export async function POST(request: Request): Promise<Response> {
  *
  * ## One query per template, and why that is the right shape here
  *
- * `readLatestVersion` runs per row rather than as one join. A user holds three
+ * `readLatestVersionForView` runs per row rather than as one join. A user holds three
  * starters plus what they author — single digits, not a page of results — and
  * the alternative is a `DISTINCT ON` that has to be kept consistent with
  * `readHighestVersionRow`'s own ordering. When a user's template count makes
@@ -161,7 +163,7 @@ export async function GET(request: Request): Promise<Response> {
 
     const templates = await Promise.all(
       rows.map(async (row) =>
-        toTemplateView(row, (await readLatestVersion(user.id, row.id)) ?? null)
+        toTemplateView(row, (await readLatestVersionForView(user.id, row.id)) ?? null)
       )
     )
 

@@ -6,12 +6,20 @@ import { PlayIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import type {
   ConnectedSubscriptionView,
   RunView,
   TemplateView,
 } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
+import {
+  buildRunCreateBody,
+  MAX_CUSTOMER_NAME_LENGTH,
+  MAX_REVISION_AUTHOR_LENGTH,
+  MAX_REVISION_LENGTH,
+  MAX_REVISION_NOTE_LENGTH,
+} from "@/lib/runs/input"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 
 /**
@@ -53,6 +61,18 @@ import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 
 /** The customer's zone, and the default the invoke context carries. */
 const DEFAULT_TIMEZONE = "Asia/Jakarta"
+
+/**
+ * The lowest `schema_version` that renders front matter, and therefore the lowest
+ * that needs the per-run values below (Requirements 13.7, 13.14).
+ *
+ * A `>=` comparison against a named threshold rather than `=== 2`, so a v3 template
+ * — which will still have a cover and a document-control page — asks for them too
+ * instead of silently falling through to the v1 branch and being rejected at the
+ * enqueue. That silent fall-through is precisely the defect this field fixes, and
+ * `=== 2` would reintroduce it on the next schema bump.
+ */
+const FRONT_MATTER_SCHEMA_VERSION = 2
 
 /** What the route answers with. Parsed defensively — it is a network response. */
 type CreateResponse = {
@@ -119,8 +139,27 @@ export function RunForm({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  /**
+   * The per-run front-matter values a `schema_version >= 2` template needs
+   * (Requirement 13.7).
+   *
+   * Held whether or not the selected template is v2, and **not cleared when the
+   * selection changes to v1**: a consultant who types a customer name, looks at a v1
+   * template and comes back should find their typing intact. What decides whether
+   * these travel is `requiresFrontMatter` at submit time, not whether the inputs are
+   * currently on screen — so a v1 run cannot carry them even if they hold values.
+   */
+  const [customerName, setCustomerName] = useState("")
+  const [revision, setRevision] = useState("")
+  const [revisionNote, setRevisionNote] = useState("")
+  const [revisionAuthor, setRevisionAuthor] = useState("")
+
   const subscriptionFieldId = useId()
   const templateFieldId = useId()
+  const customerNameFieldId = useId()
+  const revisionFieldId = useId()
+  const revisionNoteFieldId = useId()
+  const revisionAuthorFieldId = useId()
 
   /**
    * The report timezone.
@@ -138,6 +177,31 @@ export function RunForm({
     (template) => template.id === templateId
   )
 
+  /**
+   * Whether the selected template renders front matter, and so whether this run has
+   * to carry a customer name and a revision row (Requirement 13.14).
+   *
+   * `undefined` — no template selected — is **not** treated as v2: there is nothing to
+   * run yet, and asking for a document's details before choosing the document reads
+   * as the form having lost its place.
+   */
+  const requiresFrontMatter =
+    selectedTemplate !== undefined &&
+    selectedTemplate.schemaVersion >= FRONT_MATTER_SCHEMA_VERSION
+
+  // Trimmed once, and these are the values both the gate and the request body use, so
+  // a name of three spaces cannot pass the check and then travel as whitespace.
+  const trimmedCustomerName = customerName.trim()
+  const trimmedRevision = revision.trim()
+  const trimmedRevisionNote = revisionNote.trim()
+  const trimmedRevisionAuthor = revisionAuthor.trim()
+
+  const frontMatterComplete =
+    trimmedCustomerName !== "" &&
+    trimmedRevision !== "" &&
+    trimmedRevisionNote !== "" &&
+    trimmedRevisionAuthor !== ""
+
   const submit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault()
@@ -150,11 +214,25 @@ export function RunForm({
         const response = await fetch("/api/runs", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            connectedSubscriptionId,
-            templateId,
-            timezone,
-          }),
+          // Built by `buildRunCreateBody` rather than inline here, so the shape this
+          // form sends is the shape an integration test can feed to the real
+          // `enqueueRun` — see that function's note. Building it inline is what let
+          // the form and the enqueue disagree about v2 in the first place.
+          body: JSON.stringify(
+            buildRunCreateBody({
+              connectedSubscriptionId,
+              templateId,
+              timezone,
+              frontMatter: requiresFrontMatter
+                ? {
+                    customerName: trimmedCustomerName,
+                    revision: trimmedRevision,
+                    note: trimmedRevisionNote,
+                    author: trimmedRevisionAuthor,
+                  }
+                : null,
+            })
+          ),
         })
 
         const body = (await response.json()) as CreateResponse
@@ -180,7 +258,18 @@ export function RunForm({
         setSubmitting(false)
       }
     },
-    [connectedSubscriptionId, router, submitting, templateId, timezone]
+    [
+      connectedSubscriptionId,
+      requiresFrontMatter,
+      router,
+      submitting,
+      templateId,
+      timezone,
+      trimmedCustomerName,
+      trimmedRevision,
+      trimmedRevisionAuthor,
+      trimmedRevisionNote,
+    ]
   )
 
   if (subscriptions.length === 0) {
@@ -198,7 +287,12 @@ export function RunForm({
     !submitting &&
     connectedSubscriptionId !== "" &&
     templateId !== "" &&
-    selectedTemplate?.currentVersion != null
+    selectedTemplate?.currentVersion != null &&
+    // A v2 template without its front-matter values would be rejected by the enqueue
+    // with a message the browser deliberately does not show (`internalError()` is
+    // fixed text), so the refusal has to happen here, where it can say what is
+    // missing.
+    (!requiresFrontMatter || frontMatterComplete)
 
   return (
     <form
@@ -297,6 +391,94 @@ export function RunForm({
             {selectedTemplate.currentVersionSha256.slice(0, 12)}
           </span>
         </p>
+      )}
+
+      {!requiresFrontMatter ? null : (
+        <fieldset
+          data-slot="run-form-front-matter"
+          className="flex flex-col gap-4 rounded-lg border border-border px-3 py-3"
+        >
+          <legend className="px-1 font-heading text-sm font-medium tracking-tight">
+            {messageText("ui.run_form.front_matter_heading", "en")}
+          </legend>
+
+          <FieldDescription>
+            {messageText("ui.run_form.front_matter_hint", "en")}
+          </FieldDescription>
+
+          <Field>
+            <FieldLabel htmlFor={customerNameFieldId}>
+              {messageText("ui.run_form.customer_name_label", "en")}
+            </FieldLabel>
+
+            <Input
+              id={customerNameFieldId}
+              name="customerName"
+              value={customerName}
+              maxLength={MAX_CUSTOMER_NAME_LENGTH}
+              autoComplete="organization"
+              onChange={(event) => setCustomerName(event.target.value)}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor={revisionFieldId}>
+              {messageText("ui.run_form.revision_label", "en")}
+            </FieldLabel>
+
+            <Input
+              id={revisionFieldId}
+              name="revision"
+              value={revision}
+              maxLength={MAX_REVISION_LENGTH}
+              autoComplete="off"
+              spellCheck={false}
+              className="font-mono tabular-nums"
+              onChange={(event) => setRevision(event.target.value)}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor={revisionNoteFieldId}>
+              {messageText("ui.run_form.revision_note_label", "en")}
+            </FieldLabel>
+
+            <Input
+              id={revisionNoteFieldId}
+              name="revisionNote"
+              value={revisionNote}
+              maxLength={MAX_REVISION_NOTE_LENGTH}
+              onChange={(event) => setRevisionNote(event.target.value)}
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor={revisionAuthorFieldId}>
+              {messageText("ui.run_form.revision_author_label", "en")}
+            </FieldLabel>
+
+            <Input
+              id={revisionAuthorFieldId}
+              name="revisionAuthor"
+              value={revisionAuthor}
+              maxLength={MAX_REVISION_AUTHOR_LENGTH}
+              autoComplete="name"
+              onChange={(event) => setRevisionAuthor(event.target.value)}
+            />
+          </Field>
+
+          {frontMatterComplete ? null : (
+            <p
+              data-slot="run-form-front-matter-incomplete"
+              // Announced for the same reason the submit error is: the button going
+              // from enabled to disabled is otherwise a silent change.
+              aria-live="polite"
+              className="text-sm text-muted-foreground"
+            >
+              {messageText("ui.run_form.front_matter_incomplete", "en")}
+            </p>
+          )}
+        </fieldset>
       )}
 
       <FieldDescription>

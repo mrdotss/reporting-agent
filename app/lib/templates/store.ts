@@ -2,7 +2,7 @@ import "server-only"
 
 import { randomUUID } from "node:crypto"
 
-import { and, asc, desc, eq } from "drizzle-orm"
+import { and, asc, desc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
 
 import { getDb } from "@/lib/db"
@@ -13,6 +13,8 @@ import {
   type ReportTemplate,
   type ReportTemplateVersion,
 } from "@/lib/db/schema"
+import type { TemplateViewCurrentVersion } from "@/lib/db/views"
+import { MIN_SCHEMA_VERSION } from "@/lib/templates/definition"
 
 /**
  * Every read and write of `report_templates` and `report_template_versions`
@@ -734,6 +736,64 @@ export async function readLatestVersion(
   if (template === undefined) throw new TemplateNotFoundError()
 
   return await readHighestVersionRow(templateId)
+}
+
+/**
+ * The highest existing version of a template as {@link TemplateViewCurrentVersion} —
+ * its number, its digest, and the `schema_version` its definition declares.
+ *
+ * **The read a list screen should use, rather than {@link readLatestVersion}.** That
+ * one returns the whole row, `definition` jsonb included, which is right for the
+ * enqueue (it needs the definition to compile against) and wrong for a page that
+ * renders a `<select>`: `/reports` calls this once per template, so selecting the
+ * blob would pull N full block trees across to decide N option labels.
+ *
+ * `schema_version` is therefore read **in SQL**, as `definition->>'schema_version'`,
+ * and comes back as one scalar. It is read as **text and coerced here** rather than
+ * cast with `::int` in the statement: a `::int` cast raises on a value that is not a
+ * number, which would turn one malformed legacy definition into a 500 on the whole
+ * reports page. `validateSchemaVersion` means a saved definition holds a valid
+ * integer, so the fallback should never fire — but it costs nothing and it fails
+ * toward the conservative version rather than toward an error, the same choice
+ * `resolveSchemaVersion` makes for the validation walk.
+ *
+ * Scoped by `user_id` through {@link readOwnedTemplate}, like every read here
+ * (Requirement 1.5).
+ */
+export async function readLatestVersionForView(
+  userId: string,
+  templateId: string
+): Promise<TemplateViewCurrentVersion | undefined> {
+  const template = await readOwnedTemplate(userId, templateId)
+  if (template === undefined) throw new TemplateNotFoundError()
+
+  const [row] = await getDb()
+    .select({
+      version: reportTemplateVersions.version,
+      definitionSha256: reportTemplateVersions.definitionSha256,
+      // The one key the view needs out of the jsonb, projected in SQL so the tree
+      // itself never crosses. `->>` yields text or NULL, never raises.
+      schemaVersionText: sql<
+        string | null
+      >`${reportTemplateVersions.definition}->>'schema_version'`,
+    })
+    .from(reportTemplateVersions)
+    .where(eq(reportTemplateVersions.templateId, templateId))
+    .orderBy(desc(reportTemplateVersions.version))
+    .limit(1)
+
+  if (row === undefined) return undefined
+
+  const parsed = Number(row.schemaVersionText)
+
+  return {
+    version: row.version,
+    definitionSha256: row.definitionSha256,
+    schemaVersion:
+      row.schemaVersionText !== null && Number.isInteger(parsed)
+        ? parsed
+        : MIN_SCHEMA_VERSION,
+  }
 }
 
 /**

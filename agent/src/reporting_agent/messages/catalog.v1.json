@@ -808,6 +808,34 @@
     "ui.verification.drift_not_requeried": {
       "en": "{count} selected resources answered nothing and are recorded as not re-queried rather than as agreeing.",
       "id": "{count} sumber daya terpilih tidak menjawab apa pun dan dicatat sebagai tidak dikueri ulang alih-alih sebagai menyetujui."
+    },
+    "ui.run_form.front_matter_heading": {
+      "en": "Document details",
+      "id": "Detail dokumen"
+    },
+    "ui.run_form.front_matter_hint": {
+      "en": "This template renders a cover and a document-control page, so a run needs a customer name and a revision row. They are printed in the document and are not collected from Azure.",
+      "id": "Templat ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan nama pelanggan dan baris revisi. Keduanya dicetak di dokumen dan tidak dikumpulkan dari Azure."
+    },
+    "ui.run_form.customer_name_label": {
+      "en": "Customer name",
+      "id": "Nama pelanggan"
+    },
+    "ui.run_form.revision_label": {
+      "en": "Revision",
+      "id": "Revisi"
+    },
+    "ui.run_form.revision_note_label": {
+      "en": "Revision note",
+      "id": "Catatan revisi"
+    },
+    "ui.run_form.revision_author_label": {
+      "en": "Author",
+      "id": "Penulis"
+    },
+    "ui.run_form.front_matter_incomplete": {
+      "en": "Fill in the customer name, revision, note and author before requesting this report.",
+      "id": "Isi nama pelanggan, revisi, catatan, dan penulis sebelum meminta laporan ini."
     }
   }
 }

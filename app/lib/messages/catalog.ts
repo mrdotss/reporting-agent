@@ -766,6 +766,34 @@ export const MESSAGE_CATALOG = {
     en: "Pins version {version}",
     id: "Menggunakan versi {version}",
   },
+  "ui.run_form.front_matter_heading": {
+    en: "Document details",
+    id: "Detail dokumen",
+  },
+  "ui.run_form.front_matter_hint": {
+    en: "This template renders a cover and a document-control page, so a run needs a customer name and a revision row. They are printed in the document and are not collected from Azure.",
+    id: "Templat ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan nama pelanggan dan baris revisi. Keduanya dicetak di dokumen dan tidak dikumpulkan dari Azure.",
+  },
+  "ui.run_form.customer_name_label": {
+    en: "Customer name",
+    id: "Nama pelanggan",
+  },
+  "ui.run_form.revision_label": {
+    en: "Revision",
+    id: "Revisi",
+  },
+  "ui.run_form.revision_note_label": {
+    en: "Revision note",
+    id: "Catatan revisi",
+  },
+  "ui.run_form.revision_author_label": {
+    en: "Author",
+    id: "Penulis",
+  },
+  "ui.run_form.front_matter_incomplete": {
+    en: "Fill in the customer name, revision, note and author before requesting this report.",
+    id: "Isi nama pelanggan, revisi, catatan, dan penulis sebelum meminta laporan ini.",
+  },
   "ui.run_form.period_explanation": {
     en: "The collection window comes from the template's own period rule and resolves when the run is enqueued, in {timezone}. A period is local: \"July 2026\" means July in that zone, not July in UTC.",
     id: "Jendela pengumpulan berasal dari aturan periode templat dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: \"Juli 2026\" berarti Juli di zona tersebut, bukan Juli dalam UTC.",
