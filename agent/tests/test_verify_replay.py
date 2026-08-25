@@ -119,6 +119,14 @@ def wire_row(name: str, *, power_state: str = "PowerState/running") -> dict[str,
         "tags": {"env": "prod"},
         "sku": SKU,
         "powerState": power_state,
+        # The projected `fact_<key>` columns the catalog's projectable keys ask for. A row
+        # without them yields no projected fact at all, which would make any assertion
+        # about a projected fact's `collected_at` vacuous — and that instant is exactly
+        # what the receipt-vs-fold defect got wrong.
+        "fact_os_type": "Linux",
+        "fact_provisioning_state": "Succeeded",
+        "fact_vm_size": SKU,
+        "fact_data_disk_count": "2",
     }
 
 
@@ -181,17 +189,28 @@ def batch_response(resource_ids: list[str]) -> RawHttpResponse:
 class Collection:
     """One real collection over the production assembly, plus its snapshot and archive."""
 
-    def __init__(self, *, batches: list[RawHttpResponse] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        batches: list[RawHttpResponse] | None = None,
+        extra_rows: list[dict[str, Any]] | None = None,
+        metrics_by_resource_type: dict[str, list[str]] | None = None,
+        definitions_responses: list[RawHttpResponse] | None = None,
+        inventory_clock: Any = None,
+        fact_clock: Any = None,
+    ) -> None:
         self.store = InMemoryObjectStore()
         self.catalog = load_catalog()
+        self._metrics_by_resource_type = metrics_by_resource_type
+        rows = [wire_row("prod-web-01"), wire_row("prod-web-02"), *(extra_rows or [])]
         self.provider = provider_over_ports(
             inventory_port=FakeInventoryPort(
                 [
                     raw(
                         {
-                            "totalRecords": 2,
-                            "count": 2,
-                            "data": [wire_row("prod-web-01"), wire_row("prod-web-02")],
+                            "totalRecords": len(rows),
+                            "count": len(rows),
+                            "data": rows,
                         },
                         **{"x-ms-user-quota-remaining": "9"},
                     )
@@ -201,7 +220,11 @@ class Collection:
                 [raw_response_from_recorded(load_response("azure", "resource_skus_with_vcpus_available"))]
             ),
             definitions_port=FakeDefinitionsPort(
-                [raw({"value": [{"name": {"value": CPU}}, {"name": {"value": MEMORY}}]})]
+                definitions_responses
+                if definitions_responses is not None
+                else [
+                    raw({"value": [{"name": {"value": CPU}}, {"name": {"value": MEMORY}}]})
+                ]
             ),
             metrics_port=FakeMetricsPort(
                 batch_responses=(
@@ -242,7 +265,16 @@ class Collection:
             # `test_the_digest_is_identical_across_two_processes_with_different_hash_seeds`
             # compares digests produced by two subprocesses, which would then differ for a
             # reason that has nothing to do with a hash seed.
-            fact_clock=lambda: FACT_RECEIVED_AT,
+            fact_clock=fact_clock if fact_clock is not None else (lambda: FACT_RECEIVED_AT),
+            # Defaults to the *same* instant as `fact_clock`, which is what every existing
+            # test here wants — and is exactly why those tests could not see a fold that
+            # read its own clock. A test that needs the receipt and the fold in different
+            # seconds passes both explicitly.
+            inventory_clock=(
+                inventory_clock
+                if inventory_clock is not None
+                else (lambda: FACT_RECEIVED_AT)
+            ),
             fidelity_tier=FIDELITY_BASELINE,
             catalog=self.catalog,
             sleep=self._sleep,
@@ -269,7 +301,11 @@ class Collection:
                 CollectRequest(
                     scope=self.scope(),
                     resources=resources,
-                    metrics_by_resource_type={RESOURCE_TYPE: [CPU, MEMORY]},
+                    metrics_by_resource_type=(
+                        self._metrics_by_resource_type
+                        if self._metrics_by_resource_type is not None
+                        else {RESOURCE_TYPE: [CPU, MEMORY]}
+                    ),
                     grain="PT1H",
                     window=WINDOW,  # type: ignore[typeddict-item]
                     timezone="Asia/Jakarta",
@@ -355,7 +391,11 @@ class Collection:
             tz=JAKARTA,
             window=window,
             grain="PT1H",
-            metrics_by_resource_type={RESOURCE_TYPE: [CPU, MEMORY]},
+            metrics_by_resource_type=(
+                self._metrics_by_resource_type
+                if self._metrics_by_resource_type is not None
+                else {RESOURCE_TYPE: [CPU, MEMORY]}
+            ),
             resources=built,
             gaps=self.gaps,
             catalog_version=self.catalog.catalog_version,
@@ -1029,3 +1069,163 @@ def test_the_fact_gap_types_are_recomputed_rather_than_carried_over(collection) 
         if gap["gap_type"] in FACT_GAP_TYPES
     ]
     assert len(replayed) == len(fact_gaps)
+
+
+# --------------------------------------------------------------------------- #
+# 4.4 — the two defects that reported REPLAY_MISMATCH on a reproducible snapshot
+# --------------------------------------------------------------------------- #
+
+
+DISK_WIRE_TYPE: Final[str] = "microsoft.compute/disks"
+DISK_RESOURCE_TYPE: Final[str] = "Microsoft.Compute/disks"
+DISK_METRICS: Final[tuple[str, ...]] = (
+    "Composite Disk Read Bytes/sec",
+    "Composite Disk Write Bytes/sec",
+    "Composite Disk Read Operations/sec",
+    "Composite Disk Write Operations/sec",
+)
+
+
+def disk_row(name: str) -> dict[str, Any]:
+    """One managed disk, as Resource Graph returns it.
+
+    Two fields carry the whole defect. `type` is **not** a virtual machine, and
+    `powerState` is absent — a disk has none — so the inventory normalizes
+    `power_state` to `"unknown"` while `power_state_raw` stays `""`. The averages
+    exclusion reads the *raw* field and the type, so a disk is **not** excluded; the
+    copy replay used to carry read the *normalized* field against a set containing
+    `"unknown"` and excluded it.
+    """
+    return {
+        "id": resource_id(name),
+        "name": name,
+        "type": DISK_WIRE_TYPE,
+        "location": LOCATION,
+        "resourceGroup": GROUP,
+        "tags": {"env": "prod"},
+        "sku": "Premium_LRS",
+    }
+
+
+def test_a_non_vm_resource_folding_no_samples_replays_identically() -> None:
+    """Req 20.6, 31.1 — one exclusion predicate, so the collector and the replay agree.
+
+    ## The defect
+
+    `is_excluded_from_averages` existed twice. The collector's copy read
+    `power_state_raw` and only excluded a non-deallocated resource when it was a VM;
+    replay's copy tested the **normalized** `power_state` against a set containing
+    `"unknown"`. Every non-VM resource carries `power_state="unknown"` and
+    `power_state_raw=""`, so the two disagreed on all of them.
+
+    It only became visible when such a resource had **selected metrics and folded no
+    samples**: the collector, not excluding it, wrote a `no_samples` gap; replay,
+    excluding it, wrote none. The gap list is inside the hashed document, so a snapshot
+    that was perfectly reproducible reported `REPLAY_MISMATCH` — 12 gaps on the run that
+    surfaced it, from three region-unreachable disks times four composite-disk metrics.
+
+    This drives exactly that shape: a disk with the four composite metrics selected, and
+    a metrics response that carries nothing for it, so its accumulators fold no sample.
+    """
+    harness = Collection(
+        extra_rows=[disk_row("prod-data-01")],
+        # The VMs' real batch, then a response carrying no value at all for the disk's
+        # group — which is what makes the disk fold **no samples** and the collector write
+        # the `no_samples` gaps the two sides used to disagree about.
+        # The **same** VM-only response for both groups, so the disk is absent from
+        # whichever response its group receives and folds no sample — and the assertion
+        # does not depend on which resource type happens to be collected first.
+        batches=[batch_response([WEB_01, WEB_02]) for _ in range(2)],
+        # One probe per (resource_type, region) and two types here, so two answers — both
+        # naming every metric, because the probe order across groups is not this test's
+        # subject and a mismatched pairing would make the disk's metrics read as
+        # `metric_not_emitted` instead of reaching the fold at all.
+        definitions_responses=[
+            raw(
+                {
+                    "value": [
+                        {"name": {"value": name}}
+                        for name in (CPU, MEMORY, *DISK_METRICS)
+                    ]
+                }
+            )
+            for _ in range(2)
+        ],
+        metrics_by_resource_type={
+            RESOURCE_TYPE: [CPU, MEMORY],
+            # Selected, so the disk gets accumulators and can be found to have folded
+            # nothing. A resource with no selected metric never reaches the predicate.
+            DISK_RESOURCE_TYPE: list(DISK_METRICS),
+        },
+    )
+    harness.run()
+
+    # The precondition, asserted rather than assumed: the collector wrote a `no_samples`
+    # gap for the disk. Without it this test would pass against the defect, because the
+    # two sides only disagree where such a gap exists.
+    disk_id = resource_id("prod-data-01")
+    disk_gaps = [
+        gap
+        for gap in harness.document["gaps"]
+        if gap.get("resource_id") == disk_id and gap.get("gap_type") == "no_samples"
+    ]
+    assert len(disk_gaps) == len(DISK_METRICS), harness.document["gaps"]
+
+    result = replay(harness.archived(), plan=harness.plan())
+
+    assert result.findings == ()
+    assert result.outcome["recomputed_sha256"] == harness.document["snapshot_id"]
+
+
+def test_a_fact_fold_after_the_receipt_second_replays_identically() -> None:
+    """Req 4.3, 4.13, 31.1 — a projected fact's `collected_at` is its page's receipt.
+
+    ## The defect
+
+    `azure/facts.py` stamped `collected_at` from its own clock, read inside the fold
+    loop. The page had already been archived with the instant it actually arrived, and
+    replay re-derives from that archived value — so any gap between arrival and fold
+    put every projected fact's `collected_at` in the document one step away from what
+    the archive said. One second, on the run that surfaced it: 29 facts, all off,
+    `REPLAY_MISMATCH` on a reproducible snapshot.
+
+    ## Why the existing tests could not see it
+
+    Every other test here pins one fixed instant for both clocks, so a fold-time read
+    and a receipt-time read return the same value and the bug is invisible. The
+    per-page test in `test_azure_facts.py` asserted only that two pages' stamps
+    *differ* — which a per-page fold-time read also satisfies.
+
+    So this drives them apart on purpose: the page is received at `:15`, the fold runs
+    at `:17`, and they are in different seconds. The archived receipt instant is the one
+    that must reach the document.
+    """
+    received = datetime(2026, 7, 2, 1, 25, 15, tzinfo=UTC)
+    folded_later = datetime(2026, 7, 2, 1, 25, 17, tzinfo=UTC)
+    assert received.second != folded_later.second
+
+    harness = Collection(
+        inventory_clock=lambda: received,
+        # Two seconds later, and it must not appear anywhere in the document's projected
+        # facts. A fold-time read would put `01:25:17Z` on every one of them.
+        fact_clock=lambda: folded_later,
+    )
+    harness.run()
+
+    result = replay(harness.archived(), plan=harness.plan())
+
+    assert result.findings == ()
+    assert result.outcome["recomputed_sha256"] == harness.document["snapshot_id"]
+
+    # And the stamp is the receipt instant, named — not merely self-consistent between
+    # the two halves. A defect that stamped the fold instant on *both* sides would
+    # replay identically and still record the wrong time in a delivered document.
+    projectable_keys = {"os_type", "provisioning_state", "vm_size", "data_disk_count"}
+    projected = [
+        fact
+        for resource in harness.document["resources"]
+        for fact in (resource.get("facts") or ())
+        if fact.get("key") in projectable_keys and fact.get("value")
+    ]
+    assert projected, "the harness collected no projected fact to stamp"
+    assert {fact["collected_at"] for fact in projected} == {"2026-07-02T01:25:15Z"}

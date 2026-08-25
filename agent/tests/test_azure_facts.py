@@ -10,7 +10,7 @@ a plausible-looking sentence in a delivered document.
 from __future__ import annotations
 
 import asyncio
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Final
 from zoneinfo import ZoneInfo
 
@@ -44,7 +44,7 @@ from reporting_agent.catalog.loader import (
 )
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.log import GAP_TYPE_FACT_UNAVAILABLE
-from reporting_agent.providers.base import FactRecord, GapRecord, ResourceRecord
+from reporting_agent.providers.base import FactRecord, GapRecord, InventoryPage, ResourceRecord
 
 VM_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
 SQL_DB_TYPE: Final[str] = "Microsoft.Sql/servers/databases"
@@ -80,6 +80,21 @@ def record(
 
 def page(*rows: dict[str, Any]) -> dict[str, Any]:
     return {"totalRecords": len(rows), "count": len(rows), "data": list(rows)}
+
+
+DEFAULT_RECEIVED_AT = "2026-08-01T09:30:00Z"
+
+
+def fact_page(body: Any, *, received_at: str = DEFAULT_RECEIVED_AT) -> InventoryPage:
+    """One retained inventory page, paired with the instant it was received.
+
+    A page record is not a response body: `InventoryCollector` pairs each body with the
+    receipt instant it also hands the archive, and the fact fold stamps `collected_at`
+    from that pairing rather than from its own clock. Tests that supply pages therefore
+    have to supply both halves — which is the point, since a body alone is what let the
+    fold read a second clock unnoticed.
+    """
+    return InventoryPage(body=body, received_at=received_at)
 
 
 def row(resource: ResourceRecord, **facts: Any) -> dict[str, Any]:
@@ -374,7 +389,7 @@ def test_a_projected_column_becomes_a_fact_with_no_request_of_its_own() -> None:
     facts, _ = run(
         port,
         resources=[machine],
-        pages=[page(row(machine, os_type="Linux", data_disk_count="2"))],
+        pages=[fact_page(page(row(machine, os_type="Linux", data_disk_count="2")))],
     )
 
     projected = {
@@ -400,10 +415,28 @@ def test_a_resource_on_a_later_page_records_no_absence_from_an_earlier_one() -> 
         port,
         resources=[first, second],
         pages=[
-            page(row(first, os_type="Linux", provisioning_state="Succeeded", vm_size="x",
-                     data_disk_count="1")),
-            page(row(second, os_type="Linux", provisioning_state="Succeeded", vm_size="x",
-                     data_disk_count="1")),
+            fact_page(
+                page(
+                    row(
+                        first,
+                        os_type="Linux",
+                        provisioning_state="Succeeded",
+                        vm_size="x",
+                        data_disk_count="1",
+                    )
+                )
+            ),
+            fact_page(
+                page(
+                    row(
+                        second,
+                        os_type="Linux",
+                        provisioning_state="Succeeded",
+                        vm_size="x",
+                        data_disk_count="1",
+                    )
+                )
+            ),
         ],
     )
 
@@ -414,7 +447,7 @@ def test_a_page_naming_no_resource_is_skipped_rather_than_folded() -> None:
     port = FakeFactsPort(
         backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
     )
-    facts, gaps = run(port, resources=[record("prod-web-01")], pages=[page(), {}, None])
+    facts, gaps = run(port, resources=[record("prod-web-01")], pages=[fact_page(page()), fact_page({}), fact_page(None)])
 
     assert [fact for fact in facts if fact["source"] == "resource_graph"] == []
     assert [gap for gap in gaps if gap["source"] == "resource_graph"] == []
@@ -548,7 +581,7 @@ def test_a_leaf_that_does_not_parse_still_reaches_a_typed_gap() -> None:
     facts, gaps = run(
         port,
         resources=[machine],
-        pages=[page(row(machine, data_disk_count="not-a-number"))],
+        pages=[fact_page(page(row(machine, data_disk_count="not-a-number")))],
     )
 
     assert not any(fact["key"] == "data_disk_count" for fact in facts)
@@ -828,15 +861,29 @@ def test_each_page_is_stamped_with_its_own_receipt_instant() -> None:
     """Req 4.3, 4.13 — a fact's `collected_at` is when **its** response was received.
 
     Two pages arrive at two instants, and one instant for both would be a clock default
-    presented as an observation. Asserted with a ticking clock rather than a format check,
-    because a single read satisfies every format assertion equally.
-    """
-    from datetime import UTC, datetime, timedelta
+    presented as an observation.
 
+    ## This test used to assert only that the two stamps differ, and that was not enough
+
+    A fold that read its own clock once per page also produces two different values, so
+    the distinctness assertion passed while every stamp was the instant the *fold* ran
+    rather than the instant the page arrived. On a run where the fold crossed a second
+    boundary, all 29 facts were one second later than the archived page said and the
+    replay reported `REPLAY_MISMATCH` on a reproducible snapshot.
+
+    So it now asserts the stamps **are** the pages' receipt instants, by name. The clock
+    is handed to the collector and would tick if anything still read it — a fold-time
+    read would produce `09:30:00Z`/`09:30:01Z` instead of the two instants below and fail
+    on the equality rather than on the difference.
+    """
     first = record("prod-web-01")
     second = record("prod-web-02")
+
+    first_received = "2026-08-01T09:30:00Z"
+    second_received = "2026-08-01T09:31:17Z"
+
     ticks = iter(
-        datetime(2026, 8, 1, 9, 30, 0, tzinfo=UTC) + timedelta(seconds=index)
+        datetime(2026, 8, 1, 12, 0, 0, tzinfo=UTC) + timedelta(seconds=index)
         for index in range(20)
     )
 
@@ -848,14 +895,18 @@ def test_each_page_is_stamped_with_its_own_receipt_instant() -> None:
         ArchiveWriter(store=InMemoryObjectStore()),
         declaration=CATALOG.facts,
         semaphore=asyncio.Semaphore(8),
+        # Deliberately hours away from either receipt instant, so a fold-time read is not
+        # merely a near miss but an unmistakable one.
         clock=lambda: next(ticks),
     )
     result = asyncio.run(
         collect_facts.collect(
             resources=[first, second],
             inventory_pages=[
-                page(row(first, os_type="Linux")),
-                page(row(second, os_type="Windows")),
+                fact_page(page(row(first, os_type="Linux")), received_at=first_received),
+                fact_page(
+                    page(row(second, os_type="Windows")), received_at=second_received
+                ),
             ],
             subscription_id=SUBSCRIPTION,
         )
@@ -867,7 +918,8 @@ def test_each_page_is_stamped_with_its_own_receipt_instant() -> None:
         if fact["key"] == "os_type"
     }
     assert len(stamps) == 2
-    assert stamps[first["resource_id"]] != stamps[second["resource_id"]]
+    assert stamps[first["resource_id"]] == first_received
+    assert stamps[second["resource_id"]] == second_received
 
 
 def test_the_covered_type_match_folds_case_in_both_directions() -> None:
@@ -926,7 +978,14 @@ def test_the_inventory_collector_retains_the_pages_a_projection_made_fact_bearin
             fact_projections=(("os_type", "tostring(properties.osType)"),),
         )
     )
-    assert retained.get("inventory_pages") == [body]
+    # The body is retained, paired with the instant the page was received. Compared as
+    # two assertions rather than one equality against a hardcoded record, because the
+    # instant comes from the collector's own clock here — what matters is that the body
+    # survived and that an instant travelled with it. That the instant is the *archived*
+    # one is asserted by `test_a_fact_fold_after_the_receipt_second_replays_identically`.
+    pages_retained = retained.get("inventory_pages") or []
+    assert [entry["body"] for entry in pages_retained] == [body]
+    assert all(entry["received_at"] for entry in pages_retained)
 
     without = InventoryCollector(
         FakeInventoryPort([RawHttpResponse(status=200, headers={}, body=body)])

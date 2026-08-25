@@ -71,8 +71,6 @@ from typing import Final, cast
 from reporting_agent.azure.definitions import DefinitionProbe
 from reporting_agent.azure.facts import FactArchiveContext, FactCollector
 from reporting_agent.azure.inventory import (
-    DEALLOCATED_POWER_STATE_CODES,
-    VIRTUAL_MACHINE_RESOURCE_TYPE,
     InventoryArchiveContext,
     InventoryCollector,
 )
@@ -142,6 +140,7 @@ from reporting_agent.providers.base import (
     StatValue,
     assert_inventory_sorted,
     assert_plain_data,
+    is_excluded_from_averages,
     sort_inventory,
 )
 from reporting_agent.storage.base import ObjectStore
@@ -260,34 +259,6 @@ def interval_count_for(window: Mapping[str, str], grain: str) -> int:
             f"end_utc={end.isoformat()}"
         )
     return max(1, math.ceil(seconds / slot))
-
-
-def is_excluded_from_averages(resource: ResourceRecord) -> bool:
-    """Whether this resource's accumulators must fold nothing (Req 20.6, 20.13).
-
-    **Pure**, and derived from the record itself rather than from the gap list, which
-    is what lets `collect` apply the exclusion without `discover`'s gaps being handed
-    back to it through the protocol. The two conditions are the *same* ones
-    `azure/inventory.py` recorded its gaps from, read off the same two fields it wrote:
-
-    * `power_state_raw` equals `PowerState/deallocated` or `PowerState/stopped` — the
-      literal codes Req 20.5 names, matched against the raw code rather than the
-      normalized `power_state`, exactly as `inventory.py` matches them.
-    * the resource is a `Microsoft.Compute/virtualMachines` (matched
-      case-insensitively, because Resource Graph lowercases `type`) whose
-      `power_state_raw` is absent or blank — Req 20.13's unknown power state.
-
-    A resource excluded here stays in the inventory, gets accumulators, and finalizes
-    to no statistic and **no** `no_samples` gap: the reason it has nothing is already
-    recorded under `deallocated` or `power_state_unknown`, and restating it would
-    double the gap count Req 29.9 ties to `snapshot_ready`.
-    """
-    raw = resource.get("power_state_raw") or ""
-    if raw in DEALLOCATED_POWER_STATE_CODES:
-        return True
-    resource_type = resource.get("resource_type") or ""
-    is_vm = resource_type.casefold() == VIRTUAL_MACHINE_RESOURCE_TYPE.casefold()
-    return is_vm and not raw.strip()
 
 
 def _matches_resource_groups(resource: ResourceRecord, groups: Sequence[str]) -> bool:
@@ -1325,6 +1296,7 @@ def provider_over_ports(
     catalog: LoadedCatalog | None = None,
     sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     fact_clock: Callable[[], datetime] | None = None,
+    inventory_clock: Callable[[], datetime] | None = None,
     on_close: Callable[[], None] | None = None,
 ) -> AzureProvider:
     """Assemble an :class:`AzureProvider` over five ports and one object store.
@@ -1344,6 +1316,14 @@ def provider_over_ports(
     which is correct in production, where the instants genuinely differ, and makes any test
     that compares one digest to another depend on how long the test took. `None` keeps the wall
     clock, which is what a deployed run wants.
+
+    `inventory_clock` is the same seam for the inventory pass, and it exists for a sharper
+    reason than symmetry: a **projected** fact's `collected_at` is the instant its inventory
+    page was received, so this clock — not `fact_clock` — decides a value inside the hashed
+    document. The two used to be one thing by accident, because `azure/facts.py` re-read its
+    own clock at fold time; a test that pins only `fact_clock` therefore could not tell a
+    receipt instant from a fold instant, and the defect that put them a second apart was
+    invisible to it. Pinning both is what lets a test drive them **apart** on purpose.
     """
     loaded = catalog if catalog is not None else load_catalog()
     # One writer for the whole run, shared by the inventory pages and the metric
@@ -1351,7 +1331,11 @@ def provider_over_ports(
     archive_writer = ArchiveWriter(store=object_store)
     return AzureProvider(
         catalog=loaded,
-        inventory=InventoryCollector(inventory_port, sleep=sleep),
+        inventory=InventoryCollector(
+            inventory_port,
+            sleep=sleep,
+            **({} if inventory_clock is None else {"now": inventory_clock}),
+        ),
         skus=SkuCatalog(sku_port),
         definitions=DefinitionProbe(definitions_port, loaded),
         metrics=MetricsCollector(

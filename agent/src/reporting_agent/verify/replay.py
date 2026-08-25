@@ -74,14 +74,12 @@ from reporting_agent.collect.factfold import fold_fact_response
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
     FACT_GAP_TYPES,
-    GAP_TYPE_DEALLOCATED,
     GAP_TYPE_INTERVAL_COUNTS_MISSING,
     GAP_TYPE_INTERVAL_MALFORMED,
     GAP_TYPE_METRIC_ERROR,
     GAP_TYPE_METRIC_NOT_EMITTED,
     GAP_TYPE_NO_SAMPLES,
     GAP_TYPE_PERMISSION_DENIED,
-    GAP_TYPE_POWER_STATE_UNKNOWN,
     GAP_TYPE_RESOURCE_ABSENT_FROM_RESPONSE,
     GAP_TYPE_SKU_CAPABILITY_MISSING,
 )
@@ -100,6 +98,7 @@ from reporting_agent.providers.base import (
     PlainData,
     ResourceRecord,
     ScopeSpec,
+    is_excluded_from_averages,
 )
 from reporting_agent.verify.findings import (
     FINDING_ARCHIVE_INCOMPLETE,
@@ -851,9 +850,10 @@ def _replay_resource(
         "power_state": power_state,
         "fidelity_tier": str(raw.get("fidelity_tier") or ""),
     }
+    resource_record = cast("ResourceRecord", record)
 
     return ReplayResource(
-        record=cast("ResourceRecord", record),
+        record=resource_record,
         resource_type=resource_type,
         fidelity_tier=str(raw.get("fidelity_tier") or ""),
         sku=sku,
@@ -869,16 +869,20 @@ def _replay_resource(
         sku_capability_values=_capability_values(
             entry.sku_capabilities if entry else (), sku
         ),
-        # Req 20.6, 20.13 — the same exclusion the collector applied, recovered from the
-        # normalized power state the snapshot records for exactly this kind of question.
-        excluded=power_state in _EXCLUDED_POWER_STATES,
+        # Req 20.6, 20.13 — **the** exclusion predicate, not a second reading of it.
+        #
+        # This used to test the normalized `power_state` against a set containing
+        # "unknown", which disagreed with the collector on every non-VM resource: a disk
+        # carries `power_state="unknown"` and `power_state_raw=""`, so the collector
+        # (correctly) did not exclude it and this (incorrectly) did. The collector then
+        # wrote a `no_samples` gap that the replay did not, and a snapshot that was
+        # perfectly reproducible reported `REPLAY_MISMATCH`. The snapshot records
+        # `power_state_raw` and `resource_type`, so the record above reconstructs exactly
+        # the input the collector fed the predicate — there is nothing left to infer.
+        excluded=is_excluded_from_averages(resource_record),
         guest_entries=_guest_entries(raw.get("statistics")),
     )
 
-
-_EXCLUDED_POWER_STATES: Final[frozenset[str]] = frozenset(
-    {GAP_TYPE_DEALLOCATED, GAP_TYPE_POWER_STATE_UNKNOWN, "deallocated", "unknown"}
-)
 
 _CAPABILITY_READERS: Final[tuple[tuple[str, str], ...]] = (
     ("vCPUsAvailable", "vcpus_available"),

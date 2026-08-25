@@ -96,8 +96,11 @@ from reporting_agent.collect.log import (
 from reporting_agent.collect.snapshot import rfc3339_utc
 from reporting_agent.errors import AuthFailedError, ThrottledError
 from reporting_agent.providers.base import (
+    DEALLOCATED_POWER_STATE_CODES,
+    VIRTUAL_MACHINE_RESOURCE_TYPE,
     DiscoverResult,
     GapRecord,
+    InventoryPage,
     ResourceRecord,
     sort_inventory,
 )
@@ -189,20 +192,13 @@ _FIELD_SKIP_TOKEN: Final[str] = "skipToken"
 _QUOTA_REMAINING_HEADER: Final[str] = "x-ms-user-quota-remaining"
 _QUOTA_RESETS_AFTER_HEADER: Final[str] = "x-ms-user-quota-resets-after"
 
-VIRTUAL_MACHINE_RESOURCE_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
-"""The one resource type Req 20.13's absent-power-state check applies to. Matched
-case-insensitively against a row's projected `type`, because Resource Graph lowercases
-it in its response body."""
-
 # --- power state: the raw-code gap check, and the normalized field ------------------
-
-DEALLOCATED_POWER_STATE_CODES: Final[frozenset[str]] = frozenset(
-    {"PowerState/deallocated", "PowerState/stopped"}
-)
-"""The exact projected codes Req 20.5 names. Matched literally against the raw code —
-not normalized first — because the requirement's own wording is "equals
-`PowerState/deallocated` or `PowerState/stopped`", and matching after normalization
-would let a third, unanticipated spelling of "stopped" slip through unrecorded."""
+#
+# `VIRTUAL_MACHINE_RESOURCE_TYPE` and `DEALLOCATED_POWER_STATE_CODES` moved to
+# `providers/base.py`, beside `is_excluded_from_averages` — the predicate that reads
+# them and that `verify/replay.py` must run rather than re-implement. They are
+# re-exported through this module's imports so existing readers of
+# `azure.inventory.DEALLOCATED_POWER_STATE_CODES` keep resolving.
 
 POWER_STATE_UNKNOWN: Final[str] = "unknown"
 """The normalized value for an absent, empty, or unrecognized power-state code
@@ -607,7 +603,7 @@ class InventoryCollector:
 
         resources: dict[str, ResourceRecord] = {}
         gaps: list[GapRecord] = []
-        pages: list[Any] = []
+        pages: list[InventoryPage] = []
         skip_token: str | None = None
         consecutive_fallback_waits = 0
         page_index = 0
@@ -635,6 +631,15 @@ class InventoryCollector:
 
             next_token = _skip_token_from_body(response.body)
 
+            # The page's receipt instant, read **once, here** — where the page actually
+            # arrived (Req 4.3, 4.13). It is what the archive records and what the fact
+            # fold stamps onto every `collected_at` derived from this page, so the two
+            # cannot disagree. Reading it again at fold time is the defect this replaces:
+            # a fold that crossed a second boundary stamped facts one second after the
+            # archived page said they were received, and the replay re-derives from the
+            # archived value, so a reproducible snapshot reported REPLAY_MISMATCH.
+            received_at = rfc3339_utc(self._now())
+
             if archive_pages:
                 assert archive is not None  # narrowed by `archive_pages`
                 gaps.extend(
@@ -644,6 +649,7 @@ class InventoryCollector:
                         body=response.body,
                         page_index=page_index,
                         skip_token_present=next_token is not None,
+                        received_at=received_at,
                     )
                 )
 
@@ -652,7 +658,9 @@ class InventoryCollector:
             # declaration holds no page at all and the memory cost is exactly the cost of the
             # feature that needs it (Req 4.7). `azure/facts.py` folds these.
             if fact_projections:
-                pages.append(response.body)
+                pages.append(
+                    InventoryPage(body=response.body, received_at=received_at)
+                )
 
             skip_token = next_token
             page_index += 1
@@ -728,6 +736,7 @@ class InventoryCollector:
         body: object,
         page_index: int,
         skip_token_present: bool,
+        received_at: str,
     ) -> list[GapRecord]:
         """Archive one Resource Graph page, returning any gap the write produced.
 
@@ -737,8 +746,11 @@ class InventoryCollector:
         a failure: archiving an object that names no resource would add an object to the
         run's count that a replay could attribute to nothing.
 
-        `received_at` comes from this instance's injected clock, so a test drives it
-        rather than the wall clock deciding what lands in a committed fixture.
+        `received_at` is passed in rather than read here, and it is the *same* value the
+        caller pairs with the retained page (see :class:`InventoryPage`). It still comes
+        from this instance's injected clock — the caller reads it — so a test drives it
+        rather than the wall clock deciding what lands in a committed fixture. Reading it
+        here as well would recreate the two-separable-values defect one call deeper.
         """
         resource_ids = [
             row[_FIELD_ID]
@@ -755,7 +767,7 @@ class InventoryCollector:
             request_target=archive.request_target,
             page_index=page_index,
             skip_token_present=skip_token_present,
-            received_at=rfc3339_utc(self._now()),
+            received_at=received_at,
             catalog_version=archive.catalog_version,
             resource_ids=resource_ids,
             raw_body=body,

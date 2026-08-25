@@ -71,7 +71,13 @@ from reporting_agent.collect.factfold import (
 )
 from reporting_agent.collect.log import GAP_TYPE_FACT_UNAVAILABLE, record_gap
 from reporting_agent.collect.snapshot import rfc3339_utc
-from reporting_agent.providers.base import FactRecord, GapRecord, PlainData, ResourceRecord
+from reporting_agent.providers.base import (
+    FactRecord,
+    GapRecord,
+    InventoryPage,
+    PlainData,
+    ResourceRecord,
+)
 
 __all__ = [
     "BACKUP_ABSENT_GAP_TYPE",
@@ -338,7 +344,7 @@ class FactCollector:
         self,
         *,
         resources: Sequence[ResourceRecord],
-        inventory_pages: Sequence[PlainData],
+        inventory_pages: Sequence[InventoryPage],
         subscription_id: str,
     ) -> FactsResult:
         """Every fact for every resource, from the pages the caller has plus three lists.
@@ -379,15 +385,20 @@ class FactCollector:
 
     def _fold_pages(
         self,
-        inventory_pages: Sequence[PlainData],
+        inventory_pages: Sequence[InventoryPage],
         types_by_id: Mapping[str, str],
     ) -> tuple[list[FactRecord], list[GapRecord]]:
         """Fold every Resource Graph page's `fact_<key>` columns.
 
-        `received_at` is read once per page rather than once per run: the pages arrived at
-        different instants and a fact's `collected_at` is when *its* response was received
-        (Req 4.3, 4.13). One instant for all of them would be a clock default dressed as an
-        observation.
+        `received_at` is **carried on each page** rather than read here: the pages arrived
+        at different instants and a fact's `collected_at` is when *its* response was
+        received (Req 4.3, 4.13). One instant for all of them would be a clock default
+        dressed as an observation — and re-reading the clock *per page* at fold time,
+        which is what this did, is the same mistake wearing the right shape. The fold runs
+        after the page arrives, so its reading is a different instant from the one the
+        archive stored; a fold that crossed a second boundary stamped every projected fact
+        one second late and the replay, which re-derives from the archived value, reported
+        a mismatch on a snapshot that was reproducible.
 
         The `resource_ids` for each page are the ids the page itself carries, so a resource on
         page two records no absence from page one — which would otherwise be one
@@ -396,18 +407,20 @@ class FactCollector:
         facts: list[FactRecord] = []
         gaps: list[GapRecord] = []
         for page in inventory_pages:
-            received_at = self._now()
-            page_ids = _page_resource_ids(page)
+            body = page["body"]
+            page_ids = _page_resource_ids(body)
             if not page_ids:
                 continue
             page_facts, page_gaps = fold_fact_response(
-                page,
+                body,
                 kind=FACT_KIND_INVENTORY,
                 source="",  # unread for the inventory kind: it selects on `projectable`
                 resource_ids=page_ids,
                 declaration=self.declaration,
                 resource_types=types_by_id,
-                received_at=received_at,
+                # The instant the page was received, as the archive recorded it — not
+                # this fold's own reading of the clock.
+                received_at=page["received_at"],
             )
             facts.extend(page_facts)
             gaps.extend(page_gaps)

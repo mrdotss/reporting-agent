@@ -156,6 +156,67 @@ class ResourceRecord(TypedDict):
     fidelity_tier: str
 
 
+# --- The averages-exclusion predicate, shared by the collector and the replay -------
+
+VIRTUAL_MACHINE_RESOURCE_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
+"""The one resource type Req 20.13's absent-power-state check applies to. Matched
+case-insensitively against a row's projected `type`, because Resource Graph lowercases
+it in its response body."""
+
+DEALLOCATED_POWER_STATE_CODES: Final[frozenset[str]] = frozenset(
+    {"PowerState/deallocated", "PowerState/stopped"}
+)
+"""The exact projected codes Req 20.5 names. Matched literally against the raw code —
+not normalized first — because the requirement's own wording is "equals
+`PowerState/deallocated` or `PowerState/stopped`", and matching after normalization
+would let a third, unanticipated spelling of "stopped" slip through unrecorded."""
+
+
+def is_excluded_from_averages(resource: ResourceRecord) -> bool:
+    """Whether this resource's accumulators must fold nothing (Req 20.6, 20.13).
+
+    **Pure**, and derived from the record itself rather than from the gap list, which
+    is what lets `collect` apply the exclusion without `discover`'s gaps being handed
+    back to it through the protocol. The two conditions are the *same* ones
+    `azure/inventory.py` recorded its gaps from, read off the same two fields it wrote:
+
+    * `power_state_raw` equals `PowerState/deallocated` or `PowerState/stopped` — the
+      literal codes Req 20.5 names, matched against the raw code rather than the
+      normalized `power_state`, exactly as `inventory.py` matches them.
+    * the resource is a `Microsoft.Compute/virtualMachines` (matched
+      case-insensitively, because Resource Graph lowercases `type`) whose
+      `power_state_raw` is absent or blank — Req 20.13's unknown power state.
+
+    A resource excluded here stays in the inventory, gets accumulators, and finalizes
+    to no statistic and **no** `no_samples` gap: the reason it has nothing is already
+    recorded under `deallocated` or `power_state_unknown`, and restating it would
+    double the gap count Req 29.9 ties to `snapshot_ready`.
+
+    ## Why it lives here rather than in `azure/provider.py`
+
+    It used to live there, and `verify/replay.py` carried a second implementation that
+    tested the **normalized** `power_state` against a set containing `"unknown"`. Those
+    two disagree on every non-VM resource: a disk has `power_state="unknown"` and
+    `power_state_raw=""`, so this predicate says *not* excluded (it is not a VM) while
+    the normalized test said excluded. The collector wrote a `no_samples` gap and the
+    replay wrote none, and a perfectly reproducible snapshot reported
+    `REPLAY_MISMATCH` — 12 such gaps on the run that surfaced it.
+
+    So there is **one** implementation and both sides call it. This module is where it
+    can be: it already declares {@link ResourceRecord}, its imports are stdlib-only,
+    and it is already on replay's first-party closure, so putting it here adds nothing
+    to what replay can reach. Re-aligning two copies would have left the next drift
+    free to happen; `tests/test_boundaries.py` asserts replay does not grow a second
+    one again.
+    """
+    raw = resource.get("power_state_raw") or ""
+    if raw in DEALLOCATED_POWER_STATE_CODES:
+        return True
+    resource_type = resource.get("resource_type") or ""
+    is_vm = resource_type.casefold() == VIRTUAL_MACHINE_RESOURCE_TYPE.casefold()
+    return is_vm and not raw.strip()
+
+
 class GapRecord(TypedDict):
     """One typed `collection_log` entry.
 
@@ -266,6 +327,32 @@ class CollectRequest(TypedDict):
     utc_offset: str
 
 
+class InventoryPage(TypedDict):
+    """One raw inventory page, welded to the instant it was received.
+
+    `received_at` is an RFC 3339 UTC string, and it is **the same string the archive
+    recorded for this page** — not a second reading of the clock that happens to be
+    close to it.
+
+    ## Why the instant travels with the page
+
+    It did not, and a fact's `collected_at` was stamped where the fold ran rather than
+    where the page arrived: `azure/facts.py` read its own clock inside the fold loop,
+    while the archive had already stored the real receipt instant. A fold that crossed
+    a second boundary — one second, on the run that surfaced this — gave every
+    projected fact a `collected_at` one second later than the archived page said, and
+    the replay re-derives from the archived value, so all 29 facts differed and a
+    reproducible snapshot reported `REPLAY_MISMATCH`.
+
+    Two separable values that must be equal will eventually not be. Pairing them in one
+    record removes the second reading entirely: there is one instant per page, taken
+    where the page is received, and both the archive and the fold are handed it.
+    """
+
+    body: PlainData
+    received_at: str
+
+
 class _DiscoverResultExtras(TypedDict, total=False):
     """The one optional key an inventory result may carry.
 
@@ -274,7 +361,7 @@ class _DiscoverResultExtras(TypedDict, total=False):
     `TypedDict` and class-level totality is the only thing that survives.
     """
 
-    inventory_pages: list[PlainData]
+    inventory_pages: list[InventoryPage]
 
 
 class DiscoverResult(_DiscoverResultExtras):
@@ -634,7 +721,7 @@ class FactRequest(TypedDict):
     """
 
     resources: list[ResourceRecord]
-    inventory_pages: list[PlainData]
+    inventory_pages: list[InventoryPage]
     subscription_id: str
 
 

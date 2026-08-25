@@ -3031,3 +3031,149 @@ def test_every_explicitly_guarded_module_imports_no_azure_sdk() -> None:
         assert not offenders, (
             f"{relative} imports an Azure SDK: " + "; ".join(offenders)
         )
+
+
+# --------------------------------------------------------------------------- #
+# Rule 17 — one averages-exclusion predicate, and one receipt instant per page
+# --------------------------------------------------------------------------- #
+#
+# Both halves of this rule guard a defect that made `verify/replay.py` report
+# `REPLAY_MISMATCH` on a snapshot that was perfectly reproducible. Neither was a missing
+# check — each was **two copies of one fact**, and the copies drifted.
+#
+# 17a. `is_excluded_from_averages` existed in `azure/provider.py` and again, differently, in
+#      `verify/replay.py`: the collector read `power_state_raw` and excluded a
+#      non-deallocated resource only when it was a VM, while replay tested the *normalized*
+#      `power_state` against a set containing `"unknown"`. Every non-VM resource carries
+#      `power_state="unknown"` and `power_state_raw=""`, so the two disagreed on all of them,
+#      and a non-VM resource that folded no samples got a `no_samples` gap from one side and
+#      not the other. The gap list is inside the hashed document.
+#
+#      Re-aligning the two copies would have fixed the symptom and left the mechanism. So
+#      there is one implementation, in `providers/base.py` beside `ResourceRecord`, and this
+#      rule asserts replay has not grown a second one — as a definition, or as a rebuilt
+#      power-state set standing in for one.
+#
+# 17b. A projected fact's `collected_at` is the instant its inventory page was **received**,
+#      which is the instant the archive recorded and the instant replay re-derives from.
+#      `azure/facts.py` used to read its own clock inside the projected fold, so any delay
+#      between arrival and fold — one second, on the run that surfaced it — put a different
+#      instant in the document than the archive held.
+#
+#      Rule 15 does not cover this and could not: `azure/facts.py` calls an *injected*
+#      `self._now()`, not `datetime.now`, and it legitimately reads a clock for the
+#      subscription-scoped fact sources, whose responses do arrive at their own instants.
+#      The narrow, true invariant is that the **projected** fold does not time anything: it
+#      takes each instant from the page it is folding.
+
+EXCLUSION_PREDICATE = "is_excluded_from_averages"
+
+EXCLUSION_PREDICATE_OWNER = "src/reporting_agent/providers/base.py"
+"""The one module allowed to define it.
+
+`providers/base.py` because that is where `ResourceRecord`, its argument, is declared; its
+imports are stdlib-only, and it is already on replay's first-party closure, so sharing it
+adds nothing to what replay can reach."""
+
+PROJECTED_FOLD_METHOD = "_fold_pages"
+"""The method in `azure/facts.py` that folds the projected half and must read no clock."""
+
+
+def _definitions_of(path: Path, name: str) -> list[int]:
+    """The line numbers at which `path` defines a function called `name`."""
+    return [
+        node.lineno
+        for node in ast.walk(_parse(path))
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name
+    ]
+
+
+def test_the_averages_exclusion_predicate_is_defined_exactly_once() -> None:
+    """Rule 17a — one definition, in the module that owns `ResourceRecord`."""
+    owners = [
+        _label(path)
+        for path in sorted(SRC_ROOT.rglob("*.py"))
+        if _definitions_of(path, EXCLUSION_PREDICATE)
+    ]
+
+    assert owners == [EXCLUSION_PREDICATE_OWNER], (
+        f"{EXCLUSION_PREDICATE} must be defined exactly once, in "
+        f"{EXCLUSION_PREDICATE_OWNER}; found it in: {owners or '[nowhere]'}. Two copies "
+        f"of this predicate disagreed on every non-VM resource and made a reproducible "
+        f"snapshot report REPLAY_MISMATCH."
+    )
+
+
+def test_replay_calls_the_shared_exclusion_predicate_and_defines_none() -> None:
+    """Rule 17a — replay imports the predicate rather than re-deriving the exclusion."""
+    path = SRC_ROOT / REPLAY_ENTRY_POINT
+
+    assert not _definitions_of(path, EXCLUSION_PREDICATE), (
+        f"{REPLAY_ENTRY_POINT} defines its own {EXCLUSION_PREDICATE}; it must call the "
+        f"one in {EXCLUSION_PREDICATE_OWNER}."
+    )
+
+    imported = any(
+        imp.name == EXCLUSION_PREDICATE and (imp.source or "").endswith("providers.base")
+        for imp in _imports(_parse(path))
+    )
+    assert imported, (
+        f"{REPLAY_ENTRY_POINT} must import {EXCLUSION_PREDICATE} from "
+        f"reporting_agent.providers.base — a replay that decides the exclusion for "
+        f"itself is the defect this rule exists to prevent."
+    )
+
+    # The specific construct that was deleted: a rebuilt set of power-state spellings.
+    # A second reading of the exclusion does not have to be a function to drift.
+    for node in ast.walk(_parse(path)):
+        if isinstance(node, ast.Set | ast.Call):
+            literals = {
+                element.value
+                for element in ast.walk(node)
+                if isinstance(element, ast.Constant) and isinstance(element.value, str)
+            }
+            assert not {"unknown", "deallocated"} <= literals, (
+                f"{REPLAY_ENTRY_POINT}:{node.lineno} rebuilds a power-state set "
+                f"containing both 'unknown' and 'deallocated'. That is the exclusion "
+                f"predicate written a second time; call "
+                f"{EXCLUSION_PREDICATE} instead."
+            )
+
+
+def test_the_projected_fact_fold_reads_no_clock() -> None:
+    """Rule 17b — the projected fold stamps each fact from its page, not from a clock.
+
+    Scoped to the one method rather than the module: `azure/facts.py` reads a clock
+    correctly for the subscription-scoped sources, whose responses genuinely arrive at
+    their own instants. It is the projected half — where the instant is already known,
+    because the page carried it — that must not time anything.
+    """
+    path = SRC_ROOT / "azure" / "facts.py"
+    tree = _parse(path)
+
+    folds = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and node.name == PROJECTED_FOLD_METHOD
+    ]
+    assert len(folds) == 1, (
+        f"expected exactly one {PROJECTED_FOLD_METHOD} in azure/facts.py, "
+        f"found {len(folds)} — this rule scans that method by name."
+    )
+
+    offenders = [
+        f"azure/facts.py:{node.lineno} self._now()"
+        for node in ast.walk(folds[0])
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "_now"
+    ]
+
+    assert not offenders, (
+        f"{PROJECTED_FOLD_METHOD} reads a clock: " + "; ".join(offenders) + ". A "
+        "projected fact's collected_at is the instant its page was received — the one "
+        "the archive recorded and the one replay re-derives from. Reading a clock here "
+        "put every fact one fold-delay away from the archived value and made a "
+        "reproducible snapshot report REPLAY_MISMATCH."
+    )
