@@ -1,0 +1,312 @@
+{
+  "catalogue_version": "1.0.0",
+  "providers": {
+    "azure": {
+      "sections": [
+        {
+          "key": "azure_subscription",
+          "number": 1,
+          "title_id": "doc.section.azure_subscription",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["type", "count"] } }
+          ]
+        },
+        {
+          "key": "resource_groups",
+          "number": 2,
+          "title_id": "doc.section.resource_groups",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["resource_group", "type", "count"] } }
+          ]
+        },
+        {
+          "key": "virtual_network",
+          "number": 3,
+          "title_id": "doc.section.virtual_network",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Network/virtualNetworks"],
+          "needs_fact_sources": ["resource_graph"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "resource", "config": { "columns": ["subnet", "address_prefix", "available_ips"] } }
+          ]
+        },
+        {
+          "key": "virtual_machines",
+          "number": 4,
+          "title_id": "doc.section.virtual_machines",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_fact_sources": ["resource_graph"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.inventory" }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "size", "os_type", "os_build", "power_state"], "subsection": "4.1" } },
+            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.network" }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "nic", "subnet", "private_ip", "public_ip", "nsg"], "subsection": "4.2" } },
+            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.disks" }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "disk_name", "disk_size_gb", "disk_type", "caching"], "subsection": "4.3" } }
+          ]
+        },
+        {
+          "key": "public_ip_addresses",
+          "number": 5,
+          "title_id": "doc.section.public_ip_addresses",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Network/publicIPAddresses"],
+          "needs_fact_sources": ["resource_graph"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "address", "allocation_method", "sku", "association"] } }
+          ]
+        },
+        {
+          "key": "network_security_groups",
+          "number": 6,
+          "title_id": "doc.section.network_security_groups",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Network/networkSecurityGroups"],
+          "needs_fact_sources": ["resource_graph"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "resource", "config": { "columns": ["priority", "direction", "protocol", "source", "destination", "port", "action"], "omit_default_rules_above": 65000 } }
+          ],
+          "notes": "Azure default rules at priority 65000 and above are omitted; the section reports rules an operator wrote."
+        },
+        {
+          "key": "reservations",
+          "number": 7,
+          "title_id": "doc.section.reservations",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_fact_sources": ["capacity"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["reservation_name", "sku", "quantity", "expiry", "utilization"] } }
+          ]
+        },
+        {
+          "key": "vm_utilization",
+          "number": 8,
+          "title_id": "doc.section.vm_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              { "metric": "Percentage CPU", "statistic": "avg" },
+              { "metric": "Percentage CPU", "statistic": "max" },
+              { "metric": "Available Memory Bytes", "statistic": "avg" }
+            ],
+            "capacity_planning": [
+              { "metric": "Percentage CPU", "statistic": "avg" },
+              { "metric": "Percentage CPU", "statistic": "max" },
+              { "metric": "Percentage CPU", "statistic": "p95" },
+              { "metric": "Available Memory Bytes", "statistic": "avg" },
+              { "metric": "Available Memory Bytes", "statistic": "min" },
+              { "metric": "Disk Read Bytes", "statistic": "avg" },
+              { "metric": "Disk Write Bytes", "statistic": "avg" },
+              { "metric": "Network In Total", "statistic": "avg" },
+              { "metric": "Network Out Total", "statistic": "avg" }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
+            { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] },
+            { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
+          ]
+        },
+        {
+          "key": "historical_vm_utilization",
+          "number": 9,
+          "title_id": "doc.section.historical_vm_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "optional": true,
+          "draws_from_prior_verified_runs": true,
+          "presets": {
+            "standard_utilization": [
+              { "metric": "Percentage CPU", "statistic": "avg" },
+              { "metric": "Percentage CPU", "statistic": "max" }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "historical_trend", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
+            { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] }
+          ]
+        },
+        {
+          "key": "database_utilization",
+          "number": 10,
+          "title_id": "doc.section.database_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "Microsoft.Sql/servers/databases",
+            "Microsoft.Sql/managedInstances",
+            "Microsoft.DBforPostgreSQL/flexibleServers"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              { "metric": "cpu_percent", "statistic": "avg" },
+              { "metric": "cpu_percent", "statistic": "max" },
+              { "metric": "storage_percent", "statistic": "avg" }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
+            { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] },
+            { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
+          ]
+        },
+        {
+          "key": "app_service_and_storage",
+          "number": 11,
+          "title_id": "doc.section.app_service_and_storage",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "Microsoft.Web/sites",
+            "Microsoft.Storage/storageAccounts"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              { "metric": "BytesReceived", "statistic": "avg" },
+              { "metric": "BytesSent", "statistic": "avg" },
+              { "metric": "Availability", "statistic": "avg" },
+              { "metric": "Egress", "statistic": "avg" },
+              { "metric": "Ingress", "statistic": "avg" }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
+            { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] }
+          ]
+        },
+        {
+          "key": "backup_report",
+          "number": 12,
+          "title_id": "doc.section.backup_report",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_fact_sources": ["recovery_services"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "vault", "policy", "last_backup", "retention_days"] } }
+          ]
+        },
+        {
+          "key": "incident_report",
+          "number": 13,
+          "title_id": "doc.section.incident_report",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "author_filled": true,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "blank_rows_table", "per": "section", "config": { "columns": ["date", "description", "impact", "resolution", "status"], "rows": 5 } }
+          ]
+        },
+        {
+          "key": "recommendations",
+          "number": 14,
+          "title_id": "doc.section.recommendations",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": ["advisor"],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "resource_table", "per": "section", "config": { "columns": ["resource", "category", "impact", "recommendation"] } }
+          ]
+        },
+        {
+          "key": "coverage_and_verification",
+          "number": 15,
+          "title_id": "doc.section.coverage_and_verification",
+          "group": "closing",
+          "position": "always",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "gaps_and_coverage", "per": "section" },
+            { "block": "verification_record", "per": "section" }
+          ]
+        }
+      ]
+    }
+  }
+}

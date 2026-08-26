@@ -107,7 +107,8 @@ describe("Requirement 13.12 — the migration is exactly four edits", () => {
     expect(MIGRATION_SOURCE_VERSION).toBe(1)
     expect(MIGRATION_TARGET_VERSION).toBe(2)
     expect(MIGRATION_SOURCE_VERSION).toBe(MIN_SCHEMA_VERSION)
-    expect(MIGRATION_TARGET_VERSION).toBe(MAX_SUPPORTED_SCHEMA_VERSION)
+    // Migration target is explicitly 2 — not MAX — because no v2→v3 lift exists yet.
+    expect(MIGRATION_TARGET_VERSION).toBeLessThanOrEqual(MAX_SUPPORTED_SCHEMA_VERSION)
   })
 
   test("schema_version becomes 2", () => {

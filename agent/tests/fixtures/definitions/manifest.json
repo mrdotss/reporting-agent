@@ -2,6 +2,13 @@
   "manifest_version": 1,
   "fixtures": [
     {
+      "file": "accept-blank-rows-table.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "8a06d24fb09e9da6daf782bfe6b87ded0c3985de64dc10c9c6830c7c52b53a20",
+      "offenders": []
+    },
+    {
       "file": "accept-block-scope-overrides.json",
       "mode": "run",
       "verdict": "accept",
@@ -893,6 +900,129 @@
       "verdict": "accept",
       "definition_sha256": "d2ee22f7fd48959588f7ab75799b77f746542f9eeb0655bfd052d6a8ee5b85a8",
       "offenders": []
+    },
+    {
+      "file": "accept-schema-version-3-minimal.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "4d5f71104945408184d877a50bf94b11a7aabc45e523c87fb07de0b90914b72d",
+      "offenders": []
+    },
+    {
+      "file": "reject-v3-unknown-provider.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "650712f7490b328a2454c1bec15dfaaf5e1bbfd8968d4b47d47a4b4ca13e9b3e",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "provider"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-unsupported-provider.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "313606a7110de40e198bfc9e0e8a3323e6fc91216f25042e39a6c61e6b490f85",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "provider"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-unknown-section-type.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "167631ea143b7130297025f9daacfe8206bbce8d80e0de654a9b522fee48667a",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-duplicate-section-id.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "2bb5ef8db1cf366168aee197ee781d5c521a13e5718a65f2b0b62816d9b21a4b",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            1,
+            "id"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            1,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-duplicate-non-repeatable-type.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "79c75454458aa051aa32f8fd43c0b2a87bfd4c14b220536c2867bf0edbd37d79",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            1,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-fixed-section-out-of-order.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "bfe1a2aa1dd645bfe2285b3988c03e6e7874ccb92a601a7b10233ad25047ee19",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "type"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-invalid-presentation.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "0133b7a7ebbd8f887dd6912bfea0371062d0cd62759114760f361642b44e45dc",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "presentation"
+          ]
+        }
+      ]
     }
   ]
 }

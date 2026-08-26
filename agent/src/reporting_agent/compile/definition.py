@@ -92,6 +92,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import pathlib
 import re
 from dataclasses import dataclass
 from typing import Final
@@ -119,6 +120,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "heading",
     "rich_text",
     "historical_trend",
+    "blank_rows_table",
 )
 # --- END BLOCK TYPES ---
 
@@ -230,6 +232,11 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "optional": ["caption"],
         "enums": {},
     },
+    "blank_rows_table": {
+        "required": ["columns", "rows"],
+        "optional": ["caption"],
+        "enums": {},
+    },
 }
 # --- END BLOCK CONFIG ---
 
@@ -267,6 +274,7 @@ __all__ = [
     "MAX_RESOURCE_GROUPS",
     "MAX_RESOURCE_TYPES",
     "MAX_ROW_COLUMNS",
+    "MAX_SECTIONS",
     "MAX_SUPPORTED_SCHEMA_VERSION",
     "MAX_TAG_FILTERS",
     "MIN_DECIMAL_PLACES",
@@ -280,14 +288,19 @@ __all__ = [
     "NUMBER_FORMAT_KEYS",
     "PAGE_SIZE_VALUES",
     "PERIOD_KINDS",
+    "PROVIDERS",
     "REPORT_TITLE_MAX_LENGTH",
     "REQUIRED_IDENTITY_KEYS",
     "REQUIRED_TOP_LEVEL_KEYS",
     "RESOURCE_GROUP_MAX_LENGTH",
     "RESOURCE_GROUP_MIN_LENGTH",
     "RESOURCE_TYPE_MAX_LENGTH",
+    "SECTION_ID_MAX_LENGTH",
+    "SECTION_ID_MIN_LENGTH",
+    "SECTION_PRESENTATIONS",
     "SEPARATOR_DEFAULTS",
     "SORT_DIRECTIONS",
+    "SUPPORTED_PROVIDERS",
     "TABLE_STYLE_VALUES",
     "TAG_KEY_MAX_LENGTH",
     "TAG_KEY_MIN_LENGTH",
@@ -326,7 +339,7 @@ REPORT_TITLE_MAX_LENGTH: Final[int] = 200
 # version is exactly three things: `front_matter`, `identity.language`, and the two
 # `number_format` separators.
 MIN_SCHEMA_VERSION: Final[int] = 1
-MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 2
+MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 3
 
 # The version-conditional key sets, **declared as data rather than as two validators**.
 # `collect_definition_issues` resolves the version once and reads the record for it, so no
@@ -353,6 +366,15 @@ REQUIRED_TOP_LEVEL_KEYS: Final[dict[int, tuple[str, ...]]] = {
         "design",
         "front_matter",
     ),
+    3: (
+        "schema_version",
+        "identity",
+        "provider",
+        "sections",
+        "period",
+        "design",
+        "front_matter",
+    ),
 }
 
 # Req 16.1 — two keys at v1, four at v2.
@@ -364,17 +386,25 @@ NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
         "decimal_separator",
         "grouping_separator",
     ),
+    3: (
+        "decimal_places",
+        "group_thousands",
+        "decimal_separator",
+        "grouping_separator",
+    ),
 }
 
 # Req 15.1 — `identity.language` exists at v2 and nowhere else.
 IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     1: ("name", "description", "report_title"),
     2: ("name", "description", "report_title", "language"),
+    3: ("name", "description", "report_title", "language"),
 }
 
 REQUIRED_IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     1: ("name",),
     2: ("name", "language"),
+    3: ("name", "language"),
 }
 
 # Req 15.1 — the two declared languages, matched **case-sensitively**. `EN` is not a
@@ -391,13 +421,87 @@ FRONT_MATTER_KEYS: Final[tuple[str, ...]] = ("cover", "document_control", "toc")
 # type. `cover` **stays** in `BLOCK_TYPES` because Req 13.11 requires a stored v1
 # definition carrying one to keep compiling.
 FRONT_MATTER_FORBIDDEN_BLOCK_TYPES: Final[tuple[str, ...]] = ("cover",)
+
+# Req 3.4 — the closed set of providers. Only `azure` is accepted until a catalogue
+# and collector exist for the others.
+PROVIDERS: Final[tuple[str, ...]] = ("azure", "aws", "onprem")
+SUPPORTED_PROVIDERS: Final[tuple[str, ...]] = ("azure",)
+
+# Req 7.8 — the closed presentation set for a section entry.
+SECTION_PRESENTATIONS: Final[tuple[str, ...]] = (
+    "chart_and_table",
+    "chart_only",
+    "table_only",
+)
+
+# Section id bounds — same limits as block ids.
+SECTION_ID_MIN_LENGTH: Final[int] = 1
+SECTION_ID_MAX_LENGTH: Final[int] = 64
+MAX_SECTIONS: Final[int] = 200
 # --- END SCHEMA VERSIONS ---
 
-assert set(REQUIRED_TOP_LEVEL_KEYS) == {MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION}
+assert set(REQUIRED_TOP_LEVEL_KEYS) == set(
+    range(MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION + 1)
+)
 assert set(NUMBER_FORMAT_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
 assert set(IDENTITY_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
 assert set(REQUIRED_IDENTITY_KEYS) == set(REQUIRED_TOP_LEVEL_KEYS)
 assert set(FRONT_MATTER_FORBIDDEN_BLOCK_TYPES) <= set(BLOCK_TYPES)
+
+# Section catalogue keys by provider, derived from the shared JSON at import time.
+# Same mechanism as the TypeScript side — one file, both halves.
+_SECTIONS_CATALOGUE_PATH: Final[pathlib.Path] = (
+    pathlib.Path(__file__).resolve().parent.parent / "catalog" / "sections.v1.json"
+)
+
+def _load_section_keys() -> dict[str, tuple[str, ...]]:
+    """Load section keys from the shared catalogue file at import time."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    result: dict[str, tuple[str, ...]] = {}
+    for provider_name, provider_data in raw.get("providers", {}).items():
+        sections = provider_data.get("sections", [])
+        result[provider_name] = tuple(s["key"] for s in sections)
+    return result
+
+
+def _load_non_repeatable_keys() -> dict[str, frozenset[str]]:
+    """Non-repeatable section keys per provider."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    result: dict[str, frozenset[str]] = {}
+    for provider_name, provider_data in raw.get("providers", {}).items():
+        sections = provider_data.get("sections", [])
+        result[provider_name] = frozenset(
+            s["key"] for s in sections if not s.get("repeatable", False)
+        )
+    return result
+
+
+def _load_fixed_keys() -> dict[str, tuple[str, ...]]:
+    """Fixed-position section keys per provider, in declared order."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    result: dict[str, tuple[str, ...]] = {}
+    for provider_name, provider_data in raw.get("providers", {}).items():
+        sections = provider_data.get("sections", [])
+        result[provider_name] = tuple(
+            s["key"] for s in sections if s.get("position") == "fixed"
+        )
+    return result
+
+
+SECTION_KEYS_BY_PROVIDER: Final[dict[str, tuple[str, ...]]] = _load_section_keys()
+NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = (
+    _load_non_repeatable_keys()
+)
+FIXED_SECTION_KEYS_BY_PROVIDER: Final[dict[str, tuple[str, ...]]] = _load_fixed_keys()
 
 # Req 16.3 — the separators each language implies when the definition declares none.
 # Applied at validation time to decide whether the resolved pair is legal, and never
@@ -2358,6 +2462,167 @@ def _empty_required_config_fields(
     return found
 
 
+# --- Provider and Sections validation (schema_version 3) ---------------------------
+
+_PROVIDERS_SET: Final[frozenset[str]] = frozenset(PROVIDERS)
+_SUPPORTED_PROVIDERS_SET: Final[frozenset[str]] = frozenset(SUPPORTED_PROVIDERS)
+_SECTION_PRESENTATIONS_SET: Final[frozenset[str]] = frozenset(SECTION_PRESENTATIONS)
+
+
+def _validate_provider(value: object, walk: _Walk) -> None:
+    if not isinstance(value, str):
+        walk.add(("provider",), "provider must be a string.")
+        return
+    if value not in _PROVIDERS_SET:
+        walk.add(
+            ("provider",),
+            f'Unrecognized provider "{value}". Accepted: {", ".join(PROVIDERS)}.',
+        )
+        return
+    if value not in _SUPPORTED_PROVIDERS_SET:
+        walk.add(
+            ("provider",),
+            f'Provider "{value}" is declared but not yet supported \u2014 no section '
+            f"catalogue exists.",
+        )
+
+
+def _validate_sections(
+    sections: object, walk: _Walk, provider: object
+) -> None:
+    if not _is_json_array(sections):
+        walk.add(("sections",), "sections must be an array.")
+        return
+    if len(sections) > MAX_SECTIONS:
+        walk.add(("sections",), f"sections accepts at most {MAX_SECTIONS} entries.")
+
+    # Resolve the provider's catalogue keys.
+    resolved_provider: str | None = (
+        provider if isinstance(provider, str) and provider in _SUPPORTED_PROVIDERS_SET else None
+    )
+    known_keys: frozenset[str] | None = (
+        frozenset(SECTION_KEYS_BY_PROVIDER[resolved_provider])
+        if resolved_provider and resolved_provider in SECTION_KEYS_BY_PROVIDER
+        else None
+    )
+    non_repeatable_keys: frozenset[str] | None = (
+        NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER.get(resolved_provider)
+        if resolved_provider
+        else None
+    )
+    fixed_keys: tuple[str, ...] | None = (
+        FIXED_SECTION_KEYS_BY_PROVIDER.get(resolved_provider)
+        if resolved_provider
+        else None
+    )
+
+    seen_ids: set[str] = set()
+    seen_non_repeatable_types: set[str] = set()
+    last_fixed_index: int = -1
+
+    for index, entry in enumerate(sections):
+        entry_path: Path = ("sections", index)
+
+        if not _is_plain_object(entry):
+            walk.add(entry_path, "A section entry must be an object.")
+            continue
+
+        # --- id ---
+        entry_id = entry.get("id")
+        if not isinstance(entry_id, str):
+            walk.add((*entry_path, "id"), "Section id must be a string.")
+        elif (
+            len(entry_id) < SECTION_ID_MIN_LENGTH
+            or len(entry_id) > SECTION_ID_MAX_LENGTH
+        ):
+            walk.add(
+                (*entry_path, "id"),
+                f"Section id must be {SECTION_ID_MIN_LENGTH} to "
+                f"{SECTION_ID_MAX_LENGTH} characters.",
+            )
+        elif entry_id in seen_ids:
+            walk.add((*entry_path, "id"), f'Duplicate section id "{entry_id}".')
+        else:
+            seen_ids.add(entry_id)
+
+        # --- type ---
+        entry_type = entry.get("type")
+        if not isinstance(entry_type, str):
+            walk.add((*entry_path, "type"), "Section type must be a string.")
+        elif known_keys is not None and entry_type not in known_keys:
+            walk.add(
+                (*entry_path, "type"),
+                f'Unknown section type "{entry_type}" for provider "{resolved_provider}".',
+            )
+        elif (
+            isinstance(entry_type, str)
+            and non_repeatable_keys is not None
+            and entry_type in non_repeatable_keys
+        ):
+            if entry_type in seen_non_repeatable_types:
+                walk.add(
+                    (*entry_path, "type"),
+                    f'Section type "{entry_type}" is not repeatable and already '
+                    f"appears earlier.",
+                )
+            else:
+                seen_non_repeatable_types.add(entry_type)
+
+        # --- fixed-position ordering ---
+        if isinstance(entry_type, str) and fixed_keys is not None:
+            try:
+                fixed_idx = fixed_keys.index(entry_type)
+            except ValueError:
+                fixed_idx = -1
+            if fixed_idx != -1:
+                if fixed_idx <= last_fixed_index:
+                    walk.add(
+                        (*entry_path, "type"),
+                        f'Fixed-position section "{entry_type}" is out of its '
+                        f"declared order.",
+                    )
+                else:
+                    last_fixed_index = fixed_idx
+
+        # --- selection (through existing _validate_scope_spec) ---
+        if "selection" in entry:
+            _validate_scope_spec(
+                entry.get("selection"),
+                (*entry_path, "selection"),
+                walk,
+                None,
+            )
+
+        # --- metrics (through existing _validate_metric_item) ---
+        if "metrics" in entry:
+            metrics = entry.get("metrics")
+            metrics_path: Path = (*entry_path, "metrics")
+            if not _is_json_array(metrics):
+                walk.add(metrics_path, "Section metrics must be an array.")
+            else:
+                if len(metrics) > MAX_METRIC_ITEMS_PER_ENTRY:
+                    walk.add(
+                        metrics_path,
+                        f"Section metrics accepts at most "
+                        f"{MAX_METRIC_ITEMS_PER_ENTRY} items.",
+                    )
+                for item_index, item in enumerate(metrics):
+                    _validate_metric_item(item, (*metrics_path, item_index), walk)
+
+        # --- presentation ---
+        if "presentation" in entry:
+            pres = entry.get("presentation")
+            if (
+                not isinstance(pres, str)
+                or pres not in _SECTION_PRESENTATIONS_SET
+            ):
+                walk.add(
+                    (*entry_path, "presentation"),
+                    f"presentation must be one of: "
+                    f"{', '.join(SECTION_PRESENTATIONS)}.",
+                )
+
+
 # --- the pass -----------------------------------------------------------------------
 
 
@@ -2407,14 +2672,21 @@ def collect_definition_issues(raw: object, *, mode: str = "draft") -> list[Field
     _validate_identity(raw.get("identity"), ("identity",), walk)
     if "front_matter" in required_keys:
         _validate_front_matter(raw.get("front_matter"), ("front_matter",), walk)
-    _validate_scope_spec(raw.get("scope"), ("scope",), walk, None)
-    _validate_period(raw.get("period"), ("period",), walk)
-    _validate_metrics(raw.get("metrics"), ("metrics",), walk)
-    _validate_blocks(raw.get("blocks"), ("blocks",), walk, mode)
+    # v1/v2: scope, metrics, blocks; v3: provider, sections
+    if walk.version <= 2:
+        _validate_scope_spec(raw.get("scope"), ("scope",), walk, None)
+        _validate_period(raw.get("period"), ("period",), walk)
+        _validate_metrics(raw.get("metrics"), ("metrics",), walk)
+        _validate_blocks(raw.get("blocks"), ("blocks",), walk, mode)
+    else:
+        _validate_provider(raw.get("provider"), walk)
+        _validate_period(raw.get("period"), ("period",), walk)
+        _validate_sections(raw.get("sections"), walk, raw.get("provider"))
     _validate_design(raw.get("design"), ("design",), walk)
     _validate_canonical_byte_size(raw, walk)
-    _validate_every_scoped_type_is_selected(raw, walk, mode)
-    _validate_required_config_is_filled(raw, walk, mode)
+    if walk.version <= 2:
+        _validate_every_scoped_type_is_selected(raw, walk, mode)
+        _validate_required_config_is_filled(raw, walk, mode)
 
     return walk.issues
 

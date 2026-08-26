@@ -69,10 +69,14 @@ __all__ = [
     "DECLARED_FACT_SOURCES",
     "DECLARED_FACT_UNITS",
     "DECLARED_FACT_VALUE_KINDS",
+    "DECLARED_SECTION_GROUPS",
+    "DECLARED_SECTION_POSITIONS",
     "DECLARED_UNITS",
     "DECLARED_UNIT_FAMILIES",
     "DEFAULT_CATALOG_PATH",
     "DEFAULT_FACTS_PATH",
+    "DEFAULT_SECTIONS_PATH",
+    "FIXED_SECTION_ORDER",
     "MAX_FACT_KEY_LENGTH",
     "MAX_SCALE",
     "MIN_FACT_KEY_LENGTH",
@@ -84,13 +88,17 @@ __all__ = [
     "FactDeclarationEntry",
     "InvalidEntry",
     "LoadedCatalog",
+    "LoadedSectionCatalogue",
     "MetricEntry",
     "ResourceTypeCatalog",
     "ResourceTypeFacts",
+    "SectionCatalogueEntry",
+    "SectionExpansionBlock",
     "SourceBinding",
     "child_type_names",
     "is_child_type",
     "load_catalog",
+    "load_section_catalogue",
 ]
 
 # --- the declared schema (Req 32.3) -------------------------------------------------
@@ -189,6 +197,7 @@ CATALOG_ENTRY_INVALID_GAP_TYPE: Final[str] = "catalog_entry_invalid"
 
 DEFAULT_CATALOG_PATH: Final[Path] = Path(__file__).resolve().parent / "metrics.v1.json"
 DEFAULT_FACTS_PATH: Final[Path] = Path(__file__).resolve().parent / "facts.v1.json"
+DEFAULT_SECTIONS_PATH: Final[Path] = Path(__file__).resolve().parent / "sections.v1.json"
 
 _FACT_KEY_PATTERN: Final[re.Pattern[str]] = re.compile(r"^[a-z][a-z0-9_]*$")
 MIN_FACT_KEY_LENGTH: Final[int] = 1
@@ -197,6 +206,27 @@ MAX_FACT_KEY_LENGTH: Final[int] = 120
 _IDENTIFIER_PATTERN: Final[re.Pattern[str]] = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
 type SourceKind = Literal["metric", "sku_capability"]
+
+# --- section catalogue vocabulary (task 3.1) ----------------------------------
+
+DECLARED_SECTION_GROUPS: Final[frozenset[str]] = frozenset(
+    {"inventory", "utilisation", "closing"}
+)
+"""The three groups sections may declare — inventory, utilisation, closing."""
+
+DECLARED_SECTION_POSITIONS: Final[frozenset[str]] = frozenset(
+    {"free", "fixed", "always"}
+)
+"""Position semantics: free = reorderable, fixed = compiler-forced order,
+always = present and never deselectable."""
+
+FIXED_SECTION_ORDER: Final[tuple[str, ...]] = (
+    "backup_report",
+    "incident_report",
+    "recommendations",
+)
+"""The declared order for position:'fixed' entries. A catalogue declaring them
+out of this order fails validation."""
 
 
 # --- the frozen shapes ---------------------------------------------------------------
@@ -1569,3 +1599,402 @@ def _valid_string_list(value: object, declared: frozenset[str]) -> list[str] | N
     if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
         return None
     return [item for item in value if item in declared]
+
+
+# --- section catalogue (task 3.1) ------------------------------------------------
+#
+# The section catalogue is ONE SHARED JSON FILE read by both halves. Because it is
+# data rather than sentinel-mirrored code, it needs the validation a mirror would
+# have given free. This module is the only code that reads and validates it on the
+# agent side.
+
+
+@dataclass(frozen=True, slots=True)
+class SectionExpansionBlock:
+    """One block in a section's `expands_to` sequence."""
+
+    block: str
+    per: str
+    config: tuple[tuple[str, object], ...] = ()
+    when_presentation: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class SectionCatalogueEntry:
+    """One validated section catalogue entry."""
+
+    key: str
+    number: int
+    title_id: str
+    group: str
+    position: str
+    repeatable: bool
+    needs_resource_types: tuple[str, ...]
+    needs_fact_sources: tuple[str, ...]
+    metric_bearing: bool
+    presets: tuple[tuple[str, tuple[tuple[str, str], ...] | str], ...]
+    expands_to: tuple[SectionExpansionBlock, ...]
+    optional: bool = False
+    author_filled: bool = False
+    draws_from_prior_verified_runs: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedSectionCatalogue:
+    """The validated, frozen result of one section catalogue load."""
+
+    catalogue_version: str
+    entries: tuple[SectionCatalogueEntry, ...]
+
+    def by_key(self, key: str) -> SectionCatalogueEntry | None:
+        """Lookup a section entry by key."""
+        for entry in self.entries:
+            if entry.key == key:
+                return entry
+        return None
+
+    @property
+    def numbers(self) -> tuple[int, ...]:
+        """Every canonical section number, in catalogue order."""
+        return tuple(entry.number for entry in self.entries)
+
+    @property
+    def keys(self) -> tuple[str, ...]:
+        """Every section key, in catalogue order."""
+        return tuple(entry.key for entry in self.entries)
+
+    @property
+    def fixed_entries(self) -> tuple[SectionCatalogueEntry, ...]:
+        """The fixed-position entries, in their declared order."""
+        return tuple(e for e in self.entries if e.position == "fixed")
+
+    @property
+    def always_entry(self) -> SectionCatalogueEntry | None:
+        """The single always-present entry, or None."""
+        for e in self.entries:
+            if e.position == "always":
+                return e
+        return None
+
+
+def load_section_catalogue(
+    path: Path | str | None = None,
+    *,
+    loaded_catalog: LoadedCatalog | None = None,
+) -> LoadedSectionCatalogue:
+    """Load, validate and freeze the Section_Catalogue.
+
+    Validates:
+    - `expands_to` block keys are in BLOCK_TYPES
+    - `needs_resource_types` names types some catalogue declares
+    - preset metrics are declared in the metric catalogue for the entry's types
+    - no duplicate `number`
+    - `fixed` entries are in FIXED_SECTION_ORDER
+    - at most one `always` entry
+
+    Raises :class:`~reporting_agent.errors.CatalogUnusableError` on any violation,
+    naming the specific malformed entry.
+    """
+    from reporting_agent.compile.definition import BLOCK_TYPES
+
+    resolved = Path(path) if path is not None else DEFAULT_SECTIONS_PATH
+
+    try:
+        raw_text = resolved.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise CatalogUnusableError(
+            f"the section catalogue could not be read from {resolved}: {exc}"
+        ) from exc
+
+    try:
+        raw = json.loads(raw_text)
+    except json.JSONDecodeError as exc:
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} is not valid JSON: {exc}"
+        ) from exc
+
+    if not isinstance(raw, dict):
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} must be a JSON object at the top "
+            f"level, got {type(raw).__name__}"
+        )
+
+    catalogue_version = raw.get("catalogue_version")
+    if not isinstance(catalogue_version, str) or not catalogue_version.strip():
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} has no usable `catalogue_version`"
+        )
+
+    providers = raw.get("providers")
+    if not isinstance(providers, dict):
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} declares no `providers` object"
+        )
+
+    azure = providers.get("azure")
+    if not isinstance(azure, dict):
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} declares no `providers.azure` object"
+        )
+
+    raw_sections = azure.get("sections")
+    if not isinstance(raw_sections, list) or not raw_sections:
+        raise CatalogUnusableError(
+            f"the section catalogue at {resolved} declares no `providers.azure.sections`"
+        )
+
+    # Collect all known resource types from the metric AND fact catalogs for
+    # preset metric validation.
+    block_types_set = set(BLOCK_TYPES)
+    seen_numbers: set[int] = set()
+    seen_keys: set[str] = set()
+    always_count = 0
+    fixed_seen: list[str] = []
+    entries: list[SectionCatalogueEntry] = []
+
+    for idx, raw_entry in enumerate(raw_sections):
+        if not isinstance(raw_entry, dict):
+            raise CatalogUnusableError(
+                f"section catalogue entry [{idx}] must be a JSON object"
+            )
+
+        key = raw_entry.get("key")
+        if not isinstance(key, str) or not key.strip():
+            raise CatalogUnusableError(
+                f"section catalogue entry [{idx}] has no usable `key`"
+            )
+
+        if key in seen_keys:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: duplicate key"
+            )
+        seen_keys.add(key)
+
+        number = raw_entry.get("number")
+        if not isinstance(number, int) or isinstance(number, bool):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `number` must be an integer"
+            )
+        if number in seen_numbers:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: duplicate number {number}"
+            )
+        seen_numbers.add(number)
+
+        title_id = raw_entry.get("title_id")
+        if not isinstance(title_id, str) or not title_id.strip():
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `title_id` must be a non-empty string"
+            )
+
+        group = raw_entry.get("group")
+        if group not in DECLARED_SECTION_GROUPS:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `group` {group!r} is not one of "
+                f"{sorted(DECLARED_SECTION_GROUPS)}"
+            )
+
+        position = raw_entry.get("position")
+        if position not in DECLARED_SECTION_POSITIONS:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `position` {position!r} is not one of "
+                f"{sorted(DECLARED_SECTION_POSITIONS)}"
+            )
+
+        if position == "always":
+            always_count += 1
+            if always_count > 1:
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: more than one `always` entry"
+                )
+
+        if position == "fixed":
+            fixed_seen.append(key)
+            expected_idx = len(fixed_seen) - 1
+            if expected_idx >= len(FIXED_SECTION_ORDER):
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: more fixed entries than "
+                    f"FIXED_SECTION_ORDER declares ({len(FIXED_SECTION_ORDER)})"
+                )
+            if FIXED_SECTION_ORDER[expected_idx] != key:
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: fixed entry at position "
+                    f"{expected_idx} must be {FIXED_SECTION_ORDER[expected_idx]!r}, "
+                    f"got {key!r}"
+                )
+
+        repeatable = raw_entry.get("repeatable", False)
+        if not isinstance(repeatable, bool):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `repeatable` must be a boolean"
+            )
+
+        needs_resource_types = raw_entry.get("needs_resource_types", [])
+        if not isinstance(needs_resource_types, list) or not all(
+            isinstance(t, str) for t in needs_resource_types
+        ):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `needs_resource_types` must be "
+                f"a list of strings"
+            )
+        for rt in needs_resource_types:
+            if not isinstance(rt, str) or not rt.strip():
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: `needs_resource_types` "
+                    f"contains an empty or non-string entry"
+                )
+
+        needs_fact_sources = raw_entry.get("needs_fact_sources", [])
+        if not isinstance(needs_fact_sources, list) or not all(
+            isinstance(s, str) for s in needs_fact_sources
+        ):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `needs_fact_sources` must be "
+                f"a list of strings"
+            )
+
+        metric_bearing = raw_entry.get("metric_bearing", False)
+        if not isinstance(metric_bearing, bool):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `metric_bearing` must be a boolean"
+            )
+
+        # Validate expands_to
+        raw_expands = raw_entry.get("expands_to", [])
+        if not isinstance(raw_expands, list):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `expands_to` must be a list"
+            )
+
+        expansion_blocks: list[SectionExpansionBlock] = []
+        for exp_idx, raw_block in enumerate(raw_expands):
+            if not isinstance(raw_block, dict):
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: expands_to[{exp_idx}] must "
+                    f"be a JSON object"
+                )
+            block_type = raw_block.get("block")
+            if not isinstance(block_type, str) or block_type not in block_types_set:
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: expands_to[{exp_idx}].block "
+                    f"{block_type!r} is not in BLOCK_TYPES"
+                )
+            per = raw_block.get("per")
+            if per not in ("section", "resource"):
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: expands_to[{exp_idx}].per "
+                    f"must be 'section' or 'resource', got {per!r}"
+                )
+            config = raw_block.get("config", {})
+            config_tuple = (
+                tuple(sorted(config.items())) if isinstance(config, dict) else ()
+            )
+            when_presentation = raw_block.get("when_presentation", [])
+            wp_tuple = (
+                tuple(when_presentation)
+                if isinstance(when_presentation, list)
+                else ()
+            )
+            expansion_blocks.append(
+                SectionExpansionBlock(
+                    block=block_type,
+                    per=per,
+                    config=config_tuple,
+                    when_presentation=wp_tuple,
+                )
+            )
+
+        # Validate presets against the metric catalogue
+        raw_presets = raw_entry.get("presets", {})
+        if not isinstance(raw_presets, dict):
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `presets` must be an object"
+            )
+
+        presets_list: list[tuple[str, tuple[tuple[str, str], ...] | str]] = []
+        for preset_name, preset_value in raw_presets.items():
+            if preset_value == "*":
+                presets_list.append((preset_name, "*"))
+            elif isinstance(preset_value, list):
+                metrics_tuples: list[tuple[str, str]] = []
+                for pm_idx, pm in enumerate(preset_value):
+                    if not isinstance(pm, dict):
+                        raise CatalogUnusableError(
+                            f"section catalogue entry {key!r}: "
+                            f"presets.{preset_name}[{pm_idx}] must be an object"
+                        )
+                    pm_metric = pm.get("metric")
+                    pm_stat = pm.get("statistic")
+                    if not isinstance(pm_metric, str) or not isinstance(pm_stat, str):
+                        raise CatalogUnusableError(
+                            f"section catalogue entry {key!r}: "
+                            f"presets.{preset_name}[{pm_idx}] needs string "
+                            f"`metric` and `statistic`"
+                        )
+                    # Validate the metric exists in the metric catalogue for
+                    # the entry's declared resource types
+                    if loaded_catalog is not None and needs_resource_types:
+                        found = False
+                        for rt in needs_resource_types:
+                            rt_catalog = loaded_catalog.for_resource_type(rt)
+                            if rt_catalog is not None:
+                                for m in rt_catalog.metrics:
+                                    if m.name == pm_metric:
+                                        found = True
+                                        break
+                                if found:
+                                    break
+                                for d in rt_catalog.derived:
+                                    if d.statistic_id == pm_metric:
+                                        found = True
+                                        break
+                                if found:
+                                    break
+                        if not found:
+                            raise CatalogUnusableError(
+                                f"section catalogue entry {key!r}: "
+                                f"presets.{preset_name}[{pm_idx}] names metric "
+                                f"{pm_metric!r} which the metric catalogue does "
+                                f"not declare for types "
+                                f"{needs_resource_types}"
+                            )
+                    metrics_tuples.append((pm_metric, pm_stat))
+                presets_list.append((preset_name, tuple(metrics_tuples)))
+            else:
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: presets.{preset_name} must "
+                    f"be '*' or an array of metric selections"
+                )
+
+        entries.append(
+            SectionCatalogueEntry(
+                key=key,
+                number=number,
+                title_id=title_id,
+                group=group,
+                position=position,
+                repeatable=repeatable,
+                needs_resource_types=tuple(needs_resource_types),
+                needs_fact_sources=tuple(needs_fact_sources),
+                metric_bearing=metric_bearing,
+                presets=tuple(presets_list),
+                expands_to=tuple(expansion_blocks),
+                optional=bool(raw_entry.get("optional", False)),
+                author_filled=bool(raw_entry.get("author_filled", False)),
+                draws_from_prior_verified_runs=bool(
+                    raw_entry.get("draws_from_prior_verified_runs", False)
+                ),
+            )
+        )
+
+    # Final fixed-order validation: we must have seen all declared fixed entries
+    if len(fixed_seen) != len(FIXED_SECTION_ORDER):
+        missing = [k for k in FIXED_SECTION_ORDER if k not in fixed_seen]
+        raise CatalogUnusableError(
+            f"section catalogue is missing fixed entries: {missing}"
+        )
+
+    return LoadedSectionCatalogue(
+        catalogue_version=catalogue_version,
+        entries=tuple(entries),
+    )

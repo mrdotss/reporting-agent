@@ -177,12 +177,17 @@ _ABSENT = _Absent()
 
 
 def test_the_version_tables_are_keyed_by_exactly_the_supported_versions() -> None:
-    expected = {MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION}
+    expected = set(range(MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION + 1))
     assert set(REQUIRED_TOP_LEVEL_KEYS) == expected
     assert set(NUMBER_FORMAT_KEYS) == expected
     assert set(IDENTITY_KEYS) == expected
     assert set(REQUIRED_IDENTITY_KEYS) == expected
-    assert (MIN_SCHEMA_VERSION, MAX_SUPPORTED_SCHEMA_VERSION) == (1, 2)
+    # The count itself, not the pair: `MAX_SUPPORTED_SCHEMA_VERSION` grew from 2 to 3 for
+    # sections/provider, and a test asserting the old pair `(1, 2)` would go red on every
+    # future version bump for a reason unrelated to what it is meant to guard — the range
+    # of keyed versions, not which two versions happen to exist today.
+    assert MIN_SCHEMA_VERSION == 1
+    assert MAX_SUPPORTED_SCHEMA_VERSION >= 3
 
 
 def test_version_two_adds_exactly_front_matter_at_the_top_level() -> None:
@@ -226,7 +231,10 @@ def test_the_separator_defaults_cover_every_declared_language() -> None:
         # about one stored document.
         (2.0, 2),
         (0, MIN_SCHEMA_VERSION),
-        (3, MIN_SCHEMA_VERSION),
+        # 3 became a genuinely usable version when sections/provider were added — using it
+        # here as the "unusable" example would silently start testing the wrong number the
+        # moment MAX_SUPPORTED_SCHEMA_VERSION moved. 99 stays out of range regardless.
+        (99, MIN_SCHEMA_VERSION),
         ("2", MIN_SCHEMA_VERSION),
         (2.5, MIN_SCHEMA_VERSION),
         (True, MIN_SCHEMA_VERSION),
@@ -744,8 +752,12 @@ def test_every_failing_front_matter_path_is_reported_in_one_pass() -> None:
 def test_a_broken_schema_version_still_reports_every_other_failing_path() -> None:
     """Req 2.7 — the narrower table is selected so the walk continues. `front_matter` and
     `identity.language` then read as undeclared, which is the v1 verdict, and the version
-    itself is reported alongside them."""
-    body = v2(schema_version=3)
+    itself is reported alongside them.
+
+    Uses `99`, not `3`: `3` is now a genuinely supported version (sections/provider), so it
+    resolves to its own table and reports its own set of missing keys rather than v1's.
+    """
+    body = v2(schema_version=99)
     assert paths_of(body) == ["front_matter", "identity.language", "schema_version"]
 
 
@@ -972,9 +984,13 @@ def test_the_compiler_and_the_validator_resolve_the_version_through_one_function
     cover block compiles. A second resolution rule in the compiler — `int(...) >= 2`, say —
     would skip it here while the validator reported it against the v1 tables, and the
     document would silently lose its cover.
+
+    Uses `99`: `3` is now a genuinely supported version, so `resolved_schema_version(3)`
+    correctly returns `3` rather than `MIN_SCHEMA_VERSION`, and this test would otherwise be
+    asserting the resolver is broken on the day it starts working.
     """
-    body = v2([COVER_BLOCK, HEADING_BLOCK], schema_version=3)
-    assert resolved_schema_version(3) == MIN_SCHEMA_VERSION
+    body = v2([COVER_BLOCK, HEADING_BLOCK], schema_version=99)
+    assert resolved_schema_version(99) == MIN_SCHEMA_VERSION
 
     compiled = compile_document(body, view=view(), subscription_display_name="Acme")
 

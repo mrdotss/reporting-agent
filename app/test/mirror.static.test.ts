@@ -99,8 +99,12 @@ const END_CONFIG_SENTINEL = "--- END BLOCK CONFIG"
 /** Every single- or double-quoted string literal on a line. */
 const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
 
-/** The seventeen types, as a fact about the requirement rather than about the files. */
-const EXPECTED_TYPE_COUNT = 17
+/** The eighteen types, as a fact about the requirement rather than about the files.
+ *
+ * Grew to eighteen with `blank_rows_table`, which section 13 (the incident report) needs:
+ * that section prints an author-filled table of ruled EMPTY rows, and `resource_table`
+ * cannot emit a row with no resource behind it. */
+const EXPECTED_TYPE_COUNT = 18
 
 function read(absolutePath: string): string {
   expect(
@@ -314,14 +318,14 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 describe("Requirements 2.5, 2.6 — the block-type vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the seventeen declared types", () => {
+  test("the TypeScript declaration is the eighteen declared types", () => {
     const declared = declaredBlockTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_TYPE_COUNT)
   })
 
-  test("the Python declaration is the seventeen declared types", () => {
+  test("the Python declaration is the eighteen declared types", () => {
     const declared = declaredBlockTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
@@ -548,6 +552,9 @@ const TS_VERSIONS_DECLARATION = path.join(
 const VERSION_SCALARS = [
   "MIN_SCHEMA_VERSION",
   "MAX_SUPPORTED_SCHEMA_VERSION",
+  "SECTION_ID_MIN_LENGTH",
+  "SECTION_ID_MAX_LENGTH",
+  "MAX_SECTIONS",
 ] as const
 const VERSION_RECORDS = [
   "REQUIRED_TOP_LEVEL_KEYS",
@@ -559,6 +566,9 @@ const VERSION_LISTS = [
   "LANGUAGES",
   "FRONT_MATTER_KEYS",
   "FRONT_MATTER_FORBIDDEN_BLOCK_TYPES",
+  "PROVIDERS",
+  "SUPPORTED_PROVIDERS",
+  "SECTION_PRESENTATIONS",
 ] as const
 
 const DECLARED_VERSION_NAMES: readonly string[] = [

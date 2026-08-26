@@ -50,7 +50,7 @@ from reporting_agent.compile.blocks.base import (
     HistoricalSelectionKey,
     ProseProvider,
 )
-from reporting_agent.compile.historical import Selection
+from reporting_agent.compile.blocks.blank_rows import compile_blank_rows_table
 from reporting_agent.compile.blocks.structure import (
     compile_cover,
     compile_heading,
@@ -67,6 +67,7 @@ from reporting_agent.compile.figures import (
     FigureLedger,
     assert_ledger_matches_tree,
 )
+from reporting_agent.compile.historical import Selection
 from reporting_agent.compile.messages import Messages, load_messages
 from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotView
@@ -103,6 +104,7 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
     "heading": compile_heading,
     "rich_text": compile_rich_text,
     "historical_trend": charts.compile_historical_trend,
+    "blank_rows_table": compile_blank_rows_table,
 }
 """Every declared block type but `row`, which needs the child compiler and is dispatched
 separately in :func:`compile_block`."""

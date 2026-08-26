@@ -45,10 +45,11 @@ export const BLOCK_TYPES = [
   "heading",
   "rich_text",
   "historical_trend",
+  "blank_rows_table",
 ] as const
 // --- END BLOCK TYPES ---
 
-/** One of the seventeen declared block types (Requirement 6.1). */
+/** One of the eighteen declared block types (Requirement 6.1). */
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 /**
@@ -262,6 +263,11 @@ export const BLOCK_CONFIG = {
   // metric and statistic must already be in the definition's metric selection.
   historical_trend: {
     required: ["metric", "statistic", "lookback"],
+    optional: ["caption"],
+    enums: {},
+  },
+  blank_rows_table: {
+    required: ["columns", "rows"],
     optional: ["caption"],
     enums: {},
   },

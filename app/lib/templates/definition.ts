@@ -163,6 +163,7 @@ import {
   BLOCK_TYPES,
   type BlockType,
 } from "@/lib/templates/blocks"
+import rawSectionsCatalogue from "../../../agent/src/reporting_agent/catalog/sections.v1.json"
 import {
   canonicalJsonByteLength,
   type CanonicalizableValue,
@@ -206,7 +207,7 @@ export const REPORT_TITLE_MAX_LENGTH = 200
  * `identity.language`, and the two `number_format` separators.
  */
 export const MIN_SCHEMA_VERSION = 1
-export const MAX_SUPPORTED_SCHEMA_VERSION = 2
+export const MAX_SUPPORTED_SCHEMA_VERSION = 3
 
 /**
  * The version-conditional key sets, **declared as data rather than as two validators**.
@@ -250,9 +251,18 @@ export const REQUIRED_TOP_LEVEL_KEYS = {
     "design",
     "front_matter",
   ],
+  3: [
+    "schema_version",
+    "identity",
+    "provider",
+    "sections",
+    "period",
+    "design",
+    "front_matter",
+  ],
 } as const
 
-/** Requirement 16.1 — two keys at v1, four at v2. */
+/** Requirement 16.1 — two keys at v1, four at v2+. */
 export const NUMBER_FORMAT_KEYS = {
   1: ["decimal_places", "group_thousands"],
   2: [
@@ -261,17 +271,25 @@ export const NUMBER_FORMAT_KEYS = {
     "decimal_separator",
     "grouping_separator",
   ],
+  3: [
+    "decimal_places",
+    "group_thousands",
+    "decimal_separator",
+    "grouping_separator",
+  ],
 } as const
 
-/** Requirement 15.1 — `identity.language` exists at v2 and nowhere else. */
+/** Requirement 15.1 — `identity.language` exists at v2+ and nowhere else. */
 export const IDENTITY_KEYS = {
   1: ["name", "description", "report_title"],
   2: ["name", "description", "report_title", "language"],
+  3: ["name", "description", "report_title", "language"],
 } as const
 
 export const REQUIRED_IDENTITY_KEYS = {
   1: ["name"],
   2: ["name", "language"],
+  3: ["name", "language"],
 } as const
 
 /**
@@ -300,6 +318,98 @@ export const FRONT_MATTER_KEYS = ["cover", "document_control", "toc"] as const
  * exists to avoid.
  */
 export const FRONT_MATTER_FORBIDDEN_BLOCK_TYPES = ["cover"] as const
+
+/**
+ * Requirement 3.4 — the closed set of providers. Only `azure` is accepted until
+ * a catalogue and collector exist for the others; `aws` and `onprem` are declared
+ * but rejected by the validator.
+ */
+export const PROVIDERS = ["azure", "aws", "onprem"] as const
+
+/**
+ * The single provider this reader has a section catalogue for. Everything else in
+ * `PROVIDERS` is rejected until a catalogue is shipped.
+ */
+export const SUPPORTED_PROVIDERS = ["azure"] as const
+
+/**
+ * Requirement 7.8 — the closed presentation set for a section entry.
+ */
+export const SECTION_PRESENTATIONS = [
+  "chart_and_table",
+  "chart_only",
+  "table_only",
+] as const
+
+/**
+ * Section id bounds — 1 to 64 characters, the same as `BLOCK_ID_MIN_LENGTH` /
+ * `BLOCK_ID_MAX_LENGTH` (they will share anchors), deliberately the same limits.
+ */
+export const SECTION_ID_MIN_LENGTH = 1
+export const SECTION_ID_MAX_LENGTH = 64
+
+/** Maximum sections a v3 definition may carry. */
+export const MAX_SECTIONS = 200
+
+/**
+ * Section catalogue keys by provider, derived from `catalog/sections.v1.json` at
+ * build time. Used by the validator to reject an unknown `type`. One file, both
+ * halves — the Python half reads the same JSON in `catalog/loader.py`.
+ */
+export const SECTION_KEYS_BY_PROVIDER: Readonly<Record<string, readonly string[]>> = {
+  azure: (
+    rawSectionsCatalogue as { providers: { azure: { sections: { key: string }[] } } }
+  ).providers.azure.sections.map((s) => s.key),
+}
+
+/**
+ * Non-repeatable section keys by provider (for duplicate-type rejection).
+ */
+export const NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Readonly<
+  Record<string, ReadonlySet<string>>
+> = {
+  azure: new Set(
+    (
+      rawSectionsCatalogue as {
+        providers: { azure: { sections: { key: string; repeatable: boolean }[] } }
+      }
+    ).providers.azure.sections
+      .filter((s) => !s.repeatable)
+      .map((s) => s.key)
+  ),
+}
+
+/**
+ * Fixed-position section keys by provider, in declared order.
+ */
+export const FIXED_SECTION_KEYS_BY_PROVIDER: Readonly<
+  Record<string, readonly string[]>
+> = {
+  azure: (
+    rawSectionsCatalogue as {
+      providers: {
+        azure: { sections: { key: string; position: string }[] }
+      }
+    }
+  ).providers.azure.sections
+    .filter((s) => s.position === "fixed")
+    .map((s) => s.key),
+}
+
+/**
+ * Always-position section key by provider (at most one).
+ */
+export const ALWAYS_SECTION_KEY_BY_PROVIDER: Readonly<
+  Record<string, string | undefined>
+> = {
+  azure: (
+    rawSectionsCatalogue as {
+      providers: {
+        azure: { sections: { key: string; position: string }[] }
+      }
+    }
+  ).providers.azure.sections.find((s) => s.position === "always")?.key,
+}
 // --- END SCHEMA VERSIONS ---
 
 /** A `schema_version` this reader has a key set for. */
@@ -2492,6 +2602,185 @@ export function resolveSeparators(
   }
 }
 
+// --- Provider and Sections validation (schema_version 3, Requirements 3.4, 7.1, 7.8) ------
+
+const PROVIDERS_SET = new Set<string>(PROVIDERS)
+const SUPPORTED_PROVIDERS_SET = new Set<string>(SUPPORTED_PROVIDERS)
+const SECTION_PRESENTATIONS_SET = new Set<string>(SECTION_PRESENTATIONS)
+
+function validateProvider(
+  provider: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (typeof provider !== "string") {
+    addIssue(issues, path, "provider must be a string.")
+    return
+  }
+  if (!PROVIDERS_SET.has(provider)) {
+    addIssue(
+      issues,
+      path,
+      `Unrecognized provider "${provider}". Accepted: ${PROVIDERS.join(", ")}.`
+    )
+    return
+  }
+  if (!SUPPORTED_PROVIDERS_SET.has(provider)) {
+    addIssue(
+      issues,
+      path,
+      `Provider "${provider}" is declared but not yet supported — no section catalogue exists.`
+    )
+  }
+}
+
+function validateSections(
+  sections: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  provider: unknown
+): void {
+  if (!Array.isArray(sections)) {
+    addIssue(issues, path, "sections must be an array.")
+    return
+  }
+  if (sections.length > MAX_SECTIONS) {
+    addIssue(
+      issues,
+      path,
+      `sections accepts at most ${MAX_SECTIONS} entries.`
+    )
+  }
+
+  // Resolve the provider's catalogue keys — unknown or unsupported providers
+  // already have their own issues, but we still validate section entries
+  // structurally.
+  const resolvedProvider =
+    typeof provider === "string" && SUPPORTED_PROVIDERS_SET.has(provider)
+      ? provider
+      : undefined
+  const knownKeys: ReadonlySet<string> | undefined = resolvedProvider
+    ? new Set(SECTION_KEYS_BY_PROVIDER[resolvedProvider])
+    : undefined
+  const nonRepeatableKeys: ReadonlySet<string> | undefined = resolvedProvider
+    ? NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER[resolvedProvider]
+    : undefined
+  const fixedKeys: readonly string[] | undefined = resolvedProvider
+    ? FIXED_SECTION_KEYS_BY_PROVIDER[resolvedProvider]
+    : undefined
+
+  const seenIds = new Set<string>()
+  const seenNonRepeatableTypes = new Set<string>()
+  let lastFixedIndex = -1
+
+  sections.forEach((entry: unknown, index: number) => {
+    const entryPath = [...path, index]
+
+    if (!isPlainObject(entry)) {
+      addIssue(issues, entryPath, "A section entry must be an object.")
+      return
+    }
+
+    // --- id ---
+    const id = entry.id
+    if (typeof id !== "string") {
+      addIssue(issues, [...entryPath, "id"], "Section id must be a string.")
+    } else if (
+      id.length < SECTION_ID_MIN_LENGTH ||
+      id.length > SECTION_ID_MAX_LENGTH
+    ) {
+      addIssue(
+        issues,
+        [...entryPath, "id"],
+        `Section id must be ${SECTION_ID_MIN_LENGTH} to ${SECTION_ID_MAX_LENGTH} characters.`
+      )
+    } else if (seenIds.has(id)) {
+      addIssue(
+        issues,
+        [...entryPath, "id"],
+        `Duplicate section id "${id}".`
+      )
+    } else {
+      seenIds.add(id)
+    }
+
+    // --- type ---
+    const type = entry.type
+    if (typeof type !== "string") {
+      addIssue(issues, [...entryPath, "type"], "Section type must be a string.")
+    } else if (knownKeys && !knownKeys.has(type)) {
+      addIssue(
+        issues,
+        [...entryPath, "type"],
+        `Unknown section type "${type}" for provider "${resolvedProvider}".`
+      )
+    } else if (typeof type === "string" && nonRepeatableKeys?.has(type)) {
+      if (seenNonRepeatableTypes.has(type)) {
+        addIssue(
+          issues,
+          [...entryPath, "type"],
+          `Section type "${type}" is not repeatable and already appears earlier.`
+        )
+      } else {
+        seenNonRepeatableTypes.add(type)
+      }
+    }
+
+    // --- fixed-position ordering ---
+    if (typeof type === "string" && fixedKeys) {
+      const fixedIdx = fixedKeys.indexOf(type)
+      if (fixedIdx !== -1) {
+        if (fixedIdx <= lastFixedIndex) {
+          addIssue(
+            issues,
+            [...entryPath, "type"],
+            `Fixed-position section "${type}" is out of its declared order.`
+          )
+        } else {
+          lastFixedIndex = fixedIdx
+        }
+      }
+    }
+
+    // --- selection (through existing validateScopeSpec) ---
+    if ("selection" in entry) {
+      validateScopeSpec(entry.selection, [...entryPath, "selection"], issues)
+    }
+
+    // --- metrics (through the existing validateMetricItem loop) ---
+    if ("metrics" in entry) {
+      const metrics = entry.metrics
+      const metricsPath = [...entryPath, "metrics"]
+      if (!Array.isArray(metrics)) {
+        addIssue(issues, metricsPath, "Section metrics must be an array.")
+      } else {
+        if (metrics.length > MAX_METRIC_ITEMS_PER_ENTRY) {
+          addIssue(
+            issues,
+            metricsPath,
+            `Section metrics accepts at most ${MAX_METRIC_ITEMS_PER_ENTRY} items.`
+          )
+        }
+        metrics.forEach((item: unknown, itemIndex: number) => {
+          validateMetricItem(item, [...metricsPath, itemIndex], issues)
+        })
+      }
+    }
+
+    // --- presentation ---
+    if ("presentation" in entry) {
+      const pres = entry.presentation
+      if (typeof pres !== "string" || !SECTION_PRESENTATIONS_SET.has(pres)) {
+        addIssue(
+          issues,
+          [...entryPath, "presentation"],
+          `presentation must be one of: ${SECTION_PRESENTATIONS.join(", ")}.`
+        )
+      }
+    }
+  })
+}
+
 /**
  * Validates the canonical byte-size bound (Requirement 2.10), against the
  * exact same canonicalization {@link canonicalJsonByteLength} exposes to
@@ -2874,10 +3163,17 @@ export function collectDefinitionIssues(
 
   validateSchemaVersion(raw.schema_version, issues)
   validateIdentity(raw.identity, ["identity"], issues, version)
-  validateScopeSpec(raw.scope, ["scope"], issues)
-  validatePeriod(raw.period, ["period"], issues)
-  validateMetrics(raw.metrics, ["metrics"], issues)
-  validateBlocks(raw.blocks, ["blocks"], issues, mode, version)
+  // v1/v2: scope, metrics, blocks; v3: provider, sections
+  if (version <= 2) {
+    validateScopeSpec(raw.scope, ["scope"], issues)
+    validatePeriod(raw.period, ["period"], issues)
+    validateMetrics(raw.metrics, ["metrics"], issues)
+    validateBlocks(raw.blocks, ["blocks"], issues, mode, version)
+  } else {
+    validateProvider(raw.provider, ["provider"], issues)
+    validatePeriod(raw.period, ["period"], issues)
+    validateSections(raw.sections, ["sections"], issues, raw.provider)
+  }
   validateDesign(raw.design, ["design"], issues, version, language)
   // Requirement 13.13 — `front_matter` is validated only where the resolved version declares
   // it, so a version-1 definition carrying the key is reported once, as an undeclared
@@ -2886,8 +3182,10 @@ export function collectDefinitionIssues(
     validateFrontMatter(raw.front_matter, ["front_matter"], issues, version)
   }
   validateCanonicalByteSize(raw, issues)
-  validateEveryScopedTypeIsSelected(raw, issues, mode)
-  validateRequiredConfigIsFilled(raw, issues, mode)
+  if (version <= 2) {
+    validateEveryScopedTypeIsSelected(raw, issues, mode)
+    validateRequiredConfigIsFilled(raw, issues, mode)
+  }
 
   return issues
 }

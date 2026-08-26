@@ -426,6 +426,10 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
     metric: () => "Percentage CPU",
     statistic: () => "avg",
     lookback: (seed) => 2 + (seed % 23),
+    // blank_rows_table — the count of ruled EMPTY rows section 13 prints for an author
+    // to complete by hand. Bounded well inside the schema's range so the generator
+    // cannot emit a definition its own validator would reject.
+    rows: (seed) => 1 + (seed % 8),
   }
 
 type BlockConfigSchemaShape = {

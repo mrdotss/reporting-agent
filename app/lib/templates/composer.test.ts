@@ -39,7 +39,7 @@ import {
  * `"KPI row moved to position 3 of 7"` and
  * `"Resource table moved to position 2 of 4 in column 1 of 2"` are the two
  * sentences design.md quotes, and a regex that matched them both would also
- * match a sentence with the label missing. Same for the sixteen labels and for
+ * match a sentence with the label missing. Same for the labels and for
  * the fresh-block defaults, both of which are exhaustive facts about a fixed
  * set rather than properties over a generated one.
  */
@@ -89,7 +89,7 @@ function sevenPositionState(): ComposerState {
 // --- Labels ----------------------------------------------------------------
 
 describe("Requirement 12.5 — every declared block type has a human label", () => {
-  test("all sixteen types are labelled and no label is missing", () => {
+  test("every declared type is labelled and no label is missing", () => {
     // `satisfies Record<BlockType, string>` already makes an omission a compile
     // error; this asserts the runtime object matches the vocabulary too, so a
     // label map that drifted from BLOCK_TYPES by a rename fails here rather

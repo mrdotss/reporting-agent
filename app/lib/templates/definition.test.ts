@@ -1712,7 +1712,7 @@ describe("Requirement 13.10 — schema_version 2 is supported and 3 is not", () 
     expect(collectDefinitionIssues(validDefinitionV2())).toEqual([])
   })
 
-  test.each([3, 4, 99])("%s is rejected", (value) => {
+  test.each([4, 99])("%s is rejected", (value) => {
     const issues = collectDefinitionIssues({
       ...validDefinitionV2(),
       schema_version: value,
@@ -1720,9 +1720,22 @@ describe("Requirement 13.10 — schema_version 2 is supported and 3 is not", () 
     expect(pathsOf(issues)).toContain("schema_version")
   })
 
+  test("a v2-shaped definition at schema_version 3 is rejected for its keys", () => {
+    // A v2 body with schema_version bumped to 3 — it has blocks/scope/metrics
+    // which are undeclared at v3, and is missing provider/sections which are required.
+    const issues = collectDefinitionIssues({
+      ...validDefinitionV2(),
+      schema_version: 3,
+    })
+    expect(issues.length).toBeGreaterThan(0)
+    expect(pathsOf(issues)).toContain("blocks")
+    expect(pathsOf(issues)).toContain("provider")
+    expect(pathsOf(issues)).toContain("sections")
+  })
+
   test("MIN stays 1, so every stored v1 definition still validates", () => {
     expect(MIN_SCHEMA_VERSION).toBe(1)
-    expect(MAX_SUPPORTED_SCHEMA_VERSION).toBe(2)
+    expect(MAX_SUPPORTED_SCHEMA_VERSION).toBe(3)
     expect(collectDefinitionIssues(validDefinition())).toEqual([])
   })
 
@@ -2104,17 +2117,18 @@ describe("Requirement 16.3 — the language-derived defaults", () => {
 })
 
 describe("the version tables are declared as data, once", () => {
-  test("every table names exactly the two supported versions", () => {
+  test("every table names every supported version from MIN to MAX", () => {
+    const expectedKeys = Array.from(
+      { length: MAX_SUPPORTED_SCHEMA_VERSION - MIN_SCHEMA_VERSION + 1 },
+      (_, i) => MIN_SCHEMA_VERSION + i
+    )
     for (const table of [
       REQUIRED_TOP_LEVEL_KEYS,
       NUMBER_FORMAT_KEYS,
       IDENTITY_KEYS,
       REQUIRED_IDENTITY_KEYS,
     ]) {
-      expect(Object.keys(table).map(Number).sort()).toEqual([
-        MIN_SCHEMA_VERSION,
-        MAX_SUPPORTED_SCHEMA_VERSION,
-      ])
+      expect(Object.keys(table).map(Number).sort()).toEqual(expectedKeys)
     }
   })
 

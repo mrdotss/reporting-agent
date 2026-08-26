@@ -48,9 +48,14 @@ import {
  * module invents: `en` is `LANGUAGES[0]`, and the separators come from `SEPARATOR_DEFAULTS`.
  */
 
-/** The version this module migrates from, and the one it migrates to. */
+/** The version this module migrates from, and the one it migrates to.
+ *
+ * The target is 2 (not MAX_SUPPORTED_SCHEMA_VERSION) because no automatic
+ * v2→v3 lift exists yet — the sections restructure is an author-driven step
+ * in the wizard, not a code migration. See `lib/profiles/lift.ts` (task 3.12).
+ */
 export const MIGRATION_SOURCE_VERSION = MIN_SCHEMA_VERSION
-export const MIGRATION_TARGET_VERSION = MAX_SUPPORTED_SCHEMA_VERSION
+export const MIGRATION_TARGET_VERSION = 2 as const
 
 /**
  * The language a migrated definition declares.

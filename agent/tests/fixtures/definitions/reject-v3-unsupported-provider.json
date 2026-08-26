@@ -1,0 +1,79 @@
+{
+  "schema_version": 3,
+  "identity": {
+    "name": "Test v3",
+    "language": "en"
+  },
+  "provider": "aws",
+  "sections": [
+    {
+      "id": "sec_vm",
+      "type": "vm_utilization",
+      "selection": {
+        "resource_types": [
+          "Microsoft.Compute/virtualMachines"
+        ],
+        "resource_groups": [],
+        "tag_filters": [],
+        "top_n": null,
+        "sort": null
+      },
+      "metrics": [
+        {
+          "metric": "Percentage CPU",
+          "statistic": "avg"
+        }
+      ],
+      "presentation": "chart_and_table"
+    }
+  ],
+  "period": {
+    "kind": "last_full_month"
+  },
+  "design": {
+    "preset": "editorial",
+    "accent_color": "oklch(0.52 0.105 223)",
+    "density": "normal",
+    "table_style": "hairline",
+    "page_size": "A4",
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true,
+      "decimal_separator": ".",
+      "grouping_separator": ","
+    },
+    "cover_page": true,
+    "logo": null
+  },
+  "front_matter": {
+    "cover": {
+      "subtitle": "Test"
+    },
+    "document_control": {
+      "document_name": "Test",
+      "document_number_pattern": "RPT-{year}{month}-{run}",
+      "approvers": [
+        {
+          "role": "author",
+          "name": "A"
+        },
+        {
+          "role": "reviewer",
+          "name": "B"
+        },
+        {
+          "role": "approver",
+          "name": "C"
+        },
+        {
+          "role": "recipient",
+          "name": "D"
+        }
+      ]
+    },
+    "toc": {
+      "enabled": true,
+      "max_level": 3
+    }
+  }
+}

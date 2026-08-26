@@ -22,7 +22,10 @@ import { scanGate, mayContinue } from "@/lib/scans/view"
 const { db, agentcore } = vi.hoisted(() => ({
   db: {
     updates: [] as Array<{ id: string; set: Record<string, unknown> }>,
-    lastReturning: undefined as unknown,
+    // A record, not `unknown`: the tests below build a failure row with
+    // `{ ...db.lastReturning, status: "failed" }`, and spreading an `unknown` is a
+    // type error (TS2698). This was latent when the file landed.
+    lastReturning: {} as Record<string, unknown>,
   },
   agentcore: {
     shouldThrow: undefined as unknown,
