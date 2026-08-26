@@ -1,0 +1,247 @@
+"""Section expansion: a v3 definition's ``sections`` array → ``BlockSpec`` sequence.
+
+**Pure.**  No Azure, no ledger, no I/O.
+
+Ordering (Req 8.4):
+  1. ``group`` order: ``inventory``, ``utilisation``, ``closing``
+  2. Authored ``position`` within a group (the stored integer for ``free`` entries)
+  3. Catalogue-declared order for ``fixed`` entries (ignoring their stored ``position``)
+  4. The ``always`` appendix last
+
+Derived block ids (Req 21.5):
+  ``<section.id>__<expansion_index>`` for ``per: "section"``
+  ``<section.id>__<expansion_index>__<n>`` for ``per: "resource"``
+
+where ``n`` is the index in the resolved order from :func:`compile/scope.py::resolve`
+(already deterministic: declaration order, then top-N ranking, unranked appended last).
+
+A ``per: "resource"`` block carries the section's ``selection`` as its
+``scope_override`` plus a resource **ordinal** the compiler uses to pick one of the
+resolved set.  It never stores a resource id in the definition.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from typing import Final
+
+from reporting_agent.catalog.loader import (
+    LoadedSectionCatalogue,
+    SectionCatalogueEntry,
+    SectionExpansionBlock,
+)
+from reporting_agent.compile.blocks.base import BlockSpec
+from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
+from reporting_agent.compile.snapshot_view import SnapshotView
+from reporting_agent.errors import CompileFailedError
+
+__all__ = [
+    "GROUP_ORDER",
+    "expand_sections",
+]
+
+# The canonical group ordering.  Every section declares one of these.
+GROUP_ORDER: Final[tuple[str, ...]] = ("inventory", "utilisation", "closing")
+"""Document-order groups: inventory first, utilisation second, closing third."""
+
+_GROUP_RANK: Final[dict[str, int]] = {g: i for i, g in enumerate(GROUP_ORDER)}
+
+
+# ---------------------------------------------------------------------------
+# Section sorting
+# ---------------------------------------------------------------------------
+
+
+def _section_sort_key(
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    fixed_order: dict[str, int],
+) -> tuple[int, int, int]:
+    """Produce a three-tuple sort key guaranteeing deterministic ordering.
+
+    - First dimension: group rank (inventory < utilisation < closing)
+    - Second dimension:
+        * ``free`` entries: their authored ``position`` (the integer stored on them)
+        * ``fixed`` entries: their catalogue-declared fixed order (ignoring stored position)
+        * ``always`` entries: a sentinel past any plausible position
+    - Third dimension: catalogue number (tiebreaker for identical positions)
+    """
+    group_rank = _GROUP_RANK.get(entry.group, len(GROUP_ORDER))
+
+    if entry.position == "fixed":
+        position_rank = fixed_order.get(entry.key, 9999)
+    elif entry.position == "always":
+        # The always appendix sorts AFTER everything in its group
+        position_rank = 99999
+    else:
+        # free: use the authored position
+        raw_pos = section.get("position")
+        position_rank = int(raw_pos) if isinstance(raw_pos, int) else 9999
+
+    return (group_rank, position_rank, entry.number)
+
+
+# ---------------------------------------------------------------------------
+# Expansion
+# ---------------------------------------------------------------------------
+
+
+def _build_scope_override(section: Mapping[str, object]) -> ScopeRules | None:
+    """Build a ScopeRules from a section's ``selection``, or None when absent."""
+    selection = section.get("selection")
+    if selection is None:
+        return None
+    return scope_rules_from_plain(selection, at=f"section {section.get('id', '?')}.selection")
+
+
+def _should_emit(
+    expansion: SectionExpansionBlock,
+    presentation: str,
+) -> bool:
+    """Whether an expansion block should be emitted given the section's presentation.
+
+    An expansion with an empty ``when_presentation`` emits unconditionally.
+    """
+    if not expansion.when_presentation:
+        return True
+    return presentation in expansion.when_presentation
+
+
+def _expand_one_section(
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    view: SnapshotView,
+) -> tuple[BlockSpec, ...]:
+    """Expand one section into its BlockSpec sequence.
+
+    For ``per: "section"`` entries: one BlockSpec with id ``<section_id>__<exp_index>``.
+    For ``per: "resource"`` entries: one BlockSpec per resolved resource, with id
+    ``<section_id>__<exp_index>__<resource_ordinal>``.
+    """
+    section_id: str = section.get("id", "")  # type: ignore[assignment]
+    if not isinstance(section_id, str) or not section_id:
+        raise CompileFailedError("a section carries no usable id")
+
+    scope_override = _build_scope_override(section)
+    presentation: str = section.get("presentation", "chart_and_table")  # type: ignore[assignment]
+    if not isinstance(presentation, str):
+        presentation = "chart_and_table"
+
+    result: list[BlockSpec] = []
+    expansion_index = 0
+
+    for expansion in entry.expands_to:
+        if not _should_emit(expansion, presentation):
+            continue
+
+        # Build the config from the catalogue's declared config
+        config: dict[str, object] = dict(expansion.config)
+
+        if expansion.per == "section":
+            block_id = f"{section_id}__{expansion_index}"
+            result.append(BlockSpec(
+                id=block_id,
+                type=expansion.block,
+                config=config,
+                scope_override=scope_override,
+            ))
+        elif expansion.per == "resource":
+            # Resolve to get the deterministic resource order
+            if scope_override is not None:
+                resolved = resolve(scope_override, view)
+            else:
+                resolved = view.resources
+
+            for resource_ordinal, _resource in enumerate(resolved):
+                block_id = f"{section_id}__{expansion_index}__{resource_ordinal}"
+                # Carry the section's selection as scope_override, plus a resource ordinal
+                # in config so the block compiler can pick the right one from the resolved
+                # set without the id being stored in the definition.
+                per_resource_config = dict(config)
+                per_resource_config["_resource_ordinal"] = resource_ordinal
+                result.append(BlockSpec(
+                    id=block_id,
+                    type=expansion.block,
+                    config=per_resource_config,
+                    scope_override=scope_override,
+                ))
+        else:
+            raise CompileFailedError(
+                f"section {section_id!r}: expansion block declares unknown per={expansion.per!r}"
+            )
+
+        expansion_index += 1
+
+    return tuple(result)
+
+
+def expand_sections(
+    definition: Mapping[str, object],
+    *,
+    catalogue: LoadedSectionCatalogue,
+    view: SnapshotView,
+) -> tuple[BlockSpec, ...]:
+    """Expand a v3 definition's ``sections`` into a flat ordered BlockSpec tuple.
+
+    **Pure.** No Azure, no ledger, no I/O.
+
+    Ordering:
+      1. ``group`` order (inventory, utilisation, closing)
+      2. Authored ``position`` within a group for ``free`` entries
+      3. Catalogue-declared order for ``fixed`` entries (ignoring stored position)
+      4. The ``always`` appendix last
+
+    Derived block ids:
+      ``<section.id>__<expansion_index>`` for ``per: "section"``
+      ``<section.id>__<expansion_index>__<n>`` for ``per: "resource"``
+
+    Args:
+        definition: The validated v3 definition mapping.
+        catalogue: The loaded and validated section catalogue.
+        view: The SnapshotView for scope resolution.
+
+    Returns:
+        An ordered tuple of BlockSpec, ready for the three-phase compile loop.
+
+    Raises:
+        CompileFailedError: If a section references an unknown catalogue key or
+            has a malformed structure.
+    """
+    raw_sections = definition.get("sections")
+    if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, str):
+        raise CompileFailedError("a v3 definition carries no sections array")
+
+    # Build the fixed-order lookup from the catalogue's declared fixed entries
+    fixed_order: dict[str, int] = {
+        entry.key: idx
+        for idx, entry in enumerate(catalogue.fixed_entries)
+    }
+
+    # Resolve each section to its catalogue entry
+    resolved_sections: list[tuple[Mapping[str, object], SectionCatalogueEntry]] = []
+    for section in raw_sections:
+        if not isinstance(section, Mapping):
+            raise CompileFailedError("a section entry must be an object")
+        section_type = section.get("type")
+        if not isinstance(section_type, str) or not section_type:
+            raise CompileFailedError(
+                f"section {section.get('id', '?')!r} carries no type"
+            )
+        entry = catalogue.by_key(section_type)
+        if entry is None:
+            raise CompileFailedError(
+                f"section {section.get('id', '?')!r} declares type {section_type!r} "
+                f"which is not in the section catalogue"
+            )
+        resolved_sections.append((section, entry))
+
+    # Sort: group order → position within group → catalogue number as tiebreaker
+    resolved_sections.sort(key=lambda pair: _section_sort_key(pair[0], pair[1], fixed_order))
+
+    # Expand each section in sorted order
+    all_specs: list[BlockSpec] = []
+    for section, entry in resolved_sections:
+        specs = _expand_one_section(section, entry, view)
+        all_specs.extend(specs)
+
+    return tuple(all_specs)

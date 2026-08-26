@@ -225,7 +225,12 @@ does **not increase** the repository's lint finding count.
     - Keep accepting 1 and 2 in both halves; `test_schema_version_1.py`'s stored-starter compilation stays green
     - _Requirements: 3.1, 3.4, 3.5, 7.1, 7.8, 8.6, 9.2, 20.7, 20.8, 22.3_
 
-  - [ ] 3.3 `compile/sections.py::expand_sections` with its determinism guards
+  - [x] 3.3 `compile/sections.py::expand_sections` with its determinism guards
+    - `expand_sections(definition, *, catalogue, view) -> tuple[BlockSpec, ...]`, pure: no Azure, no ledger, no I/O. Three-tuple sort key `(group_rank, position_rank, catalogue_number)` — group order inventory/utilisation/closing, then authored `position` for `free` entries, catalogue-declared order for `fixed` entries via `LoadedSectionCatalogue.fixed_entries` (ignoring stored position entirely), `always` sorted last within its group, catalogue number as tiebreaker
+    - Derived ids: `<section.id>__<expansion_index>` for `per: "section"`; `<section.id>__<expansion_index>__<n>` for `per: "resource"`, where `n` is the index in `compile/scope.py::resolve`'s returned `tuple[ResourceView, ...]` — confirmed by reading the signature, not assumed. A resource ordinal travels in `config["_resource_ordinal"]`, never a resource id in the definition
+    - Two determinism guards, both mutation-checked by me: anchor-id-set stability across two expansions, and full `BlockSpec` tuple equality across ten iterations (catches dict/set iteration-order nondeterminism a single repeat could miss). Breaking the sort key fails exactly the two ordering tests that name the property, not a downstream symptom
+    - Verified independently: 17 targeted tests pass, ruff clean, full agent suite run by me from a clean state — 4645 passed / 0 failed, matching the agent's own reported number
+    - _Requirements: 7.1, 8.4, 9.1, 9.7, 21.5_
     - Create `agent/src/reporting_agent/compile/sections.py` with `expand_sections(definition, *, catalogue, view) -> tuple[BlockSpec, ...]` — **pure**: no Azure, no ledger, no I/O
     - Ordering: `group` order (`inventory`, `utilisation`, `closing`), then authored `position` within a group, then catalogue order for `fixed` entries, then the `always` appendix last. Fixed entries ignore their stored `position` entirely
     - Derived block ids: `<section.id>__<expansion_index>` for `per: "section"`, `<section.id>__<expansion_index>__<n>` for `per: "resource"` where `n` indexes the resolved order from `compile/scope.py::resolve` — already deterministic (declaration order, then top-N ranking, unranked appended last)
