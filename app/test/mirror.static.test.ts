@@ -1607,3 +1607,126 @@ describe("Requirements 15.5, 15.10 — the message-catalog id sets and values ar
     ).toEqual([])
   })
 })
+
+// ===========================================================================
+// Mirror_Guard — the generate_report invoke payload (Requirement 13.7)
+// ===========================================================================
+
+/**
+ * `app/lib/runs/invoke.ts` sends the `generate_report` payload; `agent/.../report_pipeline.py`
+ * reads it. Every other member of this file's mirror pairs is a shared vocabulary declared
+ * once per language and compared as data — this one is different, because there is no
+ * second declaration to compare: the payload's real shape is whatever
+ * `_resolve_run_facts` reads off it, expressed as a sequence of `payload.get(...)` calls
+ * inside one function body, and the TypeScript side is a type nothing enforces at the
+ * wire.
+ *
+ * This is exactly the gap that shipped a defect: `report_pipeline.py::_resolve_run_facts`
+ * has required `customer_name`, `period_display` and `revision_history_row` since the
+ * front-matter wiring landed, and `app/lib/aws/agentcore.ts`'s `generate_report` member
+ * carried none of the three for an entire release — every v2 run failed `RENDER_FAILED`
+ * on `customer_name`, and no test caught it, because nothing compared what the runtime
+ * reads against what the app's type admits.
+ *
+ * So this guard reads `_resolve_run_facts`'s **real source text**, extracts every
+ * `payload.get("…")` key inside that one function (not the whole module — `attempt_id`,
+ * `snapshot_run_id` and the rest belong to other commands and are not this function's
+ * concern), and asserts each one names a property on the TypeScript payload type. It is
+ * deliberately one-directional: a TS-only optional field the runtime does not yet read
+ * is not a defect this guard exists to catch, but a field the runtime reads and the type
+ * omits is exactly the shape of what shipped.
+ */
+
+const AGENTCORE_TS_DECLARATION = path.join(appRoot, "lib", "aws", "agentcore.ts")
+const REPORT_PIPELINE_PY = path.join(
+  AGENT_ROOT,
+  "src",
+  "reporting_agent",
+  "report_pipeline.py"
+)
+
+/** Every `payload.get("…")` key read inside one named Python function's body. */
+function payloadKeysReadByFunction(pyPath: string, functionName: string): string[] {
+  const source = readFileSync(pyPath, "utf8")
+
+  const defMatch = new RegExp(`\\ndef ${functionName}\\(`).exec(source)
+  if (defMatch === null) {
+    throw new Error(`${functionName} not found in ${pyPath}`)
+  }
+
+  // The function body ends at the next top-level `def ` (a line starting in column 0),
+  // which is how every function in this module is delimited — there is no `class` to
+  // stop at first, since this is a module of free functions.
+  const bodyStart = defMatch.index + 1
+  const nextDef = /\ndef /.exec(source.slice(bodyStart + 4))
+  const bodyEnd = nextDef === null ? source.length : bodyStart + 4 + nextDef.index
+  const body = source.slice(bodyStart, bodyEnd)
+
+  const keys = new Set<string>()
+  const pattern = /payload\.get\(\s*"([a-z_]+)"/g
+  for (const match of body.matchAll(pattern)) {
+    keys.add(match[1])
+  }
+  return [...keys].sort()
+}
+
+/** The `generate_report` member's own property names, from its sentinel-free type text. */
+function generateReportPayloadKeys(tsPath: string): string[] {
+  const source = readFileSync(tsPath, "utf8")
+
+  // The pinned member is the one carrying `template_version_id` — the snapshot-only
+  // member below it in the union declares `template_version_id?: never` instead, which
+  // this pattern's required-field shape does not match.
+  const memberStart = source.indexOf("template_version_id: string")
+  if (memberStart === -1) {
+    throw new Error(`the pinned generate_report member was not found in ${tsPath}`)
+  }
+  // Back up to the enclosing `{`, then forward to its matching `}`, by brace depth —
+  // the member's doc comments contain both characters in prose, so a regex over raw
+  // text would misfire; counting depth from the real opening brace does not.
+  const openIndex = source.lastIndexOf("{", memberStart)
+  let depth = 0
+  let index = openIndex
+  for (; index < source.length; index += 1) {
+    if (source[index] === "{") depth += 1
+    else if (source[index] === "}") {
+      depth -= 1
+      if (depth === 0) break
+    }
+  }
+  const member = source.slice(openIndex, index + 1)
+
+  // Property names at this member's own top level: `identifier:` or `identifier?:` at
+  // the start of a (trimmed) line, so a nested object's keys (`revision_history_row`'s
+  // own `revision`/`note`/`author`) are not mistaken for members of the outer shape.
+  const keys = new Set<string>()
+  const pattern = /^\s*(?:readonly\s+)?([a-z_]+)\??:/gm
+  for (const match of member.matchAll(pattern)) {
+    keys.add(match[1])
+  }
+  return [...keys].sort()
+}
+
+describe("Requirement 13.7 — the generate_report payload carries what the runtime reads", () => {
+  test("_resolve_run_facts's own payload.get() keys are declared on the pinned TS member", () => {
+    const readByRuntime = payloadKeysReadByFunction(
+      REPORT_PIPELINE_PY,
+      "_resolve_run_facts"
+    )
+    const declaredOnPayload = generateReportPayloadKeys(AGENTCORE_TS_DECLARATION)
+
+    // Precondition: if this returns nothing, the extraction itself is broken and every
+    // assertion below would pass vacuously against a guard that checks nothing.
+    expect(readByRuntime.length).toBeGreaterThan(0)
+
+    const missing = readByRuntime.filter((key) => !declaredOnPayload.includes(key))
+
+    expect(
+      missing,
+      `_resolve_run_facts reads payload["${missing.join('"], payload["')}"], which the ` +
+        `pinned generate_report member does not declare. This is the exact shape of the ` +
+        `defect Requirement 13.7 exists to close: a field the runtime requires, absent ` +
+        `from the sender, invisible until a v2 run actually fails RENDER_FAILED.`
+    ).toEqual([])
+  })
+})

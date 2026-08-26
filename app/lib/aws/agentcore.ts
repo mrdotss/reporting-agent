@@ -223,6 +223,39 @@ export type InvokeCommand =
       period: { start: string; end: string }
       scope: RunScope
       /**
+       * The per-run front-matter values a `schema_version >= 2` template's cover and
+       * document-control pages need (Requirement 13.7). Present exactly when a v2
+       * template is pinned — never for a v1 template, which has no front matter to
+       * receive them, and never for the snapshot-only member below, which pins no
+       * template at all. `enqueueRun` already rejects a v2-pinned request missing
+       * `customerName` (`lib/runs/input.ts`), so by the time a run reaches invocation
+       * these three are the ones the enqueue itself required present.
+       *
+       * `_resolve_run_facts` in `report_pipeline.py` is the only reader; this app never
+       * renders a cover, so nothing here is validated against the definition's
+       * `front_matter` section — that is the runtime's job, against its own copy.
+       */
+      customer_name?: string
+      /**
+       * The human-readable period, already formatted (Requirement 13.7).
+       *
+       * Sent rather than left to the runtime's fallback: `_resolve_run_facts` derives an
+       * unset `period_display` from `period.start` alone with `strftime("%B %Y")`, which
+       * is English-only and blind to `period.end` — wrong for an `identity.language` of
+       * `id`, and wrong for any window that is not a whole calendar month. This app
+       * already holds both the resolved period and the pinned definition's language, so
+       * it is the one side that can format this correctly; the runtime's derivation is a
+       * fallback for the snapshot-only member and for a foundation-era caller, not a
+       * formatter this path should lean on.
+       */
+      period_display?: string
+      /** The revision-history row for the document-control page (Requirement 13.7). */
+      revision_history_row?: {
+        readonly revision: string
+        readonly note: string
+        readonly author: string
+      }
+      /**
        * Historical-trend candidates (Requirement 18.4).
        *
        * Up to 200 prior runs of the same template row and subscription, each

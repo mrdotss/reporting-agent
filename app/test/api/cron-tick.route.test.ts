@@ -105,6 +105,10 @@ function claimed(id: string): ClaimedRun {
     // and requiring it is the point: a claim that dropped the column would invoke every
     // run as snapshot-only.
     templateVersionId: "ver-1",
+    // Same reasoning, for the per-run front-matter columns: `ClaimedRun` requires them
+    // present (as a value or `null`) so a claim that dropped them cannot compile.
+    customerName: null,
+    revisionHistoryRow: null,
   }
 }
 

@@ -429,7 +429,7 @@ class Pipeline:
             body["revision_history_row"] = {
                 "revision": "1.0",
                 "note": "Initial report",
-                "author": "R. Prakoso",
+                "author": "Report Author",
             }
 
         return body

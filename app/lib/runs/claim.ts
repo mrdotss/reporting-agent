@@ -252,6 +252,21 @@ export type ClaimedRun = {
    * invocation branches on rather than a missing property it has to infer.
    */
   readonly templateVersionId: string | null
+  /**
+   * The per-run front-matter values `generate_report` sends alongside a pinned
+   * template (Requirement 13.7), carried on the claim for the same reason
+   * {@link templateVersionId} is: the invocation needs them, and a claim that
+   * dropped these columns would invoke every v2 run without them — exactly the
+   * transport gap this field exists to close. `null` for a v1-pinned or
+   * snapshot-only row, which has no front matter to receive them; `enqueueRun`
+   * never requires them there, so there is nothing to read back.
+   */
+  readonly customerName: string | null
+  readonly revisionHistoryRow: {
+    readonly revision: string
+    readonly note: string
+    readonly author: string
+  } | null
 }
 
 /**
@@ -298,6 +313,12 @@ export async function claimQueuedRuns(
     timezone: string
     scope: RunScope
     template_version_id: string | null
+    customer_name: string | null
+    revision_history_row: {
+      revision: string
+      note: string
+      author: string
+    } | null
   }>(sql`
     UPDATE report_runs
        SET status = 'claimed',
@@ -312,7 +333,8 @@ export async function claimQueuedRuns(
         FOR UPDATE SKIP LOCKED
         LIMIT ${CLAIM_LIMIT})
     RETURNING id, user_id, connected_subscription_id,
-              period_start, period_end, timezone, scope, template_version_id
+              period_start, period_end, timezone, scope, template_version_id,
+              customer_name, revision_history_row
   `)
 
   return result.rows.map((row) => ({
@@ -324,6 +346,8 @@ export async function claimQueuedRuns(
     timezone: row.timezone,
     scope: row.scope,
     templateVersionId: row.template_version_id,
+    customerName: row.customer_name,
+    revisionHistoryRow: row.revision_history_row,
   }))
 }
 

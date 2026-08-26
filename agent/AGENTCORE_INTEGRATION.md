@@ -63,6 +63,24 @@ what stops the next reader treating its absence as an oversight and adding it.
     "resource_groups": [],                  // duplicates collapsed and every top-N count
     "tag_filters":     {}                   // and sort direction dropped
   },
+  // Present exactly when the pinned definition declares `front_matter` (schema_version
+  // >= 2). Absent for a v1-pinned run, which has no front matter to receive them, and
+  // absent for the snapshot-only shape below, which pins no definition at all.
+  // `enqueueRun` on the app side already required `customer_name` present for a
+  // v2-pinned request (Req 13.14), so by the time these reach here they are read
+  // straight through — `report_pipeline.py::_resolve_run_facts` is the one and only
+  // reader (Req 13.7).
+  "customer_name": "Contoso Indonesia",
+  // Already formatted, in the definition's `identity.language` — not derived here.
+  // `_resolve_run_facts` falls back to `strftime("%B %Y")` off `period.start` alone when
+  // this is absent, which is English-only and blind to `period.end`; that fallback
+  // exists for the snapshot-only shape and for a caller that predates this field, not as
+  // a formatter the app should lean on when it already holds the period and the
+  // language.
+  "period_display": "Juli 2026",
+  // The revision-history row for the document-control page. Every key required when
+  // present — `_resolve_run_facts` reads `revision`, `note` and `author` from it.
+  "revision_history_row": { "revision": "1.0", "note": "Initial report", "author": "Report Author" },
   "context": { /* the twelve fields above */ }
 }
 ```

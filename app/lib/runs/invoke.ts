@@ -20,6 +20,63 @@ import {
   getConnectedSubscription,
   resolveSubscriptionCredentials,
 } from "@/lib/subscriptions/store"
+import { declaredLanguage, declaredSchemaVersion } from "@/lib/templates/definition"
+
+/**
+ * A human-readable period, in the definition's pinned language (Requirement 13.7).
+ *
+ * Sent explicitly rather than left to `_resolve_run_facts`'s fallback, which derives an
+ * unset `period_display` from `period.start` alone with Python's `strftime("%B %Y")` —
+ * English-only, and blind to `period.end`. Both are wrong here: an `identity.language`
+ * of `id` needs Indonesian month names, and a period that is not a whole calendar month
+ * (a single-day spot check, a custom range) needs both ends named rather than one month
+ * label standing in for a span it does not describe.
+ *
+ * This app is the side that holds both facts — the resolved local dates and the pinned
+ * definition's language — so it is the one that can format this correctly. The
+ * runtime's fallback exists for the snapshot-only member (no definition, so no
+ * language) and for a foundation-era caller; it is not a formatter this path should
+ * lean on when it does not have to.
+ *
+ * `Intl.DateTimeFormat`, not a hand-maintained Indonesian month-name table: the
+ * platform already carries locale-correct names, and a table is one more place the two
+ * languages could drift from each other.
+ */
+function formatPeriodDisplay(
+  periodStart: string,
+  periodEnd: string,
+  language: "en" | "id"
+): string {
+  const locale = language === "id" ? "id-ID" : "en-US"
+  const start = new Date(`${periodStart}T00:00:00Z`)
+  const end = new Date(`${periodEnd}T00:00:00Z`)
+
+  const monthFormatter = new Intl.DateTimeFormat(locale, {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+
+  const startYearMonth = `${start.getUTCFullYear()}-${start.getUTCMonth()}`
+  const endYearMonth = `${end.getUTCFullYear()}-${end.getUTCMonth()}`
+
+  // A whole calendar month reported as itself: "July 2026" / "Juli 2026". Detected by
+  // the two ends sharing a year and month — the period rule that produces this is
+  // `last_full_month`, but the display does not need to know the rule, only the shape.
+  if (startYearMonth === endYearMonth) {
+    return monthFormatter.format(start)
+  }
+
+  // Any other span — a custom range, a single-day spot check, a window crossing a
+  // month boundary — names both ends rather than picking one month to represent it.
+  const dayFormatter = new Intl.DateTimeFormat(locale, {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  })
+  return `${dayFormatter.format(start)}–${dayFormatter.format(end)}`
+}
 
 /**
  * Starting one claimed run's invocation (Requirements 39.6, 39.10, 39.13, 41).
@@ -400,6 +457,35 @@ export async function startRunInvocation(
                 period: { start: run.periodStart, end: run.periodEnd },
                 scope: run.scope,
                 historical_candidates: historicalCandidates,
+                // The per-run front-matter values (Requirement 13.7), read off the
+                // claim rather than re-queried — `run` already holds what `enqueueRun`
+                // required present for this v2-pinned row. `customerName` /
+                // `revisionHistoryRow` are `null` on a v1-pinned row, and spreading
+                // `undefined` in that case omits the keys rather than sending `null`
+                // — the runtime's `_resolve_run_facts` treats an absent
+                // `front_matter` section on the definition as "no front matter to
+                // render" regardless, but omitting rather than nulling keeps the
+                // payload's own shape saying the same thing.
+                ...(run.customerName === null
+                  ? {}
+                  : { customer_name: run.customerName }),
+                ...(run.revisionHistoryRow === null
+                  ? {}
+                  : { revision_history_row: run.revisionHistoryRow }),
+                // Gated on the same condition as the two fields above, not sent
+                // unconditionally: a v1-pinned run has no front matter to receive a
+                // formatted period into, and sending it anyway would give a v1
+                // command a key none of its siblings carry for no reason the runtime
+                // reads.
+                ...(declaredSchemaVersion(pinned.definition) >= 2
+                  ? {
+                      period_display: formatPeriodDisplay(
+                        run.periodStart,
+                        run.periodEnd,
+                        declaredLanguage(pinned.definition) ?? "en"
+                      ),
+                    }
+                  : {}),
               },
       }),
       run.id,

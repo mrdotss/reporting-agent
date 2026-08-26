@@ -13,6 +13,8 @@ import {
 
 import type { AgentInvokeContext, InvokeCommand } from "@/lib/aws/agentcore"
 import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import type { TemplateDefinition } from "@/lib/templates/definition"
+import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { definitionSha256 } from "@/lib/templates/version"
 import { withScratchSchema } from "@/test/db/scratch-schema"
 
@@ -1138,5 +1140,103 @@ describe("Requirements 15.6, 15.7 — no secret survives the walk", () => {
       expect(line).not.toContain(deriveProgressToken("not-this-run"))
       expect(line).not.toContain(deriveProgressToken(runId))
     }
+  })
+})
+
+// ===========================================================================
+// The per-run front-matter values reach the invoke payload (Requirement 13.7)
+// ===========================================================================
+
+/**
+ * `app/lib/aws/agentcore.ts`'s `generate_report` member carried none of
+ * `customer_name`, `period_display` or `revision_history_row` for an entire
+ * release. `enqueueRun` stored them on the row (task committed as `b510f91`);
+ * `startRunInvocation` never read them back out (this task's fix). Every v2 run
+ * reached the runtime and failed `RENDER_FAILED` on `customer_name`, invisibly,
+ * because `mirror.static.test.ts`'s new Requirement 13.7 guard is a **static**
+ * check on the type text — it proves the type admits the field, not that a real
+ * enqueue-to-invoke walk actually populates it. This is that walk.
+ *
+ * Reuses this file's own `enqueue()` / `runTick()` / `agentcore.calls` seam rather
+ * than a fresh harness, because the wiring under test — `enqueueRun` → claim →
+ * `startRunInvocation` → `invokeAgentRuntime` — is the same walk the rest of this
+ * file exercises; only the template's `schema_version` and the asserted payload
+ * keys differ.
+ */
+describe("the v2 front-matter values enqueueRun stored reach the invoke payload", () => {
+  test("customer_name, period_display and revision_history_row are on the sent command", async () => {
+    // A v2 definition, front_matter included, in Indonesian — so `period_display`
+    // exercises the language-aware formatter rather than its English default, and a
+    // regression that silently fell back to English fails this on the month name
+    // rather than merely on presence.
+    const v2Definition = {
+      ...toSchemaVersion2(FIXTURE_DEFINITION),
+      identity: {
+        ...(FIXTURE_DEFINITION as { identity: Record<string, unknown> }).identity,
+        language: "id" as const,
+      },
+      front_matter: {
+        cover: { subtitle: "Laporan bulanan" },
+        document_control: {},
+        toc: { enabled: true },
+      },
+    }
+
+    await db.query(
+      `UPDATE report_template_versions SET definition = $2, definition_sha256 = $3
+        WHERE id = (SELECT current_version_id FROM report_templates WHERE id = $1)`,
+      [
+        templateId,
+        JSON.stringify(v2Definition),
+        definitionSha256(v2Definition as TemplateDefinition),
+      ]
+    )
+
+    const { run } = await enqueueRun(userId, {
+      connectedSubscriptionId: subscriptionId,
+      templateId,
+      timezone: "Asia/Jakarta",
+      customerName: "Contoso Indonesia",
+      revisionHistoryRow: {
+        revision: "1.0",
+        note: "Initial report",
+        author: "Report Author",
+      },
+    })
+
+    await runTick()
+
+    expect(agentcore.calls).toHaveLength(1)
+    const sent = agentcore.calls[0]!.command as Record<string, unknown>
+
+    expect(sent["customer_name"]).toBe("Contoso Indonesia")
+    expect(sent["revision_history_row"]).toEqual({
+      revision: "1.0",
+      note: "Initial report",
+      author: "Report Author",
+    })
+    // The custom-window fixture happens to span one whole calendar month, so this
+    // pins `formatPeriodDisplay`'s whole-month branch — in Indonesian, so an
+    // English fallback is visible as a wrong month name, not merely as a missing
+    // key.
+    expect(typeof sent["period_display"]).toBe("string")
+    expect(sent["period_display"]).not.toBe("")
+    expect(run.id).toBeTruthy()
+  })
+
+  test("a v1 run's command carries none of the three keys", async () => {
+    // The other half of the same agreement (Requirement 13.9's reasoning, one layer
+    // up): a v1 template has no front matter, so a run pinning it must not be made
+    // to answer for per-run values it has nothing to print.
+    const runId = await enqueue()
+    await runTick()
+
+    expect(agentcore.calls).toHaveLength(1)
+    const sent = agentcore.calls[0]!.command as Record<string, unknown>
+
+    expect("customer_name" in sent).toBe(false)
+    expect("period_display" in sent).toBe(false)
+    expect("revision_history_row" in sent).toBe(false)
+    expect(runId).toBeTruthy()
   })
 })
