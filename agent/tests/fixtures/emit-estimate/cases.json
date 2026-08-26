@@ -1,0 +1,297 @@
+{
+  "note": "The shared emit-estimate corpus (task 3.8, Requirements 11.1-11.7). Read by app/lib/profiles/emit.test.ts (TypeScript, estimateEmit) and by agent/tests/test_emit_estimate_mirror.py (Python, which compiles a synthetic snapshot built from the SAME resource counts and asserts the real compiler's figure_count matches this corpus's expected_figures). The estimator and the expander cannot be compared by a static mirror -- one is TypeScript, one is Python -- so both sides assert against this one committed corpus instead of against each other. Every REAL-catalogue case here (catalogue_entry present in agent/src/reporting_agent/catalog/sections.v1.json) uses an entry whose expands_to declares ONLY attribute/fact columns -- confirmed by inspection that no shipped resource_table/top_n_table entry declares a metric-kind column today, so every one of them emits ZERO figures regardless of the section's own metrics selection. The metric_bearing entries (vm_utilization, database_utilization, app_service_and_storage, historical_vm_utilization) are excluded from the real-catalogue cases because their metric selection is not yet wired into a compilable column set (see task 3.5a's deferred note on tasks.md) -- estimating a non-zero figure count for them would test arithmetic the real compiler cannot currently perform. The one case with `\"synthetic\": true` uses a hand-built catalogue entry (not present in sections.v1.json) carrying a real metric-kind column, so the matched-resources-times-metric-count arithmetic is exercised by at least one case on both sides -- both test files must build this entry locally rather than reading it from the shipped file.",
+  "cases": [
+    {
+      "name": "SYNTHETIC: a resource_table with one metric column, matched resources with the metric present",
+      "synthetic": true,
+      "catalogue_entry": "synthetic_metric_table",
+      "section": {
+        "type": "synthetic_metric_table",
+        "selection": {
+          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [
+          { "metric": "Percentage CPU", "statistic": "avg" }
+        ],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 4
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 4,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "SYNTHETIC: a catalogue entry declaring TWO static metric columns doubles the figure count",
+      "synthetic": true,
+      "catalogue_entry": "synthetic_two_metric_table",
+      "section": {
+        "type": "synthetic_two_metric_table",
+        "selection": {
+          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 4
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 8,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "SYNTHETIC: matched count exceeds the 500-row table cap",
+      "synthetic": true,
+      "catalogue_entry": "synthetic_metric_table",
+      "section": {
+        "type": "synthetic_metric_table",
+        "selection": {
+          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [
+          { "metric": "Percentage CPU", "statistic": "avg" }
+        ],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 620
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 501,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "azure_subscription (unconstrained resource_types), a populated scan",
+      "catalogue_entry": "azure_subscription",
+      "section": {
+        "type": "azure_subscription",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 3,
+        "microsoft.network/publicipaddresses": 2
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "public_ip_addresses, scan has none of that type",
+      "catalogue_entry": "public_ip_addresses",
+      "section": {
+        "type": "public_ip_addresses",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 5
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": true
+      }
+    },
+    {
+      "name": "public_ip_addresses, scan casing differs from the catalogue's canonical casing",
+      "catalogue_entry": "public_ip_addresses",
+      "section": {
+        "type": "public_ip_addresses",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.network/publicipaddresses": 4
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "public_ip_addresses, matched resources but only attribute/fact columns -- still zero figures",
+      "catalogue_entry": "public_ip_addresses",
+      "section": {
+        "type": "public_ip_addresses",
+        "selection": {
+          "resource_types": ["Microsoft.Network/publicIPAddresses"],
+          "resource_groups": ["rg-prod"],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.network/publicipaddresses": 4
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "resource_groups (two resource_table expansions, no chart family), matched resources",
+      "catalogue_entry": "resource_groups",
+      "section": {
+        "type": "resource_groups",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.compute/virtualmachines": 10
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "matched count exceeds the 500-row table cap -- one truncation figure, no metric figures (attribute/fact only)",
+      "catalogue_entry": "public_ip_addresses",
+      "section": {
+        "type": "public_ip_addresses",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.network/publicipaddresses": 620
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 1,
+        "matches_zero_resources": false
+      }
+    },
+    {
+      "name": "an empty scan matches zero resources for a type-scoped section",
+      "catalogue_entry": "public_ip_addresses",
+      "section": {
+        "type": "public_ip_addresses",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {},
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 1,
+        "figures": 0,
+        "matches_zero_resources": true
+      }
+    },
+    {
+      "name": "network_security_groups, per-resource expansion, matched resources",
+      "catalogue_entry": "network_security_groups",
+      "section": {
+        "type": "network_security_groups",
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "top_n": null,
+          "sort": null
+        },
+        "metrics": [],
+        "presentation": "table_only"
+      },
+      "scan_type_counts": {
+        "microsoft.network/networksecuritygroups": 3
+      },
+      "expected": {
+        "headings": 1,
+        "charts": 0,
+        "tables": 3,
+        "figures": 0,
+        "matches_zero_resources": false
+      }
+    }
+  ]
+}
