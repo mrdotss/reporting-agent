@@ -7,6 +7,7 @@ import { toTemplateView,
   templateViewCurrentVersion,
 } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { AZURE_SECTIONS } from "@/lib/profiles/sections"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
@@ -87,6 +88,7 @@ export default async function EditTemplatePage({ params }: PageProps) {
       )}
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
+      sectionCatalogue={AZURE_SECTIONS}
       thumbnails={themeThumbnails()}
       previewSubscriptionId={previewSubscription?.id ?? null}
       hasCompletedRun={snapshotRun !== null}

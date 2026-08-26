@@ -16,7 +16,10 @@ import {
 import { StepMetrics } from "@/components/templates/step-metrics"
 import { StepPeriod } from "@/components/templates/step-period"
 import { StepPreview } from "@/components/templates/step-preview"
-import { StepScope } from "@/components/templates/step-scope"
+import {
+  StepSections,
+  type SectionCatalogueEntry,
+} from "@/components/templates/step-sections"
 import { Button } from "@/components/ui/button"
 import type { TemplateView } from "@/lib/db/views"
 import type {
@@ -114,6 +117,7 @@ export function WizardShell({
   initialDefinition,
   catalog,
   thumbnails: _thumbnails,
+  sectionCatalogue,
   previewSubscriptionId,
   hasCompletedRun,
 }: Readonly<{
@@ -123,6 +127,8 @@ export function WizardShell({
   catalog: MetricCatalogSnapshot
   /** Resolved on the server — see `StepDesign`'s own note. */
   thumbnails: readonly ThemeThumbnail[]
+  /** The section catalogue, resolved server-side (sections.ts is server-only). */
+  sectionCatalogue: readonly SectionCatalogueEntry[]
   /**
    * The subscription a real preview renders against, and whether one can be
    * rendered at all (Requirements 14.5, 14.7).
@@ -369,6 +375,7 @@ export function WizardShell({
     definition,
     setDefinition,
     catalog,
+    sectionCatalogue,
     problems,
     templateId: template.id,
     previewSubscriptionId,
@@ -625,6 +632,7 @@ function renderStep({
   definition,
   setDefinition,
   catalog,
+  sectionCatalogue,
   problems,
   templateId,
   previewSubscriptionId,
@@ -638,6 +646,7 @@ function renderStep({
   definition: TemplateDefinition
   setDefinition: (next: TemplateDefinition) => void
   catalog: MetricCatalogSnapshot
+  sectionCatalogue: readonly SectionCatalogueEntry[]
   problems: ReturnType<typeof completionProblems>
   templateId: string
   previewSubscriptionId: string | null
@@ -661,7 +670,13 @@ function renderStep({
         />
       )
     case "sections":
-      return <StepScope definition={definition} onChange={setDefinition} />
+      return (
+        <StepSections
+          definition={definition}
+          onChange={(next) => setDefinition(next as TemplateDefinition)}
+          sectionCatalogue={sectionCatalogue}
+        />
+      )
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
     case "document":
