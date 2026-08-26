@@ -1253,3 +1253,78 @@ def test_the_declared_attributes_are_a_tuple_of_unique_names_in_a_fixed_order():
     assert len(set(COLUMN_ATTRIBUTES)) == len(COLUMN_ATTRIBUTES)
     assert COLUMN_ATTRIBUTES[0] == "resource_name"
     assert set(COLUMN_ATTRIBUTES) >= {"resource_name", "fidelity_tier"}
+
+
+# --------------------------------------------------------------------------- #
+# blank_rows_table
+# --------------------------------------------------------------------------- #
+
+
+def test_blank_rows_table_emits_the_declared_rows_and_columns_as_empty_cells() -> None:
+    """Section 13's author-filled table: ruled empty rows a consultant fills in after
+    printing, at the declared column and row count, with no resource resolution at all.
+
+    Added because this exact shape — more than one row, each needing more than one
+    column — went unexercised by any compile-path test until the catalogue's
+    `incident_report` entry (5 columns, 5 rows) was driven through `compile_document`
+    for the first time and raised a `TypeError` from a `cursor.child()` call passing
+    the row and column ordinals as two positional arguments to a method that takes
+    exactly one field name and one ordinal per call. The existing corpus fixture for
+    this block type asserted only that a definition carrying it validates — never that
+    it compiles — so the defect shipped in the block's very first commit and stayed
+    invisible until this test (and the catalogue regression test in
+    `test_expand_sections.py`) exercised the real compile path with more than a single
+    cell.
+    """
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "blank",
+                    "blank_rows_table",
+                    {"columns": ["date", "description", "impact"], "rows": 3},
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    table = next(node for node in child_nodes(document.document) if isinstance(node, Table))
+    assert [column.key for column in table.columns] == ["date", "description", "impact"]
+    assert len(table.rows) == 3
+
+    for row_idx, row in enumerate(table.rows):
+        assert row.key == f"row_{row_idx}"
+        assert len(row.cells) == 3
+        for cell in row.cells:
+            assert isinstance(cell, EmptyCell)
+            # Every cell's path is distinct — proof the row/column ordinals actually
+            # reached the path rather than silently colliding.
+            assert str(cell.path) not in {
+                str(other.path)
+                for other_row in table.rows
+                for other in other_row.cells
+                if other is not cell
+            }
+
+
+def test_blank_rows_table_produces_no_ledger_entry_for_any_cell() -> None:
+    """An `EmptyCell` carries no figure and mints no anchor — the ledger's
+    bidirectional completeness check (which `compile_document` runs on every call) is
+    unaffected by a block that is all empty cells."""
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "blank",
+                    "blank_rows_table",
+                    {"columns": ["status"], "rows": 2},
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    assert document.figure_count == 0

@@ -1,6 +1,9 @@
 """Section expansion: a v3 definition's ``sections`` array → ``BlockSpec`` sequence.
 
-**Pure.**  No Azure, no ledger, no I/O.
+**Pure.**  No Azure, no ledger, no I/O — including the resolved ``Messages`` this module
+takes as a parameter rather than loading itself: the caller builds it once from data
+already in hand, so accepting it here is a pure lookup against an in-memory table, not
+a second load path.
 
 Ordering (Req 8.4):
   1. ``group`` order: ``inventory``, ``utilisation``, ``closing``
@@ -31,6 +34,7 @@ from reporting_agent.catalog.loader import (
     SectionExpansionBlock,
 )
 from reporting_agent.compile.blocks.base import BlockSpec
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotView
 from reporting_agent.errors import CompileFailedError
@@ -107,10 +111,37 @@ def _should_emit(
     return presentation in expansion.when_presentation
 
 
+def _resolve_heading_text(
+    expansion: SectionExpansionBlock,
+    entry: SectionCatalogueEntry,
+    config: dict[str, object],
+    messages: Messages,
+) -> None:
+    """Fill a `heading` expansion's `text` from its `title_id`, in place on `config`.
+
+    A `heading` expansion may declare its own `title_id` in its static config (used by
+    a section with more than one heading, e.g. `virtual_machines`'s three subsection
+    headings) — that one wins. Absent that, the section entry's own `title_id` is the
+    heading's text, which is the common case: one section, one level-2 heading, titled
+    from the catalogue entry itself.
+
+    `expand_sections` stays pure by construction — this resolves a string from data
+    already in hand (the catalogue entry, the expansion's own config, and a `Messages`
+    object built once outside any I/O) rather than performing any I/O of its own.
+    """
+    title_id = config.pop("title_id", None) or entry.title_id
+    if not isinstance(title_id, str) or not title_id:
+        raise CompileFailedError(
+            f"section {entry.key!r}: a heading expansion carries no usable title_id"
+        )
+    config["text"] = messages.text(title_id)
+
+
 def _expand_one_section(
     section: Mapping[str, object],
     entry: SectionCatalogueEntry,
     view: SnapshotView,
+    messages: Messages,
 ) -> tuple[BlockSpec, ...]:
     """Expand one section into its BlockSpec sequence.
 
@@ -136,6 +167,8 @@ def _expand_one_section(
 
         # Build the config from the catalogue's declared config
         config: dict[str, object] = dict(expansion.config)
+        if expansion.block == "heading":
+            _resolve_heading_text(expansion, entry, config, messages)
 
         if expansion.per == "section":
             block_id = f"{section_id}__{expansion_index}"
@@ -180,6 +213,7 @@ def expand_sections(
     *,
     catalogue: LoadedSectionCatalogue,
     view: SnapshotView,
+    messages: Messages,
 ) -> tuple[BlockSpec, ...]:
     """Expand a v3 definition's ``sections`` into a flat ordered BlockSpec tuple.
 
@@ -199,6 +233,8 @@ def expand_sections(
         definition: The validated v3 definition mapping.
         catalogue: The loaded and validated section catalogue.
         view: The SnapshotView for scope resolution.
+        messages: The resolved `Messages` for the report's language, used to turn a
+            heading expansion's `title_id` into its required `text`.
 
     Returns:
         An ordered tuple of BlockSpec, ready for the three-phase compile loop.
@@ -241,7 +277,7 @@ def expand_sections(
     # Expand each section in sorted order
     all_specs: list[BlockSpec] = []
     for section, entry in resolved_sections:
-        specs = _expand_one_section(section, entry, view)
+        specs = _expand_one_section(section, entry, view, messages)
         all_specs.extend(specs)
 
     return tuple(all_specs)

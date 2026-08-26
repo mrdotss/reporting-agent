@@ -25,6 +25,24 @@ from reporting_agent.compile.figures import BlockCursor
 __all__ = ["compile_blank_rows_table"]
 
 
+def _blank_row(cursor: BlockCursor, row_idx: int, column_count: int) -> Row:
+    """One row of `EmptyCell`s at `row_idx`, one per declared column.
+
+    `BlockCursor.child` takes exactly one field name and one ordinal per call, so a
+    two-level position (row, then cell within that row) is two chained calls, not one
+    call carrying both ordinals.
+    """
+    row_cursor = cursor.child("rows", row_idx)
+    return Row(
+        path=row_cursor.path,
+        key=f"row_{row_idx}",
+        cells=tuple(
+            EmptyCell(path=row_cursor.child("cells", col_idx).path)
+            for col_idx in range(column_count)
+        ),
+    )
+
+
 def compile_blank_rows_table(
     context: BlockContext, block: BlockSpec, cursor: BlockCursor
 ) -> BlockOutput:
@@ -53,15 +71,7 @@ def compile_blank_rows_table(
 
     # Build empty data rows
     table_rows = tuple(
-        Row(
-            path=cursor.child("rows", row_idx).path,
-            key=f"row_{row_idx}",
-            cells=tuple(
-                EmptyCell(path=cursor.child("rows", row_idx, col_idx).path)
-                for col_idx in range(len(columns))
-            ),
-        )
-        for row_idx in range(rows_count)
+        _blank_row(cursor, row_idx, len(columns)) for row_idx in range(rows_count)
     )
 
     table = Table(

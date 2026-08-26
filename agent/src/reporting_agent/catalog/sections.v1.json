@@ -16,7 +16,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["type", "count"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_type"}, {"kind": "fact", "fact_key": "count"}] } }
           ]
         },
         {
@@ -32,7 +32,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["resource_group", "type", "count"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_group"}, {"kind": "attribute", "attribute": "resource_type"}, {"kind": "fact", "fact_key": "count"}] } }
           ]
         },
         {
@@ -48,7 +48,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "columns": ["subnet", "address_prefix", "available_ips"] } }
+            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "available_ips"}] } }
           ]
         },
         {
@@ -65,11 +65,11 @@
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
             { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.inventory" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "size", "os_type", "os_build", "power_state"], "subsection": "4.1" } },
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "size"}, {"kind": "fact", "fact_key": "os_type"}, {"kind": "fact", "fact_key": "os_build"}, {"kind": "attribute", "attribute": "power_state"}], "subsection": "4.1" } },
             { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.network" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "nic", "subnet", "private_ip", "public_ip", "nsg"], "subsection": "4.2" } },
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "nic"}, {"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "private_ip"}, {"kind": "fact", "fact_key": "public_ip"}, {"kind": "fact", "fact_key": "nsg"}], "subsection": "4.2" } },
             { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.disks" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "disk_name", "disk_size_gb", "disk_type", "caching"], "subsection": "4.3" } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "disk_name"}, {"kind": "fact", "fact_key": "disk_size_gb"}, {"kind": "fact", "fact_key": "disk_type"}, {"kind": "fact", "fact_key": "caching"}], "subsection": "4.3" } }
           ]
         },
         {
@@ -85,7 +85,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "address", "allocation_method", "sku", "association"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "address"}, {"kind": "fact", "fact_key": "allocation_method"}, {"kind": "fact", "fact_key": "sku"}, {"kind": "fact", "fact_key": "association"}] } }
           ]
         },
         {
@@ -101,7 +101,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "columns": ["priority", "direction", "protocol", "source", "destination", "port", "action"], "omit_default_rules_above": 65000 } }
+            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "priority"}, {"kind": "fact", "fact_key": "direction"}, {"kind": "fact", "fact_key": "protocol"}, {"kind": "fact", "fact_key": "source"}, {"kind": "fact", "fact_key": "destination"}, {"kind": "fact", "fact_key": "port"}, {"kind": "fact", "fact_key": "action"}], "omit_default_rules_above": 65000 } }
           ],
           "notes": "Azure default rules at priority 65000 and above are omitted; the section reports rules an operator wrote."
         },
@@ -118,7 +118,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["reservation_name", "sku", "quantity", "expiry", "utilization"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "reservation_name"}, {"kind": "fact", "fact_key": "sku"}, {"kind": "fact", "fact_key": "quantity"}, {"kind": "fact", "fact_key": "expiry"}, {"kind": "fact", "fact_key": "utilization"}] } }
           ]
         },
         {
@@ -253,7 +253,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["name", "vault", "policy", "last_backup", "retention_days"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "vault"}, {"kind": "fact", "fact_key": "policy"}, {"kind": "fact", "fact_key": "last_backup"}, {"kind": "fact", "fact_key": "retention_days"}] } }
           ]
         },
         {
@@ -286,7 +286,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": ["resource", "category", "impact", "recommendation"] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "resource"}, {"kind": "fact", "fact_key": "category"}, {"kind": "fact", "fact_key": "impact"}, {"kind": "fact", "fact_key": "recommendation"}] } }
           ]
         },
         {

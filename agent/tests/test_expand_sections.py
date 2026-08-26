@@ -85,6 +85,13 @@ def _make_catalogue() -> LoadedSectionCatalogue:
     return load_section_catalogue()
 
 
+def _make_messages():
+    """Load the real English message catalogue, for resolving heading text."""
+    from reporting_agent.compile.messages import load_messages
+
+    return load_messages("en")
+
+
 def _make_v3_definition(
     sections: list[dict],
 ) -> dict:
@@ -134,7 +141,7 @@ class TestExpandSectionsBasic:
         view = _make_view(["/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"])
         definition = _make_v3_definition(sections=[])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         assert result == ()
 
@@ -159,7 +166,7 @@ class TestExpandSectionsBasic:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # azure_subscription has 2 expands_to entries: heading + resource_table, both per:"section"
         assert len(result) == 2
@@ -194,7 +201,7 @@ class TestExpandSectionsBasic:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # vm_utilization expands_to:
         # - heading per:resource (3 VMs)
@@ -252,7 +259,7 @@ class TestExpandSectionsOrdering:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # First blocks should be from the inventory section (azure_subscription)
         assert result[0].id.startswith("sec_sub__")
@@ -285,7 +292,7 @@ class TestExpandSectionsOrdering:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # backup_report (fixed order 0) should come before incident_report (fixed order 1)
         backup_blocks = [s for s in result if s.id.startswith("sec_backup")]
@@ -321,7 +328,7 @@ class TestExpandSectionsOrdering:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # coverage_and_verification should be last
         cov_blocks = [s for s in result if s.id.startswith("sec_cov")]
@@ -357,7 +364,7 @@ class TestPresentationFiltering:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         types = [s.type for s in result]
         assert "timeseries_chart" not in types
@@ -380,7 +387,7 @@ class TestPresentationFiltering:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         types = [s.type for s in result]
         assert "resource_table" not in types
@@ -426,8 +433,8 @@ class TestAnchorStabilityGuard:
             },
         ])
 
-        result_a = expand_sections(definition, catalogue=catalogue, view=view)
-        result_b = expand_sections(definition, catalogue=catalogue, view=view)
+        result_a = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
+        result_b = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         ids_a = tuple(spec.id for spec in result_a)
         ids_b = tuple(spec.id for spec in result_b)
@@ -464,8 +471,8 @@ class TestAnchorStabilityGuard:
             },
         ])
 
-        result_a = expand_sections(definition, catalogue=catalogue, view=view)
-        result_b = expand_sections(definition, catalogue=catalogue, view=view)
+        result_a = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
+        result_b = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         set_a = frozenset(spec.id for spec in result_a)
         set_b = frozenset(spec.id for spec in result_b)
@@ -519,8 +526,8 @@ class TestFullDeterminismGuard:
             },
         ])
 
-        result_a = expand_sections(definition, catalogue=catalogue, view=view)
-        result_b = expand_sections(definition, catalogue=catalogue, view=view)
+        result_a = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
+        result_b = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         assert len(result_a) == len(result_b)
         for idx, (a, b) in enumerate(zip(result_a, result_b, strict=True)):
@@ -568,9 +575,9 @@ class TestFullDeterminismGuard:
         ])
 
         # Run 10 times to catch any iteration-order nondeterminism
-        first_result = expand_sections(definition, catalogue=catalogue, view=view)
+        first_result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
         for _ in range(9):
-            result = expand_sections(definition, catalogue=catalogue, view=view)
+            result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
             assert result == first_result
 
 
@@ -597,7 +604,7 @@ class TestExpandSectionsErrors:
         ])
 
         with pytest.raises(CompileFailedError, match="nonexistent_section_type"):
-            expand_sections(definition, catalogue=catalogue, view=view)
+            expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
     def test_missing_sections_array_raises(self) -> None:
         catalogue = _make_catalogue()
@@ -605,7 +612,7 @@ class TestExpandSectionsErrors:
         definition = {"schema_version": 3, "provider": "azure"}
 
         with pytest.raises(CompileFailedError, match="no sections array"):
-            expand_sections(definition, catalogue=catalogue, view=view)
+            expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
     def test_section_with_no_id_raises(self) -> None:
         catalogue = _make_catalogue()
@@ -622,7 +629,7 @@ class TestExpandSectionsErrors:
         ])
 
         with pytest.raises(CompileFailedError, match="no usable id"):
-            expand_sections(definition, catalogue=catalogue, view=view)
+            expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
 
 # ---------------------------------------------------------------------------
@@ -656,7 +663,7 @@ class TestScopeOverride:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         for spec in result:
             assert spec.scope_override is not None
@@ -682,7 +689,7 @@ class TestScopeOverride:
             },
         ])
 
-        result = expand_sections(definition, catalogue=catalogue, view=view)
+        result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # Find per-resource blocks (those with __n__m pattern)
         per_resource = [s for s in result if s.id.count("__") == 2]
@@ -870,3 +877,155 @@ class TestCompileDocumentSchemaVersionBranch:
         compiled = compile_document(v1_definition, view=view)
 
         assert "brk" in compiled.nodes_by_block
+
+    def test_the_real_catalogue_now_compiles_end_to_end_with_resolved_heading_text(
+        self,
+    ) -> None:
+        """The real `sections.v1.json` no longer fails to compile.
+
+        This is the outcome the title-resolution fix and the column-shape fix in
+        `sections.v1.json` exist for: `azure_subscription` (section 1, the simplest
+        entry — a `heading` then a `resource_table`) compiles through the REAL
+        catalogue, not a synthetic one, and its heading carries the text resolved
+        from `doc.section.azure_subscription`, not a placeholder or a raised error."""
+        from reporting_agent.compile.blocks import compile_document
+
+        catalogue = _make_catalogue()
+        view = _make_view([])
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_sub",
+                "type": "azure_subscription",
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+
+        compiled = compile_document(definition, view=view, catalogue=catalogue)
+
+        heading = compiled.nodes_by_block["sec_sub__0"][0]
+        assert heading.style == "Heading 2"
+        assert len(heading.inlines) == 1
+        assert heading.inlines[0].text == "Azure Subscription Overview"
+
+        table = compiled.nodes_by_block["sec_sub__1"][0]
+        assert table.__class__.__name__ == "Table"
+
+    def test_a_headings_own_title_id_in_config_overrides_the_section_entrys(
+        self,
+    ) -> None:
+        """`virtual_machines` (section 4) is the real catalogue's one entry with more
+        than one heading — three subsection headings, each declaring its OWN `title_id`
+        in the expansion's static config, distinct from the section's own `title_id`.
+        Proves the override branch of `_resolve_heading_text`, not just the common
+        one-heading-per-section path the previous test exercises."""
+        from reporting_agent.compile.blocks import compile_document
+
+        catalogue = _make_catalogue()
+        vm_ids = [
+            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01",
+        ]
+        view = _make_view(vm_ids)
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vms",
+                "type": "virtual_machines",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+
+        compiled = compile_document(definition, view=view, catalogue=catalogue)
+
+        # Expansion order: heading(0, section's own title), heading(1, .inventory),
+        # resource_table(2), heading(3, .network), resource_table(4),
+        # heading(5, .disks), resource_table(6).
+        section_heading = compiled.nodes_by_block["sec_vms__0"][0]
+        assert section_heading.inlines[0].text == "Virtual Machines"
+
+        inventory_heading = compiled.nodes_by_block["sec_vms__1"][0]
+        assert inventory_heading.inlines[0].text == "Inventory"
+
+        network_heading = compiled.nodes_by_block["sec_vms__3"][0]
+        assert network_heading.inlines[0].text == "Network Configuration"
+
+        disks_heading = compiled.nodes_by_block["sec_vms__5"][0]
+        assert disks_heading.inlines[0].text == "Disks"
+
+    def test_every_real_catalogue_entry_compiles_without_error(self) -> None:
+        """The regression guard for both fixes at once: every catalogue entry whose
+        expansion needs only a title and a static column list compiles through
+        `compile_document` with no resolved resources.
+
+        Excludes `vm_utilization`, `historical_vm_utilization` and
+        `database_utilization` — a THIRD, separate, already-known gap distinct from
+        the two this task fixes: their expansions include `top_n_table` (needs
+        `columns` + `order_by`) and `historical_trend` (needs `metric` + `statistic`
+        + `lookback`), and the catalogue declares neither in static config. Unlike a
+        `heading`'s text or a `resource_table`'s columns, these need a per-run metric
+        selection threaded from the section's own `metrics`/`selection` into the
+        expansion — a design decision, not a data-shape fix, and out of scope here.
+        Recorded on a later task rather than silently excluded with no trace."""
+        from reporting_agent.compile.blocks import compile_document
+
+        catalogue = _make_catalogue()
+        view = _make_view([])
+        needs_metric_selection_wiring = {
+            "vm_utilization",
+            "historical_vm_utilization",
+            "database_utilization",
+        }
+
+        for entry in catalogue.entries:
+            if entry.key in needs_metric_selection_wiring:
+                continue
+
+            metrics = (
+                [{"metric": "Percentage CPU", "statistic": "avg"}]
+                if entry.metric_bearing
+                else []
+            )
+            definition = _make_v3_definition(sections=[
+                {
+                    "id": "sec",
+                    "type": entry.key,
+                    "position": 0,
+                    "selection": {
+                        "resource_types": [],
+                        "resource_groups": [],
+                        "tag_filters": [],
+                        "top_n": None,
+                        "sort": None,
+                    },
+                    "metrics": metrics,
+                    "presentation": "table_only",
+                },
+            ])
+
+            compiled = compile_document(definition, view=view, catalogue=catalogue)
+
+            # An entry whose FIRST expansion is `per: "resource"` (e.g.
+            # `app_service_and_storage`) legitimately produces zero blocks with zero
+            # resolved resources — that is correct behaviour, not a compile failure.
+            # Every entry opening with a `per: "section"` expansion (the heading, at
+            # minimum) must always produce at least one node regardless of scope.
+            if entry.expands_to[0].per == "section":
+                assert len(compiled.nodes_by_block) > 0, (
+                    f"catalogue entry {entry.key!r} produced no compiled nodes"
+                )

@@ -293,7 +293,7 @@ def compile_document(
         # is a circular import at package-load time, not merely a lint warning.
         from reporting_agent.compile.sections import expand_sections
 
-        specs = expand_sections(definition, catalogue=catalogue, view=view)
+        specs = expand_sections(definition, catalogue=catalogue, view=view, messages=messages)
     else:
         specs = _block_specs(definition)
 

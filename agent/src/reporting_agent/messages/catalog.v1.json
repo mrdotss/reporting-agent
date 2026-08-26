@@ -317,6 +317,82 @@
       "en": "Infrastructure utilization report",
       "id": "Laporan utilisasi infrastruktur"
     },
+    "doc.section.app_service_and_storage": {
+      "en": "App Service and Storage",
+      "id": "App Service dan Penyimpanan"
+    },
+    "doc.section.azure_subscription": {
+      "en": "Azure Subscription Overview",
+      "id": "Gambaran Umum Langganan Azure"
+    },
+    "doc.section.backup_report": {
+      "en": "Backup Report",
+      "id": "Laporan Pencadangan"
+    },
+    "doc.section.coverage_and_verification": {
+      "en": "Coverage and Verification",
+      "id": "Cakupan dan Verifikasi"
+    },
+    "doc.section.database_utilization": {
+      "en": "Database Utilization",
+      "id": "Utilisasi Basis Data"
+    },
+    "doc.section.fleet_summary": {
+      "en": "Fleet Summary",
+      "id": "Ringkasan Armada"
+    },
+    "doc.section.historical_vm_utilization": {
+      "en": "Historical Utilization Trend",
+      "id": "Tren Utilisasi Historis"
+    },
+    "doc.section.incident_report": {
+      "en": "Incident Report",
+      "id": "Laporan Insiden"
+    },
+    "doc.section.network_security_groups": {
+      "en": "Network Security Groups",
+      "id": "Grup Keamanan Jaringan"
+    },
+    "doc.section.public_ip_addresses": {
+      "en": "Public IP Addresses",
+      "id": "Alamat IP Publik"
+    },
+    "doc.section.recommendations": {
+      "en": "Recommendations",
+      "id": "Rekomendasi"
+    },
+    "doc.section.reservations": {
+      "en": "Reserved Instances",
+      "id": "Instans Cadangan"
+    },
+    "doc.section.resource_groups": {
+      "en": "Resource Groups",
+      "id": "Grup Sumber Daya"
+    },
+    "doc.section.virtual_machines": {
+      "en": "Virtual Machines",
+      "id": "Mesin Virtual"
+    },
+    "doc.section.virtual_machines.disks": {
+      "en": "Disks",
+      "id": "Disk"
+    },
+    "doc.section.virtual_machines.inventory": {
+      "en": "Inventory",
+      "id": "Inventaris"
+    },
+    "doc.section.virtual_machines.network": {
+      "en": "Network Configuration",
+      "id": "Konfigurasi Jaringan"
+    },
+    "doc.section.virtual_network": {
+      "en": "Virtual Networks",
+      "id": "Jaringan Virtual"
+    },
+    "doc.section.vm_utilization": {
+      "en": "Virtual Machine Utilization",
+      "id": "Utilisasi Mesin Virtual"
+    },
     "doc.table.basis": {
       "en": "Basis",
       "id": "Dasar"
