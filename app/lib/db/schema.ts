@@ -1082,6 +1082,76 @@ export const subscriptionScans = pgTable(
   ]
 )
 
+/**
+ * One row per (template version, section) — the resources that section's rule
+ * matched at PUBLISH time, against the scan the consultant was looking at while
+ * authoring it (task 3.10, Requirement 9.5).
+ *
+ * **Deliberately kept out of `report_template_versions.definition`.**
+ * `definition_sha256` is compared head-to-head across both languages' validators
+ * and pinned per fixture — putting customer resource ids inside the hashed
+ * definition would make the digest a function of the estate the consultant
+ * happened to be looking at, rather than of the profile's own content. Two
+ * profiles with identical sections authored against different scans (different
+ * resource estates, different `scan_id`) must produce the SAME digest, and this
+ * table is what makes that possible: the digest is computed from `definition`
+ * alone, which never carries a resource id, a scan id, or a match count.
+ *
+ * **`unique(template_version_id, section_id)` is a pair, not a single key,
+ * because `insertVersion` may return an EXISTING version** when the submitted
+ * digest equals the current highest version's — a save that changed nothing
+ * creates no new version row (Requirement 9.5's other half). The write here
+ * must therefore be an upsert keyed on that pair, not a bare insert: republishing
+ * an unchanged definition against a freshly re-scanned estate still needs its
+ * authored-matches rows to reflect the current scan, even though no new version
+ * was created to hold them.
+ *
+ * **Not projected to the browser.** `matched_resource_ids` is real customer
+ * resource ids; nothing under `lib/db/views.ts` reads this table, and the
+ * projection guard covers it by the same mechanism it covers every
+ * secret-bearing table — see `structure.md`'s "one browser-safe projection type
+ * per secret-bearing table" rule.
+ */
+export const reportProfileAuthoredMatches = pgTable(
+  "report_profile_authored_matches",
+  {
+    id: text("id").primaryKey(),
+
+    templateVersionId: text("template_version_id")
+      .notNull()
+      .references(() => reportTemplateVersions.id, { onDelete: "cascade" }),
+
+    scanId: text("scan_id")
+      .notNull()
+      .references(() => subscriptionScans.id),
+
+    /** The authored section's own `id` field within `definition.sections` —
+     * not a database foreign key, since a section is not a row anywhere. */
+    sectionId: text("section_id").notNull(),
+
+    matchedCount: integer("matched_count").notNull(),
+
+    /** The full resource id list the section's rule matched, at the scan named
+     * above. `jsonb`, matching every other resource-shaped array in this
+     * schema (`typeCounts`, `resourceGroups`, …) rather than a second-table
+     * normalization this data has no other consumer to justify. */
+    matchedResourceIds: jsonb("matched_resource_ids").notNull(),
+
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    unique("report_profile_authored_matches_version_section_uq").on(
+      table.templateVersionId,
+      table.sectionId
+    ),
+    index("report_profile_authored_matches_scan_id_idx").on(table.scanId),
+  ]
+)
+
 // --- Row types --------------------------------------------------------------
 
 /**

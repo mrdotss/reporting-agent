@@ -923,6 +923,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "brands",
       "connected_subscriptions",
       "login_attempts",
+      "report_profile_authored_matches",
       "report_runs",
       "report_template_versions",
       "report_templates",

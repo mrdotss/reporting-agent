@@ -71,6 +71,13 @@
       "when": 1787759624508,
       "tag": "0009_handy_blade",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1787786627910,
+      "tag": "0010_great_toad",
+      "breakpoints": true
     }
   ]
 }

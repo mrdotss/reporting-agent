@@ -123,20 +123,23 @@ describe("the migration applies", () => {
     expect(db.appliedMigrations().length).toBeGreaterThan(0)
   })
 
-  test("the eight tables exist in the scratch schema", async () => {
+  test("every table declared in schema.ts exists in the scratch schema", async () => {
     const result = await db.query<{ tablename: string }>(
       `SELECT tablename FROM pg_tables WHERE schemaname = $1 ORDER BY tablename`,
       [db.schemaName]
     )
 
     expect(result.rows.map(({ tablename }) => tablename)).toEqual([
+      "brands",
       "connected_subscriptions",
       "login_attempts",
+      "report_profile_authored_matches",
       "report_runs",
       "report_template_versions",
       "report_templates",
       "report_verifications",
       "sessions",
+      "subscription_scans",
       "users",
     ])
   })
@@ -364,6 +367,7 @@ describe("the declared constraints and indexes exist", () => {
 
     expect(names).toEqual([
       "connected_subscriptions_user_id_subscription_id_uq",
+      "report_profile_authored_matches_version_section_uq",
       "report_runs_dedupe_key_unique",
       "report_template_versions_template_id_version_uq",
       "report_templates_user_id_seeded_starter_key_uq",
