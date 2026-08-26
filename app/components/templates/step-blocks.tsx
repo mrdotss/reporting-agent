@@ -13,7 +13,7 @@ import type { TemplateDefinition } from "@/lib/templates/definition"
  * 11.10), and a consultant looking at an empty canvas has no way to know which
  * of those they are in.
  *
- * Neither judgement is made here — `lib/templates/wizard.ts` makes both — so an
+ * Neither judgement is made here — `lib/profiles/wizard.ts` makes both — so an
  * empty document is described rather than styled as an error.
  */
 export function StepBlocks({

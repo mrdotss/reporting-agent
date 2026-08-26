@@ -5,7 +5,7 @@ import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react"
 import { PaperPreview } from "@/components/templates/paper-preview"
 import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import { blockCount, type CompletionProblem } from "@/lib/templates/wizard"
+import { sectionCount, type CompletionProblem } from "@/lib/profiles/wizard"
 
 /**
  * Step 7 — preview and completion (Requirements 11.1, 11.5, 11.10).
@@ -58,7 +58,7 @@ export function StepPreview({
   selectedSubscriptionId: string | null
   hasCompletedRun: boolean
 }>) {
-  const blocks = blockCount(definition)
+  const sections = sectionCount(definition)
   const ready = problems.length === 0
 
   return (
@@ -99,17 +99,12 @@ export function StepPreview({
       {ready ? null : (
         <ul data-slot="completion-problems" className="flex flex-col gap-2">
           {problems.map((problem, index) =>
-            problem.kind === "no_blocks" ? (
+            problem.kind === "no_sections" ? (
               <li
-                key="no-blocks"
+                key="no-content"
                 className="rounded-lg border border-destructive/40 px-3 py-2 text-sm text-destructive"
               >
-                {/*
-                  Requirement 11.10 — stated as a sentence, not as a field path.
-                  "blocks — array must contain at least 1 element" is true and
-                  tells a consultant nothing about what a report is.
-                */}
-                A report needs at least one block. Add one on step 5.
+                A report needs at least one section. Add one on step 2.
               </li>
             ) : (
               <li
@@ -143,8 +138,8 @@ export function StepPreview({
 
       <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
         <div className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">Blocks</dt>
-          <dd className="font-mono tabular-nums">{blocks}</dd>
+          <dt className="text-xs text-muted-foreground">Sections</dt>
+          <dd className="font-mono tabular-nums">{sections}</dd>
         </div>
 
         <div className="flex flex-col">
@@ -175,8 +170,8 @@ export function StepPreview({
       <PaperPreview
         html={previewHtml}
         emptyReason={
-          blocks === 0
-            ? "Nothing to preview yet. Compose at least one block on step 5."
+          sections === 0
+            ? "Nothing to preview yet. Add at least one section on step 2."
             : "Render a real preview below and the composed page appears here."
         }
       />

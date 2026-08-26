@@ -1628,7 +1628,6 @@ const SPEC_PURE_MODULES = [
   path.join("lib", "templates", "scope-union.ts"),
   path.join("lib", "templates", "starters.ts"),
   path.join("lib", "templates", "version.ts"),
-  path.join("lib", "templates", "wizard.ts"),
   path.join("lib", "verifications", "result.ts"),
 ] as const
 

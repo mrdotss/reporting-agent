@@ -9,7 +9,6 @@ import {
   FloppyDiskIcon,
 } from "@phosphor-icons/react"
 
-import { StepBlocks } from "@/components/templates/step-blocks"
 import {
   StepIdentity,
   type IdentitySaveResult,
@@ -37,7 +36,7 @@ import {
   WIZARD_STEPS,
   WIZARD_STEP_COUNT,
   type WizardStep,
-} from "@/lib/templates/wizard"
+} from "@/lib/profiles/wizard"
 
 /**
  * The seven-step wizard, and the **only** `"use client"` boundary on this screen
@@ -661,11 +660,11 @@ function renderStep({
           onRetryRename={retryRename}
         />
       )
-    case "scope":
+    case "sections":
       return <StepScope definition={definition} onChange={setDefinition} />
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
-    case "metrics":
+    case "document":
       return (
         <StepMetrics
           definition={definition}
@@ -673,8 +672,6 @@ function renderStep({
           catalog={catalog}
         />
       )
-    case "blocks":
-      return <StepBlocks definition={definition} onChange={setDefinition} />
     case "preview":
       return (
         <StepPreview

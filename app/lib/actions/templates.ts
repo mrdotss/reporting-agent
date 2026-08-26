@@ -107,7 +107,50 @@ export async function saveDraft(
   return await store.saveDraft(userId, id, draftDefinition)
 }
 
-// --- Publishing a version ----------------------------------------------------
+// --- Provider immutability (Requirement 3.6) ---------------------------------
+
+/**
+ * Whether `incoming`'s `provider` conflicts with `existingDefinition`'s, and if so,
+ * the `FieldIssue` to refuse the publish with. `null` when there is no conflict.
+ *
+ * **Pure**, like {@link resolveDesignFromBrand}, and for the same reason: the
+ * publish path around it (`publishTemplateVersion` → `store.readLatestVersion`) only
+ * runs against a real Postgres, so a test driving the whole path would not run in
+ * ordinary development. This function is the actual decision; the caller only reads
+ * the existing version and calls it.
+ *
+ * Enforced only when BOTH sides declare a `provider` — v1/v2 definitions have no
+ * such field, so a v1/v2 template (or a v3 template with no version yet) never
+ * trips this check. `existingDefinition` is `null` for a template with no version
+ * yet, which is also never a conflict: there is nothing to have locked in.
+ */
+export function checkProviderImmutable(
+  existingDefinition: unknown,
+  incoming: unknown
+): FieldIssue | null {
+  if (typeof existingDefinition !== "object" || existingDefinition === null) {
+    return null
+  }
+  if (typeof incoming !== "object" || incoming === null) return null
+
+  const existingProvider = (existingDefinition as Record<string, unknown>)
+    .provider
+  const incomingProvider = (incoming as Record<string, unknown>).provider
+
+  if (existingProvider === undefined || incomingProvider === undefined) {
+    return null
+  }
+  if (existingProvider === incomingProvider) return null
+
+  return {
+    path: ["provider"],
+    message:
+      `Provider cannot be changed once a version exists. ` +
+      `This profile's provider is locked to "${String(existingProvider)}".`,
+  }
+}
+
+
 
 /**
  * Validate, canonicalize, and insert the next immutable version — or return the
@@ -160,6 +203,20 @@ export async function publishTemplateVersion(
     METRIC_CATALOG
   )
   if (catalogIssues.length > 0) throw new TemplateInvalidError(catalogIssues)
+
+  // --- Provider immutability (Requirement 3.6) ------------------------------
+  // A profile's provider determines which catalogues (metrics, facts, sections)
+  // apply to it and which subscription connections are eligible. Changing it after
+  // a version exists would make the stored version's sections reference a different
+  // provider's catalogue, breaking the contract that a pinned version plus its
+  // snapshot reproduces the delivered document. So: once a version exists, the
+  // provider field is locked to whatever the first version declared.
+  const existingVersion = await store.readLatestVersion(userId, templateId)
+  const providerIssue = checkProviderImmutable(
+    existingVersion?.definition ?? null,
+    definition
+  )
+  if (providerIssue !== null) throw new TemplateInvalidError([providerIssue])
 
   // --- Resolve Brand into definition.design (Requirement 2.6, 2.7) ---------
   // A saved version must be SELF-CONTAINED against later Brand edits: the Brand
