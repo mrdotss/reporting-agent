@@ -100,12 +100,12 @@ from reporting_agent.collect.pipeline import (
     resolve_run_plan,
     run_collection,
 )
-from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.blocks.base import HistoricalSelectionKey
 from reporting_agent.compile.historical import (
     PriorRunCandidate,
     Selection,
 )
+from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import (
     AgentError,
     CompileFailedError,
@@ -313,6 +313,8 @@ async def run_generate_report(
         now=now,
         historical_selections=historical_selections or None,
         historical_source=historical_source,
+        front_matter=_resolve_front_matter_config(definition),
+        run_facts=_resolve_run_facts(payload, definition, run_id=plan.run_id),
     ):
         yield event
 
@@ -626,6 +628,176 @@ async def select_historical_runs(
 # --------------------------------------------------------------------------- #
 
 
+def _resolve_front_matter_config(
+    definition: Mapping[str, PlainData],
+) -> object | None:
+    """Build a `FrontMatterConfig` from the definition's `front_matter` section.
+
+    Returns `None` for v1 definitions (no `front_matter` key), so the render pipeline
+    correctly omits front matter for pre-v2 templates.
+    """
+    from reporting_agent.render.front_matter import (
+        ApproverEntry,
+        CoverConfig,
+        DocumentControlConfig,
+        FrontMatterConfig,
+        TocConfig,
+    )
+
+    fm_raw = definition.get("front_matter")
+    if not isinstance(fm_raw, Mapping):
+        return None
+
+    # Cover
+    #
+    # `design.cover_page` is Req 13.9's switch and it is **ANDed** into the cover's own
+    # `enabled` flag here, because `emit_front_matter` gates the cover on
+    # `front_matter.cover.enabled` alone and takes no `design`. Resolving it at this
+    # boundary is what makes "cover_page false emits no cover content and no leading
+    # blank page" true without the emitter having to learn about design settings.
+    #
+    # It is an AND, not a replacement: a template may switch its cover off in the
+    # front-matter section too, and either switch alone is enough to suppress it. The
+    # cover *configuration* stays in the definition either way — the requirement is that
+    # nothing is emitted, not that the config is discarded — and the document control page
+    # and the table of contents are untouched, because disabling the cover does not
+    # disable the front matter.
+    design_raw = definition.get("design")
+    cover_page_enabled = True
+    if isinstance(design_raw, Mapping):
+        cover_page_enabled = bool(design_raw.get("cover_page", True))
+
+    cover_raw = fm_raw.get("cover")
+    cover = CoverConfig(enabled=cover_page_enabled)
+    if isinstance(cover_raw, Mapping):
+        cover = CoverConfig(
+            enabled=bool(cover_raw.get("enabled", True)) and cover_page_enabled,
+            logo=str(cover_raw["logo"]) if cover_raw.get("logo") else None,
+            contact_block=str(cover_raw["contact_block"]) if cover_raw.get("contact_block") else None,
+            subtitle=str(cover_raw["subtitle"]) if cover_raw.get("subtitle") else None,
+        )
+
+    # Document control
+    dc_raw = fm_raw.get("document_control")
+    dc = DocumentControlConfig()
+    if isinstance(dc_raw, Mapping):
+        approvers_raw = dc_raw.get("approvers")
+        approvers: tuple[ApproverEntry, ...] = ()
+        if isinstance(approvers_raw, (list, tuple)):
+            entries: list[ApproverEntry] = []
+            for item in approvers_raw:
+                if isinstance(item, Mapping):
+                    entries.append(ApproverEntry(
+                        role=str(item.get("role") or ""),
+                        name=str(item.get("name") or ""),
+                        title=str(item.get("title") or ""),
+                    ))
+            approvers = tuple(entries)
+        dc = DocumentControlConfig(
+            document_name=str(dc_raw["document_name"]) if dc_raw.get("document_name") else None,
+            document_number_pattern=str(dc_raw["document_number_pattern"]) if dc_raw.get("document_number_pattern") else None,
+            confidentiality_notice_id=str(dc_raw["confidentiality_notice_id"]) if dc_raw.get("confidentiality_notice_id") else None,
+            distribution=str(dc_raw["distribution"]) if dc_raw.get("distribution") else None,
+            approvers=approvers,
+        )
+
+    # TOC
+    toc_raw = fm_raw.get("toc")
+    toc = TocConfig()
+    if isinstance(toc_raw, Mapping):
+        toc = TocConfig(
+            enabled=bool(toc_raw.get("enabled", True)),
+            max_level=int(toc_raw.get("max_level", 3)),
+        )
+
+    return FrontMatterConfig(cover=cover, document_control=dc, toc=toc)
+
+
+def _resolve_run_facts(
+    payload: Mapping[str, PlainData],
+    definition: Mapping[str, PlainData],
+    *,
+    run_id: str,
+) -> object | None:
+    """Build a `RunFacts` from the payload's per-run values.
+
+    Returns `None` when the definition has no `front_matter` section (v1), because there
+    is no front matter to render.
+    """
+    from reporting_agent.render.front_matter import RevisionHistoryRow, RunFacts
+
+    fm_raw = definition.get("front_matter")
+    if not isinstance(fm_raw, Mapping):
+        return None
+
+    customer_name = str(payload.get("customer_name") or "")
+
+    # report_title from identity
+    identity = definition.get("identity")
+    report_title = ""
+    if isinstance(identity, Mapping):
+        title = identity.get("report_title") or identity.get("name")
+        if isinstance(title, str):
+            report_title = title
+
+    # template_id from identity
+    template_id = ""
+    if isinstance(identity, Mapping):
+        tid = identity.get("id") or identity.get("name") or ""
+        template_id = str(tid) if tid else ""
+    if not template_id:
+        template_id = str(payload.get("template_version_id") or run_id)
+
+    # period info
+    period_raw = payload.get("period")
+    period_start = ""
+    if isinstance(period_raw, Mapping):
+        period_start = str(period_raw.get("start") or "")
+    elif isinstance(definition.get("period"), Mapping):
+        period_start = str(definition["period"].get("start") or "")  # type: ignore[union-attr]
+
+    period_start_year = ""
+    period_start_month = ""
+    if period_start and len(period_start) >= 7:
+        # "2026-07-01" -> year="2026", month="07"
+        parts = period_start.split("-")
+        if len(parts) >= 2:
+            period_start_year = parts[0]
+            period_start_month = parts[1]
+
+    # period_display from payload or derived
+    period_display = str(payload.get("period_display") or "")
+    if not period_display and period_start:
+        # Derive a human-readable display from the start date.
+        try:
+            from datetime import date as _date
+            d = _date.fromisoformat(period_start)
+            period_display = d.strftime("%B %Y")
+        except (ValueError, TypeError):
+            period_display = period_start
+
+    # revision_history
+    revision_history: RevisionHistoryRow | None = None
+    rh_raw = payload.get("revision_history_row")
+    if isinstance(rh_raw, Mapping):
+        revision_history = RevisionHistoryRow(
+            revision=str(rh_raw.get("revision") or ""),
+            note=str(rh_raw.get("note") or ""),
+            author=str(rh_raw.get("author") or ""),
+        )
+
+    return RunFacts(
+        run_id=run_id,
+        template_id=template_id,
+        customer_name=customer_name,
+        period_display=period_display,
+        report_title=report_title,
+        revision_history=revision_history,
+        period_start_year=period_start_year,
+        period_start_month=period_start_month,
+    )
+
+
 def _historical_verify_inputs(
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None,
 ) -> Mapping[str, historical_pass.HistoricalRunInfo]:
@@ -672,6 +844,8 @@ async def _document_phases(
     now: Callable[[], datetime],
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     historical_source: _HistoricalSourceFromStore | None = None,
+    front_matter: object | None = None,
+    run_facts: object | None = None,
 ) -> AsyncIterator[Event]:
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
@@ -735,9 +909,45 @@ async def _document_phases(
     )
     yield render_step
     rendered = await asyncio.to_thread(
-        render_document, compiled.document, ledger=compiled.ledger, design=design, messages=messages
+        render_document, compiled.document, ledger=compiled.ledger, design=design, messages=messages,
+        front_matter=front_matter, run=run_facts,
     )
     converted = await asyncio.to_thread(convert_to_pdf, rendered.docx_bytes)
+
+    # --- TOC pass 2 (Req 14.3, 14.4) -----------------------------------------------
+    # Where the two-pass approach is adopted and front matter emitted a TOC, measure
+    # actual page positions and re-emit with real page numbers. The final pass-2 bytes
+    # become the delivered artifact and the input to verification.
+    from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document
+    if should_emit_toc() and front_matter is not None:
+        from reporting_agent.render.front_matter import FrontMatterConfig
+        if isinstance(front_matter, FrontMatterConfig) and front_matter.toc.enabled:
+            from reporting_agent.render.toc import apply_toc_page_numbers
+            headings = toc_entries_from_document(compiled.document)
+            heading_texts = tuple(h[0] for h in headings)
+            if heading_texts:
+                final_docx, final_pdf = await asyncio.to_thread(
+                    apply_toc_page_numbers, rendered.docx_bytes, headings=heading_texts,
+                )
+                # Replace rendered and converted with the pass-2 artifacts so that
+                # docx_sha256 / pdf_sha256 are the pass-2 digests.
+                rendered = type(rendered)(
+                    docx_bytes=final_docx,
+                    table_identities=rendered.table_identities,
+                    advisories=rendered.advisories,
+                    figures_emitted=rendered.figures_emitted,
+                    text_facts_emitted=rendered.text_facts_emitted,
+                    chart_hashes=rendered.chart_hashes,
+                    chart_sidecars=rendered.chart_sidecars,
+                )
+                from reporting_agent.render.pdf import ConversionOutcome, digest_of
+                converted = ConversionOutcome(
+                    pdf_bytes=final_pdf,
+                    docx_sha256=digest_of(final_docx),
+                    pdf_sha256=digest_of(final_pdf),
+                    page_count=converted.page_count,
+                )
+
     yield steps.end(render_step["id"])
 
     # --- verifying ------------------------------------------------------------------
@@ -758,6 +968,8 @@ async def _document_phases(
         now=now,
         messages=messages,
         historical=_historical_verify_inputs(historical_selections),
+        front_matter=front_matter,
+        run_facts=run_facts,
     )
     yield steps.end(verify_step["id"])
 
@@ -865,6 +1077,8 @@ async def _verify(
     now: Callable[[], datetime],
     messages: Messages,
     historical: Mapping[str, historical_pass.HistoricalRunInfo] | None = None,
+    front_matter: object | None = None,
+    run_facts: object | None = None,
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -934,6 +1148,8 @@ async def _verify(
             catalog_scales=None,
             messages=messages,
             historical=historical or {},
+            front_matter=front_matter,
+            run_facts=run_facts,
         )
     )
 
@@ -1354,6 +1570,8 @@ async def run_verify_report(
         store=store,
         actor_id=actor_id,
         historical_selections=hist_selections,
+        front_matter=_resolve_front_matter_config(definition),
+        run_facts=_resolve_run_facts(payload, definition, run_id=run_id),
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)
     yield _verification_event(result)
@@ -1482,6 +1700,8 @@ async def _verify_stored(
     store: ObjectStore,
     actor_id: str,
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
+    front_matter: object | None = None,
+    run_facts: object | None = None,
 ) -> Mapping[str, Any]:
     from docx import Document as open_docx
 
@@ -1536,6 +1756,8 @@ async def _verify_stored(
             drift_seed=str(snapshot.get("snapshot_id") or ""),
             messages=_msgs,
             historical=_historical_verify_inputs(historical_selections),
+            front_matter=front_matter,
+            run_facts=run_facts,
         )
     )
 
@@ -1670,12 +1892,32 @@ async def run_render_preview(
 
     # `preview=True` is what puts the per-page notice in against each theme's
     # `PreviewNotice` style, so the artifact says what it is even after it leaves the app.
+    #
+    # ## The preview carries NO front matter, and the requirement decides that
+    #
+    # `design-system.md` calls "Render real preview" the only surface allowed to imply
+    # "this is what you will get", which argues for emitting the cover, the document
+    # control page and the table of contents here too. It cannot: a preview is rendered
+    # from a template and a snapshot with **no run**, so there is no `customer_name`, no
+    # revision-history row and no period to print — and Req 13.15 is explicit that an
+    # absent per-run value is `RENDER_FAILED` with **no substituted placeholder in its
+    # position**, because "a cover carrying invented copy is a document that cannot be
+    # signed". Emitting front matter here would therefore either fail every v2 preview or
+    # require inventing exactly the copy that requirement forbids.
+    #
+    # So the preview is honest about being a preview of the *content*: the notice on every
+    # page already says the artifact is not the deliverable, and the front matter it omits
+    # is the part that has no per-run truth to show yet. The delivered path
+    # (`_document_phases`) is where front matter is emitted, and it is the only path that
+    # has the values to emit it from.
     rendered = render_document(
         compiled.document,
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(definition.get("design")),
         preview=True,
         messages=preview_messages,
+        front_matter=None,
+        run=None,
     )
     converted = convert_to_pdf(rendered.docx_bytes)
     tags = owner_tags(actor_id)

@@ -36,9 +36,9 @@ after conversion to measure actual positions and fill in page numbers.
 
 ## Call site in render/docx.py
 
-Nobody calls ``emit_front_matter`` yet — wiring it into the render pipeline is a later
-task. The function is importable, emits real content into the document it is given, and
-is tested by handing it a real ``docx.Document()``.
+``render_document`` calls ``emit_front_matter`` after ``_apply_page_size`` and the preview
+notice, before the first content block. ``front_matter=None`` (v1 definitions, thumbnails)
+skips the call entirely.
 """
 
 from __future__ import annotations
@@ -306,7 +306,7 @@ def emit_front_matter(
     # number. Pass 2 (apply_toc_page_numbers in render/toc.py) operates on the serialized
     # docx bytes after conversion to measure actual page positions, then re-emits with
     # the measured numbers as literal text.
-    from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document, TOC_LABEL_ID
+    from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document
     if should_emit_toc() and front_matter.toc.enabled:
         _emit_toc(
             document,
@@ -549,8 +549,8 @@ def _emit_toc(
 
     Followed by a page break so content starts on a fresh page.
     """
-    from reporting_agent.render.toc import TOC_LABEL_ID
     from reporting_agent.render.themes import TOC_ENTRY_STYLE
+    from reporting_agent.render.toc import TOC_LABEL_ID
 
     # Section heading — styled Title so it doesn't appear in its own TOC.
     toc_label = messages.text(TOC_LABEL_ID)

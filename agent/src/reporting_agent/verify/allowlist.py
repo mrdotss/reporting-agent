@@ -227,6 +227,8 @@ def derive_allowlist(
     *,
     subscription_display_name: str = "",
     catalog_scales: Mapping[str, int] | None = None,
+    front_matter: object | None = None,
+    run_facts: object | None = None,
 ) -> frozenset[str]:
     """Compile and render `definition` with no data, and return its numeric chrome.
 
@@ -271,6 +273,8 @@ def derive_allowlist(
             design=DesignSettings.from_plain(definition.get("design"), language=_language),
             messages=messages,
             preview=False,
+            front_matter=front_matter,
+            run=run_facts,
         )
     except VerificationFailedError:
         raise

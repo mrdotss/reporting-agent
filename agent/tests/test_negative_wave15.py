@@ -737,8 +737,6 @@ def test_15_10_toc_naming_wrong_page() -> None:
     from reporting_agent.verify.tokens import ExtractedParagraph
     from unittest.mock import patch
     from docx import Document as new_docx
-    from docx.oxml.ns import qn as _qn
-    from docx.oxml import OxmlElement
 
     # Build a synthetic scenario: a PDF with 8+ pages where the TOC says heading
     # "Infrastructure Overview" is on page 3, but it actually appears on page 5.
@@ -771,23 +769,21 @@ def test_15_10_toc_naming_wrong_page() -> None:
         ExtractedParagraph(text=pages[0], part="document", ordinal=1, block_id=None),
     ]
 
-    # Create a document with headings at style "Heading 1" (w:pStyle val="Heading 1")
-    # Note: python-docx's add_heading() uses "Heading1" without space, but the real
-    # renderer uses "Heading 1" with space, which matches _TOC_HEADING_STYLES.
+    # Headings applied the way the renderer applies them — by **display name** through
+    # python-docx, which writes the styleId ("Heading1", no space) into `w:pStyle/@w:val`.
+    #
+    # This test used to hand-build the XML with `w:val="Heading 1"` (with a space) and
+    # carried a comment claiming that was "what the real renderer uses". That was false:
+    # `render/docx.py` styles a heading by display name and python-docx resolves it to the
+    # styleId, so no document this product produces has ever carried `w:val="Heading 1"`.
+    # The old fixture matched `_extract_headings`'s equally wrong comparison against the
+    # display-name set, so the two agreed with each other and this test passed — while the
+    # `toc` gate was vacuous for every real document and `toc_entries_checked` sat at 0.
+    # The test was protecting the defect rather than catching it. Building the document
+    # through the public API is what stops that recurring.
     doc = new_docx()
     for heading_text in [HEADING, "Resource Utilization", "Appendix"]:
-        p = OxmlElement("w:p")
-        ppr = OxmlElement("w:pPr")
-        pstyle = OxmlElement("w:pStyle")
-        pstyle.set(_qn("w:val"), "Heading 1")
-        ppr.append(pstyle)
-        p.append(ppr)
-        r = OxmlElement("w:r")
-        t = OxmlElement("w:t")
-        t.text = heading_text
-        r.append(t)
-        p.append(r)
-        doc.element.body.append(p)
+        doc.add_paragraph(heading_text, style="Heading 1")
 
     # Patch pdf_page_texts to return our synthetic pages
     with patch(

@@ -630,6 +630,8 @@ def render_document(
     design: DesignSettings,
     messages: Messages,
     preview: bool = False,
+    front_matter: object | None = None,
+    run: object | None = None,
 ) -> RenderOutcome:
     """Emit `compiled` as `.docx` bytes, once (Req 20.1, 20.11).
 
@@ -665,6 +667,26 @@ def render_document(
 
     if preview:
         _emit_preview_notice(document, emitter, messages=messages)
+
+    # --- front matter (cover, document control, TOC) — Req 13.4 -------------------
+    # Emitted after _apply_page_size and preview notice, before the first content block.
+    # `front_matter=None` means no front matter (v1 definitions, thumbnails).
+    if front_matter is not None and run is not None:
+        from reporting_agent.render.front_matter import (
+            FrontMatterConfig,
+            RunFacts,
+            emit_front_matter,
+        )
+
+        if isinstance(front_matter, FrontMatterConfig) and isinstance(run, RunFacts):
+            emit_front_matter(
+                document,
+                front_matter=front_matter,
+                run=run,
+                messages=messages,
+                cursor=compiled,
+                ledger=ledger,
+            )
 
     for ordinal, block in enumerate(compiled.blocks):
         try:

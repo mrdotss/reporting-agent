@@ -124,7 +124,7 @@ VALID_FRONT_MATTER: dict[str, Any] = {
     "document_control": {
         "document_name": "Infrastructure Utilization Report",
         "document_number_pattern": "ACME-{template}-{year}{month}-{run}",
-        "confidentiality_notice_id": "doc.confidentiality.internal",
+        "confidentiality_notice_id": "doc.front_matter.confidentiality",
         "distribution": "Acme platform team; Acme finance",
         "approvers": [
             {"role": "author", "name": "R. Prakoso", "title": "Consultant"},
@@ -189,7 +189,18 @@ def v2_definition() -> dict[str, Any]:
         blocks=[
             df.block("h", "heading", {"text": "Utilization", "level": 1}),
             df.block("res", "resource_table", {"columns": [df.CPU_AVG, df.CPU_MAX]}),
+            # Two further headings, so the emitted TOC carries three entries.
+            #
+            # Not decoration: `verify/toc.py::_toc_page_indices` identifies a TOC page as
+            # one where **at least two** declared headings appear, so a single-heading
+            # document produces no recognisable TOC page, `check_toc` names no page for any
+            # heading, `toc_entries_checked` stays 0 and `proven_toc_numerals` stays empty
+            # — which then leaves the page number pass 2 writes into the TOC unmasked and
+            # fails the run on `unmatched_prose_token`. A one-heading fixture cannot
+            # exercise the TOC gate at all; it can only make it look vacuously green.
+            df.block("h2", "heading", {"text": "Coverage and gaps", "level": 1}),
             df.block("gaps", "gaps_and_coverage", {}),
+            df.block("h3", "heading", {"text": "Verification record", "level": 1}),
             df.block("rec", "verification_record", {}),
             df.block(
                 "trend",
@@ -206,6 +217,11 @@ def v2_definition() -> dict[str, Any]:
     # Raise to v2.
     base["schema_version"] = 2
     base["front_matter"] = copy.deepcopy(VALID_FRONT_MATTER)
+    # `pipeline_harness` defaults `cover_page` to False, which was harmless while nothing
+    # emitted a cover. A v2 template's whole point is the front matter, so this fixture
+    # opts in — otherwise the delivered-document assertions below would be checking a
+    # document with two of the three sections and calling that the requirement.
+    base["design"] = {**dict(base["design"]), "cover_page": True}
     base["identity"]["language"] = "en"
     return base
 
@@ -723,32 +739,67 @@ class TestEnqueueValidation:
     def test_missing_customer_name_raises_render_failed(self) -> None:
         """The runtime rejects a v2 definition with missing customer_name at render.
 
-        The *app* rejects at enqueue (task already tested in
-        enqueue-pinning.integration.test.ts). The *agent* rejects at the front-matter
-        render stage: `_require_run_value` raises RENDER_FAILED.
+        Goes through the real render_document → emit_front_matter path, not just the
+        private _require_run_value helper. A real render that has no front matter wired
+        would never reach this assertion — the test failing means the wiring is live.
         """
-        # This is validated by the front_matter renderer. Verify the contract exists.
-        from reporting_agent.render.front_matter import (  # type: ignore[attr-defined]
-            RenderFailedError,
-            _require_run_value,
+        from reporting_agent.compile.ast import Document
+        from reporting_agent.compile.blocks.base import DesignSettings
+        from reporting_agent.compile.figures import FigureLedger
+        from reporting_agent.compile.messages import load_messages
+        from reporting_agent.errors import RenderFailedError
+        from reporting_agent.render.docx import render_document
+        from reporting_agent.render.front_matter import RunFacts
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        defn = v2_definition()
+        fm = _resolve_front_matter_config(defn)
+
+        # RunFacts with EMPTY customer_name — the absent per-run value
+        run_facts = RunFacts(
+            run_id="test", template_id="test", customer_name="",
+            period_display="July 2026", report_title="Test Report",
         )
-        with pytest.raises(RenderFailedError):
-            _require_run_value("", "customer_name")
+        with pytest.raises(RenderFailedError, match="customer_name"):
+            render_document(
+                Document(blocks=[]),
+                ledger=FigureLedger(),
+                design=DesignSettings.from_plain(defn.get("design")),
+                messages=load_messages("en"),
+                front_matter=fm,
+                run=run_facts,
+            )
 
     def test_missing_revision_history_does_not_crash(self) -> None:
-        """revision_history_row=None is allowed (nullable per spec), but customer_name
-        is required for v2 runs."""
-        # The RunFacts dataclass has revision_history as Optional — confirm it accepts None.
+        """revision_history_row=None is allowed (nullable per spec), and the real render
+        produces a document without crashing."""
+        from reporting_agent.compile.ast import Document
+        from reporting_agent.compile.blocks.base import DesignSettings
+        from reporting_agent.compile.figures import FigureLedger
+        from reporting_agent.compile.messages import load_messages
+        from reporting_agent.render.docx import render_document
         from reporting_agent.render.front_matter import RunFacts
-        facts = RunFacts(
-            run_id="test",
-            template_id="test",
-            customer_name="Contoso",
-            period_display="July 2026",
-            report_title="Test Report",
-            revision_history=None,
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        defn = v2_definition()
+        fm = _resolve_front_matter_config(defn)
+
+        run_facts = RunFacts(
+            run_id="test", template_id="test", customer_name="Contoso",
+            period_display="July 2026", report_title="Test Report",
+            revision_history=None, period_start_year="2026", period_start_month="07",
         )
-        assert facts.customer_name == "Contoso"
+        outcome = render_document(
+            Document(blocks=[]),
+            ledger=FigureLedger(),
+            design=DesignSettings.from_plain(defn.get("design")),
+            messages=load_messages("en"),
+            front_matter=fm,
+            run=run_facts,
+        )
+        # The render succeeds and produces a real docx.
+        assert len(outcome.docx_bytes) > 0
+        assert outcome.docx_bytes[:4] == b"PK\x03\x04"
 
 
 # =========================================================================== #
@@ -770,3 +821,151 @@ class TestGateCount:
         assert len(EVENT_TYPES) == 10, (
             f"expected 10 event types, got {len(EVENT_TYPES)}: {list(EVENT_TYPES)}"
         )
+
+
+# =========================================================================== #
+# GROUP 9 — Front matter reaches the delivered document (Req 13.4, 13.9, 14.3)
+# =========================================================================== #
+
+
+def _styles_in_order(blob: bytes) -> list[tuple[str, str]]:
+    """`(style name, text)` for every non-empty paragraph, in document order."""
+    import io
+
+    from docx import Document as OpenDocx
+
+    document = OpenDocx(io.BytesIO(blob))
+    return [
+        (paragraph.style.name, paragraph.text.strip())
+        for paragraph in document.paragraphs
+        if paragraph.text.strip()
+    ]
+
+
+def _render_v2(*, cover_page: bool) -> bytes:
+    """Render a v2 document with front matter, with the cover on or off.
+
+    A direct render rather than a second full walk: Req 13.9 is a property of the
+    emitter, and a 20-second collection would not make the assertion stronger.
+    """
+    import copy
+
+    from reporting_agent.compile.ast import Document
+    from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.figures import FigureLedger
+    from reporting_agent.compile.messages import load_messages
+    from reporting_agent.render.docx import render_document
+    from reporting_agent.render.front_matter import RunFacts
+    from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+    defn = copy.deepcopy(v2_definition())
+    defn["design"] = {**dict(defn["design"]), "cover_page": cover_page}
+
+    # Two headings, because `_emit_toc` lists the compiled document's headings: an empty
+    # document emits a TOC section with no entries, and "the TOC still emits" would then
+    # be asserted against nothing.
+    from reporting_agent.compile.ast import Paragraph, Text
+
+    blocks = tuple(
+        Paragraph(
+            path=("blocks", index),
+            style="Heading 1",
+            inlines=(Text(path=("blocks", index, "inlines", 0), text=label),),
+        )
+        for index, label in enumerate(("Utilization", "Coverage and gaps"))
+    )
+    outcome = render_document(
+        Document(blocks=blocks),
+        ledger=FigureLedger(),
+        design=DesignSettings.from_plain(defn.get("design")),
+        messages=load_messages("en"),
+        front_matter=_resolve_front_matter_config(defn),
+        run=RunFacts(
+            run_id=RUN_ID,
+            template_id="tpl-fixture",
+            customer_name="Contoso Indonesia",
+            period_display="July 2026",
+            report_title="Monthly utilization review",
+            period_start_year="2026",
+            period_start_month="07",
+        ),
+    )
+    return outcome.docx_bytes
+
+
+class TestFrontMatterInTheDeliveredDocument:
+    """The front matter this spec built and never called until now.
+
+    `emit_front_matter` had **zero production callers**: it was implemented, unit-tested
+    against a hand-made `docx.Document()`, and reachable from nothing. No report this
+    product ever produced carried a cover, a document-control page or a table of
+    contents. Task 16.4 claimed to cover it and did not — one of its two tests called the
+    private `_require_run_value` in isolation, the other asserted a dataclass stored its
+    own constructor argument. Both passed against a document that had none.
+    """
+
+    def test_cover_then_document_control_then_toc_precede_every_content_block(
+        self, walked: tuple[V2Walk, list[Event]]
+    ) -> None:
+        """Req 13.4 — the three sections, in that order, before the first block."""
+        walk, _ = walked
+        key = next(k for k in walk.store.keys() if k.endswith("report.docx"))
+        ordered = _styles_in_order(walk.store.get(key).body)
+        styles = [style for style, _text in ordered]
+
+        first_cover = next(i for i, s in enumerate(styles) if s.startswith("Cover"))
+        first_control = styles.index("Document Control")
+        first_toc_entry = styles.index("Toc Entry")
+        # The first content block in the fixture is a `heading` block.
+        first_content = styles.index("Heading 1")
+
+        assert first_cover < first_control < first_toc_entry < first_content, ordered[:20]
+
+    def test_the_toc_entries_carry_measured_page_numbers(
+        self, walked: tuple[V2Walk, list[Event]]
+    ) -> None:
+        """Req 14.3, 14.4 — pass 2 filled real positions, and the gate checked them."""
+        walk, events = walked
+        key = next(k for k in walk.store.keys() if k.endswith("report.docx"))
+        entries = [
+            text
+            for style, text in _styles_in_order(walk.store.get(key).body)
+            if style == "Toc Entry"
+        ]
+
+        assert entries, "no TOC entry paragraph reached the delivered document"
+        # Every entry carries a page number after its tab. Pass 1 emits the heading and a
+        # tab with nothing after it, so this is the assertion that separates the two
+        # passes — and it was false for every entry until `_identify_toc_pages` stopped
+        # misclassifying content pages as part of the TOC.
+        for entry in entries:
+            assert "\t" in entry, entry
+            assert entry.split("\t", 1)[1].strip().isdigit(), entry
+
+        # And the verifier actually checked them. This counter was 0 for the entire life
+        # of the `toc` gate: `_extract_headings` compared an OOXML styleId against a
+        # display name, so it returned no headings and `check_toc` exited early.
+        verification = one(events, "verification")
+        counts = verification.get("counts") or {}
+        assert counts.get("toc_entries_checked") == len(entries), counts
+
+    def test_cover_page_false_drops_the_cover_and_its_leading_blank_page(self) -> None:
+        """Req 13.9 — no cover content and no leading blank page; the rest stays."""
+        with_cover = _styles_in_order(_render_v2(cover_page=True))
+        without = _styles_in_order(_render_v2(cover_page=False))
+
+        assert any(style.startswith("Cover") for style, _ in with_cover)
+        # No cover content at all.
+        assert not any(style.startswith("Cover") for style, _ in without), without[:8]
+
+        # And no leading blank page: the document control page is the first thing in the
+        # document, not preceded by an empty page the cover used to occupy. Asserted on
+        # the *first* paragraph rather than by counting page breaks, because a leading
+        # break is exactly what would push document control onto page 2.
+        assert without[0][0] == "Document Control", without[:5]
+
+        # Disabling the cover does not disable the front matter (the clause this
+        # requirement exists for): both other sections still emit.
+        styles = [style for style, _ in without]
+        assert "Document Control" in styles
+        assert "Toc Entry" in styles

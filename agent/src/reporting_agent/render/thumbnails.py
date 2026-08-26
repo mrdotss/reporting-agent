@@ -352,6 +352,7 @@ def _render_preset(preset: str) -> bytes:
     """
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
+    from reporting_agent.compile.messages import load_messages
     from reporting_agent.compile.snapshot_view import build_snapshot_view
     from reporting_agent.render.docx import render_document
     from reporting_agent.render.pdf import convert_to_pdf
@@ -380,6 +381,12 @@ def _render_preset(preset: str) -> bytes:
         ledger=compiled.ledger,
         design=DesignSettings.from_plain(definition["design"]),
         preview=False,
+        messages=load_messages("en"),
+        # Thumbnails show NO front matter (Req 13.2): they are style swatches for the
+        # 2×2 preset picker, not document previews. A cover page is whitespace plus a
+        # title, which tells a reader nothing about the theme's table and heading styling.
+        front_matter=None,
+        run=None,
     )
 
     return convert_to_pdf(outcome.docx_bytes).pdf_bytes

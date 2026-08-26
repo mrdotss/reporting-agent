@@ -35,8 +35,8 @@ import tempfile
 from collections.abc import Mapping, Sequence
 from typing import Final
 
-from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
 from reporting_agent.errors import VerificationFailedError
+from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
 from reporting_agent.verify.findings import (
     FINDING_TOC_PAGE_MISMATCH,
     Finding,
@@ -55,7 +55,7 @@ _TOC_HEADING_STYLES: Final[frozenset[str]] = frozenset(
 class TocPass:
     """Result of the table-of-contents verification gate."""
 
-    __slots__ = ("findings", "entries_checked", "proven_toc_numerals")
+    __slots__ = ("entries_checked", "findings", "proven_toc_numerals")
 
     def __init__(
         self,
@@ -192,6 +192,29 @@ def check_toc(
 # ---------------------------------------------------------------------------
 
 
+def _heading_style_ids(document: object) -> frozenset[str]:
+    """The **styleIds** of the heading styles, resolved from this document's own styles.
+
+    `_TOC_HEADING_STYLES` holds display *names* ("Heading 1"). The `w:pStyle/@w:val` this
+    module reads is a **styleId** ("Heading1" — OOXML strips the space). Comparing the two
+    directly can never match, which is what made this gate silently vacuous: it returned
+    zero headings for every document, so `check_toc` exited early with
+    `entries_checked=0` and no findings, and nothing noticed because no document carried a
+    table of contents until `emit_front_matter` was wired in.
+
+    Resolved from `document.styles` rather than hardcoded as "Heading1", so a theme that
+    spells its styleId differently still resolves — the display name is the contract the
+    themes and `render/front_matter.py` both use.
+    """
+    ids: set[str] = set()
+    for style in document.styles:  # type: ignore[attr-defined]
+        name = getattr(style, "name", None)
+        style_id = getattr(style, "style_id", None)
+        if isinstance(name, str) and name in _TOC_HEADING_STYLES and isinstance(style_id, str):
+            ids.add(style_id)
+    return frozenset(ids)
+
+
 def _extract_headings(document: object) -> tuple[str, ...]:
     """Extract heading texts at levels 1-3 from the .docx in document order (Req 14.11).
 
@@ -203,6 +226,8 @@ def _extract_headings(document: object) -> tuple[str, ...]:
 
     headings: list[str] = []
     body = document.element.body  # type: ignore[attr-defined]
+    # The styleIds, not the display names — see `_heading_style_ids`.
+    heading_style_ids = _heading_style_ids(document)
     w_p = qn("w:p")
     w_pstyle = qn("w:pStyle")
     w_ppr = qn("w:pPr")
@@ -217,7 +242,7 @@ def _extract_headings(document: object) -> tuple[str, ...]:
         if pstyle is None:
             continue
         style_val = pstyle.get(qn("w:val"), "")
-        if style_val not in _TOC_HEADING_STYLES:
+        if style_val not in heading_style_ids:
             continue
 
         # Extract text runs.

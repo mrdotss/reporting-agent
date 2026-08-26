@@ -398,7 +398,7 @@ class Pipeline:
         )
 
     def payload(self) -> dict[str, Any]:
-        return {
+        body: dict[str, Any] = {
             "command": "generate_report",
             "period": dict(self.period),
             "scope": {
@@ -409,6 +409,30 @@ class Pipeline:
             "definition": self.definition,
             "template_version_id": "tv_01HQZX",
         }
+
+        # The per-run front-matter values a `schema_version >= 2` template requires
+        # (Req 13.7). Added here rather than in each test because they are not optional
+        # for such a template: `emit_front_matter` refuses an absent one with
+        # RENDER_FAILED and no substituted placeholder (Req 13.15), so a v2 harness that
+        # omits them is not testing a v2 run — it is testing a run that cannot render.
+        #
+        # Conditional so a v1 payload is byte-identical to what it always was: v1
+        # templates have no front matter and a run carrying values nothing prints would
+        # be describing a document shape that does not exist.
+        definition = self.definition
+        schema_version = definition.get("schema_version") if isinstance(definition, dict) else None
+        has_front_matter = isinstance(definition, dict) and isinstance(
+            definition.get("front_matter"), dict
+        )
+        if isinstance(schema_version, int) and schema_version >= 2 and has_front_matter:
+            body["customer_name"] = "Contoso Indonesia"
+            body["revision_history_row"] = {
+                "revision": "1.0",
+                "note": "Initial report",
+                "author": "R. Prakoso",
+            }
+
+        return body
 
     def context(self) -> dict[str, Any]:
         return {

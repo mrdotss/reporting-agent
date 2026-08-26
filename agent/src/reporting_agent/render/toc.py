@@ -56,12 +56,11 @@ cheapest first — and one way to ship no table of contents at all:
   as a disabled cover is retained, and `verification.counts.toc_entries_checked` is `0`.
   A section that cannot state a true page number is worth less than no section.
 
-:data:`ADOPTED_APPROACH` is :data:`TOC_APPROACH_NONE` until the evaluation of task 2.3
-has run and recorded a `correct` verdict. It is **not** a placeholder to be optimistically
-overwritten: `none` is a shippable outcome, so a reader cannot tell "not yet evaluated"
-from "evaluated and nothing worked" by looking at this value — that is what
-`agent/evidence/toc/evaluation.json` is for, and why the evidence record carries all
-three verdicts regardless of which one was adopted.
+:data:`ADOPTED_APPROACH` is the first candidate the evaluation recorded a `correct` verdict
+for. It is **not** a placeholder to be optimistically overwritten: a `none` value is a
+shippable outcome, so a reader cannot tell "not yet evaluated" from "evaluated and nothing
+worked" by looking at this value — that is what `agent/evidence/toc/evaluation.json` is for,
+and why the evidence record carries all three verdicts regardless of which one was adopted.
 
 ## Nothing else may spell these strings
 
@@ -195,7 +194,8 @@ def toc_entries_from_document(document: object) -> tuple[tuple[str, int], ...]:
 
     ``level`` is 1, 2 or 3 corresponding to ``Heading 1``, ``Heading 2``, ``Heading 3``.
     """
-    from reporting_agent.compile.ast import Document as CompiledDocument, Paragraph, Text, Figure
+    from reporting_agent.compile.ast import Document as CompiledDocument
+    from reporting_agent.compile.ast import Figure, Paragraph, Text
 
     if not isinstance(document, CompiledDocument):
         return ()
@@ -246,9 +246,6 @@ def apply_toc_page_numbers(
     logic as ``toc_harness._observed_pages``, brought into production for real delivery.
     """
     import io
-    import re
-
-    from docx.enum.text import WD_BREAK
 
     from reporting_agent.render.pdf import convert_to_pdf
     from reporting_agent.render.themes import TOC_ENTRY_STYLE
@@ -295,6 +292,20 @@ def apply_toc_page_numbers(
     w_r = qn("w:r")
     w_tab = qn("w:tab")
 
+    # The **styleId** of the TOC entry style, resolved from the document's own styles.
+    # `TOC_ENTRY_STYLE` is a display *name* ("Toc Entry") — the value `w:pStyle/@w:val`
+    # carries is the styleId ("TocEntry"; OOXML strips the space). Comparing the two
+    # directly matched nothing, so pass 2 walked every paragraph, recognised no TOC entry,
+    # and returned the document unchanged — the page numbers were silently never written.
+    # Invisible until `emit_front_matter` was wired in and something finally emitted a TOC.
+    toc_entry_style_id = TOC_ENTRY_STYLE
+    for style in document.styles:
+        if getattr(style, "name", None) == TOC_ENTRY_STYLE:
+            resolved = getattr(style, "style_id", None)
+            if isinstance(resolved, str) and resolved:
+                toc_entry_style_id = resolved
+            break
+
     # Find TOC entry paragraphs (styled TOC_ENTRY_STYLE) and fill page numbers.
     for p_element in body.iter(w_p):
         ppr = p_element.find(w_ppr)
@@ -304,7 +315,7 @@ def apply_toc_page_numbers(
         if pstyle is None:
             continue
         style_val = pstyle.get(w_val, "")
-        if style_val != TOC_ENTRY_STYLE:
+        if style_val != toc_entry_style_id:
             continue
 
         # Read the heading text from this entry (the runs before the tab).
@@ -355,14 +366,38 @@ def apply_toc_page_numbers(
 def _identify_toc_pages(
     pages: tuple[str, ...], headings: tuple[str, ...]
 ) -> frozenset[int]:
-    """Identify 0-based page indices that are the TOC section."""
+    """Identify 0-based page indices that are the TOC section.
+
+    A TOC page is one where at least two headings appear **followed by a leader run** —
+    the dots or tabs a TOC entry's tab stop renders as. Content pages are excluded by
+    that requirement, because a heading in the body is followed by prose.
+
+    ## Why the leader run is load-bearing
+
+    This used to test `heading in page_text` with a count of two, which misclassified any
+    content page carrying two headings as part of the TOC. Those pages were then skipped
+    by :func:`_find_heading_page`, so a heading that appeared only on skipped pages
+    measured as ``None`` and pass 2 wrote it no page number at all. On a document with
+    short sections that is most headings: the observed symptom was a TOC where only the
+    last entry carried a number, which then failed the verifier's own TOC identification
+    (it needs two numbered entries) and left the one number that *was* written unmasked,
+    failing the run on `unmatched_prose_token`.
+
+    Numbers are deliberately **not** required here, unlike the verifier's
+    `verify/toc.py::_toc_page_indices`: this runs on pass-1 output, which is exactly the
+    state where the entries have leaders and no numbers yet.
+    """
     import re
+
     indices: set[int] = set()
     for index, page_text in enumerate(pages):
         count = 0
         for heading in headings:
-            # A heading followed by optional leader + optional digits.
-            if heading in page_text:
+            # Heading, then a run of leader glyphs — dots, tabs, ellipses, or the
+            # non-breaking spaces some converters emit inside a tab stop.
+            if re.search(
+                re.escape(heading) + r"[.\t\u2026\u00a0]{3,}", page_text
+            ):
                 count += 1
         if count >= 2:
             indices.add(index)

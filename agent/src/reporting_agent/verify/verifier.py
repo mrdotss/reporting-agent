@@ -56,11 +56,11 @@ from reporting_agent.verify import charts as charts_pass
 from reporting_agent.verify import coverage as coverage_pass
 from reporting_agent.verify import derived_counts as derived_counts_pass
 from reporting_agent.verify import facts as facts_pass
+from reporting_agent.verify import historical as historical_pass
 from reporting_agent.verify import pdf as pdf_pass
+from reporting_agent.verify import toc as toc_pass
 from reporting_agent.verify.allowlist import derive_allowlist
 from reporting_agent.verify.drift import DriftOutcome, primary_metric, requery_sample, select
-from reporting_agent.verify import historical as historical_pass
-from reporting_agent.verify import toc as toc_pass
 from reporting_agent.verify.findings import (
     FINDING_LEDGER_ENTRY_UNRENDERED,
     SEVERITY_BLOCKING,
@@ -147,6 +147,8 @@ class VerifyInputs:
     catalog_scales: Mapping[str, int] | None = None
     messages: Messages | None = None
     historical: Mapping[str, historical_pass.HistoricalRunInfo] = field(default_factory=dict)
+    front_matter: object | None = None
+    run_facts: object | None = None
 
 
 async def verify(inputs: VerifyInputs) -> VerificationResult:
@@ -237,6 +239,8 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         inputs.snapshot,
         subscription_display_name=inputs.subscription_display_name,
         catalog_scales=inputs.catalog_scales,
+        front_matter=inputs.front_matter,
+        run_facts=inputs.run_facts,
     )
     ledger_strings = ledger_strings_of(
         (*inputs.ledger.entries.values(), *inputs.ledger.derived_counts().values())
