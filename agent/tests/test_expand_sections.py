@@ -1029,3 +1029,177 @@ class TestCompileDocumentSchemaVersionBranch:
                 assert len(compiled.nodes_by_block) > 0, (
                     f"catalogue entry {entry.key!r} produced no compiled nodes"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Task 3.9 — a zero-resource section never vanishes, at v3 and at v1/v2 alike.
+# ---------------------------------------------------------------------------
+
+
+class TestZeroResourceSectionsAtCompileTime:
+    """Req 11.5: a section (v3) or a block (v1/v2) whose scope resolves to zero
+    resources emits the explicit "No resources matched this scope" row rather than
+    disappearing. A disappeared section is indistinguishable from one never
+    configured, in the builder and in the delivered document alike.
+
+    This is not new compiler behaviour — `_resource_rows_table`'s empty-scope branch
+    (in `compile/blocks/tables.py`) is unconditional and shared by both
+    `compile_resource_table` and `compile_top_n_table`, regardless of whether the
+    `BlockSpec` it receives arrived via `expand_sections` (v3) or `_block_specs`
+    (v1/v2) — `expand_sections` produces ordinary `BlockSpec`s consumed by the
+    identical `compile_block` dispatch, so there is no separate "v3 path" that
+    could diverge from the v1/v2 one. This test exists to assert that fact
+    directly rather than leave it as an inference from reading the source, and to
+    catch a future change that accidentally makes the two paths disagree.
+    """
+
+    def test_a_v3_section_with_zero_matched_resources_emits_the_notice_row(
+        self,
+    ) -> None:
+        from reporting_agent.compile.blocks import compile_document
+        from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
+        from reporting_agent.compile.messages import load_messages
+
+        catalogue = _make_catalogue()
+        # An empty view: nothing in scope for any resource-typed section.
+        view = _make_view([])
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_sub",
+                "type": "azure_subscription",
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+
+        compiled = compile_document(definition, view=view, catalogue=catalogue)
+
+        # sec_sub__1 is the resource_table expansion of azure_subscription (see
+        # the earlier task-3.4 test for why the id is derived this way).
+        table = compiled.nodes_by_block["sec_sub__1"][0]
+        expected_text = load_messages("en").text(EMPTY_SCOPE_TEXT)
+
+        assert table.rows[0].cells[0].text == expected_text
+        # The block did not vanish: it is present in nodes_by_block with its own
+        # anchor, exactly as a section with matched resources would be.
+        assert "sec_sub__1" in compiled.nodes_by_block
+
+    def test_a_v1_block_with_zero_matched_resources_still_emits_the_notice_row(
+        self,
+    ) -> None:
+        """The existing v1/v2 behaviour, asserted directly rather than assumed
+        unchanged — the whole point of this task is to prove the two paths agree,
+        which requires actually running both, not just the v3 one."""
+        from reporting_agent.compile.blocks import compile_document
+        from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
+        from reporting_agent.compile.messages import load_messages
+
+        view = _make_view([])
+        v1_definition = {
+            "schema_version": 1,
+            "identity": {"name": "Test"},
+            "scope": {
+                "resource_types": [],
+                "resource_groups": [],
+                "tag_filters": [],
+                "top_n": None,
+                "sort": None,
+            },
+            "metrics": {},
+            "blocks": [
+                {
+                    "id": "tbl",
+                    "type": "resource_table",
+                    "config": {
+                        "columns": [
+                            {"kind": "attribute", "attribute": "resource_type"},
+                        ],
+                    },
+                    "scope_override": {
+                        "resource_types": ["Microsoft.Sql/servers"],
+                        "resource_groups": [],
+                        "tag_filters": [],
+                        "top_n": None,
+                        "sort": None,
+                    },
+                },
+            ],
+        }
+
+        compiled = compile_document(v1_definition, view=view)
+
+        table = compiled.nodes_by_block["tbl"][0]
+        expected_text = load_messages("en").text(EMPTY_SCOPE_TEXT)
+
+        assert table.rows[0].cells[0].text == expected_text
+        assert "tbl" in compiled.nodes_by_block
+
+    def test_both_paths_produce_byte_identical_empty_scope_rows(self) -> None:
+        """The two tests above each prove one path works. This proves they agree —
+        the actual claim task 3.9 makes ("the existing zero-resource block
+        behaviour is unchanged") is a claim about SAMENESS, not just that each
+        side independently emits something plausible."""
+        from reporting_agent.compile.blocks import compile_document
+
+        catalogue = _make_catalogue()
+        view = _make_view([])
+
+        v3_definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_sub",
+                "type": "azure_subscription",
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        v3_compiled = compile_document(v3_definition, view=view, catalogue=catalogue)
+        v3_table = v3_compiled.nodes_by_block["sec_sub__1"][0]
+
+        v1_definition = {
+            "schema_version": 1,
+            "identity": {"name": "Test"},
+            "scope": {
+                "resource_types": [],
+                "resource_groups": [],
+                "tag_filters": [],
+                "top_n": None,
+                "sort": None,
+            },
+            "metrics": {},
+            "blocks": [
+                {
+                    "id": "sec_sub__1",
+                    "type": "resource_table",
+                    "config": {
+                        "columns": [
+                            {"kind": "attribute", "attribute": "resource_type"},
+                            {"kind": "fact", "fact_key": "count"},
+                        ],
+                    },
+                },
+            ],
+        }
+        v1_compiled = compile_document(v1_definition, view=view)
+        v1_table = v1_compiled.nodes_by_block["sec_sub__1"][0]
+
+        # Same notice row, same style, same structure — the empty-scope branch
+        # does not know or care which schema version produced the BlockSpec it
+        # received.
+        assert v3_table.rows == v1_table.rows
+        assert v3_table.style == v1_table.style

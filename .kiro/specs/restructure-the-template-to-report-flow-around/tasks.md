@@ -291,9 +291,11 @@ does **not increase** the repository's lint finding count.
     - **The estimator and the expander cannot be compared by a static mirror** — one is TypeScript, one is Python. Create a shared expectation fixture of `(catalogue entry, synthetic scan, expected counts)` cases, read by a vitest test against `estimateEmit` **and** by a pytest test compiling over a synthetic snapshot built from the same counts. A change to the expansion that moves the counts then fails on both sides or neither
     - _Requirements: 11.1, 11.2, 11.3, 11.4, 11.6, 11.7_
 
-  - [ ] 3.9 Zero-resource sections at compile time
-    - `expand_sections` emits, for a section whose rule resolves to zero resources, the explicit "No resources matched this scope" row. The section never vanishes: a disappeared section is indistinguishable from one never configured, in the builder and in the delivered document alike
-    - Assert it for a v3 section, and assert the existing zero-resource block behaviour is unchanged for v1/v2
+  - [x] 3.9 Zero-resource sections at compile time
+    - **Not new compiler behaviour — verified rather than assumed.** `_resource_rows_table`'s empty-scope branch in `compile/blocks/tables.py` (shared by `compile_resource_table` and `compile_top_n_table`) is unconditional and has no notion of schema version: it resolves `context.scope_for(block)` and emits `empty_scope_table(...)` when nothing matches, regardless of whether the `BlockSpec` it received came from `expand_sections` (v3) or `_block_specs` (v1/v2). There is no separate "v3 path" to diverge, because both paths converge on ordinary `BlockSpec`s consumed by the identical `compile_block` dispatch
+    - Three tests added to `test_expand_sections.py`: a v3 section with zero matched resources emits the notice row; a v1 block with zero matched resources still does (asserted directly, not assumed unchanged); and the two produce **byte-identical** rows and table style for the same effective scope — the actual claim this task makes is about sameness, not that each side independently works
+    - Mutation-checked via the same block-id-derivation seam task 3.4's byte-identical test uses: corrupting `expand_sections`'s derived id format fails 2 of 3 new tests (naming the exact break) while the v1-only test correctly still passes, since it never touches `expand_sections`
+    - Suite: 4656 passed / 0 failed (was 4653), run once from a clean state
     - _Requirements: 11.5_
 
   - [ ] 3.10 Authored matches: the table and the write
