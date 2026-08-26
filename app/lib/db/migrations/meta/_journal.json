@@ -50,6 +50,27 @@
       "when": 1787540778156,
       "tag": "0006_bent_oracle",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1787750327770,
+      "tag": "0007_broken_mercury",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1787757818574,
+      "tag": "0008_add-region-counts-to-subscription-scans",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1787759624508,
+      "tag": "0009_handy_blade",
+      "breakpoints": true
     }
   ]
 }

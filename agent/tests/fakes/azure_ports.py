@@ -26,7 +26,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from reporting_agent.azure.ports import DnsResolutionError, RawHttpResponse
+from reporting_agent.azure.ports import DnsResolutionError, ProbeResult, RawHttpResponse
 
 __all__ = [
     "DNS_REACHABLE_LOCATIONS",
@@ -142,6 +142,23 @@ class FakeInventoryPort:
         result = self._state.record_and_pop(
             port_name="FakeInventoryPort",
             method_name="query_distinct_dimensions",
+            subscription_id=subscription_id,
+        )
+        assert isinstance(result, RawHttpResponse)
+        return result
+
+    async def query_resource_counts(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """The next scripted response, from the **same** queue as the other two methods.
+
+        One queue for the same reason: a test asserting that the scan issues exactly two
+        Resource Graph queries — dimensions and counts — could not notice a third if each
+        method had its own inexhaustible supply.
+        """
+        result = self._state.record_and_pop(
+            port_name="FakeInventoryPort",
+            method_name="query_resource_counts",
             subscription_id=subscription_id,
         )
         assert isinstance(result, RawHttpResponse)
@@ -330,10 +347,12 @@ class FakeMetricsPort:
         batch_responses: Sequence[RawHttpResponse | DnsResolutionError] = (),
         fallback_responses: Sequence[RawHttpResponse] = (),
         logs_responses: Sequence[RawHttpResponse | Exception] = (),
+        probe_responses: Sequence[object] = (),
     ) -> None:
         self._batch = _ScriptedCalls(responses=list(batch_responses))
         self._fallback = _ScriptedCalls(responses=list(fallback_responses))
         self._logs = _ScriptedCalls(responses=list(logs_responses))
+        self._probes = _ScriptedCalls(responses=list(probe_responses))
 
     @property
     def batch_calls(self) -> list[dict[str, Any]]:
@@ -346,6 +365,10 @@ class FakeMetricsPort:
     @property
     def logs_calls(self) -> list[dict[str, Any]]:
         return self._logs.calls
+
+    @property
+    def probe_calls(self) -> list[dict[str, Any]]:
+        return self._probes.calls
 
     async def query_batch(
         self,
@@ -421,6 +444,22 @@ class FakeMetricsPort:
             # envelope is raised rather than returned.
             raise result
         assert isinstance(result, RawHttpResponse)
+        return result
+
+    async def probe_region(
+        self, *, location: str, subscription_id: str
+    ) -> ProbeResult:
+        """The next scripted probe response. Scripted from the **probes** queue so a test
+        can count exactly how many probe requests were issued per region."""
+        result = self._probes.record_and_pop(
+            port_name="FakeMetricsPort",
+            method_name="probe_region",
+            location=location,
+            subscription_id=subscription_id,
+        )
+        if isinstance(result, DnsResolutionError):
+            raise result
+        assert isinstance(result, ProbeResult)
         return result
 
 

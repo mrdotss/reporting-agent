@@ -10,7 +10,6 @@ import {
 } from "@phosphor-icons/react"
 
 import { StepBlocks } from "@/components/templates/step-blocks"
-import { StepDesign } from "@/components/templates/step-design"
 import {
   StepIdentity,
   type IdentitySaveResult,
@@ -115,7 +114,7 @@ export function WizardShell({
   template,
   initialDefinition,
   catalog,
-  thumbnails,
+  thumbnails: _thumbnails,
   previewSubscriptionId,
   hasCompletedRun,
 }: Readonly<{
@@ -371,7 +370,6 @@ export function WizardShell({
     definition,
     setDefinition,
     catalog,
-    thumbnails,
     problems,
     templateId: template.id,
     previewSubscriptionId,
@@ -628,7 +626,6 @@ function renderStep({
   definition,
   setDefinition,
   catalog,
-  thumbnails,
   problems,
   templateId,
   previewSubscriptionId,
@@ -642,7 +639,6 @@ function renderStep({
   definition: TemplateDefinition
   setDefinition: (next: TemplateDefinition) => void
   catalog: MetricCatalogSnapshot
-  thumbnails: readonly ThemeThumbnail[]
   problems: ReturnType<typeof completionProblems>
   templateId: string
   previewSubscriptionId: string | null
@@ -679,14 +675,6 @@ function renderStep({
       )
     case "blocks":
       return <StepBlocks definition={definition} onChange={setDefinition} />
-    case "design":
-      return (
-        <StepDesign
-          definition={definition}
-          onChange={setDefinition}
-          thumbnails={thumbnails}
-        />
-      )
     case "preview":
       return (
         <StepPreview

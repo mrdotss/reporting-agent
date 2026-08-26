@@ -106,24 +106,30 @@ from reporting_agent.providers.base import (
 )
 
 __all__ = [
+    "COUNT_COLUMN",
     "DEALLOCATED_POWER_STATE_CODES",
     "DECLARED_POWER_STATES",
+    "DIMENSION_REGIONS",
     "DISTINCT_VALUE_LIMIT",
     "FALLBACK_WAIT_S",
     "INVENTORY_DIMENSIONS",
+    "LOCATION_COLUMN",
     "MAX_CONSECUTIVE_FALLBACK_WAITS",
     "POWER_STATE_UNKNOWN",
     "RESOURCE_GRAPH_REQUEST_TARGET",
     "RESOURCE_GRAPH_SOURCE",
+    "TYPE_COLUMN",
     "VIRTUAL_MACHINE_RESOURCE_TYPE",
     "DimensionValues",
     "InventoryArchiveContext",
     "InventoryCollector",
     "InventoryDimensions",
+    "ResourceCounts",
     "ResourceGraphQueryError",
     "normalize_power_state",
     "parse_quota_remaining",
     "parse_reset_after",
+    "read_counts",
     "read_dimension",
 ]
 
@@ -376,12 +382,14 @@ DIMENSION_RESOURCE_TYPES: Final[str] = "resource_types"
 DIMENSION_RESOURCE_GROUPS: Final[str] = "resource_groups"
 DIMENSION_TAG_KEYS: Final[str] = "tag_keys"
 DIMENSION_TAG_VALUES: Final[str] = "tag_values"
+DIMENSION_REGIONS: Final[str] = "regions"
 
 INVENTORY_DIMENSIONS: Final[tuple[str, ...]] = (
     DIMENSION_RESOURCE_TYPES,
     DIMENSION_RESOURCE_GROUPS,
     DIMENSION_TAG_KEYS,
     DIMENSION_TAG_VALUES,
+    DIMENSION_REGIONS,
 )
 """The four dimensions Req 9.1 names — and the **three** names that would otherwise drift.
 
@@ -391,6 +399,14 @@ field :func:`read_dimension` looks for in the answer, and the key `list_inventor
 dimension: the query renames a column, the reader finds nothing there, and "no resource
 groups in this subscription" is a perfectly plausible-looking answer.
 """
+
+TYPE_COLUMN: Final[str] = "type"
+COUNT_COLUMN: Final[str] = "resource_count"
+LOCATION_COLUMN: Final[str] = "location"
+"""The three columns `azure/clients.resource_counts_query` emits and :func:`read_counts`
+reads back. Declared here for the reason :data:`INVENTORY_DIMENSIONS` is: a query that
+renames a column and a reader that keeps looking for the old name produce a count of zero,
+and "this subscription holds no virtual machines" is a plausible-looking answer."""
 
 DISTINCT_VALUE_LIMIT: Final[int] = 2000
 """Req 9.1's per-dimension bound: at most this many distinct values are returned.
@@ -450,6 +466,14 @@ class InventoryDimensions:
     resource_groups: DimensionValues
     tag_keys: DimensionValues
     tag_values: DimensionValues
+    regions: DimensionValues = DimensionValues(values=(), truncated=False)
+    """The distinct regions the subscription's resources sit in.
+
+    Defaulted so every existing construction site — the tests that build four dimensions,
+    and any caller predating the scan — keeps working unchanged. It rides the same
+    aggregate query as the other four: `make_set_if(location, ...)` adds no `by` clause and
+    projects no `id`, so the query's one-row shape and Req 9.5's structural exclusion of
+    resource identifiers both survive it."""
 
     def to_plain_data(self) -> dict[str, Any]:
         """The four dimensions as the mapping `list_inventory` merges onto `done`.
@@ -489,6 +513,99 @@ def read_dimension(row: Mapping[str, Any], name: str) -> DimensionValues:
     truncated = len(unique) > DISTINCT_VALUE_LIMIT
     return DimensionValues(
         values=tuple(sorted(unique)[:DISTINCT_VALUE_LIMIT]), truncated=truncated
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceCounts:
+    """The scan's counts, **partitioned** between deployed resources and sub-records.
+
+    `resource_count` and `type_counts` cover the types a reader means by "how much is
+    deployed here"; `child_type_counts` covers the child types — a subnet, a security rule —
+    which are addressable resources but not deployed things (see
+    `catalog.loader.is_child_type`).
+
+    `region_counts` is the per-region headline count — only non-child types, for the same
+    reason `type_counts` excludes them: a region's count must not inflate when Phase 5's
+    collectors start emitting sub-records. The scan screen uses it to state, for a region
+    whose data plane refused, the count of scanned resources *in that region* (Req 5.4).
+
+    The partition is the whole point, and the reason is a timing one. Phase 5 adds the
+    collectors that emit sub-records, so under one uniform count an untouched subscription
+    would report 47 resources one month and 71 the next with nothing deployed, and a customer
+    comparing two consecutive reports would read that as infrastructure growth. Correct
+    arithmetic, misleading number — which is the failure this product exists to prevent.
+
+    A section that genuinely wants a sub-record count — a virtual-network section stating
+    that a VNet has four subnets — reads `child_type_counts`. No surface adds the two
+    together.
+    """
+
+    resource_count: int
+    type_counts: Mapping[str, int]
+    child_type_counts: Mapping[str, int]
+    region_counts: Mapping[str, int]
+
+    def to_plain_data(self) -> dict[str, Any]:
+        return {
+            COUNT_COLUMN: self.resource_count,
+            "type_counts": dict(self.type_counts),
+            "child_type_counts": dict(self.child_type_counts),
+            "region_counts": dict(self.region_counts),
+        }
+
+
+def read_counts(
+    rows: Sequence[Mapping[str, Any]], *, child_types: Sequence[str]
+) -> ResourceCounts:
+    """Partition the count query's rows into headline and child counts. **Pure.**
+
+    Rows are now `(type, location, count)` triples — the same resource type can appear in
+    several rows when it has resources in multiple regions. The per-type accumulation sums
+    across locations, and the per-region map is built from the same answer, counting only
+    non-child types (for the same reason `type_counts` excludes children: a region's count
+    must not inflate when Phase 5's collectors start emitting sub-records).
+
+    `child_types` comes from `catalog.loader.child_type_names(catalog)`, so the partition is
+    derived from the two catalogs and there is no type list embedded in query text that
+    someone would have to keep in step with them by hand.
+
+    Matched case-insensitively, because Resource Graph lower-cases `type` in its response
+    body while the catalogs declare Azure's own casing. An exact comparison would classify
+    every real row as a non-child type and the partition would silently do nothing — which is
+    the same failure as not partitioning at all, arrived at through a spelling mismatch.
+
+    A row whose count is absent, negative or not an integer is **skipped, not zero-filled**:
+    a type present in the answer with an unreadable count is not a type with no resources.
+    `bool` is excluded explicitly — `isinstance(True, int)` is `True` in Python, and a `True`
+    that reached a count column would otherwise be read as the number 1.
+    """
+    folded_children = {name.casefold() for name in child_types if isinstance(name, str)}
+
+    type_counts: dict[str, int] = {}
+    child_type_counts: dict[str, int] = {}
+    region_counts: dict[str, int] = {}
+    for row in rows:
+        resource_type = row.get(TYPE_COLUMN)
+        count = row.get(COUNT_COLUMN)
+        location = row.get(LOCATION_COLUMN)
+        if not isinstance(resource_type, str) or not resource_type.strip():
+            continue
+        if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+            continue
+        is_child = resource_type.casefold() in folded_children
+        target = child_type_counts if is_child else type_counts
+        target[resource_type] = target.get(resource_type, 0) + count
+
+        # Per-region counts: non-child types only, for the same invariance reason.
+        if not is_child and isinstance(location, str) and location.strip():
+            region_counts[location] = region_counts.get(location, 0) + count
+
+    return ResourceCounts(
+        resource_count=sum(type_counts.values()),
+        type_counts=type_counts,
+        child_type_counts=child_type_counts,
+        region_counts=region_counts,
     )
 
 
@@ -726,7 +843,39 @@ class InventoryCollector:
             resource_groups=read_dimension(row, DIMENSION_RESOURCE_GROUPS),
             tag_keys=read_dimension(row, DIMENSION_TAG_KEYS),
             tag_values=read_dimension(row, DIMENSION_TAG_VALUES),
+            regions=read_dimension(row, DIMENSION_REGIONS),
         )
+
+    async def resource_counts(
+        self, *, subscription_id: str, child_types: Sequence[str] = ()
+    ) -> ResourceCounts:
+        """The scan's per-type counts, partitioned by child type (task 1.3).
+
+        A **separate** method from :meth:`distinct_dimensions`, not a second query inside it.
+        That method's docstring states "one call to the port and no loop" and Req 9.2's "one
+        query per cache miss" as properties of its *shape*; issuing a second query there
+        would quietly make both false. The two also serve different callers — the wizard's
+        pickers need dimensions, the scan screen needs counts — so a caller that wants one
+        does not pay for the other.
+
+        `child_types` is an argument rather than a catalog on this collector, because this
+        module is the Azure boundary and the partition is a **catalog** fact: the caller —
+        `main.handle_list_inventory`, which already holds a `LoadedCatalog` — passes
+        `child_type_names(catalog)`. Giving this class a catalog dependency would let an
+        Azure-layer object answer a question about declarations, and the default of `()`
+        would then be a silently wrong partition rather than an explicit "no child types".
+
+        Fails the same way `distinct_dimensions` does, and for the same reason: counts of
+        zero are a claim about the subscription, and a failed query licenses no claim.
+        """
+        if not isinstance(subscription_id, str) or not subscription_id.strip():
+            raise ValueError("subscription_id must be a non-empty string")
+
+        response = await self._port.query_resource_counts(subscription_id=subscription_id)
+        if not response.ok:
+            raise _dimension_failure(response.status)
+
+        return read_counts(_rows_from_body(response.body), child_types=child_types)
 
     async def _archive_page(
         self,

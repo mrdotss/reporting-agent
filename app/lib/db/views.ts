@@ -5,8 +5,11 @@ import type {
   ReportTemplate,
   ReportTemplateVersion,
   ReportVerification,
+  Brand,
   RunErrorCode,
   RunStatus,
+  ScanStatus,
+  SubscriptionScan,
   SubscriptionStatus,
   VerificationStatus,
 } from "@/lib/db/schema"
@@ -827,5 +830,106 @@ export function toVerificationView(row: ReportVerification): VerificationView {
     createdAt: row.createdAt.toISOString(),
     textFactCount,
     historicalPoints,
+  }
+}
+
+// --- ScanView ----------------------------------------------------------------
+
+/**
+ * The browser-safe shape of a `subscription_scans` row (Requirement 22.7).
+ *
+ * Drops `user_id` — the signed-in user already knows who they are, and echoing
+ * their id back gives a client-side ownership check something to get wrong.
+ * Everything else passes through: there are no secrets on this table (no tenant id,
+ * no client id, no credential). `error_message` passes through already-scrubbed.
+ */
+export type ScanView = {
+  id: string
+  connectedSubscriptionId: string
+  status: ScanStatus
+  catalogVersion: string | null
+  sectionsCatalogueVersion: string | null
+  resourceCount: number | null
+  typeCounts: unknown
+  childTypeCounts: unknown
+  resourceGroups: unknown
+  regions: unknown
+  regionCounts: unknown
+  regionProbes: unknown
+  truncated: boolean | null
+  errorCode: string | null
+  errorMessage: string | null
+  completedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Project a `subscription_scans` row to the shape the browser may see. */
+export function toScanView(row: SubscriptionScan): ScanView {
+  return {
+    id: row.id,
+    connectedSubscriptionId: row.connectedSubscriptionId,
+    status: row.status,
+    catalogVersion: row.catalogVersion,
+    sectionsCatalogueVersion: row.sectionsCatalogueVersion,
+    resourceCount: row.resourceCount,
+    typeCounts: row.typeCounts,
+    childTypeCounts: row.childTypeCounts,
+    resourceGroups: row.resourceGroups,
+    regions: row.regions,
+    regionCounts: row.regionCounts,
+    regionProbes: row.regionProbes,
+    truncated: row.truncated,
+    errorCode: row.errorCode,
+    errorMessage: row.errorMessage,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  }
+}
+
+// --- BrandView ---------------------------------------------------------------
+
+/**
+ * The browser-safe shape of a `brands` row (Requirement 22.7).
+ *
+ * Drops `user_id` — the signed-in user already knows who they are. Every other
+ * column passes through: there are no secrets on this table. `logo_key` is a
+ * **key**, never a presigned URL — presigning happens per request in the route.
+ */
+export type BrandView = {
+  id: string
+  name: string
+  themePreset: string
+  accentColor: string
+  logoKey: string | null
+  density: string
+  tableStyle: string
+  pageSize: string
+  numberFormat: unknown
+  coverPage: boolean
+  defaultApproverNames: unknown
+  confidentialityNoticeId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+/** Project a `brands` row to the shape the browser may see. */
+export function toBrandView(row: Brand): BrandView {
+  return {
+    id: row.id,
+    name: row.name,
+    themePreset: row.themePreset,
+    accentColor: row.accentColor,
+    logoKey: row.logoKey,
+    density: row.density,
+    tableStyle: row.tableStyle,
+    pageSize: row.pageSize,
+    numberFormat: row.numberFormat,
+    coverPage: row.coverPage,
+    defaultApproverNames: row.defaultApproverNames,
+    confidentialityNoticeId: row.confidentialityNoticeId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   }
 }

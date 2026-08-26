@@ -346,3 +346,58 @@ describe("The empty state", () => {
     ).toBeInTheDocument()
   })
 })
+
+// --------------------------------------------------------------------------- //
+// The scan entry point (task 1.7, Requirement 4.5)
+// --------------------------------------------------------------------------- //
+
+function scanLink(): HTMLAnchorElement | null {
+  return document.querySelector<HTMLAnchorElement>(
+    'a[href^="/subscriptions/"][href$="/scan"]'
+  )
+}
+
+describe("the scan entry point", () => {
+  test("a scannable subscription offers a Scan link to its own scan route", () => {
+    // Phase 0 ships a screen nobody can reach without this: there is no
+    // `subscriptions/[id]` page, so the list is the only place the action can hang.
+    renderList([view()])
+
+    expect(scanLink()?.getAttribute("href")).toBe("/subscriptions/row-0001/scan")
+  })
+
+  test("an unverified scope offers no Scan link", () => {
+    // `POST .../scan` refuses this with SCOPE_UNVERIFIED, because an inventory query is
+    // RBAC-filtered and a scan through a narrowed role would present a partial estate as
+    // the whole one. Rendering a control certain to be refused trains the reader to ignore
+    // refusals.
+    renderList([view({ scopeVerified: false, status: "pending" })])
+
+    expect(scanLink()).toBeNull()
+  })
+
+  test("an expired secret offers no Scan link", () => {
+    // The route's other refusal, SECRET_EXPIRED. Mirrored here rather than restated as a
+    // subset, so the two cannot disagree about what is offerable.
+    renderList([
+      view({
+        secretExpiresAt: new Date(NOW.getTime() - MS_PER_DAY).toISOString(),
+      }),
+    ])
+
+    expect(scanLink()).toBeNull()
+  })
+
+  test("each row links to its own subscription", () => {
+    renderList([view({ id: "row-0001" }), view({ id: "row-0002" })])
+
+    const hrefs = [
+      ...document.querySelectorAll<HTMLAnchorElement>('a[href$="/scan"]'),
+    ].map((anchor) => anchor.getAttribute("href"))
+
+    expect(hrefs).toEqual([
+      "/subscriptions/row-0001/scan",
+      "/subscriptions/row-0002/scan",
+    ])
+  })
+})

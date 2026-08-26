@@ -33,18 +33,26 @@ os.environ.setdefault("AWS_REGION", "us-east-1")
 os.environ.setdefault("RPT_ARTIFACT_BUCKET", "rpt-artifacts-test")
 os.environ.setdefault("RPT_PROSE_MODEL_ID", "test.prose-model")
 
-from reporting_agent.azure.clients import distinct_dimensions_query
+from reporting_agent.azure.clients import (
+    distinct_dimensions_query,
+    resource_counts_query,
+)
 from reporting_agent.azure.inventory import (
+    COUNT_COLUMN,
+    DIMENSION_REGIONS,
     DIMENSION_RESOURCE_GROUPS,
     DIMENSION_RESOURCE_TYPES,
     DIMENSION_TAG_KEYS,
     DIMENSION_TAG_VALUES,
     DISTINCT_VALUE_LIMIT,
     INVENTORY_DIMENSIONS,
+    LOCATION_COLUMN,
+    TYPE_COLUMN,
     DimensionValues,
     InventoryCollector,
     InventoryDimensions,
     ResourceGraphQueryError,
+    read_counts,
     read_dimension,
 )
 from reporting_agent.azure.ports import InventoryPort, RawHttpResponse
@@ -93,7 +101,7 @@ def dimensions_from(
 # --------------------------------------------------------------------------- #
 
 
-def test_the_four_dimensions_are_declared_once_each() -> None:
+def test_the_five_dimensions_are_declared_once_each() -> None:
     """One declaration for the query's column, the reader's field and `done`'s key. Three
     spellings that agree today is how one picker silently goes empty."""
     assert INVENTORY_DIMENSIONS == (
@@ -101,14 +109,16 @@ def test_the_four_dimensions_are_declared_once_each() -> None:
         DIMENSION_RESOURCE_GROUPS,
         DIMENSION_TAG_KEYS,
         DIMENSION_TAG_VALUES,
+        DIMENSION_REGIONS,
     )
     assert INVENTORY_DIMENSIONS == (
         "resource_types",
         "resource_groups",
         "tag_keys",
         "tag_values",
+        "regions",
     )
-    assert len(set(INVENTORY_DIMENSIONS)) == 4
+    assert len(set(INVENTORY_DIMENSIONS)) == 5
 
 
 def test_the_per_dimension_bound_is_two_thousand() -> None:
@@ -132,7 +142,7 @@ def test_the_query_projects_the_four_dimensions_and_nothing_else() -> None:
     query = distinct_dimensions_query(subscription_id=SUBSCRIPTION)
     summarized = [line for line in query.splitlines() if "make_set_if" in line]
 
-    assert len(summarized) == 4
+    assert len(summarized) == 5
     for name in INVENTORY_DIMENSIONS:
         assert f"{name} = make_set_if(" in query
 
@@ -175,7 +185,7 @@ def test_the_query_asks_for_one_more_value_than_the_bound() -> None:
     Graph reports no total beside an aggregate, so receiving 2001 is the signal and asking
     for exactly 2000 would make "exactly 2000" and "more than 2000" one response."""
     query = distinct_dimensions_query(subscription_id=SUBSCRIPTION)
-    assert query.count(f", {DISTINCT_VALUE_LIMIT + 1})") == 4
+    assert query.count(f", {DISTINCT_VALUE_LIMIT + 1})") == 5
     assert f", {DISTINCT_VALUE_LIMIT})" not in query
 
 
@@ -634,7 +644,11 @@ def test_the_real_handler_builds_the_port_lists_and_closes_everything_it_opened(
                     resource_types=["Microsoft.Storage/storageAccounts"],
                     tag_keys=["owner", "env"],
                 )
-            )
+            ),
+            # The second query the scan issues: one count row per (type, location) pair.
+            # Scripted from the same queue as the first, so the assertion below pins exactly
+            # two queries rather than tolerating any number.
+            response({"type": "microsoft.storage/storageaccounts", "location": "eastus", "resource_count": 3}),
         ]
     )
     closed: list[str] = []
@@ -664,8 +678,14 @@ def test_the_real_handler_builds_the_port_lists_and_closes_everything_it_opened(
     # Both, in this order: a client closed after its credential is a client whose auth
     # policy can no longer refresh, which turns a teardown into a failed in-flight request.
     assert closed == ["port", "credential"]
-    assert len(port.calls) == 1
-    assert port.calls[0] == {"subscription_id": SUBSCRIPTION}
+    # Exactly two queries: the dimensions aggregate and the per-type counts.
+    #
+    # The shared fake records each call's kwargs but not which method received them, so a
+    # count of two cannot by itself tell "dimensions then counts" from "dimensions twice".
+    # The second query is therefore pinned by its **effect** — the counts below can only be
+    # on `done` if `query_resource_counts` was called and its answer read.
+    assert len(port.calls) == 2
+    assert all(call["subscription_id"] == SUBSCRIPTION for call in port.calls)
 
     tools = [(event["name"], event["phase"]) for event in events if event["type"] == "tool"]
     assert tools == [
@@ -681,6 +701,13 @@ def test_the_real_handler_builds_the_port_lists_and_closes_everything_it_opened(
     }
     assert done["tag_keys"] == {"values": ["env", "owner"], "truncated": False}
     assert done["resource_groups"] == {"values": [], "truncated": False}
+    assert done["resource_count"] == 3
+    assert done["type_counts"] == {"microsoft.storage/storageaccounts": 3}
+    assert done["child_type_counts"] == {}, (
+        "the shipped catalogs declare no child type yet, so every counted type is a "
+        "headline one"
+    )
+    assert done["region_counts"] == {"eastus": 3}
 
 
 def test_the_real_handler_reports_no_dimension_key_when_the_query_did_not_answer(
@@ -814,3 +841,202 @@ def test_no_secret_key_or_value_reaches_any_event_on_list_inventory() -> None:
     )
 
     _assert_no_secret_in_events(events)
+
+
+# --------------------------------------------------------------------------- #
+# read_counts / resource_counts_query — the partitioned counts (task 1.3)
+# --------------------------------------------------------------------------- #
+
+CHILD_TYPE = "Microsoft.Network/virtualNetworks/subnets"
+VM_TYPE_DECLARED = "Microsoft.Compute/virtualMachines"
+
+
+def _count_rows() -> list[dict[str, object]]:
+    """One VNet, one NSG, two VMs — plus the sub-records the Phase 5 collectors emit:
+    four subnets and six security rules. Fourteen ARM ids, four deployed things.
+    Spread across two regions to exercise the per-region accumulation."""
+    return [
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 1},
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "westus", COUNT_COLUMN: 1},
+        {TYPE_COLUMN: "microsoft.network/virtualnetworks", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 1},
+        {TYPE_COLUMN: "microsoft.network/networksecuritygroups", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 1},
+        {TYPE_COLUMN: "microsoft.network/virtualnetworks/subnets", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 4},
+        {TYPE_COLUMN: "microsoft.network/networksecuritygroups/securityrules", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 6},
+    ]
+
+
+def test_the_headline_count_is_invariant_when_child_types_start_being_declared() -> None:
+    """Task 1.3, Guard B — the property that makes Phase 5 safe to ship mid-engagement.
+
+    Phase 5 adds the collectors that emit sub-records, so the **same** estate starts
+    answering with subnets and security rules in it. If those counted, an untouched
+    subscription would report 4 resources one month and 14 the next, and a customer
+    comparing two consecutive reports would read that as infrastructure growth. Correct
+    arithmetic, misleading number.
+
+    Counted twice over one set of rows: once with no child type declared (the world before
+    Phase 5) and once with both declared (after). `resource_count` and `type_counts` must be
+    **identical** across the two, and only `child_type_counts` may move.
+    """
+    rows = _count_rows()
+
+    before = read_counts(rows, child_types=())
+    after = read_counts(
+        rows,
+        child_types=(CHILD_TYPE, "Microsoft.Network/networkSecurityGroups/securityRules"),
+    )
+
+    assert after.resource_count == 4, "two VMs, one VNet, one NSG — the deployed things"
+    assert before.resource_count == 14, (
+        "without the declaration every ARM id counts, which is the state this guard exists "
+        "to prove we left"
+    )
+    assert dict(after.type_counts) == {
+        "microsoft.compute/virtualmachines": 2,
+        "microsoft.network/virtualnetworks": 1,
+        "microsoft.network/networksecuritygroups": 1,
+    }
+    assert dict(after.child_type_counts) == {
+        "microsoft.network/virtualnetworks/subnets": 4,
+        "microsoft.network/networksecuritygroups/securityrules": 6,
+    }
+    assert sum(after.type_counts.values()) + sum(after.child_type_counts.values()) == 14, (
+        "no row is dropped by the partition — every ARM id is counted in exactly one family"
+    )
+
+
+def test_the_region_count_is_invariant_when_child_types_start_being_declared() -> None:
+    """The per-region map must not inflate when Phase 5's collectors start emitting
+    sub-records, for the same reason the per-type map does not: `is_child_type` marks a
+    subnet or a security rule as a sub-record, and a sub-record is not a deployed thing in
+    the sense a reader takes from a count.
+
+    Mutation-checked: collapsing the partition (treating children as non-children) would
+    inflate eastus from 3 to 13.
+    """
+    rows = _count_rows()
+
+    before = read_counts(rows, child_types=())
+    after = read_counts(
+        rows,
+        child_types=(CHILD_TYPE, "Microsoft.Network/networkSecurityGroups/securityRules"),
+    )
+
+    # With the partition active, only non-child types are counted per region.
+    assert dict(after.region_counts) == {"eastus": 3, "westus": 1}
+    # Without the partition, child types inflate the region counts.
+    assert dict(before.region_counts) == {"eastus": 13, "westus": 1}
+    # The mutation check: if region_counts included children despite the partition, eastus
+    # would be 13. That it is 3 proves the partition is applied.
+    assert after.region_counts["eastus"] == 3
+
+
+def test_per_type_total_sums_across_regions() -> None:
+    """A fixture whose estate puts ONE resource type in TWO regions, asserting the per-type
+    total sums across both. This is the regression the (type, location, count) change risks:
+    if read_counts overwrote rather than summed, only the last region's count would survive.
+    """
+    rows = [
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 5},
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "westeurope", COUNT_COLUMN: 3},
+    ]
+    counts = read_counts(rows, child_types=())
+
+    assert counts.type_counts["microsoft.compute/virtualmachines"] == 8
+    assert counts.resource_count == 8
+    assert dict(counts.region_counts) == {"eastus": 5, "westeurope": 3}
+
+
+def test_per_region_map_from_multiple_types_in_one_region() -> None:
+    """Multiple non-child types in a single region sum into one region entry."""
+    rows = [
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 3},
+        {TYPE_COLUMN: "microsoft.storage/storageaccounts", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 2},
+    ]
+    counts = read_counts(rows, child_types=())
+
+    assert dict(counts.region_counts) == {"eastus": 5}
+    assert counts.resource_count == 5
+
+
+def test_region_counts_omits_rows_with_absent_or_empty_location() -> None:
+    """A row with no location is counted in type_counts but not in region_counts —
+    the region map must not carry a blank key."""
+    rows = [
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", COUNT_COLUMN: 2},
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "", COUNT_COLUMN: 1},
+        {TYPE_COLUMN: "microsoft.compute/virtualmachines", LOCATION_COLUMN: "eastus", COUNT_COLUMN: 4},
+    ]
+    counts = read_counts(rows, child_types=())
+
+    assert counts.type_counts["microsoft.compute/virtualmachines"] == 7
+    assert counts.resource_count == 7
+    assert dict(counts.region_counts) == {"eastus": 4}
+
+
+def test_the_partition_folds_case_between_the_wire_and_the_catalog() -> None:
+    """Resource Graph lower-cases `type`; the catalogs declare Azure's own casing. An exact
+    comparison would put every sub-record in the headline family and the partition would
+    silently do nothing — the defect, reached through a spelling mismatch."""
+    counts = read_counts(
+        [{TYPE_COLUMN: CHILD_TYPE.casefold(), COUNT_COLUMN: 4}], child_types=(CHILD_TYPE,)
+    )
+
+    assert counts.resource_count == 0
+    assert dict(counts.child_type_counts) == {CHILD_TYPE.casefold(): 4}
+
+
+@pytest.mark.parametrize("count", [None, "3", -1, 1.5, True])
+def test_an_unreadable_count_is_skipped_rather_than_zero_filled(count: object) -> None:
+    """A type present in the answer with an unreadable count is not a type with no
+    resources. `True` is in the set because `isinstance(True, int)` is `True` in Python, so
+    a boolean reaching a count column would otherwise be read as the number 1."""
+    counts = read_counts(
+        [{TYPE_COLUMN: VM_TYPE_DECLARED, COUNT_COLUMN: count}], child_types=()
+    )
+
+    assert counts.type_counts == {}
+    assert counts.resource_count == 0
+
+
+def test_the_counts_query_projects_no_resource_id() -> None:
+    """Req 9.5, and the reason this is a second query rather than columns on the first.
+
+    That query's exclusion of resource identifiers is **structural** — it projects none, so
+    there is no field a filter has to remove. Counting distinct ids would put `id` back into
+    the projection and turn the guarantee back into a promise.
+    """
+    query = resource_counts_query(subscription_id=SUBSCRIPTION)
+
+    assert " id" not in query and "id," not in query
+    assert "count_distinct" not in query, (
+        "count_distinct/count_distinctif are Azure Data Explorer functions whose presence in "
+        "Resource Graph's KQL subset is unverified here; this query does not mv-expand, so "
+        "count() is already exact"
+    )
+    assert "mv-expand" not in query, "no row multiplication, so no distinct-count is needed"
+    assert f"summarize {COUNT_COLUMN} = count() by {TYPE_COLUMN}, {LOCATION_COLUMN}" in query
+
+
+def test_the_counts_query_has_exactly_one_count_expression() -> None:
+    """The trap this task exists to avoid.
+
+    The design sketched three `count_distinct(id)` expressions distinguished only by
+    trailing comments. Copied verbatim that returns the same number three times and the
+    partitioning silently does nothing — a plausible wrong number, which is the failure class
+    this whole task is about. One expression, partitioned in Python, cannot have that bug.
+    """
+    query = resource_counts_query(subscription_id=SUBSCRIPTION)
+
+    assert query.count("count()") == 1
+
+
+def test_the_counts_query_is_byte_identical_between_two_calls() -> None:
+    first = resource_counts_query(subscription_id=SUBSCRIPTION)
+    second = resource_counts_query(subscription_id=SUBSCRIPTION)
+    assert first == second
+
+
+def test_the_counts_query_escapes_the_subscription_id() -> None:
+    query = resource_counts_query(subscription_id="it's-not-a-guid")
+    assert "'it''s-not-a-guid'" in query

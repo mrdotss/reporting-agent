@@ -790,6 +790,66 @@ export const MESSAGE_CATALOG = {
     en: "Author",
     id: "Penulis",
   },
+  "ui.scan.heading": {
+    en: "What is in this subscription",
+    id: "Isi langganan ini",
+  },
+  "ui.scan.resources_label": {
+    en: "Resources",
+    id: "Sumber daya",
+  },
+  "ui.scan.types_label": {
+    en: "Types",
+    id: "Tipe",
+  },
+  "ui.scan.regions_label": {
+    en: "Regions",
+    id: "Region",
+  },
+  "ui.scan.groups_label": {
+    en: "Resource groups",
+    id: "Grup sumber daya",
+  },
+  "ui.scan.rescan": {
+    en: "Re-scan",
+    id: "Pindai ulang",
+  },
+  "ui.scan.continue": {
+    en: "Continue",
+    id: "Lanjutkan",
+  },
+  "ui.scan.group_compute": {
+    en: "Compute",
+    id: "Komputasi",
+  },
+  "ui.scan.group_networking": {
+    en: "Networking",
+    id: "Jaringan",
+  },
+  "ui.scan.group_data": {
+    en: "Data",
+    id: "Data",
+  },
+  "ui.scan.group_not_reportable": {
+    en: "Not reportable",
+    id: "Tidak dapat dilaporkan",
+  },
+  "ui.scan.greyed_note": {
+    en: "Greyed types have no catalogue entry, so no section can use them. They are listed so their absence from the report is visible rather than silent.",
+    id: "Tipe yang diredam tidak memiliki entri katalog, sehingga tidak ada bagian yang dapat menggunakannya. Tipe tersebut tetap dicantumkan agar ketidakhadirannya dalam laporan terlihat, bukan tersembunyi.",
+  },
+  "ui.scan.empty_scope": {
+    en: "This subscription returned no resources in scope. Fix that before authoring a profile: a report over an empty scope would pass every check and prove nothing.",
+    id: "Langganan ini tidak mengembalikan sumber daya dalam cakupan. Perbaiki hal itu sebelum menyusun profil: laporan atas cakupan kosong akan lolos setiap pemeriksaan dan tidak membuktikan apa pun.",
+  },
+  "ui.scan.fallback_region": {
+    en: "Batch metrics are refused in {region}. Metrics there are collected one resource at a time; the {count} resources in that region may return no samples and would then appear as recorded gaps.",
+    id: "Metrik batch ditolak di {region}. Metrik di sana dikumpulkan satu sumber daya sekaligus; {count} sumber daya di region tersebut mungkin tidak mengembalikan sampel dan akan tercatat sebagai celah.",
+  },
+  "ui.scan.limits_note": {
+    en: "A scan is a point-in-time observation. Every run re-resolves each section's rule against its own snapshot, so a section's estimate here is an estimate.",
+    id: "Pemindaian adalah pengamatan pada satu titik waktu. Setiap proses menyelesaikan ulang aturan setiap bagian terhadap snapshot-nya sendiri, sehingga estimasi bagian di sini hanyalah estimasi.",
+  },
   "ui.run_form.front_matter_incomplete": {
     en: "Fill in the customer name, revision, note and author before requesting this report.",
     id: "Isi nama pelanggan, revisi, catatan, dan penulis sebelum meminta laporan ini.",

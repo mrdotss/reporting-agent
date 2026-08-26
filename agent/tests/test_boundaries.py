@@ -969,6 +969,81 @@ def _modules_outside(package: str, root: Path = SRC_ROOT) -> list[Path]:
     ]
 
 
+DATA_PLANE_REFUSAL_STATUSES: frozenset[int] = frozenset({401, 403, 404})
+"""The three statuses whose CO-OCCURRENCE in one set literal means "a data-plane
+refusal test". Matched as a set, never individually: `azure/inventory.py` legitimately
+declares `_AUTH_STATUSES = frozenset({401, 403})` for a Resource Graph auth failure that
+raises rather than reroutes, and `azure/preflight.py` legitimately compares `status ==
+401`. Neither is a second reading of the data plane, and a guard that banned the numbers
+would forbid both."""
+
+REGIONS_MODULE: str = "regions.py"
+
+
+def _refusal_set_offenders(modules: Iterable[Path]) -> list[str]:
+    """Any set or frozenset literal containing all three refusal statuses.
+
+    This is the shape a duplicated reading takes: someone needs to know whether a
+    data-plane response means "use the other road", spells the three statuses inline, and
+    the scan and the run now disagree the moment one of them changes. The predicate
+    `regions.is_data_plane_refusal` is the only sanctioned answer.
+    """
+    offenders: list[str] = []
+    for path in modules:
+        tree = _parse(path)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Set):
+                continue
+            literal = {
+                element.value
+                for element in node.elts
+                if isinstance(element, ast.Constant) and isinstance(element.value, int)
+            }
+            if DATA_PLANE_REFUSAL_STATUSES <= literal:
+                offenders.append(
+                    f"{_label(path)}:{node.lineno} set literal containing "
+                    f"{sorted(DATA_PLANE_REFUSAL_STATUSES)}"
+                )
+    return offenders
+
+
+def test_only_regions_declares_the_data_plane_refusal_statuses() -> None:
+    """Task 1.1 — one reading of a data-plane status, in one place.
+
+    The defect this prevents is not a wrong status set; it is **two** status sets. The
+    scan-time route probe and the collection path both have to answer "will this region
+    serve a batch request", and if they answer it from separate literals then a scan can
+    promise a route the run declines — which presents to a customer as a region that
+    silently collected nothing.
+
+    Matched on the three statuses co-occurring in one set literal, so the auth sets in
+    `azure/inventory.py` and `azure/preflight.py` — different questions, different
+    answers — are not false positives.
+    """
+    scanned = [
+        path for path in _source_modules(SRC_ROOT) if path.name != REGIONS_MODULE
+    ]
+    assert scanned, "the refusal-set scan found zero source files"
+    offenders = _refusal_set_offenders(scanned)
+
+    assert not offenders, (
+        "these modules declare their own data-plane refusal status set instead of "
+        "calling regions.is_data_plane_refusal: " + "; ".join(offenders)
+    )
+
+
+def test_regions_still_declares_the_refusal_statuses_it_owns() -> None:
+    """Guard the guard: the rule above passes vacuously if the set is deleted from
+    `azure/regions.py` too, leaving nothing to be the single reading."""
+    from reporting_agent.azure import regions
+
+    assert regions.DATA_PLANE_REFUSED_STATUSES == DATA_PLANE_REFUSAL_STATUSES
+    assert _refusal_set_offenders([AZURE_PACKAGE / REGIONS_MODULE]), (
+        "azure/regions.py no longer declares the refusal statuses as a set literal, so "
+        "the guard above is asserting the absence of something that exists nowhere"
+    )
+
+
 def test_no_module_outside_narrate_reaches_a_bedrock_client() -> None:
     """Req 19.2, 35.1. Two call sites, both in one directory, and nothing else anywhere.
 

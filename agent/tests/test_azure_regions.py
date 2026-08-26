@@ -24,9 +24,11 @@ from fakes.azure_ports import (
 )
 from reporting_agent.azure.ports import DnsResolutionError, RawHttpResponse
 from reporting_agent.azure.regions import (
+    DATA_PLANE_REFUSED_STATUSES,
     METRICS_DATA_PLANE_ENDPOINT_TEMPLATE,
     LocationRequestResult,
     RegionResolver,
+    is_data_plane_refusal,
     metrics_data_plane_endpoint,
 )
 from reporting_agent.collect.log import GAP_TYPE_REGION_UNREACHABLE
@@ -128,6 +130,59 @@ def test_the_endpoint_is_built_from_the_location_component_of_the_grouping_key()
 def test_a_blank_location_is_rejected_rather_than_producing_a_malformed_url() -> None:
     with pytest.raises(ValueError):
         metrics_data_plane_endpoint("")
+
+
+# --------------------------------------------------------------------------- #
+# is_data_plane_refusal — the ONE reading of a data-plane outcome (task 1.1)
+# --------------------------------------------------------------------------- #
+
+
+def test_the_refused_status_set_is_exactly_the_three_documented_statuses() -> None:
+    """`401`/`403` because the refusal can come from the metrics service's own
+    authorization check, `404` because an absent route is what a DNS failure says one
+    layer down. Pinned as a set so adding a fourth status is a deliberate edit here and
+    not an accident somewhere else."""
+    assert DATA_PLANE_REFUSED_STATUSES == frozenset({401, 403, 404})
+
+
+@pytest.mark.parametrize("status", sorted(DATA_PLANE_REFUSED_STATUSES))
+def test_each_refused_status_is_a_refusal(status: int) -> None:
+    assert is_data_plane_refusal(status, dns_failed=False) is True
+
+
+@pytest.mark.parametrize("status", [200, 201, 400, 429, 500, 503])
+def test_a_status_outside_the_set_is_not_a_refusal(status: int) -> None:
+    """`400` in particular: a malformed request fails on both paths, so rerouting would
+    hide this runtime's own bug — and might succeed for the wrong reason, putting a
+    figure in a document the malformed request was never entitled to."""
+    assert is_data_plane_refusal(status, dns_failed=False) is False
+
+
+def test_a_dns_failure_is_a_refusal_with_no_status_at_all() -> None:
+    """There is no server to answer, so there is no status. The region still has no
+    usable batch route, which is the same conclusion."""
+    assert is_data_plane_refusal(None, dns_failed=True) is True
+
+
+def test_no_status_and_no_dns_failure_is_not_a_refusal() -> None:
+    """"Nothing observed" is not evidence of a refusal — a probe that could not complete
+    is `unknown`, and must not be recorded as a refusal by omission."""
+    assert is_data_plane_refusal(None, dns_failed=False) is False
+
+
+def test_a_dns_failure_outranks_a_healthy_status() -> None:
+    """Belt and braces: the two conditions are OR, not AND, so a caller that has both a
+    status and a DNS failure to report still gets a refusal."""
+    assert is_data_plane_refusal(200, dns_failed=True) is True
+
+
+def test_the_predicate_is_pure_and_total_over_the_status_range() -> None:
+    """Called twice with the same arguments it answers the same, and it answers at all
+    for every status in the range a data plane can return — no raise, no None."""
+    for status in range(100, 600):
+        first = is_data_plane_refusal(status, dns_failed=False)
+        assert isinstance(first, bool)
+        assert is_data_plane_refusal(status, dns_failed=False) is first
 
 
 # --------------------------------------------------------------------------- #

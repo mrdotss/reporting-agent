@@ -1,0 +1,68 @@
+{
+  "decisions": [
+    {
+      "id": "sections-storage-model",
+      "title": "How is a section stored — a new top-level sections[] array at schema_version 3, or a UI-only projection over the existing blocks[]?",
+      "options": [
+        "New sections[] array at schema_version 3; the agent compiles sections directly to AST and blocks[] stays only for v1/v2",
+        "Sections stay a UI projection; the wizard still writes blocks[] so the compiler is untouched"
+      ],
+      "recommended": "New sections[] array at schema_version 3; the agent compiles sections directly to AST and blocks[] stays only for v1/v2",
+      "answer": "New sections[] array at schema_version 3; the agent compiles sections directly to AST and blocks[] stays only for v1/v2"
+    },
+    {
+      "id": "approver-role-labels",
+      "title": "The four approver labels (Author / Quality Control / Reviewed By / Customer) do not map semantically onto the stored ids (author / reviewer / approver / recipient). How do we bridge that?",
+      "options": [
+        "Map positionally and keep the four stored ids untouched — labels come from the message catalogue",
+        "Rename the stored role ids to match the labels, changing APPROVER_ROLES, the fixtures and the mirror region"
+      ],
+      "recommended": "Map positionally and keep the four stored ids untouched — labels come from the message catalogue",
+      "answer": "Map positionally and keep the four stored ids untouched — labels come from the message catalogue"
+    },
+    {
+      "id": "new-collectors-in-spec",
+      "title": "Are the four new Azure collectors (VNet, public IP, NSG rules, Advisor) part of this spec's task list or a follow-up spec?",
+      "options": [
+        "In this spec as a later phase, after the UI restructure lands",
+        "Deferred to a follow-up spec; this spec ships the UI restructure and marks those four sections unavailable"
+      ],
+      "recommended": "In this spec as a later phase, after the UI restructure lands",
+      "answer": "In this spec as a later phase, after the UI restructure lands"
+    },
+    {
+      "id": "subrecord-modelling",
+      "title": "Subnets and NSG rules are one-to-many per resource. How does the snapshot model them?",
+      "options": [
+        "Synthetic child resources carrying real ARM ids, projected with mv-expand — resource_table and the fact model work unchanged",
+        "List-valued facts plus a new subrecord_table block type"
+      ],
+      "recommended": "Synthetic child resources carrying real ARM ids, projected with mv-expand — resource_table and the fact model work unchanged",
+      "answer": "Synthetic child resources carrying real ARM ids, projected with mv-expand — resource_table and the fact model work unchanged"
+    },
+    {
+      "id": "section-catalogue-mirror",
+      "title": "How is the section catalogue kept identical across both halves?",
+      "options": [
+        "One shared JSON file read by both halves, the way catalog/metrics.v1.json already is",
+        "Sentinel-delimited declarations in each half, compared by mirror.static.test.ts"
+      ],
+      "recommended": "One shared JSON file read by both halves, the way catalog/metrics.v1.json already is",
+      "answer": "One shared JSON file read by both halves, the way catalog/metrics.v1.json already is"
+    },
+    {
+      "id": "phase-zero-ordering",
+      "title": "The scan's list_inventory count extension has to land before the wizard restructure. Accept the reordered phasing?",
+      "options": [
+        "Yes — Phase 0 is the scan extension, then Brand, then the sections restructure",
+        "No — keep the collectors-last ordering from the original description and build the wizard against a stubbed scan"
+      ],
+      "recommended": "Yes — Phase 0 is the scan extension, then Brand, then the sections restructure",
+      "answer": "Yes — Phase 0 is the scan extension, then Brand, then the sections restructure"
+    }
+  ],
+  "blocking": "Waiting on the user's review of tasks.md. Requirements and design both approved; all six decisions answered.",
+  "context": {
+    "template": "reporting-agent-breadth-and-document"
+  }
+}

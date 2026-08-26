@@ -44,6 +44,7 @@ import { MESSAGE_ID_PATTERN, isMessageId } from "@/lib/messages/catalog"
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
 const REPORTS_DIR = path.join(appRoot, "components", "reports")
+const SCAN_DIR = path.join(appRoot, "components", "scan")
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -536,6 +537,189 @@ describe("literal-detection guard: app/components/reports/** (task 6.5)", () => 
     expect(
       files.length,
       "no .tsx files found under app/components/reports/"
+    ).toBeGreaterThan(0)
+
+    // Confirm at least one file parses without error
+    const source = readFileSync(files[0], "utf8")
+    const sf = ts.createSourceFile(
+      files[0],
+      source,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX
+    )
+    expect(sf.statements.length).toBeGreaterThan(0)
+  })
+
+  test("no unmigrated English literal in a text-emitting position", () => {
+    const allOffenders: {
+      file: string
+      literals: LiteralOffender[]
+    }[] = []
+
+    for (const file of files) {
+      const source = readFileSync(file, "utf8")
+      const literals = detectUnmigratedLiterals(source, file)
+      if (literals.length > 0) {
+        allOffenders.push({
+          file: path.relative(appRoot, file),
+          literals,
+        })
+      }
+    }
+
+    if (allOffenders.length > 0) {
+      const totalCount = allOffenders.reduce((sum, o) => sum + o.literals.length, 0)
+      const report = allOffenders
+        .map(
+          (o) =>
+            `  ${o.file} (${o.literals.length}):\n` +
+            o.literals
+              .map((l) => `    line ${l.line} [${l.kind}]: "${l.text}"`)
+              .join("\n")
+        )
+        .join("\n")
+
+      expect.fail(
+        `${totalCount} unmigrated literal(s) across ${allOffenders.length} file(s):\n${report}\n\n` +
+          "Migrate each literal to a ui.* catalog id resolved via messageText()."
+      )
+    }
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Scan roots extended to app/components/scan/** (task 1.7)
+// ---------------------------------------------------------------------------
+// Both guards apply: scan components use the same catalog pattern and must not
+// contain raw English literals in text positions or unresolved id-shaped constants.
+
+describe("message-literal guard: app/components/scan/**", () => {
+  const files = collectTsxFiles(SCAN_DIR)
+
+  test("the scan is not vacuous", () => {
+    expect(
+      files.length,
+      "no .tsx files found under app/components/scan/"
+    ).toBeGreaterThan(0)
+  })
+
+  test("every id-shaped constant is used only via messageText() resolution", () => {
+    const allOffenders: {
+      file: string
+      constant: string
+      references: { line: number; context: string }[]
+    }[] = []
+
+    for (const file of files) {
+      const source = readFileSync(file, "utf8")
+      const constants = extractIdConstants(source)
+
+      for (const [name] of constants) {
+        const unresolved = findUnresolvedReferences(source, name)
+        if (unresolved.length > 0) {
+          allOffenders.push({
+            file: path.relative(appRoot, file),
+            constant: name,
+            references: unresolved,
+          })
+        }
+      }
+    }
+
+    if (allOffenders.length > 0) {
+      const report = allOffenders
+        .map(
+          (o) =>
+            `  ${o.file}: ${o.constant} used outside messageText() at:\n` +
+            o.references
+              .map((r) => `    line ${r.line}: ${r.context}`)
+              .join("\n")
+        )
+        .join("\n")
+
+      expect.fail(
+        `${allOffenders.length} id-constant(s) referenced outside messageText() resolution:\n${report}\n\n` +
+          "The rule: an id-shaped constant must appear ONLY as the first argument to " +
+          "messageText(id, language). Using it in a template literal, JSX child, or " +
+          "any other position emits the raw id string rather than its resolved copy."
+      )
+    }
+  })
+
+  test("no inline message-id literal is used outside messageText() or a const declaration", () => {
+    const allOffenders: {
+      file: string
+      occurrences: { line: number; id: string }[]
+    }[] = []
+
+    for (const file of files) {
+      const source = readFileSync(file, "utf8")
+      const inlineIds = findInlineLiteralIds(source)
+      if (inlineIds.length > 0) {
+        allOffenders.push({
+          file: path.relative(appRoot, file),
+          occurrences: inlineIds,
+        })
+      }
+    }
+
+    if (allOffenders.length > 0) {
+      const report = allOffenders
+        .map(
+          (o) =>
+            `  ${o.file}:\n` +
+            o.occurrences
+              .map((occ) => `    line ${occ.line}: "${occ.id}"`)
+              .join("\n")
+        )
+        .join("\n")
+
+      expect.fail(
+        `${allOffenders.length} file(s) use inline message-id literals outside resolution:\n${report}\n\n` +
+          "Extract the id to a const and resolve it via messageText()."
+      )
+    }
+  })
+
+  test("every id-constant's value is a declared catalog entry", () => {
+    const undeclared: { file: string; constant: string; value: string }[] = []
+
+    for (const file of files) {
+      const source = readFileSync(file, "utf8")
+      const constants = extractIdConstants(source)
+
+      for (const [name, value] of constants) {
+        if (!isMessageId(value)) {
+          undeclared.push({
+            file: path.relative(appRoot, file),
+            constant: name,
+            value,
+          })
+        }
+      }
+    }
+
+    if (undeclared.length > 0) {
+      const report = undeclared
+        .map((u) => `  ${u.file}: ${u.constant} = "${u.value}"`)
+        .join("\n")
+
+      expect.fail(
+        `${undeclared.length} id-constant(s) refer to undeclared catalog entries:\n${report}\n\n` +
+          "Add the id to app/lib/messages/catalog.ts (and the agent's catalog.v1.json)."
+      )
+    }
+  })
+})
+
+describe("literal-detection guard: app/components/scan/** (task 1.7)", () => {
+  const files = collectTsxFiles(SCAN_DIR)
+
+  test("the scan is not vacuous — files exist and are parseable", () => {
+    expect(
+      files.length,
+      "no .tsx files found under app/components/scan/"
     ).toBeGreaterThan(0)
 
     // Confirm at least one file parses without error

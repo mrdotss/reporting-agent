@@ -8,8 +8,9 @@ import {
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import * as store from "@/lib/templates/store"
 import { definitionSha256 } from "@/lib/templates/version"
+import { ensureBrand } from "@/lib/brands/store"
 
-import type { ReportTemplate, ReportTemplateVersion } from "@/lib/db/schema"
+import type { ReportTemplate, ReportTemplateVersion, Brand } from "@/lib/db/schema"
 
 /**
  * The template operations, as thin wrappers over `lib/templates/store.ts`
@@ -160,10 +161,54 @@ export async function publishTemplateVersion(
   )
   if (catalogIssues.length > 0) throw new TemplateInvalidError(catalogIssues)
 
+  // --- Resolve Brand into definition.design (Requirement 2.6, 2.7) ---------
+  // A saved version must be SELF-CONTAINED against later Brand edits: the Brand
+  // is resolved here, between validation and insertion, so the renderer never
+  // learns Brands exist. The version carries the full DesignSpec inline, and a
+  // Brand edit applies to the NEXT version, never retroactively.
+  const brand = await ensureBrand(userId)
+  const resolvedDefinition = resolveDesignFromBrand(definition, brand)
+
   return await store.insertVersion(userId, templateId, {
-    definition,
+    definition: resolvedDefinition,
     definitionSha256: definitionSha256(
-      definition as Parameters<typeof definitionSha256>[0]
+      resolvedDefinition as Parameters<typeof definitionSha256>[0]
     ),
   })
+}
+
+// --- Brand resolution --------------------------------------------------------
+
+/**
+ * Write the Brand's design values into `definition.design`, producing a
+ * self-contained definition that is immune to later Brand edits.
+ *
+ * This is the mechanism that implements Requirement 2.7: a report is an audit
+ * artifact, so the design values are frozen at publish time rather than
+ * dereferenced at render time. The renderer never learns that Brands exist.
+ *
+ * **Exported for test.** The publish path itself is only reachable with a real
+ * Postgres (its store tests are integration tests, which skip without a database),
+ * so a test driving `publishTemplateVersion` end to end would not run in ordinary
+ * development and would protect nothing day to day. This function is where the
+ * frozen-at-publish guarantee actually lives, so this is the seam the guard needs.
+ */
+export function resolveDesignFromBrand(definition: unknown, brand: Brand): unknown {
+  if (typeof definition !== "object" || definition === null) return definition
+
+  const def = definition as Record<string, unknown>
+
+  return {
+    ...def,
+    design: {
+      preset: brand.themePreset,
+      accent_color: brand.accentColor,
+      density: brand.density,
+      table_style: brand.tableStyle,
+      number_format: brand.numberFormat,
+      cover_page: brand.coverPage,
+      logo: brand.logoKey,
+      page_size: brand.pageSize,
+    },
+  }
 }

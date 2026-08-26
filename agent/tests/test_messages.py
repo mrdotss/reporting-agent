@@ -121,7 +121,9 @@ def test_the_two_languages_are_actually_different_copy() -> None:
     A handful of ids legitimately match — `baseline` and `enhanced` are the tier names the
     snapshot records, and a translated tier name would no longer name the tier; `UTC` is the
     timezone abbreviation, and Indonesian technical writing keeps it untranslated for the same
-    reason — so this asserts a proportion rather than universal difference, and names the
+    reason; `Data` is a true cognate, spelled and meant identically in both languages, so
+    changing one side to satisfy this assertion would be a mistranslation performed to please a
+    test — so this asserts a proportion rather than universal difference, and names the
     exempt ids.
     """
     shared_by_design = {
@@ -130,6 +132,7 @@ def test_the_two_languages_are_actually_different_copy() -> None:
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
         "ui.run_list.utc_suffix",
+        "ui.scan.group_data",
     }
     messages = raw_catalog()["messages"]
     identical = {

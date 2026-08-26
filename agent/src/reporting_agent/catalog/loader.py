@@ -88,6 +88,8 @@ __all__ = [
     "ResourceTypeCatalog",
     "ResourceTypeFacts",
     "SourceBinding",
+    "child_type_names",
+    "is_child_type",
     "load_catalog",
 ]
 
@@ -501,6 +503,70 @@ class LoadedCatalog:
     def resource_type_names(self) -> tuple[str, ...]:
         """Every resource type the catalog declares, in file order."""
         return tuple(entry.resource_type for entry in self.resource_types)
+
+
+# --- child types: the fact-only resource types (task 1.2) --------------------------
+
+
+def is_child_type(resource_type: str, *, catalog: LoadedCatalog) -> bool:
+    """Whether `resource_type` is a **child type** — a sub-record of another resource,
+    modelled as its own resource because it carries a real ARM id. **Pure.**
+
+    A subnet (`…/virtualNetworks/vnet-a/subnets/app-tier`) and a security rule
+    (`…/networkSecurityGroups/nsg-web/securityRules/allow-https`) are addressable Azure
+    resources, so the snapshot holds them as resources and `resource_table` presents them
+    with no new block type. But they are **not deployed things** in the sense a reader
+    takes from "47 resources", and two consequences follow from that:
+
+    * no metric is ever requested for one, so an unrequested metric is not a
+      `metric_not_selected` gap — see `collect/pipeline.py`;
+    * one contributes to **no headline count** — see the scan's partitioned counts.
+
+    **The test is the declaration, not a list.** A child type appears in
+    `catalog/facts.v1.json` and never in `catalog/metrics.v1.json`, so this function reads
+    the two halves of one loaded catalog rather than consulting a second registry that
+    could disagree with them. Adding a child type is one edit, to the fact file.
+
+    Takes the whole `LoadedCatalog` rather than a `FactDeclaration` and a metric catalog
+    separately, deliberately: the two files are **one document version** — `facts.v1.json`
+    declares no `catalog_version` of its own precisely so no second version string can
+    disagree — and a signature taking them apart would let a caller pair a fact
+    declaration with a mismatched metric catalog, which is the drift this whole function
+    exists to prevent.
+
+    "Declared by metrics" means the type **appears** in the metric catalog, whether or not
+    its entries survived validation. A type whose metric entries are all invalid is a
+    catalog bug (`InvalidEntry`, `catalog_entry_invalid`), not a statement that the type is
+    a sub-record — and treating it as a child type would quietly drop a real resource out
+    of every headline count while the catalog fix was pending. Matched case-insensitively,
+    as both catalog lookups already match, because Resource Graph lower-cases `type`.
+    """
+    if not isinstance(resource_type, str) or not resource_type.strip():
+        return False
+    folded = resource_type.casefold()
+    declared_by_metrics = any(
+        entry.resource_type.casefold() == folded for entry in catalog.resource_types
+    )
+    if declared_by_metrics:
+        return False
+    return any(
+        declared.resource_type.casefold() == folded
+        for declared in catalog.facts.resource_types
+    )
+
+
+def child_type_names(catalog: LoadedCatalog) -> tuple[str, ...]:
+    """Every child type the loaded catalog declares, in fact-file order. **Pure.**
+
+    The list form of :func:`is_child_type`, for the callers that need the set rather than a
+    per-type question — the scan's count partitioning builds its query filter from this, so
+    that filter is derived from the catalogs and never hand-maintained.
+    """
+    return tuple(
+        declared.resource_type
+        for declared in catalog.facts.resource_types
+        if is_child_type(declared.resource_type, catalog=catalog)
+    )
 
 
 # --- loading ---------------------------------------------------------------------

@@ -154,11 +154,25 @@ export const verificationStatus = pgEnum("verification_status", [
   "fail",
 ])
 
+/**
+ * The scan lifecycle — deliberately simpler than `run_status` because a scan
+ * produces no snapshot, ledger or artifact, so there is nothing to claim, no
+ * progress callback and no reaper. A dead `running` row is superseded by the
+ * next scan rather than reaped.
+ */
+export const scanStatus = pgEnum("scan_status", [
+  "queued",
+  "running",
+  "complete",
+  "failed",
+])
+
 export type SubscriptionStatus = (typeof subscriptionStatus.enumValues)[number]
 export type FidelityTier = (typeof fidelityTier.enumValues)[number]
 export type RunStatus = (typeof runStatus.enumValues)[number]
 export type RunErrorCode = (typeof runErrorCode.enumValues)[number]
 export type VerificationStatus = (typeof verificationStatus.enumValues)[number]
+export type ScanStatus = (typeof scanStatus.enumValues)[number]
 
 // --- Shared column shapes ---------------------------------------------------
 
@@ -628,6 +642,102 @@ export const reportRuns = pgTable(
   ]
 )
 
+// --- brands ------------------------------------------------------------------
+
+/**
+ * Requirement 2.1. A Brand owns the visual identity of the consultancy's
+ * documents — theme preset, accent colour, density, page size, number format
+ * and logo — so those values are chosen once rather than re-picked per customer.
+ *
+ * Owned by `user_id` because no account or organization entity exists and
+ * inventing one is out of scope for this spec. A Brand edit applies to the NEXT
+ * report, never retroactively: the publish path resolves the Brand into
+ * `definition.design` at save time, making each version self-contained.
+ */
+export const themePreset = pgEnum("theme_preset", [
+  "editorial",
+  "corporate",
+  "technical",
+  "minimal",
+])
+
+export const density = pgEnum("density", ["compact", "normal", "relaxed"])
+
+export const tableStyle = pgEnum("table_style", [
+  "hairline",
+  "banded",
+  "bordered",
+])
+
+export const pageSize = pgEnum("page_size", ["A4", "Letter"])
+
+export type ThemePreset = (typeof themePreset.enumValues)[number]
+export type DensityEnum = (typeof density.enumValues)[number]
+export type TableStyleEnum = (typeof tableStyle.enumValues)[number]
+export type PageSizeEnum = (typeof pageSize.enumValues)[number]
+
+export const brands = pgTable(
+  "brands",
+  {
+    id: text("id").primaryKey(),
+
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    /** Human-readable label — "Acme Consulting Brand". */
+    name: text("name").notNull(),
+
+    themePreset: themePreset("theme_preset").notNull().default("editorial"),
+    accentColor: text("accent_color").notNull().default("#1f6f78"),
+
+    /**
+     * S3 object **key** under the owner's prefix. Never a presigned URL —
+     * presigned per request, never stored. Nullable: a brand with no logo is
+     * ordinary.
+     */
+    logoKey: text("logo_key"),
+
+    density: density("density").notNull().default("normal"),
+    tableStyle: tableStyle("table_style").notNull().default("hairline"),
+    pageSize: pageSize("page_size").notNull().default("A4"),
+
+    /** Same shape as `DesignSpec.number_format`. */
+    numberFormat: jsonb("number_format")
+      .$type<{ decimal_places: number; group_thousands: boolean }>()
+      .notNull()
+      .default({ decimal_places: 2, group_thousands: true }),
+
+    coverPage: boolean("cover_page").notNull().default(true),
+
+    /**
+     * Default approver names keyed by the four roles in APPROVER_ROLES:
+     * `{ author, reviewer, approver, recipient }`. Nullable — a brand with no
+     * defaults leaves all four for per-profile entry.
+     */
+    defaultApproverNames: jsonb("default_approver_names").$type<
+      Record<string, string>
+    >(),
+
+    /** FK into a future confidentiality_notices table. Nullable for now. */
+    confidentialityNoticeId: text("confidentiality_notice_id"),
+
+    createdAt: instant("created_at").notNull().defaultNow(),
+
+    updatedAt: instant("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("brands_user_id_idx").on(table.userId),
+    check(
+      "brands_name_ck",
+      sql`length(${table.name}) >= 1 AND length(${table.name}) <= 120`
+    ),
+  ]
+)
+
 // --- report_templates --------------------------------------------------------
 
 /**
@@ -689,6 +799,13 @@ export const reportTemplates = pgTable(
      * deleted starter is never resurrected (Requirement 10.7).
      */
     seededStarterKey: text("seeded_starter_key"),
+
+    /**
+     * The Brand this template references for its design values. Nullable:
+     * templates created before Brands existed carry no reference, and their
+     * published versions already have `definition.design` resolved inline.
+     */
+    brandId: text("brand_id").references(() => brands.id),
 
     createdAt: instant("created_at").notNull().defaultNow(),
 
@@ -909,6 +1026,62 @@ export const reportVerifications = pgTable(
   ]
 )
 
+// --- subscription_scans ------------------------------------------------------
+
+/**
+ * One row per subscription scan (Requirement 4.4). A scan reports the counts,
+ * regions and route probes the wizard's step 2 needs; it is deliberately NOT
+ * part of the `report_runs` state machine — it produces no snapshot, no ledger
+ * and no artifact, so the reaper, phase deadlines and progress callback would
+ * protect nothing. A dead `running` row is superseded by the next scan.
+ */
+export const subscriptionScans = pgTable(
+  "subscription_scans",
+  {
+    id: text("id").primaryKey(),
+
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    connectedSubscriptionId: text("connected_subscription_id")
+      .notNull()
+      .references(() => connectedSubscriptions.id),
+
+    status: scanStatus("status").notNull().default("queued"),
+
+    catalogVersion: text("catalog_version"),
+    sectionsCatalogueVersion: text("sections_catalogue_version"),
+
+    resourceCount: integer("resource_count"),
+    typeCounts: jsonb("type_counts"),
+    childTypeCounts: jsonb("child_type_counts"),
+    resourceGroups: jsonb("resource_groups"),
+    regions: jsonb("regions"),
+    regionCounts: jsonb("region_counts"),
+    regionProbes: jsonb("region_probes"),
+
+    truncated: boolean("truncated"),
+
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+
+    completedAt: instant("completed_at"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("subscription_scans_user_id_idx").on(table.userId),
+    index("subscription_scans_subscription_created_at_idx").on(
+      table.connectedSubscriptionId,
+      table.createdAt
+    ),
+  ]
+)
+
 // --- Row types --------------------------------------------------------------
 
 /**
@@ -941,3 +1114,9 @@ export type NewReportTemplateVersion =
 
 export type ReportVerification = typeof reportVerifications.$inferSelect
 export type NewReportVerification = typeof reportVerifications.$inferInsert
+
+export type SubscriptionScan = typeof subscriptionScans.$inferSelect
+export type NewSubscriptionScan = typeof subscriptionScans.$inferInsert
+
+export type Brand = typeof brands.$inferSelect
+export type NewBrand = typeof brands.$inferInsert

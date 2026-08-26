@@ -103,6 +103,7 @@ from typing import Any, Final, Protocol, runtime_checkable
 from reporting_agent.catalog.loader import (
     EnhancedCounterEntry,
     LoadedCatalog,
+    is_child_type,
     load_catalog,
 )
 from reporting_agent.collect.accumulate import (
@@ -1255,7 +1256,9 @@ async def _drive(
     gaps.extend(fact_gaps)
 
     metrics_by_resource_type = _requested_metrics(active, plan.scope, metric_selection)
-    gaps.extend(_metric_not_selected_gaps(resources, metrics_by_resource_type))
+    gaps.extend(
+        _metric_not_selected_gaps(resources, metrics_by_resource_type, catalog=loaded)
+    )
     await _report(progress, PHASE_COLLECTING, current=0, total=total, label="Metrics")
 
     # --- metrics (Req 14.7, 14.8, 23.x-30.x) -----------------------------------------
@@ -1502,6 +1505,8 @@ def _resource_snapshots(
 def _metric_not_selected_gaps(
     resources: Sequence[ResourceRecord],
     metrics_by_resource_type: Mapping[str, Sequence[str]],
+    *,
+    catalog: LoadedCatalog,
 ) -> list[GapRecord]:
     """Req 23.15, 23.16 — one gap per resource whose type had no metric requested.
 
@@ -1544,6 +1549,17 @@ def _metric_not_selected_gaps(
     for resource in resources:
         resource_type = resource["resource_type"]
         if resource_type.casefold() in requested:
+            continue
+        if is_child_type(resource_type, catalog=catalog):
+            # A child type — a subnet, a security rule — has no metrics to select, by
+            # declaration: it appears in the fact catalog and never in the metric one. So
+            # "nobody asked" is not a decision anyone made and not a defect anyone can fix
+            # by editing the template, which is the entire content of this gap.
+            #
+            # Left in, this records one gap per sub-record: a single VNet with six subnets
+            # produces six, each claiming "the pinned template version selected no metric
+            # for that type" — a statement no template could act on, in a gap list whose
+            # value is that every entry is actionable.
             continue
         gaps.append(
             record_gap(

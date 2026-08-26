@@ -1249,6 +1249,7 @@ function reportTemplateRow(
     currentVersionId: TEMPLATE_VERSION_ID,
     draftDefinition: null,
     seededStarterKey: null,
+    brandId: null,
     createdAt: new Date("2026-05-01T00:00:00.000Z"),
     updatedAt: new Date("2026-05-02T00:00:00.000Z"),
     ...overrides,

@@ -33,6 +33,8 @@ from reporting_agent.catalog.loader import (
     MIN_FACT_KEY_LENGTH,
     FactDeclaration,
     FactDeclarationEntry,
+    child_type_names,
+    is_child_type,
     load_catalog,
 )
 from reporting_agent.collect.log import FACT_GAP_TYPES, GAP_TYPE_FACT_UNAVAILABLE
@@ -776,3 +778,112 @@ def test_no_valid_metric_and_an_empty_fact_declaration_is_catalog_unusable(
     in it still raises, so widening the gate did not weaken it."""
     with pytest.raises(CatalogUnusableError):
         load_catalog(write_metrics(tmp_path, ONE_INVALID_METRIC))
+
+
+# --------------------------------------------------------------------------- #
+# is_child_type / child_type_names — the fact-only resource types (task 1.2)
+# --------------------------------------------------------------------------- #
+
+CHILD_TYPE = "Microsoft.Network/virtualNetworks/subnets"
+
+
+def _child_catalog(tmp_path: Path) -> Any:
+    """The real metric catalog paired with a fact file declaring one type the metric
+    catalog does not: the exact shape a child type has."""
+    return load_catalog(
+        DEFAULT_CATALOG_PATH,
+        facts_path=facts_file(tmp_path, [VALID_FACT], resource_type=CHILD_TYPE),
+    )
+
+
+def test_a_type_declared_by_facts_and_not_by_metrics_is_a_child_type(tmp_path: Path) -> None:
+    assert is_child_type(CHILD_TYPE, catalog=_child_catalog(tmp_path)) is True
+
+
+def test_a_type_declared_by_both_halves_is_not_a_child_type(tmp_path: Path) -> None:
+    """A virtual machine has facts *and* metrics. It is a deployed thing, it counts toward
+    every headline total, and an unrequested metric for it is a real gap."""
+    catalog = load_catalog(
+        DEFAULT_CATALOG_PATH, facts_path=facts_file(tmp_path, [VALID_FACT], resource_type=VM_TYPE)
+    )
+
+    assert is_child_type(VM_TYPE, catalog=catalog) is False
+
+
+def test_a_type_declared_by_neither_half_is_not_a_child_type(tmp_path: Path) -> None:
+    """An unsupported type — Cognitive Services, a network watcher — is absent from the
+    catalogs entirely. It is not a sub-record of anything, and it must keep recording the
+    gap that says nobody selected a metric for it."""
+    assert is_child_type("Microsoft.CognitiveServices/accounts", catalog=_child_catalog(tmp_path)) is False
+
+
+def test_the_child_type_test_folds_case(tmp_path: Path) -> None:
+    """Resource Graph lower-cases `type` in its response body, so an inventory row arrives
+    as `microsoft.network/virtualnetworks/subnets`. An exact comparison would answer
+    `False` for every real row and every sub-record would be counted as a deployed
+    resource — the defect, arrived at through a spelling mismatch."""
+    catalog = _child_catalog(tmp_path)
+
+    assert is_child_type(CHILD_TYPE.casefold(), catalog=catalog) is True
+    assert is_child_type(CHILD_TYPE.upper(), catalog=catalog) is True
+
+
+@pytest.mark.parametrize("value", ["", "   ", None, 42, [], {}])
+def test_a_non_type_is_not_a_child_type(value: object, tmp_path: Path) -> None:
+    """Total over its input rather than raising: this is called per inventory row, and a
+    malformed row must not end a run."""
+    assert is_child_type(value, catalog=_child_catalog(tmp_path)) is False  # type: ignore[arg-type]
+
+
+def test_a_type_whose_metric_entries_are_all_invalid_is_still_not_a_child_type(
+    tmp_path: Path,
+) -> None:
+    """The distinction that protects a real resource from being demoted to a sub-record.
+
+    A metric catalog entry that fails validation is a **catalog bug** — it degrades to an
+    `InvalidEntry` and a `catalog_entry_invalid` gap. If "declared by metrics" meant "has
+    valid metric entries", that bug would silently reclassify the type as a child type and
+    drop every resource of it out of the scan's headline count, while the report still
+    claimed to cover the subscription. So presence in the metric file is what counts.
+    """
+    metrics_path = write_metrics(tmp_path, ONE_INVALID_METRIC)
+    catalog = load_catalog(
+        metrics_path, facts_path=facts_file(tmp_path, [VALID_FACT], resource_type=VM_TYPE)
+    )
+    broken = catalog.for_resource_type(VM_TYPE)
+
+    assert broken is not None and not broken.has_valid_entries, (
+        "this test is only meaningful while the type's metric entries are all invalid"
+    )
+    assert is_child_type(VM_TYPE, catalog=catalog) is False
+
+
+def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path) -> None:
+    """The list form the scan's count filter is built from, so that filter is derived from
+    the catalogs rather than hand-maintained."""
+    facts_path = tmp_path / "two.json"
+    facts_path.write_text(
+        json.dumps(
+            {
+                "resource_types": {
+                    CHILD_TYPE: {"facts": [VALID_FACT]},
+                    VM_TYPE: {"facts": [VALID_FACT]},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    catalog = load_catalog(DEFAULT_CATALOG_PATH, facts_path=facts_path)
+
+    assert child_type_names(catalog) == (CHILD_TYPE,), (
+        "the virtual machine type is declared by both halves and is not a child type"
+    )
+
+
+def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
+    """Today's shipped pair has none: the four collectors that emit sub-records are phase 5.
+
+    Pinned so that the first child type to be declared is a deliberate edit which turns this
+    assertion red, rather than a quiet change to what every headline count means.
+    """
+    assert child_type_names(load_catalog()) == ()

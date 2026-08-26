@@ -29,10 +29,10 @@ import {
  * act on it.
  */
 
-export const WIZARD_STEP_COUNT = 7
+export const WIZARD_STEP_COUNT = 6
 
 export type WizardStepId =
-  "identity" | "scope" | "period" | "metrics" | "blocks" | "design" | "preview"
+  "identity" | "scope" | "period" | "metrics" | "blocks" | "preview"
 
 export type WizardStep = {
   readonly id: WizardStepId
@@ -84,14 +84,8 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     summary: "The document itself — what it contains and in what order.",
   },
   {
-    id: "design",
-    number: 6,
-    title: "Design",
-    summary: "The theme, the accent, the density and the page.",
-  },
-  {
     id: "preview",
-    number: 7,
+    number: 6,
     title: "Preview",
     summary: "What the document will look like, and saving the version.",
   },
@@ -112,7 +106,7 @@ export const STEP_FOR_FIELD: Readonly<Record<string, WizardStepId>> = {
   period: "period",
   metrics: "metrics",
   blocks: "blocks",
-  design: "design",
+  design: "preview",
 }
 
 /**
@@ -142,7 +136,6 @@ const NO_ISSUES: StepIssues = Object.freeze({
   period: [],
   metrics: [],
   blocks: [],
-  design: [],
   preview: [],
 })
 
@@ -164,7 +157,6 @@ export function issuesByStep(definition: unknown): StepIssues {
     period: [],
     metrics: [],
     blocks: [],
-    design: [],
     preview: [],
   }
 
@@ -273,7 +265,6 @@ export function completionProblems(
     period: [],
     metrics: [],
     blocks: [],
-    design: [],
     preview: [],
   }
 

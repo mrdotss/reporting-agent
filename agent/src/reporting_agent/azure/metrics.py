@@ -78,6 +78,12 @@ from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Final
 
+from reporting_agent.azure import regions
+
+# The module, not the name: `regions.is_data_plane_refusal` keeps ONE patch point for
+# every caller of the predicate, so the guard that asserts the collection path and the
+# scan-time probe reach the same reading of a data-plane status cannot be satisfied by
+# patching one caller's own binding. The two named imports below are ordinary types.
 from reporting_agent.azure.ports import RawHttpResponse
 from reporting_agent.azure.regions import LocationRequestResult, RegionResolver
 from reporting_agent.catalog.loader import (
@@ -168,15 +174,9 @@ case rather than treating an unparseable header as "no wait needed"."""
 
 _RESPONSE_TOO_LARGE_STATUS: Final[int] = 400
 
-_DATA_PLANE_REFUSED_STATUSES: Final[frozenset[int]] = frozenset({401, 403, 404})
-"""Batch statuses meaning "this endpoint will not serve this location", not "this
-request was malformed".
-
-`401`/`403` because the refusal can come from the metrics service's own authorization
-check rather than from the caller's token, and `404` because a route that is absent is
-the same fact a DNS failure carries one layer down. A `400` is deliberately absent: a
-malformed request would succeed on neither path, and falling back would hide it.
-"""
+# The refusal statuses and the predicate that reads them live in `azure/regions.py`,
+# beside the DNS-failure handling that is the same question asked of another layer.
+# Declaring a second set here is what let the scan and the run disagree.
 _RESPONSE_TOO_LARGE_HEADER: Final[str] = "x-ms-error-code"
 _RESPONSE_TOO_LARGE_VALUE: Final[str] = "ResponseTooLarge"
 
@@ -1007,7 +1007,7 @@ class MetricsCollector:
             )
             return [*first_gaps, *rest_gaps]
 
-        if response.status in _DATA_PLANE_REFUSED_STATUSES:
+        if regions.is_data_plane_refusal(response.status, dns_failed=False):
             # The data plane answered, and what it said was "not here, not for you".
             #
             # Req 24.2 anticipated a region with **no** metrics data-plane host, which

@@ -31,10 +31,12 @@ looser double would be testing the protocol rather than the pipeline.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -63,7 +65,11 @@ from reporting_agent.azure.provider import (
     FIDELITY_ENHANCED as AZURE_FIDELITY_ENHANCED,
 )
 from reporting_agent.azure.provider import provider_over_ports
-from reporting_agent.catalog.loader import DEFAULT_CATALOG_PATH, load_catalog
+from reporting_agent.catalog.loader import (
+    DEFAULT_CATALOG_PATH,
+    LoadedCatalog,
+    load_catalog,
+)
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
@@ -1927,6 +1933,7 @@ def test_a_resource_whose_type_had_no_metric_requested_gets_a_typed_gap() -> Non
             _record("/subscriptions/s/rg/providers/Microsoft.Sql/servers/sql-01", SQL_TYPE),
         ],
         {RESOURCE_TYPE: [CPU]},
+        catalog=CATALOG,
     )
 
     assert [gap["resource_id"] for gap in gaps] == [
@@ -1947,6 +1954,7 @@ def test_a_resource_type_requested_with_an_empty_metric_list_still_gets_the_gap(
     gaps = _metric_not_selected_gaps(
         [_record(resource_id("prod-web-01"), RESOURCE_TYPE)],
         {RESOURCE_TYPE: []},
+        catalog=CATALOG,
     )
 
     assert len(gaps) == 1
@@ -1961,9 +1969,82 @@ def test_no_gap_is_recorded_when_the_type_differs_only_by_case() -> None:
     gaps = _metric_not_selected_gaps(
         [_record(resource_id("prod-web-01"), WIRE_TYPE)],
         {RESOURCE_TYPE: [CPU]},
+        catalog=CATALOG,
     )
 
     assert gaps == []
+
+
+CHILD_TYPE = "Microsoft.Network/virtualNetworks/subnets"
+CHILD_FACT: dict[str, object] = {
+    "key": "address_prefix",
+    "value_kind": "text",
+    "source": "resource_graph",
+    "projectable": True,
+    "projection": "tostring(properties.addressPrefix)",
+}
+
+
+def _catalog_declaring_a_child_type(tmp_path: Path) -> LoadedCatalog:
+    """The real metric catalog paired with a fact file declaring one child type.
+
+    The pairing is the point: `CHILD_TYPE` appears in the fact half and **not** in
+    `metrics.v1.json`, which is exactly what `is_child_type` reads.
+    """
+    facts_path = tmp_path / "facts.json"
+    facts_path.write_text(
+        json.dumps({"resource_types": {CHILD_TYPE: {"facts": [CHILD_FACT]}}}),
+        encoding="utf-8",
+    )
+    return load_catalog(DEFAULT_CATALOG_PATH, facts_path=facts_path)
+
+
+def test_a_child_type_records_no_metric_not_selected_gap(tmp_path: Path) -> None:
+    """Task 1.2, Guard A — a sub-record is not a resource nobody selected metrics for.
+
+    A child type has no metrics **by declaration**: it is in the fact catalog and never in
+    the metric one, so there is nothing a template could have selected and nothing an
+    author could fix. Recording the gap anyway produces one entry per sub-record — a
+    single VNet with six subnets yields six — each claiming "the pinned template version
+    selected no metric for that type", in a gap list whose entire value is that every
+    entry is actionable.
+
+    Asserted with **both** kinds of resource in one call, so the test cannot pass by
+    suppressing the gap altogether: the non-child type still gets its gap in the same
+    invocation. Written before the collectors that emit child resources exist, because it
+    constrains how they project.
+    """
+    catalog = _catalog_declaring_a_child_type(tmp_path)
+    subnet_id = resource_id("vnet-a") + "/subnets/app-tier"
+
+    gaps = _metric_not_selected_gaps(
+        [
+            _record(subnet_id, CHILD_TYPE),
+            _record("/subscriptions/s/rg/providers/Microsoft.Sql/servers/sql-01", SQL_TYPE),
+        ],
+        {RESOURCE_TYPE: [CPU]},
+        catalog=catalog,
+    )
+
+    assert [gap["resource_id"] for gap in gaps] == [
+        "/subscriptions/s/rg/providers/Microsoft.Sql/servers/sql-01"
+    ], "the child type must be skipped and the ordinary unselected type must not be"
+
+
+def test_six_subnets_produce_six_gaps_without_the_child_type_rule(tmp_path: Path) -> None:
+    """Guard the guard: the rule above is worth having only if the noise it prevents is
+    real. With `CHILD_TYPE` absent from the fact catalog it is not a child type, and every
+    one of six sub-records records its own gap — the shape a report would carry."""
+    plain = load_catalog(DEFAULT_CATALOG_PATH)  # no fact half, so no child types at all
+
+    gaps = _metric_not_selected_gaps(
+        [_record(resource_id("vnet-a") + f"/subnets/tier-{n}", CHILD_TYPE) for n in range(6)],
+        {RESOURCE_TYPE: [CPU]},
+        catalog=plain,
+    )
+
+    assert len(gaps) == 6
+    assert all(gap["gap_type"] == GAP_TYPE_METRIC_NOT_SELECTED for gap in gaps)
 
 
 def test_the_gap_reaches_the_snapshot_and_is_counted() -> None:

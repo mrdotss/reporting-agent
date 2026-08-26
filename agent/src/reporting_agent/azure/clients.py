@@ -72,13 +72,17 @@ from reporting_agent.azure.credential import (
 # import in the one direction: `inventory.py` imports only `azure/ports.py`, which pulls in
 # no SDK, so this adds no import cost to a module that already imports `azure.core`.
 from reporting_agent.azure.inventory import (
+    COUNT_COLUMN,
+    DIMENSION_REGIONS,
     DIMENSION_RESOURCE_GROUPS,
     DIMENSION_RESOURCE_TYPES,
     DIMENSION_TAG_KEYS,
     DIMENSION_TAG_VALUES,
     DISTINCT_VALUE_LIMIT,
+    LOCATION_COLUMN,
+    TYPE_COLUMN,
 )
-from reporting_agent.azure.ports import DnsResolutionError, RawHttpResponse
+from reporting_agent.azure.ports import DnsResolutionError, ProbeResult, RawHttpResponse
 from reporting_agent.azure.regions import metrics_data_plane_endpoint
 
 __all__ = [
@@ -109,6 +113,7 @@ __all__ = [
     "inventory_query",
     "is_dns_resolution_failure",
     "pipeline_sender",
+    "resource_counts_query",
 ]
 
 logger = logging.getLogger(__name__)
@@ -460,7 +465,53 @@ def distinct_dimensions_query(*, subscription_id: str) -> str:
             f"            {DIMENSION_TAG_KEYS} = "
             f"make_set_if(tagKey, isnotempty(tagKey), {limit}),",
             f"            {DIMENSION_TAG_VALUES} = "
-            f"make_set_if(tagValue, isnotempty(tagValue), {limit})",
+            f"make_set_if(tagValue, isnotempty(tagValue), {limit}),",
+            f"            {DIMENSION_REGIONS} = "
+            f"make_set_if(location, isnotempty(location), {limit})",
+        ]
+    )
+
+
+def resource_counts_query(*, subscription_id: str) -> str:
+    """The per-resource-type count query behind the scan's headline totals. **Pure.**
+
+    A **second** query rather than columns added to :func:`distinct_dimensions_query`, for
+    two structural reasons that are not preferences:
+
+    * That query projects **no `id`** — which is what makes Req 9.5's exclusion of resource
+      identifiers structural rather than a filter someone has to remember. Counting distinct
+      ids would put `id` back in the projection, and the guarantee would become a promise
+      again.
+    * That query aggregates with **no `by` clause**, which is what makes "one row, no
+      continuation" a property of its shape. A count per type needs `by type`, so it is a
+      differently-shaped answer and it pages.
+
+    **Why `count()` and not a distinct-count.** This query does not `mv-expand`, so each
+    resource contributes exactly one row and `count()` is already exact. `count_distinct`
+    and `count_distinctif` are Azure Data Explorer functions whose presence in Resource
+    Graph's KQL subset could not be verified from this repository, and depending on an
+    unverified function to fix a counting bug would be trading one wrong number for another.
+    `make_bag` in a two-stage summarize would collapse this to a single row and was rejected
+    for the same reason.
+
+    **Child types are not filtered here.** The partition between headline counts and
+    sub-record counts happens in :func:`read_counts`, from `child_type_names(catalog)`, so
+    the type list is derived from the two catalogs rather than embedded in query text that
+    would then have to be kept in step with them by hand.
+
+    **Grouped by both type and location** so the scan screen can state, for a region whose
+    data plane refused, the count of scanned resources *in that region* (Req 5.4). The rows
+    are `(type, location, count)` triples; `read_counts` sums across locations to derive the
+    per-type totals and builds the per-region map from the same answer. Ordered
+    deterministically by both columns so the query is byte-identical between two calls with
+    the same argument.
+    """
+    return "\n".join(
+        [
+            "Resources",
+            f"| where subscriptionId == {_kql_literal(subscription_id)}",
+            f"| summarize {COUNT_COLUMN} = count() by {TYPE_COLUMN}, {LOCATION_COLUMN}",
+            f"| order by {TYPE_COLUMN} asc, {LOCATION_COLUMN} asc",
         ]
     )
 
@@ -529,6 +580,36 @@ class ArmInventoryPort:
             json={
                 "subscriptions": [subscription_id],
                 "query": distinct_dimensions_query(subscription_id=subscription_id),
+                "options": {"resultFormat": "objectArray"},
+            },
+        )
+        return await _send(self.sender, request)
+
+    async def query_resource_counts(self, *, subscription_id: str) -> RawHttpResponse:
+        """The per-type count query behind the scan's headline totals (task 1.3).
+
+        The same service, endpoint, credential audience and envelope as the dimensions
+        query — what differs is the KQL, which is why this is a second method on one port
+        rather than a second port.
+
+        `summarize count() by type, location` returns one row per (type, region) pair, so a
+        type present in three regions arrives as three rows and the reader **sums** them for
+        that type's total. Grouping by location as well is what lets the scan state the
+        resource count for a region whose data plane refused batch metrics (Req 5.4) — a
+        statement it cannot make honestly from a distinct region list alone.
+
+        Row count is bounded by the product of two already-bounded sets: a type absent from
+        the `resource_types` dimension cannot appear here, and neither can a region absent
+        from `regions`, both capped at 2000 by the dimensions query. No `$skipToken` is sent,
+        and the reader tolerates whatever rows arrive.
+        """
+        request = HttpRequest(
+            "POST",
+            f"{ARM_ENDPOINT}/providers/Microsoft.ResourceGraph/resources",
+            params={"api-version": self.api_version},
+            json={
+                "subscriptions": [subscription_id],
+                "query": resource_counts_query(subscription_id=subscription_id),
                 "options": {"resultFormat": "objectArray"},
             },
         )
@@ -1024,6 +1105,36 @@ class AzureMetricsPort:
             self._logs_sender = sender
         return sender
 
+    # --- the region route probe (task 1.6) ------------------------------------------
+
+    async def probe_region(
+        self, *, location: str, subscription_id: str
+    ) -> ProbeResult:
+        """One minimal request against `location`'s data-plane endpoint (Req 5.1).
+
+        Issues an empty-body GET to the metrics batch endpoint's base path, reads the
+        status code and the `Retry-After` header (on 429), and discards the response
+        body. Returns a :class:`ProbeResult` so the caller never sees a body.
+
+        Raises `DnsResolutionError` when the endpoint fails to resolve (same as
+        :meth:`query_batch`).
+        """
+        request = HttpRequest(
+            "GET",
+            f"{metrics_data_plane_endpoint(location)}/subscriptions/"
+            f"{subscription_id}/metrics:getBatch",
+            params={"api-version": self.batch_api_version},
+        )
+        sender = self._batch_sender(location)
+        try:
+            response = await _send(sender, request)
+        except ServiceRequestError as exc:
+            if is_dns_resolution_failure(exc):
+                raise DnsResolutionError(location) from exc
+            raise
+        retry_after = response.header("Retry-After") if response.status == 429 else None
+        return ProbeResult(status=response.status, retry_after=retry_after)
+
     # --- teardown -------------------------------------------------------------------
 
     def close(self) -> None:
@@ -1098,6 +1209,35 @@ def build_inventory_port(
         """Never raises: teardown replacing a real terminal error with a cleanup one is
         the failure this shares with :meth:`AzurePorts.close`."""
         _close_quietly(client)
+
+    return (port, close)
+
+
+def build_metrics_port(
+    *, credential: InvocationCredential,
+) -> tuple[AzureMetricsPort, Callable[[], None]]:
+    """The metrics port **alone**, for the region route probe (task 1.6).
+
+    Issues one minimal request per region to test whether the data-plane endpoint
+    answers. No ARM client, no compute client, no definitions client — just the
+    factory for regional batch senders, which is all `probe_region` needs.
+    """
+    from azure.monitor.querymetrics import MetricsClient
+
+    def metrics_client_factory(location: str) -> Any:
+        return MetricsClient(
+            endpoint=metrics_data_plane_endpoint(location),
+            credential=credential.for_scope(METRICS_DATA_PLANE_SCOPE),
+        )
+
+    port = AzureMetricsPort(
+        arm_sender=None,  # type: ignore[arg-type]
+        metrics_client_factory=metrics_client_factory,
+        logs_sender_factory=None,
+    )
+
+    def close() -> None:
+        port.close()
 
     return (port, close)
 

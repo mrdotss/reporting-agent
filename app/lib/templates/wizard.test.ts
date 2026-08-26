@@ -40,21 +40,20 @@ function withoutField(field: keyof TemplateDefinition): unknown {
 }
 
 describe("Requirement 11.1 — seven steps in a fixed order", () => {
-  test("there are exactly seven, numbered 1 to 7", () => {
+  test("there are exactly six, numbered 1 to 6", () => {
     expect(WIZARD_STEPS).toHaveLength(WIZARD_STEP_COUNT)
     expect(WIZARD_STEPS.map((step) => step.number)).toEqual([
-      1, 2, 3, 4, 5, 6, 7,
+      1, 2, 3, 4, 5, 6,
     ])
   })
 
-  test("the order is identity, scope, period, metrics, blocks, design, preview", () => {
+  test("the order is identity, scope, period, metrics, blocks, preview", () => {
     expect(WIZARD_STEPS.map((step) => step.id)).toEqual([
       "identity",
       "scope",
       "period",
       "metrics",
       "blocks",
-      "design",
       "preview",
     ])
   })
@@ -95,7 +94,7 @@ describe("every definition field has a step to show it on", () => {
     ["period", "period"],
     ["metrics", "metrics"],
     ["blocks", "blocks"],
-    ["design", "design"],
+    ["design", "preview"],
   ] as const)("a %s issue belongs to the %s step", (field, expected) => {
     expect(stepForIssue({ path: [field, "nested"], message: "x" })).toBe(
       expected
@@ -141,7 +140,7 @@ describe("Requirement 11.3 — a failing step blocks only itself", () => {
   test("issues are grouped onto the step that owns them", () => {
     const issues = issuesByStep(withoutField("design"))
 
-    expect(issues.design.length).toBeGreaterThan(0)
+    expect(issues.preview.length).toBeGreaterThan(0)
     expect(issues.identity).toEqual([])
     expect(issues.scope).toEqual([])
   })
@@ -154,7 +153,7 @@ describe("Requirement 11.2 — backward navigation is always allowed", () => {
   })
 
   test("a step above the highest reached is not", () => {
-    expect(canReturnTo(stepById("design"), 5)).toBe(false)
+    expect(canReturnTo(stepById("preview"), 5)).toBe(false)
   })
 
   test("navigating back is permitted even while that step fails", () => {
@@ -184,8 +183,8 @@ describe("step movement clamps at both ends", () => {
 })
 
 describe("Requirement 11.8 — reopening resumes rather than restarts", () => {
-  test("a complete draft opens on step 7", () => {
-    expect(openingStep(VALID).number).toBe(7)
+  test("a complete draft opens on step 6", () => {
+    expect(openingStep(VALID).number).toBe(6)
   })
 
   test("a draft failing step 3 opens on step 3", () => {

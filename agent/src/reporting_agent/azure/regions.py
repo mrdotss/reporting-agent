@@ -39,20 +39,32 @@ and does not decide batch sizing or concurrency. Those are `azure/metrics.py`'s 
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
-from reporting_agent.azure.ports import DnsResolutionError, MetricsPort, RawHttpResponse
+from reporting_agent.azure.ports import (
+    AzureTransportError,
+    DnsResolutionError,
+    MetricsPort,
+    RawHttpResponse,
+)
 from reporting_agent.collect.log import GAP_TYPE_REGION_UNREACHABLE, record_gap
 from reporting_agent.errors import RegionUnreachableError
 from reporting_agent.providers.base import GapRecord
 
 __all__ = [
+    "DATA_PLANE_REFUSED_STATUSES",
     "METRICS_DATA_PLANE_ENDPOINT_TEMPLATE",
+    "VERDICT_REACHABLE",
+    "VERDICT_REFUSED",
+    "VERDICT_UNKNOWN",
     "LocationRequestResult",
+    "RegionProbeResult",
     "RegionResolver",
+    "is_data_plane_refusal",
     "metrics_data_plane_endpoint",
+    "probe_regions",
 ]
 
 logger = logging.getLogger(__name__)
@@ -62,6 +74,48 @@ METRICS_DATA_PLANE_ENDPOINT_TEMPLATE: Final[str] = "https://{location}.metrics.m
 resource_type)` grouping key selects this host. The DNS resolution attempt itself
 happens inside a concrete `MetricsPort.query_batch` implementation, not here — this
 module reacts to `DnsResolutionError`, it does not perform the lookup."""
+
+DATA_PLANE_REFUSED_STATUSES: Final[frozenset[int]] = frozenset({401, 403, 404})
+"""Batch statuses meaning "this endpoint will not serve this location", not "this
+request was malformed".
+
+`401`/`403` because the refusal can come from the metrics service's own authorization
+check rather than from the caller's token, and `404` because a route that is absent is
+the same fact a DNS failure carries one layer down. A `400` is deliberately absent: a
+malformed request would succeed on neither path, and falling back would hide it.
+
+Lives here, beside the DNS-failure handling, because both are the same question asked
+of two layers — see :func:`is_data_plane_refusal`.
+"""
+
+
+def is_data_plane_refusal(status: int | None, *, dns_failed: bool) -> bool:
+    """Whether a data-plane response means "use the other road". **Pure.**
+
+    The ONE reading of a data-plane outcome, shared by the collection path
+    (`azure/metrics.py`, which sees a status on a `RawHttpResponse`) and by the
+    scan-time route probe (which sees a status and nothing else). Both conditions
+    live here because they are one decision:
+
+    * `dns_failed` — the region has no metrics data-plane host at all (Req 24.2);
+      there is no server to refuse anything, so the failure presents as a DNS
+      resolution failure one layer down.
+    * a status in :data:`DATA_PLANE_REFUSED_STATUSES` — the host exists, resolves,
+      and refuses. Not the caller being unauthorized: Azure's own first-party
+      `Metrics Monitor API` principal performs a
+      `Microsoft.Authorization/checkAccess` to authorize a batch request, and where
+      *that* is denied the endpoint answers `403` for every caller in the
+      subscription alike, while the ARM per-resource path serves the same metrics for
+      the same window without complaint.
+
+    Two independent readings of the same status codes would let a scan promise a
+    route the run then declines, which is why this is a function and not a comparison
+    spelled at each call site. `status=None` means "no status observed" and is a
+    refusal only when `dns_failed` is set.
+    """
+    if dns_failed:
+        return True
+    return status is not None and status in DATA_PLANE_REFUSED_STATUSES
 
 
 def metrics_data_plane_endpoint(location: str) -> str:
@@ -274,6 +328,13 @@ class RegionResolver:
                     interval=interval,
                 )
             except DnsResolutionError as exc:
+                # No status to read here, so there is no *decision* to delegate: a
+                # region with no data-plane host is a refusal by construction, which
+                # is why `is_data_plane_refusal` treats `dns_failed` as sufficient on
+                # its own. Consulting it here would be a call that can only return
+                # `True`. What the two layers genuinely share is the sink below —
+                # every route decision, from either layer, lands in
+                # `mark_fallback_only`.
                 self.mark_fallback_only(exc.location)
             else:
                 self._unreachable.discard(location)
@@ -374,3 +435,138 @@ class RegionResolver:
             self._unreachable.discard(location)
 
         return result
+
+
+# --------------------------------------------------------------------------- #
+# The region route probe (task 1.6)
+# --------------------------------------------------------------------------- #
+
+VERDICT_REFUSED: Final[str] = "refused"
+"""The probe determined this region's data-plane is refused — fallback-only."""
+
+VERDICT_REACHABLE: Final[str] = "reachable"
+"""The probe determined this region's data-plane answers."""
+
+VERDICT_UNKNOWN: Final[str] = "unknown"
+"""The probe could not complete — neither success nor refusal is recorded."""
+
+
+@dataclass(frozen=True, slots=True)
+class RegionProbeResult:
+    """One region's route-probe outcome. Carries the status code and a verdict
+    derived from :func:`is_data_plane_refusal`, the **same** predicate the run's
+    collection path uses — so the scan cannot promise a route the run then declines.
+
+    `status_code` is `None` when the probe could not complete (a DNS failure that
+    resolved to a refusal carries `None` too, since there is no server to answer).
+    `probed_at` is an ISO 8601 instant.
+    """
+
+    region: str
+    status_code: int | None
+    verdict: str
+    probed_at: str
+
+    def to_plain_data(self) -> dict[str, Any]:
+        return {
+            "region": self.region,
+            "status_code": self.status_code,
+            "verdict": self.verdict,
+            "probed_at": self.probed_at,
+        }
+
+
+async def probe_regions(
+    *,
+    regions: Sequence[str],
+    subscription_id: str,
+    port: MetricsPort,
+    sleep: Callable[..., Any] | None = None,
+    now: Callable[[], Any] | None = None,
+) -> tuple[RegionProbeResult, ...]:
+    """Probe each distinct region's data-plane endpoint ONCE (Req 5.1, 5.5).
+
+    Issues ONE minimal request per region, reads ONLY the status code, and discards
+    any response body unread. Honours `Retry-After` on 429.
+
+    The verdict is derived from :func:`is_data_plane_refusal` — the same predicate the
+    collection path uses — so the scan and the run agree on what a status means.
+
+    A probe that could not complete records `verdict: "unknown"` rather than either
+    success or failure (Req 5.5).
+    """
+    import asyncio as _asyncio
+    from datetime import UTC, datetime
+
+    _sleep = sleep or _asyncio.sleep
+    _now = now or (lambda: datetime.now(UTC))
+
+    results: list[RegionProbeResult] = []
+    seen: set[str] = set()
+
+    for region in regions:
+        if region in seen:
+            continue
+        seen.add(region)
+
+        status_code: int | None = None
+        dns_failed = False
+        try:
+            probe = await port.probe_region(
+                location=region, subscription_id=subscription_id
+            )
+            status_code = probe.status
+
+            # Honour Retry-After on 429.
+            if status_code == 429:
+                # Function-scope import: `azure/metrics.py` already imports
+                # `azure/regions.py` at module scope, so a top-level import the
+                # other way would be circular. This is the only call site in this
+                # module and runs only on 429, so the one-time import cost is
+                # negligible.
+                from reporting_agent.azure.metrics import parse_retry_after
+
+                wait_secs = parse_retry_after(probe.retry_after, now=_now())
+                if wait_secs is not None and wait_secs > 0:
+                    await _sleep(min(wait_secs, 60))
+                    # Retry once after waiting.
+                    try:
+                        probe = await port.probe_region(
+                            location=region, subscription_id=subscription_id
+                        )
+                        status_code = probe.status
+                    except DnsResolutionError:
+                        dns_failed = True
+                        status_code = None
+                    except (AzureTransportError, OSError, TimeoutError):
+                        status_code = None
+        except DnsResolutionError:
+            dns_failed = True
+            status_code = None
+        except (AzureTransportError, OSError, TimeoutError):
+            # Transport-level failures: the probe could not complete (Req 5.5).
+            # Programming errors (TypeError, AttributeError, etc.) propagate.
+            results.append(RegionProbeResult(
+                region=region,
+                status_code=None,
+                verdict=VERDICT_UNKNOWN,
+                probed_at=_now().isoformat(),
+            ))
+            continue
+
+        # Derive verdict from the shared predicate.
+        if is_data_plane_refusal(status_code, dns_failed=dns_failed):
+            verdict = VERDICT_REFUSED
+        elif status_code is not None and 200 <= status_code < 500:
+            verdict = VERDICT_REACHABLE
+        else:
+            verdict = VERDICT_UNKNOWN
+
+        results.append(RegionProbeResult(
+            region=region,
+            status_code=status_code,
+            verdict=verdict,
+            probed_at=_now().isoformat(),
+        ))
+
+    return tuple(results)

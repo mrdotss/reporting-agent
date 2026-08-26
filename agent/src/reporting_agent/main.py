@@ -1010,6 +1010,8 @@ async def handle_list_inventory(
         INVENTORY_DIMENSIONS,
         InventoryCollector,
     )
+    from reporting_agent.azure.regions import probe_regions
+    from reporting_agent.catalog.loader import child_type_names, load_catalog
 
     context = invocation.context
     subscription_id = context.get("subscription_id")
@@ -1032,10 +1034,38 @@ async def handle_list_inventory(
             status="Listing the subscription's resource types, groups and tags",
         )
         yield step
-        dimensions = await InventoryCollector(port).distinct_dimensions(
+        collector = InventoryCollector(port)
+        dimensions = await collector.distinct_dimensions(
             subscription_id=subscription_id.strip()
         )
         invocation.outcome.update(dimensions.to_plain_data())
+
+        # The scan's counts, partitioned between deployed resources and sub-records. The
+        # child-type list is derived from the two catalogs through `child_type_names`, so a
+        # type added to `facts.v1.json` is the only edit a future child type needs — there is
+        # no list in query text or here to keep in step with the declarations.
+        counts = await collector.resource_counts(
+            subscription_id=subscription_id.strip(),
+            child_types=child_type_names(load_catalog()),
+        )
+        invocation.outcome.update(counts.to_plain_data())
+
+        # The region route probe (task 1.6): one minimal request per distinct region,
+        # reading only the status code. The regions come from the dimensions answer.
+        # Results ride `done` as `region_probes`. NO new event type.
+        from reporting_agent.azure.clients import build_metrics_port
+
+        metrics_port, close_metrics = build_metrics_port(credential=credential)
+        try:
+            probes = await probe_regions(
+                regions=list(dimensions.regions.values),
+                subscription_id=subscription_id.strip(),
+                port=metrics_port,
+            )
+            invocation.outcome["region_probes"] = [p.to_plain_data() for p in probes]
+        finally:
+            close_metrics()
+
         yield steps.end(step["id"])
     finally:
         close_port()

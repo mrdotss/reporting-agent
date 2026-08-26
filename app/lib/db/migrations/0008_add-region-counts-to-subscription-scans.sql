@@ -1,0 +1,1 @@
+ALTER TABLE "subscription_scans" ADD COLUMN "region_counts" jsonb;

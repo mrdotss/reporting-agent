@@ -57,6 +57,7 @@ __all__ = [
     "FactsPort",
     "InventoryPort",
     "MetricsPort",
+    "ProbeResult",
     "RawHttpResponse",
     "SkuPort",
 ]
@@ -100,6 +101,23 @@ class RawHttpResponse:
     @property
     def ok(self) -> bool:
         return 200 <= self.status < 300
+
+
+@dataclass(frozen=True, slots=True)
+class ProbeResult:
+    """The minimal outcome of a region route probe (Req 5.1).
+
+    Carries **only** the status code and the `Retry-After` header value (if present
+    on a 429), so the caller has no body to read and "discards the body unread" is a
+    property of the type rather than of a discipline enforced by tests alone.
+
+    `status` is the HTTP status code. `retry_after` is the raw header value when the
+    status is 429, or `None` otherwise — parsing it into a duration is the caller's
+    concern (via `metrics.parse_retry_after`).
+    """
+
+    status: int
+    retry_after: str | None = None
 
 
 class AzureTransportError(Exception):
@@ -177,6 +195,21 @@ class InventoryPort(Protocol):
         single row: there is no `skip_token` parameter here and none to read back, which is
         what makes "exactly one query per call" a property of the signature rather than of a
         loop that happens to run once.
+        """
+        ...
+
+    async def query_resource_counts(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """One Resource Graph query returning a resource count per resource type.
+
+        Separate from :meth:`query_distinct_dimensions` because the two answers have
+        different shapes: that one aggregates with no `by` clause and is a single row, this
+        one is one row per resource type. Keeping them apart is what lets that method keep
+        promising a single row.
+
+        Projects **no `id`**: the count comes from `count()` over rows the query never
+        expands, so Req 9.5's structural exclusion of resource identifiers holds here too.
         """
         ...
 
@@ -345,5 +378,19 @@ class MetricsPort(Protocol):
         same reason (Req 31.4). A trailing-duration bound cannot express this: a July
         report generated in August is about July, and `PT744H` from *now* would read the
         wrong month while looking entirely plausible.
+        """
+        ...
+
+    async def probe_region(self, *, location: str, subscription_id: str) -> ProbeResult:
+        """One minimal request against `location`'s regional data-plane endpoint,
+        reading **only** the status code (Req 5.1).
+
+        Returns a :class:`ProbeResult` carrying the status and — on 429 — the raw
+        `Retry-After` header value. The response body is never exposed to the caller;
+        "discards the body unread" is a property of the return type, not a trust
+        contract.
+
+        Raises `DnsResolutionError` when the endpoint fails to resolve, exactly as
+        :meth:`query_batch` does for the same condition.
         """
         ...

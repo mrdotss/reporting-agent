@@ -1,5 +1,6 @@
 import Link from "next/link"
 import {
+  MagnifyingGlassIcon,
   PlugsConnectedIcon,
   PlusIcon,
   SealWarningIcon,
@@ -295,6 +296,31 @@ export function SubscriptionList({
                 </dl>
 
                 <StateNotice state={state} view={view} nowIso={nowIso} />
+
+                {/*
+                  The entry point to the scan (Requirement 4.5). Phase 0 ships a screen
+                  nobody can reach without it: there is no `subscriptions/[id]` page, so
+                  the list is where a per-subscription action hangs.
+
+                  Offered only when the scan could actually run. `POST .../scan` refuses a
+                  subscription whose scope is unverified or whose secret has expired — an
+                  inventory query is RBAC-filtered, so a scan through a narrowed role would
+                  present a partial estate as the whole one. Rendering a control that is
+                  certain to be refused trains the reader to ignore refusals, so the
+                  condition here mirrors the route's rather than restating a subset of it.
+                */}
+                {view.scopeVerified && state.kind !== "expired" ? (
+                  <div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      render={<Link href={`/subscriptions/${view.id}/scan`} />}
+                    >
+                      <MagnifyingGlassIcon aria-hidden="true" />
+                      Scan
+                    </Button>
+                  </div>
+                ) : null}
               </CardContent>
             </Card>
           </li>

@@ -18,6 +18,7 @@ import pytest
 from fakes.azure_ports import FakeMetricsPort, raw_response_from_recorded
 from fakes.object_store import InMemoryObjectStore
 from fixtures import load_response
+from reporting_agent.azure import regions
 from reporting_agent.azure.metrics import (
     AGGREGATIONS,
     MAX_CONSECUTIVE_429,
@@ -666,6 +667,45 @@ def test_a_bad_request_stays_a_gap_rather_than_falling_back() -> None:
     assert [g["gap_type"] for g in gaps] == ["metric_error"]
     result, _ = accs[(WEB_01, "Percentage CPU")].finalize(WEB_01, "Percentage CPU")
     assert result is None
+
+
+def test_the_collection_path_reads_the_shared_data_plane_predicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Task 1.1 — the collection path reaches `regions.is_data_plane_refusal`.
+
+    A **call-site** test, not a mirror: a mirror would prove the two halves declare the
+    same statuses, and this proves the collector actually *asks*. Two independent
+    readings of a data-plane status would let a scan-time probe promise a route that the
+    run then declines, and the failure would present as a report whose region silently
+    collected nothing.
+
+    The wrapper delegates to the real predicate rather than returning a constant, so the
+    reroute behaviour under test is the production behaviour. Task 1.6 extends this to
+    the scan probe against the same patch point — which is why `azure/metrics.py`
+    imports the module and not the name.
+    """
+    seen: list[tuple[int | None, bool]] = []
+    real = regions.is_data_plane_refusal
+
+    def counting(status: int | None, *, dns_failed: bool) -> bool:
+        seen.append((status, dns_failed))
+        return real(status, dns_failed=dns_failed)
+
+    monkeypatch.setattr(regions, "is_data_plane_refusal", counting)
+
+    port = FakeMetricsPort(
+        batch_responses=[RawHttpResponse(status=403, headers={}, body={})],
+        fallback_responses=[_served_fallback()],
+    )
+    collector, _writer = new_collector(port)
+
+    collect(collector, resource_ids=[WEB_01], metric_names=["Percentage CPU"])
+
+    assert (403, False) in seen, (
+        "the collector classified a data-plane status without consulting "
+        f"regions.is_data_plane_refusal; it saw {seen!r}"
+    )
 
 
 def test_the_refusal_is_archived_like_any_other_answer() -> None:
