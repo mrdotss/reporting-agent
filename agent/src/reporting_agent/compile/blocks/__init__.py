@@ -39,6 +39,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
+from reporting_agent.catalog.loader import LoadedSectionCatalogue
 from reporting_agent.compile.ast import Block, Document, compiling_against
 from reporting_agent.compile.blocks import charts, comparison, layout, narrative, record, tables
 from reporting_agent.compile.blocks.base import (
@@ -209,6 +210,8 @@ def compile_document(
     historical: object | None = None,
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     catalog_scales: Mapping[str, int] | None = None,
+    catalogue: LoadedSectionCatalogue | None = None,
+    authored_matches: object | None = None,
 ) -> CompiledDocument:
     """Compile a validated definition against one snapshot.
 
@@ -222,6 +225,20 @@ def compile_document(
     validator resolves with, so the version a definition is admitted at and the version it is
     compiled at cannot differ. It selects **one** behaviour: whether a `cover` block compiles
     (Req 13.2), described on :func:`_phase_one`.
+
+    At `schema_version` 3 it selects a **second** behaviour: the block sequence itself comes
+    from `compile/sections.py::expand_sections` over `definition["sections"]`, rather than from
+    `_block_specs` over `definition["blocks"]`. `catalogue` is required at v3 and unused
+    otherwise — the caller (`main.py`) loads it once per run, the same catalogue the scan and the
+    wizard already load, so all three agree on section declarations without a second load path.
+    Everything after this one branch — the three compile phases, ledger construction,
+    `assert_ledger_matches_tree` — is unchanged: it consumes `Sequence[BlockSpec]` and does not
+    care where the sequence came from, which is the whole point of the design decision that a
+    section is invisible below the AST.
+
+    `authored_matches` is accepted and currently unused: it is the seam task 3.11 (the coverage
+    appendix's drift reporting) writes into, and it defaults to `None` so no existing caller
+    changes shape before that task lands.
     """
     schema_version = resolved_schema_version(definition.get("schema_version"))
     ledger = FigureLedger()
@@ -264,7 +281,21 @@ def compile_document(
         catalog_scales=catalog_scales,
     )
 
-    specs = _block_specs(definition)
+    if schema_version >= 3:
+        if catalogue is None:
+            raise CompileFailedError(
+                "a schema_version 3 definition requires the section catalogue to compile; "
+                "none was supplied to compile_document"
+            )
+        # Deferred import: `compile/sections.py` imports `BlockSpec` from
+        # `compile/blocks/base`, which this package's `__init__.py` must finish
+        # initializing before that submodule is reachable — a top-level import here
+        # is a circular import at package-load time, not merely a lint warning.
+        from reporting_agent.compile.sections import expand_sections
+
+        specs = expand_sections(definition, catalogue=catalogue, view=view)
+    else:
+        specs = _block_specs(definition)
 
     with compiling_against(view):
         emitted, nodes_by_block, deferrals, factory_calls = _phase_one(

@@ -8,6 +8,12 @@ Two guards are the point of this module:
 
 2. **Full determinism:** two calls to ``expand_sections`` with the same definition+view
    produce IDENTICAL ``BlockSpec`` tuples (not just identical ids — identical everything).
+
+Task 3.4 adds a third: ``compile_document`` must produce a byte-identical ledger and anchor
+set whether the same ``resource_table`` block arrives via a v3 ``sections`` array or a v2
+``blocks`` array — see ``TestCompileDocumentSchemaVersionBranch`` below, which is the claim
+the whole "a section is invisible below the AST" design decision rests on, tested rather than
+asserted in a paragraph.
 """
 
 from __future__ import annotations
@@ -18,6 +24,8 @@ import pytest
 
 from reporting_agent.catalog.loader import (
     LoadedSectionCatalogue,
+    SectionCatalogueEntry,
+    SectionExpansionBlock,
     load_section_catalogue,
 )
 from reporting_agent.collect.snapshot import (
@@ -684,3 +692,181 @@ class TestScopeOverride:
         # Should have ordinals 0 and 1 for each expansion block type
         assert 0 in ordinals
         assert 1 in ordinals
+
+
+# ---------------------------------------------------------------------------
+# Task 3.4 — compile_document's schema_version branch produces a byte-identical
+# ledger and anchor set whether the block sequence comes from expand_sections (v3)
+# or _block_specs (v2), for the same block.
+# ---------------------------------------------------------------------------
+
+
+class TestCompileDocumentSchemaVersionBranch:
+    """The claim design.md rests the whole restructure on: an anchor id is derived
+    ONLY from a leaf block's own id, so a section is invisible below the AST. That is
+    only true if `compile_document`'s v3 branch (`expand_sections`) and its v2 branch
+    (`_block_specs`) produce identical downstream results for the same emitted block.
+
+    `resource_table` with static `columns` and no `needs_resource_types` is used
+    deliberately: it needs no resource resolution and no title-text resolution
+    (`expand_sections` does not yet resolve a catalogue entry's `title_id` into a
+    `heading` block's required `text` field — a real gap, out of scope for this task,
+    which only wires the branch and does not complete section-to-block config
+    translation). Every entry in the SHIPPED catalogue opens with a `heading`, so this
+    test uses a synthetic single-entry catalogue carrying only the `resource_table`
+    step, to isolate the mechanism task 3.4 owns (the schema_version branch and
+    everything downstream of it) from that separate, already-known gap.
+    """
+
+    def test_v3_and_v2_definitions_compile_the_same_block_to_the_same_ledger(self) -> None:
+        from reporting_agent.compile.blocks import compile_document
+
+        # A synthetic single-entry catalogue, deliberately not the shipped one — see the
+        # class docstring for why: every shipped entry opens with a `heading`, and
+        # `expand_sections` does not resolve `title_id` into a heading's `text`, which is
+        # a separate, already-known gap this test is not about.
+        synthetic_entry = SectionCatalogueEntry(
+            key="synthetic_table",
+            number=1,
+            title_id="doc.section.synthetic_table",
+            group="inventory",
+            position="free",
+            repeatable=False,
+            needs_resource_types=(),
+            needs_fact_sources=(),
+            metric_bearing=False,
+            presets=(),
+            expands_to=(
+                SectionExpansionBlock(
+                    block="resource_table",
+                    per="section",
+                    config=(
+                        (
+                            "columns",
+                            [
+                                {"kind": "attribute", "attribute": "resource_type"},
+                                {"kind": "attribute", "attribute": "resource_group"},
+                            ],
+                        ),
+                    ),
+                ),
+            ),
+        )
+        catalogue = LoadedSectionCatalogue(
+            catalogue_version="test",
+            entries=(synthetic_entry,),
+        )
+        view = _make_view([])
+
+        v3_definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_sub",
+                "type": "synthetic_table",
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+
+        v3_compiled = compile_document(v3_definition, view=view, catalogue=catalogue)
+
+        # A single-entry `expands_to`, so `expand_sections` derives the id as
+        # `sec_sub__0` (expansion index 0 — the only expansion in this entry).
+        v3_table_id = "sec_sub__0"
+        assert v3_table_id in v3_compiled.nodes_by_block, (
+            f"expected a resource_table block at {v3_table_id!r}; got "
+            f"{sorted(v3_compiled.nodes_by_block)}"
+        )
+
+        v2_definition = {
+            "schema_version": 1,
+            "identity": {"name": "Test"},
+            "scope": {
+                "resource_types": [],
+                "resource_groups": [],
+                "tag_filters": [],
+                "top_n": None,
+                "sort": None,
+            },
+            "metrics": {},
+            "blocks": [
+                {
+                    "id": v3_table_id,
+                    "type": "resource_table",
+                    "config": {
+                        "columns": [
+                            {"kind": "attribute", "attribute": "resource_type"},
+                            {"kind": "attribute", "attribute": "resource_group"},
+                        ],
+                    },
+                },
+            ],
+        }
+
+        v2_compiled = compile_document(v2_definition, view=view)
+
+        # The claim: identical block, identical id, identical ledger and anchor —
+        # regardless of which array (`sections` or `blocks`) it arrived through.
+        v3_nodes = v3_compiled.nodes_by_block[v3_table_id]
+        v2_nodes = v2_compiled.nodes_by_block[v3_table_id]
+        assert v3_nodes == v2_nodes, (
+            "the same resource_table block compiled to different AST nodes depending "
+            "on whether it arrived via expand_sections or _block_specs"
+        )
+
+        v3_table = v3_nodes[0]
+        v2_table = v2_nodes[0]
+        assert v3_table.anchor_id == v2_table.anchor_id, (
+            "anchor ids differ between the v3 and v2 paths for the identical block — "
+            "the design decision that a section is invisible below the AST is broken"
+        )
+
+    def test_a_v3_definition_with_no_catalogue_raises_rather_than_compiling_wrong(
+        self,
+    ) -> None:
+        """`catalogue=None` (its default) with a v3 definition must refuse loudly. A v3
+        definition silently falling through to `_block_specs` would raise on the
+        missing `blocks` key anyway, but for the wrong reason — this asserts the RIGHT
+        reason, naming the real requirement, so a future refactor that accidentally
+        makes the fallback "succeed" (e.g. `definition.get("blocks", ())`) is caught."""
+        from reporting_agent.compile.blocks import compile_document
+        from reporting_agent.errors import CompileFailedError
+
+        view = _make_view([])
+        v3_definition = _make_v3_definition(sections=[])
+
+        with pytest.raises(CompileFailedError, match="section catalogue"):
+            compile_document(v3_definition, view=view)
+
+    def test_v1_and_v2_definitions_still_compile_with_no_catalogue_argument(self) -> None:
+        """Task 3.4's own bar: every existing caller and test compiles unchanged.
+        `catalogue` must default to None with no behaviour change for schema_version < 3."""
+        from reporting_agent.compile.blocks import compile_document
+
+        view = _make_view([])
+        v1_definition = {
+            "schema_version": 1,
+            "identity": {"name": "Test"},
+            "scope": {
+                "resource_types": [],
+                "resource_groups": [],
+                "tag_filters": [],
+                "top_n": None,
+                "sort": None,
+            },
+            "metrics": {},
+            "blocks": [
+                {"id": "brk", "type": "page_break", "config": {}},
+            ],
+        }
+
+        compiled = compile_document(v1_definition, view=view)
+
+        assert "brk" in compiled.nodes_by_block
