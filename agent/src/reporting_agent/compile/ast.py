@@ -787,6 +787,8 @@ class TextFactCell:
 DERIVED_COUNT_KINDS: Final[tuple[str, ...]] = (
     "historical_points_emitted",
     "historical_lookback",
+    "scope_added_count",
+    "scope_removed_count",
 )
 """The closed set of derivation kinds a :class:`DerivedCount` may carry.
 
@@ -799,6 +801,12 @@ cannot invent a new derivation kind and have it accepted.
   re-derivable by counting ledger entries whose path starts with the block's chart anchor.
 * ``historical_lookback`` — the ``lookback`` config integer on the block, re-derivable by
   reading the definition.
+* ``scope_added_count`` — the number of resources one section's rule resolves today that
+  its recorded `authored_matches` did not (task 3.11, Req 19.1-19.7). Re-derivable by
+  counting the ledger's own `TextFact` rows naming an added resource for that section.
+* ``scope_removed_count`` — the number of resources one section's recorded
+  `authored_matches` named that its rule no longer resolves today. Re-derivable the same
+  way, over rows naming a removed resource.
 """
 
 

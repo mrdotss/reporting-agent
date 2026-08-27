@@ -211,7 +211,7 @@ def compile_document(
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     catalog_scales: Mapping[str, int] | None = None,
     catalogue: LoadedSectionCatalogue | None = None,
-    authored_matches: object | None = None,
+    authored_matches: Mapping[str, object] | None = None,
 ) -> CompiledDocument:
     """Compile a validated definition against one snapshot.
 
@@ -236,9 +236,14 @@ def compile_document(
     care where the sequence came from, which is the whole point of the design decision that a
     section is invisible below the AST.
 
-    `authored_matches` is accepted and currently unused: it is the seam task 3.11 (the coverage
-    appendix's drift reporting) writes into, and it defaults to `None` so no existing caller
-    changes shape before that task lands.
+    `authored_matches` (task 3.11) is `{section_id: AuthoredMatch}` — each section's
+    recorded matched-resource set from a prior publish, read by the caller from
+    `report_profile_authored_matches` (task 3.10) and handed down as a value, since this
+    function has no client and no database of its own. When supplied alongside
+    `catalogue`, `compute_section_drift` runs once here and the result reaches the
+    coverage appendix through `BlockContext.section_drift`. `None` — the default — means
+    no drift is computed, which is correct for every existing caller and every v1/v2
+    definition: neither has an `authored_matches` row to compare against.
     """
     schema_version = resolved_schema_version(definition.get("schema_version"))
     ledger = FigureLedger()
@@ -264,6 +269,23 @@ def compile_document(
     period_raw = definition.get("period")
     metrics_raw = definition.get("metrics")
 
+    # Task 3.11 — computed once here, before BlockContext exists, because it needs
+    # `catalogue` and `view`, both already in scope. Only meaningful at v3 (a v1/v2
+    # definition has no `sections` and `compute_section_drift` returns `()` for one
+    # regardless), and only when a caller actually supplied `authored_matches` and a
+    # `catalogue` — the same deferred-import reasoning as the schema_version branch
+    # below applies here too.
+    section_drift: tuple[object, ...] = ()
+    if authored_matches is not None and catalogue is not None:
+        from reporting_agent.compile.sections import compute_section_drift
+
+        section_drift = compute_section_drift(
+            definition,
+            catalogue=catalogue,
+            view=view,
+            authored_matches=authored_matches,  # type: ignore[arg-type]
+        )
+
     context = BlockContext(
         view=view,
         ledger=ledger,
@@ -279,6 +301,7 @@ def compile_document(
         historical=historical,  # type: ignore[arg-type]
         historical_selections=historical_selections,
         catalog_scales=catalog_scales,
+        section_drift=section_drift,
     )
 
     if schema_version >= 3:

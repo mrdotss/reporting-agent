@@ -199,7 +199,81 @@ def compile_gaps_and_coverage(
         caption=caption,
     )
     cursor.anchor_table(table_cursor.path)
-    return BlockOutput(nodes=(table,))
+
+    nodes: list[object] = [table]
+    nodes.extend(_drift_statements(context, cursor, start_index=1))
+
+    return BlockOutput(nodes=tuple(nodes))  # type: ignore[arg-type]
+
+
+def _drift_statements(
+    context: BlockContext, cursor: BlockCursor, *, start_index: int
+) -> tuple[Paragraph, ...]:
+    """One paragraph per `SectionDrift` on `context` (task 3.11, Req 19.1-19.7).
+
+    Every section carrying a recorded `AuthoredMatch` gets a statement — including one
+    whose current resolution matches exactly what was authored, which reports "no
+    drift" rather than being omitted. Req 19.3 forbids withholding or excluding a
+    matched resource silently, and an omitted row would be exactly that: a section with
+    genuinely zero drift looking identical to one this appendix never checked at all.
+
+    Every count here is a `DerivedCount` — re-derivable by the verifier from the
+    ledger's own `TextFact` rows (the resource ids named in the statement), independent
+    of the compiler's own claim (Req 19.10's mechanism, the same one `historical_trend`
+    already uses for its point-count statement).
+    """
+    drifts = context.section_drift
+    if not drifts:
+        return ()
+
+    paragraphs: list[Paragraph] = []
+    for offset, drift in enumerate(drifts):
+        # `context.section_drift` is typed `tuple[object, ...]` on BlockContext to
+        # avoid a circular import (see that field's own docstring) — narrowed here,
+        # the one call site that reads it.
+        section_id: str = drift.section_id  # type: ignore[attr-defined]
+        added: tuple[str, ...] = drift.added  # type: ignore[attr-defined]
+        removed: tuple[str, ...] = drift.removed  # type: ignore[attr-defined]
+
+        node_cursor = cursor.child("nodes", start_index + offset)
+
+        if not added and not removed:
+            paragraphs.append(
+                text_paragraph(
+                    node_cursor,
+                    "Body Text",
+                    context.messages.text("doc.drift.unchanged", section_id=section_id),
+                )
+            )
+            continue
+
+        parts: list[str] = []
+        if added:
+            added_cursor = node_cursor.child("derived_counts", 0)
+            added_cursor.derived_count("scope_added_count", len(added))
+            parts.append(
+                context.messages.text(
+                    "doc.drift.added",
+                    count=str(len(added)),
+                    section_id=section_id,
+                    resource_ids=", ".join(added),
+                )
+            )
+        if removed:
+            removed_cursor = node_cursor.child("derived_counts", 1 if added else 0)
+            removed_cursor.derived_count("scope_removed_count", len(removed))
+            parts.append(
+                context.messages.text(
+                    "doc.drift.removed",
+                    count=str(len(removed)),
+                    section_id=section_id,
+                    resource_ids=", ".join(removed),
+                )
+            )
+
+        paragraphs.append(text_paragraph(node_cursor, "Body Text", " ".join(parts)))
+
+    return tuple(paragraphs)
 
 
 def compile_verification_record(

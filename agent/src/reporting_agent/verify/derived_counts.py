@@ -39,6 +39,9 @@ def check_derived_counts(
     ledger: FigureLedger,
     *,
     definition: Mapping[str, object],
+    view: object | None = None,
+    catalogue: object | None = None,
+    authored_matches: Mapping[str, object] | None = None,
 ) -> DerivedCountsPass:
     """Re-derive each DerivedCount and assert it matches the compiled value.
 
@@ -48,12 +51,38 @@ def check_derived_counts(
         The compiled figure ledger (may be a recompiled one for re-verification).
     definition
         The template definition, for reading block config values.
+    view, catalogue, authored_matches
+        Required only to re-derive `scope_added_count`/`scope_removed_count`
+        (task 3.11) — every other kind ignores them. All three default to `None`
+        so every existing caller is unaffected; a `scope_added_count`/
+        `scope_removed_count` encountered with any of the three missing reports
+        as unresolvable (the `derived_count_mismatch` finding with
+        `expected="<unresolvable>"`), the same outcome an unrecognized kind
+        already gets, rather than silently trusting the compiler's value.
+
+    **Not yet called with these three from `verify.verify()`.** Wiring that
+    call site needs `report_pipeline.py` to read a real
+    `report_profile_authored_matches` row for the run's template version — and
+    `writeAuthoredMatches` (task 3.10) is itself not yet called from the
+    publish path, pending an undecided scan-selection design question (asked
+    twice this session, recorded on tasks.md). Until a real row can exist, a
+    verifier call site reading one would find nothing to check, which would be
+    indistinguishable from "verified and found nothing wrong" — worse than not
+    wiring it at all. This function is ready for that call the moment the
+    upstream question resolves.
     """
     findings: list[Finding] = []
     checked = 0
 
     for path, count in ledger.derived_counts().items():
-        expected = _rederive(count, ledger=ledger, definition=definition)
+        expected = _rederive(
+            count,
+            ledger=ledger,
+            definition=definition,
+            view=view,
+            catalogue=catalogue,
+            authored_matches=authored_matches,
+        )
         checked += 1
         if expected is None:
             # Cannot re-derive — this is a structural error
@@ -86,6 +115,9 @@ def _rederive(
     *,
     ledger: FigureLedger,
     definition: Mapping[str, object],
+    view: object | None = None,
+    catalogue: object | None = None,
+    authored_matches: Mapping[str, object] | None = None,
 ) -> int | None:
     """Re-derive the expected value for one DerivedCount.
 
@@ -96,7 +128,59 @@ def _rederive(
         return _count_historical_points(count.block_id, ledger)
     elif count.derivation_kind == "historical_lookback":
         return _read_lookback_config(count.block_id, definition)
+    elif count.derivation_kind in ("scope_added_count", "scope_removed_count"):
+        return _rederive_scope_drift_count(
+            count,
+            definition=definition,
+            view=view,
+            catalogue=catalogue,
+            authored_matches=authored_matches,
+        )
     return None
+
+
+def _rederive_scope_drift_count(
+    count: DerivedCount,
+    *,
+    definition: Mapping[str, object],
+    view: object | None,
+    catalogue: object | None,
+    authored_matches: Mapping[str, object] | None,
+) -> int | None:
+    """Re-derive `scope_added_count`/`scope_removed_count` by recomputing every
+    section's drift from scratch and reading off the one matching `count.block_id`.
+
+    Recomputes the FULL `compute_section_drift` result rather than re-resolving
+    just one section — the function is cheap (a handful of set differences over
+    an already-loaded snapshot) and doing so keeps this re-derivation from
+    silently depending on `compute_section_drift`'s internal id-derivation
+    scheme staying in sync with `block_id`'s own format, which a `record.py`
+    change could otherwise drift out from under this check without either
+    side's own tests catching it.
+    """
+    if view is None or catalogue is None or authored_matches is None:
+        return None
+
+    # Deferred import for the same reason `compile/blocks/__init__.py` defers it:
+    # avoiding a circular import at package-load time.
+    from reporting_agent.compile.sections import compute_section_drift
+
+    drifts = compute_section_drift(
+        definition,
+        catalogue=catalogue,  # type: ignore[arg-type]
+        view=view,  # type: ignore[arg-type]
+        authored_matches=authored_matches,  # type: ignore[arg-type]
+    )
+
+    # `count.block_id` is the gaps_and_coverage block's own id (e.g. "sec_cov__1"),
+    # not a section id — `_drift_statements` mints the DerivedCount from that
+    # block's cursor, so every drift statement in one coverage block shares one
+    # block_id regardless of which section it reports on. Re-derivation therefore
+    # sums the matching kind across every section's drift rather than looking up
+    # one section by id.
+    if count.derivation_kind == "scope_added_count":
+        return sum(len(drift.added) for drift in drifts)  # type: ignore[attr-defined]
+    return sum(len(drift.removed) for drift in drifts)  # type: ignore[attr-defined]
 
 
 def _count_historical_points(block_id: str, ledger: FigureLedger) -> int:

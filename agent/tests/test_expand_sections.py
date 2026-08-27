@@ -32,7 +32,7 @@ from reporting_agent.collect.snapshot import (
     ResourceSnapshot,
     SkuCapacity,
 )
-from reporting_agent.compile.sections import expand_sections
+from reporting_agent.compile.sections import AuthoredMatch, SectionDrift, compute_section_drift, expand_sections
 from reporting_agent.compile.snapshot_view import SnapshotView, build_snapshot_view
 from reporting_agent.errors import CompileFailedError
 from snapshot_factory import (
@@ -1203,3 +1203,265 @@ class TestZeroResourceSectionsAtCompileTime:
         # received.
         assert v3_table.rows == v1_table.rows
         assert v3_table.style == v1_table.style
+
+
+# ---------------------------------------------------------------------------
+# Task 3.11 — compute_section_drift
+# ---------------------------------------------------------------------------
+
+
+class TestComputeSectionDrift:
+    """`compute_section_drift` is the pure computation the coverage appendix's
+    drift table (task 3.11) is built on. `authored_matches` arrives as a value —
+    this module never touches a database — so every case here hand-builds the
+    `AuthoredMatch` mapping a real caller would have read from
+    `report_profile_authored_matches`.
+    """
+
+    def test_a_resource_added_since_authoring_is_reported_in_added(self) -> None:
+        catalogue = _make_catalogue()
+        vm_ids = [
+            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01",
+            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-02",
+        ]
+        view = _make_view(vm_ids)
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vm",
+                "type": "vm_utilization",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        authored = {
+            "sec_vm": AuthoredMatch(resource_ids=frozenset({vm_ids[0]})),
+        }
+
+        drifts = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches=authored
+        )
+
+        assert drifts == (
+            SectionDrift(section_id="sec_vm", added=(vm_ids[1],), removed=()),
+        )
+
+    def test_a_resource_no_longer_matching_is_reported_in_removed(self) -> None:
+        catalogue = _make_catalogue()
+        vm_id = "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
+        view = _make_view([vm_id])
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vm",
+                "type": "vm_utilization",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        gone_id = "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-deleted"
+        authored = {
+            "sec_vm": AuthoredMatch(resource_ids=frozenset({vm_id, gone_id})),
+        }
+
+        drifts = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches=authored
+        )
+
+        assert drifts == (
+            SectionDrift(section_id="sec_vm", added=(), removed=(gone_id,)),
+        )
+
+    def test_an_unchanged_match_reports_an_empty_drift_not_no_row_at_all(self) -> None:
+        """Req 19.3: every matched resource is announced, never excluded silently.
+        A section whose rule resolves to exactly what was authored must still
+        appear in the result — the coverage appendix's row for it says "no
+        drift", it does not omit the row."""
+        catalogue = _make_catalogue()
+        vm_id = "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
+        view = _make_view([vm_id])
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vm",
+                "type": "vm_utilization",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        authored = {"sec_vm": AuthoredMatch(resource_ids=frozenset({vm_id}))}
+
+        drifts = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches=authored
+        )
+
+        assert drifts == (
+            SectionDrift(section_id="sec_vm", added=(), removed=()),
+        )
+
+    def test_a_section_with_no_recorded_match_is_skipped_entirely(self) -> None:
+        """A section never published before (or added since the last publish)
+        has no AuthoredMatch to compare against — comparing against nothing
+        would report everything as newly added, which is not a fact about
+        drift. It must be absent from the result, not present with a
+        misleading all-added drift."""
+        catalogue = _make_catalogue()
+        view = _make_view(["/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"])
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vm",
+                "type": "vm_utilization",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+
+        drifts = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches={}
+        )
+
+        assert drifts == ()
+
+    def test_results_are_ordered_deterministically_across_repeated_calls(self) -> None:
+        catalogue = _make_catalogue()
+        vm_ids = [
+            f"/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-{n:02d}"
+            for n in range(1, 6)
+        ]
+        view = _make_view(vm_ids)
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_vm",
+                "type": "vm_utilization",
+                "position": 0,
+                "selection": {
+                    "resource_types": [VM_TYPE],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        authored = {"sec_vm": AuthoredMatch(resource_ids=frozenset({vm_ids[0]}))}
+
+        first = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches=authored
+        )
+        second = compute_section_drift(
+            definition, catalogue=catalogue, view=view, authored_matches=authored
+        )
+
+        assert first == second
+        # sorted, not insertion-order or set-iteration-order dependent
+        assert list(first[0].added) == sorted(first[0].added)
+
+    def test_compile_document_renders_drift_as_prose_with_a_verifiable_derived_count(
+        self,
+    ) -> None:
+        """The end-to-end wiring: `authored_matches` reaches `compile_document`,
+        drift is computed, and the coverage appendix's `gaps_and_coverage` block
+        renders it as a real prose statement carrying a `DerivedCount` the
+        verifier can independently re-derive — not just the pure function
+        producing a plausible `SectionDrift` in isolation."""
+        from reporting_agent.compile.blocks import compile_document
+        from reporting_agent.compile.ast import DerivedCount, Paragraph, Text
+
+        catalogue = _make_catalogue()
+        vm_ids = [
+            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01",
+            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-02",
+        ]
+        view = _make_view(vm_ids)
+        definition = _make_v3_definition(sections=[
+            {
+                "id": "sec_sub",
+                "type": "azure_subscription",
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+            {
+                "id": "sec_cov",
+                "type": "coverage_and_verification",
+                "position": 1,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
+                },
+                "metrics": [],
+                "presentation": "table_only",
+            },
+        ])
+        authored_matches = {
+            "sec_sub": AuthoredMatch(resource_ids=frozenset({vm_ids[0]})),
+        }
+
+        compiled = compile_document(
+            definition,
+            view=view,
+            catalogue=catalogue,
+            authored_matches=authored_matches,
+        )
+
+        # coverage_and_verification's expands_to is heading, gaps_and_coverage,
+        # verification_record, in that order per:section — so the gaps_and_coverage
+        # block's derived id is sec_cov__1.
+        cov_nodes = compiled.nodes_by_block["sec_cov__1"]
+        paragraphs = [n for n in cov_nodes if isinstance(n, Paragraph)]
+        assert paragraphs, "expected at least one drift statement paragraph"
+
+        rendered_text = " ".join(
+            inline.text for p in paragraphs for inline in p.inlines if isinstance(inline, Text)
+        )
+        assert vm_ids[1] in rendered_text
+        assert "sec_sub" in rendered_text
+
+        derived = compiled.ledger.derived_counts()
+        added_counts = [
+            c for c in derived.values()
+            if isinstance(c, DerivedCount) and c.derivation_kind == "scope_added_count"
+        ]
+        assert len(added_counts) == 1
+        assert added_counts[0].formatted == "1"

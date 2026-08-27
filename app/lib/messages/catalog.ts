@@ -438,6 +438,18 @@ export const MESSAGE_CATALOG = {
     en: "Count",
     id: "Jumlah",
   },
+  "doc.drift.added": {
+    en: "{count} resource(s) now match section {section_id} that did not when this profile was last authored: {resource_ids}.",
+    id: "{count} sumber daya sekarang cocok dengan bagian {section_id} yang sebelumnya tidak cocok saat profil ini terakhir disusun: {resource_ids}.",
+  },
+  "doc.drift.removed": {
+    en: "{count} resource(s) authored for section {section_id} no longer match: {resource_ids}.",
+    id: "{count} sumber daya yang disusun untuk bagian {section_id} tidak lagi cocok: {resource_ids}.",
+  },
+  "doc.drift.unchanged": {
+    en: "Section {section_id} matches exactly the resources authored for it — no drift.",
+    id: "Bagian {section_id} cocok persis dengan sumber daya yang disusun untuknya — tidak ada penyimpangan.",
+  },
   "doc.table.fidelity": {
     en: "Fidelity",
     id: "Ketelitian",

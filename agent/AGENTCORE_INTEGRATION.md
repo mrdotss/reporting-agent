@@ -81,6 +81,17 @@ what stops the next reader treating its absence as an oversight and adding it.
   // The revision-history row for the document-control page. Every key required when
   // present — `_resolve_run_facts` reads `revision`, `note` and `author` from it.
   "revision_history_row": { "revision": "1.0", "note": "Initial report", "author": "Report Author" },
+  // Present exactly when the pinned version is schema_version 3 AND the app holds at
+  // least one `report_profile_authored_matches` row for it (task 3.10) — absent for a
+  // v1/v2-pinned run (no `sections`, nothing to compare drift against) and absent for a
+  // v3-pinned run that has never had a scan authored against it. Keyed by the definition's
+  // own `sections[].id`; `resource_ids` is the FULL matched set recorded at that publish,
+  // not a count. `compile/blocks/__init__.py::compile_document` reads this to compute
+  // drift for the coverage appendix (Req 19.1-19.7) — see `compile/sections.py`'s
+  // `AuthoredMatch` and `compute_section_drift`.
+  "authored_matches": {
+    "sec_vm_util": { "resource_ids": ["/subscriptions/…/vm-01", "/subscriptions/…/vm-02"] }
+  },
   "context": { /* the twelve fields above */ }
 }
 ```

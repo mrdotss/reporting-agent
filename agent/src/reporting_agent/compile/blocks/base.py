@@ -574,6 +574,22 @@ class BlockContext:
     publishing a figure at a guessed precision.
     """
 
+    section_drift: tuple[object, ...] = ()
+    """Every `SectionDrift` this compile's coverage appendix should report (task 3.11,
+    Req 19.1-19.7) — `compile/sections.py::compute_section_drift`'s result, computed once
+    by `compile_document` and handed down as a value, the same "caller fetches, pure
+    module folds" split every other precomputed context field here follows.
+
+    Typed `tuple[object, ...]` rather than `tuple[SectionDrift, ...]` to avoid this module
+    importing `compile/sections.py` — `compile/sections.py` already imports
+    `compile/blocks/base.py` (for `BlockSpec`), so importing back would be circular. The
+    coverage compiler in `record.py` narrows the type at the one call site that reads it.
+
+    Empty by default: a v1/v2 definition has no sections and no authored matches, and a
+    v3 definition with no prior publish has nothing to compare against either — both are
+    "nothing to report", not an error.
+    """
+
     def scope_for(self, block: BlockSpec) -> ScopeRules:
         """A block's own scope: its override, or the template default (Req 3.2)."""
         return block.scope_override if block.scope_override is not None else self.default_scope

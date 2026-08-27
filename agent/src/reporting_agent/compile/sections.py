@@ -26,6 +26,7 @@ resolved set.  It never stores a resource id in the definition.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Final
 
 from reporting_agent.catalog.loader import (
@@ -41,6 +42,9 @@ from reporting_agent.errors import CompileFailedError
 
 __all__ = [
     "GROUP_ORDER",
+    "AuthoredMatch",
+    "SectionDrift",
+    "compute_section_drift",
     "expand_sections",
 ]
 
@@ -206,6 +210,102 @@ def _expand_one_section(
         expansion_index += 1
 
     return tuple(result)
+
+
+# ---------------------------------------------------------------------------
+# Drift (task 3.11)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class AuthoredMatch:
+    """One section's recorded matched-resource set from a prior publish (task 3.10's
+    `report_profile_authored_matches` row, read by the caller — this module never
+    touches a database).
+
+    Carries only what drift needs: the resource ids as they stood when the profile was
+    last authored. `matched_count` is not stored here — the count is `len(resource_ids)`,
+    always, and storing it separately would let the two disagree.
+    """
+
+    resource_ids: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class SectionDrift:
+    """The difference between one section's `AuthoredMatch` and what its rule resolves
+    to against the CURRENT snapshot — ordered tuples, not sets, so the coverage
+    appendix's rows are deterministic across repeated compiles of the same inputs.
+    """
+
+    section_id: str
+    added: tuple[str, ...]
+    """Resource ids the current snapshot resolves that the authored match did not."""
+    removed: tuple[str, ...]
+    """Resource ids the authored match recorded that the current snapshot no longer
+    resolves — deallocated, deleted, or moved out of scope."""
+
+
+def compute_section_drift(
+    definition: Mapping[str, object],
+    *,
+    catalogue: LoadedSectionCatalogue,
+    view: SnapshotView,
+    authored_matches: Mapping[str, AuthoredMatch],
+) -> tuple[SectionDrift, ...]:
+    """One `SectionDrift` per authored section that HAS a recorded `AuthoredMatch`,
+    comparing it against what that section's own rule resolves against `view` today.
+
+    **Pure.** No Azure, no ledger, no I/O — `authored_matches` arrives as a value the
+    caller already read from the database, the same "caller fetches, pure module folds"
+    split `compile/blocks/base.py`'s `historical_selections` and `comparison` already
+    follow.
+
+    A section with no entry in `authored_matches` (the profile has never been
+    published, or this section was added since) is skipped entirely rather than
+    reported as "everything added" — an appendix comparing against a match that was
+    never recorded would be comparing against nothing, which is not a fact about drift.
+
+    Every result — including a section whose rule resolves to exactly what was
+    authored — is still included as a `SectionDrift` with two empty tuples. Req 19.3's
+    "every matched resource is included and announced, never withheld pending
+    confirmation, never excluded silently" is about a **row of the appendix table**,
+    not about non-empty drift cases only; filtering empties out here would exclude the
+    "no drift" fact silently, which is exactly the announcement Req 19.3 requires.
+    """
+    drifts: list[SectionDrift] = []
+
+    raw_sections = definition.get("sections")
+    if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, str):
+        return ()
+
+    for section in raw_sections:
+        if not isinstance(section, Mapping):
+            continue
+        section_id = section.get("id")
+        if not isinstance(section_id, str) or not section_id:
+            continue
+
+        recorded = authored_matches.get(section_id)
+        if recorded is None:
+            continue
+
+        section_type = section.get("type")
+        entry = catalogue.by_key(section_type) if isinstance(section_type, str) else None
+        if entry is None:
+            continue
+
+        scope_override = _build_scope_override(section)
+        resolved = resolve(scope_override, view) if scope_override is not None else view.resources
+
+        current_ids = frozenset(resource.resource_id for resource in resolved)
+
+        added = tuple(sorted(current_ids - recorded.resource_ids))
+        removed = tuple(sorted(recorded.resource_ids - current_ids))
+
+        drifts.append(SectionDrift(section_id=section_id, added=added, removed=removed))
+
+    return tuple(drifts)
 
 
 def expand_sections(
