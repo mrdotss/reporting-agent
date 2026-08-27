@@ -125,8 +125,8 @@ export type LiftResult = {
 let sectionIdCounter = 0
 
 /** v3's `design` at draft-mode's own bar — every field draft mode requires
- * present, mirroring `EMPTY_DRAFT`'s v1 defaults (`lib/templates/draft.ts`)
- * field for field where v3 and v1 share a design schema. A stored
+ * present, mirroring `EMPTY_DRAFT`'s design defaults (`lib/templates/draft.ts`)
+ * field for field; `design` is one of the keys v1 and v3 share unchanged. A stored
  * definition's own `design` values override these per-key, so a fixture that
  * declares some subset still lifts with the rest filled honestly rather than
  * failing validation on the ones it never mentioned. */

@@ -1,4 +1,7 @@
-import type { TemplateDefinition } from "@/lib/templates/definition"
+import {
+  ALWAYS_SECTION_KEY_BY_PROVIDER,
+  type TemplateDefinition,
+} from "@/lib/templates/definition"
 
 /**
  * The definition a brand-new template opens the wizard on.
@@ -35,18 +38,29 @@ import type { TemplateDefinition } from "@/lib/templates/definition"
  */
 export function EMPTY_DRAFT(name: string): TemplateDefinition {
   return {
-    schema_version: 1,
-    identity: { name, description: "", report_title: name },
-    scope: {
-      resource_types: [],
-      tag_filters: [],
-      resource_groups: [],
-      top_n: null,
-      sort: null,
-    },
+    schema_version: 3,
+    provider: "azure",
+    identity: { name, description: "", report_title: name, language: "en" },
+    // The appendix is `position: "always"` in the section catalogue -- present and
+    // never deselectable (Req 8.5) -- so a draft that omitted it would open the
+    // wizard on a document already missing a section the author cannot add back.
+    sections: [
+      {
+        id: "sec_1",
+        type: ALWAYS_SECTION_KEY_BY_PROVIDER.azure,
+        position: 0,
+        selection: {
+          resource_types: [],
+          tag_filters: [],
+          resource_groups: [],
+          top_n: null,
+          sort: null,
+        },
+        metrics: [],
+        presentation: "chart_and_table",
+      },
+    ],
     period: { kind: "last_full_month" },
-    metrics: {},
-    blocks: [],
     design: {
       preset: "editorial",
       accent_color: "#1f6f78",
@@ -57,5 +71,19 @@ export function EMPTY_DRAFT(name: string): TemplateDefinition {
       logo: null,
       page_size: "A4",
     },
-  }
+    front_matter: {
+      cover: { subtitle: name },
+      document_control: {
+        document_name: name,
+        document_number_pattern: "RPT-{year}{month}-{run}",
+        approvers: [
+          { role: "author", name: "" },
+          { role: "reviewer", name: "" },
+          { role: "approver", name: "" },
+          { role: "recipient", name: "" },
+        ],
+      },
+      toc: { enabled: true, max_level: 3 },
+    },
+  } as unknown as TemplateDefinition
 }

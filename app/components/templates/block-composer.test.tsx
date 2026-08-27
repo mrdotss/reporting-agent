@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render } from "@testing-library/react"
 
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import { EMPTY_DRAFT } from "@/lib/templates/draft"
 
 import { BlockComposer } from "./block-composer"
 
@@ -35,9 +34,45 @@ afterEach(cleanup)
  * `config` instead would be a definition the validator rejects, and the crash it
  * produced in this file was the component correctly refusing to guess.
  */
+/**
+ * A v1 base, declared here rather than borrowed from `EMPTY_DRAFT`.
+ *
+ * `BlockComposer` is the v1/v2 blocks surface, kept for editing stored legacy
+ * definitions -- v3 has no `blocks` key at all. This fixture used to spread
+ * `EMPTY_DRAFT`, which was a v1 definition until the draft factory moved to v3
+ * with the five-step wizard; the composer then received a definition with no
+ * `blocks` to compose. Borrowing the NEW-template factory to fixture the OLD
+ * format was the coupling, so the fixture now owns its own shape and cannot be
+ * broken again by a change to what a new template starts as.
+ */
+const V1_BASE = {
+  schema_version: 1,
+  identity: { name: "Fixture", description: "", report_title: "Fixture" },
+  scope: {
+    resource_types: [],
+    tag_filters: [],
+    resource_groups: [],
+    top_n: null,
+    sort: null,
+  },
+  period: { kind: "last_full_month" },
+  metrics: {},
+  blocks: [],
+  design: {
+    preset: "editorial",
+    accent_color: "#1f6f78",
+    density: "normal",
+    table_style: "hairline",
+    number_format: { decimal_places: 2, group_thousands: true },
+    cover_page: true,
+    logo: null,
+    page_size: "A4",
+  },
+} as const
+
 function definitionWith(types: readonly string[]): TemplateDefinition {
   return {
-    ...EMPTY_DRAFT("Fixture"),
+    ...V1_BASE,
     blocks: types.map((type, index) =>
       type === "row"
         ? { id: `b${index + 1}`, type: "row", columns: [[], []] }
