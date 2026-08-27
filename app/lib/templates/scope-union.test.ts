@@ -271,3 +271,94 @@ describe("top_n and sort are absent from the result", () => {
     expect("sort" in union).toBe(false)
   })
 })
+
+/**
+ * v3 profiles, whose scopes live one per section.
+ *
+ * `declaredScopes` read `definition.scope` and iterated `definition.blocks`, so a v3
+ * profile -- which has neither -- threw "undefined is not iterable" at enqueue. The
+ * wizard could save a version and then no report could be requested against it.
+ *
+ * The union is the collector's one question of both shapes: the widest set of resources
+ * this document could need. A v3 profile answers it from `sections[].selection`.
+ */
+describe("unionScope over a v3 profile's per-section selections", () => {
+  const v3 = (sections: readonly unknown[]) =>
+    ({ schema_version: 3, sections }) as never
+
+  test("selections widen into one union, sorted", () => {
+    expect(
+      unionScope(
+        v3([
+          {
+            selection: {
+              resource_types: ["Microsoft.Storage/storageAccounts"],
+              resource_groups: ["rg-b"],
+              tag_filters: [],
+            },
+          },
+          {
+            selection: {
+              resource_types: ["Microsoft.Compute/virtualMachines"],
+              resource_groups: ["rg-a"],
+              tag_filters: [],
+            },
+          },
+        ])
+      )
+    ).toEqual({
+      resource_types: [
+        "Microsoft.Compute/virtualMachines",
+        "Microsoft.Storage/storageAccounts",
+      ],
+      resource_groups: ["rg-a", "rg-b"],
+      tag_filters: {},
+    })
+  })
+
+  test("one unconstrained section makes the whole dimension unconstrained", () => {
+    // The rule `widened` already applies for v1: empty is widest, so a section that
+    // names no type means the run must collect every type.
+    expect(
+      unionScope(
+        v3([
+          {
+            selection: {
+              resource_types: ["Microsoft.Compute/virtualMachines"],
+              resource_groups: [],
+              tag_filters: [],
+            },
+          },
+          { selection: { resource_types: [], resource_groups: [], tag_filters: [] } },
+        ])
+      ).resource_types
+    ).toEqual([])
+  })
+
+  test("a section with no selection at all is unconstrained, never skipped", () => {
+    // Skipping it would silently NARROW the union -- the one direction that loses
+    // resources a section then cannot render.
+    expect(
+      unionScope(
+        v3([
+          {
+            selection: {
+              resource_types: ["Microsoft.Compute/virtualMachines"],
+              resource_groups: [],
+              tag_filters: [],
+            },
+          },
+          { id: "no-selection" },
+        ])
+      ).resource_types
+    ).toEqual([])
+  })
+
+  test("a profile with no sections at all unions to unconstrained", () => {
+    expect(unionScope(v3([]))).toEqual({
+      resource_types: [],
+      resource_groups: [],
+      tag_filters: {},
+    })
+  })
+})
