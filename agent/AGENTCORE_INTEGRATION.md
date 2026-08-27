@@ -92,6 +92,25 @@ what stops the next reader treating its absence as an oversight and adding it.
   "authored_matches": {
     "sec_vm_util": { "resource_ids": ["/subscriptions/…/vm-01", "/subscriptions/…/vm-02"] }
   },
+  // The prior runs the app offers as historical points, present exactly when the pinned
+  // definition declares a `historical_trend` block. The app selects the candidates
+  // because only it can see `report_runs` and `report_verifications`; the runtime picks
+  // among them and never queries for more. `_parse_historical_candidates` treats an
+  // absent field as an empty list, which is the normal case for a definition declaring
+  // no trend block and for the snapshot-only shape below.
+  //
+  // `verification_status` is the field that decides admissibility: a candidate whose
+  // source run did not pass is dropped rather than plotted with a caveat, which is why
+  // the verification columns travel with the candidate instead of being re-derived.
+  "historical_candidates": [
+    {
+      "id": "run_01HQ…", "period_start": "2026-06-01", "period_end": "2026-06-30",
+      "timezone": "Asia/Jakarta", "status": "completed",
+      "verification_id": "ver_01HQ…", "verification_status": "pass",
+      "verification_created_at": "2026-07-01T02:14:11Z",
+      "verification_snapshot_sha256": "a41f8e6c…"
+    }
+  ],
   "context": { /* the twelve fields above */ }
 }
 ```

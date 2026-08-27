@@ -1654,6 +1654,7 @@ const REPORT_PIPELINE_PY = path.join(
   "reporting_agent",
   "report_pipeline.py"
 )
+const AGENTCORE_CONTRACT_MD = path.join(AGENT_ROOT, "AGENTCORE_INTEGRATION.md")
 
 /** Every `payload.get("…")` key read inside one named Python function's body. */
 function payloadKeysReadByFunction(pyPath: string, functionName: string): string[] {
@@ -1737,6 +1738,40 @@ describe("Requirement 13.7 — the generate_report payload carries what the runt
         `pinned generate_report member does not declare. This is the exact shape of the ` +
         `defect Requirement 13.7 exists to close: a field the runtime requires, absent ` +
         `from the sender, invisible until a v2 run actually fails RENDER_FAILED.`
+    ).toEqual([])
+  })
+
+  // Requirement 22.1 - every field on the wire is documented where the contract lives.
+  //
+  // The guard above proves the SENDER declares what the runtime reads. This one proves
+  // the CONTRACT DOCUMENT names what the sender declares, which is a different failure:
+  // `agent/AGENTCORE_INTEGRATION.md` calls itself "the authoritative description of what
+  // the web app sends the runtime and what comes back", and a field that reaches the wire
+  // without appearing there is a field nobody reviewing the contract can verify exists.
+  //
+  // This is not hypothetical. `historical_candidates` has been sent by `invoke.ts`, read
+  // by `report_pipeline.py`, and absent from that document - so the one file whose whole
+  // purpose is to stop the two halves drifting was itself drifting from both of them.
+  test("every generate_report payload field is documented in AGENTCORE_INTEGRATION.md", () => {
+    const declaredOnPayload = generateReportPayloadKeys(AGENTCORE_TS_DECLARATION)
+    const contract = readFileSync(AGENTCORE_CONTRACT_MD, "utf8")
+
+    // Precondition: an unreadable or renamed contract file would make the assertion
+    // below pass against nothing.
+    expect(declaredOnPayload.length).toBeGreaterThan(0)
+    expect(contract.length).toBeGreaterThan(0)
+
+    // `command` is the discriminant rather than a payload field, and the document names
+    // it as a table column instead of a field. Everything else must appear by name.
+    const fields = declaredOnPayload.filter((key) => key !== "command")
+    const undocumented = fields.filter((key) => !contract.includes(key))
+
+    expect(
+      undocumented,
+      `the generate_report payload carries ${undocumented.join(", ")}, which ` +
+        `agent/AGENTCORE_INTEGRATION.md does not mention. That document is the authority ` +
+        `on the invoke contract, so a field absent from it is a field nobody can verify - ` +
+        `the same class of gap as a field the sender never sends.`
     ).toEqual([])
   })
 })
