@@ -365,6 +365,64 @@
           "projection": "tostring(properties.ipConfiguration.id)"
         }
       ]
+    },
+    "Microsoft.Network/networkSecurityGroups": {
+      "facts": []
+    },
+    "Microsoft.Network/networkSecurityGroups/securityRules": {
+      "child_of": "Microsoft.Network/networkSecurityGroups",
+      "facts": [
+        {
+          "key": "priority",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(rule.properties.priority)",
+          "unit": "count"
+        },
+        {
+          "key": "direction",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(rule.properties.direction)"
+        },
+        {
+          "key": "protocol",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(rule.properties.protocol)"
+        },
+        {
+          "key": "source",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(rule.properties.sourceAddressPrefix), strcat_array(rule.properties.sourceAddressPrefixes, \", \"))"
+        },
+        {
+          "key": "destination",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(rule.properties.destinationAddressPrefix), strcat_array(rule.properties.destinationAddressPrefixes, \", \"))"
+        },
+        {
+          "key": "port",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(rule.properties.destinationPortRange), strcat_array(rule.properties.destinationPortRanges, \", \"))"
+        },
+        {
+          "key": "action",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(rule.properties.access)"
+        }
+      ]
     }
   }
 }

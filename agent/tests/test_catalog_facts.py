@@ -42,13 +42,14 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 10
-"""7 metric-bearing types, plus `Microsoft.Network/virtualNetworks/subnets` (task 6.1,
-a child type — declares `child_of`), `Microsoft.Network/virtualNetworks` itself (task
-6.1 — first-class, fact-only, declares no `child_of`; needed once subnets declare it
-as their parent, since `child_of` has to resolve against a real declaration) and
-`Microsoft.Network/publicIPAddresses` (task 6.2, first-class — declares no
-`child_of`). All three fact-only additions are distinguished from each other by
+DECLARED_TYPE_COUNT = 12
+"""7 metric-bearing types, plus four fact-only additions across tasks 6.1-6.3:
+`Microsoft.Network/virtualNetworks/subnets` (a child, declares `child_of`),
+`Microsoft.Network/virtualNetworks` (first-class, its parent),
+`Microsoft.Network/publicIPAddresses` (first-class, no relation to either), and the
+task 6.3 pair `Microsoft.Network/networkSecurityGroups/securityRules` (a child,
+declares `child_of`) with its own parent `Microsoft.Network/networkSecurityGroups`
+(first-class). Every fact-only addition is distinguished from the others by
 `child_of` alone, never inferred from either type's presence or absence in
 `metrics.v1.json` — see `catalog.loader.is_child_type`'s own docstring for why that
 inference was tried once and broke the moment a first-class, metric-less type needed
@@ -147,10 +148,14 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
     }
 
     assert fact_types - children - fact_only_first_class == metric_types
-    assert children == {"Microsoft.Network/virtualNetworks/subnets"}
+    assert children == {
+        "Microsoft.Network/virtualNetworks/subnets",
+        "Microsoft.Network/networkSecurityGroups/securityRules",
+    }
     assert fact_only_first_class == {
         "Microsoft.Network/virtualNetworks",
         "Microsoft.Network/publicIPAddresses",
+        "Microsoft.Network/networkSecurityGroups",
     }
 
 
@@ -982,13 +987,15 @@ def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path
 
 
 def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
-    """Task 6.1 is that deliberate edit: the shipped pair now declares exactly one child
-    type, `Microsoft.Network/virtualNetworks/subnets` — the first of the four collectors
-    Phase 5 adds (task 6.1's own virtual-network subnets). This test's job changes with
-    it: it no longer pins the empty tuple, it pins the **exact, single** child type this
-    task added, so a second child type appearing in a later task's catalogue edit still
-    turns this assertion red until it is updated too — the tripwire moves forward with
-    every task that deliberately grows this set, rather than staying pinned to zero
-    forever once the first one lands.
+    """Task 6.1 was that deliberate edit. Task 6.3 is the second: the shipped pair now
+    declares exactly two child types, `Microsoft.Network/virtualNetworks/subnets`
+    (task 6.1) and `Microsoft.Network/networkSecurityGroups/securityRules` (task 6.3).
+    This test's job is to move forward with every task that deliberately grows this
+    set, rather than staying pinned to whatever the set happened to be when a prior
+    task landed — a third child type appearing in a later task's catalogue edit still
+    turns this assertion red until it is updated too.
     """
-    assert child_type_names(load_catalog()) == ("Microsoft.Network/virtualNetworks/subnets",)
+    assert child_type_names(load_catalog()) == (
+        "Microsoft.Network/virtualNetworks/subnets",
+        "Microsoft.Network/networkSecurityGroups/securityRules",
+    )

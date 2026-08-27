@@ -300,19 +300,31 @@ def test_a_child_types_facts_are_excluded_from_the_general_projection_union() ->
     make the WHOLE inventory query fail, for every resource type, on every run, the
     moment `Microsoft.Network/virtualNetworks/subnets` declares any projectable fact.
 
-    `_non_child_projections` is the fix: the same union, minus every key a child type
-    owns. Proven against the real, shipped catalogue, not a hand-built one — this is
-    the fact declaration `AzureProvider.discover` actually loads and passes to
-    `inventory.discover`.
+    `_non_child_projections` is the fix: the same union, minus every key any declared
+    child type owns — task 6.3 adds a second child type
+    (`Microsoft.Network/networkSecurityGroups/securityRules`) with its own four
+    excluded keys, so this test derives the excluded set from the real catalogue's own
+    `child_type_names` rather than hardcoding subnet's four keys, which is what keeps
+    it correct as more child types are declared. Proven against the real, shipped
+    catalogue, not a hand-built one — this is the fact declaration `AzureProvider.
+    discover` actually loads and passes to `inventory.discover`.
     """
     from reporting_agent.azure.provider import _non_child_projections
-    from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.catalog.loader import child_type_names, load_catalog
 
     catalog = load_catalog()
     filtered = _non_child_projections(catalog)
     filtered_keys = {key for key, _ in filtered}
 
+    children = child_type_names(catalog)
+    child_keys = {
+        entry.key
+        for declared in catalog.facts.resource_types
+        if declared.resource_type in children
+        for entry in declared.facts
+    }
     for key in ("subnet", "address_prefix", "ip_configuration_count", "peering_state"):
+        assert key in child_keys, "this guard is only meaningful while these are subnet keys"
         assert key not in filtered_keys, (
             f"{key!r} is declared only by the child type "
             f"{SUBNET_CHILD_RESOURCE_TYPE!r} and must never ride inventory_query's "
@@ -322,13 +334,7 @@ def test_a_child_types_facts_are_excluded_from_the_general_projection_union() ->
     # And the fix must not have thrown out anything else: every non-child projectable
     # fact the catalogue declares is still present.
     unfiltered_keys = {key for key, _ in catalog.facts.projectable()}
-    non_child_keys = unfiltered_keys - {
-        "subnet",
-        "address_prefix",
-        "ip_configuration_count",
-        "peering_state",
-    }
-    assert filtered_keys == non_child_keys
+    assert filtered_keys == unfiltered_keys - child_keys
 
 
 def test_mutation_check_a_naive_unfiltered_union_would_have_broken_every_run() -> None:

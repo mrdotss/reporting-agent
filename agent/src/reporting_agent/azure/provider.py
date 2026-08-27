@@ -170,6 +170,13 @@ a provider claiming a third would be claiming something no caller can ask for.""
 FIDELITY_BASELINE: Final[str] = "baseline"
 FIDELITY_ENHANCED: Final[str] = "enhanced"
 
+_CHILD_RESOURCE_PARENT_TYPES: Final[frozenset[str]] = frozenset(
+    {"microsoft.network/virtualnetworks", "microsoft.network/networksecuritygroups"}
+)
+"""The parent types whose scope presence triggers `discover_child_resources` (task
+6.1, 6.3), matched case-insensitively against a run's requested scope. Growing to a
+third child type's parent is one more entry here, never a new gate."""
+
 FIDELITY_TIERS: Final[tuple[str, str]] = (FIDELITY_BASELINE, FIDELITY_ENHANCED)
 """The two tiers this provider can report.
 
@@ -489,17 +496,23 @@ class AzureProvider:
         #
         # Issued only when the scope actually requests a resource type that has a
         # synthetic child type — today, `Microsoft.Network/virtualNetworks` for
-        # subnets. Gating on the parent type rather than issuing this unconditionally
-        # on every run is what keeps a scope with no VNets in it from paying for a
-        # query that could only ever answer "no rows": `subnet_inventory_query` finds
-        # its subnets by filtering to VNets, so a scope with none in it has nothing
-        # this query could name. It is deliberately gated on the same scope test the
-        # section catalogue's own `needs_resource_types` entry already applies —
-        # section 3 declares `["Microsoft.Network/virtualNetworks"]`, so "the section
-        # is offerable" and "this query is worth issuing" are one condition, not two
+        # subnets and `Microsoft.Network/networkSecurityGroups` for security rules
+        # (task 6.3). Gating on either parent type rather than issuing this
+        # unconditionally on every run is what keeps a scope with neither in it from
+        # paying for a query that could only ever answer "no rows" for both of its
+        # legs: `child_resources_query` (task 6.1, 6.3) unions the subnet and
+        # security-rule queries into one request, so one gate covers both — a run
+        # whose scope names only one of the two parents still issues the combined
+        # query, and the other leg's `where type =~ ...` filter simply contributes
+        # zero rows for it, which is honest and costs nothing extra. Deliberately
+        # gated on the same scope test the section catalogue's own
+        # `needs_resource_types` entries already apply — section 3 declares
+        # `["Microsoft.Network/virtualNetworks"]` and section 6 declares
+        # `["Microsoft.Network/networkSecurityGroups"]`, so "either section is
+        # offerable" and "this query is worth issuing" are one condition, not two
         # that could disagree.
         if any(
-            name.casefold() == "microsoft.network/virtualnetworks"
+            name.casefold() in _CHILD_RESOURCE_PARENT_TYPES
             for name in scope["resource_types"]
         ):
             child_result = await self.inventory.discover_child_resources(
@@ -512,14 +525,15 @@ class AzureProvider:
                     catalog_version=self.catalog.catalog_version,
                 ),
             )
-            # No group/tag filter applied to a child resource: it inherits its parent
-            # VNet's own resource group (the query reads that column off the parent's
-            # row, not the child's), and a filter that excluded the parent would
-            # already have excluded the parent from `resources` above — a child whose
-            # own resource-group column matches would then be the only remaining trace
-            # of a VNet the scope asked to exclude, which is the opposite of what the
-            # filter means. Filtering child resources by the SAME resource_group/tag
-            # test the parent already passed keeps that consistent.
+            # No group/tag filter applied to a child resource: it inherits its
+            # parent's own resource group (the query reads that column off the
+            # parent's row, not the child's), and a filter that excluded the parent
+            # would already have excluded the parent from `resources` above — a
+            # child whose own resource-group column matches would then be the only
+            # remaining trace of a parent the scope asked to exclude, which is the
+            # opposite of what the filter means. Filtering child resources by the
+            # SAME resource_group/tag test the parent already passed keeps that
+            # consistent, regardless of which parent type produced the child.
             filtered_children = [
                 child
                 for child in child_result["resources"]

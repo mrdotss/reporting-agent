@@ -98,6 +98,7 @@ __all__ = [
     "RESERVATIONS_API_VERSION",
     "RESOURCE_GRAPH_API_VERSION",
     "RESOURCE_SKUS_API_VERSION",
+    "SECURITY_RULE_CHILD_RESOURCE_TYPE",
     "SITE_RECOVERY_API_VERSION",
     "SUBNET_CHILD_RESOURCE_TYPE",
     "ArmDefinitionsPort",
@@ -109,12 +110,14 @@ __all__ = [
     "RequestSender",
     "build_azure_ports",
     "build_inventory_port",
+    "child_resources_query",
     "distinct_dimensions_query",
     "envelope_from_response",
     "inventory_query",
     "is_dns_resolution_failure",
     "pipeline_sender",
     "resource_counts_query",
+    "security_rule_inventory_query",
     "subnet_inventory_query",
 ]
 
@@ -518,6 +521,113 @@ def subnet_inventory_query(*, subscription_id: str) -> str:
     return "\n".join(lines)
 
 
+SECURITY_RULE_CHILD_RESOURCE_TYPE: Final[str] = (
+    "Microsoft.Network/networkSecurityGroups/securityRules"
+)
+"""The synthetic child type task 6.3 declares (Req 15.4, 16.6, 16.9, 16.10).
+
+Named apart from `SUBNET_CHILD_RESOURCE_TYPE` for the same reason that constant is —
+declared here, beside the only query that ever produces a row of this type, as an
+independent string literal a test checks against the catalogue entry rather than an
+import either side could drift from."""
+
+
+def security_rule_inventory_query(*, subscription_id: str) -> str:
+    """The Resource Graph query that turns each NSG's author-defined rules into their
+    own rows (Req 15.4, 16.6, 16.9, 16.10). **Pure.**
+
+    **Expands `properties.securityRules` and never `properties.defaultSecurityRules`
+    — structurally, not by a runtime priority filter.** An NSG carries the two as
+    genuinely separate array properties (confirmed against the resource's own schema):
+    `securityRules` holds what an operator wrote, and `defaultSecurityRules` holds
+    Azure's own five rules that exist on every NSG unconditionally. Azure's schema
+    itself bounds a `securityRules` entry's `priority` to 100–4096 — the field is
+    declared `required`, ranged, on that array specifically — so a rule at priority
+    65000 or above **cannot appear in `securityRules` at all**; only
+    `defaultSecurityRules` uses that range. Task 6.3's own text asks to "omit Azure's
+    own defaults at priority 65000 and above," and the honest way to do that is to
+    never read the array that holds them, rather than read both arrays and then filter
+    by a number that happens to correlate with which array a rule came from. A runtime
+    `where priority < 65000` guard would be redundant against a schema-enforced bound
+    it did not derive from — and worse, it would silently start doing real work the
+    moment it stopped being redundant, which is exactly the kind of coincidence
+    `catalog.loader.is_child_type`'s own `child_of` correction (task 6.2) already
+    proved this codebase cannot afford to leave unexamined.
+
+    Same second-query shape task 6.1's `subnet_inventory_query` establishes, for the
+    identical reason: a security rule is nested inside its NSG's own row, not its own
+    row in `Resources`, so `mv-expand` is required and the `where` clause is always
+    `Microsoft.Network/networkSecurityGroups` regardless of the run's own scope.
+    Emits the identical eight-column inventory shape, so the response folds through
+    `InventoryCollector._fold_page` with no change at all — the same proof
+    `subnet_inventory_query` already established, not re-derived here.
+
+    The fact columns — `priority`, `direction`, `protocol`, `source`, `destination`,
+    `port`, `action` — are read off the `mv-expand`ed rule element itself, each via
+    `coalesce` between the singular and plural forms Azure's schema declares side by
+    side (`sourceAddressPrefix` vs `sourceAddressPrefixes`, and the identical pair for
+    the destination address and the destination port): an operator may write either
+    one CIDR/port or a list, and never both at once, so reading only the singular
+    field would silently blank every rule authored with a list. `strcat_array` joins
+    a populated plural array into one comma-separated string, matching this fact's
+    `text` value kind — a list is not a shape `collect/factfold.py` folds.
+    """
+    lines = [
+        "Resources",
+        f"| where subscriptionId == {_kql_literal(subscription_id)}",
+        f"| where type =~ {_kql_literal('Microsoft.Network/networkSecurityGroups')}",
+        "| mv-expand rule = properties.securityRules",
+        "| project id = tostring(rule.id),",
+        "          name = tostring(rule.name),",
+        f"          type = {_kql_literal(SECURITY_RULE_CHILD_RESOURCE_TYPE)},",
+        "          location = location,",
+        "          resourceGroup = resourceGroup,",
+        "          tags = tags,",
+        '          sku = "",',
+        '          powerState = "",',
+        "          , fact_priority = tostring(rule.properties.priority)",
+        "          , fact_direction = tostring(rule.properties.direction)",
+        "          , fact_protocol = tostring(rule.properties.protocol)",
+        "          , fact_source = coalesce(tostring(rule.properties.sourceAddressPrefix), "
+        'strcat_array(rule.properties.sourceAddressPrefixes, ", "))',
+        "          , fact_destination = coalesce("
+        "tostring(rule.properties.destinationAddressPrefix), "
+        'strcat_array(rule.properties.destinationAddressPrefixes, ", "))',
+        "          , fact_port = coalesce(tostring(rule.properties.destinationPortRange), "
+        'strcat_array(rule.properties.destinationPortRanges, ", "))',
+        "          , fact_action = tostring(rule.properties.access)",
+    ]
+    lines.append("| order by id asc")
+    return "\n".join(lines)
+
+
+def child_resources_query(*, subscription_id: str) -> str:
+    """Every synthetic child resource this run's scope can name, in one Resource Graph
+    query (task 6.1, 6.3).
+
+    One `union` of `subnet_inventory_query` and `security_rule_inventory_query` rather
+    than two HTTP calls — confirmed against Kusto's own documented `union` syntax and
+    its "Distinct count" example, which unions a full parenthesized sub-query exactly
+    this way (`T | union (OtherQuery)`), not only bare table references. Each leg keeps
+    its own `order by id asc`; `union` gives no cross-leg ordering guarantee, and
+    nothing downstream of this response needs one — `InventoryCollector._fold_page`
+    folds by resource id into a mapping regardless of arrival order.
+
+    Growing to a third child type (a future task) is one more `union (...)` leg here,
+    never a new port method: `ArmInventoryPort.query_child_resources` calls this
+    function alone, and `FakeInventoryPort.query_child_resources` scripts its response
+    from the same shared queue every other method on that fake already uses.
+    """
+    return "\n".join(
+        [
+            subnet_inventory_query(subscription_id=subscription_id),
+            "| union (",
+            security_rule_inventory_query(subscription_id=subscription_id),
+            ")",
+        ]
+    )
+
+
 _MAKE_SET_LIMIT: Final[int] = DISTINCT_VALUE_LIMIT + 1
 """What the query actually asks `make_set_if` for — **one more** than the bound.
 
@@ -727,13 +837,20 @@ class ArmInventoryPort:
         return await _send(self.sender, request)
 
     async def query_child_resources(self, *, subscription_id: str) -> RawHttpResponse:
-        """Every synthetic child resource this run's scope can name (task 6.1).
+        """Every synthetic child resource this run's scope can name (task 6.1, 6.3).
 
-        Today: `subnet_inventory_query` alone. A second child-resource query (task 6.3's
-        security rules) is expected to union its own rows into this same response rather
-        than add a fifth port method — the port's contract is "every child resource," and
-        `azure/inventory.py`'s fold already treats every row identically regardless of
-        which child type produced it.
+        One `union` of `subnet_inventory_query` and `security_rule_inventory_query`
+        rather than two HTTP calls: Resource Graph's own `union` operator combines two
+        queries into one result set, documented for exactly this — joining two
+        differently-scoped `mv-expand` passes over `Resources` — and each query's own
+        `mv-expand` still counts against the per-query cap independently within its own
+        leg, so two `mv-expand`s across two `union`ed legs is nowhere near the limit
+        either query alone could reach.
+
+        `union`, not a fifth port method: the port's contract is "every child resource
+        this run's scope can name," and `azure/inventory.py`'s fold already treats
+        every row identically regardless of which child type produced it, so growing
+        the union's legs is the only edit a future child type needs here.
         """
         request = HttpRequest(
             "POST",
@@ -741,7 +858,7 @@ class ArmInventoryPort:
             params={"api-version": self.api_version},
             json={
                 "subscriptions": [subscription_id],
-                "query": subnet_inventory_query(subscription_id=subscription_id),
+                "query": child_resources_query(subscription_id=subscription_id),
                 "options": {"resultFormat": "objectArray"},
             },
         )
