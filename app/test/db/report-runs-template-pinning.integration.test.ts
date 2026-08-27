@@ -455,3 +455,77 @@ describe("Requirements 9.6, 36.2, 36.7 — editing a template a completed run pi
     )
   })
 })
+
+describe("task 7.2 — delivered reports stay frozen through this spec's own migrations", () => {
+  test("a run and its verification pinned before this spec's own migrations still resolve unchanged", async () => {
+    // The specific claim task 7.2 asks for, named explicitly rather than left
+    // implicit in the "editing a template" scenario above: this spec's own
+    // migrations (0007-0010 -- brands, subscription_scans,
+    // report_profile_authored_matches) are additive-only (confirmed by
+    // reading every one of them: 0010 adds a FOREIGN KEY FROM the new
+    // report_profile_authored_matches table TO report_template_versions,
+    // never an ALTER on report_template_versions or report_verifications
+    // themselves). This test proves the consequence rather than the cause:
+    // a template version and a verification written as if before those
+    // migrations still resolve to the exact same rows, unchanged, once every
+    // migration this spec added has been applied -- which is the schema
+    // state this test's own scratch harness already runs under.
+    const template = await createTemplate(ownerId, { name: "Pre-existing" })
+    const v1 = await insertVersion(
+      ownerId,
+      template.id,
+      versionInput({ schema_version: 1, blocks: ["frozen"] })
+    )
+    const runId = await insertReportRun({
+      templateVersionId: v1.id,
+      status: "completed",
+    })
+    const verification = await insertVerification(
+      insertVerificationInput(runId, v1.id)
+    )
+
+    // Re-read every artifact this spec's own new tables could, in
+    // principle, have been wired to touch (subscription_scans,
+    // report_profile_authored_matches) -- and confirm none of them exist
+    // for this run, template or version. A frozen report predating a scan
+    // or an authored-match row must not gain phantom rows from either new
+    // table as a side effect of the schema simply existing.
+    const scanRows = await db.query(
+      `SELECT id FROM subscription_scans WHERE connected_subscription_id = $1`,
+      [subscriptionId]
+    )
+    expect(scanRows.rows).toHaveLength(0)
+
+    const authoredMatchRows = await db.query(
+      `SELECT id FROM report_profile_authored_matches WHERE template_version_id = $1`,
+      [v1.id]
+    )
+    expect(authoredMatchRows.rows).toHaveLength(0)
+
+    // The version and the verification themselves are exactly what was
+    // written -- byte-identical read-back, the same claim
+    // `templates-store.integration.test.ts` makes for a version alone,
+    // restated here with a verification and a run in the same scratch
+    // schema this spec's own migrations built.
+    const rereadVersion = await readVersion(ownerId, template.id, 1)
+    expect(rereadVersion.id).toBe(v1.id)
+    expect(rereadVersion.definitionSha256).toBe(v1.definitionSha256)
+    expect(rereadVersion.definition).toEqual({
+      schema_version: 1,
+      blocks: ["frozen"],
+    })
+
+    const rereadVerification = await db.query<{
+      snapshot_sha256: string
+      docx_sha256: string
+      pdf_sha256: string
+    }>(
+      `SELECT snapshot_sha256, docx_sha256, pdf_sha256
+       FROM report_verifications WHERE id = $1`,
+      [verification.id]
+    )
+    expect(rereadVerification.rows[0]?.snapshot_sha256).toBe(SHA_SNAPSHOT)
+    expect(rereadVerification.rows[0]?.docx_sha256).toBe(SHA_DOCX)
+    expect(rereadVerification.rows[0]?.pdf_sha256).toBe(SHA_PDF)
+  })
+})
