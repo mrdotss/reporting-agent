@@ -111,29 +111,42 @@ def _make_chart(
 
 
 class TestLabelIndices:
-    def test_all_labelled_at_or_below_threshold(self) -> None:
-        """<= 24 points => every one."""
+    """Task 5.3 — `label_indices` returns the last point only, and nothing else.
+
+    The old ≤24-labels-all / above-24-selects-four contract these tests used to pin is
+    superseded, not merely relaxed: the companion table already carries every plotted
+    value regardless of how many points carry a direct label (Req 22.1), so thinning
+    to one label removes redundancy, not information — and the direct label at the
+    line end is now the ONLY thing naming a series near its data (task 5.3's own
+    framing), which is why it stays exactly where it always was rather than moving.
+    """
+
+    def test_a_short_series_still_labels_only_its_last_point(self) -> None:
         node, _ = _make_chart(series_count=1, points_per_series=20)
         for series in node.series:
             indices = C.label_indices(series.points)
-            assert indices == frozenset(range(len(series.points)))
+            assert indices == frozenset({len(series.points) - 1})
 
-    def test_exactly_24_is_still_all(self) -> None:
+    def test_exactly_24_labels_only_its_last_point(self) -> None:
+        """24 was the old threshold's own boundary — asserting it explicitly is
+        what would have caught a change that only moved the threshold rather
+        than removing thresholded behaviour altogether."""
         node, _ = _make_chart(series_count=1, points_per_series=24)
         indices = C.label_indices(node.series[0].points)
-        assert indices == frozenset(range(24))
+        assert indices == frozenset({23})
 
-    def test_above_24_selects_exactly_four(self) -> None:
-        """Above threshold: first, last, max, min — when all values are the same,
-        max and min resolve to first (earliest), giving {0, 29} = 2 unique."""
+    def test_a_long_series_still_labels_only_its_last_point(self) -> None:
+        """What used to be "above threshold: four points" is now "one point,
+        regardless of length" — the old four-point selection (first, last,
+        max, min) is gone entirely, not narrowed."""
         node, _ = _make_chart(series_count=1, points_per_series=30)
         indices = C.label_indices(node.series[0].points)
-        assert 0 in indices  # first
-        assert 29 in indices  # last
-        # With identical values, max_index=0, min_index=0
-        # So at most 4 but could be fewer when indices overlap
-        assert len(indices) <= 4
-        assert len(indices) >= 2  # first and last are always distinct when len > 1
+        assert indices == frozenset({29})
+
+    def test_a_single_point_series_labels_that_one_point(self) -> None:
+        node, _ = _make_chart(series_count=1, points_per_series=1)
+        indices = C.label_indices(node.series[0].points)
+        assert indices == frozenset({0})
 
     def test_empty_points(self) -> None:
         assert C.label_indices(()) == frozenset()
@@ -145,8 +158,12 @@ class TestLabelIndices:
         second = C.label_indices(node.series[0].points)
         assert first == second
 
-    def test_selects_earlier_on_tie(self) -> None:
-        """When two points carry an equal extreme, the earlier (lower index) wins."""
+    def test_the_selected_point_does_not_depend_on_the_values_at_all(self) -> None:
+        """The old contract selected by VALUE (series maximum, series minimum) —
+        the new one selects by POSITION only. A series where every point carries
+        an identical value (the old contract's own tie-break scenario, which used
+        to collapse first/last/max/min down to {0, 29}) now labels only the last
+        point regardless, because value never enters the decision at all."""
         view = build_snapshot_view(sf.two_vm_snapshot())
         ledger = FigureLedger()
         resource = view.resources[0]
@@ -155,7 +172,6 @@ class TestLabelIndices:
 
         with compiling_against(view):
             cursor = BlockCursor(block_id="tie", ledger=ledger)
-            # Build 30 points all with the same value -> all are both max and min
             points: list[ChartPoint] = []
             for i in range(30):
                 fig = cursor.child("s", 0).child("p", i).child("f", 0).figure(value)
@@ -163,15 +179,7 @@ class TestLabelIndices:
                     ChartPoint(path=figure_path("tie", 0, i), x=f"day-{i}", y=fig)
                 )
             indices = C.label_indices(tuple(points))
-            # First and last are in the set
-            assert 0 in indices
-            assert 29 in indices
-            # Max and min both resolve to index 0 (earliest), so we still have at most 4
-            # but since 0 is first, last, max, and min candidate, we get {0, 29}
-            # plus whichever is min and max — they're both at index 0 since all are equal
-            # So indices should be {0, 29} — only 2 distinct
-            # Actually: first=0, last=29, max_index=0, min_index=0
-            assert indices == frozenset({0, 29})
+            assert indices == frozenset({29})
 
     def test_thinning_removes_label_not_figure_from_table(self) -> None:
         """The companion table records EVERY plotted point regardless of labels."""

@@ -199,53 +199,28 @@ def _figures_in(node: Chart, *, messages: Messages) -> tuple[tuple[Series, tuple
 # Direct value label selection (Req 17.4)
 # --------------------------------------------------------------------------- #
 
-_LABEL_THRESHOLD: Final[int] = 24
-
-
 def label_indices(points: tuple[ChartPoint, ...]) -> frozenset[int]:
-    """Which points carry a direct value label (criterion 17.4).
+    """Which points carry a direct value label (task 5.3, Req 18.1-18.9).
 
-    <= 24 points: every one. Otherwise exactly four — first, last, series maximum, series
-    minimum — selecting the **earlier point by period start** where two carry one equal
-    extreme. Pure, total, and deterministic, so the same series always labels the same
-    points.
+    **The last point only.** The direct label at each series' line end is the one that
+    was already load-bearing before this task — the annotation naming which series is
+    which, positioned where a reader's eye lands after following the line — and it
+    stays exactly there. Every intermediate point's label is dropped: the companion
+    table records every plotted point's value regardless (Req 22.1), so a reader who
+    wants an interior value already has it in the table, and a chart crowded with a
+    label at every point competed with the line it was meant to annotate.
 
-    Every emitted label is that point's ledger entry ``formatted`` string verbatim.
+    Pure, total, and deterministic: an empty series labels nothing, and any non-empty
+    series labels exactly its last index, so the same series always labels the same
+    point.
 
-    The companion data table records **every** plotted point whether or not that point
-    carries a direct label, so thinning removes a label and never a figure — and the table
-    is what the anchored pass checks, so a thinned label costs no verification coverage.
+    Every emitted label is that point's ledger entry ``formatted`` string verbatim —
+    unchanged by this task, since the label's own content was never the thing being
+    thinned, only how many points carried one.
     """
-    if len(points) <= _LABEL_THRESHOLD:
-        return frozenset(range(len(points)))
-
     if not points:
         return frozenset()
-
-    # Always include first and last
-    indices: set[int] = {0, len(points) - 1}
-
-    # Find the maximum — select the earlier index on ties
-    max_value = Decimal(str(points[0].y.value))
-    max_index = 0
-    for i in range(1, len(points)):
-        v = Decimal(str(points[i].y.value))
-        if v > max_value:
-            max_value = v
-            max_index = i
-    indices.add(max_index)
-
-    # Find the minimum — select the earlier index on ties
-    min_value = Decimal(str(points[0].y.value))
-    min_index = 0
-    for i in range(1, len(points)):
-        v = Decimal(str(points[i].y.value))
-        if v < min_value:
-            min_value = v
-            min_index = i
-    indices.add(min_index)
-
-    return frozenset(indices)
+    return frozenset({len(points) - 1})
 
 
 # --------------------------------------------------------------------------- #
