@@ -238,3 +238,69 @@ describe("liftDefinition — behaviour not covered by the shared corpus", () => 
     expect(new Set(secondIds).size).toBe(secondIds.length)
   })
 })
+
+describe("front_matter.document_control migrates to its v3 shape (task 4.1)", () => {
+  function storedWithDocumentControl(
+    documentControl: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      schema_version: 2,
+      identity: { name: "Test", language: "en" },
+      scope: { resource_types: [], resource_groups: [], tag_filters: [], top_n: null, sort: null },
+      metrics: {},
+      design: {},
+      blocks: [],
+      front_matter: {
+        cover: {},
+        document_control: documentControl,
+        toc: {},
+      },
+    }
+  }
+
+  test("confidentiality_notice_id moves from front_matter to the returned brand, and off the draft", () => {
+    const { draft, brand } = liftDefinition(
+      storedWithDocumentControl({ confidentiality_notice_id: "doc.confidentiality.default" })
+    )
+
+    expect(brand.confidentialityNoticeId).toBe("doc.confidentiality.default")
+    const control = (draft.front_matter as { document_control: Record<string, unknown> })
+      .document_control
+    expect("confidentiality_notice_id" in control).toBe(false)
+  })
+
+  test("no confidentiality_notice_id on the source lifts to a null brand value", () => {
+    const { brand } = liftDefinition(storedWithDocumentControl({}))
+    expect(brand.confidentialityNoticeId).toBeNull()
+  })
+
+  test("a non-empty string distribution becomes one row carrying the text as its note", () => {
+    const { draft } = liftDefinition(
+      storedWithDocumentControl({ distribution: "Internal / Customer" })
+    )
+    const control = (draft.front_matter as { document_control: Record<string, unknown> })
+      .document_control
+    expect(control.distribution).toEqual([
+      { recipient: "Distribution", note: "Internal / Customer" },
+    ])
+  })
+
+  test("an empty or whitespace-only string distribution lifts to zero rows, not one empty row", () => {
+    for (const value of ["", "   "]) {
+      const { draft } = liftDefinition(storedWithDocumentControl({ distribution: value }))
+      const control = (draft.front_matter as { document_control: Record<string, unknown> })
+        .document_control
+      expect(control.distribution).toEqual([])
+    }
+  })
+
+  test("the lifted draft passes draft-mode validation with both fields present on the source", () => {
+    const { draft } = liftDefinition(
+      storedWithDocumentControl({
+        confidentiality_notice_id: "doc.confidentiality.default",
+        distribution: "Ops, Finance",
+      })
+    )
+    expect(collectDefinitionIssues(draft, { mode: "draft" })).toEqual([])
+  })
+})

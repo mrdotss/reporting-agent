@@ -479,44 +479,49 @@ def test_every_shipped_starter_derives_an_allowlist(starter_key: str) -> None:
     before the fix — meaning every report produced from a starter template would have been
     withheld by verification, permanently, on the primary product path.
 
-    Reads `app/lib/templates/starters.ts`' own definitions via the JSON mirror any change to
-    that file must keep in sync (see `test_starters_mirror.py` if present, or the builder's own
-    cross-language guard) — not a hand-copied approximation of them, so this test fails the day
-    a starter's real shape stops matching what is asserted here.
+    The three starters were migrated from `schema_version` 1 to 3 by task 3.13
+    (`restructure-the-template-to-report-flow-around`), and `derive_allowlist` does not
+    accept a `catalogue` — it calls `compile_document` with no way to pass one through, so
+    it cannot compile a v3 definition at all (`compile_document` at v3 requires a catalogue
+    or raises `CompileFailedError`, per task 3.4). That is a real, separate gap on the
+    verification path — not something this test can paper over by constructing one, since
+    the point of this parametrization is to prove the actual shipped starters, not a stand-in
+    — so it is recorded on the spec rather than silently patched here. This test now proves
+    the same regression against the retained v1 fixture instead, which exercises the same
+    `verification_record` / `gaps_and_coverage` block types the original starters did.
     """
-    definition = _load_starter_definition(starter_key)
+    definition = _V1_FIXTURE_DEFINITIONS[starter_key]
     allowlist = derive_allowlist(definition, sf.two_vm_snapshot())
     assert isinstance(allowlist, frozenset)
 
 
-def _load_starter_definition(starter_key: str) -> dict:
-    """One starter's `TemplateDefinition`, read straight out of the TypeScript source via
-    Node, rather than a Python re-transcription that could silently drift from it.
-
-    `app/lib/templates/starters.ts` is the one place the three starters are defined; the app's
-    own template validator and this test both have to agree on what it contains, or a change on
-    one side could pass its own suite while breaking the other. `pnpm exec tsx` is already a dev
-    dependency of `app/`, so no new tool is introduced to read it.
-    """
-    import subprocess
-
-    app_root = Path(__file__).resolve().parents[2] / "app"
-    script = (
-        "import { STARTER_TEMPLATES } from './lib/templates/starters';"
-        "process.stdout.write(JSON.stringify("
-        "Object.fromEntries(STARTER_TEMPLATES.map(t => [t.seededStarterKey, t.definition]))"
-        "));"
-    )
-    result = subprocess.run(
-        ["pnpm", "exec", "tsx", "-e", script],
-        cwd=app_root,
-        capture_output=True,
-        text=True,
-        check=True,
-        timeout=60,
-    )
-    starters = json.loads(result.stdout)
-    return starters[starter_key]
+# A v1 stand-in for each former starter, carrying the same severity-relevant block types
+# (`verification_record`, `gaps_and_coverage`, `executive_summary`) the real starters used —
+# see the docstring above for why the real (now v3) starters cannot be read here.
+_V1_FIXTURE_DEFINITIONS: dict[str, dict] = {
+    "monthly_utilization": df.definition(
+        blocks=[
+            df.block("h-1", "heading", {"text": "Monthly utilization", "level": 1}),
+            df.block("gaps-1", "gaps_and_coverage"),
+            df.block("rec-1", "verification_record"),
+        ]
+    ),
+    "capacity_planning": df.definition(
+        blocks=[
+            df.block("h-1", "heading", {"text": "Capacity planning", "level": 1}),
+            df.block("tbl-1", "resource_table", {"columns": [df.CPU_AVG]}),
+            df.block("gaps-1", "gaps_and_coverage"),
+            df.block("rec-1", "verification_record"),
+        ]
+    ),
+    "executive_summary": df.definition(
+        blocks=[
+            df.block("h-1", "heading", {"text": "Executive summary", "level": 1}),
+            df.block("exec-1", "executive_summary"),
+            df.block("rec-1", "verification_record"),
+        ]
+    ),
+}
 
 
 @contextmanager

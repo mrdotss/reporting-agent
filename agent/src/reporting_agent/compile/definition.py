@@ -1657,6 +1657,15 @@ list a template can grow — the signature table's row height is a theme style, 
 role would have nowhere to be laid out."""
 
 _APPROVER_ALLOWED_KEYS: Final[frozenset[str]] = frozenset({"role", "name", "title"})
+_APPROVER_ALLOWED_KEYS_V3: Final[frozenset[str]] = _APPROVER_ALLOWED_KEYS | frozenset(
+    {"company", "signature_key"}
+)
+"""The additive fields schema_version 3 accepts on an approver entry (task 4.1, design.md
+§7.1). `company` and `signature_key` are new; `title` is kept exactly as it is at v1/v2 —
+the shipped renderer already maps `title` onto the rendered "Company" table column, and a v3
+profile keeps that field while additionally being able to carry the real `company` value and
+an optional signature. A future task decides whether the renderer prefers `company` over
+`title` once one exists; this task only makes the field legal to store."""
 
 CONTACT_BLOCK_MAX_LENGTH: Final[int] = 500
 DOCUMENT_NAME_MAX_LENGTH: Final[int] = 200
@@ -1664,6 +1673,24 @@ DISTRIBUTION_MAX_LENGTH: Final[int] = 500
 SUBTITLE_MAX_LENGTH: Final[int] = 200
 APPROVER_NAME_MAX_LENGTH: Final[int] = 120
 APPROVER_TITLE_MAX_LENGTH: Final[int] = 120
+APPROVER_COMPANY_MAX_LENGTH: Final[int] = 120
+"""Matches APPROVER_TITLE_MAX_LENGTH — same column, same theme cell width."""
+
+SIGNATURE_KEY_MAX_LENGTH: Final[int] = 512
+"""An S3 object key under the owner's prefix (Req 13.5), not the image bytes."""
+
+_DISTRIBUTION_ROW_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
+    {"recipient", "company", "note"}
+)
+DISTRIBUTION_RECIPIENT_MAX_LENGTH: Final[int] = 200
+DISTRIBUTION_ROW_COMPANY_MAX_LENGTH: Final[int] = 120
+DISTRIBUTION_NOTE_MAX_LENGTH: Final[int] = 200
+DISTRIBUTION_ROWS_MAX_ENTRIES: Final[int] = 50
+"""Req 12.6 — at schema_version 3, `distribution` becomes ordered rows of
+`{recipient, company, note}` instead of the v1/v2 free-text block (design.md §7.1). The v2
+string form keeps validating **at v2** — additive at v3 only, so a v2 profile lifted into a
+v3 draft keeps its string `distribution` until the author actually edits it (Req 20.3's
+"carry `front_matter` through unchanged")."""
 
 
 def _validate_front_matter(front_matter: object, path: Path, walk: _Walk) -> None:
@@ -1737,11 +1764,21 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
     _optional_bounded_string(
         control, "document_name", path, walk, DOCUMENT_NAME_MAX_LENGTH
     )
-    _optional_bounded_string(
-        control, "distribution", path, walk, DISTRIBUTION_MAX_LENGTH
-    )
 
-    if "confidentiality_notice_id" in control:
+    # Req 12.7 — at schema_version 3 the confidentiality notice is inherited from the Brand
+    # and is not an author-editable field on the profile at all: `publish_template_version`'s
+    # app-side equivalent resolves it at publish time, following the exact
+    # `resolveDesignFromBrand` pattern `definition.design` already uses, so the renderer never
+    # learns Brands exist. A v3 draft therefore never carries this key itself — it is rejected
+    # here, the same way an undeclared field would be, rather than silently accepted and then
+    # overwritten, which would make a wizard field that visibly does nothing.
+    if walk.version >= 3 and "confidentiality_notice_id" in control:
+        walk.add(
+            (*path, "confidentiality_notice_id"),
+            "document_control.confidentiality_notice_id is inherited from the Brand at "
+            "schema_version 3 and is not set on the profile; edit it on the Brand instead.",
+        )
+    elif walk.version < 3 and "confidentiality_notice_id" in control:
         notice = control["confidentiality_notice_id"]
         # A **string id**, resolved from the message catalog rather than carried as copy, so
         # the notice appears in the pinned language like every other fixed string. A literal
@@ -1753,6 +1790,9 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
                 "catalog string id, not literal copy.",
             )
 
+    if "distribution" in control:
+        _validate_distribution(control["distribution"], (*path, "distribution"), walk)
+
     if "document_number_pattern" in control:
         _validate_document_number_pattern(
             control["document_number_pattern"], (*path, "document_number_pattern"), walk
@@ -1760,6 +1800,71 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
 
     if "approvers" in control:
         _validate_approvers(control["approvers"], (*path, "approvers"), walk)
+
+
+def _validate_distribution(distribution: object, path: Path, walk: _Walk) -> None:
+    """Req 12.6 — `distribution` at schema_version 1/2 is the free-text block it has always
+    been; at schema_version 3 it becomes ordered rows of `{recipient, company, note}`.
+
+    Branching on shape rather than trying to accept both forms at every version: a v3 profile
+    that somehow carried a string here would silently print nothing (the renderer's v3 path
+    reads rows), so rejecting the wrong shape at validation time is what keeps a save-time
+    error from becoming a quietly empty distribution section in a delivered document.
+    """
+    if walk.version < 3:
+        if distribution is not None and (
+            not isinstance(distribution, str)
+            or _utf16_length(distribution) > DISTRIBUTION_MAX_LENGTH
+        ):
+            walk.add(
+                path,
+                f"distribution must be null or a string of at most "
+                f"{DISTRIBUTION_MAX_LENGTH} characters.",
+            )
+        return
+
+    if not isinstance(distribution, list):
+        walk.add(
+            path,
+            "document_control.distribution must be an array of "
+            "{recipient, company, note} rows at schema_version 3.",
+        )
+        return
+
+    if len(distribution) > DISTRIBUTION_ROWS_MAX_ENTRIES:
+        walk.add(
+            path,
+            f"document_control.distribution accepts at most "
+            f"{DISTRIBUTION_ROWS_MAX_ENTRIES} rows; found {len(distribution)}.",
+        )
+
+    for index, entry in enumerate(distribution):
+        at = (*path, index)
+        if not _is_plain_object(entry):
+            walk.add(at, "Each distribution row must be an object.")
+            continue
+
+        for key in entry:
+            if key not in _DISTRIBUTION_ROW_ALLOWED_KEYS:
+                walk.add((*at, key), f'Unrecognized distribution row field "{key}".')
+
+        recipient = entry.get("recipient")
+        if not _is_non_empty_string(recipient):
+            walk.add(
+                (*at, "recipient"),
+                "distribution row.recipient is required and must be a non-empty string.",
+            )
+        elif _utf16_length(recipient) > DISTRIBUTION_RECIPIENT_MAX_LENGTH:
+            walk.add(
+                (*at, "recipient"),
+                f"distribution row.recipient must be at most "
+                f"{DISTRIBUTION_RECIPIENT_MAX_LENGTH} characters.",
+            )
+
+        _optional_bounded_string(
+            entry, "company", at, walk, DISTRIBUTION_ROW_COMPANY_MAX_LENGTH
+        )
+        _optional_bounded_string(entry, "note", at, walk, DISTRIBUTION_NOTE_MAX_LENGTH)
 
 
 def _validate_document_number_pattern(value: object, path: Path, walk: _Walk) -> None:
@@ -1827,6 +1932,8 @@ def _validate_approvers(approvers: object, path: Path, walk: _Walk) -> None:
             f"one per declared role; found {len(approvers)}.",
         )
 
+    allowed_keys = _APPROVER_ALLOWED_KEYS_V3 if walk.version >= 3 else _APPROVER_ALLOWED_KEYS
+
     seen: set[str] = set()
     for index, entry in enumerate(approvers):
         at = (*path, index)
@@ -1835,7 +1942,7 @@ def _validate_approvers(approvers: object, path: Path, walk: _Walk) -> None:
             continue
 
         for key in entry:
-            if key not in _APPROVER_ALLOWED_KEYS:
+            if key not in allowed_keys:
                 walk.add((*at, key), f'Unrecognized approver field "{key}".')
 
         role = entry.get("role")
@@ -1851,6 +1958,22 @@ def _validate_approvers(approvers: object, path: Path, walk: _Walk) -> None:
 
         _optional_bounded_string(entry, "name", at, walk, APPROVER_NAME_MAX_LENGTH)
         _optional_bounded_string(entry, "title", at, walk, APPROVER_TITLE_MAX_LENGTH)
+
+        if walk.version >= 3:
+            _optional_bounded_string(
+                entry, "company", at, walk, APPROVER_COMPANY_MAX_LENGTH
+            )
+            # `signature_key` is an S3 object key (Req 13.5), not the image bytes — never a
+            # presigned URL, never the image content itself, so a definition never carries
+            # anything that has to be redacted from a log line.
+            if "signature_key" in entry and entry["signature_key"] is not None:
+                key = entry["signature_key"]
+                if not _is_non_empty_string(key) or _utf16_length(key) > SIGNATURE_KEY_MAX_LENGTH:
+                    walk.add(
+                        (*at, "signature_key"),
+                        f"approver.signature_key must be null or a non-empty string of "
+                        f"at most {SIGNATURE_KEY_MAX_LENGTH} characters.",
+                    )
 
 
 def _validate_toc(toc: object, path: Path, walk: _Walk) -> None:

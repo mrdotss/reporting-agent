@@ -108,6 +108,13 @@ export type LiftResult = {
     readonly coverPage: boolean
     readonly logoKey: string | null
     readonly pageSize: string
+    /** Lifted from the v1/v2 definition's own `document_control
+     * .confidentiality_notice_id`, if it carried one — Requirement 12.7 makes
+     * this Brand-owned at v3, so a lifted definition's per-profile value
+     * becomes the Brand's value rather than being silently dropped. `null`
+     * when the source carried none, matching the Brand column's own
+     * nullability. */
+    readonly confidentialityNoticeId: string | null
   }
   /** Every block that could not be mapped onto a section, with its id, type
    * and why — the wizard presents this and requires the author to choose
@@ -389,6 +396,36 @@ export function liftDefinition(stored: unknown): LiftResult {
     carriedFrontMatter.cover = { ...existingCover, subtitle: liftedCoverSubtitle }
   }
 
+  // Requirement 12.6, 12.7 — `document_control` diverges at v3: `distribution`
+  // becomes rows instead of free text, and `confidentiality_notice_id` moves
+  // to the Brand instead of staying on the profile. A v1/v2 source's own
+  // values for both are migrated rather than dropped, so lifting a definition
+  // that had them does not silently discard what the author configured.
+  let liftedConfidentialityNoticeId: string | null = null
+  const existingDocumentControl =
+    typeof carriedFrontMatter.document_control === "object" &&
+    carriedFrontMatter.document_control !== null
+      ? { ...(carriedFrontMatter.document_control as Record<string, unknown>) }
+      : {}
+
+  if (typeof existingDocumentControl.confidentiality_notice_id === "string") {
+    liftedConfidentialityNoticeId = existingDocumentControl.confidentiality_notice_id
+  }
+  delete existingDocumentControl.confidentiality_notice_id
+
+  if (typeof existingDocumentControl.distribution === "string") {
+    const trimmed = existingDocumentControl.distribution.trim()
+    // A v1/v2 `distribution` is one free-text field with no structured
+    // recipient, so it has nothing to put in `recipient` — the whole string
+    // becomes the row's `note` instead of being invented into a fake name,
+    // and an empty string lifts to no rows at all (an empty distribution is
+    // legitimately zero rows at v3, not one empty one).
+    existingDocumentControl.distribution =
+      trimmed.length > 0 ? [{ recipient: "Distribution", note: trimmed }] : []
+  }
+
+  carriedFrontMatter.document_control = existingDocumentControl
+
   const identity = (definition.identity ?? { name: "Untitled profile" }) as Record<
     string,
     unknown
@@ -415,6 +452,7 @@ export function liftDefinition(stored: unknown): LiftResult {
       coverPage: typeof design.cover_page === "boolean" ? design.cover_page : true,
       logoKey: typeof design.logo === "string" ? design.logo : null,
       pageSize: typeof design.page_size === "string" ? design.page_size : "A4",
+      confidentialityNoticeId: liftedConfidentialityNoticeId,
     },
     unmapped,
   }
@@ -442,5 +480,6 @@ function defaultBrandValues(): LiftResult["brand"] {
     coverPage: DEFAULT_DESIGN.cover_page as boolean,
     logoKey: DEFAULT_DESIGN.logo as string | null,
     pageSize: DEFAULT_DESIGN.page_size as string,
+    confidentialityNoticeId: null,
   }
 }

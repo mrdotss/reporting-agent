@@ -186,6 +186,22 @@ export const MESSAGE_CATALOG = {
     en: "Signature",
     id: "Tanda tangan",
   },
+  "doc.front_matter.role.author": {
+    en: "Author",
+    id: "Penulis",
+  },
+  "doc.front_matter.role.reviewer": {
+    en: "Quality Control",
+    id: "Kontrol Kualitas",
+  },
+  "doc.front_matter.role.approver": {
+    en: "Reviewed By",
+    id: "Diperiksa Oleh",
+  },
+  "doc.front_matter.role.recipient": {
+    en: "Customer",
+    id: "Pelanggan",
+  },
   "doc.gap.archive_write_failed": {
     en: "A raw response could not be archived, so this run cannot be replayed in full.",
     id: "Sebuah respons mentah gagal diarsipkan, sehingga proses ini tidak dapat diputar ulang secara utuh.",

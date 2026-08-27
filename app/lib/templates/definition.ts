@@ -972,6 +972,42 @@ const DOCUMENT_CONTROL_ALLOWED_KEYS = [
 ] as const
 const TOC_ALLOWED_KEYS = ["enabled", "max_level"] as const
 const APPROVER_ALLOWED_KEYS = ["role", "name", "title"] as const
+/**
+ * The additive fields schema_version 3 accepts on an approver entry, on top of
+ * {@link APPROVER_ALLOWED_KEYS} (task 4.1, design.md §7.1).
+ *
+ * `company` and `signature_key` are new; `title` stays exactly as it is at v1/v2 rather than
+ * being renamed to `company` — the shipped renderer already maps `title` to the rendered
+ * "Company" table column, and a v3 profile keeps that field while additionally being able to
+ * carry the real `company` value and an optional signature. A future task decides whether the
+ * renderer prefers `company` over `title` once one exists; this task only makes the field
+ * legal to store.
+ */
+const APPROVER_ALLOWED_KEYS_V3 = [
+  ...APPROVER_ALLOWED_KEYS,
+  "company",
+  "signature_key",
+] as const
+
+export const APPROVER_COMPANY_MAX_LENGTH = 120
+/** Matches {@link APPROVER_TITLE_MAX_LENGTH} — same column, same theme cell width. */
+
+export const SIGNATURE_KEY_MAX_LENGTH = 512
+/** An S3 object key under the owner's prefix (Requirement 13.5), not the image bytes. */
+
+const DISTRIBUTION_ROW_ALLOWED_KEYS = ["recipient", "company", "note"] as const
+export const DISTRIBUTION_RECIPIENT_MAX_LENGTH = 200
+export const DISTRIBUTION_ROW_COMPANY_MAX_LENGTH = 120
+export const DISTRIBUTION_NOTE_MAX_LENGTH = 200
+export const DISTRIBUTION_ROWS_MAX_ENTRIES = 50
+/**
+ * Requirement 12.6 — at schema_version 3, `distribution` becomes ordered rows of
+ * `{recipient, company, note}` instead of the v1/v2 free-text block (design.md §7.1).
+ *
+ * The v2 string form keeps validating **at v2** — this is additive at v3 only, so a v2
+ * profile lifted into a v3 draft keeps its string `distribution` until the author actually
+ * edits the field (Requirement 20.3's "carry `front_matter` through unchanged").
+ */
 
 const CONFIDENTIALITY_NOTICE_PREFIX = "doc."
 
@@ -1048,7 +1084,8 @@ function validateFrontMatter(
   validateDocumentControl(
     frontMatter.document_control,
     [...path, "document_control"],
-    issues
+    issues,
+    version
   )
   validateToc(frontMatter.toc, [...path, "toc"], issues)
 }
@@ -1092,7 +1129,8 @@ function validateCover(
 function validateDocumentControl(
   control: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  version: SchemaVersion
 ): void {
   if (control === undefined || control === null) return
   if (!isPlainObject(control)) {
@@ -1117,15 +1155,22 @@ function validateDocumentControl(
     issues,
     DOCUMENT_NAME_MAX_LENGTH
   )
-  optionalBoundedString(
-    control,
-    "distribution",
-    path,
-    issues,
-    DISTRIBUTION_MAX_LENGTH
-  )
 
-  if ("confidentiality_notice_id" in control) {
+  // Requirement 12.7 — at schema_version 3 the confidentiality notice is inherited from the
+  // Brand and is not an author-editable field on the profile at all: `publishTemplateVersion`
+  // resolves it at publish time, following the exact `resolveDesignFromBrand` pattern
+  // `definition.design` already uses, so the renderer never learns Brands exist. A v3 draft
+  // therefore never carries this key itself — it is rejected here, the same way an
+  // undeclared field would be, rather than silently accepted and then overwritten, which
+  // would make a wizard field that visibly does nothing.
+  if (version >= 3 && "confidentiality_notice_id" in control) {
+    addIssue(
+      issues,
+      [...path, "confidentiality_notice_id"],
+      "document_control.confidentiality_notice_id is inherited from the Brand at " +
+        "schema_version 3 and is not set on the profile; edit it on the Brand instead."
+    )
+  } else if (version < 3 && "confidentiality_notice_id" in control) {
     // A **string id**, resolved from the message catalog rather than carried as copy, so the
     // notice appears in the pinned language like every other fixed string. A literal here
     // would be English in an Indonesian document.
@@ -1143,6 +1188,15 @@ function validateDocumentControl(
     }
   }
 
+  if ("distribution" in control) {
+    validateDistribution(
+      control.distribution,
+      [...path, "distribution"],
+      issues,
+      version
+    )
+  }
+
   if ("document_number_pattern" in control) {
     validateDocumentNumberPattern(
       control.document_number_pattern,
@@ -1152,8 +1206,107 @@ function validateDocumentControl(
   }
 
   if ("approvers" in control) {
-    validateApprovers(control.approvers, [...path, "approvers"], issues)
+    validateApprovers(
+      control.approvers,
+      [...path, "approvers"],
+      issues,
+      version
+    )
   }
+}
+
+/**
+ * Requirement 12.6 — `distribution` at schema_version 1/2 is the free-text block it has always
+ * been; at schema_version 3 it becomes ordered rows of `{recipient, company, note}`.
+ *
+ * Branching on shape rather than trying to accept both forms at every version: a v3 profile
+ * that somehow carried a string here would silently print nothing (the renderer's v3 path
+ * reads rows), so rejecting the wrong shape at validation time is what keeps a save-time error
+ * from becoming a quietly empty distribution section in a delivered document.
+ */
+function validateDistribution(
+  distribution: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  version: SchemaVersion
+): void {
+  if (version < 3) {
+    if (
+      distribution !== null &&
+      distribution !== undefined &&
+      (typeof distribution !== "string" ||
+        distribution.length > DISTRIBUTION_MAX_LENGTH)
+    ) {
+      addIssue(
+        issues,
+        path,
+        `distribution must be null or a string of at most ` +
+          `${DISTRIBUTION_MAX_LENGTH} characters.`
+      )
+    }
+    return
+  }
+
+  if (!Array.isArray(distribution)) {
+    addIssue(
+      issues,
+      path,
+      "document_control.distribution must be an array of " +
+        "{recipient, company, note} rows at schema_version 3."
+    )
+    return
+  }
+
+  if (distribution.length > DISTRIBUTION_ROWS_MAX_ENTRIES) {
+    addIssue(
+      issues,
+      path,
+      `document_control.distribution accepts at most ` +
+        `${DISTRIBUTION_ROWS_MAX_ENTRIES} rows; found ${distribution.length}.`
+    )
+  }
+
+  distribution.forEach((entry, index) => {
+    const at = [...path, index]
+    if (!isPlainObject(entry)) {
+      addIssue(issues, at, "Each distribution row must be an object.")
+      return
+    }
+
+    for (const key of Object.keys(entry)) {
+      if (!(DISTRIBUTION_ROW_ALLOWED_KEYS as readonly string[]).includes(key)) {
+        addIssue(
+          issues,
+          [...at, key],
+          `Unrecognized distribution row field "${key}".`
+        )
+      }
+    }
+
+    if (!isNonEmptyString(entry.recipient)) {
+      addIssue(
+        issues,
+        [...at, "recipient"],
+        "distribution row.recipient is required and must be a non-empty string."
+      )
+    } else if (entry.recipient.length > DISTRIBUTION_RECIPIENT_MAX_LENGTH) {
+      addIssue(
+        issues,
+        [...at, "recipient"],
+        `distribution row.recipient must be at most ` +
+          `${DISTRIBUTION_RECIPIENT_MAX_LENGTH} characters.`
+      )
+    }
+
+    optionalBoundedString(
+      entry,
+      "company",
+      at,
+      issues,
+      DISTRIBUTION_ROW_COMPANY_MAX_LENGTH
+    )
+    optionalBoundedString(entry, "note", at, issues, DISTRIBUTION_NOTE_MAX_LENGTH)
+  })
 }
 
 /**
@@ -1231,7 +1384,8 @@ function validateDocumentNumberPattern(
 function validateApprovers(
   approvers: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  version: SchemaVersion
 ): void {
   if (!Array.isArray(approvers)) {
     addIssue(issues, path, "document_control.approvers must be an array.")
@@ -1247,6 +1401,9 @@ function validateApprovers(
     )
   }
 
+  const allowedKeys: readonly string[] =
+    version >= 3 ? APPROVER_ALLOWED_KEYS_V3 : APPROVER_ALLOWED_KEYS
+
   const seen = new Set<string>()
   approvers.forEach((entry, index) => {
     const at = [...path, index]
@@ -1256,7 +1413,7 @@ function validateApprovers(
     }
 
     for (const key of Object.keys(entry)) {
-      if (!(APPROVER_ALLOWED_KEYS as readonly string[]).includes(key)) {
+      if (!allowedKeys.includes(key)) {
         addIssue(issues, [...at, key], `Unrecognized approver field "${key}".`)
       }
     }
@@ -1279,6 +1436,30 @@ function validateApprovers(
 
     optionalBoundedString(entry, "name", at, issues, APPROVER_NAME_MAX_LENGTH)
     optionalBoundedString(entry, "title", at, issues, APPROVER_TITLE_MAX_LENGTH)
+
+    if (version >= 3) {
+      optionalBoundedString(
+        entry,
+        "company",
+        at,
+        issues,
+        APPROVER_COMPANY_MAX_LENGTH
+      )
+      // `signature_key` is an S3 object key (Requirement 13.5), not the image bytes — never a
+      // presigned URL, never the image content itself, so a definition never carries anything
+      // that has to be redacted from a log line.
+      if ("signature_key" in entry && entry.signature_key !== null) {
+        const key = entry.signature_key
+        if (!isNonEmptyString(key) || key.length > SIGNATURE_KEY_MAX_LENGTH) {
+          addIssue(
+            issues,
+            [...at, "signature_key"],
+            `approver.signature_key must be null or a non-empty string of at ` +
+              `most ${SIGNATURE_KEY_MAX_LENGTH} characters.`
+          )
+        }
+      }
+    }
   })
 }
 
