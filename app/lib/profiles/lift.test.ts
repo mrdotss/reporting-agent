@@ -4,8 +4,12 @@ import { fileURLToPath } from "node:url"
 
 import { describe, expect, test } from "vitest"
 
-import { collectDefinitionIssues } from "@/lib/templates/definition"
-import { liftDefinition, UNMAPPED_BLOCK_TYPES } from "@/lib/profiles/lift"
+import {
+  collectDefinitionIssues,
+  MAX_SUPPORTED_SCHEMA_VERSION,
+} from "@/lib/templates/definition"
+import { liftDefinition, openingDraft, UNMAPPED_BLOCK_TYPES } from "@/lib/profiles/lift"
+import { EMPTY_DRAFT } from "@/lib/templates/draft"
 
 /**
  * `lift.ts` against the shared v1/v2 fixture corpus (task 3.12, Requirements
@@ -302,5 +306,88 @@ describe("front_matter.document_control migrates to its v3 shape (task 4.1)", ()
       })
     )
     expect(collectDefinitionIssues(draft, { mode: "draft" })).toEqual([])
+  })
+})
+
+/**
+ * `openingDraft` — the call site Requirement 20.1 always needed and never had.
+ *
+ * `liftDefinition` was implemented and tested by task 3.12 and called from nowhere but
+ * this file, so a stored v1/v2 profile opened in the v3 wizard as its raw legacy self.
+ * Step 2 then wrote `sections` into it and the validator refused it as an unrecognized
+ * top-level key -- the blank-template failure reached by a different route, and the
+ * reason "Enesis v2" could not be edited.
+ *
+ * The version guard carries the risk. Lifting reads `blocks` and always emits v3, so a
+ * v3 definition handed to it would yield an empty `sections` array and silently discard
+ * the profile. That is a data-loss bug rather than a validation error, which is why the
+ * pass-through case is mutation-checked rather than merely asserted.
+ */
+describe("openingDraft decides whether to lift, and never lifts twice", () => {
+  const V1_STORED = {
+    schema_version: 1,
+    identity: { name: "Enesis v2" },
+    scope: {
+      resource_types: [],
+      resource_groups: [],
+      tag_filters: [],
+      top_n: null,
+      sort: null,
+    },
+    metrics: {},
+    design: {},
+    blocks: [{ id: "b1", type: "resource_table", config: {} }],
+  }
+
+  test("a stored v1 definition is lifted to a draft the wizard can validate", () => {
+    const { definition, lifted } = openingDraft(V1_STORED)
+
+    expect(definition["schema_version"]).toBe(MAX_SUPPORTED_SCHEMA_VERSION)
+    expect(definition).toHaveProperty("sections")
+    expect(lifted).not.toBeNull()
+    // Draft mode is the bar the wizard actually applies on open.
+    expect(collectDefinitionIssues(definition, { mode: "draft" })).toEqual([])
+  })
+
+  test("the lifted result still carries what it could not map", () => {
+    // Requirement 20: content that does not map is REPORTED, never silently dropped.
+    // The caller needs the result to say so, so the helper must not swallow it.
+    const { lifted } = openingDraft({
+      ...V1_STORED,
+      blocks: [{ id: "b1", type: "comparison_delta", config: {} }],
+    })
+
+    expect(lifted?.unmapped).toBeDefined()
+  })
+
+  test("an already-v3 definition is returned untouched, and not re-lifted", () => {
+    const v3 = openingDraft(V1_STORED).definition
+
+    const reopened = openingDraft(v3)
+
+    expect(reopened.lifted).toBeNull()
+    // Identity, not equality: the guard returns the very object it was handed.
+    expect(reopened.definition).toBe(v3)
+  })
+
+  test("a v3 profile's sections survive being opened, and lifting one would erase them", () => {
+    // The damage the guard prevents, shown rather than asserted in the abstract.
+    // `EMPTY_DRAFT` is a real v3 draft carrying the always-present appendix, so it has
+    // sections to lose. `liftDefinition` reads `blocks` -- which v3 does not have -- so
+    // lifting it yields an empty `sections` array: a profile silently emptied rather
+    // than a validation error anybody would see.
+    const v3 = EMPTY_DRAFT("Enesis v2") as unknown as Record<string, unknown>
+    const before = (v3["sections"] as unknown[]).length
+    expect(before).toBeGreaterThan(0)
+
+    expect((openingDraft(v3).definition["sections"] as unknown[]).length).toBe(before)
+    expect((liftDefinition(v3).draft["sections"] as unknown[]).length).toBe(0)
+  })
+
+  test("a v2 definition is lifted, not passed through", () => {
+    const { definition, lifted } = openingDraft({ ...V1_STORED, schema_version: 2 })
+
+    expect(lifted).not.toBeNull()
+    expect(definition["schema_version"]).toBe(MAX_SUPPORTED_SCHEMA_VERSION)
   })
 })

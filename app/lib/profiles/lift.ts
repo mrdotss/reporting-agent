@@ -59,10 +59,11 @@ import {
   AZURE_SECTIONS,
   type SectionEntry,
 } from "@/lib/profiles/sections"
-import type {
-  ScopeSpec,
-  TemplateBlock,
-  TemplateDefinition,
+import {
+  MAX_SUPPORTED_SCHEMA_VERSION,
+  type ScopeSpec,
+  type TemplateBlock,
+  type TemplateDefinition,
 } from "@/lib/templates/definition"
 
 /** Block types with no v3 catalogue destination at all — see the module
@@ -311,6 +312,37 @@ function flattenBlocks(blocks: readonly TemplateBlock[]): readonly TemplateBlock
  * unmapped, rather than throwing. A lift is a UI convenience, not a gate; the
  * wizard's own validator is what enforces correctness on the produced draft.
  */
+/**
+ * `stored` as a v3 draft: lifted when it is a legacy definition, returned untouched
+ * when it is already v3 (Requirement 20.1).
+ *
+ * **The version guard is the whole point.** `liftDefinition` reads `blocks` and always
+ * emits `schema_version: 3`; handed a v3 definition it would find no `blocks`, produce
+ * an empty `sections` array, and silently discard the profile it was asked to open. So
+ * the caller must never lift unconditionally, and making that a named function rather
+ * than a condition at the call site is what stops the next caller getting it wrong.
+ *
+ * Returns the `LiftResult` in the legacy case so the caller can still surface `unmapped`
+ * — a definition whose blocks did not map is one the consultant must be told about
+ * rather than one that quietly loses content.
+ */
+export function openingDraft(stored: unknown): {
+  readonly definition: Record<string, unknown>
+  readonly lifted: LiftResult | null
+} {
+  const version =
+    typeof stored === "object" && stored !== null
+      ? (stored as { schema_version?: unknown }).schema_version
+      : undefined
+
+  if (version === MAX_SUPPORTED_SCHEMA_VERSION) {
+    return { definition: stored as Record<string, unknown>, lifted: null }
+  }
+
+  const lifted = liftDefinition(stored)
+  return { definition: lifted.draft, lifted }
+}
+
 export function liftDefinition(stored: unknown): LiftResult {
   sectionIdCounter = 0
 

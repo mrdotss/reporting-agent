@@ -27,6 +27,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/templates/definition"
 import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
+import { openingDraft } from "@/lib/profiles/lift"
 import { EMPTY_DRAFT } from "@/lib/templates/draft"
 import {
   canAdvance,
@@ -142,10 +143,26 @@ export function WizardShell({
 }>) {
   const router = useRouter()
 
-  const [definition, setDefinition] = useState<TemplateDefinition>(() =>
-    initialDefinition === null
-      ? EMPTY_DRAFT(template.name)
-      : (initialDefinition as TemplateDefinition)
+  // Requirement 20.1 — a stored v1/v2 definition is LIFTED on the way in, not cast.
+  //
+  // `liftDefinition` has existed and been tested since task 3.12 and was never called
+  // from anywhere but its own test file, so every stored legacy profile opened in the
+  // v3 wizard as its raw v1 self. Step 2 then wrote a `sections` array into it and the
+  // validator refused it as an unrecognized top-level key — the same failure a blank
+  // template hit, reached by a different route.
+  //
+  // `openingDraft` carries the version guard: lifting an ALREADY-v3 definition would
+  // find no `blocks`, emit an empty `sections` array, and silently discard the profile.
+  const opened = useMemo(
+    () =>
+      initialDefinition === null
+        ? { definition: EMPTY_DRAFT(template.name), lifted: null }
+        : openingDraft(initialDefinition),
+    [initialDefinition, template.name]
+  )
+
+  const [definition, setDefinition] = useState<TemplateDefinition>(
+    () => opened.definition as TemplateDefinition
   )
 
   // Requirement 11.8 — the lowest-numbered failing step, or step 7 when every
@@ -153,7 +170,7 @@ export function WizardShell({
   // it as the consultant types would drag them backwards the moment an edit
   // briefly invalidated an earlier step.
   const [step, setStep] = useState<WizardStep>(() =>
-    openingStep(initialDefinition ?? EMPTY_DRAFT(template.name))
+    openingStep(opened.definition)
   )
 
   const [highestReached, setHighestReached] = useState(step.number)
