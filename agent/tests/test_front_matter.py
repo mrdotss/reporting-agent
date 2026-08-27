@@ -11,6 +11,8 @@ Tests cover:
 
 from __future__ import annotations
 
+import base64
+
 import pytest
 from docx.oxml.ns import qn
 
@@ -27,6 +29,19 @@ from reporting_agent.render.front_matter import (
     emit_front_matter,
 )
 from reporting_agent.render.themes import load_theme
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+_ONE_PIXEL_PNG: bytes = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk"
+    "+A8AAQUAAdafFs0AAAAASUVORK5CYII="
+)
+"""The smallest valid PNG: a single transparent pixel. Real magic bytes and
+a real, decodable image — not an arbitrary byte string — so a test using it
+exercises the actual `python-docx` `add_picture` path rather than assuming
+it would work."""
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -277,6 +292,114 @@ class TestSignatureBox:
         assert len(tr_height_els) >= 1
         height_val = tr_height_els[0].get(qn("w:val"))
         assert height_val == str(SIGNATURE_BOX_HEIGHT_TWIPS)
+
+    def test_signed_cell_contains_the_image_and_still_no_text(self) -> None:
+        """A row carrying a signature image places that image in the signature
+        cell, and the cell's text remains empty — the image is what fills the
+        box, never a typed name alongside or instead of it (Req 13.3, 13.4)."""
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            cover=CoverConfig(enabled=False),
+            document_control=DocumentControlConfig(
+                approvers=(
+                    ApproverEntry(
+                        role="author",
+                        name="Alice Smith",
+                        title="Engineer",
+                        signature_image=_ONE_PIXEL_PNG,
+                    ),
+                    ApproverEntry(role="reviewer", name="Bob Jones", title="Manager"),
+                ),
+            ),
+        )
+        run = _run()
+        msgs = load_messages("en")
+
+        emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
+
+        tables = _tables(doc)
+        approvers_table = tables[0]
+        author_row = approvers_table.rows[1]
+        reviewer_row = approvers_table.rows[2]
+
+        # The signed row's signature cell has no text...
+        assert author_row.cells[3].text == ""
+        # ...and DOES contain a placed picture.
+        signed_pictures = author_row.cells[3]._tc.findall(
+            f".//{qn('w:drawing')}"
+        )
+        assert len(signed_pictures) == 1
+
+        # The unsigned row's signature cell has no text and no picture.
+        assert reviewer_row.cells[3].text == ""
+        unsigned_pictures = reviewer_row.cells[3]._tc.findall(
+            f".//{qn('w:drawing')}"
+        )
+        assert len(unsigned_pictures) == 0
+
+        # The name still prints in the name column for the signed row.
+        assert author_row.cells[2].text == "Alice Smith"
+
+    def test_a_signed_rows_height_equals_an_unsigned_rows(self) -> None:
+        """Req 13.3 — a signed row and an unsigned row occupy the same space,
+        so the document's pagination does not depend on who signed."""
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            cover=CoverConfig(enabled=False),
+            document_control=DocumentControlConfig(
+                approvers=(
+                    ApproverEntry(
+                        role="author",
+                        name="Alice Smith",
+                        signature_image=_ONE_PIXEL_PNG,
+                    ),
+                    ApproverEntry(role="reviewer", name="Bob Jones"),
+                ),
+            ),
+        )
+        run = _run()
+        msgs = load_messages("en")
+
+        emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
+
+        tables = _tables(doc)
+        approvers_table = tables[0]
+
+        def row_height(row_idx: int) -> str | None:
+            tr = approvers_table.rows[row_idx]._tr
+            els = tr.findall(f".//{qn('w:trHeight')}")
+            return els[0].get(qn("w:val")) if els else None
+
+        signed_height = row_height(1)
+        unsigned_height = row_height(2)
+        assert signed_height == unsigned_height == str(SIGNATURE_BOX_HEIGHT_TWIPS)
+
+    def test_the_role_column_shows_the_positional_label_not_the_stored_id(
+        self,
+    ) -> None:
+        """Req 12.3 — the role column reads `Author`, not the stored id
+        `author`. The label is resolved through the message catalog, and the
+        stored role id never reaches the rendered document."""
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            cover=CoverConfig(enabled=False),
+            document_control=DocumentControlConfig(
+                approvers=(ApproverEntry(role="author", name="Alice"),),
+            ),
+        )
+        run = _run()
+        msgs = load_messages("en")
+
+        emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
+
+        tables = _tables(doc)
+        approvers_table = tables[0]
+        role_cells = [
+            approvers_table.rows[i].cells[0].text
+            for i in range(1, len(approvers_table.rows))
+        ]
+        assert "author" not in role_cells
+        assert "Author" in role_cells
 
 
 # ---------------------------------------------------------------------------

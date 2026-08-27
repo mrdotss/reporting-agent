@@ -43,6 +43,7 @@ skips the call entirely.
 
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass, field
 from typing import Final
@@ -62,6 +63,7 @@ __all__ = [
     "APPROVER_HEADER_NAME",
     "APPROVER_HEADER_ROLE",
     "APPROVER_HEADER_SIGNATURE",
+    "APPROVER_ROLE_LABEL_IDS",
     "DOC_CONTROL_CONFIDENTIALITY",
     "DOC_CONTROL_DISTRIBUTION",
     "DOC_CONTROL_DOCUMENT_NAME",
@@ -69,6 +71,7 @@ __all__ = [
     "DOC_CONTROL_REVISION_HISTORY",
     "DOC_CONTROL_TITLE",
     "SIGNATURE_BOX_HEIGHT_TWIPS",
+    "ApproverEntry",
     "FrontMatterConfig",
     "RunFacts",
     "document_number",
@@ -91,6 +94,20 @@ APPROVER_HEADER_ROLE: Final[str] = "doc.front_matter.approver_role"
 APPROVER_HEADER_COMPANY: Final[str] = "doc.front_matter.approver_company"
 APPROVER_HEADER_NAME: Final[str] = "doc.front_matter.approver_name"
 APPROVER_HEADER_SIGNATURE: Final[str] = "doc.front_matter.approver_signature"
+
+APPROVER_ROLE_LABEL_IDS: Final[dict[str, str]] = {
+    "author": "doc.front_matter.role.author",
+    "reviewer": "doc.front_matter.role.reviewer",
+    "approver": "doc.front_matter.role.approver",
+    "recipient": "doc.front_matter.role.recipient",
+}
+"""Requirement 12.3 — the four roles are relabelled **positionally**
+(`Author` / `Quality Control` / `Reviewed By` / `Customer`), through the
+message catalogue rather than by renaming a stored id, a fixture, or a
+mirror region. `_emit_approvers_table` resolves the role column through
+this map instead of writing the raw role id string into the cell — a role
+id is an internal symbol (Requirement 1's own rule for this rename), not
+copy a reader should see."""
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +149,17 @@ class ApproverEntry:
     role: str
     name: str = ""
     title: str = ""
+    company: str = ""
+    signature_image: bytes | None = None
+    """The decoded signature image, if one was supplied for this role.
+
+    Bytes, not a key: Requirement 13.5's `signature_key` is resolved to bytes
+    **server-side in the app** and passed inline in the invoke payload — the
+    runtime holds no session and must not fetch content from the app back —
+    so by the time a definition reaches this renderer, there is no key left
+    to resolve, only the image or its absence. `None` is the ordinary,
+    expected value for a role with no supplied signature; it is what
+    produces the empty ruled box (Req 13.1), not an error condition."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -488,16 +516,54 @@ def _emit_approvers_table(
         row_cells = table.rows[i + 1].cells
         entry = _find_approver(front_matter.document_control.approvers, role)
 
-        row_cells[0].text = role
+        # Req 12.3 — the role column shows the positional label
+        # (Author / Quality Control / Reviewed By / Customer), resolved
+        # through the message catalog. The stored role id is an internal
+        # symbol; a reader never sees it.
+        role_label_id = APPROVER_ROLE_LABEL_IDS.get(role)
+        row_cells[0].text = messages.text(role_label_id) if role_label_id else role
         row_cells[1].text = entry.title if entry else ""
         row_cells[2].text = entry.name if entry else ""
 
-        # Clause (b): signature cell is EMPTY (ruled box at declared height).
-        # Never the typed name. The row height enforces the ruled box.
+        # Clause (b): the signature cell text is EMPTY unconditionally, and
+        # NEVER the typed name — set before any image placement, so an
+        # exception raised while placing an image cannot leave a stale
+        # typed name behind it.
         row_cells[3].text = ""
 
-        # Set row height to the theme's declared signature box height
+        # Clause (c): where a signature image was supplied, place it inside
+        # the signature cell, scaled to fit the theme's declared row height
+        # without changing that height — a signed row and an unsigned row
+        # occupy the same space, so pagination never depends on who signed.
+        if entry is not None and entry.signature_image is not None:
+            _place_signature_image(row_cells[3], entry.signature_image)
+
+        # Set row height to the theme's declared signature box height —
+        # AFTER either path, so `w:hRule="atLeast"` plus a scaled-to-fit
+        # image is what makes the signed and unsigned rows the same size,
+        # rather than the image growing the row past it.
         _set_row_height(table.rows[i + 1], SIGNATURE_BOX_HEIGHT_TWIPS)
+
+
+def _place_signature_image(cell: object, image_bytes: bytes) -> None:
+    """Place a signature image inside a table cell, height-constrained to fit
+    within the theme's declared signature row height (Req 13.3).
+
+    Height-constrained rather than width-constrained: the box this cell sits
+    in is fixed-**height** (`SIGNATURE_BOX_HEIGHT_TWIPS`, `w:hRule="atLeast"`),
+    so the image's height is what must not exceed it — an image scaled only
+    by width could still be taller than the box and grow the row, which is
+    exactly the coupling Req 13.3 exists to rule out. `python-docx` preserves
+    aspect ratio automatically when only one of `width`/`height` is given.
+    """
+    from docx.shared import Twips
+
+    paragraph = cell.paragraphs[0]  # type: ignore[attr-defined]
+    run = paragraph.add_run()
+    run.add_picture(
+        io.BytesIO(image_bytes),
+        height=Twips(SIGNATURE_BOX_HEIGHT_TWIPS),
+    )
 
 
 def _set_row_height(row: object, height_twips: int) -> None:
