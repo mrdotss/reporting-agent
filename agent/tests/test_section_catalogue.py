@@ -117,11 +117,15 @@ class TestShippedCatalogue:
         assert hist.optional is True
         assert hist.draws_from_prior_verified_runs is True
 
-    def test_unavailable_sections_need_uncollected_inputs(
+    def test_declared_inputs_for_the_four_phase_5_sections(
         self, sections: LoadedSectionCatalogue
     ):
-        """Sections 3, 5, 6 and 14 declare inputs no collector supplies yet."""
-        # These sections declare resource types or fact sources not yet collected
+        """Sections 3, 5, 6 and 14 declare the resource types/fact sources their own
+        collectors supply (tasks 6.1-6.4). Offerability against a real scan is computed
+        from these declarations plus `COLLECTED_FACT_SOURCES` (task 6.5) — this test only
+        asserts the declaration itself, not the run-time offerability decision, which
+        lives in `azure/facts.py`'s `_ADVISOR_*` constants and the app's
+        `lib/profiles/offerability.ts`."""
         vnet = sections.by_key("virtual_network")
         assert vnet is not None
         assert "Microsoft.Network/virtualNetworks" in vnet.needs_resource_types
