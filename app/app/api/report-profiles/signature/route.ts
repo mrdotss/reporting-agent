@@ -1,5 +1,5 @@
-import { putSignature, signatureKey } from "@/lib/aws/s3"
-import { badRequest, json, unauthorized } from "@/lib/api/response"
+import { presignSignature, putSignature, signatureKey } from "@/lib/aws/s3"
+import { badRequest, json, notFound, unauthorized } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
 import { validateSignatureUpload } from "@/lib/brands/signature-validation"
 
@@ -45,4 +45,29 @@ export async function POST(request: Request): Promise<Response> {
   await putSignature(key, bytes, contentType)
 
   return json(201, { key } satisfies UploadResponseBody)
+}
+
+/**
+ * `GET /api/report-profiles/signature?key=...` — a short-lived presigned GET
+ * for the wizard to preview a signature it (or an earlier session) already
+ * uploaded (Requirement 13.5's read half).
+ *
+ * Ownership is checked with the same `signatureBelongsToActor` boolean every
+ * write already goes through — a key naming another user's signature reads
+ * as `notFound`, not as a distinguishable "forbidden", so the response
+ * cannot be used to probe for a key's existence.
+ */
+export async function GET(request: Request): Promise<Response> {
+  const user = await requireSessionForApi()
+  if (!user) return unauthorized()
+
+  const key = new URL(request.url).searchParams.get("key")
+  if (!key) return badRequest("key is required", "MISSING_KEY")
+
+  try {
+    const { url, expiresIn } = await presignSignature(user.id, key)
+    return json(200, { url, expiresIn })
+  } catch {
+    return notFound()
+  }
 }

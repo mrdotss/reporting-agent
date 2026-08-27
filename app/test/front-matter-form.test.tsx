@@ -35,7 +35,7 @@ function defaultValues(): FrontMatterFormValues {
       document_name: null,
       document_number_pattern: null,
       confidentiality_notice_id: null,
-      distribution: null,
+      distribution: [],
       approvers: [],
     },
     toc: { enabled: true, max_level: 3 },
@@ -176,9 +176,7 @@ describe("FrontMatterForm", () => {
     if (TOC_ADOPTED_APPROACH === "none") {
       const onChange = vi.fn()
       render(<FrontMatterForm values={defaultValues()} onChange={onChange} />)
-      expect(
-        screen.getByText(/retained.*not emitted/i)
-      ).toBeInTheDocument()
+      expect(screen.getByText(/retained.*not emitted/i)).toBeInTheDocument()
     } else {
       // Current state: approach is adopted, so no "retained" badge
       const onChange = vi.fn()
@@ -195,9 +193,7 @@ describe("FrontMatterForm", () => {
       <FrontMatterForm values={defaultValues()} onChange={onChange} />
     )
 
-    const region = container.querySelector(
-      '[data-slot="front-matter-form"]'
-    )
+    const region = container.querySelector('[data-slot="front-matter-form"]')
     expect(region).not.toBeNull()
     expect(region?.getAttribute("role")).toBe("region")
     expect(region?.getAttribute("aria-label")).toBe(
@@ -212,16 +208,12 @@ describe("FrontMatterForm", () => {
 
 describe("BlockPalette", () => {
   it("has NO palette entry for cover", () => {
-    const allTypes = PALETTE_GROUPS.flatMap((g) =>
-      g.entries.map((e) => e.type)
-    )
+    const allTypes = PALETTE_GROUPS.flatMap((g) => g.entries.map((e) => e.type))
     expect(allTypes).not.toContain("cover")
   })
 
   it("has NO palette entry for document_control or toc (they are not block types)", () => {
-    const allTypes = PALETTE_GROUPS.flatMap((g) =>
-      g.entries.map((e) => e.type)
-    )
+    const allTypes = PALETTE_GROUPS.flatMap((g) => g.entries.map((e) => e.type))
     expect(allTypes).not.toContain("document_control")
     expect(allTypes).not.toContain("toc")
   })

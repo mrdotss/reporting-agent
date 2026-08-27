@@ -13,7 +13,7 @@ import {
   StepIdentity,
   type IdentitySaveResult,
 } from "@/components/templates/step-identity"
-import { StepMetrics } from "@/components/templates/step-metrics"
+import { StepDocument } from "@/components/templates/step-document"
 import { StepPeriod } from "@/components/templates/step-period"
 import { StepPreview } from "@/components/templates/step-preview"
 import {
@@ -115,7 +115,7 @@ type PublishResponse = {
 export function WizardShell({
   template,
   initialDefinition,
-  catalog,
+  catalog: _catalog,
   thumbnails: _thumbnails,
   sectionCatalogue,
   previewSubscriptionId,
@@ -126,6 +126,11 @@ export function WizardShell({
   template: TemplateView
   /** The persisted draft, or the latest version's definition, or `null`. */
   initialDefinition: unknown
+  /** Unused since `StepMetrics` (the v1/v2 metric picker) was replaced by
+   * `StepDocument` at step 4 — this wizard is v3-only, and a v3 section's own
+   * metric selection is not a `MetricCatalogSnapshot` lookup this shell performs;
+   * see `step-sections.tsx`. Kept on the prop contract rather than removed from
+   * every caller for a fix scoped to the wizard's own step routing. */
   catalog: MetricCatalogSnapshot
   /** Resolved on the server — see `StepDesign`'s own note. */
   thumbnails: readonly ThemeThumbnail[]
@@ -387,7 +392,6 @@ export function WizardShell({
     step,
     definition,
     setDefinition,
-    catalog,
     sectionCatalogue,
     problems,
     templateId: template.id,
@@ -644,7 +648,6 @@ function renderStep({
   step,
   definition,
   setDefinition,
-  catalog,
   sectionCatalogue,
   problems,
   templateId,
@@ -660,7 +663,6 @@ function renderStep({
   step: WizardStep
   definition: TemplateDefinition
   setDefinition: (next: TemplateDefinition) => void
-  catalog: MetricCatalogSnapshot
   sectionCatalogue: readonly SectionCatalogueEntry[]
   problems: ReturnType<typeof completionProblems>
   templateId: string
@@ -699,13 +701,7 @@ function renderStep({
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
     case "document":
-      return (
-        <StepMetrics
-          definition={definition}
-          onChange={setDefinition}
-          catalog={catalog}
-        />
-      )
+      return <StepDocument definition={definition} onChange={setDefinition} />
     case "preview":
       return (
         <StepPreview

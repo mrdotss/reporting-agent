@@ -1464,6 +1464,38 @@ const FILE_INPUT_PATTERNS: readonly RegExp[] = [
 ]
 
 /**
+ * The one file this sweep does not walk, and the reason it is a named exception
+ * rather than a widened pattern.
+ *
+ * `front-matter-form.tsx`'s file input uploads an **approver's signature image**
+ * (Requirement 13.5, 13.6) — a raster image the document renders into a signature
+ * box, never a document. It is not the thing Requirement 11.6 forbids: that
+ * requirement's own words are "no control that uploads a *document*", and the
+ * distinction is structural, not a matter of degree —
+ * `POST /api/report-profiles/signature` sniffs the bytes for a real PNG/JPEG
+ * raster (`validateSignatureUpload`), caps the size, and writes to a signature-only
+ * S3 prefix a `.docx`/`.pdf` could never be read back from. `accept="image/png,
+ * image/jpeg"` is exactly the attribute this guard would otherwise flag, so this
+ * exception has to be file-scoped rather than a widened regex — widening the
+ * pattern to tolerate an image `accept` value would also tolerate one a future
+ * change quietly set to `.docx`.
+ */
+const SIGNATURE_UPLOAD_FILE = "components/templates/front-matter-form.tsx"
+
+/**
+ * {@link TEMPLATE_COMPONENT_DIRECTORY}'s files, minus {@link SIGNATURE_UPLOAD_FILE}
+ * — used by the two checks below that assert "no file input" and "no document
+ * MIME type", since a signature-image upload is legitimately exempt from the
+ * first and must still be swept by the second (an S3 signature route naming a
+ * `.docx` MIME type would be a real defect this guard should still catch).
+ */
+function templateComponentFilesExceptSignatureUpload(): readonly string[] {
+  return listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY).filter(
+    (relativePath) => relativePath !== SIGNATURE_UPLOAD_FILE
+  )
+}
+
+/**
  * The document MIME types a template upload would name.
  *
  * `.docx`'s full type is spelled by joining, so this constant does not itself
@@ -1496,7 +1528,7 @@ describe("Requirement 11.6 — the wizard offers no document upload", () => {
     ).toBeGreaterThan(0)
   })
 
-  test.each(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY))(
+  test.each(templateComponentFilesExceptSignatureUpload())(
     "%s renders no file input",
     (relativePath) => {
       const source = readFileSync(path.join(projectRoot, relativePath), "utf8")
@@ -1511,7 +1543,31 @@ describe("Requirement 11.6 — the wizard offers no document upload", () => {
     }
   )
 
-  test.each(listSourceFiles(TEMPLATE_COMPONENT_DIRECTORY))(
+  test("the one exempted file input accepts only PNG/JPEG, never a document MIME type or extension", () => {
+    // The exception granted above, checked rather than merely asserted: a file
+    // input this sweep does not walk is a hole the moment its own `accept`
+    // widens to something Requirement 11.6 forbids, so this is the guard that
+    // keeps the exemption honest instead of a one-time judgement call nothing
+    // re-checks.
+    const source = readFileSync(
+      path.join(projectRoot, SIGNATURE_UPLOAD_FILE),
+      "utf8"
+    )
+
+    expect(source).toMatch(/accept\s*=\s*["']image\/png,image\/jpeg["']/)
+
+    for (const fragment of DOCUMENT_MIME_FRAGMENTS) {
+      expect(
+        source.includes(fragment),
+        `${SIGNATURE_UPLOAD_FILE} names ${fragment} — the exempted file input ` +
+          `must never widen to accept a document`
+      ).toBe(false)
+    }
+    expect(source.includes(".docx")).toBe(false)
+    expect(source.includes(".pdf")).toBe(false)
+  })
+
+  test.each(templateComponentFilesExceptSignatureUpload())(
     "%s names no document MIME type or extension",
     (relativePath) => {
       const source = readFileSync(path.join(projectRoot, relativePath), "utf8")
@@ -2372,15 +2428,12 @@ describe("Requirements 6.1, 6.3 — breadth spec's server-only and pure modules"
     }
   )
 
-  test.each(BREADTH_SERVER_ONLY_MODULES)(
-    "%s exists",
-    (modulePath) => {
-      expect(
-        existsSync(path.join(projectRoot, modulePath)),
-        `${modulePath} must exist — guard would pass vacuously without it`
-      ).toBe(true)
-    }
-  )
+  test.each(BREADTH_SERVER_ONLY_MODULES)("%s exists", (modulePath) => {
+    expect(
+      existsSync(path.join(projectRoot, modulePath)),
+      `${modulePath} must exist — guard would pass vacuously without it`
+    ).toBe(true)
+  })
 
   test.each(BREADTH_PURE_MODULES)(
     "%s is pure — no server-only, no SDK, no connection",

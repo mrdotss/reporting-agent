@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useCallback, useState } from "react"
 import {
   CaretDown,
   CaretRight,
@@ -9,17 +9,23 @@ import {
   Signature,
   ListNumbers,
   FileText,
+  Plus,
+  Trash,
+  SpinnerGap,
 } from "@phosphor-icons/react"
 
 import {
   APPROVER_ROLES,
   CONTACT_BLOCK_MAX_LENGTH,
+  DISTRIBUTION_NOTE_MAX_LENGTH,
+  DISTRIBUTION_RECIPIENT_MAX_LENGTH,
+  DISTRIBUTION_ROW_COMPANY_MAX_LENGTH,
+  DISTRIBUTION_ROWS_MAX_ENTRIES,
   DOCUMENT_NAME_MAX_LENGTH,
   DOCUMENT_NUMBER_PATTERN_MAX_LENGTH,
   DOCUMENT_NUMBER_PATTERN_MIN_LENGTH,
   DOCUMENT_NUMBER_PLACEHOLDERS,
   DOCUMENT_NUMBER_VARYING_PLACEHOLDERS,
-  DISTRIBUTION_MAX_LENGTH,
   SUBTITLE_MAX_LENGTH,
   APPROVER_NAME_MAX_LENGTH,
   APPROVER_TITLE_MAX_LENGTH,
@@ -33,7 +39,26 @@ import {
 export type ApproverConfig = {
   readonly role: string
   readonly name: string
+  /** What the shipped renderer maps to the document's "Company" table column
+   * today. Kept exactly as it was at v1/v2 (`definition.ts`'s own note: "a
+   * future task decides whether the renderer prefers `company` over `title`
+   * once one exists" — that task has not landed, so this form still writes
+   * `title` alongside the new `company` field below rather than replacing it). */
   readonly title: string
+  /** The v3-only field schema_version 3 additionally accepts on an approver
+   * entry (Requirement 13's own additive design) — not yet read by the
+   * renderer, but legal to store. */
+  readonly company: string
+  /** An S3 object key under the signed-in user's prefix, or `null` when unsigned.
+   * Never the image bytes and never a presigned URL — the same "a key, not the
+   * content" rule every other stored artifact reference in this app follows. */
+  readonly signatureKey: string | null
+}
+
+export type DistributionRow = {
+  readonly recipient: string
+  readonly company: string
+  readonly note: string
 }
 
 export type CoverFormValues = {
@@ -45,8 +70,19 @@ export type CoverFormValues = {
 export type DocumentControlFormValues = {
   readonly document_name: string | null
   readonly document_number_pattern: string | null
+  /**
+   * `null` at v1/v2 (the profile carries no `confidentiality_notice_id` field at
+   * all in the wizard's own draft-mode shape) — schema_version 3 never accepts
+   * this key on the profile either way (Requirement 12.7: inherited from the
+   * Brand, resolved at publish), so the form never renders a control for it.
+   * Retained on the type only so a caller reading a v1/v2 stored value round-trips
+   * it unchanged; this form never writes to it.
+   */
   readonly confidentiality_notice_id: string | null
-  readonly distribution: string | null
+  /** Ordered `{recipient, company, note}` rows — schema_version 3's own shape
+   * (Requirement 12.6). There is no v1/v2 caller of this form left to support the
+   * free-text string distribution used to be; see the module docstring. */
+  readonly distribution: readonly DistributionRow[]
   readonly approvers: readonly ApproverConfig[]
 }
 
@@ -124,6 +160,16 @@ function validateDocumentNumberPattern(pattern: string): PatternIssue | null {
 // Signature slot component
 // ---------------------------------------------------------------------------
 
+/**
+ * One approver's name, company and signature upload (Req 13.5, 13.6).
+ *
+ * The upload posts raw bytes to `/api/report-profiles/signature`, which sniffs
+ * the content before writing — never a client-direct presigned `PUT`, since that
+ * would skip the one check that matters ("is this actually a raster image").
+ * The response's `key` is stored on the approver row; the preview `<img>` reads
+ * a **separate** presigned GET, minted fresh on each render rather than cached,
+ * matching every other artifact preview in this app.
+ */
 function SignatureSlot({
   role,
   approver,
@@ -135,6 +181,58 @@ function SignatureSlot({
 }>) {
   const name = approver?.name ?? ""
   const title = approver?.title ?? ""
+  const signatureKey = approver?.signatureKey ?? null
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [uploadState, setUploadState] = useState<
+    "idle" | "uploading" | "error"
+  >("idle")
+
+  const emit = useCallback(
+    (patch: Partial<ApproverConfig>) => {
+      onChange({
+        role,
+        name,
+        title,
+        company: approver?.company ?? "",
+        signatureKey,
+        ...patch,
+      })
+    },
+    [role, name, title, approver, signatureKey, onChange]
+  )
+
+  const loadPreview = useCallback((key: string) => {
+    setPreviewUrl(null)
+    fetch(`/api/report-profiles/signature?key=${encodeURIComponent(key)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: { url: string } | null) => {
+        if (body) setPreviewUrl(body.url)
+      })
+      .catch(() => setPreviewUrl(null))
+  }, [])
+
+  const handleFile = useCallback(
+    (file: File) => {
+      setUploadState("uploading")
+      file
+        .arrayBuffer()
+        .then((buffer) =>
+          fetch("/api/report-profiles/signature", {
+            method: "POST",
+            body: buffer,
+          })
+        )
+        .then(async (res) => {
+          if (!res.ok) throw new Error("upload rejected")
+          const body: { key: string } = await res.json()
+          setUploadState("idle")
+          emit({ signatureKey: body.key })
+          loadPreview(body.key)
+        })
+        .catch(() => setUploadState("error"))
+    },
+    [emit, loadPreview]
+  )
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2.5">
@@ -150,22 +248,79 @@ function SignatureSlot({
           value={name}
           maxLength={APPROVER_NAME_MAX_LENGTH}
           aria-label={`${role} name`}
-          onChange={(e) =>
-            onChange({ role, name: e.target.value, title })
-          }
+          onChange={(e) => emit({ name: e.target.value })}
           className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
         />
         <input
           type="text"
-          placeholder="Company / title"
+          placeholder="Company"
           value={title}
           maxLength={APPROVER_TITLE_MAX_LENGTH}
           aria-label={`${role} company`}
-          onChange={(e) =>
-            onChange({ role, name, title: e.target.value })
-          }
+          onChange={(e) => emit({ title: e.target.value })}
           className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
         />
+      </div>
+
+      <div className="flex items-center gap-2">
+        {signatureKey ? (
+          <>
+            <div className="flex h-10 w-24 items-center justify-center overflow-hidden rounded-md border border-border bg-background">
+              {previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewUrl}
+                  alt={`${role} signature`}
+                  className="h-full w-full object-contain"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => loadPreview(signatureKey)}
+                  className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  Show preview
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              aria-label={`Remove ${role} signature`}
+              onClick={() => {
+                emit({ signatureKey: null })
+                setPreviewUrl(null)
+              }}
+              className="flex size-8 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+            >
+              <Trash aria-hidden className="size-4" />
+            </button>
+          </>
+        ) : (
+          <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-dashed border-input px-2.5 text-xs text-muted-foreground hover:bg-accent/50">
+            {uploadState === "uploading" ? (
+              <SpinnerGap aria-hidden className="size-3.5 animate-spin" />
+            ) : (
+              <ImageIcon aria-hidden className="size-3.5" />
+            )}
+            Upload signature
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              aria-label={`Upload ${role} signature`}
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleFile(file)
+                e.target.value = ""
+              }}
+            />
+          </label>
+        )}
+        {uploadState === "error" && (
+          <span className="text-xs text-destructive" role="alert">
+            Upload failed — try a PNG or JPEG under 2 MiB.
+          </span>
+        )}
       </div>
 
       <p className="text-xs text-muted-foreground">
@@ -263,7 +418,7 @@ export function FrontMatterForm({
     >
       <div className="flex items-center gap-2">
         <FileText aria-hidden className="size-4 text-primary" />
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           Front Matter
         </h2>
         <span className="ml-auto text-xs text-muted-foreground">Fixed</span>
@@ -392,10 +547,7 @@ export function FrontMatterForm({
             </p>
             <ul className="flex flex-wrap gap-x-3 gap-y-1">
               {DOCUMENT_NUMBER_PLACEHOLDERS.map((ph) => (
-                <li
-                  key={ph}
-                  className="text-xs"
-                >
+                <li key={ph} className="text-xs">
                   <code className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
                     {ph}
                   </code>
@@ -409,25 +561,113 @@ export function FrontMatterForm({
         </div>
 
         {/* Distribution */}
-        <label className="flex flex-col gap-1">
+        <div className="flex flex-col gap-2">
           <span className="text-xs text-muted-foreground">Distribution</span>
-          <input
-            type="text"
-            value={values.document_control.distribution ?? ""}
-            maxLength={DISTRIBUTION_MAX_LENGTH}
-            placeholder="Internal / Customer"
-            onChange={(e) =>
-              onChange({
-                ...values,
-                document_control: {
-                  ...values.document_control,
-                  distribution: e.target.value || null,
-                },
-              })
-            }
-            className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
-          />
-        </label>
+          <div className="flex flex-col gap-2">
+            {values.document_control.distribution.map((row, index) => (
+              <div key={index} className="flex items-center gap-1.5">
+                <input
+                  type="text"
+                  value={row.recipient}
+                  maxLength={DISTRIBUTION_RECIPIENT_MAX_LENGTH}
+                  placeholder="Recipient"
+                  aria-label={`Distribution row ${index + 1} recipient`}
+                  onChange={(e) => {
+                    const next = [...values.document_control.distribution]
+                    next[index] = { ...row, recipient: e.target.value }
+                    onChange({
+                      ...values,
+                      document_control: {
+                        ...values.document_control,
+                        distribution: next,
+                      },
+                    })
+                  }}
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                />
+                <input
+                  type="text"
+                  value={row.company}
+                  maxLength={DISTRIBUTION_ROW_COMPANY_MAX_LENGTH}
+                  placeholder="Company"
+                  aria-label={`Distribution row ${index + 1} company`}
+                  onChange={(e) => {
+                    const next = [...values.document_control.distribution]
+                    next[index] = { ...row, company: e.target.value }
+                    onChange({
+                      ...values,
+                      document_control: {
+                        ...values.document_control,
+                        distribution: next,
+                      },
+                    })
+                  }}
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                />
+                <input
+                  type="text"
+                  value={row.note}
+                  maxLength={DISTRIBUTION_NOTE_MAX_LENGTH}
+                  placeholder="Note"
+                  aria-label={`Distribution row ${index + 1} note`}
+                  onChange={(e) => {
+                    const next = [...values.document_control.distribution]
+                    next[index] = { ...row, note: e.target.value }
+                    onChange({
+                      ...values,
+                      document_control: {
+                        ...values.document_control,
+                        distribution: next,
+                      },
+                    })
+                  }}
+                  className="h-8 flex-1 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                />
+                <button
+                  type="button"
+                  aria-label={`Remove distribution row ${index + 1}`}
+                  onClick={() => {
+                    const next = values.document_control.distribution.filter(
+                      (_, i) => i !== index
+                    )
+                    onChange({
+                      ...values,
+                      document_control: {
+                        ...values.document_control,
+                        distribution: next,
+                      },
+                    })
+                  }}
+                  className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+                >
+                  <Trash aria-hidden className="size-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+          {values.document_control.distribution.length <
+            DISTRIBUTION_ROWS_MAX_ENTRIES && (
+            <button
+              type="button"
+              onClick={() =>
+                onChange({
+                  ...values,
+                  document_control: {
+                    ...values.document_control,
+                    distribution: [
+                      ...values.document_control.distribution,
+                      { recipient: "", company: "", note: "" },
+                    ],
+                  },
+                })
+              }
+              className="flex h-8 w-fit items-center gap-1.5 rounded-md border border-dashed border-input px-2.5 text-xs text-muted-foreground hover:bg-accent/50"
+            >
+              <Plus aria-hidden className="size-3.5" />
+              Add recipient
+            </button>
+          )}
+        </div>
 
         {/* Approvers / signature slots */}
         <div className="flex flex-col gap-2">
@@ -446,8 +686,9 @@ export function FrontMatterForm({
                   const next = values.document_control.approvers.filter(
                     (a) => a.role !== role
                   )
-                  // Only store if name or title is non-empty
-                  if (updated.name || updated.title) {
+                  // Only store the row once it carries something, so an approver
+                  // slot nobody touched never round-trips as an empty entry.
+                  if (updated.name || updated.company || updated.signatureKey) {
                     next.push(updated)
                   }
                   onChange({
@@ -518,7 +759,10 @@ export function FrontMatterForm({
                 ...values,
                 toc: {
                   ...values.toc,
-                  max_level: Math.max(1, Math.min(4, Number(e.target.value) || 3)),
+                  max_level: Math.max(
+                    1,
+                    Math.min(4, Number(e.target.value) || 3)
+                  ),
                 },
               })
             }
