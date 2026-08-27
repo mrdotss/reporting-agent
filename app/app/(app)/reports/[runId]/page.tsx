@@ -182,7 +182,7 @@ export default async function RunPage({ params }: RunPageProps) {
           {pinned === null ? null : (
             <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
               <div className="flex flex-col">
-                <dt className="text-xs text-muted-foreground">Template</dt>
+                <dt className="text-xs text-muted-foreground">Report profile</dt>
                 <dd>{pinned.templateName}</dd>
               </div>
               <div className="flex flex-col">

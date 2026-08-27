@@ -192,7 +192,7 @@ function MetricNotSelectedSection({
 
   const templateLink = templateId ? (
     <Link
-      href={`/templates/${templateId}/edit`}
+      href={`/report-profiles/${templateId}/edit`}
       className="text-sm underline underline-offset-2 text-muted-foreground hover:text-foreground"
     >
       {language === "id"

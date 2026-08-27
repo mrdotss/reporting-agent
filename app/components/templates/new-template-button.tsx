@@ -38,7 +38,7 @@ export function NewTemplateButton() {
     setCreating(true)
 
     try {
-      const response = await fetch("/api/templates", {
+      const response = await fetch("/api/report-profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: DEFAULT_NAME }),
@@ -51,7 +51,7 @@ export function NewTemplateButton() {
         return
       }
 
-      router.push(`/templates/${body.template.id}/edit`)
+      router.push(`/report-profiles/${body.template.id}/edit`)
     } catch {
       setError("The template could not be created. Check your connection.")
     } finally {

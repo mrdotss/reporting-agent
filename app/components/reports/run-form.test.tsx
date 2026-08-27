@@ -290,7 +290,7 @@ describe("RunForm — changing the selected template", () => {
   test("v1 to v2 reveals the inputs, and back hides them", () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Template")
+    const select = screen.getByLabelText("Report profile")
 
     expect(screen.queryByLabelText("Customer name")).toBeNull()
 
@@ -304,7 +304,7 @@ describe("RunForm — changing the selected template", () => {
   test("switching to v1 after filling the fields sends a v1 body, not a stale v2 one", async () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Template")
+    const select = screen.getByLabelText("Report profile")
 
     fireEvent.change(select, { target: { value: "tmpl-v2" } })
     fillFrontMatter()
@@ -324,7 +324,7 @@ describe("RunForm — changing the selected template", () => {
   test("switching back to v2 keeps the typed values rather than clearing them", () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Template")
+    const select = screen.getByLabelText("Report profile")
 
     fireEvent.change(select, { target: { value: "tmpl-v2" } })
     fillFrontMatter({ customerName: "Contoso Ltd" })

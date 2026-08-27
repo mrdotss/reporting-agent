@@ -75,7 +75,7 @@ describe("Requirement 23: identity step renames the template on save", () => {
       definition: makeDefinition({ name: "My Report" }),
     })
 
-    const input = screen.getByLabelText("Template name")
+    const input = screen.getByLabelText("Report profile name")
     expect(input).toHaveValue("My Report")
   })
 
@@ -285,14 +285,14 @@ describe("identity-rename integration: fetch-level rename", () => {
     const draftDef = makeDefinition({ name: "New name" })
 
     // Call 1: save draft
-    await fetch(`/api/templates/${templateId}`, {
+    await fetch(`/api/report-profiles/${templateId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ draftDefinition: draftDef }),
     })
 
     // Call 2: rename
-    await fetch(`/api/templates/${templateId}`, {
+    await fetch(`/api/report-profiles/${templateId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: "New name" }),
@@ -302,12 +302,12 @@ describe("identity-rename integration: fetch-level rename", () => {
 
     // Assert call 1 is the draft save
     const [draftUrl, draftOpts] = fetchMock.mock.calls[0]
-    expect(draftUrl).toBe("/api/templates/tpl-001")
+    expect(draftUrl).toBe("/api/report-profiles/tpl-001")
     expect(JSON.parse(draftOpts.body)).toHaveProperty("draftDefinition")
 
     // Assert call 2 is the rename — EXACTLY ONCE
     const [renameUrl, renameOpts] = fetchMock.mock.calls[1]
-    expect(renameUrl).toBe("/api/templates/tpl-001")
+    expect(renameUrl).toBe("/api/report-profiles/tpl-001")
     const renameBody = JSON.parse(renameOpts.body)
     expect(renameBody).toEqual({ name: "New name" })
 
@@ -335,7 +335,7 @@ describe("identity-rename integration: fetch-level rename", () => {
     const submittedName = "Same name"
 
     // Only the draft save should happen — no rename call
-    await fetch(`/api/templates/${templateId}`, {
+    await fetch(`/api/report-profiles/${templateId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ draftDefinition: makeDefinition({ name: submittedName }) }),
@@ -384,7 +384,7 @@ describe("store.renameTemplate contract (asserted, not modified)", () => {
   test("renameTemplate is scoped to the signed-in user's row", () => {
     // This is asserted by the store's own integration test
     // (test/db/templates-store.integration.test.ts). We confirm here that
-    // the API route at PATCH /api/templates/[id] passes the user id.
+    // the API route at PATCH /api/report-profiles/[id] passes the user id.
     // The route handler: `await renameTemplate(user.id, params.data.id, parsed.data.name)`
     // store.renameTemplate uses: `AND user_id = $bound`
     // Another user's row resolves as TemplateNotFoundError (not found).

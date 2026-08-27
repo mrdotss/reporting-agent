@@ -451,7 +451,7 @@ describe("Requirement 20.8, 20.9 — metric_not_selected group", () => {
     // Link to template metric selection
     const link = group?.querySelector("a")
     expect(link).not.toBeNull()
-    expect(link?.getAttribute("href")).toBe("/templates/tmpl-123/edit")
+    expect(link?.getAttribute("href")).toBe("/report-profiles/tmpl-123/edit")
 
     // Distinct resource types
     expect(text).toContain("Microsoft.Sql/servers")
@@ -496,7 +496,7 @@ describe("Requirement 20.8, 20.9 — metric_not_selected group", () => {
     expect(text).toMatch(/template/i)
     const link = group?.querySelector("a")
     expect(link).not.toBeNull()
-    expect(link?.getAttribute("href")).toBe("/templates/tmpl-456/edit")
+    expect(link?.getAttribute("href")).toBe("/report-profiles/tmpl-456/edit")
   })
 
   test("metric_not_selected presents statement and link in BOTH branches", () => {

@@ -77,7 +77,7 @@ export const TOC_ADOPTED_APPROACH: "none" | "two_pass_measure" =
   "two_pass_measure"
 
 const PLACEHOLDER_DESCRIPTIONS: Record<string, string> = {
-  "{template}": "Template identifier",
+  "{template}": "Report profile identifier",
   "{year}": "Period start year (4-digit)",
   "{month}": "Period start month (2-digit)",
   "{run}": "Run identifier (unique per run)",

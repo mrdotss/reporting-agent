@@ -93,7 +93,7 @@ describe("FrontMatterForm", () => {
       expect(html).toContain(ph)
     }
     // Descriptions are present
-    expect(html).toContain("Template identifier")
+    expect(html).toContain("Report profile identifier")
     expect(html).toContain("Period start year")
     expect(html).toContain("Run identifier")
   })

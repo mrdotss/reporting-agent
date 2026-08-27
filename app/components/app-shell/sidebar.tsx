@@ -60,15 +60,15 @@ type NavItem = {
  * The rail's routes, in the order the work happens: connect a subscription,
  * produce a report, watch it land on the dashboard.
  *
- * `/templates` sits between subscriptions and reports because that is the order
- * the work happens in: connect a customer, compose what to say about them, run
- * it. A consultant who has just connected a subscription and wants a report next
- * finds the step in between where they would look for it.
+ * `/report-profiles` sits between subscriptions and reports because that is the
+ * order the work happens in: connect a customer, compose what to say about
+ * them, run it. A consultant who has just connected a subscription and wants a
+ * report next finds the step in between where they would look for it.
  */
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: GaugeIcon },
   { href: "/subscriptions", label: "Subscriptions", icon: PlugsConnectedIcon },
-  { href: "/templates", label: "Templates", icon: StackIcon },
+  { href: "/report-profiles", label: "Report Profiles", icon: StackIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
 ]
 

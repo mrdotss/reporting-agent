@@ -179,7 +179,7 @@ export function WizardShell({
     setSave({ kind: "saving" })
 
     try {
-      const response = await fetch(`/api/templates/${template.id}`, {
+      const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draftDefinition: latest.current }),
@@ -220,7 +220,7 @@ export function WizardShell({
       if (trimmed === storedName) return true
 
       try {
-        const response = await fetch(`/api/templates/${template.id}`, {
+        const response = await fetch(`/api/report-profiles/${template.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name: trimmed }),
@@ -335,7 +335,7 @@ export function WizardShell({
     setPublish({ kind: "publishing" })
 
     try {
-      const response = await fetch(`/api/templates/${template.id}`, {
+      const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ definition: latest.current }),

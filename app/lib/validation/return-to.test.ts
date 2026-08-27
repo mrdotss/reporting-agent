@@ -79,7 +79,7 @@ const ACCEPTED = [
   "/reports/run-0001",
   "/subscriptions?connected=1",
   "/reports/run-0001?tab=verification&figure=fig_0412#figure-0412",
-  "/templates/tmpl-1/edit#block-3",
+  "/report-profiles/tmpl-1/edit#block-3",
   "/reports/2026-07-01..2026-07-31",
 ] as const
 

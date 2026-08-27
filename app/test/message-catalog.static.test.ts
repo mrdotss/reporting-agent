@@ -282,12 +282,14 @@ describe("resolution", () => {
     )
   })
 
-  test("the template placeholder task 12.7 needs is declared", () => {
-    // Added in this task rather than in 12.7, because the template list presents it
-    // wherever `report_templates.name` is absent or empty and the mirror has to carry
-    // it before that list can resolve it.
+  test("the report-profile placeholder task 12.7 needs is declared", () => {
+    // Added in this task rather than in 12.7, because the report-profile list
+    // presents it wherever `report_templates.name` is absent or empty and the
+    // mirror has to carry it before that list can resolve it. Renamed at
+    // task 3.14 — the id keeps the word "template" (an internal symbol, not
+    // surfaced), but the displayed copy says "report profile".
     expect(messageText("ui.template.untitled_placeholder", "en")).toBe(
-      "Untitled template"
+      "Untitled report profile"
     )
     expect(messageText("ui.template.untitled_placeholder", "id")).toBeTruthy()
   })

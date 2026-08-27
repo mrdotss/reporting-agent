@@ -107,7 +107,7 @@ export function StepIdentity({
   return (
     <div className="flex flex-col gap-4">
       <Field>
-        <FieldLabel htmlFor={nameId}>Template name</FieldLabel>
+        <FieldLabel htmlFor={nameId}>Report profile name</FieldLabel>
         <Input
           id={nameId}
           value={definition.identity.name}

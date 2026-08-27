@@ -109,7 +109,7 @@ export function RealPreviewPanel({
     setPhase({ kind: "running" })
 
     try {
-      const response = await fetch(`/api/templates/${templateId}/preview`, {
+      const response = await fetch(`/api/report-profiles/${templateId}/preview`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

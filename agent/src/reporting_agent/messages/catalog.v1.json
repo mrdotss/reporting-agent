@@ -106,8 +106,8 @@
       "id": "Langganan"
     },
     "doc.front_matter.template_version": {
-      "en": "Template version",
-      "id": "Versi templat"
+      "en": "Report profile version",
+      "id": "Versi profil laporan"
     },
     "doc.front_matter.timezone": {
       "en": "Timezone",
@@ -534,8 +534,8 @@
       "id": "Asal data"
     },
     "ui.template.untitled_placeholder": {
-      "en": "Untitled template",
-      "id": "Templat tanpa nama"
+      "en": "Untitled report profile",
+      "id": "Profil laporan tanpa nama"
     },
     "ui.verification.failed": {
       "en": "Not verified",
@@ -630,8 +630,8 @@
       "id": "Langganan"
     },
     "ui.run_form.template_label": {
-      "en": "Template",
-      "id": "Templat"
+      "en": "Report profile",
+      "id": "Profil laporan"
     },
     "ui.run_form.submit": {
       "en": "Request a report",
@@ -810,20 +810,20 @@
       "id": "Tidak ada langganan Anda yang bisa memulai proses. Masing-masing membutuhkan penugasan Reader lingkup langganan yang telah dibuktikan dan secret klien yang masih diterima Azure."
     },
     "ui.run_form.no_templates_hint": {
-      "en": "You have no templates. The three starters are created with your account; if none is listed, author one in the wizard.",
-      "id": "Anda tidak memiliki templat. Tiga templat awal dibuat bersama akun Anda; jika tidak ada yang tercantum, buat satu di wizard."
+      "en": "You have no report profiles. The three starters are created with your account; if none is listed, author one in the wizard.",
+      "id": "Anda tidak memiliki profil laporan. Tiga profil awal dibuat bersama akun Anda; jika tidak ada yang tercantum, buat satu di wizard."
     },
     "ui.run_form.no_template_versions_hint": {
-      "en": "None of your templates has a saved version yet. A template gets its first version when the wizard's last step completes.",
-      "id": "Belum ada templat Anda yang memiliki versi tersimpan. Templat mendapat versi pertamanya saat langkah terakhir wizard selesai."
+      "en": "None of your report profiles has a saved version yet. A report profile gets its first version when the wizard's last step completes.",
+      "id": "Belum ada profil laporan Anda yang memiliki versi tersimpan. Profil laporan mendapat versi pertamanya saat langkah terakhir wizard selesai."
     },
     "ui.run_form.pinned_version_hint": {
       "en": "Pins version {version}",
       "id": "Menggunakan versi {version}"
     },
     "ui.run_form.period_explanation": {
-      "en": "The collection window comes from the template's own period rule and resolves when the run is enqueued, in {timezone}. A period is local: \"July 2026\" means July in that zone, not July in UTC.",
-      "id": "Jendela pengumpulan berasal dari aturan periode templat dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: \"Juli 2026\" berarti Juli di zona tersebut, bukan Juli dalam UTC."
+      "en": "The collection window comes from the report profile's own period rule and resolves when the run is enqueued, in {timezone}. A period is local: \"July 2026\" means July in that zone, not July in UTC.",
+      "id": "Jendela pengumpulan berasal dari aturan periode profil laporan dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: \"Juli 2026\" berarti Juli di zona tersebut, bukan Juli dalam UTC."
     },
     "ui.run_list.aria_label": {
       "en": "Report runs",
@@ -902,8 +902,8 @@
       "id": "Detail dokumen"
     },
     "ui.run_form.front_matter_hint": {
-      "en": "This template renders a cover and a document-control page, so a run needs a customer name and a revision row. They are printed in the document and are not collected from Azure.",
-      "id": "Templat ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan nama pelanggan dan baris revisi. Keduanya dicetak di dokumen dan tidak dikumpulkan dari Azure."
+      "en": "This report profile renders a cover and a document-control page, so a run needs a customer name and a revision row. They are printed in the document and are not collected from Azure.",
+      "id": "Profil laporan ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan nama pelanggan dan baris revisi. Keduanya dicetak di dokumen dan tidak dikumpulkan dari Azure."
     },
     "ui.run_form.customer_name_label": {
       "en": "Customer name",
