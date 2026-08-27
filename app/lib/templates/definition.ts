@@ -680,6 +680,15 @@ export type TemplateIdentity = {
    * unrecognized identity field.
    */
   readonly language?: (typeof LANGUAGES)[number]
+  /**
+   * Permitted at `schema_version` 3 only (Requirement 12.2), where the customer name
+   * moved from a run-form field onto the profile itself. Optional in the type for the
+   * same reason `language` is -- one type serves every version -- and deliberately not
+   * in {@link REQUIRED_IDENTITY_KEYS}, because draft mode must let an author save a
+   * profile before naming a customer. `enqueueRun` is the gate that requires it, at the
+   * point a run actually needs it.
+   */
+  readonly customer_name?: string
 }
 
 /**
