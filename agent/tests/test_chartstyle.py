@@ -34,12 +34,15 @@ from typing import Final
 
 import pytest
 
+from reporting_agent.compile.ast import panel_groups
 from reporting_agent.render import chartstyle as C
+from test_panel_groups import _build as build_series
 
 AGENT_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 REPO_ROOT: Final[Path] = AGENT_ROOT.parent
 APP_ROOT: Final[Path] = REPO_ROOT / "app"
 PALETTE_TS: Final[Path] = APP_ROOT / "components" / "charts" / "palette.ts"
+PANELS_TS: Final[Path] = APP_ROOT / "components" / "charts" / "panels.ts"
 GLOBALS_CSS: Final[Path] = APP_ROOT / "app" / "globals.css"
 
 
@@ -316,6 +319,96 @@ def test_the_two_hash_implementations_agree(tmp_path: Path) -> None:
     assert web["assignment"] == C.assign_colors(list(PROBE_KEYS)), (
         "the two halves assign colours differently, so one series would take two colours"
     )
+
+
+_PANEL_PROBE = """
+import {{ panelGroups, PANEL_SPLIT_ORDER_OF_MAGNITUDE }} from {module}
+
+type Case = {{ key: string; values: number[] }}[]
+const cases: Case[] = {cases}
+const out: {{ threshold: number; results: string[][][] }} = {{
+  threshold: PANEL_SPLIT_ORDER_OF_MAGNITUDE,
+  results: cases.map((entries) =>
+    panelGroups(
+      entries.map((e) => ({{
+        key: e.key,
+        label: e.key,
+        points: e.values.map((v, i) => ({{
+          x: `x${{i}}`,
+          value: v,
+          formatted: String(v),
+          snapshotPath: null,
+        }})),
+      }}))
+    ).map((group) => [...group])
+  ),
+}}
+process.stdout.write(JSON.stringify(out))
+"""
+
+_PANEL_CASES: Final[tuple[tuple[tuple[str, tuple[str, ...]], ...], ...]] = (
+    (("cpu", ("10", "20", "30")),),
+    (("a", ("90",)), ("b", ("15",))),
+    (("small", ("1",)), ("big", ("10",))),
+    (("small", ("1",)), ("big", ("1000",))),
+    (("hundreds", ("500",)), ("units", ("5",)), ("tens_of_thousands", ("50000",))),
+    (("positive", ("95",)), ("negative", ("-90",))),
+    (("zero-a", ("0", "0")), ("zero-b", ("0",))),
+    (("nonzero", ("42",)), ("zero", ("0",))),
+    (("big", ("100",)), ("small", ("10",))),
+    (("big", ("99",)), ("small", ("10",))),
+)
+"""Mirrors `test_panel_groups.py`'s own case set — the same inputs, run through
+both languages, so a behavioural drift shows up here rather than only in each
+language's own isolated suite agreeing with itself."""
+
+
+def test_the_panel_threshold_and_grouping_agree(tmp_path: Path) -> None:
+    """`panelGroups` (TypeScript) and `panel_groups` (Python) must group
+    identically over the same series, or a chart panelled one way at compile
+    time would panel differently once the app reads the same spec (task 5.4).
+    """
+    if not (APP_ROOT / "node_modules").is_dir():
+        raise AssertionError(
+            f"{APP_ROOT / 'node_modules'} is absent, so the mirrored half cannot be run. "
+            f"Install the app's dependencies with `pnpm install`; this guard fails rather "
+            f"than skipping."
+        )
+    pnpm = shutil.which("pnpm")
+    if pnpm is None:
+        pytest.skip("pnpm is not installed")
+
+    probe_cases = [
+        [{"key": key, "values": [float(v) for v in values]} for key, values in case]
+        for case in _PANEL_CASES
+    ]
+
+    probe = tmp_path / "panel_probe.mts"
+    probe.write_text(
+        _PANEL_PROBE.format(
+            module=json.dumps(PANELS_TS.as_posix()), cases=json.dumps(probe_cases)
+        )
+    )
+
+    result = subprocess.run(
+        [pnpm, "exec", "tsx", str(probe)],
+        cwd=APP_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    web = json.loads(result.stdout)
+
+    assert web["threshold"] == 10
+
+    for index, case in enumerate(_PANEL_CASES):
+        python_series = build_series(*case)
+        python_result = [list(group) for group in panel_groups(python_series)]
+        assert web["results"][index] == python_result, (
+            f"case {index} ({case!r}): TS grouped {web['results'][index]!r}, "
+            f"Python grouped {python_result!r}"
+        )
 
 
 def test_the_hash_starts_from_the_fnv_offset_basis() -> None:

@@ -75,6 +75,7 @@ from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Final, NewType
 
 from reporting_agent.compile.snapshot_view import (
@@ -134,6 +135,7 @@ __all__ = [
     "compiling_against",
     "decimal_string_of",
     "figure_path",
+    "panel_groups",
     "table_id",
 ]
 
@@ -1049,6 +1051,15 @@ class Chart:
     period_label: str = ""
     series: tuple[Series, ...] = field(default_factory=tuple)
     caption: str | None = None
+    panels: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
+    """Req 17.1, 17.2 — how `series` splits across stacked panels, as tuples of
+    series `key`. Empty means **one panel holding every series** — every
+    existing construction and test that never set this field stays valid,
+    unchanged, rather than needing a migration to an explicit single-panel
+    form. Assigned by `panel_groups` at compile time, never inferred by a
+    renderer: a renderer deciding panels from units would make a data
+    decision the ledger cannot show, and the in-app chart would have to
+    infer the same split identically by accident rather than reading it."""
 
     def __post_init__(self) -> None:
         at = f"chart {self.path!r}"
@@ -1068,6 +1079,82 @@ class Chart:
     @property
     def anchor_id(self) -> str:
         return chart_id(self.path)
+
+
+_PANEL_SPLIT_ORDER_OF_MAGNITUDE: Final[Decimal] = Decimal(10)
+"""Req 17.2 — the threshold `panel_groups` splits panels at. Two series whose
+max absolute values differ by this factor or more read as different scales on
+one axis — CPU percentage (0-100) beside network bytes (millions) is the
+motivating case design/Charts.dc.html was drawn from."""
+
+
+def panel_groups(series: tuple[Series, ...]) -> tuple[tuple[str, ...], ...]:
+    """Split `series` into stacked panels by magnitude (Req 17.1, 17.2).
+
+    **Pure and deterministic** — this is the compiler's decision, not the
+    renderer's: a renderer inferring panels from units would make a data
+    decision the ledger cannot show, and the in-app chart (which reads this
+    same grouping from the parsed spec) would have to infer it identically by
+    accident rather than by reading a fact the compiler already decided.
+
+    Groups by each series' own maximum **absolute** value — a negative delta
+    and a positive one of the same magnitude belong on the same panel, and
+    absolute value is what makes that true without a separate sign rule.
+    Series whose maxima differ by `_PANEL_SPLIT_ORDER_OF_MAGNITUDE` (10x) or
+    more split into different panels; consecutive series within one factor of
+    ten stay together. Groups are then ordered by **descending** panel
+    maximum, so the larger-magnitude panel is always on top — Maximum above
+    Average, matching the mockup's own arrangement.
+
+    A series with no points, or whose every point's value is exactly zero,
+    contributes a maximum of zero and is therefore never used as the
+    magnitude a threshold comparison divides by — it groups with whichever
+    panel it is nearest without ever being the value `>=` is computed against
+    on the wrong side of a division by zero.
+    """
+    if not series:
+        return ()
+
+    with_max: list[tuple[Decimal, str]] = []
+    for entry in series:
+        magnitude = max(
+            (abs(Decimal(point.y.value)) for point in entry.points),
+            default=Decimal(0),
+        )
+        with_max.append((magnitude, entry.key))
+
+    # Sort descending by magnitude so consecutive-pair comparisons walk from the
+    # largest series down, and a new group starts exactly where a pair's ratio
+    # crosses the threshold.
+    with_max.sort(key=lambda pair: pair[0], reverse=True)
+
+    groups: list[list[str]] = [[with_max[0][1]]]
+    group_maxima: list[Decimal] = [with_max[0][0]]
+
+    for magnitude, key in with_max[1:]:
+        current_max = group_maxima[-1]
+        # Both zero: no ratio to compute, and two all-zero series belong together
+        # rather than each starting a new panel.
+        splits = (
+            magnitude == 0 or current_max == 0
+        ) and magnitude != current_max
+        if not splits and current_max != 0:
+            splits = current_max / magnitude >= _PANEL_SPLIT_ORDER_OF_MAGNITUDE
+        if splits:
+            groups.append([key])
+            group_maxima.append(magnitude)
+        else:
+            groups[-1].append(key)
+
+    # Already built in descending-maximum order by construction (the walk above
+    # only ever starts a new, smaller-or-equal group after the current one), so
+    # no further sort is needed — but state it as an explicit invariant rather
+    # than relying on the loop's shape, since a future edit to the loop must not
+    # silently break the ordering guarantee callers depend on.
+    ordered = sorted(
+        zip(group_maxima, groups, strict=True), key=lambda pair: pair[0], reverse=True
+    )
+    return tuple(tuple(group) for _, group in ordered)
 
 
 @dataclass(frozen=True, slots=True)

@@ -45,6 +45,7 @@ from reporting_agent.compile.ast import (
     ChartPoint,
     Series,
     compiling_against,
+    panel_groups,
 )
 from reporting_agent.compile.blocks.base import (
     MAX_CHART_POINTS,
@@ -225,21 +226,23 @@ def compile_historical_trend(
         nodes.append(text_paragraph(cursor.child("nodes", 0), "Body Text", statement))
     else:
         # Build the chart
+        historical_series = (
+            Series(
+                path=series_cursor.path,
+                key=f"{metric}|{statistic}|historical",
+                label=f"{metric} ({statistic})",
+                points=tuple(points),
+            ),
+        )
         chart = Chart(
             path=chart_cursor.path,
             chart_type="line",
             title=caption or f"Historical trend: {metric} ({statistic})",
             unit=points[0].y.unit if points else "",
             encoding=ENCODING_SEQUENTIAL,
-            series=(
-                Series(
-                    path=series_cursor.path,
-                    key=f"{metric}|{statistic}|historical",
-                    label=f"{metric} ({statistic})",
-                    points=tuple(points),
-                ),
-            ),
+            series=historical_series,
             caption=caption,
+            panels=panel_groups(historical_series),
         )
         cursor.anchor_chart(chart_cursor.path)
         nodes.append(chart)
@@ -394,6 +397,7 @@ def compile_timeseries_chart(
         encoding=ENCODING_SEQUENTIAL if len(series) == 1 else ENCODING_CATEGORICAL,
         series=tuple(series),
         caption=caption,
+        panels=panel_groups(tuple(series)),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))
@@ -454,6 +458,9 @@ def compile_distribution_chart(
         for position, (_, _, resource, value) in enumerate(measured)
     )
 
+    series = (
+        Series(path=series_cursor.path, key=ref.key, label=ref.label, points=points),
+    )
     chart = Chart(
         path=chart_cursor.path,
         chart_type="bar",
@@ -461,12 +468,9 @@ def compile_distribution_chart(
         unit=measured[0][3].unit,
         # Sorted values along an ordered axis: one ordered quantity, not a set of peers.
         encoding=ENCODING_SEQUENTIAL,
-        series=(
-            Series(
-                path=series_cursor.path, key=ref.key, label=ref.label, points=points
-            ),
-        ),
+        series=series,
         caption=caption,
+        panels=panel_groups(series),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))
