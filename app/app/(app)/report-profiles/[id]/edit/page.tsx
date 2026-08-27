@@ -8,6 +8,7 @@ import { toTemplateView,
 } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { AZURE_SECTIONS } from "@/lib/profiles/sections"
+import { openingDraft } from "@/lib/profiles/lift"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
@@ -122,7 +123,17 @@ async function loadTemplate(userId: string, id: string) {
       //     template's stored state is presented from, and showing a migrated
       //     version there would tell a consultant the row already says something it
       //     does not.
-      initialDefinition: opened === null ? null : toSchemaVersion2(opened),
+      //   * Requirement 20.1 continues the same idea to v3: `openingDraft` lifts a
+      //     v1/v2 definition into a `sections`-based draft, and returns an already-v3
+      //     one untouched. Chained after `toSchemaVersion2` so a v1 definition picks
+      //     up its `front_matter` normalisation first and the lifter sees one shape
+      //     rather than two.
+      //   * It is applied HERE and not in `WizardShell`, which is a `"use client"`
+      //     boundary: the lifter reads the section catalogue, and that module is
+      //     `server-only`. Lifting in the component compiles locally and fails the
+      //     production build, because vitest does not enforce that boundary.
+      initialDefinition:
+        opened === null ? null : openingDraft(toSchemaVersion2(opened)).definition,
     }
   } catch (thrown) {
     // Requirement 1.5 — another user's template is not found, and the answer is
