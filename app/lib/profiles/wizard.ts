@@ -305,4 +305,60 @@ export function sectionCount(definition: unknown): number {
   return Array.isArray(sections) ? sections.length : 0
 }
 
+/**
+ * Distinct resource types the definition constrains itself to; `0` means unconstrained.
+ *
+ * Version-aware and total, like {@link sectionCount}, because the preview step renders
+ * for BOTH shapes: a v1/v2 definition keeps one template-wide `scope`, while a v3 profile
+ * carries a selection rule per section and has no top-level `scope` at all. Reading
+ * `definition.scope.resource_types` unconditionally is what crashed the wizard on a
+ * brand-new v3 profile -- and only on a VALID one, because `openingStep` sends a
+ * definition with no issues straight to the last step, so an invalid draft never reached
+ * this render.
+ */
+export function resourceTypeCount(definition: unknown): number {
+  if (typeof definition !== "object" || definition === null) return 0
+
+  const sections = (definition as { readonly sections?: unknown }).sections
+  if (Array.isArray(sections)) {
+    const types = new Set<string>()
+    for (const section of sections) {
+      const selection = (section as { readonly selection?: unknown })?.selection
+      const declared = (selection as { readonly resource_types?: unknown })
+        ?.resource_types
+      if (Array.isArray(declared)) {
+        for (const type of declared) {
+          if (typeof type === "string") types.add(type)
+        }
+      }
+    }
+    return types.size
+  }
+
+  const scope = (definition as { readonly scope?: unknown }).scope
+  const declared = (scope as { readonly resource_types?: unknown })?.resource_types
+  return Array.isArray(declared) ? declared.length : 0
+}
+
+/** Metric entries the definition selects, across sections at v3 or `metrics` at v1/v2. */
+export function metricEntryCount(definition: unknown): number {
+  if (typeof definition !== "object" || definition === null) return 0
+
+  const sections = (definition as { readonly sections?: unknown }).sections
+  if (Array.isArray(sections)) {
+    return sections.reduce<number>((total, section) => {
+      const metrics = (section as { readonly metrics?: unknown })?.metrics
+      return total + (Array.isArray(metrics) ? metrics.length : 0)
+    }, 0)
+  }
+
+  const metrics = (definition as { readonly metrics?: unknown }).metrics
+  if (typeof metrics !== "object" || metrics === null) return 0
+
+  return Object.values(metrics as Record<string, unknown>).reduce<number>(
+    (total, items) => total + (Array.isArray(items) ? items.length : 0),
+    0
+  )
+}
+
 export { NO_ISSUES }

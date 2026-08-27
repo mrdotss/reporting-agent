@@ -9,11 +9,11 @@ import {
   FloppyDiskIcon,
 } from "@phosphor-icons/react"
 
+import { StepDocument } from "@/components/templates/step-document"
 import {
   StepIdentity,
   type IdentitySaveResult,
 } from "@/components/templates/step-identity"
-import { StepMetrics } from "@/components/templates/step-metrics"
 import { StepPeriod } from "@/components/templates/step-period"
 import { StepPreview } from "@/components/templates/step-preview"
 import {
@@ -684,13 +684,7 @@ function renderStep({
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
     case "document":
-      return (
-        <StepMetrics
-          definition={definition}
-          onChange={setDefinition}
-          catalog={catalog}
-        />
-      )
+      return <StepDocument definition={definition} onChange={setDefinition} />
     case "preview":
       return (
         <StepPreview
