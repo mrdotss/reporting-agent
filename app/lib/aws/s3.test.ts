@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 
 import {
   ARTIFACT_SEGMENT_REPORTS,
+  ARTIFACT_SEGMENT_SIGNATURES,
   ARTIFACT_SEGMENT_SNAPSHOTS,
   DOWNLOADABLE_SEGMENTS,
   ArtifactAccessError,
@@ -9,6 +10,9 @@ import {
   keyBelongsToActor,
   parseArtifactKey,
   presignArtifact,
+  presignSignature,
+  signatureBelongsToActor,
+  signatureKey,
 } from "@/lib/aws/s3"
 import { snapshotArtifactKey } from "@/lib/db/views"
 
@@ -194,5 +198,74 @@ describe("presignArtifact — Requirement 37.8", () => {
     expect(caught).toBeInstanceOf(ArtifactAccessError)
     expect(caught?.message).not.toContain(ACTOR)
     expect(caught?.message).not.toContain(RUN)
+  })
+})
+
+describe("signatureKey — Requirement 13.5's owner-prefixed layout", () => {
+  test("carries the actor id as its first segment, and the signatures segment second", () => {
+    const key = signatureKey(ACTOR, "png")
+    const segments = key.split("/")
+    expect(segments[0]).toBe(ACTOR)
+    expect(segments[1]).toBe(ARTIFACT_SEGMENT_SIGNATURES)
+    expect(segments).toHaveLength(3)
+  })
+
+  test("a png extension writes a .png key; jpeg writes .jpg", () => {
+    expect(signatureKey(ACTOR, "png")).toMatch(/\.png$/)
+    expect(signatureKey(ACTOR, "jpeg")).toMatch(/\.jpg$/)
+  })
+
+  test("two calls for the same actor never collide", () => {
+    const first = signatureKey(ACTOR, "png")
+    const second = signatureKey(ACTOR, "png")
+    expect(first).not.toBe(second)
+  })
+})
+
+describe("signatureBelongsToActor — exact segment match", () => {
+  test("a key this actor's own signatureKey minted belongs to them", () => {
+    expect(signatureBelongsToActor(ACTOR, signatureKey(ACTOR, "png"))).toBe(true)
+  })
+
+  test("a key naming a different actor does not belong to this one", () => {
+    expect(signatureBelongsToActor(ACTOR, signatureKey("bob", "png"))).toBe(false)
+  })
+
+  test("a prefix-collision id ('alice-evil') is not authorized for 'alice'", () => {
+    // The same family of near-miss keyBelongsToActor's own docstring names —
+    // startsWith(actorId) would wrongly authorize this.
+    expect(
+      signatureBelongsToActor(ACTOR, signatureKey("alice-evil", "png"))
+    ).toBe(false)
+  })
+
+  test("a key with the actor's id in the wrong segment is not authorized", () => {
+    expect(
+      signatureBelongsToActor(ACTOR, `other/${ACTOR}/some-uuid.png`)
+    ).toBe(false)
+  })
+
+  test("an empty actor id matches nothing", () => {
+    expect(signatureBelongsToActor("", signatureKey(ACTOR, "png"))).toBe(false)
+  })
+})
+
+describe("presignSignature — Requirement 13.5", () => {
+  test("a key that is not the actor's mints no URL and makes no AWS call", async () => {
+    await expect(
+      presignSignature(ACTOR, signatureKey("alice-evil", "png"))
+    ).rejects.toBeInstanceOf(ArtifactAccessError)
+  })
+
+  test("the refusal message names no key and no user id", async () => {
+    let caught: Error | undefined
+    try {
+      await presignSignature(ACTOR, signatureKey("alice-evil", "png"))
+    } catch (error) {
+      caught = error as Error
+    }
+
+    expect(caught).toBeInstanceOf(ArtifactAccessError)
+    expect(caught?.message).not.toContain(ACTOR)
   })
 })

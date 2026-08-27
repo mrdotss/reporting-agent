@@ -3,9 +3,11 @@ import "server-only"
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
+import { randomUUID } from "node:crypto"
 
 import { requireEnv } from "@/lib/env"
 
@@ -347,4 +349,93 @@ export async function deleteObject(key: string): Promise<void> {
       Key: key,
     })
   )
+}
+
+// --- Signatures (Requirement 13.5, 13.6) ------------------------------------
+
+/** The second segment a signature image lives under. */
+export const ARTIFACT_SEGMENT_SIGNATURES = "signatures"
+
+/**
+ * `<userId>/signatures/<uuid>.<ext>` — the owner-prefixed layout every other
+ * artifact key uses (Requirement 37.8's mechanism), so a signature's key is
+ * authorized by comparing its first segment against the signed-in user's id,
+ * with no lookup and nothing to fall out of sync. A fresh `uuid` per upload
+ * means re-uploading a signature for the same role never collides with, or
+ * overwrites, a signature already referenced by an existing published
+ * version — a version is immutable, so the object its `signature_key`
+ * addresses must not change under it either.
+ */
+export function signatureKey(userId: string, extension: "png" | "jpeg"): string {
+  const ext = extension === "jpeg" ? "jpg" : "png"
+  return `${userId}/${ARTIFACT_SEGMENT_SIGNATURES}/${randomUUID()}.${ext}`
+}
+
+/**
+ * Does this signature key belong to this actor? Exact segment match, for the
+ * same reason {@link keyBelongsToActor} uses one rather than a `startsWith` —
+ * see that function's docstring for the `alice` / `alice-evil` case this
+ * rules out.
+ */
+export function signatureBelongsToActor(actorId: string, key: string): boolean {
+  const segments = key.split("/")
+  return (
+    actorId.length > 0 &&
+    segments.length === 3 &&
+    segments[0] === actorId &&
+    segments[1] === ARTIFACT_SEGMENT_SIGNATURES &&
+    segments[2].length > 0
+  )
+}
+
+/**
+ * Write a signature image's bytes to its key. The caller has already
+ * validated the content (`validateSignatureUpload`) and minted the key
+ * (`signatureKey`) — this function performs no validation of its own, so it
+ * is not the place a future caller can skip that step by calling something
+ * that "just uploads."
+ */
+export async function putSignature(
+  key: string,
+  bytes: Uint8Array,
+  contentType: "image/png" | "image/jpeg"
+): Promise<void> {
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+      Key: key,
+      Body: bytes,
+      ContentType: contentType,
+    })
+  )
+}
+
+/**
+ * A presigned GET for one signature image, so the wizard can render a
+ * preview of an already-uploaded signature without the bytes passing
+ * through the app a second time. Same {@link MAX_PRESIGN_SECONDS} ceiling
+ * and the same "authorize before any AWS call" ordering as
+ * {@link presignArtifact}.
+ */
+export async function presignSignature(
+  actorId: string,
+  key: string
+): Promise<{ url: string; expiresIn: number }> {
+  if (!signatureBelongsToActor(actorId, key)) {
+    throw new ArtifactAccessError(
+      "The requested signature key does not belong to the signed-in user, " +
+        "so no presigned URL was minted. Resolve this as not found."
+    )
+  }
+
+  const url = await getSignedUrl(
+    getS3Client(),
+    new GetObjectCommand({
+      Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+      Key: key,
+    }),
+    { expiresIn: MAX_PRESIGN_SECONDS }
+  )
+
+  return { url, expiresIn: MAX_PRESIGN_SECONDS }
 }
