@@ -389,6 +389,24 @@ export const SECTION_KEYS_BY_PROVIDER: Readonly<Record<string, readonly string[]
 /**
  * Non-repeatable section keys by provider (for duplicate-type rejection).
  */
+/**
+ * Each azure section's declared resource types, by section key.
+ *
+ * Read by the catalogue pass to know which types a section's metrics are checked
+ * against when the section itself declares no narrowing.
+ */
+export const SECTION_RESOURCE_TYPES_BY_KEY: Readonly<
+  Record<string, readonly string[]>
+> = Object.fromEntries(
+  (
+    rawSectionsCatalogue as {
+      providers: {
+        azure: { sections: { key: string; needs_resource_types?: string[] }[] }
+      }
+    }
+  ).providers.azure.sections.map((s) => [s.key, s.needs_resource_types ?? []])
+)
+
 export const NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
@@ -3599,7 +3617,70 @@ export function validateMetricSelectionAgainstCatalog(
 ): FieldIssue[] {
   const issues: IssueSink = []
 
-  for (const [resourceType, items] of Object.entries(definition.metrics)) {
+  // --- v3: metrics live per section, not in one template-wide `metrics` map ----
+  //
+  // A v3 profile has no `definition.metrics` at all, so the loop below threw
+  // "Cannot convert undefined or null to object" -- after run-mode validation had
+  // already passed -- and every attempt to save a v3 version failed with an
+  // unexplained "The request could not be completed".
+  //
+  // The guarantee is preserved rather than skipped: a section's metric items use the
+  // SAME shape `validateMetricItem` accepts for v1, so each is checked against the
+  // catalogue for the resource types that section actually covers. A section's own
+  // `selection.resource_types` wins where it narrows; where it is empty the section
+  // is unconstrained and the catalogue entry's declared types are what it will cover.
+  const sections = (definition as unknown as { readonly sections?: unknown })
+    .sections
+  if (Array.isArray(sections)) {
+    sections.forEach((section, sectionIndex) => {
+      const entry = section as {
+        type?: unknown
+        selection?: { resource_types?: unknown }
+        metrics?: unknown
+      }
+      const items = entry.metrics
+      if (!Array.isArray(items) || items.length === 0) return
+
+      const declared = entry.selection?.resource_types
+      const narrowed =
+        Array.isArray(declared) && declared.length > 0
+          ? (declared as string[])
+          : SECTION_RESOURCE_TYPES_BY_KEY[String(entry.type ?? "")] ?? []
+
+      items.forEach((item: MetricSelectionItem, itemIndex: number) => {
+        const path: readonly (string | number)[] = [
+          "sections",
+          sectionIndex,
+          "metrics",
+          itemIndex,
+        ]
+        const name = item?.metric ?? item?.derived ?? "<unnamed>"
+
+        // Valid where ANY covered type declares it: one section can cover several
+        // types, and a metric only has to exist on the type it will be read from.
+        const declaredSomewhere = narrowed.some((resourceType) => {
+          const resourceTypeCatalog = findCatalogResourceType(catalog, resourceType)
+          return (
+            resourceTypeCatalog !== undefined &&
+            findCatalogEntry(resourceTypeCatalog, item) !== undefined
+          )
+        })
+
+        if (!declaredSomewhere) {
+          addIssue(
+            issues,
+            path,
+            `The Metric_Catalog declares no "${name}" entry for any resource type this ` +
+              `section covers${narrowed.length > 0 ? ` (${narrowed.join(", ")})` : ""}.`
+          )
+        }
+      })
+    })
+
+    return issues
+  }
+
+  for (const [resourceType, items] of Object.entries(definition.metrics ?? {})) {
     const resourceTypeCatalog = findCatalogResourceType(catalog, resourceType)
     const basePath: readonly (string | number)[] = ["metrics", resourceType]
 
