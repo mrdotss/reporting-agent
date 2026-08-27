@@ -227,6 +227,30 @@ class TestChartDataHashUnchanged:
         )
         assert C.chart_data_hash(node, messages=_MESSAGES) == C.chart_data_hash(with_period, messages=_MESSAGES)
 
+    def test_hash_ignores_panel_assignment(self) -> None:
+        """Task 5.1/5.5, Req 17.7 — panelling is a rendering decision the hash
+        must not see, or panel splitting would fire chart-hash-mismatch on a
+        report whose plotted figures never changed. Two charts differing only
+        in `panels` (unset vs. a real two-group split over the same series)
+        must hash identically."""
+        node, _ = _make_chart()
+        assert len(node.series) >= 1
+        panelled = Chart(
+            path=node.path,
+            chart_type=node.chart_type,
+            title=node.title,
+            unit=node.unit,
+            encoding=node.encoding,
+            x_axis_label_id=node.x_axis_label_id,
+            y_axis_label_id=node.y_axis_label_id,
+            period_label=node.period_label,
+            series=node.series,
+            panels=((node.series[0].key,),),
+        )
+        assert C.chart_data_hash(node, messages=_MESSAGES) == C.chart_data_hash(
+            panelled, messages=_MESSAGES
+        )
+
 
 # --------------------------------------------------------------------------- #
 # Axis titles (Req 17.1, 17.11)

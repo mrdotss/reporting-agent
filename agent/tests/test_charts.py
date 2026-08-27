@@ -272,6 +272,40 @@ def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> Non
     assert emitted == [point.y.formatted for point in plotted]
 
 
+def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
+    """Req 17.8 — the companion table carries every plotted point of EVERY
+    panel, unthinned, on the same terms the single-panel test above asserts.
+    `companion_table` iterates `plotted_series(node, ...)` chart-wide, never
+    per panel, so this should already hold by construction — proven directly
+    against a genuinely two-panel chart rather than assumed from the
+    single-panel case."""
+    node, _ = two_magnitude_chart()
+    assert len(node.panels) == 2
+
+    plotted = [
+        point for series in C.plotted_series(node, messages=_MESSAGES) for point in series.points
+    ]
+    assert plotted, "the fixture must plot something"
+
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+    assert len(table.rows) == len(plotted)
+
+    # Every panel's series keys must appear in the table's row keys — no panel
+    # is silently dropped from the table just because it was drawn on a
+    # different subplot.
+    panel_keys = {key for group in node.panels for key in group}
+    row_series_prefixes = {row.key.split("|", 1)[0] for row in table.rows}
+    assert panel_keys <= row_series_prefixes
+
+    emitted = [
+        cell.figure.formatted
+        for row in table.rows
+        for cell in row.cells
+        if isinstance(cell, FigureCell)
+    ]
+    assert emitted == [point.y.formatted for point in plotted]
+
+
 def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
     """Req 22.6 — no plotted value is computed from a snapshot value a second time."""
     compiled, _ = render([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
@@ -538,6 +572,28 @@ def test_the_aggregate_carries_the_remaining_points_rather_than_a_sum() -> None:
         assert point.y.path in ledger, "every aggregated point is still a ledger figure"
 
 
+def test_the_five_series_cap_applies_to_the_chart_not_per_panel_task_5_5() -> None:
+    """Req 17.7 — `plotted_series`'s five-series cap and aggregate are computed
+    over the WHOLE chart's series, before any panel split — a nine-series
+    chart above the cap still plots exactly 4 real series plus one aggregate
+    regardless of how many panels those 5 plotted series eventually land in,
+    never 5 real series *per panel*."""
+    node, _ = synthetic_chart(series_count=9, points_per_series=2)
+    plotted = C.plotted_series(node, messages=_MESSAGES)
+    assert len(plotted) == S.CATEGORICAL_LIMIT  # capped chart-wide
+
+    groups = C._panel_groups_for(node, plotted)
+    total_in_panels = sum(len(group) for group in groups)
+    # Every plotted key (the 4 real series plus the aggregate) is accounted
+    # for across the panels, and the panels never re-introduce a series the
+    # cap already excluded — the total across panels equals the capped
+    # count, not the original 9.
+    assert total_in_panels == S.CATEGORICAL_LIMIT
+    assert {key for group in groups for key in group} == {
+        series.key for series in plotted
+    }
+
+
 def test_the_aggregate_uses_the_muted_token_rather_than_a_sixth_hue() -> None:
     node, _ = synthetic_chart(series_count=9, points_per_series=1)
     plotted = C.plotted_series(node, messages=_MESSAGES)
@@ -766,6 +822,22 @@ def test_the_dpi_and_figure_size_are_pinned() -> None:
     assert params["figure.dpi"] == S.CHART_DPI
     assert params["savefig.dpi"] == S.CHART_DPI
     assert params["figure.figsize"] == S.CHART_SIZE_INCHES
+
+
+def test_a_panelled_chart_still_produces_exactly_one_png_one_sidecar_one_identity_task_5_5() -> None:
+    """Req 17.7 — panelling changes how many subplots one image contains, never
+    how many images, sidecars or identities one `Chart` node produces. The
+    pairing contract the verifier matches on is untouched by panel count."""
+    node, _ = two_magnitude_chart()
+    assert len(node.panels) == 2  # a genuinely panelled chart, not the ordinary case
+
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    assert artifacts.image_png[:8] == b"\x89PNG\r\n\x1a\n"
+
+    sidecar = json.loads(artifacts.sidecar_json)
+    assert sidecar["identity"] == node.anchor_id
+    assert artifacts.identity == node.anchor_id
+    assert artifacts.table.path == node.path  # cht:<path> derives from this
 
 
 # --------------------------------------------------------------------------- #
