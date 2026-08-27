@@ -400,7 +400,18 @@ class V2Walk:
             catalog=self.catalog,
         )
 
-    def run(self, monkeypatch: pytest.MonkeyPatch) -> list[Event]:
+    def run(
+        self, monkeypatch: pytest.MonkeyPatch, *, defn: dict[str, Any] | None = None
+    ) -> list[Event]:
+        """Drive `main.invoke` over this harness's faked ports.
+
+        `defn` overrides `invoke_payload`'s own default `v2_definition()` — added
+        (task 7.3) so a v3-section closing end-to-end test can reuse this exact
+        harness (the faked Azure ports, the store, the progress reporter, the
+        heartbeat merge) rather than rebuilding it a second time for a different
+        schema version. `None` (the default) is this file's own original
+        behaviour, unchanged.
+        """
         for module in (
             "reporting_agent.collect.pipeline._s3_store",
             "reporting_agent.report_pipeline._s3_store",
@@ -431,7 +442,9 @@ class V2Walk:
         registry.register(registry.AZURE_PROVIDER_ID, self._build_provider, replace=True)
         try:
             return asyncio.run(
-                asyncio.wait_for(_drain(main.invoke(invoke_payload())), timeout=WATCHDOG_S)
+                asyncio.wait_for(
+                    _drain(main.invoke(invoke_payload(defn))), timeout=WATCHDOG_S
+                )
             )
         finally:
             registry.register_lazy(

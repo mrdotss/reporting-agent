@@ -55,10 +55,7 @@
  * different disguise.
  */
 
-import {
-  AZURE_SECTIONS,
-  type SectionEntry,
-} from "@/lib/profiles/sections"
+import { AZURE_SECTIONS, type SectionEntry } from "@/lib/profiles/sections"
 import type {
   ScopeSpec,
   TemplateBlock,
@@ -87,8 +84,7 @@ export type UnmappedBlock = {
   readonly type: string
   /** Why it could not be mapped, for the wizard to present alongside it. */
   readonly reason:
-    | "no_catalogue_destination"
-    | "ambiguous_catalogue_destination"
+    "no_catalogue_destination" | "ambiguous_catalogue_destination"
 }
 
 export type LiftResult = {
@@ -211,24 +207,41 @@ function liftLeafBlock(
   block: TemplateBlock,
   templateScope: ScopeSpec
 ):
-  | { readonly target: { readonly entry: SectionEntry; readonly scope: ScopeSpec } }
+  | {
+      readonly target: {
+        readonly entry: SectionEntry
+        readonly scope: ScopeSpec
+      }
+    }
   | { readonly unmapped: UnmappedBlock } {
   if (block.type === "row") {
     return {
-      unmapped: { id: block.id, type: block.type, reason: "no_catalogue_destination" },
+      unmapped: {
+        id: block.id,
+        type: block.type,
+        reason: "no_catalogue_destination",
+      },
     }
   }
 
   if (UNMAPPED_BLOCK_TYPES.has(block.type)) {
     return {
-      unmapped: { id: block.id, type: block.type, reason: "no_catalogue_destination" },
+      unmapped: {
+        id: block.id,
+        type: block.type,
+        reason: "no_catalogue_destination",
+      },
     }
   }
 
   const candidates = candidatesForBlockType(block.type)
   if (candidates.length === 0) {
     return {
-      unmapped: { id: block.id, type: block.type, reason: "no_catalogue_destination" },
+      unmapped: {
+        id: block.id,
+        type: block.type,
+        reason: "no_catalogue_destination",
+      },
     }
   }
 
@@ -237,8 +250,16 @@ function liftLeafBlock(
   // resolved unconditionally rather than through scopeMatchesEntry, which
   // would otherwise vacuously "match" every candidate for a reason that has
   // nothing to do with why they are actually the right destination.
-  if (candidates.length === 1 && candidates[0]!.needs_resource_types.length === 0) {
-    return { target: { entry: candidates[0]!, scope: effectiveScope(block, templateScope) } }
+  if (
+    candidates.length === 1 &&
+    candidates[0]!.needs_resource_types.length === 0
+  ) {
+    return {
+      target: {
+        entry: candidates[0]!,
+        scope: effectiveScope(block, templateScope),
+      },
+    }
   }
 
   const scope = effectiveScope(block, templateScope)
@@ -246,7 +267,11 @@ function liftLeafBlock(
 
   if (matching.length === 0) {
     return {
-      unmapped: { id: block.id, type: block.type, reason: "no_catalogue_destination" },
+      unmapped: {
+        id: block.id,
+        type: block.type,
+        reason: "no_catalogue_destination",
+      },
     }
   }
   if (matching.length > 1) {
@@ -262,7 +287,11 @@ function liftLeafBlock(
   return { target: { entry: matching[0]!, scope } }
 }
 
-function liftedSection(entry: SectionEntry, scope: ScopeSpec): Record<string, unknown> {
+function liftedSection(
+  entry: SectionEntry,
+  scope: ScopeSpec,
+  block: TemplateBlock
+): Record<string, unknown> {
   return {
     id: nextSectionId(),
     type: entry.key,
@@ -274,22 +303,59 @@ function liftedSection(entry: SectionEntry, scope: ScopeSpec): Record<string, un
       top_n: scope.top_n,
       sort: scope.sort,
     },
-    // The section's own metric selection is not yet consulted by the compiler
-    // at all (see `lib/profiles/emit.ts`'s module docstring for the same
-    // finding) — carried through empty rather than guessing at a mapping from
-    // the stored definition's own `metrics` object, which task 3.5's deferred
-    // metric-selection wiring will need to design regardless of what a lift
-    // produces here.
-    metrics: [],
+    // The section's own metric selection carries the source block's own
+    // config forward where the two shapes agree directly — `timeseries_chart`
+    // already carries `metrics` in exactly the shape a section wants, and
+    // `historical_trend` carries `metric`/`statistic`/`lookback` (task 7.3:
+    // `historical_vm_utilization`'s section REQUIRES `lookback`, since
+    // `agent/.../compile/sections.py`'s `_thread_metric_config` threads it
+    // into `historical_trend`'s own config, and that block fails to compile
+    // without it — a lift that dropped it would produce a draft that cannot
+    // validate). Every other source block type maps onto a section whose
+    // `expand_sections` binding reads the CATALOGUE's own `order_by`/
+    // `trend_metric` rather than a per-block value (task 7.3's own design:
+    // a document-design decision belonging to the section type, not an
+    // interaction artifact of which metric chip was clicked first), so
+    // there is nothing else here to carry across.
+    metrics: liftedMetrics(block),
+    ...liftedLookback(block),
     presentation: "chart_and_table",
   }
+}
+
+/** The section's `metrics` field, carried from the source block's own config where
+ * the shapes agree (`timeseries_chart.metrics`), and empty otherwise — the sections
+ * whose compiler binding reads the catalogue's own declaration
+ * (`top_n_table`'s columns, `historical_trend`'s metric+statistic) have nothing to
+ * read from a per-block metric list in the first place. */
+function liftedMetrics(block: TemplateBlock): unknown[] {
+  if (block.type === "timeseries_chart") {
+    const metrics = (block.config as Record<string, unknown>).metrics
+    return Array.isArray(metrics) ? metrics : []
+  }
+  return []
+}
+
+/** `{ lookback: n }` when the source block carries one (`historical_trend`), or `{}`
+ * otherwise — spread into the lifted section rather than always set, so a section
+ * type that never reads `lookback` does not gain a stray field. */
+function liftedLookback(block: TemplateBlock): Record<string, unknown> {
+  if (block.type === "historical_trend") {
+    const lookback = (block.config as Record<string, unknown>).lookback
+    if (typeof lookback === "number") {
+      return { lookback }
+    }
+  }
+  return {}
 }
 
 /** Every leaf block in `blocks`, flattening one level of `row` children —
  * `row` itself never maps (Requirement 6.2's "one level of nesting only"
  * means a `row`'s children are ordinary leaf blocks, individually liftable
  * even though the row that grouped them is not). */
-function flattenBlocks(blocks: readonly TemplateBlock[]): readonly TemplateBlock[] {
+function flattenBlocks(
+  blocks: readonly TemplateBlock[]
+): readonly TemplateBlock[] {
   const flat: TemplateBlock[] = []
   for (const block of blocks) {
     flat.push(block)
@@ -322,7 +388,9 @@ export function liftDefinition(stored: unknown): LiftResult {
     }
   }
 
-  const definition = stored as Partial<TemplateDefinition> & { scope?: ScopeSpec }
+  const definition = stored as Partial<TemplateDefinition> & {
+    scope?: ScopeSpec
+  }
   const templateScope: ScopeSpec = definition.scope ?? {
     resource_types: [],
     resource_groups: [],
@@ -344,13 +412,17 @@ export function liftDefinition(stored: unknown): LiftResult {
   // the moment two blocks target the same entry — found by running this
   // lifter against the real `accept-every-block-type.json` fixture, not
   // assumed from the catalogue's declared field.
-  const bySection = new Map<string, { entry: SectionEntry; scope: ScopeSpec }>()
+  const bySection = new Map<
+    string,
+    { entry: SectionEntry; scope: ScopeSpec; block: TemplateBlock }
+  >()
   const unmapped: UnmappedBlock[] = []
   let liftedCoverSubtitle: string | undefined
 
   for (const block of flat) {
     if (block.type === "cover") {
-      const subtitle = (block.config as { subtitle?: unknown } | undefined)?.subtitle
+      const subtitle = (block.config as { subtitle?: unknown } | undefined)
+        ?.subtitle
       if (typeof subtitle === "string") liftedCoverSubtitle = subtitle
       continue
     }
@@ -366,7 +438,7 @@ export function liftDefinition(stored: unknown): LiftResult {
       ? `${entry.key}:${nextSectionId()}` // repeatable: never merges with another
       : entry.key
     if (!bySection.has(dedupeKey)) {
-      bySection.set(dedupeKey, { entry, scope })
+      bySection.set(dedupeKey, { entry, scope, block })
     }
     // A non-repeatable entry already recorded: this block's own scope is
     // discarded in favour of the first block's, matching Requirement 20.3's
@@ -377,10 +449,13 @@ export function liftDefinition(stored: unknown): LiftResult {
   }
 
   const sections: Record<string, unknown>[] = [...bySection.values()].map(
-    ({ entry, scope }) => liftedSection(entry, scope)
+    ({ entry, scope, block }) => liftedSection(entry, scope, block)
   )
 
-  const design = { ...DEFAULT_DESIGN, ...(definition.design ?? {}) } as Record<string, unknown>
+  const design = { ...DEFAULT_DESIGN, ...(definition.design ?? {}) } as Record<
+    string,
+    unknown
+  >
   const frontMatter = (definition as { front_matter?: unknown }).front_matter
   const carriedFrontMatter: Record<string, unknown> = {
     ...DEFAULT_FRONT_MATTER,
@@ -390,10 +465,14 @@ export function liftDefinition(stored: unknown): LiftResult {
   }
   if (liftedCoverSubtitle !== undefined) {
     const existingCover =
-      typeof carriedFrontMatter.cover === "object" && carriedFrontMatter.cover !== null
+      typeof carriedFrontMatter.cover === "object" &&
+      carriedFrontMatter.cover !== null
         ? (carriedFrontMatter.cover as Record<string, unknown>)
         : {}
-    carriedFrontMatter.cover = { ...existingCover, subtitle: liftedCoverSubtitle }
+    carriedFrontMatter.cover = {
+      ...existingCover,
+      subtitle: liftedCoverSubtitle,
+    }
   }
 
   // Requirement 12.6, 12.7 — `document_control` diverges at v3: `distribution`
@@ -409,7 +488,8 @@ export function liftDefinition(stored: unknown): LiftResult {
       : {}
 
   if (typeof existingDocumentControl.confidentiality_notice_id === "string") {
-    liftedConfidentialityNoticeId = existingDocumentControl.confidentiality_notice_id
+    liftedConfidentialityNoticeId =
+      existingDocumentControl.confidentiality_notice_id
   }
   delete existingDocumentControl.confidentiality_notice_id
 
@@ -426,10 +506,9 @@ export function liftDefinition(stored: unknown): LiftResult {
 
   carriedFrontMatter.document_control = existingDocumentControl
 
-  const identity = (definition.identity ?? { name: "Untitled profile" }) as Record<
-    string,
-    unknown
-  >
+  const identity = (definition.identity ?? {
+    name: "Untitled profile",
+  }) as Record<string, unknown>
 
   const draft: Record<string, unknown> = {
     schema_version: 3,
@@ -444,12 +523,23 @@ export function liftDefinition(stored: unknown): LiftResult {
   return {
     draft,
     brand: {
-      themePreset: typeof design.preset === "string" ? design.preset : "editorial",
-      accentColor: typeof design.accent_color === "string" ? design.accent_color : "#000000",
+      themePreset:
+        typeof design.preset === "string" ? design.preset : "editorial",
+      accentColor:
+        typeof design.accent_color === "string"
+          ? design.accent_color
+          : "#000000",
       density: typeof design.density === "string" ? design.density : "normal",
-      tableStyle: typeof design.table_style === "string" ? design.table_style : "hairline",
-      numberFormat: design.number_format ?? { decimal_places: 1, group_thousands: true },
-      coverPage: typeof design.cover_page === "boolean" ? design.cover_page : true,
+      tableStyle:
+        typeof design.table_style === "string"
+          ? design.table_style
+          : "hairline",
+      numberFormat: design.number_format ?? {
+        decimal_places: 1,
+        group_thousands: true,
+      },
+      coverPage:
+        typeof design.cover_page === "boolean" ? design.cover_page : true,
       logoKey: typeof design.logo === "string" ? design.logo : null,
       pageSize: typeof design.page_size === "string" ? design.page_size : "A4",
       confidentialityNoticeId: liftedConfidentialityNoticeId,

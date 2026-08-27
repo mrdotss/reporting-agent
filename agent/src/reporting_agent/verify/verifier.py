@@ -149,6 +149,7 @@ class VerifyInputs:
     historical: Mapping[str, historical_pass.HistoricalRunInfo] = field(default_factory=dict)
     front_matter: object | None = None
     run_facts: object | None = None
+    section_catalogue: object | None = None
 
 
 async def verify(inputs: VerifyInputs) -> VerificationResult:
@@ -241,6 +242,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         catalog_scales=inputs.catalog_scales,
         front_matter=inputs.front_matter,
         run_facts=inputs.run_facts,
+        section_catalogue=inputs.section_catalogue,
     )
     ledger_strings = ledger_strings_of(
         (*inputs.ledger.entries.values(), *inputs.ledger.derived_counts().values())

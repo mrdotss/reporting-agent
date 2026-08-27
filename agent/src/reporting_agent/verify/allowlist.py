@@ -229,6 +229,7 @@ def derive_allowlist(
     catalog_scales: Mapping[str, int] | None = None,
     front_matter: object | None = None,
     run_facts: object | None = None,
+    section_catalogue: object | None = None,
 ) -> frozenset[str]:
     """Compile and render `definition` with no data, and return its numeric chrome.
 
@@ -263,6 +264,7 @@ def derive_allowlist(
             prose=None,
             comparison_source=_NullComparison(view),
             catalog_scales=catalog_scales,
+            catalogue=section_catalogue,
         )
         # `CompiledDocument` carries no design — `compile_document` derives one from the
         # definition and keeps it internal — so the same derivation is repeated here

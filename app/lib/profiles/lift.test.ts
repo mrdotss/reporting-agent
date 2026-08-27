@@ -26,9 +26,19 @@ import { liftDefinition, UNMAPPED_BLOCK_TYPES } from "@/lib/profiles/lift"
  * at-least-one-section rule and must NOT fail `draft` mode's looser one.
  */
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..")
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "..",
+  ".."
+)
 const repoRoot = path.resolve(appRoot, "..")
-const CORPUS_ROOT = path.join(repoRoot, "agent", "tests", "fixtures", "definitions")
+const CORPUS_ROOT = path.join(
+  repoRoot,
+  "agent",
+  "tests",
+  "fixtures",
+  "definitions"
+)
 const CORPUS_MANIFEST = path.join(CORPUS_ROOT, "manifest.json")
 
 type ManifestEntry = {
@@ -36,7 +46,10 @@ type ManifestEntry = {
   readonly verdict: "accept" | "reject"
 }
 
-function acceptFixtures(): readonly { readonly name: string; readonly definition: unknown }[] {
+function acceptFixtures(): readonly {
+  readonly name: string
+  readonly definition: unknown
+}[] {
   const manifest = JSON.parse(readFileSync(CORPUS_MANIFEST, "utf8")) as {
     readonly fixtures: readonly ManifestEntry[]
   }
@@ -62,7 +75,9 @@ describe("liftDefinition against the shared v1/v2 corpus", () => {
 
   test("the corpus has at least one v1 and one v2 accept fixture", () => {
     const versions = new Set(
-      fixtures.map((f) => (f.definition as { schema_version: number }).schema_version)
+      fixtures.map(
+        (f) => (f.definition as { schema_version: number }).schema_version
+      )
     )
     expect(versions.has(1)).toBe(true)
     expect(versions.has(2)).toBe(true)
@@ -118,6 +133,110 @@ describe("liftDefinition against the shared v1/v2 corpus", () => {
 })
 
 describe("liftDefinition — behaviour not covered by the shared corpus", () => {
+  test("a historical_trend block's lookback carries onto the lifted historical_vm_utilization section (task 7.3)", () => {
+    // The specific defect task 7.3's closing end-to-end test surfaced: a lift
+    // that always produced `metrics: []` and no `lookback` field was correct
+    // when nothing downstream read either — task 7.3 made
+    // `historical_vm_utilization`'s section REQUIRE `lookback`, so a lift
+    // that still dropped it would migrate a perfectly valid v1/v2 template
+    // into a v3 draft that cannot pass draft-mode validation.
+    const stored = {
+      schema_version: 1,
+      identity: { name: "Test" },
+      scope: {
+        resource_types: ["Microsoft.Compute/virtualMachines"],
+        resource_groups: [],
+        tag_filters: [],
+        top_n: null,
+        sort: null,
+      },
+      blocks: [
+        {
+          id: "b-trend",
+          type: "historical_trend",
+          config: { metric: "Percentage CPU", statistic: "max", lookback: 6 },
+        },
+      ],
+    }
+
+    const { draft } = liftDefinition(stored)
+    const sections = draft.sections as readonly Record<string, unknown>[]
+    const historical = sections.find(
+      (s) => s.type === "historical_vm_utilization"
+    )
+
+    expect(historical).toBeDefined()
+    expect(historical!.lookback).toBe(6)
+
+    const issues = collectDefinitionIssues(draft, { mode: "draft" })
+    expect(issues).toEqual([])
+  })
+
+  test("a timeseries_chart block's metrics carry onto the lifted section's metrics field", () => {
+    const stored = {
+      schema_version: 1,
+      identity: { name: "Test" },
+      scope: {
+        resource_types: ["Microsoft.Compute/virtualMachines"],
+        resource_groups: [],
+        tag_filters: [],
+        top_n: null,
+        sort: null,
+      },
+      blocks: [
+        {
+          id: "b-chart",
+          type: "timeseries_chart",
+          config: {
+            metrics: [
+              { metric: "Percentage CPU", statistic: "avg" },
+              { metric: "Percentage CPU", statistic: "max" },
+            ],
+          },
+        },
+      ],
+    }
+
+    const { draft } = liftDefinition(stored)
+    const sections = draft.sections as readonly Record<string, unknown>[]
+    const section = sections[0]!
+
+    expect(section.metrics).toEqual([
+      { metric: "Percentage CPU", statistic: "avg" },
+      { metric: "Percentage CPU", statistic: "max" },
+    ])
+  })
+
+  test("a historical_trend block with a non-numeric lookback lifts with no lookback field, not a stray invalid one", () => {
+    const stored = {
+      schema_version: 1,
+      identity: { name: "Test" },
+      scope: {
+        resource_types: ["Microsoft.Compute/virtualMachines"],
+        resource_groups: [],
+        tag_filters: [],
+        top_n: null,
+        sort: null,
+      },
+      blocks: [
+        {
+          id: "b-trend",
+          type: "historical_trend",
+          config: { metric: "Percentage CPU", statistic: "max" },
+        },
+      ],
+    }
+
+    const { draft } = liftDefinition(stored)
+    const sections = draft.sections as readonly Record<string, unknown>[]
+    const historical = sections.find(
+      (s) => s.type === "historical_vm_utilization"
+    )
+
+    expect(historical).toBeDefined()
+    expect(historical).not.toHaveProperty("lookback")
+  })
+
   test("a cover block's subtitle lifts into front_matter.cover.subtitle", () => {
     const stored = {
       schema_version: 1,
@@ -231,8 +350,12 @@ describe("liftDefinition — behaviour not covered by the shared corpus", () => 
     const first = liftDefinition(stored)
     const second = liftDefinition(stored)
 
-    const firstIds = (first.draft.sections as readonly { id: string }[]).map((s) => s.id)
-    const secondIds = (second.draft.sections as readonly { id: string }[]).map((s) => s.id)
+    const firstIds = (first.draft.sections as readonly { id: string }[]).map(
+      (s) => s.id
+    )
+    const secondIds = (second.draft.sections as readonly { id: string }[]).map(
+      (s) => s.id
+    )
 
     expect(new Set(firstIds).size).toBe(firstIds.length)
     expect(new Set(secondIds).size).toBe(secondIds.length)
@@ -246,7 +369,13 @@ describe("front_matter.document_control migrates to its v3 shape (task 4.1)", ()
     return {
       schema_version: 2,
       identity: { name: "Test", language: "en" },
-      scope: { resource_types: [], resource_groups: [], tag_filters: [], top_n: null, sort: null },
+      scope: {
+        resource_types: [],
+        resource_groups: [],
+        tag_filters: [],
+        top_n: null,
+        sort: null,
+      },
       metrics: {},
       design: {},
       blocks: [],
@@ -260,12 +389,15 @@ describe("front_matter.document_control migrates to its v3 shape (task 4.1)", ()
 
   test("confidentiality_notice_id moves from front_matter to the returned brand, and off the draft", () => {
     const { draft, brand } = liftDefinition(
-      storedWithDocumentControl({ confidentiality_notice_id: "doc.confidentiality.default" })
+      storedWithDocumentControl({
+        confidentiality_notice_id: "doc.confidentiality.default",
+      })
     )
 
     expect(brand.confidentialityNoticeId).toBe("doc.confidentiality.default")
-    const control = (draft.front_matter as { document_control: Record<string, unknown> })
-      .document_control
+    const control = (
+      draft.front_matter as { document_control: Record<string, unknown> }
+    ).document_control
     expect("confidentiality_notice_id" in control).toBe(false)
   })
 
@@ -278,8 +410,9 @@ describe("front_matter.document_control migrates to its v3 shape (task 4.1)", ()
     const { draft } = liftDefinition(
       storedWithDocumentControl({ distribution: "Internal / Customer" })
     )
-    const control = (draft.front_matter as { document_control: Record<string, unknown> })
-      .document_control
+    const control = (
+      draft.front_matter as { document_control: Record<string, unknown> }
+    ).document_control
     expect(control.distribution).toEqual([
       { recipient: "Distribution", note: "Internal / Customer" },
     ])
@@ -287,9 +420,12 @@ describe("front_matter.document_control migrates to its v3 shape (task 4.1)", ()
 
   test("an empty or whitespace-only string distribution lifts to zero rows, not one empty row", () => {
     for (const value of ["", "   "]) {
-      const { draft } = liftDefinition(storedWithDocumentControl({ distribution: value }))
-      const control = (draft.front_matter as { document_control: Record<string, unknown> })
-        .document_control
+      const { draft } = liftDefinition(
+        storedWithDocumentControl({ distribution: value })
+      )
+      const control = (
+        draft.front_matter as { document_control: Record<string, unknown> }
+      ).document_control
       expect(control.distribution).toEqual([])
     }
   })

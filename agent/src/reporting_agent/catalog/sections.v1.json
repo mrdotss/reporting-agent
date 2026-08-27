@@ -131,6 +131,7 @@
           "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
           "needs_fact_sources": [],
           "metric_bearing": true,
+          "order_by": { "metric": "Percentage CPU", "statistic": "max" },
           "presets": {
             "standard_utilization": [
               { "metric": "Percentage CPU", "statistic": "avg" },
@@ -169,6 +170,7 @@
           "metric_bearing": true,
           "optional": true,
           "draws_from_prior_verified_runs": true,
+          "trend_metric": { "metric": "Percentage CPU", "statistic": "max" },
           "presets": {
             "standard_utilization": [
               { "metric": "Percentage CPU", "statistic": "avg" },
@@ -196,6 +198,7 @@
           ],
           "needs_fact_sources": [],
           "metric_bearing": true,
+          "order_by": { "metric": "cpu_percent", "statistic": "max" },
           "presets": {
             "standard_utilization": [
               { "metric": "cpu_percent", "statistic": "avg" },

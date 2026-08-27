@@ -141,6 +141,93 @@ def _resolve_heading_text(
     config["text"] = messages.text(title_id)
 
 
+def _thread_metric_config(
+    expansion: SectionExpansionBlock,
+    entry: SectionCatalogueEntry,
+    section: Mapping[str, object],
+    config: dict[str, object],
+) -> None:
+    """Fill a metric-bearing expansion's config from the section's own selected metrics
+    and the catalogue entry's declared `order_by`/`trend_metric` (task 7.3's own finding).
+
+    `expand_sections` sets each block's `scope_override` from the section's `selection`
+    already; this is the missing half — its `metrics` — and only for the three block
+    types that need exactly this shape:
+
+    * `timeseries_chart` needs `config.metrics`: the section's own selected metrics,
+      unchanged. A chart plots every selected metric as its own series (task 5.1-5.4's
+      own panelling then decides how many panels those series need).
+    * `top_n_table` needs `config.columns` (the section's own selected metrics again —
+      the table shows every selected metric as a column) and `config.order_by` (which
+      metric+statistic ranks the table). `order_by` is the catalogue entry's own
+      declaration, never inferred from the section's own selection order — the wizard's
+      metric chips are a set, not a ranked list, and ranking by "whichever was clicked
+      first" would make the ranking depend on an interaction artifact.
+    * `historical_trend` needs exactly one `config.metric` + `config.statistic` (the
+      catalogue entry's own `trend_metric`, for the identical "not an interaction
+      artifact" reason) plus `config.lookback`, which is NOT a catalogue default — see
+      the section's own docstring reference below.
+
+    Does nothing for any other block type, and does nothing when the entry declares
+    neither `order_by` nor `trend_metric` (the metric-bearing sections this doesn't
+    apply to today).
+    """
+    section_metrics = section.get("metrics")
+    if expansion.block == "timeseries_chart":
+        if (
+            "metrics" not in config
+            and isinstance(section_metrics, Sequence)
+            and not isinstance(section_metrics, str)
+        ):
+            config["metrics"] = list(section_metrics)
+    elif expansion.block == "resource_table":
+        # A metric-bearing section's per-resource resource_table needs the same
+        # `columns` the chart needs `metrics` — the section's own selected metrics,
+        # shown as columns rather than plotted as series. Not one of the three
+        # bindings first named, but the identical shape of gap: `vm_utilization`'s own
+        # `resource_table` expansion carries no `columns` config either, and fails to
+        # compile for the same reason `timeseries_chart` did before this fix.
+        #
+        # Only fills `columns` when the catalogue declared none — a section like
+        # `recommendations` (task 6.4) declares its own static fact-key columns on
+        # this exact block type, and that declaration must always win over a
+        # metrics-derived one this section never asked for.
+        if (
+            "columns" not in config
+            and isinstance(section_metrics, Sequence)
+            and not isinstance(section_metrics, str)
+        ):
+            config["columns"] = list(section_metrics)
+    elif expansion.block == "top_n_table":
+        if (
+            "columns" not in config
+            and isinstance(section_metrics, Sequence)
+            and not isinstance(section_metrics, str)
+        ):
+            config["columns"] = list(section_metrics)
+        if "order_by" not in config and entry.order_by is not None:
+            order_metric, order_stat = entry.order_by
+            config["order_by"] = {"metric": order_metric, "statistic": order_stat}
+    elif expansion.block == "historical_trend":
+        if "metric" not in config and "statistic" not in config and entry.trend_metric is not None:
+            trend_metric_name, trend_stat = entry.trend_metric
+            config["metric"] = trend_metric_name
+            config["statistic"] = trend_stat
+        # `lookback` is author-set on the section, with no catalogue default (task
+        # 7.3's own ruling): a default would make every profile print a history depth
+        # nobody chose, and `verify/derived_counts.py` re-derives and VERIFIES it as a
+        # `derived_count("historical_lookback", ...)` — a catalogue default here would
+        # make that a verified claim no human made. Absent is a compile-time failure
+        # naming `config.lookback`, not a silent fallback.
+        lookback = section.get("lookback")
+        if (
+            "lookback" not in config
+            and isinstance(lookback, int)
+            and not isinstance(lookback, bool)
+        ):
+            config["lookback"] = lookback
+
+
 def _expand_one_section(
     section: Mapping[str, object],
     entry: SectionCatalogueEntry,
@@ -173,6 +260,7 @@ def _expand_one_section(
         config: dict[str, object] = dict(expansion.config)
         if expansion.block == "heading":
             _resolve_heading_text(expansion, entry, config, messages)
+        _thread_metric_config(expansion, entry, section, config)
 
         if expansion.per == "section":
             block_id = f"{section_id}__{expansion_index}"

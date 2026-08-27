@@ -1737,7 +1737,24 @@ class SectionExpansionBlock:
 
 @dataclass(frozen=True, slots=True)
 class SectionCatalogueEntry:
-    """One validated section catalogue entry."""
+    """One validated section catalogue entry.
+
+    `order_by` and `trend_metric` are `(metric, statistic)` pairs, present only on the
+    entries whose expansion needs exactly one metric where the section's own `metrics`
+    may name several (task 7.3's own finding): `top_n_table` ranks by one metric, and
+    `historical_trend` plots exactly one metric+statistic pair. Both are declared here —
+    a document-design decision belonging to the section type, not inferred from
+    "whichever metric was selected first" (an interaction artifact: the wizard's metric
+    chips are a set, and reordering them must not silently change what a table ranks by
+    or what a trend plots) and never defaulted when absent (a silent fallback is how a
+    table ends up ranked by something nobody chose).
+
+    Validated at load, the same two ways as a preset metric: the pair must name a metric
+    the metric catalogue declares for one of the entry's `needs_resource_types`, and it
+    must appear in the entry's own resolved metric set — checked against every preset's
+    metrics when the entry declares presets, since a custom per-run selection is a
+    definition-time concern this catalogue-load-time check cannot see.
+    """
 
     key: str
     number: int
@@ -1753,6 +1770,8 @@ class SectionCatalogueEntry:
     optional: bool = False
     author_filled: bool = False
     draws_from_prior_verified_runs: bool = False
+    order_by: tuple[str, str] | None = None
+    trend_metric: tuple[str, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1791,6 +1810,87 @@ class LoadedSectionCatalogue:
             if e.position == "always":
                 return e
         return None
+
+
+def _parse_single_metric_pair(
+    raw_entry: dict[str, object],
+    field_name: str,
+    *,
+    key: str,
+    needs_resource_types: list[str],
+    preset_metric_names: set[str],
+    loaded_catalog: LoadedCatalog | None,
+) -> tuple[str, str] | None:
+    """Parse and validate one `{"metric": ..., "statistic": ...}` field on a section
+    catalogue entry (`order_by` or `trend_metric`), or return `None` when absent.
+    Absent is legal — most entries declare neither — but a present-and-malformed
+    value is not.
+
+    A module-level function rather than a closure defined inside
+    `load_section_catalogue`'s own per-entry loop, so it takes every value it reads
+    from that loop's own variables as an explicit parameter instead of capturing them
+    by reference — the closure form let a mutation to `key` or `needs_resource_types`
+    on a later loop iteration change what an earlier-built closure would report, even
+    though every call site here happens to invoke it immediately within the same
+    iteration and never stores it.
+    """
+    raw_pair = raw_entry.get(field_name)
+    if raw_pair is None:
+        return None
+    if not isinstance(raw_pair, dict):
+        raise CatalogUnusableError(
+            f"section catalogue entry {key!r}: `{field_name}` must be an "
+            f"object with `metric` and `statistic`"
+        )
+    pair_metric = raw_pair.get("metric")
+    pair_stat = raw_pair.get("statistic")
+    if not isinstance(pair_metric, str) or not isinstance(pair_stat, str):
+        raise CatalogUnusableError(
+            f"section catalogue entry {key!r}: `{field_name}` needs string "
+            f"`metric` and `statistic`"
+        )
+
+    # Rule 1: the pair must name a metric the metric catalogue declares for
+    # one of this entry's resource types — the same check a preset metric
+    # already gets.
+    if loaded_catalog is not None and needs_resource_types:
+        found = False
+        for rt in needs_resource_types:
+            rt_catalog = loaded_catalog.for_resource_type(rt)
+            if rt_catalog is not None:
+                for m in rt_catalog.metrics:
+                    if m.name == pair_metric:
+                        found = True
+                        break
+                if found:
+                    break
+                for d in rt_catalog.derived:
+                    if d.statistic_id == pair_metric:
+                        found = True
+                        break
+                if found:
+                    break
+        if not found:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: `{field_name}` names "
+                f"metric {pair_metric!r} which the metric catalogue does "
+                f"not declare for types {needs_resource_types}"
+            )
+
+    # Rule 2: the pair must appear in the entry's own resolved metric set —
+    # every declared preset's metrics, since a custom per-run selection is a
+    # definition-time concern this catalogue-load-time check cannot see (the
+    # per-run check belongs where the section's own resolved metrics are
+    # actually known, at compile/expand time).
+    if preset_metric_names and pair_metric not in preset_metric_names:
+        raise CatalogUnusableError(
+            f"section catalogue entry {key!r}: `{field_name}` names metric "
+            f"{pair_metric!r} which appears in none of this entry's own "
+            f"presets — a section cannot rank or trend on a metric it "
+            f"never collects"
+        )
+
+    return (pair_metric, pair_stat)
 
 
 def load_section_catalogue(
@@ -2082,6 +2182,36 @@ def load_section_catalogue(
                     f"be '*' or an array of metric selections"
                 )
 
+        # Every preset's metric names, for rule 2 below: `order_by`/`trend_metric` must
+        # appear in the entry's own resolved metric set. A preset value of "*" is
+        # deliberately excluded from this membership set — "everything the catalogue
+        # offers" is not itself a named metric set to check membership against, and an
+        # entry offering "*" alongside a named preset is still checked against the
+        # named one.
+        preset_metric_names: set[str] = {
+            metric_name
+            for _, preset_metrics in presets_list
+            if isinstance(preset_metrics, tuple)
+            for metric_name, _ in preset_metrics
+        }
+
+        order_by = _parse_single_metric_pair(
+            raw_entry,
+            "order_by",
+            key=key,
+            needs_resource_types=needs_resource_types,
+            preset_metric_names=preset_metric_names,
+            loaded_catalog=loaded_catalog,
+        )
+        trend_metric = _parse_single_metric_pair(
+            raw_entry,
+            "trend_metric",
+            key=key,
+            needs_resource_types=needs_resource_types,
+            preset_metric_names=preset_metric_names,
+            loaded_catalog=loaded_catalog,
+        )
+
         entries.append(
             SectionCatalogueEntry(
                 key=key,
@@ -2100,6 +2230,8 @@ def load_section_catalogue(
                 draws_from_prior_verified_runs=bool(
                     raw_entry.get("draws_from_prior_verified_runs", False)
                 ),
+                order_by=order_by,
+                trend_metric=trend_metric,
             )
         )
 

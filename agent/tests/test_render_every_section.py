@@ -8,14 +8,11 @@ that guard and fail here first. "A section no guard has ever rendered is a secti
 emitter has never run" is task 6.5's own acceptance criterion, and this module is what makes
 that claim true rather than aspirational.
 
-**Three of the fifteen entries are excluded, and it is the same three, for the same reason,
-as `test_expand_sections.py`'s own compile-only guard**: `vm_utilization`,
-`historical_vm_utilization` and `database_utilization` need a per-run metric selection
-threaded from the section's own `metrics`/`selection` into `expand_sections` before they
-compile at all (`top_n_table` needs `columns` + `order_by`; `historical_trend` needs `metric`
-+ `statistic` + `lookback`) — a design decision, not a data-shape fix, out of scope for this
-task exactly as it was out of scope for the compile-only guard. Recorded here rather than
-silently narrowed a second time.
+**All fifteen entries are exercised, with no skip list** (task 7.3). `vm_utilization`,
+`historical_vm_utilization` and `database_utilization` were excluded here until task 7.3
+fixed the real cause: `top_n_table`/`historical_trend` needed a per-run metric selection
+threaded from the section's own `metrics`/`selection` into `expand_sections`, which
+`compile/sections.py`'s `_thread_metric_config` now does.
 """
 
 from __future__ import annotations
@@ -39,12 +36,6 @@ from reporting_agent.render.html import emit_html
 from snapshot_factory import CPU, exact
 from snapshot_factory import build as build_fixture
 from snapshot_factory import resource_record as make_rec
-
-# The same exclusion, the same reason, as
-# `test_expand_sections.py::test_every_real_catalogue_entry_compiles_without_error`.
-NEEDS_METRIC_SELECTION_WIRING: frozenset[str] = frozenset(
-    {"vm_utilization", "historical_vm_utilization", "database_utilization"}
-)
 
 DESIGN: dict[str, object] = {
     "preset": "corporate",
@@ -92,25 +83,27 @@ def _v3_definition(section_key: str, *, metric_bearing: bool) -> dict:
     metrics = (
         [{"metric": "Percentage CPU", "statistic": "avg"}] if metric_bearing else []
     )
+    section: dict[str, object] = {
+        "id": "sec",
+        "type": section_key,
+        "position": 0,
+        "selection": {
+            "resource_types": [],
+            "resource_groups": [],
+            "tag_filters": [],
+            "top_n": None,
+            "sort": None,
+        },
+        "metrics": metrics,
+        "presentation": "table_only",
+    }
+    if section_key == "historical_vm_utilization":
+        section["lookback"] = 6
+
     return {
         "schema_version": 3,
         "provider": "azure",
-        "sections": [
-            {
-                "id": "sec",
-                "type": section_key,
-                "position": 0,
-                "selection": {
-                    "resource_types": [],
-                    "resource_groups": [],
-                    "tag_filters": [],
-                    "top_n": None,
-                    "sort": None,
-                },
-                "metrics": metrics,
-                "presentation": "table_only",
-            }
-        ],
+        "sections": [section],
         "identity": {
             "language": "en",
             "customer_name": "Test Corp",
@@ -148,18 +141,18 @@ def _renderable_entries():
     return [
         entry
         for entry in catalogue.entries
-        if entry.key not in NEEDS_METRIC_SELECTION_WIRING
-        and entry.expands_to[0].per == "section"
+        if entry.expands_to[0].per == "section"
     ]
 
 
 _ENTRIES = _renderable_entries()
 _ENTRY_IDS = [entry.key for entry in _ENTRIES]
 
-assert len(_ENTRIES) >= 10, (
-    f"expected at least 10 renderable catalogue entries after the known exclusions, got "
-    f"{len(_ENTRIES)}: {_ENTRY_IDS} -- a change to the catalogue or the exclusion set "
-    f"narrowed this guard's coverage without anyone deciding to"
+assert len(_ENTRIES) >= 12, (
+    f"expected at least 12 renderable catalogue entries (fifteen minus the three "
+    f"whose first expansion is per:resource -- vm_utilization, database_utilization, "
+    f"app_service_and_storage), got {len(_ENTRIES)}: {_ENTRY_IDS} -- a change to the "
+    f"catalogue narrowed this guard's coverage without anyone deciding to"
 )
 
 
@@ -210,8 +203,9 @@ def test_a_document_combining_every_renderable_entry_converts_to_a_readable_pdf(
     proving once against the union rather than once per entry."""
     catalogue = _catalogue()
     view = _view()
-    sections = [
-        {
+    sections = []
+    for index, entry in enumerate(_ENTRIES):
+        section: dict[str, object] = {
             "id": f"sec_{entry.key}",
             "type": entry.key,
             "position": index,
@@ -229,8 +223,9 @@ def test_a_document_combining_every_renderable_entry_converts_to_a_readable_pdf(
             ),
             "presentation": "table_only",
         }
-        for index, entry in enumerate(_ENTRIES)
-    ]
+        if entry.key == "historical_vm_utilization":
+            section["lookback"] = 6
+        sections.append(section)
     definition = _v3_definition(_ENTRIES[0].key, metric_bearing=_ENTRIES[0].metric_bearing)
     definition["sections"] = sections
 

@@ -376,13 +376,28 @@ export const SECTION_ID_MAX_LENGTH = 64
 export const MAX_SECTIONS = 200
 
 /**
+ * `historical_vm_utilization`'s `lookback` bound, in months — mirrors
+ * `HISTORICAL_LOOKBACK_MIN`/`MAX` in `agent/.../compile/blocks/charts.py` exactly
+ * (task 7.3). Author-set, with no catalogue default: `lookback` is a number the
+ * document prints and `verify/derived_counts.py` independently re-derives and
+ * verifies, so a default here would make every profile print a history depth
+ * nobody chose, and the verifier would confirm a claim no human made.
+ */
+export const HISTORICAL_LOOKBACK_MIN = 2
+export const HISTORICAL_LOOKBACK_MAX = 24
+
+/**
  * Section catalogue keys by provider, derived from `catalog/sections.v1.json` at
  * build time. Used by the validator to reject an unknown `type`. One file, both
  * halves — the Python half reads the same JSON in `catalog/loader.py`.
  */
-export const SECTION_KEYS_BY_PROVIDER: Readonly<Record<string, readonly string[]>> = {
+export const SECTION_KEYS_BY_PROVIDER: Readonly<
+  Record<string, readonly string[]>
+> = {
   azure: (
-    rawSectionsCatalogue as { providers: { azure: { sections: { key: string }[] } } }
+    rawSectionsCatalogue as {
+      providers: { azure: { sections: { key: string }[] } }
+    }
   ).providers.azure.sections.map((s) => s.key),
 }
 
@@ -395,7 +410,9 @@ export const NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Readonly<
   azure: new Set(
     (
       rawSectionsCatalogue as {
-        providers: { azure: { sections: { key: string; repeatable: boolean }[] } }
+        providers: {
+          azure: { sections: { key: string; repeatable: boolean }[] }
+        }
       }
     ).providers.azure.sections
       .filter((s) => !s.repeatable)
@@ -923,7 +940,10 @@ function validateIdentity(
     }
   }
 
-  if (allowedKeys.includes("customer_name") && identity.customer_name !== undefined) {
+  if (
+    allowedKeys.includes("customer_name") &&
+    identity.customer_name !== undefined
+  ) {
     const customerName = identity.customer_name
     if (
       typeof customerName !== "string" ||
@@ -1343,7 +1363,13 @@ function validateDistribution(
       issues,
       DISTRIBUTION_ROW_COMPANY_MAX_LENGTH
     )
-    optionalBoundedString(entry, "note", at, issues, DISTRIBUTION_NOTE_MAX_LENGTH)
+    optionalBoundedString(
+      entry,
+      "note",
+      at,
+      issues,
+      DISTRIBUTION_NOTE_MAX_LENGTH
+    )
   })
 }
 
@@ -2864,11 +2890,7 @@ function validateSections(
     return
   }
   if (sections.length > MAX_SECTIONS) {
-    addIssue(
-      issues,
-      path,
-      `sections accepts at most ${MAX_SECTIONS} entries.`
-    )
+    addIssue(issues, path, `sections accepts at most ${MAX_SECTIONS} entries.`)
   }
 
   // Resolve the provider's catalogue keys — unknown or unsupported providers
@@ -2914,11 +2936,7 @@ function validateSections(
         `Section id must be ${SECTION_ID_MIN_LENGTH} to ${SECTION_ID_MAX_LENGTH} characters.`
       )
     } else if (seenIds.has(id)) {
-      addIssue(
-        issues,
-        [...entryPath, "id"],
-        `Duplicate section id "${id}".`
-      )
+      addIssue(issues, [...entryPath, "id"], `Duplicate section id "${id}".`)
     } else {
       seenIds.add(id)
     }
@@ -2984,6 +3002,39 @@ function validateSections(
           validateMetricItem(item, [...metricsPath, itemIndex], issues)
         })
       }
+    }
+
+    // --- lookback (task 7.3) ---
+    //
+    // Permitted-not-required in general — most section types never read it — and
+    // REQUIRED specifically when `type === "historical_vm_utilization"`, the one
+    // section type that needs it: `compile/sections.py`'s `_thread_metric_config`
+    // threads it into `historical_trend`'s config, and that block fails to compile
+    // without it. The same pattern `customer_name` already uses: named at the gate
+    // where it is actually needed, not defaulted when absent. A profile selecting
+    // section 9 with no `lookback` is invalid at authoring time — the honest moment
+    // to say "a historical trend needs a depth", not at render.
+    if ("lookback" in entry) {
+      const lookback = entry.lookback
+      if (
+        typeof lookback !== "number" ||
+        !Number.isInteger(lookback) ||
+        lookback < HISTORICAL_LOOKBACK_MIN ||
+        lookback > HISTORICAL_LOOKBACK_MAX
+      ) {
+        addIssue(
+          issues,
+          [...entryPath, "lookback"],
+          `lookback must be an integer from ${HISTORICAL_LOOKBACK_MIN} to ${HISTORICAL_LOOKBACK_MAX} inclusive.`
+        )
+      }
+    } else if (type === "historical_vm_utilization") {
+      addIssue(
+        issues,
+        [...entryPath, "lookback"],
+        `Section type "historical_vm_utilization" requires lookback (an integer from ` +
+          `${HISTORICAL_LOOKBACK_MIN} to ${HISTORICAL_LOOKBACK_MAX} inclusive).`
+      )
     }
 
     // --- presentation ---

@@ -91,7 +91,11 @@ from reporting_agent.artifacts import (
     write_report_artifacts,
     write_verification_result,
 )
-from reporting_agent.catalog.loader import LoadedCatalog, load_catalog
+from reporting_agent.catalog.loader import (
+    LoadedCatalog,
+    load_catalog,
+    load_section_catalogue,
+)
 from reporting_agent.collect.pipeline import (
     CollectionOutcome,
     CollectionSink,
@@ -315,6 +319,11 @@ async def run_generate_report(
         historical_source=historical_source,
         front_matter=_resolve_front_matter_config(definition),
         run_facts=_resolve_run_facts(payload, definition, run_id=plan.run_id),
+        section_catalogue=(
+            load_section_catalogue(loaded_catalog=catalog)
+            if definition.get("schema_version") == 3
+            else None
+        ),
     ):
         yield event
 
@@ -407,6 +416,10 @@ def requested_metric_union(
     """
     from reporting_agent.compile.scope import scope_rules_from_plain, union_scope
 
+    schema_version = definition.get("schema_version")
+    if schema_version == 3:
+        return _requested_metric_union_v3(definition, catalog)
+
     selected: dict[str, set[str]] = {}
     raw_metrics = definition.get("metrics")
     if isinstance(raw_metrics, Mapping):
@@ -448,6 +461,95 @@ def requested_metric_union(
     for resource_type, names in requested.items():
         entry = catalog.for_resource_type(resource_type)
         key = entry.resource_type if entry is not None else resource_type
+        canonical.setdefault(key, set()).update(names)
+    return {key: tuple(sorted(names)) for key, names in sorted(canonical.items())}
+
+
+def _requested_metric_union_v3(
+    definition: Mapping[str, PlainData], catalog: LoadedCatalog
+) -> dict[str, tuple[str, ...]]:
+    """Req 5.4 at `schema_version` 3 — the agent-side twin of the app-side
+    `declaredScopes` gap fixed in `a1d912f` (task 7.3, previously "union_scope_v3_gap"
+    from an earlier phase, closed here rather than deferred again).
+
+    A v3 definition carries no top-level `metrics` or `scope`/`blocks` at all — every
+    section carries its own `metrics` (a list of `{metric, statistic}`/`{derived,
+    statistic}` items, the same shape a v1/v2 item uses) and its own `selection` (the
+    same shape a v1/v2 `scope_override` uses). The unmodified v1/v2 branch above reads
+    both from the top level and folds in nothing for a v3 definition, so it always
+    returns an empty union — a v3 run therefore requests zero metrics at any scope and
+    fails `NO_STATISTICS`, whose user-facing copy blames the customer's estate
+    (deallocated resources, metrics the resource type does not emit) for a failure that
+    is this pipeline's own, never the estate's.
+
+    Each section's own resource types are its `selection.resource_types` where the
+    section narrows the scope, and the Section_Catalogue entry's own
+    `needs_resource_types` where it does not — the same "empty means unconstrained,
+    fall back to what the entry actually needs" reading `union_scope` already gives an
+    empty `ScopeRules.resource_types`, since a section with no narrowing still needs to
+    key its own metrics against *something* rather than every resource type in the
+    catalogue.
+    """
+    from reporting_agent.compile.scope import scope_rules_from_plain, union_scope
+
+    section_catalogue = load_section_catalogue(loaded_catalog=catalog)
+
+    scopes: list[Any] = []
+    metrics_by_type: dict[str, set[str]] = {}
+
+    raw_sections = definition.get("sections")
+    if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, (str, bytes)):
+        return {}
+
+    for ordinal, section in enumerate(raw_sections):
+        if not isinstance(section, Mapping):
+            continue
+
+        section_type = section.get("type")
+        entry = (
+            section_catalogue.by_key(section_type)
+            if isinstance(section_type, str)
+            else None
+        )
+
+        selection = section.get("selection")
+        scope_rules = scope_rules_from_plain(
+            selection, at=f"sections.{ordinal}.selection"
+        )
+        scopes.append(scope_rules)
+
+        resource_types = scope_rules.resource_types or (
+            entry.needs_resource_types if entry is not None else ()
+        )
+        if not resource_types:
+            continue
+
+        items = section.get("metrics")
+        if not isinstance(items, Sequence) or isinstance(items, (str, bytes)):
+            continue
+        for resource_type in resource_types:
+            names = metrics_by_type.setdefault(resource_type, set())
+            for item in items:
+                if not isinstance(item, Mapping):
+                    continue
+                metric = item.get("metric")
+                if isinstance(metric, str) and metric:
+                    names.add(metric)
+                    continue
+                derived = item.get("derived")
+                if isinstance(derived, str) and derived:
+                    names.update(
+                        _derived_source_metrics(catalog, resource_type, derived)
+                    )
+
+    requested = union_scope(
+        scopes, metrics_by_resource_type=metrics_by_type
+    ).metrics_by_resource_type
+
+    canonical: dict[str, set[str]] = {}
+    for resource_type, names in requested.items():
+        canon_entry = catalog.for_resource_type(resource_type)
+        key = canon_entry.resource_type if canon_entry is not None else resource_type
         canonical.setdefault(key, set()).update(names)
     return {key: tuple(sorted(names)) for key, names in sorted(canonical.items())}
 
@@ -846,6 +948,7 @@ async def _document_phases(
     historical_source: _HistoricalSourceFromStore | None = None,
     front_matter: object | None = None,
     run_facts: object | None = None,
+    section_catalogue: object | None = None,
 ) -> AsyncIterator[Event]:
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
@@ -885,6 +988,7 @@ async def _document_phases(
         compile_document, definition, view=view, prose=prose,
         historical=historical_source,
         historical_selections=historical_selections,
+        catalogue=section_catalogue,
     )
     if block_count:
         yield steps.progress(
@@ -970,6 +1074,7 @@ async def _document_phases(
         historical=_historical_verify_inputs(historical_selections),
         front_matter=front_matter,
         run_facts=run_facts,
+        section_catalogue=section_catalogue,
     )
     yield steps.end(verify_step["id"])
 
@@ -1079,6 +1184,7 @@ async def _verify(
     historical: Mapping[str, historical_pass.HistoricalRunInfo] | None = None,
     front_matter: object | None = None,
     run_facts: object | None = None,
+    section_catalogue: object | None = None,
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -1150,6 +1256,7 @@ async def _verify(
             historical=historical or {},
             front_matter=front_matter,
             run_facts=run_facts,
+            section_catalogue=section_catalogue,
         )
     )
 

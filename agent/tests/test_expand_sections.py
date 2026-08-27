@@ -32,7 +32,12 @@ from reporting_agent.collect.snapshot import (
     ResourceSnapshot,
     SkuCapacity,
 )
-from reporting_agent.compile.sections import AuthoredMatch, SectionDrift, compute_section_drift, expand_sections
+from reporting_agent.compile.sections import (
+    AuthoredMatch,
+    SectionDrift,
+    compute_section_drift,
+    expand_sections,
+)
 from reporting_agent.compile.snapshot_view import SnapshotView, build_snapshot_view
 from reporting_agent.errors import CompileFailedError
 from snapshot_factory import (
@@ -969,54 +974,48 @@ class TestCompileDocumentSchemaVersionBranch:
         assert disks_heading.inlines[0].text == "Disks"
 
     def test_every_real_catalogue_entry_compiles_without_error(self) -> None:
-        """The regression guard for both fixes at once: every catalogue entry whose
-        expansion needs only a title and a static column list compiles through
-        `compile_document` with no resolved resources.
+        """The regression guard for both fixes at once, and now for a third (task
+        7.3): every catalogue entry compiles through `compile_document` with no
+        resolved resources — all fifteen, with no skip list, which is what Req 15.9
+        asks for.
 
-        Excludes `vm_utilization`, `historical_vm_utilization` and
-        `database_utilization` — a THIRD, separate, already-known gap distinct from
-        the two this task fixes: their expansions include `top_n_table` (needs
-        `columns` + `order_by`) and `historical_trend` (needs `metric` + `statistic`
-        + `lookback`), and the catalogue declares neither in static config. Unlike a
-        `heading`'s text or a `resource_table`'s columns, these need a per-run metric
-        selection threaded from the section's own `metrics`/`selection` into the
-        expansion — a design decision, not a data-shape fix, and out of scope here.
-        Recorded on a later task rather than silently excluded with no trace."""
+        `vm_utilization`, `historical_vm_utilization` and `database_utilization`
+        were excluded here until task 7.3: their `top_n_table`/`historical_trend`
+        expansions needed a per-run metric selection threaded from the section's own
+        `metrics`/`selection` into the expansion, which `compile/sections.py`'s
+        `_thread_metric_config` now does. `historical_vm_utilization` additionally
+        needs `lookback` on the section itself (task 7.3's own ruling: author-set,
+        no catalogue default, since it is a number the document prints and the
+        verifier independently re-derives)."""
         from reporting_agent.compile.blocks import compile_document
 
         catalogue = _make_catalogue()
         view = _make_view([])
-        needs_metric_selection_wiring = {
-            "vm_utilization",
-            "historical_vm_utilization",
-            "database_utilization",
-        }
 
         for entry in catalogue.entries:
-            if entry.key in needs_metric_selection_wiring:
-                continue
-
             metrics = (
                 [{"metric": "Percentage CPU", "statistic": "avg"}]
                 if entry.metric_bearing
                 else []
             )
-            definition = _make_v3_definition(sections=[
-                {
-                    "id": "sec",
-                    "type": entry.key,
-                    "position": 0,
-                    "selection": {
-                        "resource_types": [],
-                        "resource_groups": [],
-                        "tag_filters": [],
-                        "top_n": None,
-                        "sort": None,
-                    },
-                    "metrics": metrics,
-                    "presentation": "table_only",
+            section: dict[str, object] = {
+                "id": "sec",
+                "type": entry.key,
+                "position": 0,
+                "selection": {
+                    "resource_types": [],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                    "top_n": None,
+                    "sort": None,
                 },
-            ])
+                "metrics": metrics,
+                "presentation": "table_only",
+            }
+            if entry.key == "historical_vm_utilization":
+                section["lookback"] = 6
+
+            definition = _make_v3_definition(sections=[section])
 
             compiled = compile_document(definition, view=view, catalogue=catalogue)
 
@@ -1395,8 +1394,8 @@ class TestComputeSectionDrift:
         renders it as a real prose statement carrying a `DerivedCount` the
         verifier can independently re-derive — not just the pure function
         producing a plausible `SectionDrift` in isolation."""
-        from reporting_agent.compile.blocks import compile_document
         from reporting_agent.compile.ast import DerivedCount, Paragraph, Text
+        from reporting_agent.compile.blocks import compile_document
 
         catalogue = _make_catalogue()
         vm_ids = [
