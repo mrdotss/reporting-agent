@@ -45,7 +45,7 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 import { EnqueueRejectedError, enqueueRun } from "@/lib/actions/runs"
 import * as schema from "@/lib/db/schema"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
 
 let drizzleDb: NodePgDatabase<typeof schema> | undefined
@@ -80,8 +80,8 @@ const STORAGE = "Microsoft.Storage/storageAccounts"
 
 const JAKARTA = "Asia/Jakarta"
 
-/** A base definition the validator accepts — a real starter, reused. */
-const BASE = STARTER_TEMPLATES[0]!.definition
+/** A base definition the validator accepts — the dedicated v1 test fixture. */
+const BASE = V1_TEST_FIXTURE_DEFINITION
 
 function definitionWith(
   overrides: Partial<TemplateDefinition>

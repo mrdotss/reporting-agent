@@ -15,7 +15,7 @@ import {
 } from "vitest"
 
 import type { AgentInvokeContext, InvokeCommand } from "@/lib/aws/agentcore"
-import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
 import { withScratchSchema } from "@/test/db/scratch-schema"
 
@@ -213,7 +213,7 @@ const ENCRYPTION_KEY = Buffer.alloc(32, 9).toString("base64")
 const PERIOD = { start: "2026-07-01", end: "2026-07-31" } as const
 
 const FIXTURE_DEFINITION = {
-  ...STARTER_TEMPLATES[0]!.definition,
+  ...V1_TEST_FIXTURE_DEFINITION,
   period: { kind: "custom", start: PERIOD.start, end: PERIOD.end },
 } as const
 

@@ -53,7 +53,7 @@ import * as schema from "@/lib/db/schema"
 import { buildRunCreateBody, runCreateInputSchema } from "@/lib/runs/input"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
-import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
 
 let drizzleDb: NodePgDatabase<typeof schema> | null = null
@@ -69,8 +69,8 @@ const JAKARTA = "Asia/Jakarta"
 
 const savedEnv: Record<string, string | undefined> = {}
 
-/** The v1 starter, and the same definition migrated to v2. */
-const V1_DEFINITION = STARTER_TEMPLATES[0]!.definition
+/** The v1 fixture, and the same definition migrated to v2. */
+const V1_DEFINITION = V1_TEST_FIXTURE_DEFINITION
 const V2_DEFINITION = toSchemaVersion2(V1_DEFINITION)
 
 let ownerId = ""

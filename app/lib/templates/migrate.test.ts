@@ -16,7 +16,7 @@ import {
   needsSchemaVersion2Migration,
   toSchemaVersion2,
 } from "@/lib/templates/migrate"
-import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 
 /**
  * `lib/templates/migrate.ts` — the one-directional version-1-to-2 migration
@@ -204,16 +204,14 @@ describe("Requirement 13.12 — a migrated definition is saveable", () => {
     expect(pathsOf(toSchemaVersion2(before))).toEqual([])
   })
 
-  test.each(
-    STARTER_TEMPLATES.map(
-      (starter) => [starter.seededStarterKey, starter] as const
-    )
-  )(
-    "the %s starter migrates into a definition the validator accepts",
+  test.each([
+    ["v1_test_fixture", { seededStarterKey: "v1_test_fixture", definition: V1_TEST_FIXTURE_DEFINITION }] as const,
+  ])(
+    "the %s migrates into a definition the validator accepts",
     (_key, starter) => {
-      // The corpus this migration exists for: five stored version-1 definitions carrying
-      // `cover` blocks. A migrated definition the validator rejects is a template a consultant
-      // can open and cannot save.
+      // The corpus this migration exists for: stored version-1 definitions
+      // carrying `cover` blocks. A migrated definition the validator rejects
+      // is a template a consultant can open and cannot save.
       const definition = starter.definition as unknown as Record<
         string,
         unknown
@@ -231,7 +229,10 @@ describe("Requirement 13.12 — a migrated definition is saveable", () => {
   test("every starter carrying a cover block keeps its subtitle in the section", () => {
     // The half a "validates" assertion cannot see: a migration that dropped the config and
     // wrote an empty cover would validate perfectly and lose the consultant's subtitle.
-    const withSubtitle = STARTER_TEMPLATES.filter((starter) =>
+    const starters = [
+      { seededStarterKey: "v1_test_fixture", definition: V1_TEST_FIXTURE_DEFINITION },
+    ]
+    const withSubtitle = starters.filter((starter) =>
       (
         starter.definition as unknown as {
           blocks: { type: string; config?: Record<string, unknown> }[]

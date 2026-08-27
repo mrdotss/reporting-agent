@@ -339,9 +339,12 @@ does **not increase** the repository's lint finding count.
     - Suite: app 3289 passed / 0 failed / 0 skipped with a real Postgres (was 3260), typecheck clean except the one pre-existing error, lint unchanged at 13 problems
     - _Requirements: 20.1, 20.2, 20.3, 20.4, 20.5, 20.6_
 
-  - [ ] 3.13 Version-3 starter profiles
-    - Replace the three starters in `app/lib/templates/starters.ts` with v3 profiles, keeping the existing v1 starters valid so accounts seeded before this change still open
-    - `app/test/starters.static.test.ts` validates each in `mode: "run"` through the same `collectDefinitionIssues` every route handler uses
+  - [x] 3.13 Version-3 starter profiles
+    - Replaced the three v1 `blocks`-array starters in `app/lib/templates/starters.ts` with v3 `sections`-array profiles, each `type` a real key from `catalog/sections.v1.json` — cross-checked against the shipped catalogue by the new test file, not invented. Kept the same three names, the same three `seededStarterKey` values (unique, stable forever — `lib/templates/seed.ts` reads this array live at account-creation time, so this change affects only new accounts; an account seeded before this change has its v1 definitions permanently stored in the immutable `report_template_versions`, untouched by anything here)
+    - v3's analog of Requirement 10.5's "provenance chain": at least one section from `STARTER_DATA_SECTION_TYPES` and exactly one `coverage_and_verification`. There is no v3 narrative-section equivalent of `executive_summary`/`kpi_row` (confirmed the same catalogue gap task 3.12 found), so a v3 starter demonstrates data-to-record, not a narrative layer the catalogue does not yet offer
+    - `app/test/starters.static.test.ts` rewritten around `sections` rather than `blocks`/`row` — `flattenStarterBlocks`, `referencedMetricKeys` and the row-traversal checks had no v3 analog and were replaced with a section-shape equivalent, plus a new check that every starter's section types exist in the real shipped catalogue
+    - **Ripple effects found and fixed, not anticipated in advance**: five integration tests (`run-form-enqueue-round-trip`, `report-run-end-to-end`, `enqueue-pinning`, `run-wiring`) used `STARTER_TEMPLATES[0].definition` as a rich v1 test fixture for the v1/v2 enqueue-and-run path, completely independent of what the starters actually are — silently broken the moment starter 0 became v3. Extracted a dedicated `V1_TEST_FIXTURE_DEFINITION` (carrying a `cover` block, since `migrate.test.ts`'s cover-lifting assertions needed one) so these tests no longer couple to what ships as a starter. `catalog.test.ts`'s Requirement 10.8 check crashed on `Object.entries(definition.metrics)` for a v3 starter (no top-level `metrics` field at v3 at all) — guarded to v1/v2 only rather than skipped outright, so a future v1/v2 starter re-added stays checked
+    - Suite: app 3281 passed / 0 failed / 0 skipped with a real Postgres (was 3289 — net change from removing v1-shape tests and adding v3-shape ones), typecheck clean except the one pre-existing error, lint unchanged at 13 problems
     - _Requirements: 20.9_
 
   - [ ] 3.14 The rename

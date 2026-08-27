@@ -1,12 +1,30 @@
 /**
- * The three starter template definitions, versioned in the repository and
- * reviewed as code (Requirements 10.1, 10.3, 10.5, 10.8).
+ * The three starter profile definitions, versioned in the repository and
+ * reviewed as code (Requirements 10.1, 10.3, 10.5, 10.8, 20.9).
  *
  * **Pure, and deliberately not `server-only`.** These are plain values: no
  * clock, no connection, no secret. `lib/templates/seed.ts` writes them at
  * account creation, `app/test/starters.static.test.ts` validates them at build
  * time, and the wizard may render one as a preview without pulling a server
  * module into a client bundle.
+ *
+ * ## v3, not v1 (task 3.12/3.13)
+ *
+ * These were three `blocks`-array definitions before this task. They are now
+ * `sections`-array v3 profiles, each `type` a real key from
+ * `catalog/sections.v1.json` — not invented here, cross-checked against the
+ * shipped catalogue by `starters.static.test.ts` so a future catalogue rename
+ * fails the build rather than shipping a starter that references a section
+ * type that no longer exists.
+ *
+ * **Existing seeded accounts are unaffected.** `lib/templates/seed.ts` reads
+ * this array live, at account-creation time — an account seeded before this
+ * change already has its v1 definitions permanently stored in
+ * `report_template_versions`, which is immutable, and nothing in this file's
+ * change touches a stored row. The v1 validator path this repository already
+ * carries is what keeps those existing definitions openable in the wizard, and
+ * this file changing what a *new* account seeds does not need to, and does
+ * not, do anything to preserve that.
  *
  * ## Why they are code rather than seed SQL
  *
@@ -22,101 +40,68 @@
  *
  * ## What every starter carries, and why
  *
- * Requirement 10.3 — the period is one of the five **relative** specifications
- * and never `custom`, so a starter that shipped in July still resolves to a
- * meaningful window in November with no edit. A `custom` starter would be a
- * placeholder pretending to be an example, and it would start failing the
- * enqueue's 1–31-local-day bound the moment its dates aged out.
+ * Requirement 10.3 — the period is one of the five **relative**
+ * specifications and never `custom`, so a starter that shipped in July still
+ * resolves to a meaningful window in November with no edit.
  *
- * Requirement 10.5 — each is composed from at least one block of
- * {@link STARTER_DATA_BLOCK_TYPES}, at least one of
- * {@link STARTER_NARRATIVE_BLOCK_TYPES}, and exactly one `verification_record`.
- * That combination is not decoration: it is the provenance chain end to end in
- * one document. A data block emits figures the compiler traced to snapshot
- * paths, a narrative block emits model prose the verifier will refuse to let
- * carry an unmatched numeral, and the `verification_record` states the snapshot
- * those figures came from. A starter missing any of the three would demonstrate
- * a report rather than a *provable* report.
+ * The v3 analog of Requirement 10.5's "provenance chain end to end" is: at
+ * least one section from {@link STARTER_DATA_SECTION_TYPES} (a section that
+ * emits real figures or facts from the snapshot) and exactly one
+ * `coverage_and_verification` — the section that states the snapshot those
+ * figures came from. `executive_summary`/`kpi_row`-style narrative has no v3
+ * section equivalent at all (see `lib/profiles/lift.ts`'s own note on the same
+ * finding, from task 3.12) — a v3 starter demonstrates the data-to-record
+ * chain, not a narrative layer the catalogue does not yet offer.
  *
- * ## They are three genuinely different reports
- *
- * Not one definition renamed three times, because the point of shipping three
- * is that a first-time user sees what the palette can express:
+ * ## They are three genuinely different profiles
  *
  * | starter | period | shape |
  * |---|---|---|
- * | **Monthly utilization** | `last_full_month` | broad and periodic — KPIs, a chart row, the full resource table, a top-10 ranking, gaps |
- * | **Capacity planning** | `last_30d` | decision-oriented — `capacity_vs_usage` twice, a busiest-ten and a quietest-ten ranking, the p95 distribution |
- * | **Executive summary** | `last_full_month` | one page, prose-forward — cover, prose, three KPIs, the record |
- *
- * ## The metric selections are consistent with the blocks that read them
- *
- * Every `metric` and `derived` name below is one the Metric_Catalog
- * (`agent/src/reporting_agent/catalog/metrics.v1.json`) declares for
- * `Microsoft.Compute/virtualMachines`, and every statistic is one that catalog
- * entry supports. Three consequences that are easy to get wrong and would each
- * turn a starter into a failed run:
- *
- *   * **A percentile entry carries its estimator label and fidelity tier**
- *     (Requirements 5.7, 5.8). `p95` from platform metrics is computed from a
- *     fixed 0–100 histogram fed with hourly interval averages, so the estimator
- *     is `histogram_sketch_pt1h_interval_average` and the tier is `baseline`.
- *     The spelling is the collector's own, from
- *     `collect/snapshot.py`'s `_percentile_estimator`; a starter that invented
- *     a label would produce a figure the formatter has no entry for.
- *   * **`memory_used_pct` is derived, so its source metric travels with it.**
- *     The catalog declares `Available Memory Bytes` and the `MemoryGB` SKU
- *     capability as its sources, and
- *     `validateMetricSelectionAgainstCatalog` requires that source metric to be
- *     selected for the same resource type — so every starter naming
- *     `memory_used_pct` also names `Available Memory Bytes`.
- *   * **A block references only what its definition collects** (Requirement
- *     5.3). Each `kpi_row`, `resource_table`, `top_n_table`, chart and
- *     `capacity_vs_usage` config below names `(metric | derived, statistic)`
- *     pairs drawn from that same definition's `metrics`, and
- *     `starters.static.test.ts` asserts that containment directly rather than
- *     leaving it to a reader to check by eye.
+ * | **Monthly utilization** | `last_full_month` | broad and periodic — subscription overview, resource groups, the full VM inventory, VM utilization, coverage |
+ * | **Capacity planning** | `last_30d` | narrower — VM utilization only, scoped tighter, over a rolling window, coverage |
+ * | **Executive summary** | `last_full_month` | the smallest legitimate profile — one inventory section and coverage, for a reader who wants the fewest pages |
  *
  * ## `seededStarterKey` is a persisted identifier
  *
- * The three keys are the `report_templates.seeded_starter_key` values, and they
- * are the idempotency key of `UNIQUE (user_id, seeded_starter_key)`. They are
- * **stable forever**: renaming one would make an existing user's seeded row
- * invisible to the seeder and re-insert a duplicate under the new spelling.
- * They are deliberately not derived from the display name, which is a label a
- * consultant may edit (Requirement 10.7) while the key must not move.
+ * The three keys are the `report_templates.seeded_starter_key` values, and
+ * they are the idempotency key of `UNIQUE (user_id, seeded_starter_key)`. They
+ * are **stable forever**: renaming one would make an existing user's seeded
+ * row invisible to the seeder and re-insert a duplicate under the new
+ * spelling. Unchanged by this task.
  */
 
-import type { BlockType } from "@/lib/templates/blocks"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 
-// --- The composition rule (Requirement 10.5) --------------------------------
+// --- The composition rule, v3 (Requirement 10.5, applied to sections) -------
 
 /**
- * The six block types that emit figures from the snapshot. Requirement 10.5
- * requires at least one of them in every starter.
+ * Section types that emit real figures or facts from the snapshot.
+ * Requirement 10.5's "provenance chain" requires at least one per starter.
  *
  * Declared as a value rather than restated in the guard, so the rule and the
- * assertion share one source.
+ * assertion share one source — the same convention
+ * `STARTER_DATA_BLOCK_TYPES` used at v1.
  */
-export const STARTER_DATA_BLOCK_TYPES = [
-  "kpi_row",
-  "resource_table",
-  "top_n_table",
-  "timeseries_chart",
-  "distribution_chart",
-  "capacity_vs_usage",
-] as const satisfies readonly BlockType[]
+export const STARTER_DATA_SECTION_TYPES = [
+  "azure_subscription",
+  "resource_groups",
+  "virtual_network",
+  "virtual_machines",
+  "public_ip_addresses",
+  "network_security_groups",
+  "reservations",
+  "vm_utilization",
+  "historical_vm_utilization",
+  "database_utilization",
+  "app_service_and_storage",
+  "backup_report",
+  "incident_report",
+  "recommendations",
+] as const
 
-/** The two block types that carry prose. At least one per starter. */
-export const STARTER_NARRATIVE_BLOCK_TYPES = [
-  "executive_summary",
-  "rich_text",
-] as const satisfies readonly BlockType[]
-
-/** Exactly one per starter — the block that names the snapshot behind the figures. */
-export const STARTER_RECORD_BLOCK_TYPE =
-  "verification_record" satisfies BlockType
+/** Exactly one per starter — the section that names the snapshot behind the
+ * figures. The v3 successor to `STARTER_RECORD_BLOCK_TYPE`. */
+export const STARTER_RECORD_SECTION_TYPE = "coverage_and_verification"
 
 // --- The one resource type these starters scope to --------------------------
 
@@ -127,88 +112,10 @@ export const STARTER_RECORD_BLOCK_TYPE =
  */
 const VIRTUAL_MACHINES = "Microsoft.Compute/virtualMachines"
 
-// --- Metric selection fragments ---------------------------------------------
+// --- Shared shapes ------------------------------------------------------------
 
-/**
- * The catalog's estimator label for a platform-metric percentile at the base
- * `PT1H` grain (Requirement 5.7).
- *
- * Composed by the collector as `<sketch kind>_<grain>_<interval statistic>`:
- * a fixed 0–100 histogram, fed from `PT1H` intervals, each folded as that
- * interval's own average. Restated here as a constant rather than spelled at
- * each use site, so the three starters cannot disagree about it.
- */
-export const BASELINE_PERCENTILE_ESTIMATOR =
-  "histogram_sketch_pt1h_interval_average"
-
-/** Platform metrics only — no Azure Monitor Agent, no Data Collection Rule. */
-export const BASELINE_FIDELITY_TIER = "baseline"
-
-const CPU_AVG = { metric: "Percentage CPU", statistic: "avg" } as const
-const CPU_MIN = { metric: "Percentage CPU", statistic: "min" } as const
-const CPU_MAX = { metric: "Percentage CPU", statistic: "max" } as const
-
-/**
- * The p95 entry, carrying both fields Requirement 5.8 makes mandatory. Written
- * once and shared, because an entry that named `p95` without them is a
- * rejection and a second hand-typed copy is where that happens.
- */
-const CPU_P95 = {
-  metric: "Percentage CPU",
-  statistic: "p95",
-  estimator: BASELINE_PERCENTILE_ESTIMATOR,
-  fidelity_tier: BASELINE_FIDELITY_TIER,
-} as const
-
-const MEMORY_BYTES_AVG = {
-  metric: "Available Memory Bytes",
-  statistic: "avg",
-} as const
-const MEMORY_BYTES_MIN = {
-  metric: "Available Memory Bytes",
-  statistic: "min",
-} as const
-
-/** Host-observed, and the catalog says so — see `memory_used_pct`'s `observation`. */
-const MEMORY_USED_PCT_AVG = {
-  derived: "memory_used_pct",
-  statistic: "avg",
-} as const
-const MEMORY_USED_PCT_MAX = {
-  derived: "memory_used_pct",
-  statistic: "max",
-} as const
-
-/** NIC-level byte counters. **Not** billable egress — see `azure-integration.md`. */
-const NETWORK_IN_AVG = { metric: "Network In Total", statistic: "avg" } as const
-const NETWORK_OUT_AVG = {
-  metric: "Network Out Total",
-  statistic: "avg",
-} as const
-
-const DISK_READ_AVG = { metric: "Disk Read Bytes", statistic: "avg" } as const
-const DISK_WRITE_AVG = { metric: "Disk Write Bytes", statistic: "avg" } as const
-
-/** A `(metric | derived, statistic)` reference, as a block config carries one. */
-function ref(
-  item: Readonly<{ metric?: string; derived?: string; statistic: string }>
-): Readonly<{ metric?: string; derived?: string; statistic: string }> {
-  return item.metric === undefined
-    ? { derived: item.derived, statistic: item.statistic }
-    : { metric: item.metric, statistic: item.statistic }
-}
-
-// --- Shared design ----------------------------------------------------------
-
-/**
- * Every field `designSchema` declares, present. The presets differ per starter
- * below; everything else is the same restrained default — two decimal places,
- * grouped thousands, hairline tables, A4.
- *
- * `accent_color` is the preset's teal, written as one opaque value: the schema
- * treats it as a string it does not interpret, and the renderer is the only
- * thing entitled to give it meaning.
- */
+/** Every field `designSchema` declares, present. Restrained defaults;
+ * presets differ per starter below. */
 function design(
   preset: TemplateDefinition["design"]["preset"],
   overrides: Partial<TemplateDefinition["design"]> = {}
@@ -226,16 +133,29 @@ function design(
   }
 }
 
-/**
- * The template default scope: every virtual machine the connected subscription
- * exposes, unnarrowed.
- *
- * All five dimensions are **present** — an empty array or `null`, never an
- * absent key — because that is the shape `scopeSpecSchema` requires and the
- * shape the mirrored Python validator reads. A key this module omitted would be
- * a key one side defaults and the other rejects.
- */
-function allVirtualMachines(): TemplateDefinition["scope"] {
+/** v3's `front_matter` at its own required minimum — every field the
+ * validator requires present, filled honestly rather than guessed at
+ * per-starter. */
+function frontMatter(subtitle: string): Record<string, unknown> {
+  return {
+    cover: { subtitle },
+    document_control: {
+      document_name: subtitle,
+      document_number_pattern: "RPT-{year}{month}-{run}",
+      approvers: [
+        { role: "author", name: "" },
+        { role: "reviewer", name: "" },
+        { role: "approver", name: "" },
+        { role: "recipient", name: "" },
+      ],
+    },
+    toc: { enabled: true, max_level: 3 },
+  }
+}
+
+/** Every VM the connected subscription exposes, unnarrowed — all five
+ * dimensions present as the empty value `scopeSpecSchema` requires. */
+function allVirtualMachines(): Record<string, unknown> {
   return {
     resource_types: [VIRTUAL_MACHINES],
     tag_filters: [],
@@ -245,390 +165,137 @@ function allVirtualMachines(): TemplateDefinition["scope"] {
   }
 }
 
-/**
- * A per-block narrowing to the top `count` virtual machines by one
- * `(metric, statistic)` pair (Requirement 3.2).
- *
- * `direction` is the scope's own `sort`, which is what actually orders the
- * ranking — `top_n_table`'s `order_by_direction` config field names the column
- * the table highlights as the reason for that order and does not re-derive it.
- */
-function topVirtualMachines(
-  count: number,
-  metric: string,
-  statistic: string,
-  direction: "descending" | "ascending"
-): TemplateDefinition["scope"] {
+/** No resource-type constraint at all — the subscription-wide sections
+ * (`azure_subscription`, `resource_groups`) declare no
+ * `needs_resource_types`, so an unconstrained selection is what "match
+ * everything relevant" means for them. */
+function unconstrained(): Record<string, unknown> {
   return {
-    resource_types: [VIRTUAL_MACHINES],
+    resource_types: [],
     tag_filters: [],
     resource_groups: [],
-    top_n: { count, metric, statistic },
-    sort: direction,
+    top_n: null,
+    sort: null,
+  }
+}
+
+let sectionCounter = 0
+
+/** One authored section entry. `position` is authored freshly per starter —
+ * every entry below is `position: "free"` in the catalogue, so the number is
+ * this starter's own ordering choice, not a catalogue-declared one. */
+function section(
+  type: string,
+  position: number,
+  selection: Record<string, unknown>
+): Record<string, unknown> {
+  sectionCounter += 1
+  return {
+    id: `sec_${sectionCounter}`,
+    type,
+    position,
+    selection,
+    metrics: [],
+    presentation: "chart_and_table",
   }
 }
 
 // --- Starter 1 — Monthly utilization ----------------------------------------
 
 /**
- * The broad periodic report: what every machine did last month, with the
- * ranking a consultant looks at first and the gaps that qualify it.
+ * The broad periodic report: the subscription's own inventory, its resource
+ * groups, every VM and its utilization, closed by coverage.
  */
 const MONTHLY_UTILIZATION: TemplateDefinition = {
-  schema_version: 1,
+  schema_version: 3,
+  provider: "azure",
   identity: {
     name: "Monthly utilization",
     description:
-      "CPU, memory, disk and network for every virtual machine in scope over " +
-      "the last full calendar month, with a top-ten ranking by average CPU " +
-      "and every recorded collection gap.",
+      "Subscription inventory, resource groups and virtual machine " +
+      "utilization for the last full calendar month, closed with the " +
+      "coverage and verification record.",
     report_title: "Infrastructure utilization — monthly review",
+    language: "en",
   },
-  scope: allVirtualMachines(),
+  sections: [
+    section("azure_subscription", 0, unconstrained()),
+    section("resource_groups", 1, unconstrained()),
+    section("virtual_machines", 2, allVirtualMachines()),
+    section("vm_utilization", 3, allVirtualMachines()),
+    section("coverage_and_verification", 4, unconstrained()),
+  ],
   // Requirement 10.3 — relative, so this starter runs unedited in any month.
   period: { kind: "last_full_month" },
-  metrics: {
-    [VIRTUAL_MACHINES]: [
-      CPU_AVG,
-      CPU_MIN,
-      CPU_MAX,
-      CPU_P95,
-      MEMORY_BYTES_AVG,
-      MEMORY_BYTES_MIN,
-      MEMORY_USED_PCT_AVG,
-      NETWORK_IN_AVG,
-      NETWORK_OUT_AVG,
-      DISK_READ_AVG,
-      DISK_WRITE_AVG,
-    ],
-  },
-  blocks: [
-    {
-      id: "cover",
-      type: "cover",
-      config: { subtitle: "Monthly utilization review" },
-    },
-    {
-      id: "summary-heading",
-      type: "heading",
-      config: { level: 1, text: "Summary" },
-    },
-    // Model prose. It may characterize the month; it may not state a figure the
-    // compiler did not place, and the verifier deletes the report if it does.
-    { id: "summary-prose", type: "executive_summary", config: {} },
-    {
-      id: "kpis",
-      type: "kpi_row",
-      config: {
-        caption: "Fleet averages for the period",
-        show_fidelity: true,
-        metrics: [
-          ref(CPU_AVG),
-          ref(CPU_P95),
-          ref(MEMORY_USED_PCT_AVG),
-          ref(NETWORK_OUT_AVG),
-        ],
-      },
-    },
-    {
-      id: "trend-heading",
-      type: "heading",
-      config: { level: 1, text: "How utilization moved" },
-    },
-    // One level of nesting: a row of two charts, each a block in its own column.
-    {
-      id: "trend-row",
-      type: "row",
-      columns: [
-        [
-          {
-            id: "cpu-over-time",
-            type: "timeseries_chart",
-            config: {
-              caption: "Average CPU per local day",
-              metrics: [ref(CPU_AVG), ref(MEMORY_USED_PCT_AVG)],
-            },
-          },
-        ],
-        [
-          {
-            id: "cpu-distribution",
-            type: "distribution_chart",
-            config: {
-              caption: "Distribution of CPU across the fleet",
-              metrics: [ref(CPU_AVG)],
-            },
-          },
-        ],
-      ],
-    },
-    {
-      id: "fleet-heading",
-      type: "heading",
-      config: { level: 1, text: "Every machine in scope" },
-    },
-    {
-      id: "fleet-table",
-      type: "resource_table",
-      config: {
-        caption: "Per-machine utilization",
-        show_fidelity: true,
-        columns: [
-          ref(CPU_AVG),
-          ref(CPU_MAX),
-          ref(CPU_P95),
-          ref(MEMORY_USED_PCT_AVG),
-          ref(DISK_READ_AVG),
-          ref(DISK_WRITE_AVG),
-        ],
-      },
-    },
-    {
-      id: "busiest-ten",
-      type: "top_n_table",
-      config: {
-        caption: "Top ten by average CPU",
-        show_fidelity: true,
-        order_by: ref(CPU_AVG),
-        order_by_direction: "descending",
-        columns: [ref(CPU_AVG), ref(CPU_P95), ref(MEMORY_USED_PCT_AVG)],
-      },
-      scope_override: topVirtualMachines(
-        10,
-        "Percentage CPU",
-        "avg",
-        "descending"
-      ),
-    },
-    {
-      id: "gaps",
-      type: "gaps_and_coverage",
-      config: { caption: "What could not be collected" },
-    },
-    { id: "record-break", type: "page_break", config: {} },
-    {
-      id: "record",
-      type: STARTER_RECORD_BLOCK_TYPE,
-      config: { caption: "Collection record" },
-    },
-    { id: "methodology", type: "appendix_methodology", config: {} },
-  ],
   design: design("editorial"),
-}
+  front_matter: frontMatter("Monthly utilization review"),
+} as unknown as TemplateDefinition
 
 // --- Starter 2 — Capacity planning ------------------------------------------
 
 /**
- * The right-sizing report. Leans on `capacity_vs_usage` and two rankings —
- * busiest and quietest — because those are the two ends a resize decision is
- * made from, and on p95 rather than the average, since a mean hides the spikes
- * that decide whether a machine can be shrunk.
- *
- * The p95 figures are `baseline`-tier estimates and say so wherever they
- * appear: the estimator label travels inside the figure, so the document is
- * structurally incapable of printing a bare "p95".
+ * Narrower and rolling: only utilization, over 30 days rather than a
+ * calendar month, for a right-sizing conversation rather than a periodic one.
  */
 const CAPACITY_PLANNING: TemplateDefinition = {
-  schema_version: 1,
+  schema_version: 3,
+  provider: "azure",
   identity: {
     name: "Capacity planning",
     description:
-      "SKU capacity against observed usage over the last 30 local days, with " +
-      "the busiest and quietest ten machines by estimated p95 CPU, for " +
-      "right-sizing decisions.",
+      "Virtual machine utilization over the last 30 local days, for a " +
+      "right-sizing conversation, closed with the coverage and " +
+      "verification record.",
     report_title: "Capacity and right-sizing review",
+    language: "en",
   },
-  scope: allVirtualMachines(),
-  period: { kind: "last_30d" },
-  metrics: {
-    [VIRTUAL_MACHINES]: [
-      CPU_AVG,
-      CPU_MAX,
-      CPU_P95,
-      MEMORY_BYTES_AVG,
-      MEMORY_BYTES_MIN,
-      MEMORY_USED_PCT_AVG,
-      MEMORY_USED_PCT_MAX,
-    ],
-  },
-  blocks: [
-    {
-      id: "cover",
-      type: "cover",
-      config: { subtitle: "Capacity and right-sizing" },
-    },
-    {
-      id: "method-heading",
-      type: "heading",
-      config: { level: 1, text: "How to read this report" },
-    },
-    // Static prose, authored here and carrying no figure — Requirement 6.6.
-    // Deliberately a `rich_text` rather than an `executive_summary`: this
-    // paragraph is a fixed methodological caveat, not a per-run narration, so
-    // it should be identical in every render.
-    {
-      id: "method-note",
-      type: "rich_text",
-      config: {
-        text:
-          "Percentile figures in this report are estimated from hourly " +
-          "platform metrics and are labelled as such wherever they appear. " +
-          "Memory utilization is host-observed and typically reads a little " +
-          "below what the guest operating system reports. Both are exact " +
-          "enough to size a machine and are stated with their derivation so a " +
-          "reader can judge them.",
-      },
-    },
-    {
-      id: "headroom-heading",
-      type: "heading",
-      config: { level: 1, text: "Capacity against usage" },
-    },
-    {
-      id: "cpu-headroom",
-      type: "capacity_vs_usage",
-      config: {
-        caption: "vCPU capacity against observed CPU",
-        show_fidelity: true,
-        capacity_metric: { sku_capability: "vCPUsAvailable" },
-        usage_metric: ref(CPU_P95),
-      },
-    },
-    {
-      id: "memory-headroom",
-      type: "capacity_vs_usage",
-      config: {
-        caption: "Memory capacity against observed usage",
-        show_fidelity: true,
-        capacity_metric: { sku_capability: "MemoryGB" },
-        usage_metric: ref(MEMORY_USED_PCT_MAX),
-      },
-    },
-    {
-      id: "ranking-heading",
-      type: "heading",
-      config: { level: 1, text: "The two ends of the fleet" },
-    },
-    {
-      id: "busiest-ten",
-      type: "top_n_table",
-      config: {
-        caption: "Busiest ten by estimated p95 CPU",
-        show_fidelity: true,
-        order_by: ref(CPU_P95),
-        order_by_direction: "descending",
-        columns: [ref(CPU_P95), ref(CPU_MAX), ref(MEMORY_USED_PCT_MAX)],
-      },
-      scope_override: topVirtualMachines(
-        10,
-        "Percentage CPU",
-        "p95",
-        "descending"
-      ),
-    },
-    {
-      id: "quietest-ten",
-      type: "top_n_table",
-      config: {
-        caption: "Quietest ten by estimated p95 CPU — the resize candidates",
-        show_fidelity: true,
-        order_by: ref(CPU_P95),
-        order_by_direction: "ascending",
-        columns: [ref(CPU_P95), ref(CPU_AVG), ref(MEMORY_USED_PCT_AVG)],
-      },
-      scope_override: topVirtualMachines(
-        10,
-        "Percentage CPU",
-        "p95",
-        "ascending"
-      ),
-    },
-    {
-      id: "p95-distribution",
-      type: "distribution_chart",
-      config: {
-        caption: "Where the fleet sits on estimated p95 CPU",
-        metrics: [ref(CPU_P95)],
-      },
-    },
-    {
-      id: "gaps",
-      type: "gaps_and_coverage",
-      config: { caption: "Machines this analysis could not cover" },
-    },
-    {
-      id: "record",
-      type: STARTER_RECORD_BLOCK_TYPE,
-      config: { caption: "Collection record" },
-    },
-    { id: "methodology", type: "appendix_methodology", config: {} },
+  sections: [
+    section("vm_utilization", 0, allVirtualMachines()),
+    section("coverage_and_verification", 1, unconstrained()),
   ],
+  period: { kind: "last_30d" },
   design: design("technical", { table_style: "banded", density: "compact" }),
-}
+  front_matter: frontMatter("Capacity and right-sizing"),
+} as unknown as TemplateDefinition
 
 // --- Starter 3 — Executive summary ------------------------------------------
 
 /**
- * One page for someone who will not read the other two. Prose first, three
- * figures, and the record that makes those three figures checkable.
- *
- * No resource table and no ranking on purpose: this starter exists to show that
- * a short, prose-forward report is a legitimate shape, and a per-machine table
- * would make it the monthly report with fewer columns.
+ * The smallest legitimate profile: one inventory section and coverage, for a
+ * reader who wants the fewest pages. No utilization section on purpose — this
+ * starter demonstrates that a minimal profile is a legitimate shape, and
+ * adding a utilization section would make it the monthly report with one
+ * fewer inventory page.
  */
 const EXECUTIVE_SUMMARY: TemplateDefinition = {
-  schema_version: 1,
+  schema_version: 3,
+  provider: "azure",
   identity: {
     name: "Executive summary",
     description:
-      "A single page for the last full calendar month: narrative first, three " +
-      "headline figures, and the snapshot record those figures trace to.",
+      "A subscription-level inventory summary for the last full calendar " +
+      "month, closed with the coverage and verification record.",
     report_title: "Infrastructure utilization — executive summary",
+    language: "en",
   },
-  scope: allVirtualMachines(),
-  period: { kind: "last_full_month" },
-  metrics: {
-    [VIRTUAL_MACHINES]: [
-      CPU_AVG,
-      CPU_P95,
-      MEMORY_BYTES_AVG,
-      MEMORY_USED_PCT_AVG,
-    ],
-  },
-  blocks: [
-    { id: "cover", type: "cover", config: { subtitle: "Executive summary" } },
-    {
-      id: "summary-heading",
-      type: "heading",
-      config: { level: 1, text: "The month in one paragraph" },
-    },
-    { id: "summary-prose", type: "executive_summary", config: {} },
-    {
-      id: "kpis",
-      type: "kpi_row",
-      config: {
-        caption: "Headline figures",
-        show_fidelity: true,
-        metrics: [ref(CPU_AVG), ref(CPU_P95), ref(MEMORY_USED_PCT_AVG)],
-      },
-    },
-    {
-      id: "record",
-      type: STARTER_RECORD_BLOCK_TYPE,
-      config: { caption: "Where these figures came from" },
-    },
+  sections: [
+    section("azure_subscription", 0, unconstrained()),
+    section("coverage_and_verification", 1, unconstrained()),
   ],
+  period: { kind: "last_full_month" },
   design: design("minimal", { table_style: "hairline", density: "relaxed" }),
-}
+  front_matter: frontMatter("Executive summary"),
+} as unknown as TemplateDefinition
 
 // --- The declared set -------------------------------------------------------
 
 /**
  * One starter: its persisted `seeded_starter_key` and its definition.
  *
- * `name` and `description` are read off the definition's own `identity` rather
- * than being declared a second time, so the `report_templates` row and the
- * definition it pins cannot disagree about what the template is called.
+ * `name` and `description` are read off the definition's own `identity`
+ * rather than being declared a second time, so the `report_templates` row
+ * and the definition it pins cannot disagree about what the template is
+ * called.
  */
 export type StarterTemplate = {
   /**
@@ -643,9 +310,9 @@ export type StarterTemplate = {
 /**
  * Exactly three (Requirement 10.1), in the order they are seeded and listed.
  *
- * One array read by the seeder **and** by `starters.static.test.ts`, so a fourth
- * starter added here is seeded and validated in the same change — a second list
- * is how a starter comes to be written and never checked.
+ * One array read by the seeder **and** by `starters.static.test.ts`, so a
+ * fourth starter added here is seeded and validated in the same change — a
+ * second list is how a starter comes to be written and never checked.
  */
 export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
   { seededStarterKey: "monthly_utilization", definition: MONTHLY_UTILIZATION },
@@ -661,94 +328,107 @@ export const STARTER_KEYS: readonly string[] = STARTER_TEMPLATES.map(
 /** Requirement 10.1 — three, asserted as a value the guard can read. */
 export const STARTER_TEMPLATE_COUNT = 3
 
-/**
- * Every block in a starter, flattened through row columns in document order.
- *
- * Exported because both the composition rule (Requirement 10.5) and the
- * unique-id assertion need the same traversal, and because a row's children are
- * exactly the blocks a naive `definition.blocks.map(…)` misses.
- */
-export function flattenStarterBlocks(
+/** Every section entry in a v3 starter's `sections` array — `TemplateDefinition`
+ * types this as the v1/v2 `blocks` shape, so this reads it defensively as
+ * `unknown` narrowed to the shape a v3 profile actually carries, the same
+ * pattern `lib/profiles/wizard.ts` uses throughout. */
+export function starterSections(
   definition: TemplateDefinition
-): readonly { readonly id: string; readonly type: BlockType }[] {
-  const flattened: { id: string; type: BlockType }[] = []
-
-  for (const block of definition.blocks) {
-    flattened.push({ id: block.id, type: block.type })
-    if (block.type !== "row") continue
-    for (const column of block.columns) {
-      for (const child of column) {
-        flattened.push({ id: child.id, type: child.type })
-      }
-    }
-  }
-
-  return flattened
+): readonly { readonly id: string; readonly type: string }[] {
+  const raw = (definition as unknown as { sections?: unknown }).sections
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter(
+      (entry): entry is { id: string; type: string } =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as Record<string, unknown>).id === "string" &&
+        typeof (entry as Record<string, unknown>).type === "string"
+    )
+    .map((entry) => ({ id: entry.id, type: entry.type }))
 }
 
+// --- A v1 fixture, for tests that need one independent of what starters are -
+
 /**
- * Every `(metric | derived, statistic)` pair a starter's blocks reference,
- * as `"<metric|derived>|<statistic>"` keys.
+ * A self-contained, rich `schema_version` 1 definition — **not** one of the
+ * three seeded starters, which are v3 as of task 3.13.
  *
- * Requirement 5.3's containment check, in the one place that can perform it
- * cheaply: a block config's references are opaque to `definition.ts` (which
- * validates field *names*, not the shapes inside them), so the guard reads them
- * through this function and compares against the definition's own `metrics`.
+ * Several integration tests (`test/db/run-form-enqueue-round-trip`,
+ * `report-run-end-to-end`, `enqueue-pinning`, `run-wiring`) exercise the
+ * v1/v2 enqueue-and-run path and need a real, complex v1 definition to do it
+ * with — a need that has nothing to do with what the seeded starters
+ * currently are, and coupling it to `STARTER_TEMPLATES[0]` is exactly what
+ * broke when this task changed that entry to v3. This is the extracted,
+ * dedicated fixture those tests import instead.
  */
-export function referencedMetricKeys(
-  definition: TemplateDefinition
-): ReadonlySet<string> {
-  const keys = new Set<string>()
-
-  const collect = (value: unknown): void => {
-    if (Array.isArray(value)) {
-      for (const item of value) collect(item)
-      return
-    }
-    if (typeof value !== "object" || value === null) return
-
-    const record = value as Record<string, unknown>
-    const name =
-      typeof record.metric === "string"
-        ? record.metric
-        : typeof record.derived === "string"
-          ? record.derived
-          : undefined
-
-    if (name !== undefined && typeof record.statistic === "string") {
-      keys.add(`${name}|${record.statistic}`)
-      return
-    }
-
-    for (const nested of Object.values(record)) collect(nested)
-  }
-
-  for (const block of definition.blocks) {
-    if (block.type === "row") {
-      for (const column of block.columns) {
-        for (const child of column) collect(child.config)
-      }
-      continue
-    }
-    collect(block.config)
-  }
-
-  return keys
-}
-
-/** The `(metric | derived, statistic)` pairs a starter's `metrics` selects. */
-export function selectedMetricKeys(
-  definition: TemplateDefinition
-): ReadonlySet<string> {
-  const keys = new Set<string>()
-
-  for (const items of Object.values(definition.metrics)) {
-    for (const item of items) {
-      const name = item.metric ?? item.derived
-      if (name === undefined) continue
-      keys.add(`${name}|${item.statistic}`)
-    }
-  }
-
-  return keys
+export const V1_TEST_FIXTURE_DEFINITION: TemplateDefinition = {
+  schema_version: 1,
+  identity: {
+    name: "V1 fixture profile",
+    description: "A rich v1 definition for integration tests exercising the enqueue-and-run path.",
+    report_title: "V1 fixture profile",
+  },
+  scope: {
+    resource_types: [VIRTUAL_MACHINES],
+    tag_filters: [],
+    resource_groups: [],
+    top_n: null,
+    sort: null,
+  },
+  period: { kind: "last_full_month" },
+  metrics: {
+    [VIRTUAL_MACHINES]: [
+      { metric: "Percentage CPU", statistic: "avg" },
+      { metric: "Percentage CPU", statistic: "max" },
+      { metric: "Available Memory Bytes", statistic: "avg" },
+    ],
+  },
+  blocks: [
+    {
+      id: "fixture-cover",
+      type: "cover",
+      config: { subtitle: "V1 fixture profile" },
+    },
+    {
+      id: "fixture-heading",
+      type: "heading",
+      config: { level: 1, text: "Fixture" },
+    },
+    {
+      id: "fixture-kpis",
+      type: "kpi_row",
+      config: {
+        caption: "Fleet averages",
+        show_fidelity: true,
+        metrics: [
+          { metric: "Percentage CPU", statistic: "avg" },
+          { metric: "Available Memory Bytes", statistic: "avg" },
+        ],
+      },
+    },
+    {
+      id: "fixture-table",
+      type: "resource_table",
+      config: {
+        caption: "Per-machine utilization",
+        show_fidelity: true,
+        columns: [
+          { metric: "Percentage CPU", statistic: "avg" },
+          { metric: "Percentage CPU", statistic: "max" },
+        ],
+      },
+    },
+    {
+      id: "fixture-gaps",
+      type: "gaps_and_coverage",
+      config: { caption: "What could not be collected" },
+    },
+    {
+      id: "fixture-record",
+      type: "verification_record",
+      config: { caption: "Collection record" },
+    },
+  ],
+  design: design("editorial"),
 }

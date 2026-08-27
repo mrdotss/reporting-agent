@@ -12,7 +12,7 @@ import {
 } from "vitest"
 
 import type { AgentInvokeContext, InvokeCommand } from "@/lib/aws/agentcore"
-import { STARTER_TEMPLATES } from "@/lib/templates/starters"
+import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { definitionSha256 } from "@/lib/templates/version"
@@ -226,7 +226,7 @@ const SCOPE = {
  * relative rule would move the asserted window every month.
  */
 const FIXTURE_DEFINITION = {
-  ...STARTER_TEMPLATES[0]!.definition,
+  ...V1_TEST_FIXTURE_DEFINITION,
   period: { kind: "custom", start: PERIOD.start, end: PERIOD.end },
 } as const
 
