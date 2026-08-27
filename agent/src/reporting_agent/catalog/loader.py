@@ -346,6 +346,31 @@ class ResourceTypeFacts:
 
     resource_type: str
     facts: tuple[FactDeclarationEntry, ...]
+    child_of: str | None = None
+    """The parent resource type this type is a sub-record of, or `None` for a first-class
+    type (Req 16.9, task 6.1/6.2's own correction).
+
+    **Declared, never inferred.** The earlier design read "declared in the fact file and
+    absent from the metric file" as the definition of a child type — task 6.2 broke that
+    reading the moment `Microsoft.Network/publicIPAddresses` needed the identical shape
+    for an unrelated reason: it has facts and genuinely no platform metric, but it is a
+    first-class resource that counts toward every headline total. The metric catalogue's
+    absence answers "does this type have a metric," never "is this type a sub-record" —
+    two different facts that happened to coincide for every child type declared before
+    this one, which is exactly what let the coincidence pass as a definition.
+
+    `child_of` names the actual relationship sections 3 and 6 already need for their own
+    reason — which parent a subnet or a security rule belongs to — so it is not a flag
+    invented to satisfy `is_child_type`; it is data those sections would have needed to
+    declare regardless. A subnet's `child_of` is `Microsoft.Network/virtualNetworks`; a
+    public IP address's `child_of` is `None`, because it belongs to nothing.
+
+    Also why this could not be inferred from the resource type string's own shape (one
+    fewer slash than its parent, say): `Microsoft.Sql/servers/databases` is a three-part,
+    fully first-class type carrying its own metrics, and any segment-counting rule wide
+    enough to catch a subnet's four segments would catch that one's three just as
+    confidently and wrongly.
+    """
 
     @property
     def has_valid_entries(self) -> bool:
@@ -552,37 +577,48 @@ def is_child_type(resource_type: str, *, catalog: LoadedCatalog) -> bool:
       `metric_not_selected` gap — see `collect/pipeline.py`;
     * one contributes to **no headline count** — see the scan's partitioned counts.
 
-    **The test is the declaration, not a list.** A child type appears in
-    `catalog/facts.v1.json` and never in `catalog/metrics.v1.json`, so this function reads
-    the two halves of one loaded catalog rather than consulting a second registry that
-    could disagree with them. Adding a child type is one edit, to the fact file.
+    **The test is the declaration, not an inference.** A child type declares
+    `child_of` — the parent resource type it is a sub-record of — in its own
+    `catalog/facts.v1.json` entry, and this function reads exactly that field.
 
-    Takes the whole `LoadedCatalog` rather than a `FactDeclaration` and a metric catalog
-    separately, deliberately: the two files are **one document version** — `facts.v1.json`
-    declares no `catalog_version` of its own precisely so no second version string can
-    disagree — and a signature taking them apart would let a caller pair a fact
-    declaration with a mismatched metric catalog, which is the drift this whole function
-    exists to prevent.
+    A prior version of this function inferred the property from "declared in
+    `facts.v1.json` and absent from `metrics.v1.json`" — reading the metric catalogue's
+    silence as a statement about child-ness. That coincidence held for every child type
+    declared before task 6.2, and broke the instant `Microsoft.Network/publicIPAddresses`
+    needed the identical shape (facts declared, no metric) for an unrelated, entirely
+    legitimate reason: a public IP address has no platform metric to declare, but it is a
+    first-class resource that counts toward every headline total. "Has no metric" and "is
+    a sub-record" are two different facts about a resource type, and they only happened to
+    coincide because every child type declared so far also happened to have no metric —
+    which is not a definition, it is an accident that was one new type away from breaking.
 
-    "Declared by metrics" means the type **appears** in the metric catalog, whether or not
-    its entries survived validation. A type whose metric entries are all invalid is a
-    catalog bug (`InvalidEntry`, `catalog_entry_invalid`), not a statement that the type is
-    a sub-record — and treating it as a child type would quietly drop a real resource out
-    of every headline count while the catalog fix was pending. Matched case-insensitively,
-    as both catalog lookups already match, because Resource Graph lower-cases `type`.
+    `child_of` is not a flag invented to satisfy this function. Sections 3 and 6 already
+    need to know which parent a subnet or a security rule belongs to, to render it beside
+    that parent — so the field carries information those sections need regardless of
+    whether this function reads it. Declaring it is also why a structural inference (an
+    extra path segment, say) would have been the wrong fallback even before
+    `publicIPAddresses` existed: `Microsoft.Sql/servers/databases` is a three-segment,
+    fully first-class type with 11 declared metrics, and any segment-counting rule wide
+    enough to catch a subnet's four segments catches that one's three just as confidently
+    and just as wrongly.
+
+    Takes the whole `LoadedCatalog` rather than a `FactDeclaration` alone for the same
+    reason as before: the two files are **one document version**, and a signature that
+    could take a fact declaration without its paired metric catalogue would let a caller
+    pass a document this function was never checked against. This function no longer
+    *reads* `catalog.resource_types` at all — it is accepted purely so a caller cannot
+    construct the mismatch, not because this check needs it.
+
+    Matched case-insensitively, because Resource Graph lower-cases `type` in its response
+    body while the catalogues declare Azure's own casing.
     """
     if not isinstance(resource_type, str) or not resource_type.strip():
         return False
     folded = resource_type.casefold()
-    declared_by_metrics = any(
-        entry.resource_type.casefold() == folded for entry in catalog.resource_types
-    )
-    if declared_by_metrics:
-        return False
-    return any(
-        declared.resource_type.casefold() == folded
-        for declared in catalog.facts.resource_types
-    )
+    for declared in catalog.facts.resource_types:
+        if declared.resource_type.casefold() == folded:
+            return declared.child_of is not None
+    return False
 
 
 def child_type_names(catalog: LoadedCatalog) -> tuple[str, ...]:
@@ -692,6 +728,29 @@ def load_catalog(
 
     facts, fact_invalid = _load_facts(resolved_facts)
     invalid_entries.extend(fact_invalid)
+
+    # `child_of` names a parent resource type, and that name has to resolve against
+    # the pair's own declarations or it is a typo no run would ever catch otherwise —
+    # a `child_of` pointing at nothing would make a subnet's parent silently absent
+    # from every place that reads it. Checked here, once both halves are loaded,
+    # because the parent is ordinarily a metric-catalogue type (a VNet, an NSG) that
+    # `_load_facts` alone cannot see. Case-folded, matching every other cross-catalogue
+    # comparison in this module.
+    known_type_names = {rt.resource_type.casefold() for rt in resource_types} | {
+        declared.resource_type.casefold() for declared in facts.resource_types
+    }
+    for declared in facts.resource_types:
+        if declared.child_of is not None and declared.child_of.casefold() not in known_type_names:
+            invalid_entries.append(
+                InvalidEntry(
+                    resource_type=declared.resource_type,
+                    metric=None,
+                    message=(
+                        f"`child_of` names {declared.child_of!r}, which neither "
+                        f"catalog declares as a resource type"
+                    ),
+                )
+            )
 
     # Req 32.7, widened by Req 1.7: a *fact* is a fourth thing a resource type can be
     # usable for. A type declaring no metric this run can collect but a fact it can
@@ -877,6 +936,12 @@ def _load_facts(
             )
             continue
 
+        child_of, child_of_reasons = _validate_child_of(raw_entry)
+        invalid.extend(
+            InvalidEntry(resource_type=resource_type, metric=None, message=reason)
+            for reason in child_of_reasons
+        )
+
         declared.append(
             ResourceTypeFacts(
                 resource_type=resource_type,
@@ -886,10 +951,34 @@ def _load_facts(
                     invalid=invalid,
                     projection_of_key=projection_of_key,
                 ),
+                child_of=child_of,
             )
         )
 
     return FactDeclaration(resource_types=tuple(declared)), invalid
+
+
+def _validate_child_of(raw_entry: object) -> tuple[str | None, list[str]]:
+    """One resource type's `child_of` field, validated for shape alone. **Pure.**
+
+    Absent or `None` means first-class — the ordinary case, and the only shape every
+    entry had before this field existed, so an entry that never mentions `child_of` is
+    unaffected. Whether the *named* parent is itself a resource type the catalogue pair
+    actually declares is a cross-catalogue question this function cannot answer with
+    only the fact entry in front of it; :func:`load_catalog` checks that once both
+    halves are loaded, and reports the same `catalog_entry_invalid` gap type either way.
+    """
+    if not isinstance(raw_entry, dict):
+        return None, []
+    raw_child_of = raw_entry.get("child_of")
+    if raw_child_of is None:
+        return None, []
+    if not isinstance(raw_child_of, str) or not raw_child_of.strip():
+        return None, [
+            f"`child_of` must be a non-empty string naming the parent resource type, "
+            f"got {raw_child_of!r}"
+        ]
+    return raw_child_of, []
 
 
 def _validate_facts(

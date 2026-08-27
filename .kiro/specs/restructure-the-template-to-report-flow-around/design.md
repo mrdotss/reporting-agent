@@ -378,9 +378,19 @@ NSG. Two ways to express that, and the choice is load-bearing.
 
 Resource Graph projects them with `mv-expand` in the same inventory pass. Each becomes an ordinary
 `ResourceRecord` with a `resource_type` of `Microsoft.Network/virtualNetworks/subnets` and scalar
-facts (`address_prefix`, `available_ips`, `priority`, `protocol`, `source`, `action`). The document
-shape is then `resource_table` with fact columns — the compiler task 12.8 already built — and
-scope rules, facts, anchors, the ledger and every verification gate work unchanged.
+facts (`address_prefix`, `ip_configuration_count`, `priority`, `protocol`, `source`, `action`). The
+document shape is then `resource_table` with fact columns — the compiler task 12.8 already built —
+and scope rules, facts, anchors, the ledger and every verification gate work unchanged.
+
+`available_ips` — named in an earlier draft of this section — was dropped in task 6.1's own
+implementation: Azure exposes no static "available IP count" property, and every real
+computation derives it by hand from the address prefix's own mask arithmetic minus the reserved
+addresses minus the attached `ipConfigurations`. That is a **derived** statistic in this
+catalogue's own sense (`DerivedEntry`, the shape `memory_used_pct` already uses), not a scalar
+fact this pass can honestly project — a KQL expression hand-rolling the mask math here would be a
+second, undeclared formula next to the one `DerivedEntry.formula` already exists to make visible.
+`ip_configuration_count` is projected instead — the one half Resource Graph can answer — and the
+CIDR-mask half is a named, explicit follow-on.
 
 **Rejected: a list-valued fact plus a new `subrecord_table` block type.** It breaks the fact model
 (`value_kind` is `numeric` \| `text`, and `collect/factfold.py` folds scalars), needs a new AST
@@ -388,9 +398,8 @@ shape, a new verification path for nested values, and a new block compiler — f
 express something the resource model already expresses. A subnet *is* an addressable Azure resource;
 modelling it as one is the honest option as well as the cheap one.
 
-**The constraint this creates.** A child type appears in `catalog/facts.v1.json` and **never** in
-`catalog/metrics.v1.json`. That property is the **formal test for a child type** — there is no second
-list to maintain:
+**The constraint this creates, and the test that was tried and replaced.** The design originally
+declared the formal test for a child type as one property of where a type appears:
 
 ```python
 def is_child_type(resource_type: str, *, facts: FactDeclaration, metrics: MetricCatalog) -> bool:
@@ -398,8 +407,46 @@ def is_child_type(resource_type: str, *, facts: FactDeclaration, metrics: Metric
     return facts.declares(resource_type) and not metrics.declares(resource_type)
 ```
 
-Two consequences follow from that one property, and they are stated together because they are the
-same decision seen twice:
+**That test held for every child type declared through task 6.1 and broke the moment task 6.2
+needed the identical shape for an unrelated reason.** `Microsoft.Network/publicIPAddresses` has
+facts and genuinely no platform metric — Azure emits no utilization metric for a public IP
+address at all — but it is a first-class resource that counts toward every headline total, not a
+sub-record. "Declared by facts, absent from metrics" answers *"does this type have a metric,"*
+never *"is this type a sub-record,"* and the two questions only happened to share an answer for
+every child type declared before this one — which is an accident, not a definition, and it was
+exactly one new type away from silently dropping every public IP address out of every headline
+count while a report claimed to cover the subscription.
+
+**Corrected test: `child_of` is declared, never inferred.** `catalog/facts.v1.json` gains an
+optional field, present only on a genuine sub-record:
+
+```jsonc
+"Microsoft.Network/virtualNetworks/subnets": {
+  "child_of": "Microsoft.Network/virtualNetworks",
+  "facts": [ /* … */ ]
+}
+```
+
+```python
+def is_child_type(resource_type: str, *, catalog: LoadedCatalog) -> bool:
+    """A type the fact catalogue declares with a `child_of` naming its parent."""
+    declared = catalog.facts.for_declaration(resource_type)
+    return declared is not None and declared.child_of is not None
+```
+
+Nothing here reads the metric catalogue at all. `child_of` is not a flag invented to satisfy this
+function — sections 3 and 6 already need to know which parent a subnet or a security rule belongs
+to, to render it beside that parent, so the field carries information those sections need
+regardless of whether `is_child_type` reads it. It is also why a structural inference (one more
+path segment than the parent, say) was never a sound fallback, with or without
+`publicIPAddresses`: `Microsoft.Sql/servers/databases` is a three-segment, fully first-class type
+with 11 declared metrics, and any segment-counting rule wide enough to catch a subnet's four
+segments catches that one's three just as confidently and just as wrongly. The loader validates
+`child_of` against the pair's own declarations — a name resolving to nothing is a
+`catalog_entry_invalid` gap, not a silently absent parent.
+
+Two consequences follow from `child_of is not None`, and they are stated together because they are
+the same decision seen twice:
 
 1. **No metric is ever requested for a child type**, so the design requires a test asserting a
    fact-only resource type produces **no** `metric_not_selected` gap — because if it does, one VNet

@@ -42,11 +42,17 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 8
-"""Task 6.1 adds `Microsoft.Network/virtualNetworks/subnets` as the shipped
-declaration's first **child** type — a type the fact file declares and the metric
-file never does, per `catalog.loader.is_child_type`. So the fact half now covers one
-more resource type than the metric half: 7 metric-bearing types plus this one."""
+DECLARED_TYPE_COUNT = 10
+"""7 metric-bearing types, plus `Microsoft.Network/virtualNetworks/subnets` (task 6.1,
+a child type — declares `child_of`), `Microsoft.Network/virtualNetworks` itself (task
+6.1 — first-class, fact-only, declares no `child_of`; needed once subnets declare it
+as their parent, since `child_of` has to resolve against a real declaration) and
+`Microsoft.Network/publicIPAddresses` (task 6.2, first-class — declares no
+`child_of`). All three fact-only additions are distinguished from each other by
+`child_of` alone, never inferred from either type's presence or absence in
+`metrics.v1.json` — see `catalog.loader.is_child_type`'s own docstring for why that
+inference was tried once and broke the moment a first-class, metric-less type needed
+the identical shape."""
 
 
 # --------------------------------------------------------------------------- #
@@ -76,8 +82,17 @@ def write_facts(tmp_path: Path, body: Any, *, name: str = "facts.json") -> Path:
     return path
 
 
-def facts_file(tmp_path: Path, facts: list[Any], *, resource_type: str = VM_TYPE) -> Path:
-    return write_facts(tmp_path, {"resource_types": {resource_type: {"facts": facts}}})
+def facts_file(
+    tmp_path: Path,
+    facts: list[Any],
+    *,
+    resource_type: str = VM_TYPE,
+    child_of: str | None = None,
+) -> Path:
+    entry: dict[str, Any] = {"facts": facts}
+    if child_of is not None:
+        entry["child_of"] = child_of
+    return write_facts(tmp_path, {"resource_types": {resource_type: entry}})
 
 
 def load_with(tmp_path: Path, facts: list[Any]) -> Any:
@@ -109,25 +124,34 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
     """Req 1.7, 1.8 — the seven types task 3.2 widened the metric catalog to are the seven
     the fact declaration covers.
 
-    Asserted as a set equality in both directions rather than a count, because a count is
-    satisfied by seven types that are not these seven — and a type declaring metrics but no
-    facts would render a resource table with no identity columns.
-
-    **Task 6.1 adds the first exception on purpose.** The fact declaration now also covers
-    `Microsoft.Network/virtualNetworks/subnets`, a **child** type with facts and
-    deliberately no metrics — no metric is ever requested for a sub-record
-    (`catalog.loader.is_child_type`'s whole point). So the equality this test's own name
-    promises now holds only after child types are excluded from the fact side; asserting
-    that exclusion explicitly is what keeps this test from silently widening to tolerate a
-    second, unrelated type gaining metrics-less fact coverage by accident.
+    **Task 6.1 and 6.2 both add exceptions on purpose, and for two different reasons.**
+    `Microsoft.Network/virtualNetworks/subnets` (task 6.1) is a **child** type: it
+    declares `child_of` and no metric is ever requested for it — a sub-record, not a
+    deployed thing. `Microsoft.Network/publicIPAddresses` (task 6.2) declares no
+    `child_of` at all: it is first-class and counts toward every headline total, and its
+    absence from the metric file states only "no platform metric exists for this type,"
+    never "this is a sub-record." So the metric-type set is now a strict subset of the
+    fact-type set, once **both** the child types and the fact-only-first-class types are
+    accounted for separately — asserting the two exclusions by name is what keeps this
+    test from silently widening to tolerate a third, unrelated gap.
     """
     catalog = load_catalog()
     metric_types = set(catalog.resource_type_names)
     fact_types = set(catalog.facts.resource_type_names)
     children = set(child_type_names(catalog))
+    fact_only_first_class = {
+        declared.resource_type
+        for declared in catalog.facts.resource_types
+        if declared.child_of is None
+        and declared.resource_type not in metric_types
+    }
 
-    assert fact_types - children == metric_types
+    assert fact_types - children - fact_only_first_class == metric_types
     assert children == {"Microsoft.Network/virtualNetworks/subnets"}
+    assert fact_only_first_class == {
+        "Microsoft.Network/virtualNetworks",
+        "Microsoft.Network/publicIPAddresses",
+    }
 
 
 def test_every_declared_fact_key_is_lower_snake_case_and_within_the_length_bound() -> None:
@@ -801,29 +825,61 @@ def test_no_valid_metric_and_an_empty_fact_declaration_is_catalog_unusable(
 # --------------------------------------------------------------------------- #
 
 CHILD_TYPE = "Microsoft.Network/virtualNetworks/subnets"
+CHILD_PARENT = "Microsoft.Network/virtualNetworks"
+"""`CHILD_PARENT` must be a real metric-catalog type for `_child_catalog`'s `child_of`
+validation to resolve — `Microsoft.Network/virtualNetworks` is not one in the shipped
+metric catalog, so these fixtures declare it in the fact file alongside the child, the
+same two-entries-in-one-file shape task 6.1's own real catalogue edit uses."""
 
 
 def _child_catalog(tmp_path: Path) -> Any:
-    """The real metric catalog paired with a fact file declaring one type the metric
-    catalog does not: the exact shape a child type has."""
-    return load_catalog(
-        DEFAULT_CATALOG_PATH,
-        facts_path=facts_file(tmp_path, [VALID_FACT], resource_type=CHILD_TYPE),
+    """The real metric catalog paired with a fact file declaring a child type AND its
+    parent — the exact shape a real child-type declaration has, `child_of` included."""
+    facts_path = tmp_path / "child.json"
+    facts_path.write_text(
+        json.dumps(
+            {
+                "resource_types": {
+                    CHILD_TYPE: {"child_of": CHILD_PARENT, "facts": [VALID_FACT]},
+                    CHILD_PARENT: {"facts": [VALID_FACT]},
+                }
+            }
+        ),
+        encoding="utf-8",
     )
+    return load_catalog(DEFAULT_CATALOG_PATH, facts_path=facts_path)
 
 
-def test_a_type_declared_by_facts_and_not_by_metrics_is_a_child_type(tmp_path: Path) -> None:
+def test_a_type_declaring_child_of_is_a_child_type(tmp_path: Path) -> None:
+    """Task 6.2's correction: the test is `child_of`, not "declared by facts and not by
+    metrics" — that inference broke the instant a first-class, metric-less type
+    (`Microsoft.Network/publicIPAddresses`, task 6.2) needed the identical shape for an
+    unrelated, legitimate reason."""
     assert is_child_type(CHILD_TYPE, catalog=_child_catalog(tmp_path)) is True
 
 
 def test_a_type_declared_by_both_halves_is_not_a_child_type(tmp_path: Path) -> None:
-    """A virtual machine has facts *and* metrics. It is a deployed thing, it counts toward
-    every headline total, and an unrequested metric for it is a real gap."""
+    """A virtual machine has facts *and* metrics, and declares no `child_of`. It is a
+    deployed thing, it counts toward every headline total, and an unrequested metric
+    for it is a real gap."""
     catalog = load_catalog(
         DEFAULT_CATALOG_PATH, facts_path=facts_file(tmp_path, [VALID_FACT], resource_type=VM_TYPE)
     )
 
     assert is_child_type(VM_TYPE, catalog=catalog) is False
+
+
+def test_a_fact_only_type_with_no_child_of_is_not_a_child_type(tmp_path: Path) -> None:
+    """The exact case task 6.2 found: a type declared in `facts.v1.json` alone, with
+    genuinely no platform metric, but no `child_of` either — first-class, not a
+    sub-record. `Microsoft.Network/publicIPAddresses` is this case in the real,
+    shipped catalogue; this fixture is the same shape without depending on it."""
+    catalog = load_catalog(
+        DEFAULT_CATALOG_PATH,
+        facts_path=facts_file(tmp_path, [VALID_FACT], resource_type="Microsoft.Network/publicIPAddresses"),
+    )
+
+    assert is_child_type("Microsoft.Network/publicIPAddresses", catalog=catalog) is False
 
 
 def test_a_type_declared_by_neither_half_is_not_a_child_type(tmp_path: Path) -> None:
@@ -857,10 +913,10 @@ def test_a_type_whose_metric_entries_are_all_invalid_is_still_not_a_child_type(
     """The distinction that protects a real resource from being demoted to a sub-record.
 
     A metric catalog entry that fails validation is a **catalog bug** — it degrades to an
-    `InvalidEntry` and a `catalog_entry_invalid` gap. If "declared by metrics" meant "has
-    valid metric entries", that bug would silently reclassify the type as a child type and
-    drop every resource of it out of the scan's headline count, while the report still
-    claimed to cover the subscription. So presence in the metric file is what counts.
+    `InvalidEntry` and a `catalog_entry_invalid` gap. `child_of` is a declared fact about
+    the *fact*-catalogue entry, not a derivation from whether the metric side happened to
+    validate, so a metric-catalog bug can never turn this type into a child type — it was
+    never eligible to be one in the first place, because it declares no `child_of`.
     """
     metrics_path = write_metrics(tmp_path, ONE_INVALID_METRIC)
     catalog = load_catalog(
@@ -874,6 +930,34 @@ def test_a_type_whose_metric_entries_are_all_invalid_is_still_not_a_child_type(
     assert is_child_type(VM_TYPE, catalog=catalog) is False
 
 
+def test_child_of_naming_an_undeclared_parent_is_invalid(tmp_path: Path) -> None:
+    """`child_of` names a real fact, not a free-text label: a typo'd parent would make a
+    subnet's parent silently absent from every place that reads it, so it is checked
+    against the pair's own declarations rather than accepted as any string."""
+    facts_path = facts_file(
+        tmp_path, [VALID_FACT], resource_type=CHILD_TYPE, child_of="Microsoft.Typo/doesNotExist"
+    )
+    catalog = load_catalog(DEFAULT_CATALOG_PATH, facts_path=facts_path)
+
+    messages = [entry.message for entry in catalog.invalid_entries]
+    assert any("child_of" in message and "Microsoft.Typo/doesNotExist" in message for message in messages)
+    # And the type is folded out of the fact declaration for the run to still use it —
+    # it is invalid, not absent, so it degrades rather than silently vanishing... except
+    # `child_of` failing validation does not remove the type's own facts; only the
+    # relationship claim is rejected. Confirmed here rather than assumed:
+    assert catalog.facts.for_resource_type(CHILD_TYPE), (
+        "an invalid child_of degrades that one claim, not the whole entry's facts"
+    )
+
+
+def test_child_of_naming_a_real_type_from_either_half_is_valid(tmp_path: Path) -> None:
+    """The parent may be declared by the metric catalogue (the ordinary case — a VNet, an
+    NSG) or by the fact catalogue itself (a chain of sub-records, not used today but not
+    structurally forbidden either)."""
+    catalog = _child_catalog(tmp_path)
+    assert not any("child_of" in entry.message for entry in catalog.invalid_entries)
+
+
 def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path) -> None:
     """The list form the scan's count filter is built from, so that filter is derived from
     the catalogs rather than hand-maintained."""
@@ -882,7 +966,8 @@ def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path
         json.dumps(
             {
                 "resource_types": {
-                    CHILD_TYPE: {"facts": [VALID_FACT]},
+                    CHILD_TYPE: {"child_of": CHILD_PARENT, "facts": [VALID_FACT]},
+                    CHILD_PARENT: {"facts": [VALID_FACT]},
                     VM_TYPE: {"facts": [VALID_FACT]},
                 }
             }

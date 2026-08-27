@@ -289,7 +289,19 @@
         }
       ]
     },
+    "Microsoft.Network/virtualNetworks": {
+      "facts": [
+        {
+          "key": "address_space",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.addressSpace.addressPrefixes[0])"
+        }
+      ]
+    },
     "Microsoft.Network/virtualNetworks/subnets": {
+      "child_of": "Microsoft.Network/virtualNetworks",
       "facts": [
         {
           "key": "subnet",
@@ -319,6 +331,38 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(properties.virtualNetworkPeerings[0].properties.peeringState)"
+        }
+      ]
+    },
+    "Microsoft.Network/publicIPAddresses": {
+      "facts": [
+        {
+          "key": "address",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.ipAddress)"
+        },
+        {
+          "key": "allocation_method",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.publicIPAllocationMethod)"
+        },
+        {
+          "key": "sku",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "association",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.ipConfiguration.id)"
         }
       ]
     }

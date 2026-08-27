@@ -1988,12 +1988,25 @@ CHILD_FACT: dict[str, object] = {
 def _catalog_declaring_a_child_type(tmp_path: Path) -> LoadedCatalog:
     """The real metric catalog paired with a fact file declaring one child type.
 
-    The pairing is the point: `CHILD_TYPE` appears in the fact half and **not** in
-    `metrics.v1.json`, which is exactly what `is_child_type` reads.
+    The declaration is the point: `CHILD_TYPE` carries `child_of`, naming a parent
+    resource type the fact file also declares — task 6.2's own correction to
+    `is_child_type`, which used to infer child-ness from "present in the fact file,
+    absent from the metric file" and broke the moment a first-class, metric-less type
+    needed that identical shape for an unrelated reason.
     """
     facts_path = tmp_path / "facts.json"
     facts_path.write_text(
-        json.dumps({"resource_types": {CHILD_TYPE: {"facts": [CHILD_FACT]}}}),
+        json.dumps(
+            {
+                "resource_types": {
+                    CHILD_TYPE: {
+                        "child_of": "Microsoft.Network/virtualNetworks",
+                        "facts": [CHILD_FACT],
+                    },
+                    "Microsoft.Network/virtualNetworks": {"facts": [CHILD_FACT]},
+                }
+            }
+        ),
         encoding="utf-8",
     )
     return load_catalog(DEFAULT_CATALOG_PATH, facts_path=facts_path)
