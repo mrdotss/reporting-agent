@@ -27,7 +27,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/templates/definition"
 import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
-import { EMPTY_DRAFT } from "@/lib/templates/draft"
+import { EMPTY_DRAFT_V3 } from "@/lib/templates/draft"
 import {
   canAdvance,
   canReturnTo,
@@ -160,7 +160,7 @@ export function WizardShell({
 
   const [definition, setDefinition] = useState<TemplateDefinition>(() =>
     initialDefinition === null
-      ? EMPTY_DRAFT(template.name)
+      ? EMPTY_DRAFT_V3(template.name)
       : (initialDefinition as TemplateDefinition)
   )
 
@@ -169,7 +169,7 @@ export function WizardShell({
   // it as the consultant types would drag them backwards the moment an edit
   // briefly invalidated an earlier step.
   const [step, setStep] = useState<WizardStep>(() =>
-    openingStep(initialDefinition ?? EMPTY_DRAFT(template.name))
+    openingStep(initialDefinition ?? EMPTY_DRAFT_V3(template.name))
   )
 
   const [highestReached, setHighestReached] = useState(step.number)
