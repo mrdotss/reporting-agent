@@ -120,6 +120,8 @@ export function WizardShell({
   sectionCatalogue,
   previewSubscriptionId,
   hasCompletedRun,
+  scanTypeCounts,
+  collectedFactSources,
 }: Readonly<{
   template: TemplateView
   /** The persisted draft, or the latest version's definition, or `null`. */
@@ -139,6 +141,20 @@ export function WizardShell({
    */
   previewSubscriptionId: string | null
   hasCompletedRun: boolean
+  /**
+   * The most recent scan's `type_counts`, for `StepSections`'s offerability gate
+   * (task 6.5, Req 15.9, 16.1-16.3). `undefined` means no scan to check
+   * against yet — every section renders offerable, unchanged from before this
+   * task.
+   */
+  scanTypeCounts?: Readonly<Record<string, number>>
+  /**
+   * Which fact sources `facts.v1.json` actually collects —
+   * `lib/profiles/facts.ts`'s `COLLECTED_FACT_SOURCES`, resolved server-side and
+   * threaded down since this component tree is client-side and that module is
+   * `server-only`.
+   */
+  collectedFactSources?: ReadonlySet<string>
 }>) {
   const router = useRouter()
 
@@ -251,8 +267,7 @@ export function WizardShell({
     if (!draftOk) {
       setIdentitySave({
         kind: "failed",
-        message:
-          "The draft was not saved. Nothing you have entered was lost.",
+        message: "The draft was not saved. Nothing you have entered was lost.",
       })
       return
     }
@@ -262,8 +277,7 @@ export function WizardShell({
     if (!renameOk) {
       setIdentitySave({
         kind: "draft_saved_rename_failed",
-        message:
-          "The draft was saved, but the template name was not updated.",
+        message: "The draft was saved, but the template name was not updated.",
       })
       return
     }
@@ -282,8 +296,7 @@ export function WizardShell({
     } else {
       setIdentitySave({
         kind: "draft_saved_rename_failed",
-        message:
-          "The draft was saved, but the template name was not updated.",
+        message: "The draft was saved, but the template name was not updated.",
       })
     }
   }, [renameIfNeeded])
@@ -384,6 +397,8 @@ export function WizardShell({
     identitySave,
     saveIdentityStep,
     retryRename,
+    scanTypeCounts,
+    collectedFactSources,
   })
 
   return (
@@ -474,9 +489,7 @@ export function WizardShell({
                 ? saveIdentityStep()
                 : persistDraft())
             }
-            disabled={
-              save.kind === "saving" || identitySave.kind === "saving"
-            }
+            disabled={save.kind === "saving" || identitySave.kind === "saving"}
           >
             <FloppyDiskIcon aria-hidden="true" />
             {save.kind === "saving" || identitySave.kind === "saving"
@@ -641,6 +654,8 @@ function renderStep({
   identitySave,
   saveIdentityStep,
   retryRename,
+  scanTypeCounts,
+  collectedFactSources,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
@@ -655,6 +670,8 @@ function renderStep({
   identitySave: IdentitySaveResult
   saveIdentityStep: () => void
   retryRename: () => void
+  scanTypeCounts?: Readonly<Record<string, number>>
+  collectedFactSources?: ReadonlySet<string>
 }>) {
   switch (step.id) {
     case "identity":
@@ -675,6 +692,8 @@ function renderStep({
           definition={definition}
           onChange={(next) => setDefinition(next as TemplateDefinition)}
           sectionCatalogue={sectionCatalogue}
+          scanTypeCounts={scanTypeCounts}
+          collectedFactSources={collectedFactSources}
         />
       )
     case "period":

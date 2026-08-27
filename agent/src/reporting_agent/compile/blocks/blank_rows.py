@@ -180,7 +180,7 @@ def compile_blank_rows_table(
 
     table = Table(
         path=cursor.child("nodes", 0).path,
-        style="Table Grid",
+        style=context.design.table_style_name,
         columns=table_columns,
         rows=supplied_row_nodes + padding_row_nodes,
         caption=block.config.get("caption"),

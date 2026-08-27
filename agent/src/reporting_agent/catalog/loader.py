@@ -422,6 +422,27 @@ class FactDeclaration:
             entry for declared in self.resource_types for entry in declared.facts
         )
 
+    @property
+    def collected_sources(self) -> frozenset[str]:
+        """Which of `DECLARED_FACT_SOURCES` at least one real entry actually names
+        (task 6.5, Req 15.9, 16.1-16.3).
+
+        **Not the same set as `DECLARED_FACT_SOURCES`, and the difference is the whole
+        reason this property exists rather than callers reading the module constant
+        directly.** `arm` is declared as a source Req 4.2 fixes the vocabulary around and
+        used by zero entries today, deliberately — `test_arm_is_declared_as_a_source_and_
+        deliberately_not_yet_used` asserts exactly that absence. "Declared" is the legal
+        vocabulary a fact's `source` field is allowed to name; "collected" is what a run
+        against this catalogue would actually go and fetch. A section whose offerability
+        keyed on the declared set would read `Ready` for a source nothing has wired up yet,
+        which is the same "a green gate says nothing was checked" failure `catalog_evidence`
+        exists to catch for metrics, now for fact sources.
+
+        Computed from `self.entries` rather than cached at load time, so it can never drift
+        from the catalogue this instance actually holds — the same reasoning `entries`
+        itself already follows."""
+        return frozenset(entry.source for entry in self.entries)
+
     def projectable(
         self, resource_type: str | None = None
     ) -> tuple[tuple[str, str], ...]:

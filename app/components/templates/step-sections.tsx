@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react"
 import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "@phosphor-icons/react"
 
 import { messageText, type MessageId } from "@/lib/messages/catalog"
+import { missingInputs } from "@/lib/profiles/offerability"
 import { Button } from "@/components/ui/button"
 
 // ---------------------------------------------------------------------------
@@ -23,6 +24,7 @@ export type SectionCatalogueEntry = {
   readonly position: "free" | "fixed" | "always"
   readonly repeatable: boolean
   readonly needs_resource_types: readonly string[]
+  readonly needs_fact_sources: readonly string[]
   readonly metric_bearing: boolean
 }
 
@@ -92,10 +94,27 @@ export function StepSections({
   definition,
   onChange,
   sectionCatalogue,
+  scanTypeCounts,
+  collectedFactSources,
 }: {
   definition: unknown
   onChange: (next: unknown) => void
   sectionCatalogue: readonly SectionCatalogueEntry[]
+  /**
+   * The most recent scan's `type_counts`, for Req 16.1's "disabled with the missing input
+   * named" surface (task 6.5). Omitted (or `undefined`) means "no scan to check against
+   * yet" — every section renders offerable rather than every section renders disabled,
+   * because a wizard with no scan data at all must not look broken; it looks exactly as it
+   * did before this task landed.
+   */
+  scanTypeCounts?: Readonly<Record<string, number>>
+  /**
+   * Which fact sources the catalogue actually collects — `lib/profiles/facts.ts`'s
+   * `COLLECTED_FACT_SOURCES`, threaded down rather than imported here because this is a
+   * client component and that module is `server-only`. Omitted means the same "no scan yet"
+   * default as `scanTypeCounts`.
+   */
+  collectedFactSources?: ReadonlySet<string>
 }) {
   const language = readLanguage(definition)
   const sections = useMemo(() => readSections(definition), [definition])
@@ -108,9 +127,27 @@ export function StepSections({
     [sectionCatalogue]
   )
 
+  // Offerability against the most recent scan (task 6.5, Req 15.9, 16.1-16.3). `undefined`
+  // props mean "nothing to check against yet" — treated as offerable rather than as
+  // disabled, so a wizard opened before any scan completed behaves as it always has.
+  const missingInputsByKey = useMemo(() => {
+    if (scanTypeCounts === undefined || collectedFactSources === undefined) {
+      return new Map<string, readonly string[]>()
+    }
+    return new Map(
+      sectionCatalogue.map((entry) => [
+        entry.key,
+        missingInputs(entry, scanTypeCounts, collectedFactSources),
+      ])
+    )
+  }, [sectionCatalogue, scanTypeCounts, collectedFactSources])
+
   // Group authored sections by their catalogue group
   const grouped = useMemo(() => {
-    const groups: Record<string, { entry: SectionCatalogueEntry | undefined; section: AuthoredSection }[]> = {
+    const groups: Record<
+      string,
+      { entry: SectionCatalogueEntry | undefined; section: AuthoredSection }[]
+    > = {
       inventory: [],
       utilisation: [],
       closing: [],
@@ -159,6 +196,7 @@ export function StepSections({
     (type: string) => {
       const entry = catalogueMap.get(type)
       if (!entry) return
+      if ((missingInputsByKey.get(type)?.length ?? 0) > 0) return
       const newSection: AuthoredSection = {
         id: generateSectionId(),
         type,
@@ -174,7 +212,7 @@ export function StepSections({
       }
       updateSections([...sections, newSection])
     },
-    [catalogueMap, sections, updateSections]
+    [catalogueMap, sections, updateSections, missingInputsByKey]
   )
 
   const removeSection = useCallback(
@@ -188,9 +226,7 @@ export function StepSections({
   // Available catalogue entries for "Add section" dropdown
   const addable = useMemo(() => {
     const usedTypes = new Set(sections.map((s) => s.type))
-    return sectionCatalogue.filter(
-      (e) => e.repeatable || !usedTypes.has(e.key)
-    )
+    return sectionCatalogue.filter((e) => e.repeatable || !usedTypes.has(e.key))
   }, [sectionCatalogue, sections])
 
   const selectedSection = sections.find((s) => s.id === selectedId)
@@ -207,7 +243,7 @@ export function StepSections({
           if (items.length === 0) return null
           return (
             <div key={group} className="flex flex-col gap-1">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 {GROUP_LABELS[group]}
               </h3>
               <ol
@@ -245,7 +281,7 @@ export function StepSections({
                           <button
                             type="button"
                             aria-label={`Move ${resolveTitle(entry, language)} up`}
-                            className="rounded p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="rounded p-0.5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                             onClick={() => moveSection(section.id, "up")}
                           >
                             <ArrowUpIcon size={14} aria-hidden="true" />
@@ -253,7 +289,7 @@ export function StepSections({
                           <button
                             type="button"
                             aria-label={`Move ${resolveTitle(entry, language)} down`}
-                            className="rounded p-0.5 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                            className="rounded p-0.5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                             onClick={() => moveSection(section.id, "down")}
                           >
                             <ArrowDownIcon size={14} aria-hidden="true" />
@@ -280,6 +316,7 @@ export function StepSections({
             addable={addable}
             language={language}
             onAdd={addSection}
+            missingInputsByKey={missingInputsByKey}
           />
         )}
       </div>
@@ -301,7 +338,12 @@ export function StepSections({
       </div>
 
       {/* Announce reorder to screen readers */}
-      <div aria-live="polite" aria-atomic="true" className="sr-only" id="section-move-announcer" />
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        id="section-move-announcer"
+      />
     </div>
   )
 }
@@ -314,10 +356,12 @@ function AddSectionControl({
   addable,
   language,
   onAdd,
+  missingInputsByKey,
 }: {
   addable: readonly SectionCatalogueEntry[]
   language: "en" | "id"
   onAdd: (type: string) => void
+  missingInputsByKey: ReadonlyMap<string, readonly string[]>
 }) {
   const [open, setOpen] = useState(false)
 
@@ -341,23 +385,45 @@ function AddSectionControl({
       <p className="text-xs font-medium text-muted-foreground">
         Choose a section to add:
       </p>
-      {addable.map((entry) => (
-        <button
-          key={entry.key}
-          type="button"
-          className="rounded px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onClick={() => {
-            onAdd(entry.key)
-            setOpen(false)
-          }}
-          data-testid={`add-section-${entry.key}`}
-        >
-          <span className="font-mono text-xs text-muted-foreground">
-            {entry.number}
-          </span>{" "}
-          {resolveTitle(entry, language)}
-        </button>
-      ))}
+      {addable.map((entry) => {
+        const missing = missingInputsByKey.get(entry.key) ?? []
+        const isDisabled = missing.length > 0
+        return (
+          <button
+            key={entry.key}
+            type="button"
+            disabled={isDisabled}
+            aria-disabled={isDisabled}
+            title={
+              isDisabled
+                ? `Not yet available: needs ${missing.join(", ")}`
+                : undefined
+            }
+            className={[
+              "rounded px-2 py-1 text-left text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              isDisabled
+                ? "cursor-not-allowed text-muted-foreground opacity-60"
+                : "hover:bg-muted",
+            ].join(" ")}
+            onClick={() => {
+              if (isDisabled) return
+              onAdd(entry.key)
+              setOpen(false)
+            }}
+            data-testid={`add-section-${entry.key}`}
+          >
+            <span className="font-mono text-xs text-muted-foreground">
+              {entry.number}
+            </span>{" "}
+            {resolveTitle(entry, language)}
+            {isDisabled && (
+              <span className="ml-1 text-xs text-muted-foreground">
+                (needs {missing.join(", ")})
+              </span>
+            )}
+          </button>
+        )
+      })}
       <Button
         type="button"
         variant="ghost"

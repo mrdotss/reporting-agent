@@ -37,7 +37,7 @@ from reporting_agent.providers.base import GapRecord, ResourceRecord
 
 VM_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
 SUBSCRIPTION: Final[str] = "3f2b0000-0000-0000-0000-000000000000"
-ADVISOR_KEYS: Final[tuple[str, ...]] = ("resource", "category", "impact", "recommendation")
+ADVISOR_KEYS: Final[tuple[str, ...]] = ("category", "impact", "recommendation")
 
 CATALOG = load_catalog()
 
@@ -244,7 +244,6 @@ def test_a_matching_recommendation_records_all_four_facts_and_no_gap() -> None:
 
     by_key = {fact["key"]: fact["value"] for fact in facts}
     assert by_key == {
-        "resource": "prod-web-01",
         "category": "HighAvailability",
         "impact": "Medium",
         "recommendation": "What to do about it.",

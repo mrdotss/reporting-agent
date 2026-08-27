@@ -2,10 +2,7 @@ import { StrictMode } from "react"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 
-import {
-  StepSections,
-  type SectionCatalogueEntry,
-} from "./step-sections"
+import { StepSections, type SectionCatalogueEntry } from "./step-sections"
 
 afterEach(cleanup)
 
@@ -22,6 +19,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "free",
     repeatable: false,
     needs_resource_types: [],
+    needs_fact_sources: [],
     metric_bearing: false,
   },
   {
@@ -32,6 +30,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "free",
     repeatable: false,
     needs_resource_types: ["Microsoft.Compute/virtualMachines"],
+    needs_fact_sources: [],
     metric_bearing: true,
   },
   {
@@ -42,6 +41,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "free",
     repeatable: false,
     needs_resource_types: [],
+    needs_fact_sources: [],
     metric_bearing: false,
   },
   {
@@ -52,6 +52,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "fixed",
     repeatable: false,
     needs_resource_types: [],
+    needs_fact_sources: ["recovery_services"],
     metric_bearing: false,
   },
   {
@@ -62,6 +63,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "always",
     repeatable: false,
     needs_resource_types: [],
+    needs_fact_sources: [],
     metric_bearing: false,
   },
   {
@@ -72,6 +74,7 @@ const CATALOGUE: SectionCatalogueEntry[] = [
     position: "free",
     repeatable: true,
     needs_resource_types: ["Microsoft.Web/sites"],
+    needs_fact_sources: [],
     metric_bearing: true,
   },
 ]
@@ -101,7 +104,13 @@ function makeSection(
   return {
     id,
     type,
-    selection: { resource_types: [], resource_groups: [], tag_filters: [], top_n: null, sort: null },
+    selection: {
+      resource_types: [],
+      resource_groups: [],
+      tag_filters: [],
+      top_n: null,
+      sort: null,
+    },
     metrics: [],
     presentation: "chart_and_table",
   }
@@ -164,9 +173,7 @@ describe("StepSections fixed position", () => {
     expect(fixedLabels).toHaveLength(2) // backup_report + coverage_and_verification
 
     // Free section has arrow buttons
-    expect(
-      screen.getByLabelText(/Move .* up/)
-    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/Move .* up/)).toBeInTheDocument()
   })
 })
 
@@ -291,8 +298,143 @@ describe("StepSections add section", () => {
     fireEvent.click(screen.getByTestId("add-section-vm_utilization"))
 
     expect(onChange).toHaveBeenCalledTimes(1)
-    const updated = onChange.mock.calls[0]![0] as { sections: { type: string }[] }
+    const updated = onChange.mock.calls[0]![0] as {
+      sections: { type: string }[]
+    }
     expect(updated.sections).toHaveLength(2)
     expect(updated.sections[1]!.type).toBe("vm_utilization")
+  })
+})
+
+describe("StepSections offerability (task 6.5, Req 15.9, 16.1-16.3)", () => {
+  test("with no scan props at all, every entry stays offerable -- a wizard opened before this task behaves unchanged", () => {
+    const sections = [makeSection("azure_subscription")]
+    const definition = makeDefinition(sections)
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={() => {}}
+          sectionCatalogue={CATALOGUE}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    const vmButton = screen.getByTestId("add-section-vm_utilization")
+    expect(vmButton).not.toBeDisabled()
+  })
+
+  test("a section needing a resource type absent from the scan renders disabled and names the missing type", () => {
+    const sections = [makeSection("azure_subscription")]
+    const definition = makeDefinition(sections)
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={() => {}}
+          sectionCatalogue={CATALOGUE}
+          scanTypeCounts={{}}
+          collectedFactSources={new Set(["resource_graph"])}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    const vmButton = screen.getByTestId("add-section-vm_utilization")
+    expect(vmButton).toBeDisabled()
+    expect(vmButton.textContent).toContain("Microsoft.Compute/virtualMachines")
+  })
+
+  test("clicking a disabled entry does not call onChange", () => {
+    const sections = [makeSection("azure_subscription")]
+    const definition = makeDefinition(sections)
+    const onChange = vi.fn()
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={onChange}
+          sectionCatalogue={CATALOGUE}
+          scanTypeCounts={{}}
+          collectedFactSources={new Set(["resource_graph"])}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    fireEvent.click(screen.getByTestId("add-section-vm_utilization"))
+
+    expect(onChange).not.toHaveBeenCalled()
+  })
+
+  test("once the scan carries the needed resource type, the entry is offerable", () => {
+    const sections = [makeSection("azure_subscription")]
+    const definition = makeDefinition(sections)
+    const onChange = vi.fn()
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={onChange}
+          sectionCatalogue={CATALOGUE}
+          scanTypeCounts={{ "Microsoft.Compute/virtualMachines": 3 }}
+          collectedFactSources={new Set(["resource_graph"])}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    const vmButton = screen.getByTestId("add-section-vm_utilization")
+    expect(vmButton).not.toBeDisabled()
+    fireEvent.click(vmButton)
+    expect(onChange).toHaveBeenCalledTimes(1)
+  })
+
+  test("a section needing a fact source not yet collected renders disabled and names the source", () => {
+    const sections = [makeSection("azure_subscription")]
+    const definition = makeDefinition(sections)
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={() => {}}
+          sectionCatalogue={CATALOGUE}
+          scanTypeCounts={{ "Microsoft.Compute/virtualMachines": 3 }}
+          collectedFactSources={new Set()}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    const backupButton = screen.getByTestId("add-section-backup_report")
+    expect(backupButton).toBeDisabled()
+    expect(backupButton.textContent).toContain("recovery_services")
+  })
+
+  test("an entry declaring neither stays offerable regardless of the scan", () => {
+    const sections = [makeSection("vm_utilization")]
+    const definition = makeDefinition(sections)
+
+    render(
+      <StrictMode>
+        <StepSections
+          definition={definition}
+          onChange={() => {}}
+          sectionCatalogue={CATALOGUE}
+          scanTypeCounts={{}}
+          collectedFactSources={new Set()}
+        />
+      </StrictMode>
+    )
+
+    fireEvent.click(screen.getByTestId("add-section-trigger"))
+    // fleet_summary declares neither needs_resource_types nor needs_fact_sources
+    expect(screen.getByTestId("add-section-fleet_summary")).not.toBeDisabled()
   })
 })

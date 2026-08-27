@@ -196,20 +196,22 @@ _ADVISOR_RESOURCE_ID_PATHS: Final[tuple[tuple[str, ...], ...]] = (
     (_PROPERTIES, "resourceMetadata", "resourceId"),
 )
 _ADVISOR_VALUE_PATHS: Final[dict[str, tuple[str, ...]]] = {
-    "resource": (_PROPERTIES, "impactedValue"),
     "category": (_PROPERTIES, "category"),
     "impact": (_PROPERTIES, "impact"),
     "recommendation": (_PROPERTIES, "shortDescription", "solution"),
 }
 """Confirmed against Advisor's own REST reference (`ResourceRecommendationBase`): a
 recommendation names its resource through `properties.resourceMetadata.resourceId` (used as
-the fold key, see `_ADVISOR_RESOURCE_ID_PATHS`) but that field is the ARM id, not a name fit
-for a table cell — `properties.impactedValue` is Advisor's own human-readable name for the
-same resource ("armavset", "xyz" in its documented examples) and is what section 14's
-`resource` column actually needs to print. `properties.shortDescription.solution` is
-Advisor's own field for what to do about the finding, matching section 14's `recommendation`
-column; `problem` (the sibling field) is not projected, since section 14 declares no column
-for it and a fact this run never reads has no reason to be collected."""
+the fold key, see `_ADVISOR_RESOURCE_ID_PATHS`) — no fact declares that resource's own name,
+because `resource_table` already renders one implicit `resource` column per row (Req 12.6's
+own shape, `compile/blocks/tables.py`'s `_resource_column`) and a `fact_key: "resource"`
+column collided with it (task 6.5's render-every-section guard caught this: two columns
+sharing one key fails `Table.__post_init__`'s uniqueness check the moment any emitter
+actually renders the section, which the compile-only guard `test_expand_sections.py` never
+does). `properties.shortDescription.solution` is Advisor's own field for what to do about
+the finding, matching section 14's `recommendation` column; `problem` (the sibling field) is
+not projected, since section 14 declares no column for it and a fact this run never reads
+has no reason to be collected."""
 
 
 @dataclass(frozen=True, slots=True)

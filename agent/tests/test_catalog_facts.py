@@ -286,6 +286,24 @@ def test_arm_is_declared_as_a_source_and_deliberately_not_yet_used() -> None:
     assert used == DECLARED_FACT_SOURCES - {"arm"}
 
 
+def test_collected_sources_is_declared_minus_arm_and_matches_the_used_set() -> None:
+    """`collected_sources` is Req 15.9/16.1-16.3's offerability input, and it must equal
+    the `used` set the test above computes by hand — the property is the same fact
+    formalized, not a second, independently-derived answer that could drift from it.
+
+    Asserted as its own claim rather than folded into the test above: `collected_sources`
+    is what a section-offerability check imports, so a change to `FactDeclaration` that
+    left the property returning something other than "sources at least one entry names"
+    should fail here even if `used` (a plain set comprehension re-derived at the test) kept
+    passing for an unrelated reason."""
+    facts = load_catalog().facts
+
+    assert facts.collected_sources == DECLARED_FACT_SOURCES - {"arm"}
+    assert facts.collected_sources == {entry.source for entry in facts.entries}
+    assert "arm" not in facts.collected_sources
+    assert "advisor" in facts.collected_sources
+
+
 # --------------------------------------------------------------------------- #
 # FactDeclaration's accessors
 # --------------------------------------------------------------------------- #

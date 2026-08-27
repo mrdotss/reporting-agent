@@ -286,7 +286,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "resource"}, {"kind": "fact", "fact_key": "category"}, {"kind": "fact", "fact_key": "impact"}, {"kind": "fact", "fact_key": "recommendation"}] } }
+            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "category"}, {"kind": "fact", "fact_key": "impact"}, {"kind": "fact", "fact_key": "recommendation"}] } }
           ]
         },
         {

@@ -69,13 +69,6 @@
           "additional_role": "Reservations Reader"
         },
         {
-          "key": "resource",
-          "value_kind": "text",
-          "source": "advisor",
-          "projectable": false,
-          "absent_gap_type": "advisor_not_available"
-        },
-        {
           "key": "category",
           "value_kind": "text",
           "source": "advisor",

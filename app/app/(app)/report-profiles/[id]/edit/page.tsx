@@ -3,13 +3,14 @@ import { notFound } from "next/navigation"
 
 import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
-import { toTemplateView,
-  templateViewCurrentVersion,
-} from "@/lib/db/views"
+import { toTemplateView, templateViewCurrentVersion } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { AZURE_SECTIONS } from "@/lib/profiles/sections"
+import { COLLECTED_FACT_SOURCES } from "@/lib/profiles/facts"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { mostRecentSnapshotRun } from "@/lib/templates/preview"
+import { readLatestScan } from "@/lib/scans/store"
+import { readTypeCounts } from "@/lib/scans/view"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import {
@@ -78,6 +79,18 @@ export default async function EditTemplatePage({ params }: PageProps) {
       ? null
       : await mostRecentSnapshotRun(user.id, previewSubscription.id)
 
+  // Task 6.5 (Req 15.9, 16.1-16.3) — the most recent scan for the same
+  // subscription the preview panel already defaults to, so the section list's
+  // offerability gate and the preview panel agree on which subscription's data
+  // they are both reading. `null` (no subscription, or no scan yet) means every
+  // section renders offerable, unchanged from before this task.
+  const latestScan =
+    previewSubscription === null
+      ? null
+      : await readLatestScan(user.id, previewSubscription.id)
+  const scanTypeCounts =
+    latestScan === null ? undefined : readTypeCounts(latestScan.typeCounts)
+
   return (
     <WizardShell
       template={toTemplateView(
@@ -92,6 +105,8 @@ export default async function EditTemplatePage({ params }: PageProps) {
       thumbnails={themeThumbnails()}
       previewSubscriptionId={previewSubscription?.id ?? null}
       hasCompletedRun={snapshotRun !== null}
+      scanTypeCounts={scanTypeCounts}
+      collectedFactSources={COLLECTED_FACT_SOURCES}
     />
   )
 }
