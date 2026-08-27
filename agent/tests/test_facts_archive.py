@@ -256,6 +256,7 @@ def test_each_fact_producing_response_lands_one_object_carrying_its_provenance()
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(record("prod-web-01"))]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()]
     )
 
     asyncio.run(
@@ -297,6 +298,7 @@ def test_the_object_is_written_before_the_next_request_of_that_source() -> None:
     inner = FakeFactsPort(
         backup_responses=[empty_fact_list()],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()]
     )
     store = RecordingStore(events)
 
@@ -327,7 +329,8 @@ def test_a_collector_with_no_archive_context_writes_nothing_and_still_folds() ->
     the honest verdict for an archive that does not exist."""
     store = InMemoryObjectStore()
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()]
     )
 
     result = asyncio.run(
@@ -359,6 +362,7 @@ def test_a_failed_write_records_a_gap_per_resource_and_still_folds() -> None:
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(record("prod-web-01"))]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()]
     )
     writer_store = FailingStore()
 
@@ -512,7 +516,8 @@ def test_the_archived_keys_are_the_keys_that_source_answers_for() -> None:
 def test_the_object_records_the_narrowed_keys_and_not_the_whole_declaration() -> None:
     store = InMemoryObjectStore()
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()]
     )
 
     asyncio.run(

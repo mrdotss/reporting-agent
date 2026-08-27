@@ -90,6 +90,7 @@ def collect(
     port = FakeFactsPort(
         backup_responses=[empty_fact_list()],
         reservation_responses=[reservations],
+        advisor_responses=[empty_fact_list()]
     )
     collector = FactCollector(
         port,

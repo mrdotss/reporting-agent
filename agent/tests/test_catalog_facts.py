@@ -269,8 +269,8 @@ def test_a_gibibyte_size_declares_count_rather_than_manufacturing_bytes() -> Non
         )
 
 
-def test_arm_is_declared_as_a_source_and_deliberately_not_yet_used() -> None:
-    """Req 4.2 declares four sources; the shipped file needs three of them.
+def test_arm_and_advisor_are_declared_as_sources_and_not_yet_used() -> None:
+    """Req 4.2 declares five sources; the shipped file uses three of them.
 
     The hole is the mechanism, the same way `azure/definitions.py`'s `UNMAPPED_UNITS` is:
     `arm` is the per-resource control-plane read, and every fact the seven types need today
@@ -279,11 +279,21 @@ def test_arm_is_declared_as_a_source_and_deliberately_not_yet_used() -> None:
     than one narrowed to today's needs — and asserting the absence means the day a fact
     starts using it, this test fails and the claim gets re-read instead of silently
     outliving its reason.
+
+    `advisor` (task 6.4) is the second hole, and unlike `arm` it is a **temporary** one: the
+    source, its port, its client, its collector and its absent-gap type all exist, but no
+    `facts.v1.json` entry declares it yet, so `narrowed_to_gap_type` hands `_collect_advisor`
+    an empty declaration and it folds nothing. Which resource types should declare the advisor
+    keys is an open design question: declaring them on every first-class type makes every
+    storage account collect `advisor_not_available`, which is the noise Req 5.9 forbids (see
+    `test_the_collector_records_no_fact_for_a_resource_type_declaring_none`), while declaring
+    them narrowly leaves a recommendation about an undeclared type with nowhere to land. This
+    assertion is what makes that decision surface the moment somebody adds the first entry.
     """
     used = {entry.source for entry in load_catalog().facts.entries}
 
     assert used <= DECLARED_FACT_SOURCES
-    assert used == DECLARED_FACT_SOURCES - {"arm"}
+    assert used == DECLARED_FACT_SOURCES - {"arm", "advisor"}
 
 
 # --------------------------------------------------------------------------- #

@@ -255,6 +255,7 @@ class Collection:
                     )
                 ],
                 reservation_responses=[empty_fact_list()],
+                advisor_responses=[empty_fact_list()]
             ),
             object_store=self.store,
             actor_id=ACTOR_ID,

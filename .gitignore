@@ -8,6 +8,8 @@ KIRO*
 agent/deploy/*.json
 !agent/deploy/*.example.json
 
+/design
+
 # The agent half's local environment. `app/.gitignore` has covered `.env*` on its side
 # since the foundation; `agent/` had no equivalent only because no `agent/.env` existed
 # yet. It holds no credential today — the Azure secret and the progress token arrive in

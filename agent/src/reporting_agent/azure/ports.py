@@ -333,6 +333,19 @@ class FactsPort(Protocol):
         """
         ...
 
+    async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
+        """Every cached Advisor recommendation for the subscription, one subscription-scoped
+        list (task 6.4, Req 16.7).
+
+        `GET /subscriptions/{subscriptionId}/providers/Microsoft.Advisor/recommendations` —
+        confirmed against Advisor's own REST reference. Each recommendation names its
+        resource through `properties.resourceMetadata.resourceId`, so this one list answers
+        for every resource Advisor has an opinion about, the same "one list, many resources"
+        shape `list_backup_protected_items` and `list_reservations` already have on this
+        port — no per-resource request, matching Req 4.8's own rule for every method here.
+        """
+        ...
+
 
 @runtime_checkable
 class MetricsPort(Protocol):

@@ -86,6 +86,7 @@ from reporting_agent.azure.ports import DnsResolutionError, ProbeResult, RawHttp
 from reporting_agent.azure.regions import metrics_data_plane_endpoint
 
 __all__ = [
+    "ADVISOR_API_VERSION",
     "ARM_ENDPOINT",
     "BACKUP_MANAGEMENT_TYPE_FILTER",
     "DNS_FAILURE_PHRASES",
@@ -995,6 +996,7 @@ class ArmDefinitionsPort:
 RECOVERY_SERVICES_BACKUP_API_VERSION: Final[str] = "2021-01-01"
 SITE_RECOVERY_API_VERSION: Final[str] = "2024-04-01"
 RESERVATIONS_API_VERSION: Final[str] = "2022-11-01"
+ADVISOR_API_VERSION: Final[str] = "2025-01-01"
 """Pinned for the reason every version here is pinned: the response *shape*
 `azure/facts.py` reads is a property of the version, so floating one would change what a
 fact means without changing a line of this repository."""
@@ -1033,6 +1035,7 @@ class ArmFactsPort:
     backup_api_version: str = RECOVERY_SERVICES_BACKUP_API_VERSION
     site_recovery_api_version: str = SITE_RECOVERY_API_VERSION
     reservations_api_version: str = RESERVATIONS_API_VERSION
+    advisor_api_version: str = ADVISOR_API_VERSION
     max_pages: int = MAX_FACT_LIST_PAGES
 
     async def list_backup_protected_items(
@@ -1120,6 +1123,26 @@ class ArmFactsPort:
 
         return RawHttpResponse(
             status=orders.status, headers=orders.headers, body={"value": entries}
+        )
+
+    async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
+        """Every cached Advisor recommendation for the subscription, one subscription-scoped
+        list (task 6.4, Req 16.7).
+
+        One level, unlike `list_reservations`'s two: Advisor's own list already returns
+        every recommendation with its resource named inline
+        (`properties.resourceMetadata.resourceId`), so there is no second per-order request
+        to concatenate. `_paged_list` follows `nextLink` to the end, the same convention
+        every other list on this port already uses.
+        """
+        return await self._paged_list(
+            HttpRequest(
+                "GET",
+                f"{ARM_ENDPOINT}/subscriptions/{subscription_id}/"
+                "providers/Microsoft.Advisor/recommendations",
+                params={"api-version": self.advisor_api_version},
+            ),
+            what=f"recommendations for {subscription_id}",
         )
 
     async def _paged_list(self, request: HttpRequest, *, what: str) -> RawHttpResponse:
