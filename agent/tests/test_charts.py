@@ -13,6 +13,7 @@ import io
 import json
 import re
 import zipfile
+from decimal import Decimal
 from typing import Final
 
 import pytest
@@ -27,6 +28,7 @@ from reporting_agent.compile.ast import (
     TextCell,
     compiling_against,
     figure_path,
+    panel_groups,
 )
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, DesignSettings
@@ -87,6 +89,95 @@ def first_chart(compiled) -> Chart:
     raise AssertionError("no chart in the compiled document")
 
 
+def two_magnitude_chart(*, chart_type: str = "line") -> tuple[Chart, FigureLedger]:
+    """A chart with two series at genuinely different magnitudes, so
+    `panel_groups` actually splits them — unlike `synthetic_chart`'s series,
+    which all share one figure's value and therefore always group into one
+    panel.
+
+    Built with a minimal resolver fixed per point, the same seam
+    `test_panel_groups.py` uses and for the same reason: `sf.two_vm_snapshot()`
+    has no metric at a genuinely different order of magnitude from CPU
+    percentage on hand, and inventing a real second metric in the shared
+    fixture would couple every other test that reads it to this one test's
+    needs.
+    """
+    from dataclasses import dataclass as _dataclass
+
+    from reporting_agent.compile.estimators import ESTIMATOR_EXACT_COUNT_WEIGHTED
+    from reporting_agent.compile.snapshot_view import SnapshotValue
+
+    @_dataclass(frozen=True, slots=True)
+    class _FixedValueResolver:
+        value: SnapshotValue
+
+        def resolve_all(self, raw_pointer: str) -> tuple[SnapshotValue, ...]:
+            return (self.value,)
+
+        def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+            return ()
+
+    def _value(decimal_str: str, unit: str) -> SnapshotValue:
+        return SnapshotValue(
+            value=Decimal(decimal_str),
+            unit=unit,
+            statistic="avg",
+            estimator=ESTIMATOR_EXACT_COUNT_WEIGHTED,
+            fidelity_tier="baseline",
+            scale=2,
+            pointer="/resources/r0/metrics/m0/value",
+            estimated=None,
+            metric="synthetic",
+            resource_id="r0",
+            window="",
+        )
+
+    ledger = FigureLedger()
+    cursor = BlockCursor(block_id="c", ledger=ledger)
+
+    cpu_points = []
+    for point_index, decimal_str in enumerate(("50", "60", "70")):
+        value = _value(decimal_str, "percent")
+        with compiling_against(_FixedValueResolver(value)):
+            figure = (
+                cursor.child("series", 0).child("points", point_index).child("figure", 0).figure(value)
+            )
+        cpu_points.append(
+            ChartPoint(path=figure_path("c", 0, point_index), x=f"day-{point_index}", y=figure)
+        )
+
+    memory_points = []
+    for point_index, decimal_str in enumerate(("4000000000", "4200000000", "3900000000")):
+        value = _value(decimal_str, "bytes")
+        with compiling_against(_FixedValueResolver(value)):
+            figure = (
+                cursor.child("series", 1).child("points", point_index).child("figure", 0).figure(value)
+            )
+        memory_points.append(
+            ChartPoint(path=figure_path("c", 1, point_index), x=f"day-{point_index}", y=figure)
+        )
+
+    series = (
+        Series(path=figure_path("c", 0), key="cpu", label="CPU", points=tuple(cpu_points)),
+        Series(
+            path=figure_path("c", 1),
+            key="memory",
+            label="Memory",
+            points=tuple(memory_points),
+        ),
+    )
+    node = Chart(
+        path=figure_path("c", 99),
+        chart_type=chart_type,
+        title="Two magnitudes",
+        unit="mixed",
+        encoding="categorical",
+        series=series,
+        panels=panel_groups(series),
+    )
+    return node, ledger
+
+
 def synthetic_chart(
     *,
     series_count: int,
@@ -140,6 +231,7 @@ def synthetic_chart(
             unit="percent",
             encoding=encoding,
             series=tuple(series),
+            panels=panel_groups(tuple(series)),
         )
     return chart, ledger
 
@@ -794,3 +886,128 @@ def test_indonesian_render_produces_indonesian_series_label() -> None:
     assert expected_label == "Lainnya (5 seri)"
     assert aggregate.label == expected_label
     assert aggregate.key == C.OTHER_SERIES_KEY
+
+
+# --------------------------------------------------------------------------- #
+# Task 5.2 — the renderer draws N stacked panels
+# --------------------------------------------------------------------------- #
+
+
+def test_a_single_panel_chart_renders_at_the_original_size() -> None:
+    """A chart with one panel (the ordinary case, unchanged by panelling) is
+    exactly `CHART_SIZE_INCHES` — the same size every chart rendered before
+    task 5.2, so a one-panel chart's emitted bytes stay byte-identical."""
+    from reporting_agent.render import chartstyle as S
+
+    node, _ = synthetic_chart(series_count=2, points_per_series=3)
+    assert len(node.panels) == 1  # no split: both series share the same figure's value
+
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    assert artifacts.image_png[:8] == b"\x89PNG\r\n\x1a\n"
+
+    # The pixel dimensions are size_inches * dpi, so an unchanged figsize
+    # produces the same pixel geometry a pre-panelling chart always had.
+    import io as _io
+
+    from PIL import Image
+
+    with Image.open(_io.BytesIO(artifacts.image_png)) as img:
+        expected_w = round(S.CHART_SIZE_INCHES[0] * S.CHART_DPI)
+        expected_h = round(S.CHART_SIZE_INCHES[1] * S.CHART_DPI)
+        assert img.size == (expected_w, expected_h)
+
+
+def test_a_two_magnitude_chart_splits_into_two_panels_and_is_taller() -> None:
+    """CPU (0-100) and memory-in-bytes (billions) differ by far more than one
+    order of magnitude, so `panel_groups` splits them — and the rendered
+    image is taller than a single-panel chart, proportional to
+    `chart_size_inches(2)`."""
+    from reporting_agent.render import chartstyle as S
+
+    node, _ = two_magnitude_chart()
+    assert len(node.panels) == 2
+
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+
+    import io as _io
+
+    from PIL import Image
+
+    with Image.open(_io.BytesIO(artifacts.image_png)) as img:
+        expected_w, expected_h = S.chart_size_inches(2)
+        assert img.size == (
+            round(expected_w * S.CHART_DPI),
+            round(expected_h * S.CHART_DPI),
+        )
+        # Taller than the single-panel size, and width is unchanged — panels
+        # stack vertically, never widen the figure.
+        single_w, single_h = S.CHART_SIZE_INCHES
+        assert img.size[1] > round(single_h * S.CHART_DPI)
+        assert img.size[0] == round(single_w * S.CHART_DPI)
+
+
+@pytest.mark.parametrize("chart_type", ["line", "area", "bar", "hbar"])
+def test_a_panelled_chart_still_renders_identical_bytes_across_two_calls(
+    chart_type: str,
+) -> None:
+    """Panelling must not reopen the byte-reproducibility guarantee
+    `test_two_renders_of_one_chart_node_produce_identical_bytes` already
+    proves for the single-panel case."""
+    node, _ = two_magnitude_chart(chart_type=chart_type)
+    first = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    second = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    assert first.image_png == second.image_png
+    assert first.data_hash == second.data_hash
+
+
+def test_a_declared_panel_grouping_missing_the_aggregate_key_is_rerived() -> None:
+    """Above the five-series cap, `plotted_series` folds the remainder into
+    one `__other__` aggregate the compile-time `panel_groups` call never saw
+    — `_panel_groups_for` must re-derive rather than silently dropping that
+    series from every panel (task 5.2's own note on why this re-derivation
+    exists at all)."""
+    node, _ = synthetic_chart(series_count=9, points_per_series=2)
+    # synthetic_chart's series all share one figure's value, so
+    # panel_groups declared one panel naming all nine metric-N keys — none
+    # of which is __other__, since the aggregate does not exist until
+    # plotted_series folds the remainder at render time.
+    assert C.OTHER_SERIES_KEY not in {key for group in node.panels for key in group}
+
+    series_set = C.plotted_series(node, messages=_MESSAGES)
+    groups = C._panel_groups_for(node, series_set)
+
+    # Every plotted key — including the aggregate — must appear in some
+    # panel; re-deriving is what makes that true when the declared grouping
+    # cannot possibly have named it.
+    grouped_keys = {key for group in groups for key in group}
+    assert grouped_keys == {series.key for series in series_set}
+    assert C.OTHER_SERIES_KEY in grouped_keys
+
+    # render_chart must not crash on this reconciliation either.
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    assert artifacts.image_png[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_chart_size_inches_reduces_to_the_single_chart_size_at_one_panel() -> None:
+    from reporting_agent.render import chartstyle as S
+
+    assert S.chart_size_inches(1) == S.CHART_SIZE_INCHES
+
+
+def test_chart_size_inches_grows_linearly_with_panel_count_plus_gaps() -> None:
+    from reporting_agent.render import chartstyle as S
+
+    one = S.chart_size_inches(1)
+    three = S.chart_size_inches(3)
+    expected_height = 3 * S.CHART_PANEL_HEIGHT_INCHES + 2 * S.CHART_PANEL_GAP_INCHES
+    assert three[1] == pytest.approx(expected_height)
+    assert three[0] == one[0]  # width never changes
+
+
+def test_chart_size_inches_rejects_zero_or_negative_panel_counts() -> None:
+    from reporting_agent.render import chartstyle as S
+
+    with pytest.raises(ValueError):
+        S.chart_size_inches(0)
+    with pytest.raises(ValueError):
+        S.chart_size_inches(-1)

@@ -62,6 +62,7 @@ from reporting_agent.compile.ast import (
     Series,
     Table,
     TextCell,
+    panel_groups,
 )
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, NOTICE_COLUMN_HEADER
 from reporting_agent.compile.messages import Messages
@@ -401,6 +402,48 @@ def _figure_cell(figure: Figure):
 # --------------------------------------------------------------------------- #
 
 
+def _panel_groups_for(
+    node: Chart, series_set: tuple[Series, ...]
+) -> tuple[tuple[str, ...], ...]:
+    """Resolve `node.panels` against the series actually **plotted** (Req 17.7).
+
+    `node.panels` was assigned by the compiler at compile time, over every
+    series the block produced — before `plotted_series` applies Req 22.9's
+    five-series cap and folds the remainder into one `__other__` aggregate.
+    A chart above the cap therefore has a declared panel grouping that may
+    name series no longer present (the folded ones) and never names the
+    aggregate (which does not exist until render time), so this function
+    re-derives groups over the plotted set rather than trusting the
+    declared one verbatim in that case.
+
+    Below the cap, `plotted_series` returns every series unchanged, so
+    `node.panels`'s own groups already match — filtered to the keys present
+    (a no-op there) and returned as declared, preserving the compiler's own
+    panel ORDER rather than re-deriving it and risking a different order
+    for the ordinary, most common case.
+
+    Empty `node.panels` (a chart compiled before task 5.1, or one whose
+    `panel_groups` never split it) still means one panel — never zero —
+    matching the AST field's own documented default.
+    """
+    plotted_keys = {series.key for series in series_set}
+
+    if node.panels:
+        filtered = tuple(
+            tuple(key for key in group if key in plotted_keys)
+            for group in node.panels
+        )
+        filtered = tuple(group for group in filtered if group)
+        if filtered and plotted_keys <= {key for group in filtered for key in group}:
+            return filtered
+        # The aggregate key (or some other plotted key) is not named in the
+        # declared groups — re-derive over what is actually plotted rather
+        # than silently dropping it from every panel.
+
+    groups = panel_groups(series_set)
+    return groups if groups else ((),)
+
+
 def render_chart(node: Chart, *, table_style: str, theme: str = "light", messages: Messages) -> ChartArtifacts:
     """Emit one chart's image, sidecar and companion table.
 
@@ -428,11 +471,60 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
     data_hash = chart_data_hash(node, messages=messages)
     series_set = plotted_series(node, messages=messages)
 
+    # Req 17.1 — the panel groups this chart's plotted series fall into. Empty
+    # `node.panels` means one panel holding every plotted series (task 5.1's
+    # own guarantee), so `groups` always has at least one entry even for a
+    # chart compiled before panelling existed. `plotted_series` (the
+    # five-series cap and the aggregate) runs BEFORE this, so a panel never
+    # groups a series the cap already dropped — panelling is a further split
+    # of what was already going to be drawn, not a second selection.
+    groups = _panel_groups_for(node, series_set)
+    panel_count = len(groups)
+
     with rc_context(style.frozen_rc_params()):
-        figure = MplFigure(figsize=style.CHART_SIZE_INCHES, dpi=style.CHART_DPI)
-        axes = figure.add_subplot(111)
+        figure = MplFigure(
+            figsize=style.chart_size_inches(panel_count), dpi=style.CHART_DPI
+        )
+        axes_list = figure.subplots(panel_count, 1, sharex=True, squeeze=False)[:, 0]
+
+        # Req 17.5 — the chart's own title (plus period) belongs to the whole
+        # figure, set exactly once regardless of panel count, so a panelled
+        # chart reads as one chart with panel_count panels rather than
+        # panel_count separately titled charts stacked together.
+        title_text = node.title
+        if node.period_label:
+            title_text = f"{node.title}\n{node.period_label}"
+        figure.suptitle(
+            title_text, fontfamily=style.CHART_FONT, fontsize=style.CHART_TITLE_SIZE
+        )
+
         try:
-            _draw(axes, node, series_set, theme=theme, messages=messages)
+            for panel_index, (axes, panel_keys) in enumerate(zip(axes_list, groups, strict=True)):
+                panel_series = tuple(
+                    series for series in series_set if series.key in panel_keys
+                )
+                _draw(
+                    axes,
+                    node,
+                    panel_series,
+                    theme=theme,
+                    messages=messages,
+                    is_last_panel=(panel_index == panel_count - 1),
+                )
+
+            # Fixed rather than tight_layout(): `tight_layout` measures rendered text, so
+            # its result depends on font metrics and would make the emitted bytes
+            # host-dependent. Set once, on the whole figure, after every panel is drawn.
+            # `hspace` is a fixed axes-fraction gap between stacked panels — large enough
+            # to separate one panel's x-axis tick labels from the panel below's title,
+            # small enough that `panel_count` panels still read as one chart rather than
+            # `panel_count` charts with visible whitespace between them. Single-panel
+            # charts (`panel_count == 1`) ignore `hspace` entirely, so this changes
+            # nothing about their emitted bytes.
+            figure.subplots_adjust(
+                left=0.12, right=0.86, top=0.86, bottom=0.28, hspace=0.5
+            )
+
             buffer = io.BytesIO()
             figure.savefig(
                 buffer,
@@ -490,13 +582,26 @@ def _colour_for(series: Series, siblings: tuple[str, ...], node: Chart, theme: s
     return style.hex_for_token(style.color_for_key(series.key, siblings), theme)
 
 
-def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, messages: Messages) -> None:
-    """Draw the plotted set.
+def _draw(
+    axes,
+    node: Chart,
+    series_set: tuple[Series, ...],
+    *,
+    theme: str,
+    messages: Messages,
+    is_last_panel: bool = True,
+) -> None:
+    """Draw one panel's plotted set.
 
     `float(...)` on a plotted decimal string happens here and nowhere else. The result
     positions a mark and is discarded; it is never hashed and never emitted as text
     (Req 22.6), which is what keeps a float off the path from a snapshot value to a
     displayed string.
+
+    `is_last_panel` decides whether this axes gets x-axis tick labels: `sharex=True`
+    across the stacked subplots means every panel shares one x range, so repeating the
+    labels on every panel would say the same thing `panel_count` times for no reason —
+    only the bottom panel needs them (Req 17.3).
     """
     # --- Axis titles (Req 17.1, 17.11) ----------------------------------------
     # Resolved from the message catalog. An absent id with a unit is acceptable;
@@ -504,12 +609,17 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
     x_axis_title = _resolve_axis_title(node.x_axis_label_id, node=node, axis="x", messages=messages)
     y_axis_title = _resolve_axis_title(node.y_axis_label_id, node=node, axis="y", messages=messages)
 
-    # --- Chart title with period (Req 17.5) ------------------------------------
-    title_text = node.title
-    if node.period_label:
-        title_text = f"{node.title}\n{node.period_label}"
-
-    axes.set_title(title_text, fontfamily=style.CHART_FONT, fontsize=style.CHART_TITLE_SIZE)
+    # --- Panel title (Req 17.5) -------------------------------------------------
+    # The chart's own title (plus period) belongs to the WHOLE chart, so it is set
+    # only once, on the top panel — repeating it on every panel would read as
+    # `panel_count` separately titled charts stacked together rather than one
+    # chart with `panel_count` panels. Every panel still states which series it
+    # holds, so "a reader knows which is the maximum without a legend" — the
+    # requirement's own phrasing — holds even on a panel with no chart title.
+    panel_subtitle = ", ".join(dict.fromkeys(series.label for series in series_set))
+    axes.set_title(
+        panel_subtitle, fontfamily=style.CHART_FONT, fontsize=style.CHART_LABEL_SIZE
+    )
 
     # Y-axis: combine title and unit
     if y_axis_title:
@@ -517,8 +627,8 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
     else:
         axes.set_ylabel(node.unit)
 
-    # X-axis: title if present
-    if x_axis_title:
+    # X-axis: title only on the last (bottom) panel — see `is_last_panel`'s note above.
+    if x_axis_title and is_last_panel:
         axes.set_xlabel(x_axis_title)
 
     # --- Gridlines (Req 17.2) -------------------------------------------------
@@ -631,10 +741,6 @@ def _draw(axes, node: Chart, series_set: tuple[Series, ...], *, theme: str, mess
             fontsize=style.CHART_LABEL_SIZE,
             framealpha=0.8,
         )
-
-    # Fixed rather than tight_layout(): `tight_layout` measures rendered text, so its result
-    # depends on font metrics and would make the emitted bytes host-dependent.
-    axes.figure.subplots_adjust(left=0.12, right=0.86, top=0.86, bottom=0.28)
 
 
 def _bar_offsets(series_count: int, slot: int) -> float:

@@ -54,9 +54,12 @@ __all__ = [
     "CHART_GRID_WIDTH",
     "CHART_LABEL_SIZE",
     "CHART_MARKER_SIZE",
+    "CHART_PANEL_GAP_INCHES",
+    "CHART_PANEL_HEIGHT_INCHES",
     "CHART_SIZE_INCHES",
     "CHART_STROKE_WIDTH",
     "CHART_TITLE_SIZE",
+    "CHART_WIDTH_INCHES",
     "DASH_PATTERNS",
     "DESTRUCTIVE_VALUES",
     "MARKER_SHAPES",
@@ -70,6 +73,7 @@ __all__ = [
     "Theme",
     "assign_colors",
     "axis_label_color",
+    "chart_size_inches",
     "color_for_key",
     "compare_by_code_point",
     "contrast_ratio",
@@ -524,6 +528,53 @@ CHART_SIZE_INCHES: Final[tuple[float, float]] = (6.0, 3.2)
 """One size for every chart, so a document's charts share a shape and the emitted PNG
 has one pixel geometry. 6 inches sits inside an A4 text column at the theme's 2 cm
 margins with room for the direct labels."""
+
+CHART_WIDTH_INCHES: Final[float] = CHART_SIZE_INCHES[0]
+"""The width every chart shares, panelled or not — pulled out under its own name so
+`chart_size_inches` states plainly which of `CHART_SIZE_INCHES`'s two numbers it is
+holding fixed, rather than reaching into a tuple by position a reader has to remember."""
+
+CHART_PANEL_HEIGHT_INCHES: Final[float] = CHART_SIZE_INCHES[1]
+"""Req 17.3 — the height of ONE panel. A single-panel chart is exactly
+`CHART_SIZE_INCHES` today (`panels` empty means one panel, task 5.1), so fixing this to
+the existing single-chart height is what makes a one-panel chart's emitted bytes
+byte-identical to every chart rendered before task 5.1, rather than a chart the same
+data used to produce coming out a different size now that panels exist as a concept."""
+
+CHART_PANEL_GAP_INCHES: Final[float] = 0.3
+"""The vertical gap between two stacked panels — enough to separate a panel's x-axis
+tick labels from the panel above's title without the two panels reading as one taller
+chart. Not zero: a panel boundary with no visual gap is a panel boundary a reader has
+to infer from the axis ranges alone."""
+
+
+def chart_size_inches(panel_count: int) -> tuple[float, float]:
+    """The figure size for a chart with `panel_count` stacked panels (Req 17.3, 17.5).
+
+    Width is always `CHART_WIDTH_INCHES` — panelling stacks panels **vertically**, so
+    the width `docx.py::emit_chart`'s `_CHART_WIDTH_INCHES = 6.0` embeds against never
+    changes, and a taller PNG still embeds without resampling. Height is `panel_count`
+    panels plus `panel_count - 1` gaps between them, so `panel_count == 1` reduces
+    exactly to `CHART_SIZE_INCHES`'s own height with zero gaps — the same byte-identical
+    guarantee `CHART_PANEL_HEIGHT_INCHES`'s own docstring states.
+
+    `panel_count < 1` is a caller error — a chart always has at least one panel, empty
+    `panels` on the AST node included, since that means one panel holding every series
+    rather than zero panels holding none — so this raises rather than silently
+    clamping to 1, which would hide the caller passing the wrong count.
+    """
+    if panel_count < 1:
+        raise ValueError(
+            f"chart_size_inches requires panel_count >= 1, got {panel_count}; a chart "
+            f"always has at least one panel (an empty AST `panels` field means one "
+            f"panel holding every series, not zero panels)."
+        )
+    height = (
+        panel_count * CHART_PANEL_HEIGHT_INCHES
+        + (panel_count - 1) * CHART_PANEL_GAP_INCHES
+    )
+    return (CHART_WIDTH_INCHES, height)
+
 
 CHART_FONT: Final[str] = "DejaVu Sans"
 """Named explicitly, never resolved by fallback.
