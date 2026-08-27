@@ -93,6 +93,47 @@ describe("Requirement 22.12 — the encoding is read, never inferred", () => {
   })
 })
 
+describe("Requirement 17.6 — the panel grouping is read, never re-derived here", () => {
+  test("a chart with no data-panels attribute at all parses to an empty grouping", () => {
+    expect(parseChartFigure(CHART)!.panels).toEqual([])
+  })
+
+  test("a real declared grouping round-trips through the HTML attribute", () => {
+    const html =
+      '<figure class="rpt-chart" data-encoding="categorical" ' +
+      'data-panels="[[&quot;cpu&quot;],[&quot;memory&quot;,&quot;disk&quot;]]">' +
+      "<figcaption>Two panels</figcaption>" +
+      "</figure>"
+    const spec = parseChartFigure(figureFrom(html))!
+    expect(spec.panels).toEqual([["cpu"], ["memory", "disk"]])
+  })
+
+  test("an explicit empty array attribute parses to an empty grouping", () => {
+    const html =
+      '<figure class="rpt-chart" data-encoding="categorical" data-panels="[]">' +
+      "<figcaption>One panel</figcaption>" +
+      "</figure>"
+    expect(parseChartFigure(figureFrom(html))!.panels).toEqual([])
+  })
+
+  test("malformed JSON in data-panels falls back to an empty grouping, not a crash", () => {
+    const html =
+      '<figure class="rpt-chart" data-encoding="categorical" data-panels="not json">' +
+      "<figcaption>Broken</figcaption>" +
+      "</figure>"
+    expect(() => parseChartFigure(figureFrom(html))).not.toThrow()
+    expect(parseChartFigure(figureFrom(html))!.panels).toEqual([])
+  })
+
+  test("a data-panels value that is not an array of arrays falls back to empty", () => {
+    const html =
+      '<figure class="rpt-chart" data-encoding="categorical" data-panels="[&quot;cpu&quot;]">' +
+      "<figcaption>Wrong shape</figcaption>" +
+      "</figure>"
+    expect(parseChartFigure(figureFrom(html))!.panels).toEqual([])
+  })
+})
+
 describe("parsing refuses what it did not produce", () => {
   test("an element that is not a chart figure is null", () => {
     expect(parseChartFigure(figureFrom("<div>not a chart</div>"))).toBeNull()

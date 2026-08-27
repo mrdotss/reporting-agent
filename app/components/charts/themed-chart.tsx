@@ -3,7 +3,7 @@
 import { useMemo } from "react"
 
 import { assignSeries, cssVar } from "@/components/charts/categorical"
-import type { ChartSpec } from "@/components/charts/chart-spec"
+import type { ChartSeries, ChartSpec } from "@/components/charts/chart-spec"
 import {
   SEQUENTIAL_STROKE_SAFE,
   type MarkerShape,
@@ -46,11 +46,12 @@ import {
  */
 
 const WIDTH = 720
-const HEIGHT = 260
+const PANEL_HEIGHT = 260
+const PANEL_GAP = 24
 const PADDING = { top: 16, right: 96, bottom: 28, left: 48 }
 
 const PLOT_WIDTH = WIDTH - PADDING.left - PADDING.right
-const PLOT_HEIGHT = HEIGHT - PADDING.top - PADDING.bottom
+const PLOT_HEIGHT = PANEL_HEIGHT - PADDING.top - PADDING.bottom
 
 /** One marker, centred on `(x, y)`. Shapes rather than sizes, so all read equally. */
 function Marker({
@@ -134,141 +135,185 @@ export function ThemedChart({
     )
   }
 
-  const values = plotted
-    .flatMap((series) => series.points.map((point) => point.value))
-    .filter((value) => Number.isFinite(value))
-
-  const max = values.length === 0 ? 1 : Math.max(...values)
-  const min = values.length === 0 ? 0 : Math.min(0, Math.min(...values))
-  const span = max - min || 1
+  // Requirement 17.6 — the SAME panel grouping the compiler assigned, read from
+  // the spec rather than re-derived here. An empty `spec.panels` (no attribute,
+  // or the AST's own empty-means-one-panel default) resolves to one panel
+  // holding every plotted series — the chart every report had before panelling
+  // existed. `plottedKeys` filters a declared group down to keys that survived
+  // this component's own "drop series with zero points" filter above; a group
+  // that becomes empty after filtering is dropped entirely rather than drawn as
+  // a panel with nothing in it.
+  const plottedKeys = new Set(plotted.map((series) => series.key))
+  const panelGroups: readonly (readonly string[])[] =
+    spec.panels.length > 0
+      ? spec.panels
+          .map((group) => group.filter((key) => plottedKeys.has(key)))
+          .filter((group) => group.length > 0)
+      : [[...plottedKeys]]
+  const panels: readonly (readonly ChartSeries[])[] =
+    panelGroups.length > 0
+      ? panelGroups.map((group) =>
+          plotted.filter((series) => group.includes(series.key))
+        )
+      : [plotted]
 
   const longest = Math.max(...plotted.map((series) => series.points.length))
-
   const xFor = (index: number) =>
     PADDING.left + (longest <= 1 ? 0 : (index / (longest - 1)) * PLOT_WIDTH)
 
-  const yFor = (value: number) =>
-    PADDING.top + PLOT_HEIGHT - ((value - min) / span) * PLOT_HEIGHT
-
   const sequentialTokens = SEQUENTIAL_STROKE_SAFE[theme]
+  const panelCount = panels.length
+  const totalHeight =
+    panelCount * PANEL_HEIGHT + Math.max(0, panelCount - 1) * PANEL_GAP
 
   return (
     <svg
       data-slot="themed-chart"
       data-encoding={spec.encoding}
-      viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+      data-panel-count={panelCount}
+      viewBox={`0 0 ${WIDTH} ${totalHeight}`}
       // The figures beneath this SVG are the accessible alternative
       // (Requirement 22.10), so the drawing itself is decorative to a reader.
       role="img"
       aria-label={`${spec.title}. The figures are listed in the table below.`}
       className="w-full"
     >
-      {/* A baseline, in a border token rather than `--destructive` (Req 22.13). */}
-      <line
-        x1={PADDING.left}
-        y1={yFor(min)}
-        x2={PADDING.left + PLOT_WIDTH}
-        y2={yFor(min)}
-        stroke="var(--border)"
-        strokeWidth={1}
-      />
+      {panels.map((panelSeries, panelIndex) => {
+        const panelOffset = panelIndex * (PANEL_HEIGHT + PANEL_GAP)
+        // Each panel scales to ITS OWN data — the identical rule the document
+        // renderer follows (Req 17.3): no shared axis range is imposed across
+        // panels, since the whole point of splitting is that the panels are at
+        // different magnitudes.
+        const panelValues = panelSeries
+          .flatMap((series) => series.points.map((point) => point.value))
+          .filter((value) => Number.isFinite(value))
+        const panelMax = panelValues.length === 0 ? 1 : Math.max(...panelValues)
+        const panelMin =
+          panelValues.length === 0 ? 0 : Math.min(0, Math.min(...panelValues))
+        const panelSpan = panelMax - panelMin || 1
+        const yFor = (value: number) =>
+          panelOffset +
+          PADDING.top +
+          PLOT_HEIGHT -
+          ((value - panelMin) / panelSpan) * PLOT_HEIGHT
 
-      {plotted.map((series, seriesIndex) => {
-        // Requirement 22.12 — the palette follows the **encoding**, never the
-        // series count. A sequential chart plots one ordered quantity, so its
-        // series walk the ramp; a categorical chart's series are peers and take
-        // the hash-assigned slot that keeps a resource one colour report-wide.
-        const style = styles.get(series.key)
-        const token =
-          spec.encoding === "sequential"
-            ? (sequentialTokens[
-                Math.min(seriesIndex, sequentialTokens.length - 1)
-              ] ?? sequentialTokens[0]!)
-            : (style?.token ?? "--cat-other")
+        return (
+          <g key={panelIndex} data-slot="chart-panel">
+            {/* A baseline, in a border token rather than `--destructive` (Req 22.13). */}
+            <line
+              x1={PADDING.left}
+              y1={yFor(panelMin)}
+              x2={PADDING.left + PLOT_WIDTH}
+              y2={yFor(panelMin)}
+              stroke="var(--border)"
+              strokeWidth={1}
+            />
 
-        const finite = series.points
-          .map((point, index) => ({ point, index }))
-          .filter(({ point }) => Number.isFinite(point.value))
+            {panelSeries.map((series) => {
+              const seriesIndex = plotted.findIndex(
+                (candidate) => candidate.key === series.key
+              )
+              // Requirement 22.12 — the palette follows the **encoding**, never
+              // the series count. A sequential chart plots one ordered
+              // quantity, so its series walk the ramp; a categorical chart's
+              // series are peers and take the hash-assigned slot that keeps a
+              // resource one colour report-wide.
+              const style = styles.get(series.key)
+              const token =
+                spec.encoding === "sequential"
+                  ? (sequentialTokens[
+                      Math.min(seriesIndex, sequentialTokens.length - 1)
+                    ] ?? sequentialTokens[0]!)
+                  : (style?.token ?? "--cat-other")
 
-        // A gap rather than a zero: an unparseable value plotted at the baseline
-        // is a claim the data does not make.
-        const path = finite
+              const finite = series.points
+                .map((point, index) => ({ point, index }))
+                .filter(({ point }) => Number.isFinite(point.value))
+
+              // A gap rather than a zero: an unparseable value plotted at the
+              // baseline is a claim the data does not make.
+              const path = finite
           .map(
             ({ point, index }, position) =>
               `${position === 0 ? "M" : "L"}${xFor(index)},${yFor(point.value)}`
           )
           .join(" ")
 
-        const last = finite.at(-1)
+              const last = finite.at(-1)
 
-        return (
-          <g key={series.key} data-series-key={series.key}>
-            <path
-              d={path}
-              fill="none"
-              stroke={cssVar(token)}
-              strokeWidth={2}
-              // Requirement 22.8 — a second channel on the stroke itself.
-              strokeDasharray={style?.dash === "0" ? undefined : style?.dash}
-            />
+              return (
+                <g key={series.key} data-series-key={series.key}>
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke={cssVar(token)}
+                    strokeWidth={2}
+                    // Requirement 22.8 — a second channel on the stroke itself.
+                    strokeDasharray={style?.dash === "0" ? undefined : style?.dash}
+                  />
 
-            {finite.map(({ point, index }) => (
-              <Marker
-                key={`${series.key}-${index}`}
-                shape={style?.marker ?? "circle"}
-                x={xFor(index)}
-                y={yFor(point.value)}
-                token={token}
-              />
-            ))}
+                  {finite.map(({ point, index }) => (
+                    <Marker
+                      key={`${series.key}-${index}`}
+                      shape={style?.marker ?? "circle"}
+                      x={xFor(index)}
+                      y={yFor(point.value)}
+                      token={token}
+                    />
+                  ))}
+
+                  {/*
+                    The direct label (Requirement 22.8), at the end of the line
+                    rather than in a legend — a legend makes the reader match a
+                    swatch to a name, which is the matching a colour-blind
+                    reader cannot do.
+                  */}
+                  {last === undefined ? null : (
+                    <text
+                      x={xFor(last.index) + 8}
+                      y={yFor(last.point.value) + 4}
+                      fill={cssVar(token)}
+                      className="text-[11px]"
+                    >
+                      {series.label}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
 
             {/*
-              The direct label (Requirement 22.8), at the end of the line rather
-              than in a legend — a legend makes the reader match a swatch to a
-              name, which is the matching a colour-blind reader cannot do.
+              Value labels on the extremes only, per panel. Every point
+              labelled is unreadable at this width, and the two a reader
+              actually looks for are the peak and the trough — both printed
+              from `formatted`, never from `value`.
             */}
-            {last === undefined ? null : (
-              <text
-                x={xFor(last.index) + 8}
-                y={yFor(last.point.value) + 4}
-                fill={cssVar(token)}
-                className="text-[11px]"
-              >
-                {series.label}
-              </text>
-            )}
+            {panelSeries.map((series) => {
+              const finite = series.points
+                .map((point, index) => ({ point, index }))
+                .filter(({ point }) => Number.isFinite(point.value))
+
+              if (finite.length === 0) return null
+
+              const peak = finite.reduce((held, candidate) =>
+                candidate.point.value > held.point.value ? candidate : held
+              )
+
+              return (
+                <text
+                  key={`${series.key}-peak`}
+                  data-slot="value-label"
+                  x={xFor(peak.index)}
+                  y={yFor(peak.point.value) - 8}
+                  textAnchor="middle"
+                  className="fill-foreground font-mono text-[10px] tabular-nums"
+                >
+                  {/* Requirement 22.7 — the ledger's string, verbatim. */}
+                  {peak.point.formatted}
+                </text>
+              )
+            })}
           </g>
-        )
-      })}
-
-      {/*
-        Value labels on the extremes only. Every point labelled is unreadable at
-        this width, and the two a reader actually looks for are the peak and the
-        trough — both printed from `formatted`, never from `value`.
-      */}
-      {plotted.map((series) => {
-        const finite = series.points
-          .map((point, index) => ({ point, index }))
-          .filter(({ point }) => Number.isFinite(point.value))
-
-        if (finite.length === 0) return null
-
-        const peak = finite.reduce((held, candidate) =>
-          candidate.point.value > held.point.value ? candidate : held
-        )
-
-        return (
-          <text
-            key={`${series.key}-peak`}
-            data-slot="value-label"
-            x={xFor(peak.index)}
-            y={yFor(peak.point.value) - 8}
-            textAnchor="middle"
-            className="fill-foreground font-mono text-[10px] tabular-nums"
-          >
-            {/* Requirement 22.7 — the ledger's string, verbatim. */}
-            {peak.point.formatted}
-          </text>
         )
       })}
     </svg>

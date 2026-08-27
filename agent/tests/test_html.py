@@ -13,6 +13,7 @@ explicit test — an absence nobody asserts is an absence that grows a feature.
 
 from __future__ import annotations
 
+import json
 import re
 import zipfile
 from typing import Final
@@ -618,6 +619,24 @@ def test_a_chart_carries_its_declared_encoding_verbatim() -> None:
     encodings = re.findall(r'data-encoding="([^"]*)"', outcome.html)
     assert encodings
     assert set(encodings) <= {"categorical", "sequential"}
+
+
+def test_a_chart_carries_its_panels_grouping_as_json_task_5_4() -> None:
+    """`data-panels` (task 5.4) is what lets the app read the SAME panel
+    grouping the compiler assigned, rather than the app inferring its own
+    split over the parsed spec — the identical reasoning `data-encoding`
+    already follows for the palette."""
+    _, outcome = emit([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
+    matches = re.findall(r'data-panels="([^"]*)"', outcome.html)
+    assert matches
+    for raw in matches:
+        # html.escape(quote=True) turns a literal `"` into `&quot;` — undo it
+        # before parsing, the same as a browser's attribute parser would.
+        decoded = raw.replace("&quot;", '"')
+        parsed = json.loads(decoded)
+        assert isinstance(parsed, list)
+        # Every group is itself a list of series keys.
+        assert all(isinstance(group, list) for group in parsed)
 
 
 def test_every_plotted_point_is_a_figure_element_with_provenance() -> None:

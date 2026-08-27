@@ -59,6 +59,16 @@ export type ChartSpec = {
   readonly unit: string
   readonly title: string
   readonly series: readonly ChartSeries[]
+  /**
+   * Requirement 17.6 — the SAME panel grouping the compiler assigned
+   * (`panel_groups` in `compile/ast.py`), read from the markup rather than
+   * inferred here. Each entry is a series key list for one panel, in panel
+   * order. An empty array (the emitter's own `[]` for the AST field's empty
+   * default) means one panel holding every series — `themed-chart.tsx`
+   * resolves that the same way `panelGroups` resolves an empty input, so the
+   * two halves agree even before the app ever calls `panelGroups` itself.
+   */
+  readonly panels: readonly (readonly string[])[]
 }
 
 /**
@@ -104,6 +114,30 @@ export function parseChartFigure(figure: Element): ChartSpec | null {
     unit: figure.getAttribute("data-unit") ?? "",
     title: figure.querySelector("figcaption")?.textContent ?? "",
     series,
+    panels: parsePanels(figure.getAttribute("data-panels")),
+  }
+}
+
+/**
+ * Parse `data-panels`'s JSON array of string arrays, defensively.
+ *
+ * `[]` for anything absent, malformed, or shaped wrong — the same "render
+ * nothing rather than a chart of guesses" discipline {@link parseChartFigure}
+ * itself follows for an element that is not a chart at all. `themed-chart.tsx`
+ * treats an empty `panels` as one panel holding every series (matching the AST
+ * field's own documented default), so falling back to `[]` here is falling
+ * back to the single-panel behaviour every chart had before panelling existed
+ * — never to a crash and never to a guessed grouping.
+ */
+function parsePanels(raw: string | null): readonly (readonly string[])[] {
+  if (raw === null) return []
+  try {
+    const parsed: unknown = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    if (!parsed.every((group) => Array.isArray(group))) return []
+    return parsed as readonly (readonly string[])[]
+  } catch {
+    return []
   }
 }
 

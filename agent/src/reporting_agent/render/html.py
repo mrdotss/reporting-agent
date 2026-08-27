@@ -42,6 +42,7 @@ is never a verification input.
 from __future__ import annotations
 
 import html
+import json
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -444,6 +445,7 @@ class _Emitter:
             f'"{html.escape(node.chart_type, quote=True)}"'
             f' data-encoding="{html.escape(node.encoding, quote=True)}"'
             f' data-unit="{html.escape(node.unit, quote=True)}"'
+            f' data-panels="{html.escape(json.dumps(node.panels), quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
             f"<figcaption>{html.escape(node.title)}</figcaption>"
             f'{period_markup}{indication}<div class="{_CLS_SERIES_SET}">{"".join(series_markup)}</div>'
