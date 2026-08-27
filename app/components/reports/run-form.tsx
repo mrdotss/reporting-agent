@@ -15,7 +15,6 @@ import type {
 import { messageText } from "@/lib/messages/catalog"
 import {
   buildRunCreateBody,
-  MAX_CUSTOMER_NAME_LENGTH,
   MAX_REVISION_AUTHOR_LENGTH,
   MAX_REVISION_LENGTH,
   MAX_REVISION_NOTE_LENGTH,
@@ -144,19 +143,22 @@ export function RunForm({
    * (Requirement 13.7).
    *
    * Held whether or not the selected template is v2, and **not cleared when the
-   * selection changes to v1**: a consultant who types a customer name, looks at a v1
+   * selection changes to v1**: a consultant who types a revision note, looks at a v1
    * template and comes back should find their typing intact. What decides whether
    * these travel is `requiresFrontMatter` at submit time, not whether the inputs are
    * currently on screen — so a v1 run cannot carry them even if they hold values.
+   *
+   * Requirement 12.8 — `customerName` is deliberately **not** collected here.
+   * It moved onto the pinned template's `identity.customer_name` at
+   * schema_version 3 (task 4.4); nothing that identifies the customer is
+   * asked at run time.
    */
-  const [customerName, setCustomerName] = useState("")
   const [revision, setRevision] = useState("")
   const [revisionNote, setRevisionNote] = useState("")
   const [revisionAuthor, setRevisionAuthor] = useState("")
 
   const subscriptionFieldId = useId()
   const templateFieldId = useId()
-  const customerNameFieldId = useId()
   const revisionFieldId = useId()
   const revisionNoteFieldId = useId()
   const revisionAuthorFieldId = useId()
@@ -190,14 +192,12 @@ export function RunForm({
     selectedTemplate.schemaVersion >= FRONT_MATTER_SCHEMA_VERSION
 
   // Trimmed once, and these are the values both the gate and the request body use, so
-  // a name of three spaces cannot pass the check and then travel as whitespace.
-  const trimmedCustomerName = customerName.trim()
+  // a note of three spaces cannot pass the check and then travel as whitespace.
   const trimmedRevision = revision.trim()
   const trimmedRevisionNote = revisionNote.trim()
   const trimmedRevisionAuthor = revisionAuthor.trim()
 
   const frontMatterComplete =
-    trimmedCustomerName !== "" &&
     trimmedRevision !== "" &&
     trimmedRevisionNote !== "" &&
     trimmedRevisionAuthor !== ""
@@ -225,7 +225,6 @@ export function RunForm({
               timezone,
               frontMatter: requiresFrontMatter
                 ? {
-                    customerName: trimmedCustomerName,
                     revision: trimmedRevision,
                     note: trimmedRevisionNote,
                     author: trimmedRevisionAuthor,
@@ -265,7 +264,6 @@ export function RunForm({
       submitting,
       templateId,
       timezone,
-      trimmedCustomerName,
       trimmedRevision,
       trimmedRevisionAuthor,
       trimmedRevisionNote,
@@ -405,21 +403,6 @@ export function RunForm({
           <FieldDescription>
             {messageText("ui.run_form.front_matter_hint", "en")}
           </FieldDescription>
-
-          <Field>
-            <FieldLabel htmlFor={customerNameFieldId}>
-              {messageText("ui.run_form.customer_name_label", "en")}
-            </FieldLabel>
-
-            <Input
-              id={customerNameFieldId}
-              name="customerName"
-              value={customerName}
-              maxLength={MAX_CUSTOMER_NAME_LENGTH}
-              autoComplete="organization"
-              onChange={(event) => setCustomerName(event.target.value)}
-            />
-          </Field>
 
           <Field>
             <FieldLabel htmlFor={revisionFieldId}>

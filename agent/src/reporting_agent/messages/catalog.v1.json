@@ -918,12 +918,8 @@
       "id": "Detail dokumen"
     },
     "ui.run_form.front_matter_hint": {
-      "en": "This report profile renders a cover and a document-control page, so a run needs a customer name and a revision row. They are printed in the document and are not collected from Azure.",
-      "id": "Profil laporan ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan nama pelanggan dan baris revisi. Keduanya dicetak di dokumen dan tidak dikumpulkan dari Azure."
-    },
-    "ui.run_form.customer_name_label": {
-      "en": "Customer name",
-      "id": "Nama pelanggan"
+      "en": "This report profile renders a cover and a document-control page, so a run needs a revision row. It is printed in the document and is not collected from Azure.",
+      "id": "Profil laporan ini menghasilkan halaman sampul dan halaman kendali dokumen, sehingga proses memerlukan baris revisi. Baris tersebut dicetak di dokumen dan tidak dikumpulkan dari Azure."
     },
     "ui.run_form.revision_label": {
       "en": "Revision",
@@ -998,8 +994,8 @@
       "id": "Pemindaian adalah pengamatan pada satu titik waktu. Setiap proses menyelesaikan ulang aturan setiap bagian terhadap snapshot-nya sendiri, sehingga estimasi bagian di sini hanyalah estimasi."
     },
     "ui.run_form.front_matter_incomplete": {
-      "en": "Fill in the customer name, revision, note and author before requesting this report.",
-      "id": "Isi nama pelanggan, revisi, catatan, dan penulis sebelum meminta laporan ini."
+      "en": "Fill in the revision, note and author before requesting this report.",
+      "id": "Isi revisi, catatan, dan penulis sebelum meminta laporan ini."
     }
   }
 }

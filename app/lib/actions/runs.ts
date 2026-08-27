@@ -281,6 +281,66 @@ export type EnqueueResult = {
  * `status` records what the preflight decided; the blocker adds what the clock has
  * done since.
  */
+
+/** The lowest `schema_version` at which `customer_name` lives on the profile's
+ * own `identity` rather than being submitted per run (Requirement 12.2). */
+const CUSTOMER_NAME_SCHEMA_VERSION = 3
+
+/**
+ * Resolve the `customer_name` a run should carry, and which field (if any) is
+ * missing, for one pinned `definition` and one submitted `input.customerName`
+ * (Requirement 12.2, 12.8, 12.9, task 4.4).
+ *
+ * **Pure**, like {@link checkProviderImmutable} and {@link resolveDesignFromBrand}
+ * and for the same reason: `enqueueRun` around it is only reachable against a
+ * real Postgres (and, as of this task, also depends on `unionScope` accepting
+ * a v3 `sections` definition, which it does not yet — see task 4.4's own note
+ * in `tasks.md`), so a test driving the whole action would not exercise this
+ * resolution at all today. This function is where the actual decision lives;
+ * the caller only reads the missing-field result into its rejection message.
+ *
+ * At `schema_version >= CUSTOMER_NAME_SCHEMA_VERSION`, the value comes from
+ * `definition.identity.customer_name` — `run-form.tsx` stopped collecting it
+ * (task 4.4) — and a missing value is reported as `identity.customer_name`, an
+ * author error on the **profile**, not a submission error on this run. Below
+ * that version, the value still comes from `input.customerName`, the field the
+ * form still collects for a v2 pin, reported as `customerName` when absent.
+ */
+export function resolveCustomerName(
+  definition: { readonly schema_version?: unknown; readonly identity?: unknown },
+  submittedCustomerName: string | undefined
+): {
+  readonly customerName: string | null
+  readonly missingCustomerNameField: "identity.customer_name" | "customerName" | null
+} {
+  const schemaVersion =
+    typeof definition.schema_version === "number"
+      ? definition.schema_version
+      : 1
+
+  if (schemaVersion >= CUSTOMER_NAME_SCHEMA_VERSION) {
+    const identity = definition.identity
+    const identityCustomerName =
+      typeof identity === "object" &&
+      identity !== null &&
+      typeof (identity as Record<string, unknown>).customer_name === "string"
+        ? ((identity as Record<string, unknown>).customer_name as string)
+        : null
+
+    return {
+      customerName: identityCustomerName,
+      missingCustomerNameField:
+        identityCustomerName === null ? "identity.customer_name" : null,
+    }
+  }
+
+  return {
+    customerName: submittedCustomerName ?? null,
+    missingCustomerNameField:
+      submittedCustomerName === undefined ? "customerName" : null,
+  }
+}
+
 export async function enqueueRun(
   userId: string,
   input: RunCreateInput,
@@ -404,10 +464,13 @@ export async function enqueueRun(
       ? definition.schema_version
       : 1
 
+  const { customerName: resolvedCustomerName, missingCustomerNameField } =
+    resolveCustomerName(definition, input.customerName)
+
   if (schemaVersion >= 2) {
     const missingFields: string[] = []
-    if (input.customerName === undefined) {
-      missingFields.push("customerName")
+    if (missingCustomerNameField !== null) {
+      missingFields.push(missingCustomerNameField)
     }
     if (input.revisionHistoryRow === undefined) {
       missingFields.push("revisionHistoryRow")
@@ -475,8 +538,10 @@ export async function enqueueRun(
         scope,
         status: "queued",
         dedupeKey,
-        // Requirement 13.7 — per-run front-matter values, nullable for v1 pins.
-        customerName: input.customerName ?? null,
+        // Requirement 13.7, 12.2 — per-run front-matter values, nullable for
+        // v1 pins. Sourced from the pinned version at schema_version >= 3,
+        // from the submission at v2 — see the resolution above.
+        customerName: resolvedCustomerName,
         revisionHistoryRow: input.revisionHistoryRow ?? null,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick
         // recomputes the token from this run's id when it invokes.

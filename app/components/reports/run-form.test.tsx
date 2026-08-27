@@ -140,16 +140,13 @@ function renderForm(templates: readonly TemplateView[]) {
   )
 }
 
-/** Fill all four front-matter inputs with valid values. */
+/** Fill the three front-matter inputs with valid values (Requirement 12.8 —
+ * `customerName` is no longer collected here). */
 function fillFrontMatter(values?: {
-  customerName?: string
   revision?: string
   note?: string
   author?: string
 }) {
-  fireEvent.change(screen.getByLabelText("Customer name"), {
-    target: { value: values?.customerName ?? "Contoso Ltd" },
-  })
   fireEvent.change(screen.getByLabelText("Revision"), {
     target: { value: values?.revision ?? "1.0" },
   })
@@ -170,7 +167,7 @@ function submitButton(): HTMLButtonElement {
 // ---------------------------------------------------------------------------
 
 describe("RunForm — a v2 template's per-run front-matter values", () => {
-  test("submits customerName and a revisionHistoryRow of exactly revision, note and author", async () => {
+  test("submits a revisionHistoryRow of exactly revision, note and author, and no customerName", async () => {
     renderForm([V2])
     fillFrontMatter()
 
@@ -180,11 +177,14 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
 
     // The assertion the missing test would have made. Not "the inputs rendered" —
     // they did, in the shipped defect too; the body is what was wrong.
+    //
+    // Requirement 12.8, 12.9 — `customerName` is absent, not merely empty: the
+    // form no longer collects it at all, and `enqueueRun` now sources it from
+    // the pinned version's `identity.customer_name` at schema_version >= 3.
     expect(bodies[0]).toEqual({
       connectedSubscriptionId: "sub-0001",
       templateId: "tmpl-v2",
       timezone: "Asia/Jakarta",
-      customerName: "Contoso Ltd",
       revisionHistoryRow: {
         revision: "1.0",
         note: "First issue",
@@ -211,7 +211,6 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
   test("values are trimmed, so whitespace does not travel as content", async () => {
     renderForm([V2])
     fillFrontMatter({
-      customerName: "  Contoso Ltd  ",
       revision: " 1.0 ",
       note: "  First issue ",
       author: " A. Consultant  ",
@@ -220,7 +219,6 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
 
     await waitFor(() => expect(bodies).toHaveLength(1))
 
-    expect(bodies[0]!.customerName).toBe("Contoso Ltd")
     expect(bodies[0]!.revisionHistoryRow).toEqual({
       revision: "1.0",
       note: "First issue",
@@ -228,10 +226,9 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
     })
   })
 
-  test("the four inputs appear", () => {
+  test("the three inputs appear", () => {
     renderForm([V2])
 
-    expect(screen.getByLabelText("Customer name")).toBeTruthy()
     expect(screen.getByLabelText("Revision")).toBeTruthy()
     expect(screen.getByLabelText("Revision note")).toBeTruthy()
     expect(screen.getByLabelText("Author")).toBeTruthy()
@@ -242,9 +239,6 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
 
     // The bounds come from `lib/runs/input.ts`, which is why they are the same
     // numbers the route validates against rather than a second set written here.
-    expect(
-      screen.getByLabelText("Customer name").getAttribute("maxLength")
-    ).toBe("200")
     expect(screen.getByLabelText("Revision").getAttribute("maxLength")).toBe(
       "100"
     )
@@ -258,10 +252,9 @@ describe("RunForm — a v2 template's per-run front-matter values", () => {
 })
 
 describe("RunForm — a v1 template answers for no page it does not have", () => {
-  test("the four inputs do not appear", () => {
+  test("the three inputs do not appear", () => {
     renderForm([V1])
 
-    expect(screen.queryByLabelText("Customer name")).toBeNull()
     expect(screen.queryByLabelText("Revision")).toBeNull()
     expect(screen.queryByLabelText("Revision note")).toBeNull()
     expect(screen.queryByLabelText("Author")).toBeNull()
@@ -292,13 +285,13 @@ describe("RunForm — changing the selected template", () => {
 
     const select = screen.getByLabelText("Report profile")
 
-    expect(screen.queryByLabelText("Customer name")).toBeNull()
+    expect(screen.queryByLabelText("Revision")).toBeNull()
 
     fireEvent.change(select, { target: { value: "tmpl-v2" } })
-    expect(screen.getByLabelText("Customer name")).toBeTruthy()
+    expect(screen.getByLabelText("Revision")).toBeTruthy()
 
     fireEvent.change(select, { target: { value: "tmpl-v1" } })
-    expect(screen.queryByLabelText("Customer name")).toBeNull()
+    expect(screen.queryByLabelText("Revision")).toBeNull()
   })
 
   test("switching to v1 after filling the fields sends a v1 body, not a stale v2 one", async () => {
@@ -327,19 +320,19 @@ describe("RunForm — changing the selected template", () => {
     const select = screen.getByLabelText("Report profile")
 
     fireEvent.change(select, { target: { value: "tmpl-v2" } })
-    fillFrontMatter({ customerName: "Contoso Ltd" })
+    fillFrontMatter({ revision: "1.0" })
 
     fireEvent.change(select, { target: { value: "tmpl-v1" } })
     fireEvent.change(select, { target: { value: "tmpl-v2" } })
 
     expect(
-      (screen.getByLabelText("Customer name") as HTMLInputElement).value
-    ).toBe("Contoso Ltd")
+      (screen.getByLabelText("Revision") as HTMLInputElement).value
+    ).toBe("1.0")
   })
 })
 
 describe("RunForm — an incomplete v2 submission is refused here, not by the server", () => {
-  test("the submit button is disabled while any of the four is empty", () => {
+  test("the submit button is disabled while any of the three is empty", () => {
     renderForm([V2])
 
     expect(submitButton().disabled).toBe(true)
@@ -349,7 +342,6 @@ describe("RunForm — an incomplete v2 submission is refused here, not by the se
   })
 
   test.each([
-    ["customerName", "Customer name"],
     ["revision", "Revision"],
     ["note", "Revision note"],
     ["author", "Author"],
@@ -385,7 +377,7 @@ describe("RunForm — an incomplete v2 submission is refused here, not by the se
     renderForm([V2])
 
     const hint = screen.getByText(
-      /Fill in the customer name, revision, note and author/
+      /Fill in the revision, note and author/
     )
 
     expect(hint).toBeTruthy()
@@ -393,13 +385,13 @@ describe("RunForm — an incomplete v2 submission is refused here, not by the se
     expect(hint.getAttribute("aria-live")).toBe("polite")
   })
 
-  test("the hint clears once all four are filled", () => {
+  test("the hint clears once all three are filled", () => {
     renderForm([V2])
     fillFrontMatter()
 
     expect(
       screen.queryByText(
-        /Fill in the customer name, revision, note and author/
+        /Fill in the revision, note and author/
       )
     ).toBeNull()
   })
@@ -409,7 +401,7 @@ describe("RunForm — an incomplete v2 submission is refused here, not by the se
 
     expect(
       screen.queryByText(
-        /Fill in the customer name, revision, note and author/
+        /Fill in the revision, note and author/
       )
     ).toBeNull()
     expect(submitButton().disabled).toBe(false)

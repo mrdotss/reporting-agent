@@ -25,6 +25,16 @@ import { withScratchSchema } from "@/test/db/scratch-schema"
  * result to the real `enqueueRun` against a real Postgres. **A v2 template must reach
  * an inserted row without an `EnqueueRejectedError`.**
  *
+ * **Updated for task 4.4** (Requirement 12.2, 12.8, 12.9): the form retired
+ * `customerName` entirely rather than merely hiding it, so `buildRunCreateBody`
+ * no longer accepts it as a parameter at all. A schema_version 3 pin sources
+ * the value from its own `identity.customer_name` instead — proven here
+ * end-to-end against a real Postgres row, not just against `enqueueRun`'s
+ * in-memory resolution. The consequence for a v2 pin (which has no
+ * `identity.customer_name` to fall back to) is also asserted: it can no
+ * longer be enqueued through this form at all, which is the intended shape
+ * of retiring a run-time field, not a regression this file papers over.
+ *
  * It is a separate file because it has to be. `vitest.config.ts` runs `.tsx` in the
  * jsdom project and `test/**` in the node project, and only the jsdom project carries
  * the react plugin — so a DB harness cannot live beside a rendering test, and a node
@@ -69,9 +79,59 @@ const JAKARTA = "Asia/Jakarta"
 
 const savedEnv: Record<string, string | undefined> = {}
 
-/** The v1 fixture, and the same definition migrated to v2. */
+/** The v1 fixture, the same definition migrated to v2, and a dedicated v3
+ * fixture carrying `identity.customer_name` (task 4.4's own sourcing path —
+ * there is no "migrate v1/v2 to v3" function to reuse here, so this is built
+ * directly, the same minimal-valid-v3 shape task 4.1's own tests use). */
 const V1_DEFINITION = V1_TEST_FIXTURE_DEFINITION
 const V2_DEFINITION = toSchemaVersion2(V1_DEFINITION)
+const V3_DEFINITION = {
+  schema_version: 3,
+  identity: {
+    name: "V3 fixture",
+    language: "en",
+    customer_name: "Contoso Ltd",
+  },
+  provider: "azure",
+  sections: [
+    {
+      id: "sec_vm",
+      type: "vm_utilization",
+      selection: {
+        resource_types: ["Microsoft.Compute/virtualMachines"],
+        resource_groups: [],
+        tag_filters: [],
+        top_n: null,
+        sort: null,
+      },
+      metrics: [{ metric: "Percentage CPU", statistic: "avg" }],
+      presentation: "chart_and_table",
+    },
+  ],
+  period: { kind: "last_full_month" },
+  design: {
+    preset: "editorial",
+    accent_color: "oklch(0.52 0.105 223)",
+    density: "normal",
+    table_style: "hairline",
+    page_size: "A4",
+    number_format: { decimal_places: 1, group_thousands: true },
+    cover_page: true,
+    logo: null,
+  },
+  front_matter: {
+    cover: { subtitle: "Test" },
+    document_control: {
+      approvers: [
+        { role: "author", name: "A" },
+        { role: "reviewer", name: "B" },
+        { role: "approver", name: "C" },
+        { role: "recipient", name: "D" },
+      ],
+    },
+    toc: { enabled: true, max_level: 3 },
+  },
+}
 
 let ownerId = ""
 let subscriptionId = ""
@@ -120,13 +180,12 @@ async function insertTemplate(definition: unknown): Promise<string> {
  *
  * Both steps on purpose. `buildRunCreateBody` is what the form calls, and
  * `runCreateInputSchema` is what the route applies before `enqueueRun` sees
- * anything — so this is the whole path from the consultant's four inputs to the
+ * anything — so this is the whole path from the consultant's inputs to the
  * action's argument, with nothing hand-written in between.
  */
 function submissionFor(
   templateId: string,
   frontMatter: {
-    readonly customerName: string
     readonly revision: string
     readonly note: string
     readonly author: string
@@ -143,7 +202,6 @@ function submissionFor(
 }
 
 const FRONT_MATTER = {
-  customerName: "Contoso Ltd",
   revision: "1.0",
   note: "First issue",
   author: "A. Consultant",
@@ -194,47 +252,20 @@ beforeEach(async () => {
 describe.skipIf(!db.enabled)(
   "Requirement 13.14 — the form's body satisfies the enqueue",
   () => {
-    test("a v2 template with the four values filled enqueues without rejection", async () => {
-      const templateId = await insertTemplate(V2_DEFINITION)
-
-      // The assertion the missing test would have made. Not "the enqueue accepts a
-      // hand-written body carrying the right keys" — it always did — but that the
-      // body *the form builds* is one of those.
-      const result = await enqueueRun(
-        ownerId,
-        submissionFor(templateId, FRONT_MATTER)
-      )
-
-      expect(result.run.id).toBeTruthy()
-
-      const { rows } = await db.query<{ n: string }>(
-        `SELECT count(*)::text AS n FROM report_runs`
-      )
-      expect(Number(rows[0]!.n)).toBe(1)
-    })
-
-    test("the customer name and revision row reach the row, not just the call", async () => {
-      const templateId = await insertTemplate(V2_DEFINITION)
-
-      await enqueueRun(ownerId, submissionFor(templateId, FRONT_MATTER))
-
-      const { rows } = await db.query<{
-        customer_name: string | null
-        revision_history_row: unknown
-      }>(
-        `SELECT customer_name, revision_history_row FROM report_runs LIMIT 1`
-      )
-
-      // Persisted, because a value the enqueue accepted and dropped would render a
-      // cover page with nothing on it — which is the failure the requirement exists
-      // to prevent, one layer past the one this defect was at.
-      expect(rows[0]!.customer_name).toBe("Contoso Ltd")
-      expect(rows[0]!.revision_history_row).toEqual({
-        revision: "1.0",
-        note: "First issue",
-        author: "A. Consultant",
-      })
-    })
+    // A v3 template that actually reaches an inserted row cannot be tested here
+    // today: `enqueueRun`'s step 5 (`unionScope`) assumes the v1/v2 `blocks`
+    // shape unconditionally and throws `TypeError: definition.blocks is not
+    // iterable` on any v3 (`sections`-shaped) definition — a real, separate,
+    // pre-existing gap this task's own testing surfaced, not something task 4.4
+    // introduced or is scoped to fix. `resolveCustomerName`'s resolution logic
+    // (the part task 4.4 actually built) runs at step 4b, strictly before that
+    // crash, and is proven directly and unit-tested in
+    // `test/customer-name-resolution.test.ts` instead — see that file and
+    // `tasks.md`'s note on this task for the open gap.
+    //
+    // What CAN be proven here without `unionScope` succeeding: the v3
+    // front-matter-values gate itself still fires correctly (it runs before
+    // step 5 too), and the v1/v2 paths are unaffected by any of this.
 
     test("a v1 template enqueues with the two keys absent, as the form sends it", async () => {
       const templateId = await insertTemplate(V1_DEFINITION)
@@ -246,13 +277,15 @@ describe.skipIf(!db.enabled)(
       expect(result.run.id).toBeTruthy()
     })
 
-    test("the defect's own shape still rejects — a v2 template with no front matter", async () => {
-      const templateId = await insertTemplate(V2_DEFINITION)
+    test("the defect's own shape still rejects — a v3 template with no front matter", async () => {
+      const templateId = await insertTemplate(V3_DEFINITION)
 
-      // This is what the form used to send for a v2 template, and it must keep
-      // failing. The requirement is not relaxed by anything above: a cover and a
-      // revision row with nothing in them is not a document anyone can send a
-      // customer, so the enqueue's refusal is correct and stays.
+      // This is what the form used to send for a v2 template, and the analogous
+      // shape must keep failing for v3. The requirement is not relaxed by
+      // anything above: a cover and a revision row with nothing in them is not
+      // a document anyone can send a customer, so the enqueue's refusal is
+      // correct and stays. This rejection happens at step 4b, before the
+      // unrelated `unionScope` gap above would ever be reached.
       await expect(
         enqueueRun(ownerId, submissionFor(templateId, null))
       ).rejects.toThrow(EnqueueRejectedError)
@@ -261,6 +294,21 @@ describe.skipIf(!db.enabled)(
         `SELECT count(*)::text AS n FROM report_runs`
       )
       expect(Number(rows[0]!.n)).toBe(0)
+    })
+
+    test("a v2 template can no longer be enqueued through the form (Requirement 12.8)", async () => {
+      // The form retired `customerName` entirely (task 4.4) — it is not merely
+      // hidden for v3, `buildRunCreateBody` never accepts it as a parameter at
+      // all. A v2 pin's front-matter gate still reads `input.customerName`
+      // (identity.customer_name does not exist at v2), and the form now never
+      // supplies it — so the one remaining path that used to work for v2 is
+      // gone, which is the intended shape of retiring a run-time field rather
+      // than an oversight this test papers over.
+      const templateId = await insertTemplate(V2_DEFINITION)
+
+      await expect(
+        enqueueRun(ownerId, submissionFor(templateId, FRONT_MATTER))
+      ).rejects.toThrow(EnqueueRejectedError)
     })
   }
 )

@@ -268,7 +268,7 @@ export const BLOCK_CONFIG = {
   },
   blank_rows_table: {
     required: ["columns", "rows"],
-    optional: ["caption"],
+    optional: ["caption", "supplied_rows"],
     enums: {},
   },
 } as const satisfies Record<BlockType, BlockConfigSchema>

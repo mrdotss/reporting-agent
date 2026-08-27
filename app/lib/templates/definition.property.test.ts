@@ -430,6 +430,16 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
     // to complete by hand. Bounded well inside the schema's range so the generator
     // cannot emit a definition its own validator would reject.
     rows: (seed) => 1 + (seed % 8),
+    // blank_rows_table — author-supplied incident rows. Always `[]` here rather
+    // than a generated row of text: each entry must have exactly `columns.length`
+    // strings, and `columns` above is generated independently (and shared across
+    // several block types with different shapes), so there is no seed-derived
+    // value this provider could produce that is guaranteed to match without
+    // reaching into another field's own generator. An empty list is valid at
+    // every seed and exercises the field's presence — the actual multi-row,
+    // length-matching path is covered directly in `test_blocks.py` and this
+    // file's own compile-path tests instead, not by the generator.
+    supplied_rows: () => [],
   }
 
 type BlockConfigSchemaShape = {

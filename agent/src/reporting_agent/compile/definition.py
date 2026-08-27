@@ -234,7 +234,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     },
     "blank_rows_table": {
         "required": ["columns", "rows"],
-        "optional": ["caption"],
+        "optional": ["caption", "supplied_rows"],
         "enums": {},
     },
 }
@@ -334,6 +334,11 @@ NAME_MAX_LENGTH: Final[int] = 120
 DESCRIPTION_MAX_LENGTH: Final[int] = 1000
 REPORT_TITLE_MAX_LENGTH: Final[int] = 200
 
+CUSTOMER_NAME_MAX_LENGTH: Final[int] = 200
+"""Req 12.2 — identity.customer_name at v3. Matches MAX_CUSTOMER_NAME_LENGTH in
+app/lib/runs/input.ts, the bound the run form validated this field against before
+it moved onto the profile."""
+
 # --- BEGIN SCHEMA VERSIONS (mirrored in app/lib/templates/definition.ts) ---
 # Req 2.9, 13.10 — MIN stays 1 and 2 is the highest this reader accepts. What raises the
 # version is exactly three things: `front_matter`, `identity.language`, and the two
@@ -398,12 +403,20 @@ NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
 IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     1: ("name", "description", "report_title"),
     2: ("name", "description", "report_title", "language"),
-    3: ("name", "description", "report_title", "language"),
+    # Req 12.2 — `customer_name` moves from a run-time form field onto the
+    # profile at v3, additive alongside `report_title`. report_pipeline.py's
+    # _resolve_run_facts still reads payload.get("customer_name") unchanged
+    # (task 4.4).
+    3: ("name", "description", "report_title", "language", "customer_name"),
 }
 
 REQUIRED_IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     1: ("name",),
     2: ("name", "language"),
+    # customer_name is deliberately NOT required here — draft mode must
+    # allow saving a profile before naming a customer, exactly as
+    # report_title is optional at every version. The run-time gate belongs
+    # to enqueueRun, not to draft-mode validation.
     3: ("name", "language"),
 }
 
@@ -949,6 +962,18 @@ def _validate_identity(identity: object, path: Path, walk: _Walk) -> None:
                 (*path, "report_title"),
                 f"identity.report_title must be a string of at most "
                 f"{REPORT_TITLE_MAX_LENGTH} characters.",
+            )
+
+    if "customer_name" in allowed and "customer_name" in identity:
+        customer_name = identity["customer_name"]
+        if (
+            not isinstance(customer_name, str)
+            or _utf16_length(customer_name) > CUSTOMER_NAME_MAX_LENGTH
+        ):
+            walk.add(
+                (*path, "customer_name"),
+                f"identity.customer_name must be a string of at most "
+                f"{CUSTOMER_NAME_MAX_LENGTH} characters.",
             )
 
 

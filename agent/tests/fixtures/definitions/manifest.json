@@ -9,6 +9,13 @@
       "offenders": []
     },
     {
+      "file": "accept-blank-rows-table-with-supplied-rows.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "7a5cc488aaf5f7eb3191909afc81bfe2de8c83747bd47dcd47ea160a447d6364",
+      "offenders": []
+    },
+    {
       "file": "accept-block-scope-overrides.json",
       "mode": "run",
       "verdict": "accept",

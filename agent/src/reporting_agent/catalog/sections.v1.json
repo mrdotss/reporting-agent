@@ -270,7 +270,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "blank_rows_table", "per": "section", "config": { "columns": ["date", "description", "impact", "resolution", "status"], "rows": 5 } }
+            { "block": "blank_rows_table", "per": "section", "config": { "columns": ["Case", "Date", "Solution", "Description"], "rows": 5 } }
           ]
         },
         {

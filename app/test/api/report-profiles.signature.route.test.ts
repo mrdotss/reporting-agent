@@ -48,7 +48,7 @@ function bytesOf(length: number, header: Uint8Array): Uint8Array {
 function request(body: Uint8Array): Request {
   return new Request("https://app.test/api/report-profiles/signature", {
     method: "POST",
-    body,
+    body: Buffer.from(body),
   })
 }
 

@@ -111,6 +111,34 @@ def test_the_minimal_v3_fixture_itself_validates() -> None:
     assert collect_definition_issues(_valid_v3_definition()) == []
 
 
+class TestCustomerNameAtV3:
+    """Req 12.2 — customer_name moves onto identity at v3, additive."""
+
+    def test_v3_accepts_identity_customer_name(self) -> None:
+        definition = _valid_v3_definition()
+        definition["identity"]["customer_name"] = "Contoso Ltd"
+        assert collect_definition_issues(definition) == []
+
+    def test_v3_customer_name_is_optional(self) -> None:
+        # Draft mode must allow saving a profile before naming a customer,
+        # exactly as report_title is optional at every version.
+        definition = _valid_v3_definition()
+        assert "customer_name" not in definition["identity"]
+        assert collect_definition_issues(definition) == []
+
+    def test_v3_rejects_an_over_long_customer_name(self) -> None:
+        definition = _valid_v3_definition()
+        definition["identity"]["customer_name"] = "x" * 201
+        issues = collect_definition_issues(definition)
+        assert "identity.customer_name" in _paths(issues)
+
+    def test_v2_rejects_customer_name_as_an_unrecognized_field(self) -> None:
+        definition = _valid_v2_definition()
+        definition["identity"]["customer_name"] = "Contoso Ltd"
+        issues = collect_definition_issues(definition)
+        assert "identity.customer_name" in _paths(issues)
+
+
 class TestDistributionBecomesRowsAtV3:
     """Req 12.6 — rows at v3, unchanged string at v1/v2."""
 

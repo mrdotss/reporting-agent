@@ -191,10 +191,19 @@ export type RunCreateInput = z.output<typeof runCreateInputSchema>
  * — the first describes the form, the second proves the form's output is what the
  * enqueue accepts, which is the assertion that was missing.
  *
- * `frontMatter` is `null` for a v1 template, and the two keys are then **absent**
- * rather than empty. `runCreateInputSchema` is `.strict()` with both fields
- * `.optional()`, so a blank string would fail its own `min(1)` and a v1 run would
- * start failing for a page it does not have.
+ * `frontMatter` is `null` for a v1 template, and the revision-history keys are then
+ * **absent** rather than empty. `runCreateInputSchema` is `.strict()` with
+ * `revisionHistoryRow` `.optional()`, so a blank string would fail its own `min(1)`
+ * and a v1 run would start failing for a page it does not have.
+ *
+ * **`customerName` is deliberately not a parameter here** (Requirement 12.8, 12.9,
+ * task 4.4). The run form stopped collecting it — nothing that identifies the
+ * customer is asked at run time — and `enqueueRun` now sources it from the pinned
+ * version's `identity.customer_name` at `schema_version >= 3` instead. A
+ * `schema_version` 2 pin (the only remaining version whose front-matter gate still
+ * reads a submitted `customerName`) can no longer be run through this form; that is
+ * an accepted consequence of retiring the field everywhere the form touches it,
+ * not an oversight.
  *
  * Values are trimmed here, once. The schema trims too, but a caller that gates its
  * submit button on "is this non-empty" and then sends untrimmed text is deciding with
@@ -205,7 +214,6 @@ export function buildRunCreateBody(fields: {
   readonly templateId: string
   readonly timezone: string
   readonly frontMatter: {
-    readonly customerName: string
     readonly revision: string
     readonly note: string
     readonly author: string
@@ -221,7 +229,6 @@ export function buildRunCreateBody(fields: {
 
   return {
     ...base,
-    customerName: fields.frontMatter.customerName.trim(),
     revisionHistoryRow: {
       revision: fields.frontMatter.revision.trim(),
       note: fields.frontMatter.note.trim(),

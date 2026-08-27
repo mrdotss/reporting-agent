@@ -1,0 +1,53 @@
+{
+  "blocks": [
+    {
+      "config": {
+        "columns": ["Case", "Date", "Solution", "Description"],
+        "rows": 5,
+        "supplied_rows": [
+          ["INC-1024", "week of 14 July", "Restarted the service", "Brief outage on prod-web-01"],
+          ["INC-1031", "2026-07-22", "Scaled up the tier", "Sustained high CPU during a batch job"]
+        ]
+      },
+      "id": "b-incident",
+      "type": "blank_rows_table"
+    }
+  ],
+  "design": {
+    "accent_color": "oklch(0.52 0.105 223)",
+    "cover_page": true,
+    "density": "normal",
+    "logo": null,
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true
+    },
+    "page_size": "A4",
+    "preset": "editorial",
+    "table_style": "hairline"
+  },
+  "identity": {
+    "name": "Blank rows table with supplied rows test"
+  },
+  "metrics": {
+    "Microsoft.Compute/virtualMachines": [
+      {
+        "metric": "Percentage CPU",
+        "statistic": "avg"
+      }
+    ]
+  },
+  "period": {
+    "kind": "last_full_month"
+  },
+  "schema_version": 1,
+  "scope": {
+    "resource_groups": [],
+    "resource_types": [
+      "Microsoft.Compute/virtualMachines"
+    ],
+    "sort": null,
+    "tag_filters": [],
+    "top_n": null
+  }
+}

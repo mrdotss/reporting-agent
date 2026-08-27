@@ -200,6 +200,15 @@ export const DESCRIPTION_MAX_LENGTH = 1000
 /** Not bounded by any single criterion; kept in the same range as `name`. */
 export const REPORT_TITLE_MAX_LENGTH = 200
 
+/**
+ * Requirement 12.2 — `identity.customer_name` at v3. Matches
+ * `MAX_CUSTOMER_NAME_LENGTH` in `lib/runs/input.ts`, the bound the run form
+ * validated the same field against before it moved onto the profile —
+ * keeping the number identical is what makes the move invisible to a value
+ * that already fit.
+ */
+export const CUSTOMER_NAME_MAX_LENGTH = 200
+
 // --- BEGIN SCHEMA VERSIONS (mirrored in agent/src/reporting_agent/compile/definition.py) ---
 /**
  * Requirement 2.9, 13.10 — `MIN_SCHEMA_VERSION` stays `1`, and `2` is the highest this
@@ -283,12 +292,27 @@ export const NUMBER_FORMAT_KEYS = {
 export const IDENTITY_KEYS = {
   1: ["name", "description", "report_title"],
   2: ["name", "description", "report_title", "language"],
-  3: ["name", "description", "report_title", "language"],
+  // Requirement 12.2 — `customer_name` moves from a run-time form field onto
+  // the profile at v3, additive alongside `report_title` (its nearest
+  // existing analog: both are per-document identity strings, and
+  // Requirement 12.1 lists them side by side in the wizard's own collection
+  // order). `report_pipeline.py::_resolve_run_facts` still reads
+  // `payload.get("customer_name")` unchanged — the value now travels from
+  // the pinned version instead of the run form, but the wire key and the
+  // store-to-send mirror guard's mechanism are untouched (task 4.4).
+  3: ["name", "description", "report_title", "language", "customer_name"],
 } as const
 
 export const REQUIRED_IDENTITY_KEYS = {
   1: ["name"],
   2: ["name", "language"],
+  // `customer_name` is deliberately NOT required here even though every v3
+  // run needs one to reach `_resolve_run_facts` successfully: the wizard's
+  // draft mode must allow an author to save a profile before naming a
+  // customer, exactly as `report_title` is optional at every version despite
+  // being needed by the time a document renders. The **run-time** gate
+  // belongs to `enqueueRun` (the same place that already gates a v2
+  // template's front-matter completeness), not to draft-mode validation.
   3: ["name", "language"],
 } as const
 
@@ -895,6 +919,20 @@ function validateIdentity(
         issues,
         [...path, "report_title"],
         `identity.report_title must be a string of at most ${REPORT_TITLE_MAX_LENGTH} characters.`
+      )
+    }
+  }
+
+  if (allowedKeys.includes("customer_name") && identity.customer_name !== undefined) {
+    const customerName = identity.customer_name
+    if (
+      typeof customerName !== "string" ||
+      customerName.length > CUSTOMER_NAME_MAX_LENGTH
+    ) {
+      addIssue(
+        issues,
+        [...path, "customer_name"],
+        `identity.customer_name must be a string of at most ${CUSTOMER_NAME_MAX_LENGTH} characters.`
       )
     }
   }

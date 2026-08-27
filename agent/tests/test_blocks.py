@@ -1291,13 +1291,24 @@ def test_blank_rows_table_emits_the_declared_rows_and_columns_as_empty_cells() -
     )
 
     table = next(node for node in child_nodes(document.document) if isinstance(node, Table))
-    assert [column.key for column in table.columns] == ["date", "description", "impact"]
+    # The compiler-generated "No" ordinal column is always first, and is never
+    # part of the author's own `columns` config.
+    assert [column.key for column in table.columns] == [
+        "no",
+        "date",
+        "description",
+        "impact",
+    ]
     assert len(table.rows) == 3
 
     for row_idx, row in enumerate(table.rows):
         assert row.key == f"row_{row_idx}"
-        assert len(row.cells) == 3
-        for cell in row.cells:
+        assert len(row.cells) == 4
+        # The ordinal cell is a real TextCell holding the row's 1-based
+        # position — not empty, even on a fully blank row.
+        assert isinstance(row.cells[0], TextCell)
+        assert row.cells[0].text == str(row_idx + 1)
+        for cell in row.cells[1:]:
             assert isinstance(cell, EmptyCell)
             # Every cell's path is distinct — proof the row/column ordinals actually
             # reached the path rather than silently colliding.
@@ -1328,3 +1339,173 @@ def test_blank_rows_table_produces_no_ledger_entry_for_any_cell() -> None:
     )
 
     assert document.figure_count == 0
+
+
+def test_blank_rows_table_prints_supplied_rows_first_then_pads_to_the_minimum() -> None:
+    """Author-supplied rows print first, in entry order, then the table pads
+    with blank rows up to `config.rows`'s declared minimum total."""
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "incidents",
+                    "blank_rows_table",
+                    {
+                        "columns": ["Case", "Date", "Solution", "Description"],
+                        "rows": 5,
+                        "supplied_rows": [
+                            ["INC-1", "14 July", "Restarted", "Brief outage"],
+                            ["INC-2", "22 July", "Scaled up", "High CPU"],
+                        ],
+                    },
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    table = next(node for node in child_nodes(document.document) if isinstance(node, Table))
+    assert len(table.rows) == 5  # padded up to the minimum, not just the 2 supplied
+
+    first_row, second_row = table.rows[0], table.rows[1]
+    assert [cell.text for cell in first_row.cells if isinstance(cell, TextCell)] == [
+        "1",
+        "INC-1",
+        "14 July",
+        "Restarted",
+        "Brief outage",
+    ]
+    assert [cell.text for cell in second_row.cells if isinstance(cell, TextCell)] == [
+        "2",
+        "INC-2",
+        "22 July",
+        "Scaled up",
+        "High CPU",
+    ]
+
+    # The remaining 3 rows are padding: a real ordinal, empty cells otherwise.
+    for row_idx in range(2, 5):
+        row = table.rows[row_idx]
+        assert isinstance(row.cells[0], TextCell)
+        assert row.cells[0].text == str(row_idx + 1)
+        assert all(isinstance(cell, EmptyCell) for cell in row.cells[1:])
+
+
+def test_blank_rows_table_with_zero_supplied_rows_is_the_original_all_blank_behaviour() -> None:
+    """Zero supplied rows reproduces exactly the all-blank behaviour this block
+    always had, unchanged — the ordinal column is the only visible difference."""
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "incidents",
+                    "blank_rows_table",
+                    {"columns": ["Case", "Date"], "rows": 3},
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    table = next(node for node in child_nodes(document.document) if isinstance(node, Table))
+    assert len(table.rows) == 3
+    for row in table.rows:
+        assert all(isinstance(cell, EmptyCell) for cell in row.cells[1:])
+
+
+def test_blank_rows_table_more_supplied_rows_than_the_minimum_adds_no_padding() -> None:
+    """More supplied rows than `config.rows` prints all of them with zero
+    padding, rather than truncating the author's own content to fit a minimum
+    that is meant as a floor, not a ceiling."""
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "incidents",
+                    "blank_rows_table",
+                    {
+                        "columns": ["Case"],
+                        "rows": 2,
+                        "supplied_rows": [["A"], ["B"], ["C"], ["D"]],
+                    },
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    table = next(node for node in child_nodes(document.document) if isinstance(node, Table))
+    assert len(table.rows) == 4
+    assert all(
+        not any(isinstance(cell, EmptyCell) for cell in row.cells)
+        for row in table.rows
+    )
+
+
+def test_blank_rows_table_supplied_rows_produce_no_ledger_entry() -> None:
+    """Author-supplied text is presentation, exactly like a revision-history
+    note: it enters no figure ledger, is checked by no numeric gate, and its
+    absence is not a verification finding."""
+    view = view_of(resources=[], gaps=[])
+    document = compile_document(
+        df.definition(
+            [
+                df.block(
+                    "incidents",
+                    "blank_rows_table",
+                    {
+                        "columns": ["Case"],
+                        "rows": 1,
+                        "supplied_rows": [["INC-1"]],
+                    },
+                ),
+            ]
+        ),
+        view=view,
+    )
+
+    assert document.figure_count == 0
+
+
+def test_blank_rows_table_rejects_a_supplied_row_of_the_wrong_length() -> None:
+    view = view_of(resources=[], gaps=[])
+    with pytest.raises(CompileFailedError):
+        compile_document(
+            df.definition(
+                [
+                    df.block(
+                        "incidents",
+                        "blank_rows_table",
+                        {
+                            "columns": ["Case", "Date"],
+                            "rows": 1,
+                            "supplied_rows": [["only-one-value"]],
+                        },
+                    ),
+                ]
+            ),
+            view=view,
+        )
+
+
+def test_blank_rows_table_rejects_a_columns_entry_named_no() -> None:
+    """`No` is generated by the compiler and prepended automatically — an
+    author declaring it in `config.columns` would collide with the column the
+    compiler already emits."""
+    view = view_of(resources=[], gaps=[])
+    with pytest.raises(CompileFailedError):
+        compile_document(
+            df.definition(
+                [
+                    df.block(
+                        "incidents",
+                        "blank_rows_table",
+                        {"columns": ["No", "Case"], "rows": 1},
+                    ),
+                ]
+            ),
+            view=view,
+        )
