@@ -170,18 +170,24 @@ satisfies a decimal grammar and is an operating-system version, while `10.0.0.4`
 version with a grouping separator."""
 
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor"}
 )
-"""Req 4.2's four sources, recorded from the request that produced the fact rather than
+"""Req 4.2's five sources, recorded from the request that produced the fact rather than
 derived from its key — so a fact's provenance is an observation about where it came from
 and not a guess from what it is called."""
 
 DECLARED_ABSENT_GAP_TYPES: Final[frozenset[str]] = frozenset(
-    {"backup_not_configured", "no_reservations", "replication_not_enabled"}
+    {
+        "backup_not_configured",
+        "no_reservations",
+        "replication_not_enabled",
+        "advisor_not_available",
+    }
 )
-"""The three gap types a **non-projectable** fact may name for its own absence (Req 5.1-5.3).
+"""The four gap types a **non-projectable** fact may name for its own absence (Req 5.1-5.3,
+16.7).
 
-Mirrors three of `collect/log.py`'s four fact gap types **by value, not by import**, the
+Mirrors four of `collect/log.py`'s five fact gap types **by value, not by import**, the
 same non-coupling `collect/sketch.py` draws against this module's unit families: the
 catalog is a document whose vocabulary this module owns, and `collect/log.py` imports
 nothing from here.

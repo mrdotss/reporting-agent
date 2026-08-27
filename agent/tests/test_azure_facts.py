@@ -23,6 +23,7 @@ from reporting_agent.azure.clients import (
     FACT_FIELD_PREFIX,
 )
 from reporting_agent.azure.facts import (
+    ADVISOR_ABSENT_GAP_TYPE,
     BACKUP_ABSENT_GAP_TYPE,
     BACKUP_COVERED_RESOURCE_TYPES,
     MAX_FACT_KEY_LENGTH,
@@ -180,6 +181,7 @@ def test_the_mirrored_sources_and_gap_types_agree_with_the_catalog() -> None:
         BACKUP_ABSENT_GAP_TYPE,
         REPLICATION_ABSENT_GAP_TYPE,
         RESERVATION_ABSENT_GAP_TYPE,
+        ADVISOR_ABSENT_GAP_TYPE,
     } == DECLARED_ABSENT_GAP_TYPES
 
 
@@ -220,14 +222,18 @@ def test_a_hundred_resources_cost_the_same_two_requests_as_one() -> None:
     """Req 4.8 as an observation rather than an intention. The whole reason a `FactsPort`
     method takes no resource id is that a per-resource shape would be the easy one to write."""
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     run(port, resources=[record(f"vm-{index:03d}") for index in range(100)])
 
     assert len(port.backup_calls) == 1
     assert len(port.reservation_calls) == 1
+    assert len(port.advisor_calls) == 1
     assert port.replication_calls == []
     assert port.backup_calls[0] == {"subscription_id": SUBSCRIPTION}
+    assert port.advisor_calls[0] == {"subscription_id": SUBSCRIPTION}
 
 
 def test_the_backup_filter_is_the_reason_its_answer_covers_virtual_machines_alone() -> None:
@@ -246,7 +252,9 @@ def test_a_sql_database_records_no_backup_fact_and_no_backup_gap() -> None:
     be reported as unprotected, which is a false statement rather than a missing one.
     """
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     database = record("db-01", resource_type=SQL_DB_TYPE)
     facts, gaps = run(port, resources=[database])
@@ -262,6 +270,7 @@ def test_a_backup_item_records_the_status_and_the_restore_point() -> None:
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(machine)]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[machine])
 
@@ -274,7 +283,9 @@ def test_a_backup_item_records_the_status_and_the_restore_point() -> None:
 def test_a_successful_empty_backup_list_is_backup_not_configured() -> None:
     machine = record("prod-web-01")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine])
 
@@ -288,6 +299,7 @@ def test_a_rejected_backup_list_is_fact_unavailable_not_backup_not_configured() 
     port = FakeFactsPort(
         backup_responses=[RawHttpResponse(status=403, headers={}, body=None)],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine])
 
@@ -306,7 +318,9 @@ def test_no_vault_in_scope_records_no_replication_fact_and_no_replication_gap() 
     so with no vault there is no request that could have answered — and a vault outside the
     run's scope is invisible from here rather than absent."""
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[record("prod-web-01")])
 
@@ -325,6 +339,7 @@ def test_one_list_is_issued_per_vault_in_the_inventory() -> None:
         backup_responses=[empty_fact_list()],
         replication_responses=[empty_fact_list(), empty_fact_list()],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine, *vaults])
 
@@ -345,6 +360,7 @@ def test_a_replicated_vm_records_its_health_from_the_fabric_object_id() -> None:
             )
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[machine, vault])
 
@@ -366,6 +382,7 @@ def test_one_unreadable_vault_makes_replication_unavailable_rather_than_absent()
         backup_responses=[empty_fact_list()],
         replication_responses=[RawHttpResponse(status=500, headers={}, body=None)],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine, *vaults])
 
@@ -384,7 +401,9 @@ def test_one_unreadable_vault_makes_replication_unavailable_rather_than_absent()
 def test_a_projected_column_becomes_a_fact_with_no_request_of_its_own() -> None:
     machine = record("prod-web-01")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, _ = run(
         port,
@@ -409,7 +428,9 @@ def test_a_resource_on_a_later_page_records_no_absence_from_an_earlier_one() -> 
     first = record("prod-web-01")
     second = record("prod-web-02")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(
         port,
@@ -445,7 +466,9 @@ def test_a_resource_on_a_later_page_records_no_absence_from_an_earlier_one() -> 
 
 def test_a_page_naming_no_resource_is_skipped_rather_than_folded() -> None:
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[record("prod-web-01")], pages=[fact_page(page()), fact_page({}), fact_page(None)])
 
@@ -478,6 +501,7 @@ def test_a_value_at_the_bound_is_kept_and_one_past_it_is_a_gap() -> None:
             )
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[machine])
     assert any(fact["key"] == "last_backup_status" for fact in facts)
@@ -496,6 +520,7 @@ def test_a_value_at_the_bound_is_kept_and_one_past_it_is_a_gap() -> None:
             )
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(port, resources=[machine])
     assert not any(fact["key"] == "last_backup_status" for fact in facts)
@@ -537,6 +562,7 @@ def test_every_source_request_is_taken_through_the_supplied_semaphore() -> None:
         backup_responses=[empty_fact_list()],
         replication_responses=[empty_fact_list()],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     run(port, resources=[machine, vault], semaphore=semaphore)
 
@@ -576,7 +602,9 @@ def test_a_leaf_that_does_not_parse_still_reaches_a_typed_gap() -> None:
     """
     machine = record("prod-web-01")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, gaps = run(
         port,
@@ -602,6 +630,7 @@ def test_a_collected_at_is_rfc3339_utc_with_whole_second_precision() -> None:
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(machine)]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, _ = run(port, resources=[machine])
 
@@ -616,7 +645,9 @@ def test_the_collector_records_no_fact_for_a_resource_type_declaring_none() -> N
     type never had is absent. Without it every storage account collects `no_reservations`."""
     storage = record("store01", resource_type="Microsoft.Storage/storageAccounts")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[storage])
 
@@ -630,7 +661,9 @@ def test_every_gap_names_its_source_and_its_key(source: str) -> None:
     the four fact gap types."""
     machine = record("prod-web-01")
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine])
 
@@ -833,6 +866,7 @@ def test_a_rejected_backup_list_carrying_an_error_body_is_still_unavailable() ->
             RawHttpResponse(status=403, headers={}, body=ARM_FORBIDDEN_BODY)
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine])
 
@@ -850,6 +884,7 @@ def test_a_rejected_vault_list_carrying_an_error_body_is_still_unavailable() -> 
             RawHttpResponse(status=403, headers={}, body=ARM_FORBIDDEN_BODY)
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     _, gaps = run(port, resources=[machine, vault])
 
@@ -888,7 +923,9 @@ def test_each_page_is_stamped_with_its_own_receipt_instant() -> None:
     )
 
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     collect_facts = FactCollector(
         port,
@@ -941,6 +978,7 @@ def test_the_covered_type_match_folds_case_in_both_directions() -> None:
             )
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     facts, _ = run(port, resources=[declared_spelling])
 
@@ -1045,6 +1083,7 @@ def test_the_fact_pass_waits_on_the_metric_collectors_own_semaphore() -> None:
         facts_port=FakeFactsPort(
             backup_responses=[empty_fact_list()],
             reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
         ),
         object_store=InMemoryObjectStore(),
         actor_id="usr_01HQZX8QW9K7YB4T2C3M5N6P7Q",

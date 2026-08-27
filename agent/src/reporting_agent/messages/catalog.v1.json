@@ -169,6 +169,10 @@
       "en": "Customer",
       "id": "Pelanggan"
     },
+    "doc.gap.advisor_not_available": {
+      "en": "Azure Advisor has no recommendation on record for this resource.",
+      "id": "Azure Advisor tidak memiliki rekomendasi tercatat untuk sumber daya ini."
+    },
     "doc.gap.archive_write_failed": {
       "en": "A raw response could not be archived, so this run cannot be replayed in full.",
       "id": "Sebuah respons mentah gagal diarsipkan, sehingga proses ini tidak dapat diputar ulang secara utuh."

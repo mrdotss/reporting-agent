@@ -115,15 +115,17 @@ over one long string."""
 
 SOURCE_RECOVERY_SERVICES: Final[str] = "recovery_services"
 SOURCE_CAPACITY: Final[str] = "capacity"
-"""Two of `catalog/loader.py`'s `DECLARED_FACT_SOURCES`, mirrored **by value**.
+SOURCE_ADVISOR: Final[str] = "advisor"
+"""Three of `catalog/loader.py`'s `DECLARED_FACT_SOURCES`, mirrored **by value**.
 
 The same non-coupling `collect/factfold.py` draws against that module: the catalog owns the
-vocabulary and this module records which request produced which source. A test asserts the two
-spellings agree."""
+vocabulary and this module records which request produced which source. A test asserts the
+three spellings agree."""
 
 BACKUP_ABSENT_GAP_TYPE: Final[str] = "backup_not_configured"
 REPLICATION_ABSENT_GAP_TYPE: Final[str] = "replication_not_enabled"
 RESERVATION_ABSENT_GAP_TYPE: Final[str] = "no_reservations"
+ADVISOR_ABSENT_GAP_TYPE: Final[str] = "advisor_not_available"
 """`catalog/loader.py`'s `DECLARED_ABSENT_GAP_TYPES`, mirrored by value and used **as the
 selector** for which declared keys each API answers. See the module docstring."""
 
@@ -144,7 +146,13 @@ RESERVATION_COVERED_RESOURCE_TYPES: Final[tuple[str, ...]] = (
 Declared here rather than derived from the fact declaration, because the covering set follows
 from the **filter this module's request carries**, not from which types happen to declare the
 key. `Microsoft.Sql/servers/databases` declares `last_backup_status` and is deliberately absent
-from the backup set for exactly that reason."""
+from the backup set for exactly that reason.
+
+**Advisor has no equivalent constant, on purpose.** Its request carries no type filter at
+all — Advisor recommends across VMs, storage accounts, databases and more — so there is no
+fixed tuple that would be honest here the way there is for backup, replication and
+reservations. `_collect_advisor` below covers every resource in the run's own inventory
+instead of a declared type list."""
 
 # --- the item shape each source normalizes into -------------------------------------
 #
@@ -183,6 +191,25 @@ _RESERVATION_SKU_PATHS: Final[tuple[tuple[str, ...], ...]] = (
 _RESERVATION_SCOPE_TYPE_PATH: Final[tuple[str, ...]] = (_PROPERTIES, "appliedScopeType")
 _RESERVATION_SCOPES_PATH: Final[tuple[str, ...]] = (_PROPERTIES, "appliedScopes")
 _SHARED_SCOPE: Final[str] = "shared"
+
+_ADVISOR_RESOURCE_ID_PATHS: Final[tuple[tuple[str, ...], ...]] = (
+    (_PROPERTIES, "resourceMetadata", "resourceId"),
+)
+_ADVISOR_VALUE_PATHS: Final[dict[str, tuple[str, ...]]] = {
+    "resource": (_PROPERTIES, "impactedValue"),
+    "category": (_PROPERTIES, "category"),
+    "impact": (_PROPERTIES, "impact"),
+    "recommendation": (_PROPERTIES, "shortDescription", "solution"),
+}
+"""Confirmed against Advisor's own REST reference (`ResourceRecommendationBase`): a
+recommendation names its resource through `properties.resourceMetadata.resourceId` (used as
+the fold key, see `_ADVISOR_RESOURCE_ID_PATHS`) but that field is the ARM id, not a name fit
+for a table cell — `properties.impactedValue` is Advisor's own human-readable name for the
+same resource ("armavset", "xyz" in its documented examples) and is what section 14's
+`resource` column actually needs to print. `properties.shortDescription.solution` is
+Advisor's own field for what to do about the finding, matching section 14's `recommendation`
+column; `problem` (the sibling field) is not projected, since section 14 declares no column
+for it and a fact this run never reads has no reason to be collected."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -236,6 +263,7 @@ REPLICATION_REQUEST_TARGET: Final[str] = (
 RESERVATION_REQUEST_TARGET: Final[str] = (
     "/providers/Microsoft.Capacity/reservationOrders/reservations"
 )
+ADVISOR_REQUEST_TARGET: Final[str] = "/providers/Microsoft.Advisor/recommendations"
 """What was asked, recorded on every archived fact object.
 
 ARM paths rather than full URLs, the same discipline `azure/inventory.py`'s
@@ -373,6 +401,7 @@ class FactCollector:
             self._collect_backup(resources, types_by_id, subscription_id),
             self._collect_replication(resources, types_by_id),
             self._collect_reservations(resources, types_by_id),
+            self._collect_advisor(resources, types_by_id, subscription_id),
         ):
             facts.extend(source_facts)
             gaps.extend(source_gaps)
@@ -603,6 +632,77 @@ class FactCollector:
             normalized,
             kind=FACT_KIND_FACTS,
             source=SOURCE_CAPACITY,
+            resource_ids=covered,
+            declaration=declared,
+            resource_types=types_by_id,
+            received_at=received_at,
+        )
+        return facts, (*gaps, *fold_gaps)
+
+    async def _collect_advisor(
+        self,
+        resources: Sequence[ResourceRecord],
+        types_by_id: Mapping[str, str],
+        subscription_id: str,
+    ) -> tuple[tuple[FactRecord, ...], tuple[GapRecord, ...]]:
+        """One subscription-scoped Advisor listing, matched to resources by
+        `resourceMetadata.resourceId` (task 6.4, Req 16.7).
+
+        **Covers every resource in the run, not a fixed resource-type tuple** — the one real
+        difference from `_collect_backup`/`_collect_replication`/`_collect_reservations`
+        above, each of which is filtered to `Microsoft.Compute/virtualMachines` by the
+        request itself. Advisor has no such filter: it recommends across VMs, storage
+        accounts, databases and more, and its own list already names exactly which resource
+        each recommendation is about. So "covered" here is every resource id the run's
+        inventory holds, and a resource Advisor's list never mentions is honestly
+        `advisor_not_available` rather than a type this module excluded by construction.
+
+        **The two outcomes are not collapsed, mirroring `_collect_reservations`'s own
+        reasoning exactly.** A rejected `Microsoft.Advisor` request folds an unreadable body,
+        which is `fact_unavailable` naming the source; a successful listing that names
+        nothing for a resource folds no item for it, which is `advisor_not_available`.
+        Reader at subscription scope does grant `Microsoft.Advisor/recommendations/read` (it
+        is a read-only recommendation feed, unlike the reservation and backup APIs), so the
+        rejected case is the less common of the two here — but the distinction is drawn the
+        same way regardless of which is more likely, because collapsing either direction
+        would misreport either a permission problem as a data problem or the reverse.
+        """
+        covered = tuple(record["resource_id"] for record in resources)
+        declared = narrowed_to_gap_type(self.declaration, ADVISOR_ABSENT_GAP_TYPE)
+        if not covered or not declared.entries:
+            return (), ()
+
+        async with self.semaphore:
+            response = await self.port.list_recommendations(subscription_id=subscription_id)
+        received_at = self._now()
+
+        normalized: PlainData = None
+        if response.ok:
+            normalized = _normalized(
+                response.body,
+                id_paths=_ADVISOR_RESOURCE_ID_PATHS,
+                value_paths=_ADVISOR_VALUE_PATHS,
+            )
+        else:
+            logger.info(
+                "the Advisor recommendation listing answered HTTP %d; every recommendation "
+                "fact is reported as unavailable rather than as absent.",
+                response.status,
+            )
+
+        gaps = await self._archive(
+            source=SOURCE_ADVISOR,
+            request_target=ADVISOR_REQUEST_TARGET,
+            declared=declared,
+            resource_ids=covered,
+            received_at=received_at,
+            body=normalized,
+        )
+
+        facts, fold_gaps = fold_fact_response(
+            normalized,
+            kind=FACT_KIND_FACTS,
+            source=SOURCE_ADVISOR,
             resource_ids=covered,
             declaration=declared,
             resource_types=types_by_id,

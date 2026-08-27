@@ -187,10 +187,10 @@ class FakeInventoryPort:
 
 
 class FakeFactsPort:
-    """Scripts the three non-projectable fact sources (Req 4.8, 5.1, 5.2, 5.3).
+    """Scripts the four non-projectable fact sources (Req 4.8, 5.1, 5.2, 5.3, 16.7).
 
-    **Three independent queues**, unlike `FakeInventoryPort`'s one, because the three methods
-    are three different services and a test almost always wants to script them
+    **Four independent queues**, unlike `FakeInventoryPort`'s one, because the four methods
+    are four different services and a test almost always wants to script them
     asymmetrically — a successful backup list beside a rejected reservation listing is the
     ordinary subscription, not an edge case.
 
@@ -205,10 +205,12 @@ class FakeFactsPort:
         backup_responses: Sequence[RawHttpResponse] = (),
         replication_responses: Sequence[RawHttpResponse] = (),
         reservation_responses: Sequence[RawHttpResponse] = (),
+        advisor_responses: Sequence[RawHttpResponse] = (),
     ) -> None:
         self._backup = _ScriptedCalls(responses=list(backup_responses))
         self._replication = _ScriptedCalls(responses=list(replication_responses))
         self._reservations = _ScriptedCalls(responses=list(reservation_responses))
+        self._advisor = _ScriptedCalls(responses=list(advisor_responses))
 
     @property
     def backup_calls(self) -> list[dict[str, Any]]:
@@ -221,6 +223,10 @@ class FakeFactsPort:
     @property
     def reservation_calls(self) -> list[dict[str, Any]]:
         return self._reservations.calls
+
+    @property
+    def advisor_calls(self) -> list[dict[str, Any]]:
+        return self._advisor.calls
 
     async def list_backup_protected_items(
         self, *, subscription_id: str
@@ -249,6 +255,15 @@ class FakeFactsPort:
             )
         )
 
+    async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
+        return _one(
+            self._advisor.record_and_pop(
+                port_name="FakeFactsPort",
+                method_name="list_recommendations",
+                subscription_id=subscription_id,
+            )
+        )
+
 
 def _one(result: object) -> RawHttpResponse:
     assert isinstance(result, RawHttpResponse), result
@@ -271,10 +286,11 @@ def facts_port_answering_nothing(*, vaults: int = 0) -> FakeFactsPort:
     """A `FakeFactsPort` every source of which answers successfully and names nothing.
 
     The default for a harness that is **not** about facts: it models a subscription with no
-    backup, no replication and no reservation, so the run collects the projected facts from
-    the inventory query and records one typed absence per non-projectable key. That is a real
-    subscription rather than an evasion — and it is why those harnesses' runs now carry gaps
-    and report `PARTIAL_COVERAGE`, which Req 5.6 names as the intended outcome.
+    backup, no replication, no reservation and no Advisor recommendation, so the run
+    collects the projected facts from the inventory query and records one typed absence per
+    non-projectable key. That is a real subscription rather than an evasion — and it is why
+    those harnesses' runs now carry gaps and report `PARTIAL_COVERAGE`, which Req 5.6 names
+    as the intended outcome.
 
     `vaults` scripts one replication answer per Recovery Services vault the harness's
     inventory holds; zero is the common case, and `azure/facts.py` then issues no replication
@@ -284,6 +300,7 @@ def facts_port_answering_nothing(*, vaults: int = 0) -> FakeFactsPort:
         backup_responses=[empty_fact_list()],
         replication_responses=[empty_fact_list() for _ in range(vaults)],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
 
 

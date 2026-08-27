@@ -30,12 +30,15 @@ from fakes.azure_ports import FakeFactsPort, empty_fact_list
 from fakes.object_store import InMemoryObjectStore
 from reporting_agent.azure.clients import FACT_FIELD_PREFIX
 from reporting_agent.azure.facts import (
+    ADVISOR_ABSENT_GAP_TYPE,
+    ADVISOR_REQUEST_TARGET,
     BACKUP_ABSENT_GAP_TYPE,
     BACKUP_REQUEST_TARGET,
     REPLICATION_ABSENT_GAP_TYPE,
     REPLICATION_REQUEST_TARGET,
     RESERVATION_ABSENT_GAP_TYPE,
     RESERVATION_REQUEST_TARGET,
+    SOURCE_ADVISOR,
     SOURCE_CAPACITY,
     SOURCE_RECOVERY_SERVICES,
     FactArchiveContext,
@@ -158,6 +161,10 @@ class RecordingFactsPort:
         self._events.append("request:reservations")
         return await self._inner.list_reservations()
 
+    async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
+        self._events.append("request:advisor")
+        return await self._inner.list_recommendations(subscription_id=subscription_id)
+
 
 def collector(
     port: FactsPort,
@@ -256,6 +263,7 @@ def test_each_fact_producing_response_lands_one_object_carrying_its_provenance()
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(record("prod-web-01"))]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
 
     asyncio.run(
@@ -267,10 +275,11 @@ def test_each_fact_producing_response_lands_one_object_carrying_its_provenance()
     )
 
     objects = objects_of(store)
-    assert [obj["kind"] for obj in objects] == [ARCHIVE_KIND_FACTS] * 2
+    assert [obj["kind"] for obj in objects] == [ARCHIVE_KIND_FACTS] * 3
     assert {obj["source"] for obj in objects} == {
         SOURCE_RECOVERY_SERVICES,
         SOURCE_CAPACITY,
+        SOURCE_ADVISOR,
     }
     for obj in objects:
         assert obj["schema_version"] == ARCHIVE_SCHEMA_VERSION
@@ -282,6 +291,7 @@ def test_each_fact_producing_response_lands_one_object_carrying_its_provenance()
             BACKUP_REQUEST_TARGET,
             REPLICATION_REQUEST_TARGET,
             RESERVATION_REQUEST_TARGET,
+            ADVISOR_REQUEST_TARGET,
         }
 
 
@@ -297,6 +307,7 @@ def test_the_object_is_written_before_the_next_request_of_that_source() -> None:
     inner = FakeFactsPort(
         backup_responses=[empty_fact_list()],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     store = RecordingStore(events)
 
@@ -312,8 +323,8 @@ def test_the_object_is_written_before_the_next_request_of_that_source() -> None:
 
     puts = [event for event in events if event.startswith("put:")]
     requests = [event for event in events if event.startswith("request:")]
-    assert len(puts) == 2
-    assert set(requests) == {"request:backup", "request:reservations"}
+    assert len(puts) == 3
+    assert set(requests) == {"request:backup", "request:reservations", "request:advisor"}
     # Every put follows the request whose response it archives, and the first put cannot
     # precede the first request.
     assert events.index("request:backup") < min(
@@ -327,7 +338,9 @@ def test_a_collector_with_no_archive_context_writes_nothing_and_still_folds() ->
     the honest verdict for an archive that does not exist."""
     store = InMemoryObjectStore()
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
 
     result = asyncio.run(
@@ -343,6 +356,7 @@ def test_a_collector_with_no_archive_context_writes_nothing_and_still_folds() ->
     assert {gap["gap_type"] for gap in result.gaps} == {
         BACKUP_ABSENT_GAP_TYPE,
         RESERVATION_ABSENT_GAP_TYPE,
+        ADVISOR_ABSENT_GAP_TYPE,
     }
 
 
@@ -359,6 +373,7 @@ def test_a_failed_write_records_a_gap_per_resource_and_still_folds() -> None:
             RawHttpResponse(status=200, headers={}, body={"value": [backup_item(record("prod-web-01"))]})
         ],
         reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
     writer_store = FailingStore()
 
@@ -512,7 +527,9 @@ def test_the_archived_keys_are_the_keys_that_source_answers_for() -> None:
 def test_the_object_records_the_narrowed_keys_and_not_the_whole_declaration() -> None:
     store = InMemoryObjectStore()
     port = FakeFactsPort(
-        backup_responses=[empty_fact_list()], reservation_responses=[empty_fact_list()]
+        backup_responses=[empty_fact_list()],
+        reservation_responses=[empty_fact_list()],
+        advisor_responses=[empty_fact_list()],
     )
 
     asyncio.run(

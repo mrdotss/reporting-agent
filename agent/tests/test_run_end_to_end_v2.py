@@ -371,6 +371,7 @@ class V2Walk:
             backup_responses=[empty_fact_list()],
             replication_responses=[],
             reservation_responses=[empty_fact_list()],
+            advisor_responses=[empty_fact_list()],
         )
         self.provider_builds = 0
 

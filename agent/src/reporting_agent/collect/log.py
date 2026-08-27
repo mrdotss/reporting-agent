@@ -3,7 +3,7 @@
 **A gap is recorded, never zero-filled** (Req 29.3, 29.4). `deallocated`,
 `metric_not_emitted` and `permission_denied` are three completely different facts that
 a zero-filling collector would render identically as "0% CPU" — the partition of
-24 declared `gap_type` values below is the point, not an implementation detail, and it
+25 declared `gap_type` values below is the point, not an implementation detail, and it
 is fixed by the requirements glossary rather than inferred from whatever a caller
 happens to pass. This module is the single place that partition is declared and the
 single place a caller builds one entry, so a typo in a `gap_type` string fails at the
@@ -39,7 +39,7 @@ from reporting_agent.providers.base import GapRecord
 __all__ = [
     "DECLARED_GAP_TYPES",
     "FACT_GAP_TYPES",
-    "GAP_TYPE_ARCHIVE_WRITE_FAILED",
+    "GAP_TYPE_ADVISOR_NOT_AVAILABLE",
     "GAP_TYPE_BACKUP_NOT_CONFIGURED",
     "GAP_TYPE_CATALOG_ENTRY_INVALID",
     "GAP_TYPE_DEALLOCATED",
@@ -130,6 +130,7 @@ GAP_TYPE_METRIC_NOT_SELECTED: Final[str] = "metric_not_selected"
 GAP_TYPE_BACKUP_NOT_CONFIGURED: Final[str] = "backup_not_configured"
 GAP_TYPE_NO_RESERVATIONS: Final[str] = "no_reservations"
 GAP_TYPE_REPLICATION_NOT_ENABLED: Final[str] = "replication_not_enabled"
+GAP_TYPE_ADVISOR_NOT_AVAILABLE: Final[str] = "advisor_not_available"
 GAP_TYPE_FACT_UNAVAILABLE: Final[str] = "fact_unavailable"
 
 FACT_GAP_TYPES: Final[frozenset[str]] = frozenset(
@@ -137,16 +138,17 @@ FACT_GAP_TYPES: Final[frozenset[str]] = frozenset(
         GAP_TYPE_BACKUP_NOT_CONFIGURED,
         GAP_TYPE_NO_RESERVATIONS,
         GAP_TYPE_REPLICATION_NOT_ENABLED,
+        GAP_TYPE_ADVISOR_NOT_AVAILABLE,
         GAP_TYPE_FACT_UNAVAILABLE,
     }
 )
-"""The four gap types a fact produces, and the set `record_gap` requires a `source` for.
+"""The five gap types a fact produces, and the set `record_gap` requires a `source` for.
 
 Req 5.10 asks that every gap of a type this spec adds record the source that was queried.
 Declared as a set and enforced at the one gate rather than left to the caller: the fold
-that records these gaps handles four sources and several keys per resource, so "remember to
-pass the source" is exactly the kind of obligation that holds for three call sites and not
-the fourth. A gap that cannot name where it looked is not evidence of anything."""
+that records these gaps handles five sources and several keys per resource, so "remember to
+pass the source" is exactly the kind of obligation that holds for four call sites and not
+the fifth. A gap that cannot name where it looked is not evidence of anything."""
 
 DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
     {
@@ -174,12 +176,12 @@ DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
-assert len(DECLARED_GAP_TYPES) == 24
+assert len(DECLARED_GAP_TYPES) == 25
 assert FACT_GAP_TYPES < DECLARED_GAP_TYPES
 
 
 class GapTypeError(ValueError):
-    """`gap_type` is not one of the 24 declared values.
+    """`gap_type` is not one of the 25 declared values.
 
     Carries the offending value so a caller building a message does not have to
     re-parse `str(exc)`.
