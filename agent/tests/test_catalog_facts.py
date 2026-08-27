@@ -42,7 +42,11 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 7
+DECLARED_TYPE_COUNT = 8
+"""Task 6.1 adds `Microsoft.Network/virtualNetworks/subnets` as the shipped
+declaration's first **child** type — a type the fact file declares and the metric
+file never does, per `catalog.loader.is_child_type`. So the fact half now covers one
+more resource type than the metric half: 7 metric-bearing types plus this one."""
 
 
 # --------------------------------------------------------------------------- #
@@ -108,10 +112,22 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
     Asserted as a set equality in both directions rather than a count, because a count is
     satisfied by seven types that are not these seven — and a type declaring metrics but no
     facts would render a resource table with no identity columns.
+
+    **Task 6.1 adds the first exception on purpose.** The fact declaration now also covers
+    `Microsoft.Network/virtualNetworks/subnets`, a **child** type with facts and
+    deliberately no metrics — no metric is ever requested for a sub-record
+    (`catalog.loader.is_child_type`'s whole point). So the equality this test's own name
+    promises now holds only after child types are excluded from the fact side; asserting
+    that exclusion explicitly is what keeps this test from silently widening to tolerate a
+    second, unrelated type gaining metrics-less fact coverage by accident.
     """
     catalog = load_catalog()
+    metric_types = set(catalog.resource_type_names)
+    fact_types = set(catalog.facts.resource_type_names)
+    children = set(child_type_names(catalog))
 
-    assert set(catalog.facts.resource_type_names) == set(catalog.resource_type_names)
+    assert fact_types - children == metric_types
+    assert children == {"Microsoft.Network/virtualNetworks/subnets"}
 
 
 def test_every_declared_fact_key_is_lower_snake_case_and_within_the_length_bound() -> None:
@@ -881,9 +897,13 @@ def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path
 
 
 def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
-    """Today's shipped pair has none: the four collectors that emit sub-records are phase 5.
-
-    Pinned so that the first child type to be declared is a deliberate edit which turns this
-    assertion red, rather than a quiet change to what every headline count means.
+    """Task 6.1 is that deliberate edit: the shipped pair now declares exactly one child
+    type, `Microsoft.Network/virtualNetworks/subnets` — the first of the four collectors
+    Phase 5 adds (task 6.1's own virtual-network subnets). This test's job changes with
+    it: it no longer pins the empty tuple, it pins the **exact, single** child type this
+    task added, so a second child type appearing in a later task's catalogue edit still
+    turns this assertion red until it is updated too — the tripwire moves forward with
+    every task that deliberately grows this set, rather than staying pinned to zero
+    forever once the first one lands.
     """
-    assert child_type_names(load_catalog()) == ()
+    assert child_type_names(load_catalog()) == ("Microsoft.Network/virtualNetworks/subnets",)

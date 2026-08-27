@@ -99,6 +99,7 @@ __all__ = [
     "RESOURCE_GRAPH_API_VERSION",
     "RESOURCE_SKUS_API_VERSION",
     "SITE_RECOVERY_API_VERSION",
+    "SUBNET_CHILD_RESOURCE_TYPE",
     "ArmDefinitionsPort",
     "ArmFactsPort",
     "ArmInventoryPort",
@@ -114,6 +115,7 @@ __all__ = [
     "is_dns_resolution_failure",
     "pipeline_sender",
     "resource_counts_query",
+    "subnet_inventory_query",
 ]
 
 logger = logging.getLogger(__name__)
@@ -407,6 +409,115 @@ def inventory_query(
     return "\n".join(lines)
 
 
+SUBNET_CHILD_RESOURCE_TYPE: Final[str] = "Microsoft.Network/virtualNetworks/subnets"
+"""The synthetic child type task 6.1 declares (Req 16.4, 16.9, 16.10).
+
+Declared here, beside the query that is the only place a row of this type is ever
+produced, rather than imported from `catalog/facts.v1.json` — the catalogue names it
+as a **string literal**, the same way `azure/facts.py`'s `RECOVERY_SERVICES_VAULT_TYPE`
+names its own inventory type, so the query and the catalogue entry are two independent
+statements of the same spelling rather than one importing the other. A test asserts
+they agree.
+"""
+
+
+def subnet_inventory_query(*, subscription_id: str) -> str:
+    """The Resource Graph query that turns each VNet's nested subnets into their own
+    rows (Req 16.4, 16.9, 16.10). **Pure.**
+
+    Subnets are **not** their own row in the `Resources` table — Azure nests them in a
+    virtual network's own `properties.subnets` array, and the only way to read one as an
+    addressable row is `mv-expand` (confirmed against Microsoft's own Resource Graph
+    sample queries and the `Resources` table's documented shape: "Most Resource Manager
+    resource types and properties are here," with a subnet's own type never listed as a
+    table row). So this is a **second, separate** query from :func:`inventory_query`
+    rather than a column added to it — the two queries have different `where` clauses
+    (`inventory_query` matches whatever the scope names; this one is always scoped to
+    `Microsoft.Network/virtualNetworks` regardless of scope, because a subnet's data
+    lives on its parent's row) and a different post-filter shape (`mv-expand` here,
+    none there).
+
+    **Emits the identical eight-column inventory shape `inventory_query` does** —
+    `id, name, type, location, resourceGroup, tags, sku, powerState` — so the response
+    folds through `InventoryCollector._fold_page` completely unchanged: a subnet row is
+    an ordinary `ResourceRecord` to every module downstream of the fold, with a real ARM
+    id (`properties.subnets[].id`, which Azure returns as the subnet's own full resource
+    id) and no metric ever requested for it, exactly as `catalog.loader.is_child_type`
+    requires. `sku` and `powerState` are always empty for a subnet — it has neither —
+    which the fold already tolerates for any resource type that carries no power state
+    (Req 20.13 is VM-scoped).
+
+    `resourceGroup` and `tags` are read from the **parent VNet's own row**, not from the
+    subnet element, because a subnet carries neither of its own — the same reasoning
+    that makes reading `location` from the parent correct too, since a subnet has no
+    independent region. A subnet inherits its group and region from the VNet that owns
+    it, structurally, so reading the parent's columns is not a fallback, it is what the
+    field means for a resource with no such property of its own.
+
+    The fact columns this projects — `fact_subnet` (the subnet's own name), plus
+    whatever `facts.v1.json` declares for `Microsoft.Network/virtualNetworks/subnets` —
+    are read off the **`mv-expand`ed element itself**, since after the expansion each
+    subnet element carries its own `properties` (`addressPrefix`,
+    `provisioningState`, and the peering state resolved through the parent's own
+    `virtualNetworkPeerings`, projected onto the row it produced rather than a second
+    query — a peering is a property of the *parent* VNet's connection to another VNet,
+    not of any one subnet, so every subnet under one VNet reports that VNet's own
+    peering state).
+
+    **`available_ips` is deliberately absent from this query.** Azure exposes no static
+    "available IP count" property on a subnet at all — confirmed by checking the
+    resource's own schema and Microsoft's own community guidance, which computes it by
+    hand from `addressPrefix` (the CIDR mask) minus 5 reserved addresses minus the count
+    of `properties.ipConfigurations` already attached. That arithmetic is a **derived**
+    statistic in this catalog's own sense (`catalog.loader.DerivedEntry`, the same shape
+    `memory_used_pct` already uses), not a scalar this query can honestly project — a
+    KQL expression that hand-rolled the subnet-mask power-of-two math here would be a
+    second, undeclared formula next to the one `DerivedEntry.formula` already exists to
+    make visible and provenance-bearing. This function projects
+    `ip_configuration_count` (`array_length(subnet.properties.ipConfigurations)`), the
+    one half of that formula only Resource Graph can answer; the CIDR-mask half and the
+    subtraction are `compile/`'s job once a `Microsoft.Network/virtualNetworks/subnets`
+    derived entry declares them.
+
+    `fact_projections` is unfiltered by resource type at the call site — the same
+    "union across every declared type" design `AzureProvider.discover` already applies
+    to `inventory_query` — but only entries actually declared for
+    `Microsoft.Network/virtualNetworks/subnets` do anything here, because the
+    `mv-expand`ed element has no field a projection for another resource type could
+    resolve; an unrelated projection simply reads empty, exactly as an inventory column
+    that does not apply to a row comes back empty rather than failing the query.
+
+    No `skip_token` parameter and no continuation read back: `mv-expand`'s own
+    `RowLimit` (2000, matching Resource Graph's documented cap) already bounds the
+    result, and a page beyond it is a genuinely different failure — a subscription with
+    more than 2000 subnets across all its VNets — which this function does not attempt
+    to page around, matching the same "ordinary" treatment `distinct_dimensions_query`
+    gives its own analogous cap.
+    """
+    lines = [
+        "Resources",
+        f"| where subscriptionId == {_kql_literal(subscription_id)}",
+        f"| where type =~ {_kql_literal('Microsoft.Network/virtualNetworks')}",
+        "| mv-expand subnet = properties.subnets",
+        "| project id = tostring(subnet.id),",
+        "          name = tostring(subnet.name),",
+        f"          type = {_kql_literal(SUBNET_CHILD_RESOURCE_TYPE)},",
+        "          location = location,",
+        "          resourceGroup = resourceGroup,",
+        "          tags = tags,",
+        '          sku = "",',
+        '          powerState = "",',
+        "          , fact_subnet = tostring(subnet.name)",
+        "          , fact_address_prefix = tostring(subnet.properties.addressPrefix)",
+        "          , fact_ip_configuration_count = tostring("
+        "array_length(subnet.properties.ipConfigurations))",
+        "          , fact_peering_state = tostring("
+        "properties.virtualNetworkPeerings[0].properties.peeringState)",
+    ]
+    lines.append("| order by id asc")
+    return "\n".join(lines)
+
+
 _MAKE_SET_LIMIT: Final[int] = DISTINCT_VALUE_LIMIT + 1
 """What the query actually asks `make_set_if` for — **one more** than the bound.
 
@@ -610,6 +721,27 @@ class ArmInventoryPort:
             json={
                 "subscriptions": [subscription_id],
                 "query": resource_counts_query(subscription_id=subscription_id),
+                "options": {"resultFormat": "objectArray"},
+            },
+        )
+        return await _send(self.sender, request)
+
+    async def query_child_resources(self, *, subscription_id: str) -> RawHttpResponse:
+        """Every synthetic child resource this run's scope can name (task 6.1).
+
+        Today: `subnet_inventory_query` alone. A second child-resource query (task 6.3's
+        security rules) is expected to union its own rows into this same response rather
+        than add a fifth port method — the port's contract is "every child resource," and
+        `azure/inventory.py`'s fold already treats every row identically regardless of
+        which child type produced it.
+        """
+        request = HttpRequest(
+            "POST",
+            f"{ARM_ENDPOINT}/providers/Microsoft.ResourceGraph/resources",
+            params={"api-version": self.api_version},
+            json={
+                "subscriptions": [subscription_id],
+                "query": subnet_inventory_query(subscription_id=subscription_id),
                 "options": {"resultFormat": "objectArray"},
             },
         )

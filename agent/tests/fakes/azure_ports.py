@@ -164,6 +164,27 @@ class FakeInventoryPort:
         assert isinstance(result, RawHttpResponse)
         return result
 
+    async def query_child_resources(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """The next scripted response, from the **same** shared queue (task 6.1).
+
+        `AzureProvider.discover` calls this only when the scope actually requests a
+        resource type that has a synthetic child type (e.g. VNets, for subnets) —
+        never unconditionally — so a test scripting only `query_resources`'s own
+        responses and never requesting such a type is unaffected. A test that DOES
+        request one and forgets to script this call's response gets
+        `ExhaustedScriptError` rather than a silent success, the same discipline every
+        other method on this fake already gives.
+        """
+        result = self._state.record_and_pop(
+            port_name="FakeInventoryPort",
+            method_name="query_child_resources",
+            subscription_id=subscription_id,
+        )
+        assert isinstance(result, RawHttpResponse)
+        return result
+
 
 class FakeFactsPort:
     """Scripts the three non-projectable fact sources (Req 4.8, 5.1, 5.2, 5.3).

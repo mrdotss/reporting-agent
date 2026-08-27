@@ -213,6 +213,40 @@ class InventoryPort(Protocol):
         """
         ...
 
+    async def query_child_resources(
+        self, *, subscription_id: str
+    ) -> RawHttpResponse:
+        """One `mv-expand`-based Resource Graph query returning every synthetic child
+        resource this run's scope covers (task 6.1, Req 16.4, 16.9, 16.10).
+
+        A **fourth** method rather than an option on :meth:`query_resources`, for the
+        same reason :meth:`query_resource_counts` is its own method and not columns
+        added to :meth:`query_distinct_dimensions`: the KQL shape genuinely differs.
+        `query_resources` never runs `mv-expand` — a child resource (a subnet, a
+        security rule) is nested inside its parent's own row and is not addressable
+        any other way, so the two queries have different `where` clauses and only one
+        of them expands anything.
+
+        `azure/clients.py::subnet_inventory_query` is the first caller today; a second
+        child type (task 6.3's security rules) is expected to add a second query this
+        same method issues, unioned in `azure/clients.py`'s own adapter rather than
+        here — this port method's contract is "every child resource," not "subnets
+        specifically."
+
+        The response is shaped identically to :meth:`query_resources`'s own eight
+        columns (`id, name, type, location, resourceGroup, tags, sku, powerState`)
+        plus whatever `fact_<key>` columns the child type's own catalogue entry
+        declares, so it folds through `azure/inventory.py`'s existing page fold with
+        no change at all — a child resource is an ordinary row to every module
+        downstream of the fold.
+
+        No `skip_token` and no continuation read back: `mv-expand`'s own row-limit cap
+        (2000, matching Resource Graph's documented default) already bounds the
+        result, matching :meth:`query_resource_counts`'s own treatment of its
+        analogous cap.
+        """
+        ...
+
 
 @runtime_checkable
 class SkuPort(Protocol):

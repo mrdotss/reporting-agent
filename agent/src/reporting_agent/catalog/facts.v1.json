@@ -288,6 +288,39 @@
           "unit": "days"
         }
       ]
+    },
+    "Microsoft.Network/virtualNetworks/subnets": {
+      "facts": [
+        {
+          "key": "subnet",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(subnet.name)"
+        },
+        {
+          "key": "address_prefix",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(subnet.properties.addressPrefix)"
+        },
+        {
+          "key": "ip_configuration_count",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(array_length(subnet.properties.ipConfigurations))",
+          "unit": "count"
+        },
+        {
+          "key": "peering_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.virtualNetworkPeerings[0].properties.peeringState)"
+        }
+      ]
     }
   }
 }

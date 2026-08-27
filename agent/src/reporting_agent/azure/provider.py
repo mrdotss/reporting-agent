@@ -93,6 +93,7 @@ from reporting_agent.catalog.loader import (
     LoadedCatalog,
     MetricEntry,
     ResourceTypeCatalog,
+    child_type_names,
     load_catalog,
 )
 from reporting_agent.collect.accumulate import (
@@ -261,6 +262,37 @@ def interval_count_for(window: Mapping[str, str], grain: str) -> int:
     return max(1, math.ceil(seconds / slot))
 
 
+def _non_child_projections(
+    catalog: LoadedCatalog,
+) -> tuple[tuple[str, str], ...]:
+    """Every projectable fact declared by a **non**-child resource type, as `(key,
+    projection)` pairs ordered by key (Req 4.7). **Pure.**
+
+    `FactDeclaration.projectable()` with no `resource_type` argument returns the union
+    across every declared type, and that union is what `inventory_query`'s own
+    `project` clause needs — except for a child type's own facts. A child type's
+    projection expression names an identifier that exists only inside its own
+    `mv-expand`-based query (`subnet`, for `Microsoft.Network/virtualNetworks/subnets`);
+    `inventory_query` never runs that `mv-expand`, so the identifier is unbound there
+    and the whole query would fail — for every resource type, on every run — the moment
+    a child type declares even one projectable fact.
+
+    Filtered per resource type rather than once over the flattened union, because two
+    resource types can legitimately declare the identical `(key, projection)` pair
+    (`sku_name`, say) and `projectable()`'s own de-duplication already handles that; this
+    function only has to remove entries whose **owning type** is a child type, which
+    `FactDeclaration.for_resource_type` already answers per type.
+    """
+    child_types = {name.casefold() for name in child_type_names(catalog)}
+    excluded_keys: set[str] = set()
+    for declared in catalog.facts.resource_types:
+        if declared.resource_type.casefold() in child_types:
+            excluded_keys.update(entry.key for entry in declared.facts)
+    return tuple(
+        pair for pair in catalog.facts.projectable() if pair[0] not in excluded_keys
+    )
+
+
 def _matches_resource_groups(resource: ResourceRecord, groups: Sequence[str]) -> bool:
     """Whether the resource is in one of the requested resource groups.
 
@@ -410,7 +442,17 @@ class AzureProvider:
             # cost the projection exists to avoid. `FactDeclaration.projectable`
             # de-duplicates, so the several types declaring `sku_name` identically project
             # it once.
-            fact_projections=self.catalog.facts.projectable(),
+            #
+            # **Except a child type's own facts (task 6.1).** A child type's projection
+            # expression (`tostring(subnet.name)`, say) refers to an identifier —
+            # `subnet` — that exists only inside `subnet_inventory_query`'s own
+            # `mv-expand subnet = properties.subnets`. `inventory_query` never runs that
+            # `mv-expand`, so appending a child type's projection to its `project` clause
+            # would reference an unbound identifier and fail the query for every run,
+            # for every resource type, the instant a child type's facts are declared.
+            # `_non_child_projections` is what keeps the union exactly what it was before
+            # any child type existed.
+            fact_projections=_non_child_projections(self.catalog),
             # The **same** writer the metrics collector uses, not a second one: the
             # snapshot records one `raw_archive.object_count`, and a replay refuses to
             # proceed when the objects supplied and the objects the sequence names differ.
@@ -441,9 +483,55 @@ class AzureProvider:
                 len(result["resources"]),
             )
 
+        gaps = list(result["gaps"])
+
+        # --- child resources (task 6.1) --------------------------------------------
+        #
+        # Issued only when the scope actually requests a resource type that has a
+        # synthetic child type — today, `Microsoft.Network/virtualNetworks` for
+        # subnets. Gating on the parent type rather than issuing this unconditionally
+        # on every run is what keeps a scope with no VNets in it from paying for a
+        # query that could only ever answer "no rows": `subnet_inventory_query` finds
+        # its subnets by filtering to VNets, so a scope with none in it has nothing
+        # this query could name. It is deliberately gated on the same scope test the
+        # section catalogue's own `needs_resource_types` entry already applies —
+        # section 3 declares `["Microsoft.Network/virtualNetworks"]`, so "the section
+        # is offerable" and "this query is worth issuing" are one condition, not two
+        # that could disagree.
+        if any(
+            name.casefold() == "microsoft.network/virtualnetworks"
+            for name in scope["resource_types"]
+        ):
+            child_result = await self.inventory.discover_child_resources(
+                subscription_id=scope["subscription_id"],
+                fidelity_tier=self.fidelity_tier,
+                archive=InventoryArchiveContext(
+                    writer=self.metrics.archive_writer,
+                    actor_id=self.actor_id,
+                    run_id=self.run_id,
+                    catalog_version=self.catalog.catalog_version,
+                ),
+            )
+            # No group/tag filter applied to a child resource: it inherits its parent
+            # VNet's own resource group (the query reads that column off the parent's
+            # row, not the child's), and a filter that excluded the parent would
+            # already have excluded the parent from `resources` above — a child whose
+            # own resource-group column matches would then be the only remaining trace
+            # of a VNet the scope asked to exclude, which is the opposite of what the
+            # filter means. Filtering child resources by the SAME resource_group/tag
+            # test the parent already passed keeps that consistent.
+            filtered_children = [
+                child
+                for child in child_result["resources"]
+                if _matches_resource_groups(child, groups)
+                and _matches_tag_filters(child, filters)
+            ]
+            resources.extend(filtered_children)
+            gaps.extend(child_result["gaps"])
+
         discovered = DiscoverResult(
             resources=sort_inventory(resources),
-            gaps=list(result["gaps"]),
+            gaps=gaps,
             # Passed through **unfiltered**, exactly as the gaps are: the pages are what
             # Azure answered, and `collect_facts` folds a page against the resource ids that
             # page names. A row a group or tag filter excluded contributes a fact for a

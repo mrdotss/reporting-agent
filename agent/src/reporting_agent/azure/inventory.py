@@ -877,6 +877,68 @@ class InventoryCollector:
 
         return read_counts(_rows_from_body(response.body), child_types=child_types)
 
+    async def discover_child_resources(
+        self,
+        *,
+        subscription_id: str,
+        fidelity_tier: str,
+        archive: InventoryArchiveContext | None = None,
+    ) -> DiscoverResult:
+        """Every synthetic child resource this run's scope can name (task 6.1, Req 16.4,
+        16.9, 16.10).
+
+        A **separate** method from :meth:`discover`, matching :meth:`resource_counts`'s own
+        separation from :meth:`distinct_dimensions` and for the identical reason: one call
+        to the port and no `skip_token` loop, as properties of this method's shape rather
+        than an accident of today's response size. `mv-expand`'s own row-limit cap already
+        bounds the answer (Req 16.4's own note on why no paging is attempted here), so
+        adding a loop this method never needs would misstate what it promises.
+
+        Reuses :meth:`_fold_page` completely unchanged: `query_child_resources`'s response
+        is shaped as the identical eight inventory columns `query_resources` produces, so a
+        child resource — a subnet, a future security rule — becomes an ordinary
+        `ResourceRecord` through the exact fold every other resource goes through. No
+        power-state gap is expected (a child resource carries no power state at all), and
+        none is asserted here — the fold's own VM-only check already reads that correctly.
+
+        Archived **before** the fold, matching :meth:`discover`'s own write-then-fold order
+        (Req 7.1, 26.3, 26.4): unconditionally, unlike the main inventory page, because
+        every child-resource response is fact-producing by construction — there is no
+        "no fact was projected" case for a query whose entire purpose is to name a
+        resource's facts.
+        """
+        if not isinstance(subscription_id, str) or not subscription_id.strip():
+            raise ValueError("subscription_id must be a non-empty string")
+
+        response = await self._port.query_child_resources(subscription_id=subscription_id)
+        if not response.ok:
+            logger.warning(
+                "the child-resource query for subscription %r returned status %d; "
+                "no child resource is recorded for this run.",
+                subscription_id,
+                response.status,
+            )
+            return DiscoverResult(resources=[], gaps=[])
+
+        received_at = rfc3339_utc(self._now())
+        gaps: list[GapRecord] = []
+        if archive is not None:
+            gaps.extend(
+                await self._archive_page(
+                    archive,
+                    subscription_id=subscription_id,
+                    body=response.body,
+                    page_index=0,
+                    skip_token_present=False,
+                    received_at=received_at,
+                )
+            )
+
+        resources: dict[str, ResourceRecord] = {}
+        self._fold_page(response.body, resources, gaps, fidelity_tier=fidelity_tier)
+
+        return DiscoverResult(resources=sort_inventory(resources.values()), gaps=gaps)
+
     async def _archive_page(
         self,
         archive: InventoryArchiveContext,

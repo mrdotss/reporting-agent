@@ -638,6 +638,8 @@ def test_discover_retains_every_gap_including_one_a_filter_excluded() -> None:
 
 def test_discover_scopes_the_query_to_the_subscription_and_resource_types() -> None:
     """Req 20.11, observed on the call the provider actually made."""
+    from reporting_agent.azure.provider import _non_child_projections
+
     harness = Harness(inventory=[inventory_page([inventory_row("prod-web-01")])])
 
     run(harness.provider.discover(scope()))
@@ -647,7 +649,11 @@ def test_discover_scopes_the_query_to_the_subscription_and_resource_types() -> N
             "subscription_id": SUBSCRIPTION,
             "resource_types": (RESOURCE_TYPE,),
             "skip_token": None,
-            "fact_projections": load_catalog().facts.projectable(),
+            # Task 6.1: NOT the raw `load_catalog().facts.projectable()` union — a
+            # child type's own facts (`Microsoft.Network/virtualNetworks/subnets`)
+            # name an identifier that exists only inside their own `mv-expand`-based
+            # query, so they are excluded here. See `_non_child_projections`.
+            "fact_projections": _non_child_projections(load_catalog()),
         }
     ]
 
@@ -660,17 +666,28 @@ def test_the_projected_facts_come_from_the_declaration_not_from_the_scope() -> N
     Graph query serves the whole scope, so narrowing per type would mean one query per
     type — the cost projecting exists to avoid. A well-formed non-empty tuple of pairs
     would satisfy a shape assertion whichever of the two it was; this asserts which.
+
+    **Except a child type's own facts (task 6.1)** — see
+    `test_a_child_types_facts_are_excluded_from_the_general_projection_union` in
+    `test_subnet_inventory.py` for why, and why the union here is
+    `_non_child_projections(declaration's catalog)` rather than the raw
+    `declaration.projectable()` this test asserted before that type existed.
     """
+    from reporting_agent.azure.provider import _non_child_projections
+
     harness = Harness(inventory=[inventory_page([inventory_row("prod-web-01")])])
-    declaration = load_catalog().facts
+    catalog = load_catalog()
 
     run(harness.provider.discover(scope()))
     passed = harness.inventory_port.calls[0]["fact_projections"]
 
-    assert passed == declaration.projectable()
-    assert passed != declaration.projectable(RESOURCE_TYPE)
+    assert passed == _non_child_projections(catalog)
+    # And the exclusion is real, not vacuous: the raw union differs from what was
+    # actually passed, because the child type's facts were removed.
+    assert passed != catalog.facts.projectable()
+    assert passed != catalog.facts.projectable(RESOURCE_TYPE)
     # And the union is strictly wider, so the difference above is "more", not "other".
-    assert set(declaration.projectable(RESOURCE_TYPE)) < set(passed)
+    assert set(catalog.facts.projectable(RESOURCE_TYPE)) < set(passed)
 
 
 # --------------------------------------------------------------------------- #

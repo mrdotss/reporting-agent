@@ -48,7 +48,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "available_ips"}] } }
+            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "ip_configuration_count"}] } }
           ]
         },
         {
