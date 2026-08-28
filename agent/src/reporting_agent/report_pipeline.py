@@ -741,6 +741,7 @@ def _resolve_front_matter_config(
     from reporting_agent.render.front_matter import (
         ApproverEntry,
         CoverConfig,
+        DistributionRow,
         DocumentControlConfig,
         FrontMatterConfig,
         TocConfig,
@@ -793,13 +794,36 @@ def _resolve_front_matter_config(
                         role=str(item.get("role") or ""),
                         name=str(item.get("name") or ""),
                         title=str(item.get("title") or ""),
+                        # Collected by the wizard's approver rows and declared on
+                        # `ApproverEntry` since it was written; dropped here, so the
+                        # approvers table had nothing to put in its Company column.
+                        company=str(item.get("company") or ""),
                     ))
             approvers = tuple(entries)
+        distribution_raw = dc_raw.get("distribution")
+        distribution_rows: tuple[DistributionRow, ...] = ()
+        distribution_text: str | None = None
+        if isinstance(distribution_raw, (list, tuple)):
+            # Req 12.6's v3 shape. `str()` over this list produced its Python repr and
+            # put that in the delivered document.
+            distribution_rows = tuple(
+                DistributionRow(
+                    recipient=str(row.get("recipient") or ""),
+                    company=str(row.get("company") or ""),
+                    note=str(row.get("note") or ""),
+                )
+                for row in distribution_raw
+                if isinstance(row, Mapping)
+            )
+        elif distribution_raw:
+            distribution_text = str(distribution_raw)
+
         dc = DocumentControlConfig(
             document_name=str(dc_raw["document_name"]) if dc_raw.get("document_name") else None,
             document_number_pattern=str(dc_raw["document_number_pattern"]) if dc_raw.get("document_number_pattern") else None,
             confidentiality_notice_id=str(dc_raw["confidentiality_notice_id"]) if dc_raw.get("confidentiality_notice_id") else None,
-            distribution=str(dc_raw["distribution"]) if dc_raw.get("distribution") else None,
+            distribution=distribution_text,
+            distribution_rows=distribution_rows,
             approvers=approvers,
         )
 

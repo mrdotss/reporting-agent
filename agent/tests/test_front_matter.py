@@ -76,6 +76,39 @@ def _tables(doc: object) -> list[object]:
     return list(doc.tables)
 
 
+def _document_text(doc: object) -> list[str]:
+    """Every paragraph in the document, including the ones inside table cells.
+
+    The cover and the document control page carry their values in labelled
+    ``Layout Table`` blocks rather than in `f"{label}: {value}"` paragraphs, so "the
+    document states X" is a question about the whole body and not about
+    `doc.paragraphs` alone.
+    """
+    texts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                texts.extend(p.text for p in cell.paragraphs)
+    return texts
+
+
+def _approvers_table(doc: object) -> object:
+    """The approvers table, found by its own style rather than by position.
+
+    It was `doc.tables[0]`, which silently meant "whichever table the emitter happens to
+    write first" — so adding the document control page's naming block above it pointed
+    every signature assertion at the wrong table. `Table Signature` is the approvers
+    table's identity (`render/themes.py`), and it is the only table carrying it.
+    """
+    from reporting_agent.render.themes import SIGNATURE_TABLE_STYLE
+
+    matches = [t for t in doc.tables if t.style is not None and t.style.name == SIGNATURE_TABLE_STYLE]
+    assert len(matches) == 1, (
+        f"expected exactly one {SIGNATURE_TABLE_STYLE!r} table, found {len(matches)}"
+    )
+    return matches[0]
+
+
 # ---------------------------------------------------------------------------
 # Basic emission — cover enabled, document control emitted
 # ---------------------------------------------------------------------------
@@ -104,7 +137,7 @@ class TestEmitCoverEnabled:
 
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
-        texts = _paragraphs_text(doc)
+        texts = _document_text(doc)
         assert "Acme Corp" in texts
         assert "July 2026" in texts
 
@@ -134,12 +167,13 @@ class TestEmitCoverEnabled:
 
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
-        texts = _paragraphs_text(doc)
+        texts = _document_text(doc)
         expected_number = "RPT-tmpl-abc-202607-run-001"
-        # On cover
-        assert expected_number in texts
-        # On document control (as "Document number: RPT-...")
-        assert any(expected_number in t for t in texts if "Document number" in t)
+        # Once on the cover and once on the document control page — the same string
+        # both times, which is the whole of Req 13.8.
+        assert texts.count(expected_number) == 2
+        # And the document control page labels it.
+        assert "Document number" in texts
 
 
 # ---------------------------------------------------------------------------
@@ -192,7 +226,7 @@ class TestCoverDisabled:
 
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
-        texts = _paragraphs_text(doc)
+        texts = _document_text(doc)
         assert any("Monthly Infra Report" in t for t in texts)
 
     def test_approvers_table_still_emitted_when_cover_disabled(self) -> None:
@@ -234,7 +268,7 @@ class TestSignatureBox:
 
         tables = _tables(doc)
         assert len(tables) >= 1
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
 
         # Check every signature cell (column 3) in data rows
         for row_idx in range(1, len(approvers_table.rows)):
@@ -262,7 +296,7 @@ class TestSignatureBox:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         # Row 1 is the "author" row (row 0 is header)
         author_row = approvers_table.rows[1]
         assert author_row.cells[2].text == "Alice Smith"
@@ -285,7 +319,7 @@ class TestSignatureBox:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         # Check row 1 (first data row) has the height set
         tr = approvers_table.rows[1]._tr
         tr_height_els = tr.findall(f".//{qn('w:trHeight')}")
@@ -318,7 +352,7 @@ class TestSignatureBox:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         author_row = approvers_table.rows[1]
         reviewer_row = approvers_table.rows[2]
 
@@ -363,7 +397,7 @@ class TestSignatureBox:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
 
         def row_height(row_idx: int) -> str | None:
             tr = approvers_table.rows[row_idx]._tr
@@ -393,7 +427,7 @@ class TestSignatureBox:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         role_cells = [
             approvers_table.rows[i].cells[0].text
             for i in range(1, len(approvers_table.rows))
@@ -494,7 +528,7 @@ class TestMessageResolution:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         header_row = approvers_table.rows[0]
         assert header_row.cells[0].text == "Role"
         assert header_row.cells[1].text == "Company"
@@ -510,7 +544,7 @@ class TestMessageResolution:
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
         tables = _tables(doc)
-        approvers_table = tables[0]
+        approvers_table = _approvers_table(doc)
         header_row = approvers_table.rows[0]
         assert header_row.cells[0].text == "Peran"
         assert header_row.cells[1].text == "Perusahaan"
@@ -551,7 +585,7 @@ class TestFullIntegration:
 
         emit_front_matter(doc, front_matter=config, run=run, messages=msgs)
 
-        texts = _paragraphs_text(doc)
+        texts = _document_text(doc)
         # Cover content
         assert "Cloud Report" in texts
         assert "BigCo" in texts
@@ -562,9 +596,170 @@ class TestFullIntegration:
         assert "Document control" in texts
         assert any("Infra Report" in t for t in texts)
         assert any("RPT-INFRA-202608-r42" in t for t in texts)
-        # Revision history
-        assert any("1.0" in t and "Initial" in t for t in texts)
+        # Revision history — the revision and its note are the two cells of one row.
+        assert "Revision history" in texts
+        assert "1.0" in texts
+        assert any("Initial" in t for t in texts)
         # Distribution
         assert any("Internal" in t for t in texts)
         # Table exists
         assert len(_tables(doc)) >= 1
+
+
+# ---------------------------------------------------------------------------
+# The two values the app collected and the document never showed
+# ---------------------------------------------------------------------------
+
+
+class TestApproverCompanyColumn:
+    """The COMPANY column shows the approver's company.
+
+    `ApproverEntry.company` was declared, collected by the wizard's approver rows, and
+    dropped by `report_pipeline._front_matter_from` — so the column headed "Company"
+    rendered `title`, the person's job title, instead.
+    """
+
+    def test_company_is_shown_when_supplied(self) -> None:
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            document_control=DocumentControlConfig(
+                approvers=(
+                    ApproverEntry(
+                        role="author",
+                        name="Mayer Reflino Sitorus",
+                        title="Cloud Engineer",
+                        company="PT Helios Informatika Nusantara",
+                    ),
+                )
+            )
+        )
+        emit_front_matter(
+            doc, front_matter=config, run=_run(), messages=load_messages("en")
+        )
+
+        row = _approvers_table(doc).rows[1]
+        assert row.cells[1].text == "PT Helios Informatika Nusantara"
+        assert row.cells[2].text == "Mayer Reflino Sitorus"
+
+    def test_title_remains_the_fallback(self) -> None:
+        """A profile authored before this fix put its company in `title`, because that
+        is the field the column rendered. Those keep rendering exactly as they did."""
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            document_control=DocumentControlConfig(
+                approvers=(
+                    ApproverEntry(role="author", name="A. Person", title="Acme Ltd"),
+                )
+            )
+        )
+        emit_front_matter(
+            doc, front_matter=config, run=_run(), messages=load_messages("en")
+        )
+
+        assert _approvers_table(doc).rows[1].cells[1].text == "Acme Ltd"
+
+
+class TestDistributionRows:
+    """Req 12.6's v3 rows reach the document as a table, not as a Python repr."""
+
+    def test_v3_rows_render_as_their_own_values(self) -> None:
+        from reporting_agent.render.front_matter import DistributionRow
+
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            document_control=DocumentControlConfig(
+                distribution_rows=(
+                    DistributionRow(
+                        recipient="Doni Prasetyo",
+                        company="PT. Herlina Indah",
+                        note="Softcopy",
+                    ),
+                )
+            )
+        )
+        emit_front_matter(
+            doc, front_matter=config, run=_run(), messages=load_messages("en")
+        )
+
+        texts = _document_text(doc)
+        assert "Doni Prasetyo" in texts
+        assert "PT. Herlina Indah" in texts
+        assert "Softcopy" in texts
+        # The defect: `str()` over the row list put its repr in a signed document.
+        assert not any("DistributionRow(" in t or "{'recipient'" in t for t in texts)
+
+    def test_the_v1_v2_free_text_block_still_renders(self) -> None:
+        doc = load_theme("editorial")
+        config = FrontMatterConfig(
+            document_control=DocumentControlConfig(distribution="Internal only")
+        )
+        emit_front_matter(
+            doc, front_matter=config, run=_run(), messages=load_messages("en")
+        )
+
+        assert "Internal only" in _document_text(doc)
+
+
+class TestResolveFrontMatterConfigCarriesEveryField:
+    """`report_pipeline._resolve_front_matter_config` is the wire between the definition
+    the app writes and the renderer that draws it.
+
+    Both bugs above were **here**, not in the renderer: `company` was not read, and
+    `distribution` was coerced with `str()` whatever shape it held. These assert the
+    wire carries what the app puts on it.
+    """
+
+    def test_the_approver_company_survives_the_wire(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config({
+            "front_matter": {
+                "document_control": {
+                    "approvers": [
+                        {
+                            "role": "author",
+                            "name": "Mayer Reflino Sitorus",
+                            "title": "Cloud Engineer",
+                            "company": "PT Helios Informatika Nusantara",
+                        }
+                    ]
+                }
+            }
+        })
+
+        approver = config.document_control.approvers[0]
+        assert approver.company == "PT Helios Informatika Nusantara"
+        assert approver.title == "Cloud Engineer"
+
+    def test_v3_distribution_rows_arrive_as_rows(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config({
+            "front_matter": {
+                "document_control": {
+                    "distribution": [
+                        {
+                            "recipient": "Doni Prasetyo",
+                            "company": "PT. Herlina Indah",
+                            "note": "Softcopy",
+                        }
+                    ]
+                }
+            }
+        })
+
+        control = config.document_control
+        assert control.distribution is None
+        assert len(control.distribution_rows) == 1
+        assert control.distribution_rows[0].recipient == "Doni Prasetyo"
+
+    def test_the_v1_v2_string_still_arrives_as_a_string(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config({
+            "front_matter": {"document_control": {"distribution": "Internal only"}}
+        })
+
+        control = config.document_control
+        assert control.distribution == "Internal only"
+        assert control.distribution_rows == ()

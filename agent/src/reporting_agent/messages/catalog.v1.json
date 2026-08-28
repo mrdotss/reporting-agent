@@ -133,6 +133,18 @@
       "en": "Distribution",
       "id": "Distribusi"
     },
+    "doc.front_matter.distribution_recipient": {
+      "en": "Recipient",
+      "id": "Penerima"
+    },
+    "doc.front_matter.distribution_company": {
+      "en": "Company",
+      "id": "Perusahaan"
+    },
+    "doc.front_matter.distribution_note": {
+      "en": "Note",
+      "id": "Catatan"
+    },
     "doc.front_matter.revision_history": {
       "en": "Revision history",
       "id": "Riwayat revisi"

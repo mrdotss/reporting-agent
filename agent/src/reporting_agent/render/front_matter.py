@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Final
 
@@ -88,6 +89,9 @@ DOC_CONTROL_DOCUMENT_NAME: Final[str] = "doc.front_matter.document_name"
 DOC_CONTROL_DOCUMENT_NUMBER: Final[str] = "doc.front_matter.document_number"
 DOC_CONTROL_CONFIDENTIALITY: Final[str] = "doc.front_matter.confidentiality"
 DOC_CONTROL_DISTRIBUTION: Final[str] = "doc.front_matter.distribution"
+DISTRIBUTION_HEADER_RECIPIENT: Final[str] = "doc.front_matter.distribution_recipient"
+DISTRIBUTION_HEADER_COMPANY: Final[str] = "doc.front_matter.distribution_company"
+DISTRIBUTION_HEADER_NOTE: Final[str] = "doc.front_matter.distribution_note"
 DOC_CONTROL_REVISION_HISTORY: Final[str] = "doc.front_matter.revision_history"
 
 APPROVER_HEADER_ROLE: Final[str] = "doc.front_matter.approver_role"
@@ -173,13 +177,33 @@ class CoverConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class DistributionRow:
+    """One row of the v3 distribution list (Req 12.6)."""
+
+    recipient: str = ""
+    company: str = ""
+    note: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class DocumentControlConfig:
-    """The document_control subsection of `front_matter`."""
+    """The document_control subsection of `front_matter`.
+
+    `distribution` carries the **v1/v2** free-text block; `distribution_rows` carries the
+    **v3** ordered `{recipient, company, note}` rows (Req 12.6). Two fields rather than one
+    union because the two render differently — a paragraph and a table — and a renderer
+    that had to ask which shape it held on every use would ask in more places than the one
+    that matters.
+
+    A definition populates at most one of them. Both empty is the ordinary case for a
+    profile that names no distribution at all.
+    """
 
     document_name: str | None = None
     document_number_pattern: str | None = None
     confidentiality_notice_id: str | None = None
     distribution: str | None = None
+    distribution_rows: tuple[DistributionRow, ...] = ()
     approvers: tuple[ApproverEntry, ...] = ()
 
 
@@ -366,37 +390,89 @@ def _emit_cover(
     messages: Messages,
     doc_number: str | None,
 ) -> None:
-    """Emit the cover page: report title, customer name, period, contact block.
+    """Emit the cover page: report title, then a labelled block of the run's facts.
 
-    Uses theme styles ``Cover Title`` and ``Cover Meta`` (declared in
-    ``render/themes.py``). Ends with a page break so document control starts on a fresh
-    page.
+    Uses theme styles ``Cover Title`` and ``Cover Meta``, and ``Layout Table`` for the
+    facts block. Ends with a page break so document control starts on a fresh page.
+
+    ## Why the facts are a table and not a run of paragraphs
+
+    They were five bare `Cover Meta` paragraphs — customer, period, document number — one
+    under the next with nothing saying which was which. A reader who does not already know
+    the document cannot tell the customer's name from the report's subtitle, because
+    nothing distinguishes them.
+
+    A two-column layout table gives each value its label. ``Layout Table`` is the theme's
+    own borderless style, already used by `render/anchors.py` for exactly this — structure
+    with no rules drawn — so the cover gains alignment without gaining a grid.
     """
+    from reporting_agent.compile.blocks.base import LAYOUT_TABLE_STYLE
     from reporting_agent.render.themes import COVER_META_STYLE, COVER_TITLE_STYLE
 
-    # Report title in Cover Title style
     document.add_paragraph(run.report_title, style=COVER_TITLE_STYLE)
 
-    # Customer name
-    document.add_paragraph(run.customer_name, style=COVER_META_STYLE)
-
-    # Period
-    document.add_paragraph(run.period_display, style=COVER_META_STYLE)
-
-    # Subtitle (optional)
+    # The subtitle sits directly under the title, where it reads as part of it, rather
+    # than as another labelled fact.
     if front_matter.cover.subtitle:
         document.add_paragraph(front_matter.cover.subtitle, style=COVER_META_STYLE)
 
-    # Contact block (optional)
-    if front_matter.cover.contact_block:
-        document.add_paragraph(front_matter.cover.contact_block, style=COVER_META_STYLE)
-
-    # Document number on cover (identical to document control page — Req 13.8)
+    # Req 13.8 — the document number is the same string here and on the document
+    # control page; both read it from `doc_number`.
+    rows: list[tuple[str, str]] = [
+        (messages.text("doc.front_matter.prepared_for"), run.customer_name),
+        (messages.text("doc.front_matter.reporting_period"), run.period_display),
+    ]
     if doc_number:
-        document.add_paragraph(doc_number, style=COVER_META_STYLE)
+        rows.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+    if front_matter.cover.contact_block:
+        rows.append(
+            (
+                messages.text("doc.front_matter.prepared_by"),
+                front_matter.cover.contact_block,
+            )
+        )
 
-    # Page break after cover
+    _emit_label_value_table(
+        document, rows, style_name=LAYOUT_TABLE_STYLE, paragraph_style=COVER_META_STYLE
+    )
+
     _add_page_break(document)
+
+
+def _emit_label_value_table(
+    document: DocxDocument,
+    rows: Sequence[tuple[str, str]],
+    *,
+    style_name: str,
+    paragraph_style: str,
+) -> None:
+    """A two-column label/value block, in the given table and paragraph styles.
+
+    Emits nothing for an empty `rows` — a table with no rows is a table a reader has to
+    wonder about. Every cell's paragraph carries `paragraph_style` rather than the
+    document default, so the block inherits the theme's front-matter type rather than the
+    body face.
+    """
+    if not rows:
+        return
+
+    table = document.add_table(rows=len(rows), cols=2)
+    table.style = style_name
+    for index, (label, value) in enumerate(rows):
+        cells = table.rows[index].cells
+        _set_cell_text(cells[0], label, paragraph_style)
+        _set_cell_text(cells[1], value, paragraph_style)
+
+
+def _set_cell_text(cell: object, text: str, paragraph_style: str) -> None:
+    """Write `text` into `cell`'s first paragraph in `paragraph_style`.
+
+    `python-docx` gives a new cell exactly one empty paragraph; this writes into it rather
+    than adding a second, so a cell never carries a blank line above its content.
+    """
+    paragraph = cell.paragraphs[0]  # type: ignore[attr-defined]
+    paragraph.style = paragraph_style
+    paragraph.add_run(text)
 
 
 def _emit_document_control(
@@ -409,73 +485,123 @@ def _emit_document_control(
 ) -> None:
     """Emit the document control page (Req 13.5, 13.6).
 
-    Carries: document control heading, document name, document number, approvers table,
-    revision history, distribution, confidentiality notice.
+    Carries: the page title, a labelled block naming the document, the approvers table,
+    the revision history, the distribution list and the confidentiality notice.
 
     The approvers table emits one row per role. Where no signature image is supplied,
     emit an EMPTY RULED SIGNATURE BOX — NOT the typed name (clause b).
 
     Every fixed string is resolved by id through ``messages`` (Req 15.3).
+
+    ## Labelled blocks, not "Label: value" sentences
+
+    The naming block and the revision history were emitted as `Document Control`
+    paragraphs holding `f"{label}: {value}"`. That put the page's whole structure inside
+    string concatenation: nothing aligned, every label re-read as prose, and a document
+    control page indistinguishable from a paragraph of running text. They are tables now,
+    in the theme's own borderless ``Layout Table``.
     """
+    from reporting_agent.compile.blocks.base import LAYOUT_TABLE_STYLE
     from reporting_agent.render.themes import DOCUMENT_CONTROL_STYLE
 
-    # --- document control heading (resolved by id) ---
-    dc_title = messages.text(DOC_CONTROL_TITLE)
-    document.add_paragraph(dc_title, style=DOCUMENT_CONTROL_STYLE)
+    document.add_paragraph(messages.text(DOC_CONTROL_TITLE), style=DOCUMENT_CONTROL_STYLE)
 
-    # --- document name (optional in config) ---
+    # --- what this document is ------------------------------------------------
+    naming: list[tuple[str, str]] = []
     if front_matter.document_control.document_name:
-        dc_doc_name_label = messages.text(DOC_CONTROL_DOCUMENT_NAME)
-        document.add_paragraph(
-            f"{dc_doc_name_label}: {front_matter.document_control.document_name}",
-            style=DOCUMENT_CONTROL_STYLE,
+        naming.append(
+            (
+                messages.text(DOC_CONTROL_DOCUMENT_NAME),
+                front_matter.document_control.document_name,
+            )
         )
-
-    # --- document number (Req 13.8 — identical on cover and here) ---
+    # Req 13.8 — identical to the cover's.
     if doc_number:
-        dc_doc_number_label = messages.text(DOC_CONTROL_DOCUMENT_NUMBER)
-        document.add_paragraph(
-            f"{dc_doc_number_label}: {doc_number}",
-            style=DOCUMENT_CONTROL_STYLE,
-        )
-
-    # --- customer name ---
-    dc_prepared_for = messages.text("doc.front_matter.prepared_for")
-    document.add_paragraph(
-        f"{dc_prepared_for}: {run.customer_name}",
-        style=DOCUMENT_CONTROL_STYLE,
+        naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+    naming.append(
+        (messages.text("doc.front_matter.prepared_for"), run.customer_name)
+    )
+    _emit_label_value_table(
+        document,
+        naming,
+        style_name=LAYOUT_TABLE_STYLE,
+        paragraph_style=DOCUMENT_CONTROL_STYLE,
     )
 
-    # --- approvers table (Req 13.6) ---
+    # --- approvers (Req 13.6) -------------------------------------------------
     _emit_approvers_table(document, front_matter=front_matter, messages=messages)
 
-    # --- revision history ---
+    # --- revision history -----------------------------------------------------
     if run.revision_history:
-        rev_label = messages.text(DOC_CONTROL_REVISION_HISTORY)
-        document.add_paragraph(rev_label, style=DOCUMENT_CONTROL_STYLE)
         document.add_paragraph(
-            f"{run.revision_history.revision} — {run.revision_history.note}"
-            + (f" ({run.revision_history.author})" if run.revision_history.author else ""),
-            style=DOCUMENT_CONTROL_STYLE,
+            messages.text(DOC_CONTROL_REVISION_HISTORY), style=DOCUMENT_CONTROL_STYLE
+        )
+        row = run.revision_history
+        _emit_label_value_table(
+            document,
+            [(row.revision, row.note + (f" ({row.author})" if row.author else ""))],
+            style_name=LAYOUT_TABLE_STYLE,
+            paragraph_style=DOCUMENT_CONTROL_STYLE,
         )
 
-    # --- distribution ---
-    if front_matter.document_control.distribution:
-        dist_label = messages.text(DOC_CONTROL_DISTRIBUTION)
-        document.add_paragraph(
-            f"{dist_label}: {front_matter.document_control.distribution}",
-            style=DOCUMENT_CONTROL_STYLE,
-        )
+    # --- distribution ---------------------------------------------------------
+    _emit_distribution(
+        document, front_matter=front_matter, messages=messages,
+        paragraph_style=DOCUMENT_CONTROL_STYLE,
+    )
 
-    # --- confidentiality notice ---
+    # --- confidentiality notice ----------------------------------------------
     if front_matter.document_control.confidentiality_notice_id:
-        conf_text = messages.text(
-            front_matter.document_control.confidentiality_notice_id
+        document.add_paragraph(
+            messages.text(front_matter.document_control.confidentiality_notice_id),
+            style=DOCUMENT_CONTROL_STYLE,
         )
-        document.add_paragraph(conf_text, style=DOCUMENT_CONTROL_STYLE)
 
-    # Page break after document control
     _add_page_break(document)
+
+
+def _emit_distribution(
+    document: DocxDocument,
+    *,
+    front_matter: FrontMatterConfig,
+    messages: Messages,
+    paragraph_style: str,
+) -> None:
+    """Emit the distribution list, in whichever of its two shapes the definition carries.
+
+    ## The v3 rows were being rendered as their own Python repr
+
+    `distribution` is a free-text block at schema_version 1 and 2, and **ordered
+    `{recipient, company, note}` rows at 3** (Req 12.6). The emitter knew only the string,
+    and the pipeline coerced whatever arrived with `str(...)` — so a v3 profile's
+    distribution reached the delivered document as `[{'recipient': ...}]`, the list's repr,
+    in a signed report. The rows get a table; the string keeps the paragraph it always had.
+    """
+    from reporting_agent.compile.blocks.base import LAYOUT_TABLE_STYLE
+
+    control = front_matter.document_control
+    if not control.distribution_rows and not control.distribution:
+        return
+
+    document.add_paragraph(messages.text(DOC_CONTROL_DISTRIBUTION), style=paragraph_style)
+
+    if not control.distribution_rows:
+        # v1/v2 — one free-text block, unchanged.
+        document.add_paragraph(str(control.distribution), style=paragraph_style)
+        return
+
+    table = document.add_table(rows=1 + len(control.distribution_rows), cols=3)
+    table.style = LAYOUT_TABLE_STYLE
+    header = table.rows[0].cells
+    _set_cell_text(header[0], messages.text(DISTRIBUTION_HEADER_RECIPIENT), paragraph_style)
+    _set_cell_text(header[1], messages.text(DISTRIBUTION_HEADER_COMPANY), paragraph_style)
+    _set_cell_text(header[2], messages.text(DISTRIBUTION_HEADER_NOTE), paragraph_style)
+
+    for index, row in enumerate(control.distribution_rows):
+        cells = table.rows[index + 1].cells
+        _set_cell_text(cells[0], row.recipient, paragraph_style)
+        _set_cell_text(cells[1], row.company, paragraph_style)
+        _set_cell_text(cells[2], row.note, paragraph_style)
 
 
 def _emit_approvers_table(
@@ -522,7 +648,12 @@ def _emit_approvers_table(
         # symbol; a reader never sees it.
         role_label_id = APPROVER_ROLE_LABEL_IDS.get(role)
         row_cells[0].text = messages.text(role_label_id) if role_label_id else role
-        row_cells[1].text = entry.title if entry else ""
+        # The COMPANY column shows the approver's **company**. It showed `title` — the
+        # person's job title — under a header reading "Company", while the `company` the
+        # app collects was dropped by the pipeline and never reached this renderer at
+        # all. `title` remains the fallback so a profile that put its company in that
+        # field before this fix keeps rendering exactly as it did.
+        row_cells[1].text = (entry.company or entry.title) if entry else ""
         row_cells[2].text = entry.name if entry else ""
 
         # Clause (b): the signature cell text is EMPTY unconditionally, and
