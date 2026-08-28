@@ -1,6 +1,10 @@
 import { describe, expect, test } from "vitest"
 
-import { completionProblems, customerNameMissing } from "@/lib/profiles/wizard"
+import {
+  completionProblems,
+  customerNameMissing,
+  metricBearingSectionsWithoutMetrics,
+} from "@/lib/profiles/wizard"
 import { resolveCustomerName } from "@/lib/actions/runs"
 
 /**
@@ -109,6 +113,104 @@ describe("completionProblems refuses to publish a version that could never run",
     expect(
       problems.some((p) => p.kind === "step" && p.step.id === "identity")
     ).toBe(true)
+  })
+})
+
+describe("a metric-bearing section selecting no metric is refused at publish", () => {
+  // The failure that cost seven diagnostic rounds. The validator accepts an empty
+  // `metrics[]`, so step 5 said "Every step passes", the version published, and the
+  // collector then requested nothing — reporting NO_STATISTICS with copy that points
+  // at deallocated machines and non-emitting resource types, i.e. at the customer's
+  // estate, for what was entirely a fact about the profile. Seeding on add cannot fix
+  // a section that already exists, which is the case that kept reaching a run.
+  const METRIC_BEARING = new Set([
+    "vm_utilization",
+    "historical_vm_utilization",
+  ])
+
+  function withSections(sections: readonly Record<string, unknown>[]) {
+    return {
+      ...v3({ customer_name: "Enesis Group" }),
+      sections,
+    }
+  }
+
+  test("an empty metrics array on a metric-bearing section is a sections problem", () => {
+    const problems = completionProblems(
+      withSections([{ id: "s1", type: "vm_utilization", metrics: [] }]),
+      METRIC_BEARING
+    )
+
+    const sectionProblem = problems.find(
+      (p) => p.kind === "step" && p.step.id === "sections"
+    )
+    expect(sectionProblem).toBeDefined()
+    expect(
+      sectionProblem!.kind === "step" &&
+        sectionProblem!.issues.some(
+          (i) => i.path.join(".") === "sections.0.metrics"
+        )
+    ).toBe(true)
+  })
+
+  test("an absent metrics key is refused the same way", () => {
+    expect(
+      metricBearingSectionsWithoutMetrics(
+        withSections([{ id: "s1", type: "vm_utilization" }]),
+        METRIC_BEARING
+      )
+    ).toHaveLength(1)
+  })
+
+  test("a populated selection passes", () => {
+    expect(
+      metricBearingSectionsWithoutMetrics(
+        withSections([
+          {
+            id: "s1",
+            type: "vm_utilization",
+            metrics: [{ metric: "Percentage CPU", statistic: "avg" }],
+          },
+        ]),
+        METRIC_BEARING
+      )
+    ).toStrictEqual([])
+  })
+
+  test("a NON-metric-bearing section with no metrics is fine", () => {
+    // `azure_subscription` is inventory; requiring metrics there would refuse every
+    // profile that carries it, which is all of them.
+    expect(
+      metricBearingSectionsWithoutMetrics(
+        withSections([{ id: "s1", type: "azure_subscription", metrics: [] }]),
+        METRIC_BEARING
+      )
+    ).toStrictEqual([])
+  })
+
+  test("each offending section is named by its own index", () => {
+    const issues = metricBearingSectionsWithoutMetrics(
+      withSections([
+        { id: "s0", type: "azure_subscription" },
+        { id: "s1", type: "vm_utilization", metrics: [] },
+        { id: "s2", type: "historical_vm_utilization", metrics: [] },
+      ]),
+      METRIC_BEARING
+    )
+
+    expect(issues.map((i) => i.path.join("."))).toStrictEqual([
+      "sections.1.metrics",
+      "sections.2.metrics",
+    ])
+  })
+
+  test("no catalogue supplied means the check is skipped, not guessed", () => {
+    expect(
+      metricBearingSectionsWithoutMetrics(
+        withSections([{ id: "s1", type: "vm_utilization", metrics: [] }]),
+        undefined
+      )
+    ).toStrictEqual([])
   })
 })
 

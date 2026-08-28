@@ -203,7 +203,24 @@ export function WizardShell({
   })
 
   const issues = useMemo(() => issuesByStep(definition), [definition])
-  const problems = useMemo(() => completionProblems(definition), [definition])
+  /**
+   * The section types that bear metrics, for the publish-time check that refuses a
+   * metric-bearing section selecting nothing (see `completionProblems`). Derived
+   * from the catalogue prop rather than imported, because `sections.ts` is
+   * `server-only`.
+   */
+  const metricBearingKeys = useMemo(
+    () =>
+      new Set(
+        sectionCatalogue.filter((e) => e.metric_bearing).map((e) => e.key)
+      ),
+    [sectionCatalogue]
+  )
+
+  const problems = useMemo(
+    () => completionProblems(definition, metricBearingKeys),
+    [definition, metricBearingKeys]
+  )
 
   /** The latest draft, for a persist that must not capture a stale closure. */
   const latest = useRef(definition)

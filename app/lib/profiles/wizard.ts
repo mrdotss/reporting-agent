@@ -260,7 +260,16 @@ export type CompletionProblem =
  * be saved mid-authoring) but is refused at completion.
  */
 export function completionProblems(
-  definition: unknown
+  definition: unknown,
+  /**
+   * The catalogue keys of the section types that BEAR metrics, threaded from the
+   * server because `lib/profiles/sections.ts` is `server-only`.
+   *
+   * Omitted means "no catalogue to check against", and the metrics check is then
+   * skipped rather than guessed — a wizard with no catalogue must not refuse every
+   * profile.
+   */
+  metricBearingKeys?: ReadonlySet<string>
 ): readonly CompletionProblem[] {
   const problems: CompletionProblem[] = []
 
@@ -292,6 +301,24 @@ export function completionProblems(
   const missingCustomerName = customerNameMissing(definition)
   if (missingCustomerName !== null) {
     grouped.identity.push(missingCustomerName)
+  }
+
+  // A metric-bearing section carrying NO metrics, checked here for the same reason
+  // `no_sections` and `customer_name` are: legal in a draft, refused at publish.
+  //
+  // This is the failure that cost the most to diagnose. The validator accepts an
+  // empty `metrics[]` (it is optional), so the wizard said "Every step passes" and
+  // published a version. The collector then requested nothing for that section's
+  // resource types, produced no statistic, and the run died `NO_STATISTICS` — whose
+  // copy points at deallocated machines and resource types that emit nothing, i.e.
+  // at the customer's estate, for what is entirely a fact about the profile. Seeding
+  // metrics in `addSection` fixes new sections; it cannot fix a section that already
+  // exists, which is exactly the case that kept reaching a run.
+  for (const empty of metricBearingSectionsWithoutMetrics(
+    definition,
+    metricBearingKeys
+  )) {
+    grouped.sections.push(empty)
   }
 
   for (const step of WIZARD_STEPS) {
@@ -337,6 +364,51 @@ export function customerNameMissing(definition: unknown): FieldIssue | null {
       "Name the customer this report is for. A run cannot be requested " +
       "without one.",
   }
+}
+
+/**
+ * One issue per metric-bearing section that selects no metric.
+ *
+ * A section whose type bears metrics but whose `metrics[]` is empty requests
+ * nothing at collection time, so every resource its rule matches is recorded as a
+ * `metric_not_selected` gap and the run reports `NO_STATISTICS` if no other section
+ * collected anything. The message names the section index, which is what the rail
+ * needs to send the author to the right row.
+ *
+ * Exported so the rule can be asserted directly rather than only through the
+ * wizard's own render.
+ */
+export function metricBearingSectionsWithoutMetrics(
+  definition: unknown,
+  metricBearingKeys?: ReadonlySet<string>
+): readonly FieldIssue[] {
+  if (metricBearingKeys === undefined || metricBearingKeys.size === 0) return []
+  if (typeof definition !== "object" || definition === null) return []
+
+  const sections = (definition as { readonly sections?: unknown }).sections
+  if (!Array.isArray(sections)) return []
+
+  const issues: FieldIssue[] = []
+
+  sections.forEach((section, index) => {
+    if (typeof section !== "object" || section === null) return
+    const entry = section as Record<string, unknown>
+    if (typeof entry.type !== "string") return
+    if (!metricBearingKeys.has(entry.type)) return
+
+    const metrics = entry.metrics
+    if (Array.isArray(metrics) && metrics.length > 0) return
+
+    issues.push({
+      path: ["sections", index, "metrics"],
+      message:
+        `Section "${entry.type}" reports metrics but none are selected, so the ` +
+        `run would collect nothing for it. Choose a set in the section's Metrics ` +
+        `row.`,
+    })
+  })
+
+  return issues
 }
 
 /**
