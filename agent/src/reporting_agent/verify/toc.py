@@ -257,19 +257,52 @@ def _extract_headings(document: object) -> tuple[str, ...]:
     return tuple(headings)
 
 
+_TOC_ENTRY_TAIL: Final[str] = r"[\s ]*[.…]{3,}[\s.… ]*(\d+)"
+r"""What follows a heading's text on a contents line: the tab stop's leader run, then the
+page number.
+
+**Three or more dot or ellipsis glyphs, and whitespace is not one of them.** That is the
+whole distinction between a contents entry and a table row that happens to put a number
+after a resource's name: `prod-web-01  12.00` has the spacing but never the dots.
+Whitespace is permitted on either side of the run because a PDF text extractor may put a
+space between the heading and the first dot, or between the last dot and the digits.
+
+Dots rather than the tabs `render/toc.py::_identify_toc_pages` also accepts: that function
+reads **pass-1** output, where the entries carry leaders and no numbers yet, while by the
+time this side reads the PDF the tab stop has been rendered to real leader glyphs. Keeping
+tabs out here costs nothing and keeps a tab-separated table row from ever matching.
+"""
+
+
 def _toc_page_indices(
     pages: tuple[str, ...], headings: Sequence[str]
 ) -> frozenset[int]:
-    """Identify pages that are the table-of-contents section (0-based indices).
+    r"""Identify pages that are the table-of-contents section (0-based indices).
 
-    A TOC page is one where at least 2 of the declared headings appear followed by
-    a page number pattern (heading text + leader + digits).
+    A TOC page is one where at least 2 of the declared headings appear followed by a
+    **leader run** and a page number — see :data:`_TOC_ENTRY_TAIL`.
+
+    ## The leader run is load-bearing, and this copy was the one without it
+
+    `render/toc.py::_identify_toc_pages` states the same rule and already requires the
+    leader run. This function did not: it accepted `[\s...]+` before the digits, so a
+    plain **space** separating a heading's text from any number counted as a TOC entry.
+    That is the ordinary shape of a table row — a resource named `prod-web-01` beside its
+    value — so a content page listing two per-resource headings in its tables was
+    classified as part of the table of contents, excluded from
+    :func:`_observed_pages`'s content search, and the heading that really lived on it
+    then "was not found on any content page".
+
+    Harmless while every heading was a section title that appears nowhere but its own
+    heading; wrong as soon as a heading names a resource, because a resource's name is
+    exactly what its tables repeat. Requiring the leader run is what distinguishes "the
+    contents page lists this heading" from "this page happens to mention it".
     """
     indices: set[int] = set()
     for index, page_text in enumerate(pages):
         toc_entry_count = 0
         for heading in headings:
-            pattern = re.compile(re.escape(heading) + r"[\s.\t\u2026\u00a0]+\d+")
+            pattern = re.compile(re.escape(heading) + _TOC_ENTRY_TAIL)
             if pattern.search(page_text):
                 toc_entry_count += 1
         if toc_entry_count >= 2:
@@ -282,10 +315,14 @@ def _named_pages_from_pdf(
     headings: Sequence[str],
     toc_page_indices: frozenset[int],
 ) -> dict[str, int]:
-    """Read the page number the document prints for each heading from the TOC pages."""
+    """Read the page number the document prints for each heading from the TOC pages.
+
+    Uses :data:`_TOC_ENTRY_TAIL` — the same shape :func:`_toc_page_indices` selected the
+    page by, so the two cannot disagree about what a contents entry looks like.
+    """
     named: dict[str, int] = {}
     for heading in headings:
-        pattern = re.compile(re.escape(heading) + r"[\s.\t\u2026\u00a0]+(\d+)")
+        pattern = re.compile(re.escape(heading) + _TOC_ENTRY_TAIL)
         for index in sorted(toc_page_indices):
             match = pattern.search(pages[index])
             if match is not None:

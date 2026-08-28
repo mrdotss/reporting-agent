@@ -33,11 +33,19 @@ from reporting_agent.verify.tokens import ExtractedParagraph
 
 
 class TestTocPageIndices:
-    """Test that we identify TOC pages correctly."""
+    """Test that we identify TOC pages correctly.
+
+    Every fixture here carries the **leader run** a rendered contents entry actually
+    has — `Heading......4` — because that run is what distinguishes a contents entry
+    from a page that merely mentions a heading beside a number. These fixtures used to
+    be space-separated (`"Executive Overview 2"`), a shape no converter emits for a tab
+    stop and one that made the tests agree with a rule loose enough to classify an
+    ordinary table row as a table of contents.
+    """
 
     def test_identifies_page_with_multiple_heading_entries(self):
         pages = (
-            "Executive Overview 2 Memory And Capacity 4 Network 6",
+            "Executive Overview.........2 Memory And Capacity.........4 Network.........6",
             "This is body content page with no headings",
             "More body content",
         )
@@ -49,24 +57,57 @@ class TestTocPageIndices:
 
     def test_page_with_only_one_heading_is_not_toc(self):
         pages = (
-            "Executive Overview 2",
+            "Executive Overview.........2",
             "Memory And Capacity section content",
         )
         headings = ("Executive Overview", "Memory And Capacity")
         indices = _toc_page_indices(pages, headings)
         assert len(indices) == 0
 
+    def test_a_content_page_listing_headings_beside_numbers_is_not_toc(self):
+        """The regression this rule exists for.
+
+        A per-resource heading is named for its resource, and a resource's tables repeat
+        that name beside its values — `prod-web-01  12.00`. Under the old rule (any
+        whitespace, then digits) two such rows made the page a table of contents, which
+        excluded it from the content search, and the heading that really lived on it was
+        then reported as "not found on any content page". Two blocking findings on a
+        correct document.
+        """
+        pages = (
+            "Virtual Machine Utilization.........4 prod-db-02.........4 prod-web-01.........4",
+            "PERIOD TIME VALUE prod-web-01 12.00 2026-07-01 prod-db-02 15.00 2026-07-01",
+        )
+        headings = ("Virtual Machine Utilization", "prod-db-02", "prod-web-01")
+        indices = _toc_page_indices(pages, headings)
+        assert indices == frozenset({0}), (
+            "the contents page is page 0; page 1 is a table that happens to repeat two "
+            "of the headings beside numbers"
+        )
+
 
 class TestNamedPagesFromPdf:
     def test_extracts_page_numbers_from_toc_entries(self):
         pages = (
-            "Executive Overview 2 Memory And Capacity 4",
+            "Executive Overview.........2 Memory And Capacity.........4",
             "Body page content",
         )
         headings = ("Executive Overview", "Memory And Capacity")
         toc_indices = frozenset({0})
         named = _named_pages_from_pdf(pages, headings, toc_indices)
         assert named == {"Executive Overview": 2, "Memory And Capacity": 4}
+
+    def test_a_number_merely_following_a_heading_is_not_read_as_its_page(self):
+        """`_named_pages_from_pdf` reads the same shape `_toc_page_indices` selects by.
+
+        If it did not, a page classified by the strict rule could still have its numbers
+        read by a loose one, and the gate would compare a real page against a value it
+        picked up from a table cell.
+        """
+        pages = ("prod-web-01 12 prod-db-02 15",)
+        headings = ("prod-web-01", "prod-db-02")
+        named = _named_pages_from_pdf(pages, headings, frozenset({0}))
+        assert named == {}
 
     def test_returns_empty_when_no_toc_pages(self):
         pages = ("Body content only",)
