@@ -152,9 +152,15 @@ export async function POST(request: Request): Promise<Response> {
     // The action replaces a driver failure with the operation and the SQLSTATE and
     // nothing else, so this line cannot write `progress_token_hash` or the
     // requested scope into a log.
+    //
+    // The stack is included because the response deliberately carries nothing
+    // from the thrown value: without one, a `TypeError: e.blocks is not iterable`
+    // names neither the file nor the field, which is exactly how a v3 enqueue
+    // defect stayed un-diagnosable from the journal alone.
     console.error(
       `[api/runs] POST failed: ` +
-        `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`
+        `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`,
+      thrown instanceof Error ? (thrown.stack ?? "") : thrown
     )
 
     return internalError()
