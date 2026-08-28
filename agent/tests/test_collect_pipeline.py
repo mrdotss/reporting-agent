@@ -84,6 +84,7 @@ from reporting_agent.collect.pipeline import (
     FIDELITY_ENHANCED,
     _metric_not_selected_gaps,
     assert_some_location_reachable,
+    assert_some_statistic,
     distinct_resource_ids,
     resolve_run_plan,
     run_generate_report,
@@ -174,11 +175,12 @@ def inventory_row(
     *,
     location: str = LOCATION,
     power_state: str = "PowerState/running",
+    resource_type: str = WIRE_TYPE,
 ) -> dict[str, Any]:
     return {
         "id": resource_id(name),
         "name": name,
-        "type": WIRE_TYPE,
+        "type": resource_type,
         "location": location,
         "resourceGroup": "rg-prod-sea",
         "tags": {"env": "prod"},
@@ -652,6 +654,81 @@ def test_resources_with_no_statistic_at_all_are_terminal_no_statistics() -> None
     assert caught.value.code is ErrorCode.NO_STATISTICS
     assert caught.value.terminal is True
     assert_no_snapshot_written(harness, "no snapshot for a run that measured nothing")
+
+
+def test_no_statistics_message_names_the_metric_not_selected_gaps() -> None:
+    """The gate must read the run's WHOLE gap list, not just the metric collector's.
+
+    `_metric_not_selected_gaps` exists because "nobody asked for a metric on this
+    resource's type" leaves no other trace — no accumulator, no `no_samples`, no
+    per-resource error. It is appended to the driver's own `gaps` list. The gate was
+    handed `collected["gaps"]` instead, which holds only what the metric collector
+    returned, so those gaps were invisible to it.
+
+    The consequence was not a cosmetic one. The raise happens BEFORE `build_snapshot`,
+    so no `collection_log` is persisted either, and the gate's message is the only
+    surviving evidence by design ("destroys its own evidence", per its docstring). A run
+    against a subscription full of unselected types therefore reported "the
+    collection_log recorded no gap either, so nothing explains the absence" while the
+    gaps that explained it sat one variable away — sending an operator to look at the
+    customer's estate for what was a fact about the pinned profile.
+
+    Driven with a network interface alongside deallocated VMs: NICs have no
+    Metric_Catalog entry, so nothing is requested for that type and the gap fires, while
+    the deallocated VMs guarantee zero statistics so the gate is reached at all.
+    """
+    harness = Harness(
+        inventory=[
+            inventory_page(
+                [
+                    inventory_row("prod-web-01", power_state="PowerState/deallocated"),
+                    inventory_row(
+                        "prod-web-01-nic",
+                        resource_type="microsoft.network/networkInterfaces",
+                    ),
+                ]
+            )
+        ],
+        skus=[sku_listing()],
+        definitions=[definitions_response(*DECLARED_METRICS)],
+        batches=[batch_response([WEB_01])],
+    )
+
+    with pytest.raises(NoStatisticsError) as caught:
+        harness.run()
+
+    message = str(caught.value)
+
+    assert GAP_TYPE_METRIC_NOT_SELECTED in message, (
+        "the gate must name the gap that explains why nothing was collected for a "
+        f"resource whose type nobody selected a metric for; got: {message}"
+    )
+    # And it must NOT fall back to the no-gaps sentence, which would mean the list it
+    # read was still the narrow one.
+    assert "recorded no gap either" not in message
+
+
+def test_no_statistics_message_is_grammatical_when_no_gap_was_recorded() -> None:
+    """The fallback sentence stands on its own, and claims no cause it cannot see.
+
+    It used to be interpolated after "The collection_log this run would have carried:"
+    while itself starting with "and the collection_log recorded no gap either", producing
+    a dangling colon followed by a conjunction — visible verbatim on the report page. It
+    also asserted "the metrics were requested and answered with no data point", which
+    this function has no way to know and which is the wrong cause for a run that
+    requested nothing.
+    """
+    plan = resolve_run_plan(payload(), context())
+
+    with pytest.raises(NoStatisticsError) as caught:
+        assert_some_statistic(plan, {}, ())
+
+    message = str(caught.value)
+
+    assert "carried: and" not in message
+    assert "would have carried:." not in message
+    assert "the metrics were requested and answered with no data point" not in message
+    assert "check what the pinned version actually requested" in message
 
 
 def test_distinct_resource_ids_counts_ids_not_rows() -> None:

@@ -583,19 +583,35 @@ def assert_some_statistic(
     counted = Counter(
         str(gap.get("gap_type") or "unclassified") for gap in gaps
     )
-    detail = (
-        ", ".join(f"{gap_type} x{count}" for gap_type, count in sorted(counted.items()))
-        if counted
-        else "and the collection_log recorded no gap either, so nothing explains the "
-        "absence — the metrics were requested and answered with no data point"
-    )
+
+    if counted:
+        detail = (
+            "The collection_log this run would have carried: "
+            + ", ".join(
+                f"{gap_type} x{count}" for gap_type, count in sorted(counted.items())
+            )
+            + "."
+        )
+    else:
+        # Deliberately does NOT say "the metrics were requested and answered with no
+        # data point". This function cannot see what was requested, so that sentence
+        # asserted a cause it had no evidence for — and it was the WRONG one in the
+        # case that actually happened: a run that requested no metric at all reads
+        # identically here, and the sentence then sent an operator to look at the
+        # customer's estate for a defect in the pinned profile. `metric_not_selected`
+        # is the gap that distinguishes the two, and it now reaches this list.
+        detail = (
+            "The collection_log recorded no gap either, so nothing here explains the "
+            "absence — which is itself the finding: neither Azure nor this pipeline "
+            "reported a reason, so check what the pinned version actually requested "
+            "before looking at the estate."
+        )
 
     raise NoStatisticsError(
         f"the collection produced no statistic for any resource or any metric in "
         f"subscription {plan.subscription_id}, although at least one resource resolved "
         f"in scope: no snapshot was written, because a snapshot carrying resources and "
-        f"no statistics is indistinguishable downstream from a measured one. The "
-        f"collection_log this run would have carried: {detail}."
+        f"no statistics is indistinguishable downstream from a measured one. {detail}"
     )
 
 
@@ -1293,7 +1309,17 @@ async def _drive(
 
     # --- the two remaining gates, in this order (see the module docstring) -----------
     assert_some_location_reachable(plan, collected.get("locations"))
-    assert_some_statistic(plan, collected["statistics"], collected.get("gaps") or ())
+    # `gaps`, NOT `collected["gaps"]`. The latter holds only what the metric collector
+    # itself returned, while by this line `gaps` also carries the fact gaps, the guest
+    # gaps and — decisively — `_metric_not_selected_gaps`, whose entire purpose is to
+    # record that nobody asked for a metric on a resource's type. Passing the narrower
+    # list made this gate blind to the one gap that explains its own failure: the run
+    # reported "the collection_log recorded no gap either, so nothing explains the
+    # absence" while the gaps that did explain it sat in this list, and because the raise
+    # happens before `build_snapshot` no collection_log was persisted for anyone to read
+    # instead. That is the "destroys its own evidence" case the gate's docstring names,
+    # and reading the wrong list is what defeated the mitigation.
+    assert_some_statistic(plan, collected["statistics"], gaps)
 
     # --- the snapshot (Req 34.x, 35.x) -----------------------------------------------
     await _report(progress, PHASE_COLLECTING, current=total, total=total, label="Snapshot")
