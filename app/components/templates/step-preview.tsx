@@ -5,7 +5,13 @@ import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react"
 import { PaperPreview } from "@/components/templates/paper-preview"
 import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import { sectionCount, type CompletionProblem } from "@/lib/profiles/wizard"
+import {
+  designPreset,
+  metricItemCount,
+  scopedResourceTypeCount,
+  sectionCount,
+  type CompletionProblem,
+} from "@/lib/profiles/wizard"
 
 /**
  * Step 7 — preview and completion (Requirements 11.1, 11.5, 11.10).
@@ -59,6 +65,9 @@ export function StepPreview({
   hasCompletedRun: boolean
 }>) {
   const sections = sectionCount(definition)
+  const resourceTypes = scopedResourceTypeCount(definition)
+  const metricEntries = metricItemCount(definition)
+  const preset = designPreset(definition)
   const ready = problems.length === 0
 
   return (
@@ -145,25 +154,18 @@ export function StepPreview({
         <div className="flex flex-col">
           <dt className="text-xs text-muted-foreground">Resource types</dt>
           <dd className="font-mono tabular-nums">
-            {definition.scope.resource_types.length === 0
-              ? "all"
-              : definition.scope.resource_types.length}
+            {resourceTypes === 0 ? "all" : resourceTypes}
           </dd>
         </div>
 
         <div className="flex flex-col">
           <dt className="text-xs text-muted-foreground">Metric entries</dt>
-          <dd className="font-mono tabular-nums">
-            {Object.values(definition.metrics).reduce(
-              (total, items) => total + items.length,
-              0
-            )}
-          </dd>
+          <dd className="font-mono tabular-nums">{metricEntries}</dd>
         </div>
 
         <div className="flex flex-col">
           <dt className="text-xs text-muted-foreground">Preset</dt>
-          <dd className="capitalize">{definition.design.preset}</dd>
+          <dd className="capitalize">{preset ?? "—"}</dd>
         </div>
       </dl>
 

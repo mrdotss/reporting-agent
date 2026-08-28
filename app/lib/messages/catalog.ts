@@ -918,6 +918,18 @@ export const MESSAGE_CATALOG = {
     en: "Re-scan",
     id: "Pindai ulang",
   },
+  "ui.scan.rescan_running": {
+    en: "Scanning…",
+    id: "Memindai…",
+  },
+  "ui.scan.rescan_failed": {
+    en: "The scan could not be started.",
+    id: "Pemindaian tidak dapat dimulai.",
+  },
+  "ui.scan.rescan_offline": {
+    en: "The scan could not be started. Check your connection.",
+    id: "Pemindaian tidak dapat dimulai. Periksa koneksi Anda.",
+  },
   "ui.scan.continue": {
     en: "Continue",
     id: "Lanjutkan",
@@ -959,8 +971,8 @@ export const MESSAGE_CATALOG = {
     id: "Isi revisi, catatan, dan penulis sebelum meminta laporan ini.",
   },
   "ui.run_form.period_explanation": {
-    en: "The collection window comes from the report profile's own period rule and resolves when the run is enqueued, in {timezone}. A period is local: \"July 2026\" means July in that zone, not July in UTC.",
-    id: "Jendela pengumpulan berasal dari aturan periode profil laporan dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: \"Juli 2026\" berarti Juli di zona tersebut, bukan Juli dalam UTC.",
+    en: 'The collection window comes from the report profile\'s own period rule and resolves when the run is enqueued, in {timezone}. A period is local: "July 2026" means July in that zone, not July in UTC.',
+    id: 'Jendela pengumpulan berasal dari aturan periode profil laporan dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: "Juli 2026" berarti Juli di zona tersebut, bukan Juli dalam UTC.',
   },
   "ui.run_list.aria_label": {
     en: "Report runs",
@@ -1088,9 +1100,7 @@ export function messageText(
       callerParameters
     )
   }
-  return value.replace(/\{([^}]+)\}/g, (_, key: string) =>
-    String(params[key])
-  )
+  return value.replace(/\{([^}]+)\}/g, (_, key: string) => String(params[key]))
 }
 
 /**

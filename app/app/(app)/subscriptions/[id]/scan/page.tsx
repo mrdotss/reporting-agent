@@ -1,7 +1,7 @@
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { ArrowLeftIcon, ArrowsClockwiseIcon } from "@phosphor-icons/react/ssr"
+import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { Button } from "@/components/ui/button"
 import { requireSession } from "@/lib/auth/guard"
@@ -9,8 +9,17 @@ import { type MessageId, messageText } from "@/lib/messages/catalog"
 import { groupScanTypes, type ScanGroup } from "@/lib/scans/grouping"
 import { readLatestScan } from "@/lib/scans/store"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
-import { mayContinue, readRegionCounts, readRegionProbes, readStringList, readTypeCounts, refusedRegions, scanGate } from "@/lib/scans/view"
+import {
+  mayContinue,
+  readRegionCounts,
+  readRegionProbes,
+  readStringList,
+  readTypeCounts,
+  refusedRegions,
+  scanGate,
+} from "@/lib/scans/view"
 import { CollectionProblems } from "@/components/scan/collection-problems"
+import { RescanButton } from "@/components/scan/rescan-button"
 
 /**
  * `/subscriptions/[id]/scan` — what is in this subscription (Requirements 4.5–4.9, 5.6).
@@ -61,7 +70,9 @@ export default async function ScanPage({ params }: ScanPageProps) {
   // `getConnectedSubscription` rather than `readSubscriptionForScan`: that one returns
   // only the two fields the route's refusal gate needs and throws when absent, which is
   // right for a gate and wrong for a page that has a heading to render.
-  const subscription = await getConnectedSubscription(user.id, id).catch(() => null)
+  const subscription = await getConnectedSubscription(user.id, id).catch(
+    () => null
+  )
   if (subscription === null) notFound()
 
   const scan = await readLatestScan(user.id, id)
@@ -113,20 +124,17 @@ export default async function ScanPage({ params }: ScanPageProps) {
       </div>
 
       <section className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-border px-5 py-4">
-        <Figure label={t("ui.scan.resources_label")} value={scan?.resourceCount ?? null} />
-        <Figure label={t("ui.scan.types_label")} value={Object.keys(counts).length} />
+        <Figure
+          label={t("ui.scan.resources_label")}
+          value={scan?.resourceCount ?? null}
+        />
+        <Figure
+          label={t("ui.scan.types_label")}
+          value={Object.keys(counts).length}
+        />
         <Figure label={t("ui.scan.regions_label")} value={regions.length} />
         <Figure label={t("ui.scan.groups_label")} value={groups.length} />
-        <form
-          action={`/api/subscriptions/${id}/scan`}
-          method="post"
-          className="ml-auto"
-        >
-          <Button type="submit" variant="outline" size="sm">
-            <ArrowsClockwiseIcon />
-            {t("ui.scan.rescan")}
-          </Button>
-        </form>
+        <RescanButton subscriptionId={id} language={language} />
       </section>
 
       {grouped.length > 0 && (
@@ -146,7 +154,11 @@ export default async function ScanPage({ params }: ScanPageProps) {
                     className="flex items-baseline justify-between px-4 py-2 text-sm"
                   >
                     <span
-                      className={type.greyed ? "text-muted-foreground" : "text-foreground"}
+                      className={
+                        type.greyed
+                          ? "text-muted-foreground"
+                          : "text-foreground"
+                      }
                     >
                       {type.resourceType}
                     </span>
@@ -158,16 +170,24 @@ export default async function ScanPage({ params }: ScanPageProps) {
               </ul>
             </div>
           ))}
-          <p className="text-sm text-muted-foreground">{t("ui.scan.greyed_note")}</p>
+          <p className="text-sm text-muted-foreground">
+            {t("ui.scan.greyed_note")}
+          </p>
         </section>
       )}
 
-      {scan !== null && (() => {
-        const probes = readRegionProbes(scan.regionProbes)
-        const refused = refusedRegions(probes)
-        const regionCountMap = readRegionCounts(scan.regionCounts)
-        return <CollectionProblems refused={refused} resourcesByRegion={regionCountMap} />
-      })()}
+      {scan !== null &&
+        (() => {
+          const probes = readRegionProbes(scan.regionProbes)
+          const refused = refusedRegions(probes)
+          const regionCountMap = readRegionCounts(scan.regionCounts)
+          return (
+            <CollectionProblems
+              refused={refused}
+              resourcesByRegion={regionCountMap}
+            />
+          )
+        })()}
 
       {gate.kind === "empty" && (
         <p className="rounded-lg border border-border px-5 py-4 text-sm">
@@ -175,10 +195,14 @@ export default async function ScanPage({ params }: ScanPageProps) {
         </p>
       )}
 
-      <p className="text-sm text-muted-foreground">{t("ui.scan.limits_note")}</p>
+      <p className="text-sm text-muted-foreground">
+        {t("ui.scan.limits_note")}
+      </p>
 
       {mayContinue(gate) && (
-        <Button render={<Link href={`/report-profiles/new?scan=${scan?.id ?? ""}`} />}>
+        <Button
+          render={<Link href={`/report-profiles/new?scan=${scan?.id ?? ""}`} />}
+        >
           {t("ui.scan.continue")}
         </Button>
       )}
@@ -205,7 +229,9 @@ function Figure({
 }) {
   return (
     <div className="space-y-0.5">
-      <div className="text-xs tracking-wide text-muted-foreground uppercase">{label}</div>
+      <div className="text-xs tracking-wide text-muted-foreground uppercase">
+        {label}
+      </div>
       <div className="font-mono text-lg tabular-nums">{value ?? "—"}</div>
     </div>
   )

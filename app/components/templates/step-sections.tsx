@@ -5,6 +5,10 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "@phosphor-icons/react"
 
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 import { missingInputs } from "@/lib/profiles/offerability"
+import {
+  HISTORICAL_LOOKBACK_MAX,
+  HISTORICAL_LOOKBACK_MIN,
+} from "@/lib/templates/definition"
 import { Button } from "@/components/ui/button"
 
 // ---------------------------------------------------------------------------
@@ -40,6 +44,8 @@ type AuthoredSection = {
   readonly selection?: unknown
   readonly metrics?: unknown
   readonly presentation?: string
+  /** Months of history, required for `historical_vm_utilization` alone. */
+  readonly lookback?: number
 }
 
 // ---------------------------------------------------------------------------
@@ -166,6 +172,31 @@ export function StepSections({
       onChange({ ...(definition as object), sections: newSections })
     },
     [definition, onChange]
+  )
+
+  /**
+   * Set or clear one section's `lookback`.
+   *
+   * `undefined` DELETES the key rather than writing `undefined` into it: the
+   * validator branches on `"lookback" in entry`, so a present-but-undefined key
+   * would take the range branch and report "must be an integer" for a field the
+   * author has simply not filled in yet, instead of the "requires lookback"
+   * message that actually tells them what to do.
+   */
+  const setLookback = useCallback(
+    (id: string, months: number | undefined) => {
+      updateSections(
+        sections.map((section) => {
+          if (section.id !== id) return section
+          if (months === undefined) {
+            const { lookback: _dropped, ...rest } = section
+            return rest
+          }
+          return { ...section, lookback: months }
+        })
+      )
+    },
+    [sections, updateSections]
   )
 
   const moveSection = useCallback(
@@ -329,6 +360,9 @@ export function StepSections({
             entry={selectedEntry}
             language={language}
             onRemove={() => removeSection(selectedSection.id)}
+            onLookbackChange={(months) =>
+              setLookback(selectedSection.id, months)
+            }
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -445,11 +479,13 @@ function SectionInspector({
   entry,
   language,
   onRemove,
+  onLookbackChange,
 }: {
   section: AuthoredSection
   entry: SectionCatalogueEntry
   language: "en" | "id"
   onRemove: () => void
+  onLookbackChange: (months: number | undefined) => void
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -492,6 +528,63 @@ function SectionInspector({
           </dd>
         </div>
       </dl>
+
+      {/*
+        `lookback` — required by the validator for exactly one section type, and
+        until now settable by no control anywhere in the wizard, which made a
+        profile containing section 9 impossible to save: the validator asked for a
+        depth and the UI offered no way to give one.
+
+        Rendered ONLY for the type that reads it. A number input on every section
+        would imply the other fourteen have a configurable depth, and
+        `compile/sections.py` threads it into `historical_trend`'s config alone.
+      */}
+      {section.type === "historical_vm_utilization" && (
+        <div className="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2">
+          <label
+            htmlFor={`lookback-${section.id}`}
+            className="text-xs font-medium"
+          >
+            Lookback (months)
+          </label>
+          <input
+            id={`lookback-${section.id}`}
+            type="number"
+            inputMode="numeric"
+            min={HISTORICAL_LOOKBACK_MIN}
+            max={HISTORICAL_LOOKBACK_MAX}
+            step={1}
+            value={typeof section.lookback === "number" ? section.lookback : ""}
+            onChange={(event) => {
+              const raw = event.target.value
+              // An empty field clears the key rather than writing 0 or NaN: the
+              // validator's message ("requires lookback") is the correct thing to
+              // show for "not chosen yet", and a 0 would trade it for a
+              // range error that describes the UI rather than the author's intent.
+              if (raw === "") {
+                onLookbackChange(undefined)
+                return
+              }
+              const parsed = Number(raw)
+              if (!Number.isInteger(parsed)) return
+              onLookbackChange(parsed)
+            }}
+            className="h-8 w-24 rounded-md border border-input bg-background px-2.5 font-mono text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          />
+          <p className="text-xs text-muted-foreground">
+            How many months of history the trend covers, from{" "}
+            <span className="font-mono tabular-nums">
+              {HISTORICAL_LOOKBACK_MIN}
+            </span>{" "}
+            to{" "}
+            <span className="font-mono tabular-nums">
+              {HISTORICAL_LOOKBACK_MAX}
+            </span>
+            . Each month is collected as its own window, so a deeper trend is a
+            longer run.
+          </p>
+        </div>
+      )}
 
       {entry.position === "free" && (
         <Button

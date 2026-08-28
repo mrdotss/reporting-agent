@@ -1341,10 +1341,18 @@ describe("Requirement 12.9 — the `columns` kind enum is mirrored", () => {
     const expected = new Set(["metric", "attribute", "fact"])
 
     expect(
-      quotedStringsBetween(TS_COLUMN_KINDS, BEGIN_COLUMN_KINDS, END_COLUMN_KINDS)
+      quotedStringsBetween(
+        TS_COLUMN_KINDS,
+        BEGIN_COLUMN_KINDS,
+        END_COLUMN_KINDS
+      )
     ).toEqual(expected)
     expect(
-      quotedStringsBetween(PY_COLUMN_KINDS, BEGIN_COLUMN_KINDS, END_COLUMN_KINDS)
+      quotedStringsBetween(
+        PY_COLUMN_KINDS,
+        BEGIN_COLUMN_KINDS,
+        END_COLUMN_KINDS
+      )
     ).toEqual(expected)
   })
 })
@@ -1463,16 +1471,30 @@ function parseTsCatalogBody(body: string): ParsedCatalog {
     }
 
     // Extract language key → value pairs from the inner brace body.
-    // The app catalog uses bare language keys (en, id) with double-quoted values.
-    // Values may contain apostrophes and escaped double quotes (\\").
-    // We match: `lang: "value"` where value can contain anything except an unescaped quote.
+    //
+    // BOTH quote styles are accepted, and that is not defensive padding — it is
+    // required to read a correctly-formatted catalog. Prettier picks whichever
+    // quote character needs fewer escapes, so an entry whose copy contains more
+    // double quotes than apostrophes is rewritten to a SINGLE-quoted literal:
+    //
+    //   en: 'A period is local: "July 2026" means July in that zone.'
+    //
+    // A double-quote-only parser does not merely miss such an entry, which would
+    // at least be visible. `\b([a-z]+)\s*:\s*"` finds the first `"` INSIDE the
+    // single-quoted copy and reads `local: "July 2026"` as a language key named
+    // `local` — inventing a language that does not exist while dropping the real
+    // `en` value, so the guard reports a divergence in the one direction nobody
+    // would think to look. That is exactly what it did.
     const entry: CatalogEntry = {}
-    const kvPattern = /\b([a-z]+)\s*:\s*"((?:[^"\\]|\\.)*)"/g
+    const kvPattern =
+      /\b([a-z]+)\s*:\s*(?:"((?:[^"\\]|\\.)*)"|'((?:[^'\\]|\\.)*)')/g
     for (const kv of braceBody.matchAll(kvPattern)) {
       const lang = kv[1]
-      // Unescape the value: replace \" with "
-      const value = kv[2].replace(/\\"/g, '"')
-      if (lang) entry[lang] = value
+      const raw = kv[2] ?? kv[3]
+      if (lang === undefined || raw === undefined) continue
+      // Unescape whichever quote the literal escaped.
+      const value = raw.replace(/\\(["'])/g, "$1")
+      entry[lang] = value
     }
 
     if (Object.keys(entry).length > 0) {
@@ -1508,10 +1530,14 @@ function parseAgentCatalog(): ParsedCatalog {
   ).toBe(true)
 
   const result: ParsedCatalog = new Map()
-  for (const [id, entry] of Object.entries(messages as Record<string, unknown>)) {
+  for (const [id, entry] of Object.entries(
+    messages as Record<string, unknown>
+  )) {
     if (entry !== null && typeof entry === "object") {
       const values: CatalogEntry = {}
-      for (const [lang, value] of Object.entries(entry as Record<string, unknown>)) {
+      for (const [lang, value] of Object.entries(
+        entry as Record<string, unknown>
+      )) {
         if (typeof value === "string") values[lang] = value
       }
       result.set(id, values)
@@ -1647,7 +1673,12 @@ describe("Requirements 15.5, 15.10 — the message-catalog id sets and values ar
  * omits is exactly the shape of what shipped.
  */
 
-const AGENTCORE_TS_DECLARATION = path.join(appRoot, "lib", "aws", "agentcore.ts")
+const AGENTCORE_TS_DECLARATION = path.join(
+  appRoot,
+  "lib",
+  "aws",
+  "agentcore.ts"
+)
 const REPORT_PIPELINE_PY = path.join(
   AGENT_ROOT,
   "src",
@@ -1656,7 +1687,10 @@ const REPORT_PIPELINE_PY = path.join(
 )
 
 /** Every `payload.get("…")` key read inside one named Python function's body. */
-function payloadKeysReadByFunction(pyPath: string, functionName: string): string[] {
+function payloadKeysReadByFunction(
+  pyPath: string,
+  functionName: string
+): string[] {
   const source = readFileSync(pyPath, "utf8")
 
   const defMatch = new RegExp(`\\ndef ${functionName}\\(`).exec(source)
@@ -1669,7 +1703,8 @@ function payloadKeysReadByFunction(pyPath: string, functionName: string): string
   // stop at first, since this is a module of free functions.
   const bodyStart = defMatch.index + 1
   const nextDef = /\ndef /.exec(source.slice(bodyStart + 4))
-  const bodyEnd = nextDef === null ? source.length : bodyStart + 4 + nextDef.index
+  const bodyEnd =
+    nextDef === null ? source.length : bodyStart + 4 + nextDef.index
   const body = source.slice(bodyStart, bodyEnd)
 
   const keys = new Set<string>()
@@ -1689,7 +1724,9 @@ function generateReportPayloadKeys(tsPath: string): string[] {
   // this pattern's required-field shape does not match.
   const memberStart = source.indexOf("template_version_id: string")
   if (memberStart === -1) {
-    throw new Error(`the pinned generate_report member was not found in ${tsPath}`)
+    throw new Error(
+      `the pinned generate_report member was not found in ${tsPath}`
+    )
   }
   // Back up to the enclosing `{`, then forward to its matching `}`, by brace depth —
   // the member's doc comments contain both characters in prose, so a regex over raw
@@ -1723,13 +1760,17 @@ describe("Requirement 13.7 — the generate_report payload carries what the runt
       REPORT_PIPELINE_PY,
       "_resolve_run_facts"
     )
-    const declaredOnPayload = generateReportPayloadKeys(AGENTCORE_TS_DECLARATION)
+    const declaredOnPayload = generateReportPayloadKeys(
+      AGENTCORE_TS_DECLARATION
+    )
 
     // Precondition: if this returns nothing, the extraction itself is broken and every
     // assertion below would pass vacuously against a guard that checks nothing.
     expect(readByRuntime.length).toBeGreaterThan(0)
 
-    const missing = readByRuntime.filter((key) => !declaredOnPayload.includes(key))
+    const missing = readByRuntime.filter(
+      (key) => !declaredOnPayload.includes(key)
+    )
 
     expect(
       missing,

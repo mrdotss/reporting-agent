@@ -73,6 +73,7 @@ export function StepIdentity({
 }>) {
   const nameId = useId()
   const titleId = useId()
+  const customerId = useId()
   const descriptionId = useId()
 
   // --- Validation --------------------------------------------------------
@@ -95,7 +96,9 @@ export function StepIdentity({
   // Show divergence only when the stored name differs from the draft name AND
   // the save state is idle (not just-failed-rename, which has its own message).
   const showDivergence =
-    divergence !== null && saveState.kind === "idle" && storedName !== trimmedName
+    divergence !== null &&
+    saveState.kind === "idle" &&
+    storedName !== trimmedName
 
   const set = (identity: Partial<TemplateDefinition["identity"]>) => {
     onChange({
@@ -157,6 +160,25 @@ export function StepIdentity({
         />
         <FieldDescription>
           Printed on the document&rsquo;s cover page and in its header.
+        </FieldDescription>
+      </Field>
+
+      <Field>
+        <FieldLabel htmlFor={customerId}>Customer name</FieldLabel>
+        <Input
+          id={customerId}
+          value={definition.identity.customer_name ?? ""}
+          onChange={(event) => set({ customer_name: event.target.value })}
+        />
+        <FieldDescription>
+          {/*
+            Requirement 12.2 — authored here rather than asked for per run. The
+            description says so, because this field moved: a consultant who used
+            to type a customer name on the run form needs to know why it is no
+            longer there, and that a run will be refused without one.
+          */}
+          Who the report is for. Printed on the cover and in the
+          document-control page. A run cannot be requested until this is set.
         </FieldDescription>
       </Field>
 

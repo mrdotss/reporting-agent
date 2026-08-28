@@ -38,11 +38,7 @@ import {
 export const WIZARD_STEP_COUNT = 5
 
 export type WizardStepId =
-  | "identity"
-  | "sections"
-  | "period"
-  | "document"
-  | "preview"
+  "identity" | "sections" | "period" | "document" | "preview"
 
 export type WizardStep = {
   readonly id: WizardStepId
@@ -65,8 +61,7 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     id: "identity",
     number: 1,
     title: "Identity",
-    summary:
-      "What this report profile is called, and the provider it targets.",
+    summary: "What this report profile is called, and the provider it targets.",
   },
   {
     id: "sections",
@@ -85,8 +80,7 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     id: "document",
     number: 4,
     title: "Document",
-    summary:
-      "Front matter, approvers, distribution, and document appearance.",
+    summary: "Front matter, approvers, distribution, and document appearance.",
   },
   {
     id: "preview",
@@ -303,6 +297,115 @@ export function sectionCount(definition: unknown): number {
   const sections = (definition as { readonly sections?: unknown }).sections
 
   return Array.isArray(sections) ? sections.length : 0
+}
+
+/**
+ * The number of DISTINCT resource types the definition narrows its collection to,
+ * or `0` meaning "not narrowed — all of them".
+ *
+ * Reads both shapes because the count means the same thing in each and the
+ * summary that displays it must not crash on either:
+ *
+ * - at v1/v2 the narrowing is one top-level `scope.resource_types`;
+ * - at v3 there is **no top-level scope at all** — each section carries its own
+ *   `selection`, so the definition's narrowing is the UNION across sections.
+ *
+ * The union, specifically, and not a sum: two sections both scoped to
+ * `virtualMachines` narrow the run to one resource type, and the collector
+ * fetches the union of every section's scope exactly once (see
+ * `azure-integration.md`). Summing would claim a breadth the run does not have.
+ *
+ * A v3 section with no `selection` inherits the catalogue entry's own
+ * `needs_resource_types`, which this function cannot see (it has no catalogue).
+ * Such a section therefore contributes nothing here, which is why the "0 means
+ * all" reading is the honest one for a v3 profile: absent an explicit narrowing,
+ * the run is bounded by the catalogue, not by the author.
+ */
+export function scopedResourceTypeCount(definition: unknown): number {
+  if (typeof definition !== "object" || definition === null) return 0
+
+  const record = definition as Record<string, unknown>
+
+  // v1/v2 — one top-level scope.
+  const scope = record.scope
+  if (typeof scope === "object" && scope !== null) {
+    const types = (scope as Record<string, unknown>).resource_types
+    if (Array.isArray(types)) return new Set(types).size
+  }
+
+  // v3 — the union across every section's own selection.
+  const sections = record.sections
+  if (!Array.isArray(sections)) return 0
+
+  const union = new Set<string>()
+  for (const section of sections) {
+    if (typeof section !== "object" || section === null) continue
+    const selection = (section as Record<string, unknown>).selection
+    if (typeof selection !== "object" || selection === null) continue
+    const types = (selection as Record<string, unknown>).resource_types
+    if (!Array.isArray(types)) continue
+    for (const type of types) {
+      if (typeof type === "string") union.add(type)
+    }
+  }
+  return union.size
+}
+
+/**
+ * How many metric-selection items the definition carries in total.
+ *
+ * A sum here rather than a union, unlike {@link scopedResourceTypeCount}: a
+ * metric item is a request for one figure on one resource type, so the same
+ * metric selected by two sections is two entries in the ledger and two figures
+ * in the document. Counting it once would understate the work.
+ *
+ * v1/v2 keep `metrics` as an object keyed by resource type; v3 puts an array on
+ * each section. Both are read defensively — a draft is `unknown` until it
+ * validates.
+ */
+export function metricItemCount(definition: unknown): number {
+  if (typeof definition !== "object" || definition === null) return 0
+
+  const record = definition as Record<string, unknown>
+
+  // v1/v2 — one top-level object keyed by resource type.
+  const metrics = record.metrics
+  if (
+    typeof metrics === "object" &&
+    metrics !== null &&
+    !Array.isArray(metrics)
+  ) {
+    return Object.values(metrics as Record<string, unknown>).reduce(
+      (total: number, items) =>
+        total + (Array.isArray(items) ? items.length : 0),
+      0
+    )
+  }
+
+  // v3 — an array per section.
+  const sections = record.sections
+  if (!Array.isArray(sections)) return 0
+
+  return sections.reduce((total: number, section) => {
+    if (typeof section !== "object" || section === null) return total
+    const items = (section as Record<string, unknown>).metrics
+    return total + (Array.isArray(items) ? items.length : 0)
+  }, 0)
+}
+
+/**
+ * The definition's style preset, or `null` when it declares none.
+ *
+ * Defensive for the same reason as the counts above: `design` is absent on a
+ * partially-authored draft, and the completion summary must render rather than
+ * throw when it is.
+ */
+export function designPreset(definition: unknown): string | null {
+  if (typeof definition !== "object" || definition === null) return null
+  const design = (definition as Record<string, unknown>).design
+  if (typeof design !== "object" || design === null) return null
+  const preset = (design as Record<string, unknown>).preset
+  return typeof preset === "string" ? preset : null
 }
 
 export { NO_ISSUES }

@@ -961,6 +961,18 @@
       "en": "Re-scan",
       "id": "Pindai ulang"
     },
+    "ui.scan.rescan_running": {
+      "en": "Scanning…",
+      "id": "Memindai…"
+    },
+    "ui.scan.rescan_failed": {
+      "en": "The scan could not be started.",
+      "id": "Pemindaian tidak dapat dimulai."
+    },
+    "ui.scan.rescan_offline": {
+      "en": "The scan could not be started. Check your connection.",
+      "id": "Pemindaian tidak dapat dimulai. Periksa koneksi Anda."
+    },
     "ui.scan.continue": {
       "en": "Continue",
       "id": "Lanjutkan"

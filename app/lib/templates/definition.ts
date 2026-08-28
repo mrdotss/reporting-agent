@@ -679,6 +679,18 @@ export type TemplateIdentity = {
    * unrecognized identity field.
    */
   readonly language?: (typeof LANGUAGES)[number]
+  /**
+   * The customer this report is produced for (Requirement 12.2). Permitted only
+   * at `schema_version` 3 — {@link IDENTITY_ALLOWED_KEYS} rejects it at 1 and 2,
+   * where the value was a per-run form field instead.
+   *
+   * Optional in the type, and optional in {@link REQUIRED_IDENTITY_KEYS} too, so
+   * a draft can be saved before a customer is named. It is required by the time a
+   * RUN is enqueued — `enqueueRun` is the gate — so a published v3 profile
+   * without one produces a run rejected as `front_matter_values_missing` rather
+   * than a document with a blank cover.
+   */
+  readonly customer_name?: string
 }
 
 /**
