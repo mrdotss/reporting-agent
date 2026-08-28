@@ -9,11 +9,27 @@ import {
   type FrontMatterFormValues,
   type TocFormValues,
 } from "@/components/templates/front-matter-form"
+import { StepDesign } from "@/components/templates/step-design"
 import type { TemplateDefinition } from "@/lib/templates/definition"
+import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 /**
  * Step 4 — Document: the front matter's cover, document control and table of
- * contents (Requirements 12.1, 13.1-13.9, 14.1-14.4).
+ * contents (Requirements 12.1, 13.1-13.9, 14.1-14.4), and the document's
+ * appearance (Requirements 7.1, 7.2, 13.2, 13.5).
+ *
+ * ## Why `design` renders here rather than on a step of its own
+ *
+ * `lib/profiles/wizard.ts` maps **both** `front_matter` and `design` to this
+ * step (`STEP_FOR_FIELD`), and the step's own summary promises "document
+ * appearance". That mapping is the reason a sixth step would be wrong: an issue
+ * on a `design.*` path already opens *this* step, so a picker living anywhere
+ * else would be a step the wizard never navigates to when its own field fails.
+ *
+ * `StepDesign` is therefore composed in below the front matter, which is also
+ * the order of the decision — what the document *says* before what it *looks
+ * like*. It owns the whole `design` key and this component does not read or
+ * write it.
  *
  * ## `front_matter` reads defensively, because its type does not exist yet
  *
@@ -170,9 +186,13 @@ function toWire(values: FrontMatterFormValues): Record<string, unknown> {
 export function StepDocument({
   definition,
   onChange,
+  thumbnails,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
+  /** Resolved on the server — see `StepDesign`'s own note. Passed straight
+   * through: this component never inspects a thumbnail. */
+  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const values: FrontMatterFormValues = {
     cover: readCover(definition.front_matter),
@@ -181,14 +201,34 @@ export function StepDocument({
   }
 
   return (
-    <FrontMatterForm
-      values={values}
-      onChange={(next) =>
-        onChange({
-          ...definition,
-          front_matter: toWire(next),
-        })
-      }
-    />
+    <div className="flex flex-col gap-8">
+      <FrontMatterForm
+        values={values}
+        onChange={(next) =>
+          onChange({
+            ...definition,
+            front_matter: toWire(next),
+          })
+        }
+      />
+
+      <div className="flex flex-col gap-5 border-t border-border pt-8">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-heading text-base font-medium tracking-tight">
+            Appearance
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            The theme the document is rendered against, and what the theme
+            leaves tunable.
+          </p>
+        </div>
+
+        <StepDesign
+          definition={definition}
+          onChange={onChange}
+          thumbnails={thumbnails}
+        />
+      </div>
+    </div>
   )
 }

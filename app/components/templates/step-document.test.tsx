@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 
 import { StepDocument } from "./step-document"
 import type { TemplateDefinition } from "@/lib/templates/definition"
+import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 afterEach(cleanup)
 
@@ -16,18 +17,46 @@ afterEach(cleanup)
  * validator actually requires.
  */
 
+/**
+ * The four cards the preset picker renders. `src: null` is a legitimate state
+ * (Requirement 13.8 — the card says the image is unavailable and stays
+ * selectable), so these exercise the picker without needing real PNG bytes.
+ */
+const THUMBNAILS: readonly ThemeThumbnail[] = [
+  { preset: "editorial", src: null, unavailableReason: "absent" },
+  { preset: "corporate", src: null, unavailableReason: "absent" },
+  { preset: "technical", src: null, unavailableReason: "absent" },
+  { preset: "minimal", src: null, unavailableReason: "absent" },
+]
+
 function v3Definition(frontMatter?: unknown): TemplateDefinition {
   return {
     schema_version: 3,
     identity: { name: "Test", description: "", report_title: "Test" },
     front_matter: frontMatter,
+    // `design` is required at every schema version
+    // (`REQUIRED_TOP_LEVEL_KEYS`), and step 4 now renders `StepDesign` over it.
+    design: {
+      preset: "editorial",
+      accent_color: "#1f6f78",
+      density: "normal",
+      table_style: "hairline",
+      number_format: { decimal_places: 2, group_thousands: true },
+      cover_page: true,
+      logo: null,
+      page_size: "A4",
+    },
   } as unknown as TemplateDefinition
 }
 
 describe("StepDocument reads a v3 definition's front_matter, not metrics", () => {
   test("renders the front-matter sections with no front_matter present at all", () => {
     render(
-      <StepDocument definition={v3Definition(undefined)} onChange={() => {}} />
+      <StepDocument
+        definition={v3Definition(undefined)}
+        onChange={() => {}}
+        thumbnails={THUMBNAILS}
+      />
     )
 
     expect(screen.getByText("Cover")).toBeInTheDocument()
@@ -44,6 +73,7 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
           toc: {},
         })}
         onChange={() => {}}
+        thumbnails={THUMBNAILS}
       />
     )
 
@@ -56,6 +86,7 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
+        thumbnails={THUMBNAILS}
       />
     )
 
@@ -78,6 +109,7 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
+        thumbnails={THUMBNAILS}
       />
     )
 
@@ -98,6 +130,7 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
+        thumbnails={THUMBNAILS}
       />
     )
 

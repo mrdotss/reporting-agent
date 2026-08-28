@@ -42,11 +42,11 @@ import {
 } from "@/lib/profiles/wizard"
 
 /**
- * The seven-step wizard, and the **only** `"use client"` boundary on this screen
+ * The five-step wizard, and the **only** `"use client"` boundary on this screen
  * (Requirement 11).
  *
  * Every step below is a child of this component rather than an island of its own,
- * which is what makes "retain every value entered on every one of the seven
+ * which is what makes "retain every value entered on every one of the five
  * steps" (Requirement 11.2) structural: there is one draft object, held here, and
  * a step cannot reset a field it does not own because it does not own the state.
  *
@@ -128,7 +128,7 @@ export function WizardShell({
   template,
   initialDefinition,
   catalog,
-  thumbnails: _thumbnails,
+  thumbnails,
   sectionCatalogue,
   previewSubscriptionId,
   hasCompletedRun,
@@ -444,6 +444,7 @@ export function WizardShell({
     retryRename,
     scanTypeCounts,
     collectedFactSources,
+    thumbnails,
   })
 
   return (
@@ -454,7 +455,7 @@ export function WizardShell({
         </h1>
 
         {/*
-          Requirement 11.1 — the current step's position and the total of seven,
+          Requirement 11.1 — the current step's position and the total of five,
           on **every** step. In the header rather than inside a step body, so
           there is one place it is rendered and no step can omit it.
         */}
@@ -570,7 +571,7 @@ export function WizardShell({
 }
 
 /**
- * The seven-step rail.
+ * The five-step rail.
  *
  * A `nav` of buttons rather than links: navigating a step is state in this
  * component, not a route, and a link would put the wizard's position in the URL
@@ -578,7 +579,7 @@ export function WizardShell({
  * derives from the draft.
  *
  * A step above `highestReached` is disabled rather than hidden — a consultant can
- * see there are seven and how far along they are, which is what Requirement 11.1's
+ * see there are five and how far along they are, which is what Requirement 11.1's
  * "position and the total" is for.
  */
 function StepRail({
@@ -753,6 +754,7 @@ function renderStep({
   retryRename,
   scanTypeCounts,
   collectedFactSources,
+  thumbnails,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
@@ -769,6 +771,7 @@ function renderStep({
   retryRename: () => void
   scanTypeCounts?: Readonly<Record<string, number>>
   collectedFactSources?: ReadonlySet<string>
+  thumbnails: readonly ThemeThumbnail[]
 }>) {
   switch (step.id) {
     case "identity":
@@ -797,7 +800,13 @@ function renderStep({
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
     case "document":
-      return <StepDocument definition={definition} onChange={setDefinition} />
+      return (
+        <StepDocument
+          definition={definition}
+          onChange={setDefinition}
+          thumbnails={thumbnails}
+        />
+      )
     case "preview":
       return (
         <StepPreview
