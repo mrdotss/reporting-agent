@@ -140,9 +140,16 @@ function storeFailure(operation: string, thrown: unknown): Response {
     return conflict(thrown.message, "VERSION_SEQUENCING")
   }
 
+  // An unexpected throw reaches here, and the response deliberately carries
+  // nothing from it (see `internalError`). The LOG is therefore the only record
+  // of what actually happened, so it gets the stack: without one, a
+  // `TypeError: Cannot convert undefined or null to object` names neither the
+  // file nor the field, which is exactly how a v3-publish defect stayed
+  // un-diagnosable from the server log alone.
   console.error(
-    `[api/templates/[id]] ${operation} failed: ` +
-      `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`
+    `[api/report-profiles/[id]] ${operation} failed: ` +
+      `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`,
+    thrown instanceof Error ? (thrown.stack ?? "") : thrown
   )
 
   return internalError()

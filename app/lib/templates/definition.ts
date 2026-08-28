@@ -3656,15 +3656,117 @@ function findCatalogEntry(
  *   selection — which again needs scope resolution and is left to the same
  *   later composition point as 5.3).
  */
+/**
+ * Resolves a v3 section type to the resource types its metrics apply to, for
+ * sections that declare no `selection.resource_types` of their own.
+ *
+ * Supplied by the caller rather than read here, so this module keeps no
+ * dependency on the section catalogue (which is `server-only`). `lib/actions`
+ * passes `sectionByKey(type)?.needs_resource_types`.
+ */
+export type SectionResourceTypeResolver = (
+  sectionType: string
+) => readonly string[]
+
+/** One place a metric selection lives, normalized across schema versions. */
+type MetricSelectionSite = {
+  readonly resourceType: string
+  readonly items: readonly MetricSelectionItem[]
+  readonly basePath: readonly (string | number)[]
+}
+
+/**
+ * Every metric selection in the definition, paired with the resource type it
+ * applies to and the field path that names it.
+ *
+ * This exists because the two schema versions put the selection in different
+ * places, and the catalog validator used to read only one of them:
+ *
+ * - **v1/v2** — one top-level `metrics` object keyed by resource type.
+ * - **v3** — no top-level `metrics` key AT ALL. Each section carries its own
+ *   `metrics` array, and the resource types it applies to come from that
+ *   section's `selection.resource_types` when it narrows, else from the section
+ *   catalogue's `needs_resource_types`. This is the same resolution rule
+ *   `compile/sections.py`'s v3 metric union applies, deliberately — a selection
+ *   this validator accepts must be one the collector will actually request.
+ *
+ * Reading `Object.entries(definition.metrics)` unconditionally threw
+ * `TypeError: Cannot convert undefined or null to object` on every v3 publish,
+ * which surfaced as a bare 500 and made a v3 profile impossible to save. The
+ * shape pass that runs first is what made it look safe: it validates a v3
+ * definition successfully, and `metrics` is legitimately absent from the result.
+ *
+ * A v3 section with metrics but no resolvable resource type yields NO site
+ * rather than a fabricated one — its metrics cannot be checked against a
+ * catalogue keyed by resource type, and inventing a key to check against would
+ * report a mismatch that says more about this function than about the profile.
+ */
+function metricSelectionSites(
+  definition: TemplateDefinition,
+  resolveSectionResourceTypes?: SectionResourceTypeResolver
+): MetricSelectionSite[] {
+  const record = definition as unknown as Record<string, unknown>
+
+  // v1/v2 — the top-level object.
+  const metrics = record.metrics
+  if (isPlainObject(metrics)) {
+    return Object.entries(metrics as MetricSelection).map(
+      ([resourceType, items]) => ({
+        resourceType,
+        items,
+        basePath: ["metrics", resourceType],
+      })
+    )
+  }
+
+  // v3 — one selection per section, fanned out over that section's resource types.
+  const sections = record.sections
+  if (!Array.isArray(sections)) return []
+
+  const sites: MetricSelectionSite[] = []
+
+  sections.forEach((section, index) => {
+    if (!isPlainObject(section)) return
+    const entry = section as Record<string, unknown>
+
+    const items = entry.metrics
+    if (!Array.isArray(items) || items.length === 0) return
+
+    const narrowed = isPlainObject(entry.selection)
+      ? (entry.selection as Record<string, unknown>).resource_types
+      : undefined
+
+    const resourceTypes =
+      Array.isArray(narrowed) && narrowed.length > 0
+        ? narrowed.filter((t): t is string => typeof t === "string")
+        : typeof entry.type === "string" && resolveSectionResourceTypes
+          ? resolveSectionResourceTypes(entry.type)
+          : []
+
+    for (const resourceType of resourceTypes) {
+      sites.push({
+        resourceType,
+        items: items as readonly MetricSelectionItem[],
+        basePath: ["sections", index, "metrics"],
+      })
+    }
+  })
+
+  return sites
+}
+
 export function validateMetricSelectionAgainstCatalog(
   definition: TemplateDefinition,
-  catalog: MetricCatalogSnapshot
+  catalog: MetricCatalogSnapshot,
+  resolveSectionResourceTypes?: SectionResourceTypeResolver
 ): FieldIssue[] {
   const issues: IssueSink = []
 
-  for (const [resourceType, items] of Object.entries(definition.metrics)) {
+  for (const { resourceType, items, basePath } of metricSelectionSites(
+    definition,
+    resolveSectionResourceTypes
+  )) {
     const resourceTypeCatalog = findCatalogResourceType(catalog, resourceType)
-    const basePath: readonly (string | number)[] = ["metrics", resourceType]
 
     if (resourceTypeCatalog === undefined) {
       addIssue(

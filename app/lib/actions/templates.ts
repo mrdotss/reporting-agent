@@ -6,11 +6,16 @@ import {
   type FieldIssue,
 } from "@/lib/templates/definition"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { sectionByKey } from "@/lib/profiles/sections"
 import * as store from "@/lib/templates/store"
 import { definitionSha256 } from "@/lib/templates/version"
 import { ensureBrand } from "@/lib/brands/store"
 
-import type { ReportTemplate, ReportTemplateVersion, Brand } from "@/lib/db/schema"
+import type {
+  ReportTemplate,
+  ReportTemplateVersion,
+  Brand,
+} from "@/lib/db/schema"
 
 /**
  * The template operations, as thin wrappers over `lib/templates/store.ts`
@@ -150,8 +155,6 @@ export function checkProviderImmutable(
   }
 }
 
-
-
 /**
  * Validate, canonicalize, and insert the next immutable version — or return the
  * existing highest version when the digest is unchanged (Requirements 2.7, 9.2,
@@ -198,9 +201,16 @@ export async function publishTemplateVersion(
   // catalog pass reads is present and of the type it expects. The cast is what
   // the two-pass layering costs, and it is confined to this one line rather
   // than spread across the catalog validator's signature.
+  //
+  // The resolver is what makes this work at v3, where the selection lives on each
+  // section instead of in one top-level `metrics` object: a section that does not
+  // narrow its own scope applies its metrics to the section catalogue's declared
+  // resource types. Without it a v3 section's metrics would silently go
+  // unchecked against the Metric_Catalog.
   const catalogIssues = validateMetricSelectionAgainstCatalog(
     definition as Parameters<typeof validateMetricSelectionAgainstCatalog>[0],
-    METRIC_CATALOG
+    METRIC_CATALOG,
+    (sectionType) => sectionByKey(sectionType)?.needs_resource_types ?? []
   )
   if (catalogIssues.length > 0) throw new TemplateInvalidError(catalogIssues)
 
@@ -250,7 +260,10 @@ export async function publishTemplateVersion(
  * development and would protect nothing day to day. This function is where the
  * frozen-at-publish guarantee actually lives, so this is the seam the guard needs.
  */
-export function resolveDesignFromBrand(definition: unknown, brand: Brand): unknown {
+export function resolveDesignFromBrand(
+  definition: unknown,
+  brand: Brand
+): unknown {
   if (typeof definition !== "object" || definition === null) return definition
 
   const def = definition as Record<string, unknown>

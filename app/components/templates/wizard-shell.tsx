@@ -96,7 +96,18 @@ type PublishState =
       readonly version: number
       readonly created: boolean
     }
-  | { readonly kind: "refused"; readonly message: string }
+  | {
+      readonly kind: "refused"
+      readonly message: string
+      /** The API's error code, when it sent one — the only handle on a 500. */
+      readonly code?: string
+      readonly status?: number
+      /** Per-field paths from a `TEMPLATE_INVALID` refusal (Requirement 2.7). */
+      readonly fields?: readonly {
+        readonly path: string
+        readonly message: string
+      }[]
+    }
 
 type PatchResponse = { readonly error?: { readonly message?: string } }
 
@@ -105,6 +116,7 @@ type PublishResponse = {
   readonly created?: boolean
   readonly error?: {
     readonly message?: string
+    readonly code?: string
     readonly fields?: readonly {
       readonly path: string
       readonly message: string
@@ -362,10 +374,18 @@ export function WizardShell({
       const body = (await response.json()) as PublishResponse
 
       if (!response.ok || body.version === undefined) {
+        // The server names the failing field paths for a validation refusal
+        // (`TEMPLATE_INVALID` carries `fields`), and discarding them was leaving
+        // the consultant with "The request could not be completed." and nothing
+        // to act on. Keep them, and keep the code for the cases that carry no
+        // fields at all — a 500's code is the only handle on it.
         setPublish({
           kind: "refused",
           message:
             body.error?.message ?? "The template version could not be saved.",
+          code: body.error?.code,
+          status: response.status,
+          fields: body.error?.fields ?? [],
         })
         return
       }
@@ -620,26 +640,78 @@ function SaveNotice({ state }: Readonly<{ state: SaveState }>) {
 function PublishNotice({ state }: Readonly<{ state: PublishState }>) {
   if (state.kind === "idle") return null
 
+  if (state.kind === "refused") {
+    return (
+      <div
+        data-slot="wizard-publish-state"
+        aria-live="polite"
+        role="alert"
+        className="flex flex-col gap-1.5 rounded-lg border border-destructive/40 px-3 py-2"
+      >
+        <p className="text-sm text-destructive">{state.message}</p>
+
+        {/*
+          The field paths, when the refusal carries them. Requirement 2.7 has the
+          API return every failing path precisely so the consultant is not left
+          guessing, and the wizard used to drop them on the floor — the whole
+          refusal collapsed to one generic sentence.
+        */}
+        {state.fields && state.fields.length > 0 ? (
+          <ul className="flex flex-col gap-1">
+            {state.fields.map((field, index) => (
+              <li
+                key={`${field.path}-${index}`}
+                className="text-xs text-destructive"
+              >
+                <span className="font-mono">{field.path || "definition"}</span>{" "}
+                — {field.message}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {/*
+          A refusal with no field list is either a conflict or a defect, and in
+          both cases the code plus the status is the only thing that identifies
+          it. Shown rather than hidden: "the request could not be completed" with
+          nothing else is not a report anyone can act on or pass along.
+        */}
+        {state.code !== undefined || state.status !== undefined ? (
+          <p className="text-xs text-muted-foreground">
+            {state.code !== undefined ? (
+              <>
+                Code <span className="font-mono">{state.code}</span>
+              </>
+            ) : null}
+            {state.code !== undefined && state.status !== undefined
+              ? " · "
+              : null}
+            {state.status !== undefined ? (
+              <>
+                HTTP{" "}
+                <span className="font-mono tabular-nums">{state.status}</span>
+              </>
+            ) : null}
+          </p>
+        ) : null}
+      </div>
+    )
+  }
+
   return (
     <p
       data-slot="wizard-publish-state"
       aria-live="polite"
-      className={
-        state.kind === "refused"
-          ? "text-sm text-destructive"
-          : "text-sm text-muted-foreground"
-      }
+      className="text-sm text-muted-foreground"
     >
       {state.kind === "publishing"
         ? "Saving the version…"
-        : state.kind === "published"
-          ? state.created
-            ? `Saved as version ${state.version}.`
-            : // Requirement 9.5 — a save that changed nothing creates no version,
-              // and saying so is better than reporting a version number that is
-              // not new.
-              `No changes to save — this is still version ${state.version}.`
-          : state.message}
+        : state.created
+          ? `Saved as version ${state.version}.`
+          : // Requirement 9.5 — a save that changed nothing creates no version,
+            // and saying so is better than reporting a version number that is
+            // not new.
+            `No changes to save — this is still version ${state.version}.`}
     </p>
   )
 }
