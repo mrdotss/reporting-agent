@@ -129,6 +129,12 @@ def _resolve_heading_text(
     heading's text, which is the common case: one section, one level-2 heading, titled
     from the catalogue entry itself.
 
+    **`per: "section"` headings only.** A `per: "resource"` heading is emitted once per
+    resolved resource and is titled by that resource — see
+    :func:`_assert_resource_heading_untitled` and `_expand_one_section`. Titling those
+    from the catalogue is what made `vm_utilization` emit its section title once per
+    machine instead of naming the machines.
+
     `expand_sections` stays pure by construction — this resolves a string from data
     already in hand (the catalogue entry, the expansion's own config, and a `Messages`
     object built once outside any I/O) rather than performing any I/O of its own.
@@ -139,6 +145,27 @@ def _resolve_heading_text(
             f"section {entry.key!r}: a heading expansion carries no usable title_id"
         )
     config["text"] = messages.text(title_id)
+
+
+def _assert_resource_heading_untitled(
+    entry: SectionCatalogueEntry,
+    config: Mapping[str, object],
+) -> None:
+    """Refuse a `per: "resource"` heading that declares a fixed `title_id`.
+
+    The combination has exactly one possible rendering — the same fixed string once per
+    resource — which is the defect this guard exists to keep out of the catalogue, and
+    which shipped in `vm_utilization`, `database_utilization` and
+    `app_service_and_storage`. A per-resource heading names its resource; a heading that
+    wants a fixed title is a `per: "section"` heading.
+    """
+    if "title_id" in config:
+        raise CompileFailedError(
+            f"section {entry.key!r}: a per-resource heading declares "
+            f"title_id={config['title_id']!r}, which would emit that one title once per "
+            f"resource. A per-resource heading is titled by its resource; use "
+            f"per='section' for a fixed title."
+        )
 
 
 def _thread_metric_config(
@@ -258,7 +285,7 @@ def _expand_one_section(
 
         # Build the config from the catalogue's declared config
         config: dict[str, object] = dict(expansion.config)
-        if expansion.block == "heading":
+        if expansion.block == "heading" and expansion.per == "section":
             _resolve_heading_text(expansion, entry, config, messages)
         _thread_metric_config(expansion, entry, section, config)
 
@@ -271,19 +298,27 @@ def _expand_one_section(
                 scope_override=scope_override,
             ))
         elif expansion.per == "resource":
+            if expansion.block == "heading":
+                _assert_resource_heading_untitled(entry, config)
+
             # Resolve to get the deterministic resource order
             if scope_override is not None:
                 resolved = resolve(scope_override, view)
             else:
                 resolved = view.resources
 
-            for resource_ordinal, _resource in enumerate(resolved):
+            for resource_ordinal, resource in enumerate(resolved):
                 block_id = f"{section_id}__{expansion_index}__{resource_ordinal}"
                 # Carry the section's selection as scope_override, plus a resource ordinal
                 # in config so the block compiler can pick the right one from the resolved
                 # set without the id being stored in the definition.
                 per_resource_config = dict(config)
                 per_resource_config["_resource_ordinal"] = resource_ordinal
+                if expansion.block == "heading":
+                    # A per-resource heading names its resource. `resolved` is the
+                    # snapshot's own order, so this is as deterministic as the ordinal
+                    # beside it.
+                    per_resource_config["text"] = resource.name
                 result.append(BlockSpec(
                     id=block_id,
                     type=expansion.block,

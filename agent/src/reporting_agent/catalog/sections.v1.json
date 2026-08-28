@@ -152,7 +152,8 @@
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "heading", "config": { "level": 3 }, "per": "resource" },
             { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
             { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] },
             { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
@@ -208,7 +209,8 @@
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "heading", "config": { "level": 3 }, "per": "resource" },
             { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
             { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] },
             { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
@@ -238,7 +240,8 @@
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "resource" },
+            { "block": "heading", "config": { "level": 2 }, "per": "section" },
+            { "block": "heading", "config": { "level": 3 }, "per": "resource" },
             { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
             { "block": "resource_table", "per": "resource", "when_presentation": ["chart_and_table", "table_only"] }
           ]

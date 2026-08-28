@@ -209,16 +209,30 @@ class TestExpandSectionsBasic:
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
         # vm_utilization expands_to:
-        # - heading per:resource (3 VMs)
+        # - heading per:section, level 2 (1)
+        # - heading per:resource, level 3 (3 VMs)
         # - timeseries_chart per:resource when chart_and_table (3 VMs)
         # - resource_table per:resource when chart_and_table (3 VMs)
         # - top_n_table per:section (1)
-        # Total: 3 + 3 + 3 + 1 = 10
-        assert len(result) == 10
+        # Total: 1 + 3 + 3 + 3 + 1 = 11
+        assert len(result) == 11
 
-        # Check per-resource ids have the __n suffix
-        heading_ids = [s.id for s in result if s.type == "heading"]
-        assert heading_ids == ["sec_util__0__0", "sec_util__0__1", "sec_util__0__2"]
+        headings = [s for s in result if s.type == "heading"]
+
+        # The section's own level-2 heading, then one level-3 heading per machine.
+        assert [h.id for h in headings] == [
+            "sec_util__0",
+            "sec_util__1__0",
+            "sec_util__1__1",
+            "sec_util__1__2",
+        ]
+        assert [h.config["level"] for h in headings] == [2, 3, 3, 3]
+
+        # Each per-resource heading names **its own resource**. It used to take the
+        # section's title, so three machines produced "Virtual Machine Utilization"
+        # three times over and the section's own title never appeared at all.
+        assert headings[0].config["text"] == "Virtual Machine Utilization"
+        assert [h.config["text"] for h in headings[1:]] == ["vm-01", "vm-02", "vm-03"]
 
         # Check the top_n_table is per:section
         top_n = [s for s in result if s.type == "top_n_table"]
@@ -1464,3 +1478,62 @@ class TestComputeSectionDrift:
         ]
         assert len(added_counts) == 1
         assert added_counts[0].formatted == "1"
+
+
+class TestPerResourceHeadingTitles:
+    """A per-resource heading is titled by its resource, never by the catalogue."""
+
+    def test_a_per_resource_heading_declaring_a_title_is_refused(self) -> None:
+        """The combination has one rendering — the same string once per resource.
+
+        That is the defect itself, so the catalogue is not allowed to express it: a
+        heading wanting a fixed title is a `per: "section"` heading.
+        """
+        from reporting_agent.compile.sections import _assert_resource_heading_untitled
+
+        catalogue = _make_catalogue()
+        entry = catalogue.by_key("vm_utilization")
+        assert entry is not None
+
+        with pytest.raises(CompileFailedError, match="per-resource heading"):
+            _assert_resource_heading_untitled(
+                entry, {"level": 3, "title_id": "doc.section.vm_utilization"}
+            )
+
+    def test_an_untitled_per_resource_heading_is_accepted(self) -> None:
+        from reporting_agent.compile.sections import _assert_resource_heading_untitled
+
+        catalogue = _make_catalogue()
+        entry = catalogue.by_key("vm_utilization")
+        assert entry is not None
+
+        _assert_resource_heading_untitled(entry, {"level": 3})
+
+
+class TestCatalogueHeadingShape:
+    """Every per-resource heading in the shipped catalogue is untitled, and every
+    section that has one also carries a section-level heading above it.
+
+    Read from `sections.v1.json` itself rather than restated, so a section added later
+    with the old shape fails here rather than in a delivered document.
+    """
+
+    def test_no_shipped_per_resource_heading_declares_a_title(self) -> None:
+        catalogue = _make_catalogue()
+        for entry in catalogue.entries:
+            for expansion in entry.expands_to:
+                if expansion.block == "heading" and expansion.per == "resource":
+                    assert "title_id" not in expansion.config, (
+                        f"{entry.key}: a per-resource heading declares a fixed title"
+                    )
+
+    def test_a_section_with_per_resource_headings_titles_itself_too(self) -> None:
+        catalogue = _make_catalogue()
+        for entry in catalogue.entries:
+            headings = [e for e in entry.expands_to if e.block == "heading"]
+            if not any(h.per == "resource" for h in headings):
+                continue
+            assert headings and headings[0].per == "section", (
+                f"{entry.key}: its first heading is per-resource, so the section's own "
+                f"title never appears in the document or its table of contents"
+            )
