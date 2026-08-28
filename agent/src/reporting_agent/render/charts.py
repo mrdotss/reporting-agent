@@ -487,6 +487,11 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
                     is_last_panel=(panel_index == panel_count - 1),
                 )
 
+            # `right` leaves the gutter the direct end labels are drawn into. At the
+            # previous 0.86 that gutter was 0.84in and a label like
+            # "CPN-MCP - Percentage CPU (max)" was clipped mid-word by the figure edge,
+            # which is what made the legend load-bearing rather than a fallback.
+            #
             # Fixed rather than tight_layout(): `tight_layout` measures rendered text, so
             # its result depends on font metrics and would make the emitted bytes
             # host-dependent. Set once, on the whole figure, after every panel is drawn.
@@ -497,7 +502,7 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
             # charts (`panel_count == 1`) ignore `hspace` entirely, so this changes
             # nothing about their emitted bytes.
             figure.subplots_adjust(
-                left=0.12, right=0.86, top=0.86, bottom=0.28, hspace=0.5
+                left=0.12, right=_AXES_RIGHT, top=0.86, bottom=0.28, hspace=0.5
             )
 
             buffer = io.BytesIO()
@@ -655,7 +660,7 @@ def _draw(
                 axes.fill_between(range(len(values)), values, color=colour, alpha=0.15)
             # Req 22.10 — a direct label at the line end, so the legend is a fallback.
             axes.annotate(
-                series.label,
+                truncate_end_label(series.label),
                 xy=(len(values) - 1, values[-1]),
                 xytext=(3, 0),
                 textcoords="offset points",
@@ -677,8 +682,9 @@ def _draw(
                         fontsize=style.CHART_LABEL_SIZE,
                         fontfamily="monospace",
                     )
-            axes.set_xticks(range(len(labels)))
-            axes.set_xticklabels(labels, rotation=45, ha="right")
+            ticks = tick_label_positions(len(labels))
+            axes.set_xticks(ticks)
+            axes.set_xticklabels([labels[i] for i in ticks], rotation=45, ha="right")
         else:
             offset = _bar_offsets(len(series_set), slot)
             positions = [index + offset for index in range(len(values))]
@@ -689,8 +695,11 @@ def _draw(
                 axes.set_yticklabels(labels)
             else:
                 axes.bar(positions, values, width=width, color=colour, label=series.label)
-                axes.set_xticks(range(len(labels)))
-                axes.set_xticklabels(labels, rotation=45, ha="right")
+                ticks = tick_label_positions(len(labels))
+                axes.set_xticks(ticks)
+                axes.set_xticklabels(
+                    [labels[i] for i in ticks], rotation=45, ha="right"
+                )
             # Req 17.4 — a direct value label on labelled bars.
             for index, (position, value, point) in enumerate(
                 zip(positions, values, series.points, strict=True)
@@ -709,13 +718,87 @@ def _draw(
                     fontfamily="monospace",
                 )
 
-    # --- Legend (Req 17.3) — only when more than one series --------------------
-    if len(series_set) > 1:
+    # --- Legend (Req 17.3) — the fallback, and only when it is one -------------
+    #
+    # Req 22.10 makes the direct label at each line end the primary way a reader tells
+    # two series apart and calls the legend a *fallback*. Drawn unconditionally it was
+    # not a fallback but a second label, boxed at `upper right` — on top of the plotted
+    # lines, and on top of the very end labels it duplicated.
+    #
+    # So it is drawn only when the direct labels are **not** there to be read: a line or
+    # area panel annotates every non-empty series at its line end, and a bar panel
+    # annotates none. `label_indices` is what decides that, so ask it rather than
+    # restating the rule and letting the two drift.
+    directly_labelled = node.chart_type in ("line", "area") and all(
+        label_indices(series.points) for series in series_set
+    )
+    if len(series_set) > 1 and not directly_labelled:
         axes.legend(
             loc="upper right",
             fontsize=style.CHART_LABEL_SIZE,
             framealpha=0.8,
         )
+
+
+_AXES_RIGHT: Final[float] = 0.74
+"""Where the axes stop, leaving the rest of the figure width as the end-label gutter."""
+
+END_LABEL_MAX_CHARS: Final[int] = 30
+"""How many characters of a series label fit in the right gutter.
+
+The gutter is `1 - _AXES_RIGHT` of `CHART_WIDTH_INCHES` — 0.26 x 6.0in = 1.56in — and a
+character of the 7pt label face averages about half its point size, so 1.56in / (3.5pt)
+is a little over 30 characters. Counted rather than measured **on purpose**: measuring
+rendered text is what `subplots_adjust`'s own note rules out, because a font metric read
+at render time makes the emitted PNG host-dependent.
+"""
+
+_ELLIPSIS: Final[str] = "\u2026"
+
+MAX_X_TICK_LABELS: Final[int] = 12
+"""The most x tick labels one panel prints.
+
+A 31-day window ticked at every point produces 31 rotated labels in 6 inches — about
+0.19in each — which overlap into an unreadable diagonal band. Every k-th label, where k
+is chosen so at most this many survive, keeps them legible; the companion table carries
+every point's x value regardless (Req 22.1), so nothing is lost by not printing them all.
+"""
+
+
+def truncate_end_label(label: str, budget: int = END_LABEL_MAX_CHARS) -> str:
+    """`label` shortened to `budget` characters, keeping both ends.
+
+    Middle-elided rather than tail-truncated because the **tail is what distinguishes
+    two series of one resource**: "CPN-App - Percentage CPU (avg)" and
+    "... (max)" differ only in their last five characters, so cutting the tail turns two
+    series into one label and the chart into a chart a reader cannot read. The head is
+    kept because that is where the resource name is.
+
+    Pure and total over any string and any budget >= 2.
+    """
+    if len(label) <= budget:
+        return label
+    if budget < 2:
+        return label[:budget]
+    keep = budget - 1  # one code point spent on the ellipsis
+    head = (keep + 1) // 2
+    tail = keep - head
+    return f"{label[:head]}{_ELLIPSIS}{label[len(label) - tail:]}" if tail else f"{label[:head]}{_ELLIPSIS}"
+
+
+def tick_label_positions(count: int, maximum: int = MAX_X_TICK_LABELS) -> list[int]:
+    """Which of `count` x positions carry a printed tick label.
+
+    Every k-th index from 0, with k the smallest step that brings the total to `maximum`
+    or fewer. Integer arithmetic over one integer, so it is as deterministic as the
+    plotted order it indexes into.
+    """
+    if count <= 0:
+        return []
+    if count <= maximum:
+        return list(range(count))
+    step = -(-count // maximum)  # ceil
+    return list(range(0, count, step))
 
 
 def _bar_offsets(series_count: int, slot: int) -> float:

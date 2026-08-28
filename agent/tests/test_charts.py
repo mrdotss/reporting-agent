@@ -1083,3 +1083,85 @@ def test_chart_size_inches_rejects_zero_or_negative_panel_counts() -> None:
         S.chart_size_inches(0)
     with pytest.raises(ValueError):
         S.chart_size_inches(-1)
+
+
+# ---------------------------------------------------------------------------
+# Chart layout: the end-label gutter, tick thinning, and the legend's role
+# ---------------------------------------------------------------------------
+
+
+class TestEndLabelBudget:
+    """`truncate_end_label` keeps a series identifiable in the right gutter.
+
+    The gutter is a fixed fraction of a fixed figure width, so what fits is a character
+    count and not a measurement — see `END_LABEL_MAX_CHARS`. Before this, a label was
+    written at full length into a 0.84in gutter and the figure edge cut it mid-word,
+    which is how "CPN-MCP — Percentage CPU (max)" reached a delivered document as
+    "CPN-MCP — Percenta".
+    """
+
+    def test_a_label_within_budget_is_untouched(self) -> None:
+        from reporting_agent.render.charts import truncate_end_label
+
+        assert truncate_end_label("CPN-App — CPU (avg)") == "CPN-App — CPU (avg)"
+
+    def test_a_long_label_is_cut_to_the_budget(self) -> None:
+        from reporting_agent.render.charts import (
+            END_LABEL_MAX_CHARS,
+            truncate_end_label,
+        )
+
+        label = "A" * 120
+        assert len(truncate_end_label(label)) == END_LABEL_MAX_CHARS
+
+    def test_two_series_of_one_resource_stay_distinguishable(self) -> None:
+        """The reason the elision is in the middle rather than at the tail.
+
+        Two series of one machine differ only in their last five characters. Cutting the
+        tail would give both the same label and leave the chart unreadable — which is
+        precisely the case the gutter exists to serve.
+        """
+        from reporting_agent.render.charts import truncate_end_label
+
+        avg = truncate_end_label(
+            "CPN-App — Percentage CPU utilisation across the window (avg)"
+        )
+        mx = truncate_end_label(
+            "CPN-App — Percentage CPU utilisation across the window (max)"
+        )
+        assert avg != mx
+        assert avg.endswith("(avg)")
+        assert mx.endswith("(max)")
+
+    def test_it_is_total_over_a_tiny_budget(self) -> None:
+        from reporting_agent.render.charts import truncate_end_label
+
+        assert truncate_end_label("abcdef", budget=1) == "a"
+
+
+class TestTickThinning:
+    """`tick_label_positions` bounds how many x labels one panel prints."""
+
+    def test_a_short_series_labels_every_point(self) -> None:
+        from reporting_agent.render.charts import tick_label_positions
+
+        assert tick_label_positions(5) == [0, 1, 2, 3, 4]
+
+    def test_a_months_worth_of_days_is_thinned(self) -> None:
+        from reporting_agent.render.charts import (
+            MAX_X_TICK_LABELS,
+            tick_label_positions,
+        )
+
+        ticks = tick_label_positions(31)
+        assert len(ticks) <= MAX_X_TICK_LABELS
+        assert ticks[0] == 0
+        # Evenly stepped, so the axis reads as a scale rather than a selection.
+        steps = {b - a for a, b in zip(ticks[:-1], ticks[1:], strict=True)}
+        assert len(steps) == 1
+
+    def test_it_is_total_at_the_boundaries(self) -> None:
+        from reporting_agent.render.charts import tick_label_positions
+
+        assert tick_label_positions(0) == []
+        assert tick_label_positions(1) == [0]
