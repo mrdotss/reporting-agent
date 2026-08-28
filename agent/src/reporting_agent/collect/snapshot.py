@@ -1753,6 +1753,14 @@ def _assert_facts_are_collectable(
     rejects no correct run. A looser bound would have been the thing to argue about; a tighter
     one needs only to be recorded, which is what this paragraph is.
 
+    **Both sides are compared at whole-second precision**, because that is the precision a
+    fact is stored at. `collected_at` is written through `rfc3339_utc`, which truncates; the
+    bound is a full-precision clock reading. Comparing the two directly rejected any fact
+    whose response arrived in the same second the invocation began — truncation moves the
+    fact's instant to the start of that second, putting it before a bound with a non-zero
+    microsecond. Intermittent by construction: it fired only when collection reached its
+    first fact inside that one second, so a fast subscription failed and a slow one did not.
+
     `invocation_started_at` is `None` on the **replay** path, and that is a decision rather than
     a default: `verify/replay.py` re-derives a document that was already validated when it was
     written, and it has no invocation of its own to bound anything by. Required-but-nullable so
@@ -1777,7 +1785,19 @@ def _assert_facts_are_collectable(
             if invocation_started_at is None:
                 continue
             instant = _parse_rfc3339(entry.collected_at, key=entry.key, resource_id=resource_id)
-            if not invocation_started_at <= instant <= snapshot_written_at:
+            # Compared at the precision the fact is **stored** at. `collected_at` is written
+            # by `rfc3339_utc`, which truncates to whole seconds (Req 4.3, 35.1), while the
+            # bound is a full-precision reading of the clock. Truncation only ever moves a
+            # value earlier, so a fact received at 16:38:23.789 is stored as 16:38:23Z and
+            # compares as 16:38:23.000 — before an invocation that began at 16:38:23.456,
+            # though it was genuinely collected after it. Flooring the bound to the same
+            # second is what makes the two comparable.
+            #
+            # Only the lower bound is at risk, and for that same reason: truncation cannot
+            # push a fact past `snapshot_written_at`, which is read after every response has
+            # arrived.
+            lower = invocation_started_at.replace(microsecond=0)
+            if not lower <= instant <= snapshot_written_at:
                 raise FactEntryError(
                     f"resource {resource_id!r} fact {entry.key!r} was collected at "
                     f"{entry.collected_at}, outside this run's lifetime "

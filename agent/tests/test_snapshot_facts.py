@@ -472,3 +472,70 @@ def test_the_snapshot_schema_version_declares_the_shape_bump() -> None:
 
     assert SNAPSHOT_SCHEMA_VERSION == "1.2.0"
     assert snapshot(vm(resource_id=RESOURCE_ID))["schema_version"] == "1.2.0"
+
+
+# ---------------------------------------------------------------------------
+# Req 4.13 — the precision the bound is compared at
+# ---------------------------------------------------------------------------
+
+
+SUB_SECOND_INVOCATION: Final[datetime] = datetime(2026, 7, 1, 0, 0, 0, 456000, tzinfo=UTC)
+"""A real invocation instant.
+
+`INVOCATION_STARTED_AT` is whole-second, which is what let the mismatch below survive
+`test_both_bounds_are_inclusive`: that test states exactly the right intent — "a fact
+collected in the same second the invocation began is inside the run" — but a bound with
+no microseconds cannot express the case the production clock produces on every run.
+"""
+
+
+def test_a_fact_received_in_the_invocations_own_second_is_inside_the_run() -> None:
+    """A fact's `collected_at` is written by `rfc3339_utc`, which **truncates** to whole
+    seconds (Req 4.3), while the bound is a full-precision clock reading. A fact genuinely
+    received at 00:00:00.789 is therefore stored as `00:00:00Z` and compares as
+    00:00:00.000 — before an invocation that began at 00:00:00.456.
+
+    Comparing the two at different precisions failed a correct run in production, on a
+    disk's `sku_name`, with a message naming a bound that looked identical to the value it
+    rejected because both had been formatted to the second. Intermittent by construction:
+    it needed collection to reach its first fact inside that one second, so a fast
+    subscription failed where a slow one passed.
+    """
+    document = snapshot(
+        vm(resource_id=RESOURCE_ID, facts=(fact(collected_at="2026-07-01T00:00:00Z"),)),
+        invocation_started_at=SUB_SECOND_INVOCATION,
+    )
+
+    assert facts_of(document)[0]["collected_at"] == "2026-07-01T00:00:00Z"
+
+
+def test_a_fact_from_the_second_before_the_invocation_is_still_refused() -> None:
+    """Flooring the bound widens it by less than one second and no further — the width of
+    the precision the fact is stored at. A fact stamped in the second *before* the
+    invocation began is still not from this run."""
+    with pytest.raises(FactEntryError) as raised:
+        snapshot(
+            vm(
+                resource_id=RESOURCE_ID,
+                facts=(fact(collected_at="2026-06-30T23:59:59Z"),),
+            ),
+            invocation_started_at=SUB_SECOND_INVOCATION,
+        )
+
+    assert "outside this run's lifetime" in str(raised.value)
+
+
+def test_the_upper_bound_is_untouched_by_the_flooring() -> None:
+    """Truncation can only move an instant earlier, so it can never push a fact past
+    `snapshot_written_at` — which is read after every response has arrived. Only the lower
+    bound needed the change."""
+    with pytest.raises(FactEntryError) as raised:
+        snapshot(
+            vm(
+                resource_id=RESOURCE_ID,
+                facts=(fact(collected_at="2026-07-01T01:00:01Z"),),
+            ),
+            invocation_started_at=SUB_SECOND_INVOCATION,
+        )
+
+    assert "outside this run's lifetime" in str(raised.value)
