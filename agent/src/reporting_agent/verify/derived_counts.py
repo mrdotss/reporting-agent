@@ -199,22 +199,61 @@ def _count_historical_points(block_id: str, ledger: FigureLedger) -> int:
 
 
 def _read_lookback_config(block_id: str, definition: Mapping[str, object]) -> int | None:
-    """Read the lookback config value from the definition for the given block.
+    """Read the lookback the `historical_trend` block at `block_id` was compiled with.
 
-    Searches the definition's blocks list for one with the matching id and
-    type 'historical_trend', then reads config.lookback.
+    Two places, because the two schema versions keep it in different ones:
+
+    * **v1/v2** — an authored `historical_trend` block in the top-level `blocks`
+      list, carrying `config.lookback`.
+    * **v3** — there is no `blocks` list at all. The author writes `lookback` on a
+      SECTION, and `compile/sections.py` expands that section into blocks whose ids
+      it synthesizes as ``<section_id>__<expansion_index>`` or
+      ``<section_id>__<expansion_index>__<resource_ordinal>``. So no v3 definition
+      can ever contain a block matching `block_id`, and reading only `blocks`
+      returned `None` for every v3 run — which this module reports as "could not be
+      re-derived from the ledger", a BLOCKING finding. Every v3 report containing a
+      historical trend was therefore withheld at verification, with one finding per
+      resource the section expanded over.
+
+    The section is matched by id PREFIX rather than by parsing the ordinals out of
+    `block_id`: the id scheme is `compile/sections.py`'s to change, and comparing
+    against the ids the definition actually declares cannot drift with it.
     """
+    # v1/v2 — an authored block.
     blocks = definition.get("blocks")
-    if not isinstance(blocks, list):
-        return None
+    if isinstance(blocks, list):
+        for block in blocks:
+            if not isinstance(block, Mapping):
+                continue
+            if block.get("id") == block_id and block.get("type") == "historical_trend":
+                config = block.get("config")
+                if isinstance(config, Mapping):
+                    lookback = config.get("lookback")
+                    if _is_int(lookback):
+                        return lookback
 
-    for block in blocks:
-        if not isinstance(block, Mapping):
-            continue
-        if block.get("id") == block_id and block.get("type") == "historical_trend":
-            config = block.get("config")
-            if isinstance(config, Mapping):
-                lookback = config.get("lookback")
-                if isinstance(lookback, int):
-                    return lookback
+    # v3 — the section this block was expanded from.
+    sections = definition.get("sections")
+    if isinstance(sections, list):
+        for section in sections:
+            if not isinstance(section, Mapping):
+                continue
+            section_id = section.get("id")
+            if not isinstance(section_id, str) or not section_id:
+                continue
+            if block_id != section_id and not block_id.startswith(f"{section_id}__"):
+                continue
+            lookback = section.get("lookback")
+            if _is_int(lookback):
+                return lookback
+
     return None
+
+
+def _is_int(value: object) -> bool:
+    """An integer, and not a `bool`.
+
+    `isinstance(True, int)` is true in Python, and a `lookback` of `True` would
+    otherwise re-derive as 1 and silently agree with a one-point trend.
+    """
+    return isinstance(value, int) and not isinstance(value, bool)
