@@ -6,8 +6,16 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "@phosphor-icons/react"
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 import { missingInputs } from "@/lib/profiles/offerability"
 import {
+  DEFAULT_PRESET_NAME,
+  expandPresets,
+  matchPresetName,
+  type ExpandedPreset,
+} from "@/lib/profiles/presets"
+import {
   HISTORICAL_LOOKBACK_MAX,
   HISTORICAL_LOOKBACK_MIN,
+  type MetricCatalogSnapshot,
+  type MetricSelectionItem,
 } from "@/lib/templates/definition"
 import { Button } from "@/components/ui/button"
 
@@ -30,6 +38,20 @@ export type SectionCatalogueEntry = {
   readonly needs_resource_types: readonly string[]
   readonly needs_fact_sources: readonly string[]
   readonly metric_bearing: boolean
+  /**
+   * The catalogue's named metric bundles (Requirement 10.3), e.g.
+   * `standard_utilization`. Expanded to concrete metric items by
+   * `lib/profiles/presets.ts` when a preset is chosen — never stored by name.
+   *
+   * Optional because the narrow fixtures in this component's own tests declare
+   * none; a section whose entry declares no preset simply offers no preset row.
+   */
+  readonly presets?: Readonly<
+    Record<
+      string,
+      readonly { readonly metric: string; readonly statistic: string }[] | "*"
+    >
+  >
 }
 
 /**
@@ -100,12 +122,29 @@ export function StepSections({
   definition,
   onChange,
   sectionCatalogue,
+  catalog,
   scanTypeCounts,
   collectedFactSources,
 }: {
   definition: unknown
   onChange: (next: unknown) => void
   sectionCatalogue: readonly SectionCatalogueEntry[]
+  /**
+   * The Metric_Catalog, threaded from the server because
+   * `lib/templates/catalog.ts` is `server-only`.
+   *
+   * Requirement 10.3's preset row expands against it and writes CONCRETE metrics
+   * into the section, rather than storing the preset's name: a stored name would be
+   * resolved at compile time against whatever `sections.v1.json` the running image
+   * ships, and since replay recompiles a pinned version demanding a byte-identical
+   * ledger, editing a preset later would fail replay on reports that were correct
+   * when issued. See `lib/profiles/presets.ts`.
+   *
+   * Optional so the existing tests that render this step without a catalogue keep
+   * working — with none, the preset row is absent and a section is added with no
+   * metrics, exactly as before this landed.
+   */
+  catalog?: MetricCatalogSnapshot
   /**
    * The most recent scan's `type_counts`, for Req 16.1's "disabled with the missing input
    * named" surface (task 6.5). Omitted (or `undefined`) means "no scan to check against
@@ -131,6 +170,43 @@ export function StepSections({
   const catalogueMap = useMemo(
     () => new Map(sectionCatalogue.map((e) => [e.key, e])),
     [sectionCatalogue]
+  )
+
+  /**
+   * A catalogue entry's presets, expanded against the Metric_Catalog.
+   *
+   * Memoized per entry key, because expanding `"*"` walks every metric the
+   * catalogue declares for the section's types and the inspector re-renders on
+   * every keystroke elsewhere in the step.
+   */
+  const expandedByKey = useMemo(() => {
+    const out = new Map<string, readonly ExpandedPreset[]>()
+    if (catalog === undefined) return out
+    for (const entry of sectionCatalogue) {
+      if (entry.presets === undefined) continue
+      out.set(
+        entry.key,
+        expandPresets(
+          {
+            key: entry.key,
+            needs_resource_types: entry.needs_resource_types,
+            presets: entry.presets,
+          },
+          catalog
+        )
+      )
+    }
+    return out
+  }, [sectionCatalogue, catalog])
+
+  const presetMetricsFor = useCallback(
+    (
+      entry: SectionCatalogueEntry,
+      presetName: string
+    ): readonly MetricSelectionItem[] =>
+      expandedByKey.get(entry.key)?.find((p) => p.name === presetName)
+        ?.metrics ?? [],
+    [expandedByKey]
   )
 
   // Offerability against the most recent scan (task 6.5, Req 15.9, 16.1-16.3). `undefined`
@@ -238,12 +314,56 @@ export function StepSections({
           top_n: null,
           sort: null,
         },
-        metrics: [],
+        // Seeded from the catalogue's default preset, expanded to concrete items.
+        // This used to be a hardcoded `[]`, which meant every metric-bearing
+        // section a consultant added requested NO metric: the collector asked Azure
+        // for nothing, produced no statistic, and the run died `NO_STATISTICS` with
+        // an empty `collection_log`, so nothing explained the absence. The preset's
+        // metrics are written INTO the section rather than referenced by name —
+        // see the `catalog` prop's own note for why a stored name breaks replay.
+        metrics: presetMetricsFor(entry, DEFAULT_PRESET_NAME),
         presentation: "chart_and_table",
       }
       updateSections([...sections, newSection])
     },
-    [catalogueMap, sections, updateSections, missingInputsByKey]
+    [
+      catalogueMap,
+      sections,
+      updateSections,
+      missingInputsByKey,
+      presetMetricsFor,
+    ]
+  )
+
+  /**
+   * Replace one section's metrics with a preset's, or clear them.
+   *
+   * `null` clears — the author choosing `Custom` with no per-metric tier yet built
+   * (Requirement 10.4/10.5) has no way to express a partial selection, so clearing
+   * is the only honest meaning available and the section then reads as Custom.
+   */
+  const setPreset = useCallback(
+    (id: string, presetName: string | null) => {
+      const section = sections.find((candidate) => candidate.id === id)
+      if (section === undefined) return
+      const entry = catalogueMap.get(section.type)
+      if (entry === undefined) return
+
+      updateSections(
+        sections.map((candidate) =>
+          candidate.id === id
+            ? {
+                ...candidate,
+                metrics:
+                  presetName === null
+                    ? []
+                    : presetMetricsFor(entry, presetName),
+              }
+            : candidate
+        )
+      )
+    },
+    [sections, catalogueMap, updateSections, presetMetricsFor]
   )
 
   const removeSection = useCallback(
@@ -363,6 +483,16 @@ export function StepSections({
             onLookbackChange={(months) =>
               setLookback(selectedSection.id, months)
             }
+            presets={expandedByKey.get(selectedSection.type) ?? []}
+            activePreset={matchPresetName(
+              Array.isArray(selectedSection.metrics)
+                ? (selectedSection.metrics as readonly MetricSelectionItem[])
+                : [],
+              expandedByKey.get(selectedSection.type) ?? []
+            )}
+            onPresetChange={(presetName) =>
+              setPreset(selectedSection.id, presetName)
+            }
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -480,12 +610,20 @@ function SectionInspector({
   language,
   onRemove,
   onLookbackChange,
+  presets,
+  activePreset,
+  onPresetChange,
 }: {
   section: AuthoredSection
   entry: SectionCatalogueEntry
   language: "en" | "id"
   onRemove: () => void
   onLookbackChange: (months: number | undefined) => void
+  /** The entry's presets, already expanded against the Metric_Catalog. */
+  presets: readonly ExpandedPreset[]
+  /** Which preset the current metrics match, or `null` for Custom. */
+  activePreset: string | null
+  onPresetChange: (presetName: string | null) => void
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -501,10 +639,6 @@ function SectionInspector({
         <div>
           <dt className="text-muted-foreground">Position</dt>
           <dd className="capitalize">{entry.position}</dd>
-        </div>
-        <div>
-          <dt className="text-muted-foreground">Metric-bearing</dt>
-          <dd>{entry.metric_bearing ? "Yes" : "No"}</dd>
         </div>
         {entry.needs_resource_types.length > 0 && (
           <div>
@@ -528,6 +662,67 @@ function SectionInspector({
           </dd>
         </div>
       </dl>
+
+      {/*
+        Requirement 10.3's preset row. It replaces a read-only "Metric-bearing:
+        Yes", which told the consultant the section carried metrics while offering
+        no way to choose any — and `addSection` wrote none, so the section shipped
+        an empty selection and the run collected nothing.
+
+        Only the tiers the catalogue declares are offered, plus `Custom`. The
+        per-metric chips and the statistic multi-select (Requirement 10.4, 10.5) are
+        NOT here yet: this is the first tier only, which is what makes a report
+        possible at all. `Custom` therefore clears the selection rather than opening
+        a picker that does not exist, and says so.
+      */}
+      {presets.length > 0 && (
+        <div className="flex flex-col gap-2 rounded-lg border border-border px-3 py-2">
+          <p className="text-xs font-medium">Metrics</p>
+
+          <div className="flex flex-col gap-1">
+            {presets.map((preset) => (
+              <label
+                key={preset.name}
+                className="flex items-start gap-2 text-xs has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
+              >
+                <input
+                  type="radio"
+                  name={`preset-${section.id}`}
+                  value={preset.name}
+                  checked={activePreset === preset.name}
+                  onChange={() => onPresetChange(preset.name)}
+                  className="mt-0.5"
+                />
+                <span className="flex flex-col">
+                  <span>{preset.label}</span>
+                  <span className="font-mono text-muted-foreground tabular-nums">
+                    {preset.metrics.length}{" "}
+                    {preset.metrics.length === 1 ? "metric" : "metrics"}
+                  </span>
+                </span>
+              </label>
+            ))}
+
+            <label className="flex items-start gap-2 text-xs">
+              <input
+                type="radio"
+                name={`preset-${section.id}`}
+                value="__custom__"
+                checked={activePreset === null}
+                onChange={() => onPresetChange(null)}
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span>Custom</span>
+                <span className="text-muted-foreground">
+                  Clears the selection. Per-metric choice is not built yet, so a
+                  section left on Custom collects nothing.
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
 
       {/*
         `lookback` — required by the validator for exactly one section type, and

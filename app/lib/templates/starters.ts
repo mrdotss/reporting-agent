@@ -183,7 +183,19 @@ let sectionCounter = 0
 
 /** One authored section entry. `position` is authored freshly per starter —
  * every entry below is `position: "free"` in the catalogue, so the number is
- * this starter's own ordering choice, not a catalogue-declared one. */
+ * this starter's own ordering choice, not a catalogue-declared one.
+ *
+ * `metrics` is left EMPTY here and filled by `lib/templates/seed.ts` from the
+ * catalogue's default preset — see `withPresetMetrics` there. It cannot be
+ * expanded in this module: expansion needs the Metric_Catalog and the
+ * Section_Catalogue, both `server-only`, and this module is deliberately not (see
+ * the note at the top of the file), so importing either would pull a server module
+ * into any client bundle that renders a starter preview.
+ *
+ * Leaving it empty here is therefore correct, but leaving it empty in the STORED
+ * definition was the defect: a section with no metrics requests none, the collector
+ * asks Azure for nothing, and the run fails `NO_STATISTICS` with an empty
+ * `collection_log` — which is what all three shipped starters did. */
 function section(
   type: string,
   position: number,
@@ -366,7 +378,8 @@ export const V1_TEST_FIXTURE_DEFINITION: TemplateDefinition = {
   schema_version: 1,
   identity: {
     name: "V1 fixture profile",
-    description: "A rich v1 definition for integration tests exercising the enqueue-and-run path.",
+    description:
+      "A rich v1 definition for integration tests exercising the enqueue-and-run path.",
     report_title: "V1 fixture profile",
   },
   scope: {

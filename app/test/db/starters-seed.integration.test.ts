@@ -56,6 +56,9 @@ import {
   STARTER_TEMPLATES,
 } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
+import { sectionByKey } from "@/lib/profiles/sections"
+import { DEFAULT_PRESET_NAME, expandPreset } from "@/lib/profiles/presets"
+import { METRIC_CATALOG } from "@/lib/templates/catalog"
 
 // --- Wiring ------------------------------------------------------------
 
@@ -228,12 +231,71 @@ describe("Requirement 10.2 — seeding a fresh account", () => {
 
       // The canonical digest of the definition that was actually stored, computed
       // through the same function a wizard-authored version uses (Req 9.4).
+      //
+      // Compared against the STORED definition rather than against
+      // `starter.definition`: seeding fills each section's `metrics` from the
+      // catalogue's default preset (`withPresetMetrics`), because `starters.ts`
+      // cannot expand it — both catalogues are `server-only` and that module is
+      // deliberately client-safe. Asserting digest-matches-row is the real
+      // invariant anyway; asserting digest-matches-a-constant only held while the
+      // stored definition happened to be that constant.
       expect(version!.definition_sha256, starter.seededStarterKey).toBe(
-        definitionSha256(starter.definition)
+        definitionSha256(version!.definition as never)
       )
-      expect(version!.definition, starter.seededStarterKey).toStrictEqual(
-        JSON.parse(JSON.stringify(starter.definition))
+
+      // Everything except `metrics` is the starter verbatim.
+      const storedSections = (
+        version!.definition as unknown as {
+          sections: readonly Record<string, unknown>[]
+        }
+      ).sections
+      const starterSections = (
+        starter.definition as unknown as {
+          sections: readonly Record<string, unknown>[]
+        }
+      ).sections
+
+      expect(storedSections, starter.seededStarterKey).toHaveLength(
+        starterSections.length
       )
+      storedSections.forEach((stored, index) => {
+        const { metrics: _stored, ...storedRest } = stored
+        const { metrics: _starter, ...starterRest } = starterSections[index]!
+        expect(
+          storedRest,
+          `${starter.seededStarterKey}[${index}]`
+        ).toStrictEqual(JSON.parse(JSON.stringify(starterRest)))
+      })
+
+      // Requirement 10.3 — every section that BEARS metrics and whose default
+      // preset expands to something carries concrete metrics. Every starter wrote
+      // `metrics: []` for every section before this, so no starter with a
+      // utilization section could produce a report: no metric requested means no
+      // statistic collected, and the run fails NO_STATISTICS.
+      //
+      // Scoped per section rather than per starter: `executive_summary` is composed
+      // only of `azure_subscription` and `coverage_and_verification`, both
+      // `metric_bearing: false`, so seeding no metrics there is correct rather than
+      // a miss.
+      for (const [index, section] of storedSections.entries()) {
+        const entry =
+          typeof section.type === "string"
+            ? sectionByKey(section.type)
+            : undefined
+        if (entry === undefined || !entry.metric_bearing) continue
+        if (
+          expandPreset(entry, DEFAULT_PRESET_NAME, METRIC_CATALOG).length === 0
+        ) {
+          // A known catalogue defect for `app_service_and_storage` — see
+          // `test/preset-expansion.test.ts`, which pins it by name.
+          continue
+        }
+
+        expect(
+          section.metrics,
+          `${starter.seededStarterKey}[${index}] (${String(section.type)}) seeded no metrics`
+        ).not.toStrictEqual([])
+      }
 
       // Requirement 10.2 — `current_version_id` names that row, so a seeded
       // starter is immediately runnable rather than a template with no version.

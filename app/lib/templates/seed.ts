@@ -12,6 +12,59 @@ import {
   STARTER_TEMPLATE_COUNT,
 } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
+import { METRIC_CATALOG } from "@/lib/templates/catalog"
+import { sectionByKey } from "@/lib/profiles/sections"
+import { DEFAULT_PRESET_NAME, expandPreset } from "@/lib/profiles/presets"
+
+/**
+ * Fill each section's `metrics` from the catalogue's default preset.
+ *
+ * `starters.ts` writes `metrics: []` and cannot do better: expansion needs the
+ * Metric_Catalog and the Section_Catalogue, both `server-only`, and that module is
+ * deliberately client-safe so a starter can be previewed without dragging a server
+ * module into the bundle. This module is `server-only`, so the expansion happens
+ * here — at the one point where a starter stops being a plain value and becomes a
+ * STORED, pinnable definition.
+ *
+ * That distinction is the whole point. A stored section with no metrics requests
+ * none, so the collector asks Azure for nothing, produces no statistic, and the run
+ * fails `NO_STATISTICS` with an empty `collection_log` — which is what all three
+ * shipped starters did. And the metrics are written IN rather than referenced by
+ * preset name because `load_catalog()` reads the catalogue baked into the running
+ * image: a stored name would resolve against whatever build replays the run, and
+ * replay demands a byte-identical ledger, so editing a preset later would fail
+ * replay on reports that were correct when they were issued.
+ *
+ * A section the catalogue does not know, or one whose entry declares no matching
+ * preset, keeps its empty array rather than being dropped — the definition's shape
+ * is `starters.ts`'s decision, not this function's.
+ */
+function withPresetMetrics<T>(definition: T): T {
+  const record = definition as unknown as Record<string, unknown>
+  const sections = record.sections
+  if (!Array.isArray(sections)) return definition
+
+  return {
+    ...record,
+    sections: sections.map((section) => {
+      if (typeof section !== "object" || section === null) return section
+      const entry = section as Record<string, unknown>
+      if (typeof entry.type !== "string") return section
+
+      const catalogueEntry = sectionByKey(entry.type)
+      if (catalogueEntry === undefined) return section
+
+      const metrics = expandPreset(
+        catalogueEntry,
+        DEFAULT_PRESET_NAME,
+        METRIC_CATALOG
+      )
+      if (metrics.length === 0) return section
+
+      return { ...entry, metrics }
+    }),
+  } as unknown as T
+}
 
 /**
  * Seeding the three starter templates at account creation (Requirements 10.2,
@@ -258,7 +311,7 @@ export async function seedStarterTemplates(
       let inserted = 0
 
       for (const starter of STARTER_TEMPLATES) {
-        const { definition } = starter
+        const definition = withPresetMetrics(starter.definition)
         const templateId = randomUUID()
 
         const [template] = await tx

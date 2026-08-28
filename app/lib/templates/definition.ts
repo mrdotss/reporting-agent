@@ -3670,25 +3670,130 @@ export type SectionResourceTypeResolver = (
 
 /** One place a metric selection lives, normalized across schema versions. */
 type MetricSelectionSite = {
-  readonly resourceType: string
+  /** The resource type(s) this selection is checked against, for messages. */
+  readonly label: string
+  /**
+   * The catalogue the selection is checked against — ONE resource type's at
+   * v1/v2, and the UNION of the section's types at v3. See
+   * {@link metricSelectionSites} for why the two differ.
+   */
+  readonly resourceTypeCatalog: MetricCatalogResourceType | undefined
   readonly items: readonly MetricSelectionItem[]
   readonly basePath: readonly (string | number)[]
 }
 
 /**
- * Every metric selection in the definition, paired with the resource type it
- * applies to and the field path that names it.
+ * The union of several resource types' catalogues, or `undefined` when none of
+ * them is declared.
+ *
+ * Needed because a v3 section holds ONE flat `metrics[]` applied to every
+ * resource type its rule matches, while the Metric_Catalog declares metrics **per
+ * type** and the types disagree: `database_utilization` spans
+ * `Sql/servers/databases`, `Sql/managedInstances` and
+ * `DBforPostgreSQL/flexibleServers`, and its `cpu_percent` preset entry is
+ * declared by the first and third — `managedInstances` calls the same thing
+ * `avg_cpu_percent`. Requiring every type to declare every item would make that
+ * section, and its shipped preset, impossible to publish.
+ *
+ * At-least-one is not a relaxation invented here; it is the rule both other
+ * halves already apply. The agent's own catalogue loader accepts a preset metric
+ * that any of the entry's types declares (`for rt in needs_resource_types: ... if
+ * found: break`), and `_requested_metric_union_v3` fans the section's metric names
+ * across all its types at collection time, so a type that does not emit one
+ * records a `metric_not_emitted` gap rather than failing the run. An app-side
+ * validator stricter than both would refuse definitions the pipeline handles
+ * correctly.
+ *
+ * Presentation fields take the first declaring type's values; `statistics`,
+ * `percentiles` and the derived-source lists are unioned, so an item is accepted
+ * when any type declares it and its statistic.
+ */
+function unionResourceTypeCatalogs(
+  catalog: MetricCatalogSnapshot,
+  resourceTypes: readonly string[]
+): MetricCatalogResourceType | undefined {
+  const resolved = resourceTypes
+    .map((type) => findCatalogResourceType(catalog, type))
+    .filter((found): found is MetricCatalogResourceType => found !== undefined)
+
+  if (resolved.length === 0) return undefined
+  if (resolved.length === 1) return resolved[0]
+
+  const merged = new Map<string, MetricCatalogEntry>()
+  const skuCapabilities = new Set<string>()
+
+  for (const resourceType of resolved) {
+    for (const capability of resourceType.declaredSkuCapabilities) {
+      skuCapabilities.add(capability)
+    }
+
+    for (const entry of resourceType.entries) {
+      const key = `${entry.kind}\u0000${entry.name}`
+      const existing = merged.get(key)
+
+      if (existing === undefined) {
+        merged.set(key, entry)
+        continue
+      }
+
+      merged.set(key, {
+        ...existing,
+        statistics: [
+          ...existing.statistics,
+          ...entry.statistics.filter(
+            (statistic) => !existing.statistics.includes(statistic)
+          ),
+        ],
+        percentiles: { ...existing.percentiles, ...entry.percentiles },
+        ...(existing.requiredSourceMetrics === undefined &&
+        entry.requiredSourceMetrics === undefined
+          ? {}
+          : {
+              requiredSourceMetrics: [
+                ...new Set([
+                  ...(existing.requiredSourceMetrics ?? []),
+                  ...(entry.requiredSourceMetrics ?? []),
+                ]),
+              ],
+            }),
+        ...(existing.requiredSkuCapabilities === undefined &&
+        entry.requiredSkuCapabilities === undefined
+          ? {}
+          : {
+              requiredSkuCapabilities: [
+                ...new Set([
+                  ...(existing.requiredSkuCapabilities ?? []),
+                  ...(entry.requiredSkuCapabilities ?? []),
+                ]),
+              ],
+            }),
+      })
+    }
+  }
+
+  return {
+    resourceType: resolved.map((entry) => entry.resourceType).join(", "),
+    entries: [...merged.values()],
+    declaredSkuCapabilities: [...skuCapabilities],
+  }
+}
+
+/**
+ * Every metric selection in the definition, paired with the catalogue it is
+ * checked against and the field path that names it.
  *
  * This exists because the two schema versions put the selection in different
  * places, and the catalog validator used to read only one of them:
  *
- * - **v1/v2** — one top-level `metrics` object keyed by resource type.
+ * - **v1/v2** — one top-level `metrics` object keyed by resource type, so each
+ *   selection is checked against exactly that type's catalogue.
  * - **v3** — no top-level `metrics` key AT ALL. Each section carries its own
- *   `metrics` array, and the resource types it applies to come from that
- *   section's `selection.resource_types` when it narrows, else from the section
- *   catalogue's `needs_resource_types`. This is the same resolution rule
- *   `compile/sections.py`'s v3 metric union applies, deliberately — a selection
- *   this validator accepts must be one the collector will actually request.
+ *   `metrics` array applied to every type its rule matches, so the selection is
+ *   checked against the UNION of those types' catalogues (see
+ *   {@link unionResourceTypeCatalogs} for why at-least-one is the correct rule and
+ *   not a loosening). The resource types come from that section's
+ *   `selection.resource_types` when it narrows, else from the section catalogue's
+ *   `needs_resource_types`.
  *
  * Reading `Object.entries(definition.metrics)` unconditionally threw
  * `TypeError: Cannot convert undefined or null to object` on every v3 publish,
@@ -3696,30 +3801,32 @@ type MetricSelectionSite = {
  * shape pass that runs first is what made it look safe: it validates a v3
  * definition successfully, and `metrics` is legitimately absent from the result.
  *
- * A v3 section with metrics but no resolvable resource type yields NO site
- * rather than a fabricated one — its metrics cannot be checked against a
- * catalogue keyed by resource type, and inventing a key to check against would
- * report a mismatch that says more about this function than about the profile.
+ * A v3 section with metrics but no resolvable resource type yields NO site rather
+ * than a fabricated one — its metrics cannot be checked against a catalogue keyed
+ * by resource type, and inventing a key to check against would report a mismatch
+ * that says more about this function than about the profile.
  */
 function metricSelectionSites(
   definition: TemplateDefinition,
+  catalog: MetricCatalogSnapshot,
   resolveSectionResourceTypes?: SectionResourceTypeResolver
 ): MetricSelectionSite[] {
   const record = definition as unknown as Record<string, unknown>
 
-  // v1/v2 — the top-level object.
+  // v1/v2 — the top-level object, one site per declared resource type.
   const metrics = record.metrics
   if (isPlainObject(metrics)) {
     return Object.entries(metrics as MetricSelection).map(
       ([resourceType, items]) => ({
-        resourceType,
+        label: resourceType,
+        resourceTypeCatalog: findCatalogResourceType(catalog, resourceType),
         items,
         basePath: ["metrics", resourceType],
       })
     )
   }
 
-  // v3 — one selection per section, fanned out over that section's resource types.
+  // v3 — one selection per section, checked against the union of its types.
   const sections = record.sections
   if (!Array.isArray(sections)) return []
 
@@ -3743,13 +3850,14 @@ function metricSelectionSites(
           ? resolveSectionResourceTypes(entry.type)
           : []
 
-    for (const resourceType of resourceTypes) {
-      sites.push({
-        resourceType,
-        items: items as readonly MetricSelectionItem[],
-        basePath: ["sections", index, "metrics"],
-      })
-    }
+    if (resourceTypes.length === 0) return
+
+    sites.push({
+      label: resourceTypes.join(", "),
+      resourceTypeCatalog: unionResourceTypeCatalogs(catalog, resourceTypes),
+      items: items as readonly MetricSelectionItem[],
+      basePath: ["sections", index, "metrics"],
+    })
   })
 
   return sites
@@ -3762,17 +3870,17 @@ export function validateMetricSelectionAgainstCatalog(
 ): FieldIssue[] {
   const issues: IssueSink = []
 
-  for (const { resourceType, items, basePath } of metricSelectionSites(
-    definition,
-    resolveSectionResourceTypes
-  )) {
-    const resourceTypeCatalog = findCatalogResourceType(catalog, resourceType)
-
+  for (const {
+    label,
+    resourceTypeCatalog,
+    items,
+    basePath,
+  } of metricSelectionSites(definition, catalog, resolveSectionResourceTypes)) {
     if (resourceTypeCatalog === undefined) {
       addIssue(
         issues,
         basePath,
-        `The Metric_Catalog declares no entries for resource type "${resourceType}".`
+        `The Metric_Catalog declares no entries for resource type "${label}".`
       )
       continue
     }
@@ -3787,7 +3895,7 @@ export function validateMetricSelectionAgainstCatalog(
           issues,
           itemPath,
           `The Metric_Catalog declares no "${name}" ${item.metric !== undefined ? "metric" : "derived statistic"} ` +
-            `for resource type "${resourceType}".`
+            `for resource type "${label}".`
         )
         return
       }
@@ -3797,7 +3905,7 @@ export function validateMetricSelectionAgainstCatalog(
           issues,
           [...itemPath, "statistic"],
           `The Metric_Catalog declares no "${item.statistic}" statistic for "${catalogEntry.name}" ` +
-            `on resource type "${resourceType}".`
+            `on resource type "${label}".`
         )
       }
 
@@ -3834,7 +3942,7 @@ export function validateMetricSelectionAgainstCatalog(
               issues,
               itemPath,
               `Derived statistic "${catalogEntry.name}" requires the source metric ` +
-                `"${sourceMetric}" to also be selected for resource type "${resourceType}".`
+                `"${sourceMetric}" to also be selected for resource type "${label}".`
             )
           }
         }
@@ -3849,7 +3957,7 @@ export function validateMetricSelectionAgainstCatalog(
               itemPath,
               `Derived statistic "${catalogEntry.name}" requires the SKU capability ` +
                 `"${skuCapability}", which the Metric_Catalog does not declare for resource ` +
-                `type "${resourceType}".`
+                `type "${label}".`
             )
           }
         }

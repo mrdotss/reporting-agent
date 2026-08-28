@@ -127,7 +127,7 @@ type PublishResponse = {
 export function WizardShell({
   template,
   initialDefinition,
-  catalog: _catalog,
+  catalog,
   thumbnails: _thumbnails,
   sectionCatalogue,
   previewSubscriptionId,
@@ -138,11 +138,14 @@ export function WizardShell({
   template: TemplateView
   /** The persisted draft, or the latest version's definition, or `null`. */
   initialDefinition: unknown
-  /** Unused since `StepMetrics` (the v1/v2 metric picker) was replaced by
-   * `StepDocument` at step 4 — this wizard is v3-only, and a v3 section's own
-   * metric selection is not a `MetricCatalogSnapshot` lookup this shell performs;
-   * see `step-sections.tsx`. Kept on the prop contract rather than removed from
-   * every caller for a fix scoped to the wizard's own step routing. */
+  /**
+   * The Metric_Catalog, resolved server-side (`lib/templates/catalog.ts` is
+   * `server-only`). Step 2 expands a section's chosen preset against it —
+   * Requirement 10.3's preset row writes concrete metrics into the section rather
+   * than storing a preset name, because a stored name would resolve against
+   * whatever catalogue the replaying build ships and break a delivered report's
+   * replay. See `lib/profiles/presets.ts`.
+   */
   catalog: MetricCatalogSnapshot
   /** Resolved on the server — see `StepDesign`'s own note. */
   thumbnails: readonly ThemeThumbnail[]
@@ -412,6 +415,7 @@ export function WizardShell({
     step,
     definition,
     setDefinition,
+    catalog,
     sectionCatalogue,
     problems,
     templateId: template.id,
@@ -720,6 +724,7 @@ function renderStep({
   step,
   definition,
   setDefinition,
+  catalog,
   sectionCatalogue,
   problems,
   templateId,
@@ -735,6 +740,7 @@ function renderStep({
   step: WizardStep
   definition: TemplateDefinition
   setDefinition: (next: TemplateDefinition) => void
+  catalog: MetricCatalogSnapshot
   sectionCatalogue: readonly SectionCatalogueEntry[]
   problems: ReturnType<typeof completionProblems>
   templateId: string
@@ -766,6 +772,7 @@ function renderStep({
           definition={definition}
           onChange={(next) => setDefinition(next as TemplateDefinition)}
           sectionCatalogue={sectionCatalogue}
+          catalog={catalog}
           scanTypeCounts={scanTypeCounts}
           collectedFactSources={collectedFactSources}
         />
