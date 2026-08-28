@@ -125,7 +125,28 @@ export async function POST(request: Request): Promise<Response> {
 
         case "subscription_inactive":
           return unprocessable(thrown.message, rejection.code)
+
+        case "front_matter_values_missing":
+          // 422, and the same reasoning as `template_unversioned`: the request is
+          // well-formed, the answer is that this profile cannot run yet, and the
+          // fix is on another screen — the wizard's identity step for
+          // `identity.customer_name`, this form's own fields for a revision row.
+          //
+          // This case was ABSENT, so the rejection fell out of the switch into
+          // `internalError()` and a consultant was told "The request could not be
+          // completed." for the one failure that names exactly what to do. The
+          // message already lists the missing fields; the code is what lets the UI
+          // point at them without parsing prose.
+          return unprocessable(thrown.message, "FRONT_MATTER_VALUES_MISSING")
       }
+
+      // Every case above returns, so `rejection` is `never` here. That makes this
+      // line a COMPILE-TIME exhaustiveness check: adding a rejection kind without
+      // a case above stops the build instead of silently falling through to
+      // `internalError()`, which is how `front_matter_values_missing` came to be
+      // reported as an unexplained 500 for a refusal that names its own fix.
+      const unhandledRejection: never = rejection
+      void unhandledRejection
     }
 
     // The action replaces a driver failure with the operation and the SQLSTATE and

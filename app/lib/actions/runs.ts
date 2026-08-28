@@ -307,11 +307,15 @@ const CUSTOMER_NAME_SCHEMA_VERSION = 3
  * form still collects for a v2 pin, reported as `customerName` when absent.
  */
 export function resolveCustomerName(
-  definition: { readonly schema_version?: unknown; readonly identity?: unknown },
+  definition: {
+    readonly schema_version?: unknown
+    readonly identity?: unknown
+  },
   submittedCustomerName: string | undefined
 ): {
   readonly customerName: string | null
-  readonly missingCustomerNameField: "identity.customer_name" | "customerName" | null
+  readonly missingCustomerNameField:
+    "identity.customer_name" | "customerName" | null
 } {
   const schemaVersion =
     typeof definition.schema_version === "number"
@@ -320,12 +324,20 @@ export function resolveCustomerName(
 
   if (schemaVersion >= CUSTOMER_NAME_SCHEMA_VERSION) {
     const identity = definition.identity
-    const identityCustomerName =
+    const raw =
       typeof identity === "object" &&
       identity !== null &&
       typeof (identity as Record<string, unknown>).customer_name === "string"
         ? ((identity as Record<string, unknown>).customer_name as string)
         : null
+
+    // A blank or whitespace-only value is ABSENT, not present-and-empty. Accepting
+    // it would pass this gate and print an empty customer on the cover and the
+    // document-control page — a run that succeeds and delivers a wrong document,
+    // which is strictly worse than the refusal. `customerNameMissing` in
+    // `lib/profiles/wizard.ts` applies the same rule so the wizard refuses to
+    // publish such a version in the first place.
+    const identityCustomerName = raw !== null && raw.trim() !== "" ? raw : null
 
     return {
       customerName: identityCustomerName,

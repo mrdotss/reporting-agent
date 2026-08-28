@@ -276,6 +276,24 @@ export function completionProblems(
     grouped[stepForIssue(issue)].push(issue)
   }
 
+  // Requirement 12.2 — `identity.customer_name` at v3, checked HERE rather than in
+  // the validator, for exactly the reason `no_sections` is checked here: a draft
+  // must be saveable before a customer is named (`REQUIRED_IDENTITY_KEYS[3]`
+  // deliberately omits it), but a published VERSION without one is useless. Every
+  // run pinning it is refused by `enqueueRun` with
+  // `front_matter_values_missing`, and the consultant discovers that on the
+  // Reports page — a screen away from the field that would fix it, with a version
+  // already created that can never produce a report.
+  //
+  // A blank or whitespace-only value counts as absent. It would otherwise satisfy
+  // the enqueue gate's `typeof === "string"` test and print an empty customer on
+  // the cover, which is worse than the refusal: the run succeeds and the document
+  // is wrong.
+  const missingCustomerName = customerNameMissing(definition)
+  if (missingCustomerName !== null) {
+    grouped.identity.push(missingCustomerName)
+  }
+
   for (const step of WIZARD_STEPS) {
     const issues = grouped[step.id]
     if (issues.length > 0) problems.push({ kind: "step", step, issues })
@@ -284,6 +302,41 @@ export function completionProblems(
   if (sectionCount(definition) === 0) problems.push({ kind: "no_sections" })
 
   return problems
+}
+
+/**
+ * The issue to raise when a v3 definition names no customer, or `null`.
+ *
+ * Exported so the same rule can be asserted directly, and so nothing else has to
+ * re-derive "what counts as naming a customer" — the answer (a non-blank string
+ * at `schema_version` >= 3) has to agree with `resolveCustomerName`'s own gate in
+ * `lib/actions/runs.ts`, and two copies of it would drift.
+ *
+ * Returns `null` below v3: there the value is a per-run form field, not a
+ * property of the profile, so its absence here is not a defect.
+ */
+export function customerNameMissing(definition: unknown): FieldIssue | null {
+  if (typeof definition !== "object" || definition === null) return null
+
+  const record = definition as Record<string, unknown>
+  const schemaVersion =
+    typeof record.schema_version === "number" ? record.schema_version : 1
+  if (schemaVersion < 3) return null
+
+  const identity = record.identity
+  const value =
+    typeof identity === "object" && identity !== null
+      ? (identity as Record<string, unknown>).customer_name
+      : undefined
+
+  if (typeof value === "string" && value.trim() !== "") return null
+
+  return {
+    path: ["identity", "customer_name"],
+    message:
+      "Name the customer this report is for. A run cannot be requested " +
+      "without one.",
+  }
 }
 
 /**

@@ -28,10 +28,24 @@ import {
  *    marks step 2 as failing from the moment the wizard opens.
  */
 
-/** A valid v3 definition — mirrors the accept-schema-version-3-minimal fixture. */
+/**
+ * A valid v3 definition — mirrors the accept-schema-version-3-minimal fixture,
+ * plus `identity.customer_name`.
+ *
+ * The corpus fixture omits `customer_name` correctly: the VALIDATOR does not
+ * require it, so a half-authored draft can be saved without one. This fixture is
+ * used to assert PUBLISH-readiness, which is a stricter bar —
+ * `completionProblems` refuses a version with no customer because every run
+ * pinning it would be refused by `enqueueRun`. So the field belongs here even
+ * though it does not belong in the validator's minimal fixture.
+ */
 const VALID_V3 = {
   schema_version: 3,
-  identity: { name: "Test v3", language: "en" },
+  identity: {
+    name: "Test v3",
+    language: "en",
+    customer_name: "Test Customer",
+  },
   provider: "azure",
   sections: [
     {
