@@ -322,6 +322,25 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
     same distinction the rest of the compiler draws between "measured zero" and "not
     measured".
 
+    ## The rows are the chart's real series, not the five it draws
+
+    Above Req 22.9's five-series cap the *image* draws four series plus one `__other__`
+    aggregate, and that aggregate qualifies each of its x values with the series it came
+    from (`prod-db-07 · 2026-07-03`) so two remainder series sharing a date stay distinct.
+    That qualification existed for the old row shape, where `(series key, x)` was the row
+    key.
+
+    In a matrix those qualified values would each become their own **column**: twenty
+    machines over July is 31 real dates plus 16 x 31 qualified ones, a 527-column table.
+    So the table iterates `node.series` — every real series — while the image goes on
+    plotting the capped five. The point set is identical either way, because the
+    aggregate's points *are* the remainder's points, the same `Figure` objects at the same
+    paths; only the grouping differs. Listing them under the resource they belong to is
+    also what the qualifier was reaching for, without the cost.
+
+    This is what "chart the notable, table the rest" means concretely: the image shows the
+    four that rank and says how many it folded together, and the table carries all twenty.
+
     Its path is the chart node's own, so its identity is `cht:<path>` — the same identity
     written into the image's alt text. That is the pairing key, and deriving both from the
     node's path means they cannot disagree.
@@ -336,7 +355,8 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
     the tests are what make the update cheap.
     """
 
-    series_set = plotted_series(node, messages=messages)
+    # Every real series — see "The rows are the chart's real series" above.
+    series_set = node.series
     if not any(series.points for series in series_set):
         # One column, so the notice reads as a notice rather than as a row with two blanks.
         return Table(

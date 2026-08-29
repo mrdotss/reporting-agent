@@ -535,8 +535,14 @@ def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
     hashed_points = sum(len(series.points) for series in plotted)
-    # One row per series; the plotted points are the table's figure cells.
-    assert len(table.rows) == len(plotted)
+
+    # The hash is over the **plotted** set — four series plus the aggregate, above the
+    # cap. The table's rows are the **real** series, all nine, because the aggregate's
+    # qualified x values would otherwise each become a column. Both describe one point
+    # set: the aggregate's points are the remainder's points, the same figures at the
+    # same paths, so the figure count is the same number either way.
+    assert len(table.rows) == len(node.series)
+    assert len(plotted) == 5  # the cap: four ranked series plus one aggregate
     assert sum(
         1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
     ) == hashed_points
@@ -1175,3 +1181,34 @@ class TestTickThinning:
 
         assert tick_label_positions(0) == []
         assert tick_label_positions(1) == [0]
+
+
+def test_the_aggregate_does_not_turn_the_matrix_into_one_column_per_point() -> None:
+    """Above the five-series cap the table stays as wide as the x axis, not as wide as
+    the fold.
+
+    `plotted_series` qualifies each aggregated point's x with the series it came from
+    (`prod-db-07 · 2026-07-03`) so two remainder series sharing a date stay distinct. In
+    a matrix those qualified values would each become their own **column**: twenty
+    machines over July is 31 real dates plus 16 x 31 qualified ones, a 527-column table
+    nobody can read.
+
+    So the table iterates the chart's real series while the image plots the capped five.
+    """
+    node, _ = synthetic_chart(series_count=9, points_per_series=4)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+
+    # One row per real series, one column per x plus the series column.
+    assert len(table.rows) == 9
+    assert len(table.columns) == 5
+
+    # No column key carries the aggregate's qualifier.
+    assert not [c for c in table.columns if C.QUALIFIER in c.key], (
+        "a qualified x reached the columns, so the aggregate is being matrixed"
+    )
+
+    # And every plotted point is still present.
+    plotted = C.plotted_series(node, messages=_MESSAGES)
+    assert sum(
+        1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
+    ) == sum(len(series.points) for series in plotted)
