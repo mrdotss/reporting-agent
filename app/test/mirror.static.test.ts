@@ -99,12 +99,16 @@ const END_CONFIG_SENTINEL = "--- END BLOCK CONFIG"
 /** Every single- or double-quoted string literal on a line. */
 const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
 
-/** The eighteen types, as a fact about the requirement rather than about the files.
+/** The nineteen types, as a fact about the requirement rather than about the files.
  *
  * Grew to eighteen with `blank_rows_table`, which section 13 (the incident report) needs:
  * that section prints an author-filled table of ruled EMPTY rows, and `resource_table`
- * cannot emit a row with no resource behind it. */
-const EXPECTED_TYPE_COUNT = 18
+ * cannot emit a row with no resource behind it.
+ *
+ * Grew to nineteen with `metric_summary`, which replaced a metric section's per-resource
+ * tables: one row per resource carrying that period's average, estimated P95, peak and
+ * peak day, in place of one row per plotted point per series. */
+const EXPECTED_TYPE_COUNT = 19
 
 function read(absolutePath: string): string {
   expect(
@@ -318,14 +322,14 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 describe("Requirements 2.5, 2.6 — the block-type vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the eighteen declared types", () => {
+  test("the TypeScript declaration is the nineteen declared types", () => {
     const declared = declaredBlockTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_TYPE_COUNT)
   })
 
-  test("the Python declaration is the eighteen declared types", () => {
+  test("the Python declaration is the nineteen declared types", () => {
     const declared = declaredBlockTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])

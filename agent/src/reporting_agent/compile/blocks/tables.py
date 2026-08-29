@@ -564,6 +564,163 @@ def compile_top_n_table(
     return _resource_rows_table(context, block, cursor, ordered, fact_keys=fact_keys)
 
 
+# ---------------------------------------------------------------------------
+# metric_summary — the block that replaced the per-day dump
+# ---------------------------------------------------------------------------
+
+SUMMARY_STATISTICS: Final[tuple[str, ...]] = ("avg", "p95", "max")
+"""The statistics a summary row reports, in column order.
+
+`avg` and `max` are exact — the collector computes both over every sample. `p95` is an
+**estimate** from the folded sketch and only exists where the Metric_Catalog declares it,
+which today is `Percentage CPU` alone; its column is omitted entirely for a metric that
+declares none rather than printed as a row of blanks.
+
+Deliberately not configurable. A summary whose columns varied per profile would be a
+second thing to author and a second thing to get wrong, and the point of the block is that
+one row describes one resource over one period the same way every time.
+"""
+
+
+def compile_metric_summary(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """One table per selected metric: a row per resource, a period in four numbers.
+
+    ## What this replaces
+
+    A month of `timeseries_chart` companion rows is one row per plotted point per series —
+    three machines over July is 93 rows, and twenty machines is 620. Nobody reads 620 rows
+    to learn that CPU sat near idle with one spike. This says that in three.
+
+    The daily values are not lost: they remain in the snapshot, in the ledger, and in the
+    chart's own companion table, which is where a reader who wants a specific day looks.
+
+    ## Peak at
+
+    A `TextCell` carrying the local day whose daily maximum equals the window maximum —
+    derived here by argmax over `day_series`, the same series the chart plots. Derived
+    rather than collected, and therefore not a figure: the figure is the peak itself, in
+    the column beside it. The derivation is pure over the snapshot, so a replay recomputes
+    the same day, and a date is masked as a date by `verify/masking.py`'s fourth stage.
+
+    Ties go to the **earliest** day. A resource that hit its maximum twice has no single
+    peak day, and picking the earlier one is at least a rule rather than whichever the
+    dictionary happened to yield.
+    """
+    refs = read_metric_refs(block, "metrics")
+    matched = resolve(context.scope_for(block), context.view)
+    style = context.design.table_style_name
+    caption = caption_of(block)
+
+    # One table per distinct metric name, in the order the section selected them. The
+    # statistics are this block's own, so two refs naming one metric with different
+    # statistics are one table, not two.
+    names: list[str] = []
+    for ref in refs:
+        if ref.name not in names:
+            names.append(ref.name)
+
+    nodes: list[Table] = []
+    for ordinal, name in enumerate(names):
+        table_cursor = cursor.child("nodes", ordinal)
+        if not matched:
+            nodes.append(
+                empty_scope_table(table_cursor, style, caption, messages=context.messages)
+            )
+            continue
+        nodes.append(
+            _metric_summary_table(
+                context, table_cursor, name, matched[:MAX_TABLE_ROWS], style, caption
+            )
+        )
+        cursor.anchor_table(table_cursor.path)
+
+    return BlockOutput(nodes=tuple(nodes))
+
+
+def _metric_summary_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    metric: str,
+    resources: Sequence[ResourceView],
+    style: str,
+    caption: str | None,
+) -> Table:
+    """One metric's summary table over `resources`."""
+    # A statistic earns its column only if some resource has it. `p95` is declared for one
+    # metric in the whole catalogue, so an unconditional column would be blank in every
+    # table but one.
+    present = tuple(
+        statistic
+        for statistic in SUMMARY_STATISTICS
+        if any(
+            context.view.stat(resource.resource_id, metric, statistic) is not None
+            for resource in resources
+        )
+    )
+
+    rows: list[Row] = []
+    for ordinal, resource in enumerate(resources):
+        row_cursor = table_cursor.child("rows", ordinal)
+        cells: list[object] = [text_cell(row_cursor.child("cells", 0), resource.name)]
+        for statistic in present:
+            cell_cursor = row_cursor.child("cells", len(cells))
+            value = context.view.stat(resource.resource_id, metric, statistic)
+            cells.append(
+                empty_cell(cell_cursor)
+                if value is None
+                else _figure_cell(cell_cursor, context, value)
+            )
+        peak_day = _peak_day(context, resource, metric)
+        cells.append(
+            text_cell(row_cursor.child("cells", len(cells)), peak_day)
+            if peak_day is not None
+            else empty_cell(row_cursor.child("cells", len(cells)))
+        )
+        rows.append(
+            Row(path=row_cursor.path, key=resource.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
+        )
+
+    columns = (
+        _resource_column(context.messages),
+        *(
+            Column(
+                key=f"{metric}:{statistic}",
+                header=context.messages.text(f"doc.summary.{statistic}"),
+            )
+            for statistic in present
+        ),
+        Column(key=f"{metric}:peak_at", header=context.messages.text("doc.summary.peak_at")),
+    )
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=columns,
+        rows=tuple(rows),
+        caption=caption or metric,
+    )
+
+
+def _peak_day(
+    context: BlockContext, resource: ResourceView, metric: str
+) -> str | None:
+    """The earliest local day whose daily maximum equals this resource's window maximum.
+
+    `None` when the window has no maximum, or when no day's maximum reaches it — the
+    second is possible when a day bucket is missing, and inventing a day for a peak whose
+    day was not collected would be the kind of quiet fabrication the whole product exists
+    to refuse.
+    """
+    window_max = context.view.stat(resource.resource_id, metric, "max")
+    if window_max is None:
+        return None
+    for local_day, value in context.view.day_series(resource.resource_id, metric, "max"):
+        if value.value == window_max.value:
+            return local_day
+    return None
+
+
 def compile_kpi_row(
     context: BlockContext, block: BlockSpec, cursor: BlockCursor
 ) -> BlockOutput:

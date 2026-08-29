@@ -118,6 +118,7 @@ export type EmitEstimate = {
    * docstring for why chart figures are not estimated. */
   readonly charts: number
   /** Count of table-family expansion **blocks** (`resource_table`, `top_n_table`,
+   * `metric_summary`,
    * `blank_rows_table`) this section will emit, filtered by `presentation`. */
   readonly tables: number
   /** The estimated total `Figure` count from every table-family block —
@@ -157,7 +158,12 @@ function metricColumnCount(
   return count
 }
 
-const TABLE_FAMILY = new Set(["resource_table", "top_n_table", "blank_rows_table"])
+const TABLE_FAMILY = new Set([
+  "resource_table",
+  "top_n_table",
+  "blank_rows_table",
+  "metric_summary",
+])
 const CHART_FAMILY = new Set([
   "timeseries_chart",
   "distribution_chart",

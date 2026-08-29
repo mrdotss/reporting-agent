@@ -82,6 +82,18 @@
           }
         ]
       },
+      "id": "b-metric-summary",
+      "type": "metric_summary"
+    },
+    {
+      "config": {
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        ]
+      },
       "id": "b-distribution",
       "type": "distribution_chart"
     },

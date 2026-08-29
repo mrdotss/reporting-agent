@@ -260,16 +260,22 @@ def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> Non
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-    assert len(table.rows) == len(plotted)
 
-    # The cell text is the ledger's formatted string, verbatim.
+    # One row per series, one column per x — and every plotted point still in it.
+    series_set = C.plotted_series(node, messages=_MESSAGES)
+    assert len(table.rows) == len(series_set)
+    x_values = {point.x for point in plotted}
+    assert len(table.columns) == len(x_values) + 1  # + the series column
+
+    # The cell text is the ledger's formatted string, verbatim, and the set is exactly
+    # the plotted set — that is the claim, and it does not depend on the row shape.
     emitted = [
         cell.figure.formatted
         for row in table.rows
         for cell in row.cells
         if isinstance(cell, FigureCell)
     ]
-    assert emitted == [point.y.formatted for point in plotted]
+    assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
 
 
 def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
@@ -288,14 +294,14 @@ def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-    assert len(table.rows) == len(plotted)
+    assert len(table.rows) == len(C.plotted_series(node, messages=_MESSAGES))
 
     # Every panel's series keys must appear in the table's row keys — no panel
     # is silently dropped from the table just because it was drawn on a
-    # different subplot.
+    # different subplot. A row key is now the series key alone: the x that used
+    # to be concatenated into it is the column.
     panel_keys = {key for group in node.panels for key in group}
-    row_series_prefixes = {row.key.split("|", 1)[0] for row in table.rows}
-    assert panel_keys <= row_series_prefixes
+    assert panel_keys <= {row.key for row in table.rows}
 
     emitted = [
         cell.figure.formatted
@@ -303,7 +309,7 @@ def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
         for cell in row.cells
         if isinstance(cell, FigureCell)
     ]
-    assert emitted == [point.y.formatted for point in plotted]
+    assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
 
 
 def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
@@ -529,7 +535,11 @@ def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
     hashed_points = sum(len(series.points) for series in plotted)
-    assert len(table.rows) == hashed_points
+    # One row per series; the plotted points are the table's figure cells.
+    assert len(table.rows) == len(plotted)
+    assert sum(
+        1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
+    ) == hashed_points
 
     sidecar = json.loads(C.sidecar_bytes(node, data_hash=C.chart_data_hash(node, messages=_MESSAGES), messages=_MESSAGES))
     assert sidecar["point_count"] == hashed_points

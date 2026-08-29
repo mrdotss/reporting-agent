@@ -462,6 +462,22 @@ export const MESSAGE_CATALOG = {
     en: "Virtual Machine Utilization",
     id: "Utilisasi Mesin Virtual",
   },
+  "doc.summary.avg": {
+    en: "Average",
+    id: "Rata-rata",
+  },
+  "doc.summary.p95": {
+    en: "P95 (est.)",
+    id: "P95 (perkiraan)",
+  },
+  "doc.summary.max": {
+    en: "Peak",
+    id: "Puncak",
+  },
+  "doc.summary.peak_at": {
+    en: "Peak at",
+    id: "Puncak pada",
+  },
   "doc.table.basis": {
     en: "Basis",
     id: "Dasar",
@@ -529,6 +545,10 @@ export const MESSAGE_CATALOG = {
   "doc.table.scope": {
     en: "Scope",
     id: "Cakupan",
+  },
+  "doc.table.series": {
+    en: "Series",
+    id: "Seri",
   },
   "doc.table.this_run": {
     en: "This run",

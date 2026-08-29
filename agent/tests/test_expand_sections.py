@@ -50,8 +50,14 @@ from snapshot_factory import (
 # ---------------------------------------------------------------------------
 
 
-def _make_snapshot_document(resource_ids: list[str]) -> dict:
-    """Build a minimal real snapshot document with the given VM resource ids."""
+def _make_snapshot_document(
+    resource_ids: list[str], *, resource_type: str | None = None
+) -> dict:
+    """Build a minimal real snapshot document with the given resource ids.
+
+    `resource_type` overrides the record's type, for a section that scopes to something
+    other than a VM.
+    """
     from snapshot_factory import build as build_fixture
     from snapshot_factory import exact
     from snapshot_factory import resource_record as make_rec
@@ -60,6 +66,8 @@ def _make_snapshot_document(resource_ids: list[str]) -> dict:
     for rid in resource_ids:
         name = rid.rsplit("/", 1)[-1]
         rec = make_rec(resource_id=rid, name=name)
+        if resource_type is not None:
+            rec = {**rec, "resource_type": resource_type}
         resources.append(
             ResourceSnapshot(
                 record=rec,
@@ -79,9 +87,11 @@ def _make_snapshot_document(resource_ids: list[str]) -> dict:
     return build_fixture(resources=resources)
 
 
-def _make_view(resource_ids: list[str]) -> SnapshotView:
+def _make_view(
+    resource_ids: list[str], *, resource_type: str | None = None
+) -> SnapshotView:
     """Build a SnapshotView from a list of resource ids."""
-    doc = _make_snapshot_document(resource_ids)
+    doc = _make_snapshot_document(resource_ids, resource_type=resource_type)
     return build_snapshot_view(doc)
 
 
@@ -180,8 +190,14 @@ class TestExpandSectionsBasic:
         assert result[1].id == "sec_sub__1"
         assert result[1].type == "resource_table"
 
-    def test_per_resource_expansion(self) -> None:
-        """A per:'resource' block expands once per matched resource."""
+    def test_a_metric_section_expands_to_a_fixed_four_blocks(self) -> None:
+        """`vm_utilization` expands to the same four blocks whatever the estate size.
+
+        It used to expand `per: "resource"` — a heading, a chart and a table each, per
+        machine. `_resource_ordinal` was written into their config and read nowhere, so
+        every one of those charts plotted the *whole* section scope: three machines meant
+        three identical charts and three identical tables, and twenty meant twenty.
+        """
         catalogue = _make_catalogue()
         vm_ids = [
             "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01",
@@ -208,31 +224,21 @@ class TestExpandSectionsBasic:
 
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
-        # vm_utilization expands_to:
-        # - heading per:section, level 2 (1)
-        # - heading per:resource, level 3 (3 VMs)
-        # - timeseries_chart per:resource when chart_and_table (3 VMs)
-        # - resource_table per:resource when chart_and_table (3 VMs)
-        # - top_n_table per:section (1)
-        # Total: 1 + 3 + 3 + 3 + 1 = 11
-        assert len(result) == 11
-
-        headings = [s for s in result if s.type == "heading"]
-
-        # The section's own level-2 heading, then one level-3 heading per machine.
-        assert [h.id for h in headings] == [
-            "sec_util__0",
-            "sec_util__1__0",
-            "sec_util__1__1",
-            "sec_util__1__2",
+        # heading + metric_summary + timeseries_chart + top_n_table, all per:section.
+        assert [spec.type for spec in result] == [
+            "heading", "metric_summary", "timeseries_chart", "top_n_table",
         ]
-        assert [h.config["level"] for h in headings] == [2, 3, 3, 3]
+        assert all("__" in spec.id and spec.id.count("__") == 1 for spec in result), (
+            "a per:section block carries no resource ordinal in its id"
+        )
 
-        # Each per-resource heading names **its own resource**. It used to take the
-        # section's title, so three machines produced "Virtual Machine Utilization"
-        # three times over and the section's own title never appeared at all.
-        assert headings[0].config["text"] == "Virtual Machine Utilization"
-        assert [h.config["text"] for h in headings[1:]] == ["vm-01", "vm-02", "vm-03"]
+        heading = result[0]
+        assert heading.config["level"] == 2
+        assert heading.config["text"] == "Virtual Machine Utilization"
+
+        # The summary table is the one block that grows with the estate, and it grows in
+        # rows rather than in blocks.
+        assert result[1].config["metrics"] == [{"metric": CPU, "statistic": "avg"}]
 
         # Check the top_n_table is per:section
         top_n = [s for s in result if s.type == "top_n_table"]
@@ -387,7 +393,9 @@ class TestPresentationFiltering:
 
         types = [s.type for s in result]
         assert "timeseries_chart" not in types
-        assert "resource_table" in types
+        # The tabular half of a metric section is `metric_summary` now — one row per
+        # resource rather than one whole table per resource.
+        assert "metric_summary" in types
 
     def test_chart_only_omits_tables(self) -> None:
         catalogue = _make_catalogue()
@@ -690,32 +698,42 @@ class TestScopeOverride:
             assert "rg-prod" in spec.scope_override.resource_groups
 
     def test_per_resource_block_carries_ordinal_in_config(self) -> None:
-        """per:'resource' blocks carry _resource_ordinal in config."""
+        """per:'resource' blocks carry `_resource_ordinal` in config.
+
+        Uses `network_security_groups`, because the metric sections no longer expand
+        per-resource at all — they emit one `metric_summary` and one chart whatever the
+        estate size.
+
+        **Nothing reads this ordinal.** `expand_sections` writes it so a block compiler
+        can narrow to its own resource, and no compiler does: a `per: "resource"` block
+        resolves the whole section scope, so `network_security_groups` over three NSGs
+        emits three identical rule tables. This asserts what the expander produces, not
+        that the mechanism is complete — see the note in `sections.py`.
+        """
         catalogue = _make_catalogue()
-        vm_ids = [
-            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01",
-            "/subscriptions/sub-1/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-02",
+        nsg_type = "Microsoft.Network/networkSecurityGroups"
+        nsg_ids = [
+            f"/subscriptions/sub-1/resourceGroups/rg-prod/providers/{nsg_type}/nsg-0{n}"
+            for n in (1, 2)
         ]
-        view = _make_view(vm_ids)
+        view = _make_view(nsg_ids, resource_type=nsg_type)
         definition = _make_v3_definition(sections=[
             {
-                "id": "sec_util",
-                "type": "vm_utilization",
+                "id": "sec_nsg",
+                "type": "network_security_groups",
                 "position": 1,
-                "selection": {"resource_types": [VM_TYPE], "resource_groups": [], "tag_filters": [], "top_n": None, "sort": None},
-                "metrics": [{"metric": CPU, "statistic": "avg"}],
-                "presentation": "chart_and_table",
+                "selection": {"resource_types": [nsg_type], "resource_groups": [], "tag_filters": [], "top_n": None, "sort": None},
+                "metrics": [],
+                "presentation": "table_only",
             },
         ])
 
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
-        # Find per-resource blocks (those with __n__m pattern)
         per_resource = [s for s in result if s.id.count("__") == 2]
         assert len(per_resource) > 0
 
         ordinals = [s.config.get("_resource_ordinal") for s in per_resource]
-        # Should have ordinals 0 and 1 for each expansion block type
         assert 0 in ordinals
         assert 1 in ordinals
 

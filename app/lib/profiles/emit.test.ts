@@ -238,13 +238,17 @@ describe("estimateEmit — behaviour not covered by the shared corpus", () => {
 
   test("a presentation that excludes a when_presentation-gated block omits it", () => {
     // vm_utilization's timeseries_chart is gated on chart_and_table/chart_only,
-    // so table_only excludes it. resource_table is `per: "resource"` and gated
-    // on chart_and_table/table_only, so table_only includes it — and since it
-    // is per-resource, it contributes ONE table per matched resource (4 here),
-    // not one for the whole section. top_n_table carries NO when_presentation
-    // gate and is `per: "section"`, so it always emits exactly one, regardless
-    // of presentation. table_only therefore counts 4 + 1 = 5 table-family
-    // blocks, not one.
+    // so table_only excludes it. metric_summary is gated on
+    // chart_and_table/table_only, so table_only includes it — and it is
+    // `per: "section"`, so it contributes exactly one table however many
+    // resources match. top_n_table carries NO when_presentation gate and is
+    // also per-section, so it always emits one. table_only therefore counts
+    // 1 + 1 = 2 table-family blocks.
+    //
+    // It counted 5 when the section expanded per-resource: one resource_table
+    // for each of the 4 matched VMs plus the top_n. Every one of those four
+    // resolved the whole section scope, so the document carried four identical
+    // tables — which is what putting the summary in their place fixed.
     const vmUtilization = CATALOGUE.find((e) => e.key === "vm_utilization")
     expect(vmUtilization).toBeDefined()
 
@@ -260,6 +264,6 @@ describe("estimateEmit — behaviour not covered by the shared corpus", () => {
     )
 
     expect(estimate.charts).toBe(0)
-    expect(estimate.tables).toBe(5)
+    expect(estimate.tables).toBe(2)
   })
 })

@@ -57,6 +57,7 @@ from reporting_agent.compile.ast import (
     Chart,
     ChartPoint,
     Column,
+    EmptyCell,
     Figure,
     Row,
     Series,
@@ -77,8 +78,6 @@ __all__ = [
     "QUALIFIER",
     "SERIES_COLUMN_KEY",
     "SIDECAR_SUFFIX",
-    "VALUE_COLUMN_KEY",
-    "X_COLUMN_KEY",
     "ChartArtifacts",
     "chart_data_hash",
     "companion_table",
@@ -100,8 +99,6 @@ document's pinned language. A chart that vanished is indistinguishable in the de
 document from a chart the author never configured."""
 
 SERIES_COLUMN_KEY: Final[str] = "series"
-X_COLUMN_KEY: Final[str] = "x"
-VALUE_COLUMN_KEY: Final[str] = "value"
 
 # The three companion-table header constants that stood here — `SERIES_COLUMN_HEADER`,
 # `X_COLUMN_HEADER` and `VALUE_COLUMN_HEADER` — were removed when task 6.3 migrated their
@@ -296,11 +293,34 @@ def sidecar_bytes(node: Chart, *, data_hash: str, messages: Messages) -> bytes:
 
 
 def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Table:
-    """Every plotted point of every plotted series, as a data table.
+    """Every plotted point of every plotted series, as a data table — one row per series,
+    one column per x value.
 
     No sampling, no thinning, no re-rounding (Req 22.1): the cell text is the ledger's
-    `formatted` string, and the row set is exactly the plotted set. A table that showed a
-    subset would let the image assert something the table could not confirm.
+    `formatted` string, and the plotted set is exactly the set this table carries. A table
+    that showed a subset would let the image assert something the table could not confirm.
+
+    ## Why a matrix, when it used to be one row per point
+
+    Req 22.1 demands every plotted point. It does **not** demand a row each. One row per
+    (series, point) is `series x points` rows — three machines over July is 93, twenty
+    machines is 620 — and it repeated the series label in full on every one of them, beside
+    an x value the next column already held. That is what made a three-machine July report
+    45 pages.
+
+    As a matrix it is one row per series: three rows for the same 93 values, twenty for the
+    same 620. Every point is still present, still its own `Figure`, still anchored, and the
+    verifier still resolves each one by `(row_key, column_key)` — which is a better address
+    here than it was before, because the pair is now genuinely two dimensions rather than a
+    series label with the x concatenated into it.
+
+    ## Ragged series
+
+    `SnapshotView.day_series` omits a day it has no value for rather than zero-filling it,
+    so two series of one chart can carry different x sets. The columns are the **union** in
+    first-seen order, and a series with no point at some x gets an `EmptyCell` there — the
+    same distinction the rest of the compiler draws between "measured zero" and "not
+    measured".
 
     Its path is the chart node's own, so its identity is `cht:<path>` — the same identity
     written into the image's alt text. That is the pairing key, and deriving both from the
@@ -315,12 +335,6 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
     today by omission. Every call site supplies the run's pinned messages explicitly, and
     the tests are what make the update cheap.
     """
-
-    columns = (
-        Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.period")),
-        Column(key=X_COLUMN_KEY, header=messages.text("chart.axis.time")),
-        Column(key=VALUE_COLUMN_KEY, header=messages.text("doc.table.value")),
-    )
 
     series_set = plotted_series(node, messages=messages)
     if not any(series.points for series in series_set):
@@ -339,23 +353,33 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
             caption=node.caption,
         )
 
-    rows: list[Row] = []
+    # The union of x values, in the order they are first plotted. Every series of one
+    # chart shares an x axis, so this is that axis — and a series missing one of its
+    # positions is a gap in that series, not a shorter axis.
+    x_values: list[str] = []
     for series in series_set:
         for point in series.points:
-            # The row key the verifier resolves by is the key column's text, and the key
-            # column here is the series label — so the x value goes into it too, because a
-            # multi-series chart repeats every x.
-            rows.append(
-                Row(
-                    path=point.path,
-                    key=f"{series.key}|{point.x}",
-                    cells=(
-                        TextCell(path=point.path, text=f"{series.label} — {point.x}"),
-                        TextCell(path=point.path, text=point.x),
-                        _figure_cell(point.y),
-                    ),
-                )
+            if point.x not in x_values:
+                x_values.append(point.x)
+
+    columns = (
+        Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.series")),
+        *(Column(key=x, header=x) for x in x_values),
+    )
+
+    rows: list[Row] = []
+    for series in series_set:
+        by_x = {point.x: point for point in series.points}
+        # The row's own path is the chart node's: a row spans many points now, and no one
+        # of them is the row. Each cell still carries its own figure's path, which is what
+        # the ledger matches against, and the row is addressed by `key`.
+        cells: list[object] = [TextCell(path=node.path, text=series.label)]
+        for x in x_values:
+            point = by_x.get(x)
+            cells.append(
+                _figure_cell(point.y) if point is not None else EmptyCell(path=node.path)
             )
+        rows.append(Row(path=node.path, key=series.key, cells=tuple(cells)))  # type: ignore[arg-type]
 
     return Table(
         path=node.path,
