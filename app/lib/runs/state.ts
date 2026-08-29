@@ -1,10 +1,12 @@
 import "server-only"
 
-import { and, desc, eq } from "drizzle-orm"
+import { and, count, desc, eq, ilike, inArray, or, type SQL } from "drizzle-orm"
 
 import { getDb } from "@/lib/db"
 import {
   reportRuns,
+  reportTemplateVersions,
+  reportTemplates,
   reportVerifications,
   runErrorCode,
   type ReportRun,
@@ -306,26 +308,116 @@ export async function findOwnedRun(
   return row
 }
 
-/** How many runs the list surfaces render at once. */
+/** How many runs an unpaginated read returns — the dashboard's recent list and
+ * `/api/runs` both take this default. */
 export const RUN_LIST_LIMIT = 50
+
+/** How many runs **one page** of the reports table carries.
+ *
+ * Separate from `RUN_LIST_LIMIT` on purpose: the reports table pages, and the two
+ * other callers do not. Folding them into one number would have quietly changed
+ * what `/api/runs` returns to a consumer that never asked to be paginated. */
+export const RUN_PAGE_SIZE = 25
+
+/**
+ * How a caller narrows the run list.
+ *
+ * `search` matches the **report profile's name**, which lives two hops away —
+ * `report_runs.template_version_id` -> `report_template_versions.template_id` ->
+ * `report_templates.name`. Matching it in SQL rather than filtering the page after
+ * it is read is the whole point: a search that only looked at the twenty-five rows
+ * already fetched would silently answer "no runs" for a profile whose runs are on
+ * page three.
+ */
+export type RunListQuery = {
+  /** Statuses to include. Empty or absent means every status. */
+  readonly statuses?: readonly RunStatus[]
+  /** A case-insensitive substring of the report profile's name. */
+  readonly search?: string
+  readonly limit?: number
+  readonly offset?: number
+}
+
+/**
+ * The `where` both {@link listOwnedRuns} and {@link countOwnedRuns} read.
+ *
+ * One builder, because a count that disagreed with the page it is counting would
+ * put a pager on a list that has no such pages — the failure mode of every
+ * hand-written pair of these.
+ */
+function runListWhere(userId: string, query: RunListQuery): SQL | undefined {
+  const clauses: SQL[] = [eq(reportRuns.userId, userId)]
+
+  if (query.statuses !== undefined && query.statuses.length > 0) {
+    clauses.push(inArray(reportRuns.status, [...query.statuses]))
+  }
+
+  const needle = query.search?.trim()
+  if (needle !== undefined && needle !== "") {
+    // A run whose profile was deleted keeps its `template_version_id`, and a run
+    // old enough to predate the column carries none. Neither matches a name
+    // search, which is correct — there is no name to have matched.
+    clauses.push(
+      inArray(
+        reportRuns.templateVersionId,
+        getDb()
+          .select({ id: reportTemplateVersions.id })
+          .from(reportTemplateVersions)
+          .innerJoin(
+            reportTemplates,
+            eq(reportTemplateVersions.templateId, reportTemplates.id)
+          )
+          .where(
+            and(
+              eq(reportTemplates.userId, userId),
+              ilike(reportTemplates.name, `%${needle}%`)
+            )
+          )
+      )
+    )
+  }
+
+  return clauses.length === 1 ? clauses[0] : and(...clauses)
+}
 
 /**
  * This user's runs, newest first (Requirement 36.10).
  *
  * `created_at DESC` then `id DESC`: the id breaks a tie so two rows written in
  * the same transaction do not swap places between renders, which on a list whose
- * rows carry counts would read as data changing when nothing did.
+ * rows carry counts would read as data changing when nothing did. It is also what
+ * makes `offset` stable — paging by offset over an order with ties can show one
+ * row twice and skip another.
  */
 export async function listOwnedRuns(
   userId: string,
-  limit: number = RUN_LIST_LIMIT
+  query: RunListQuery = {}
 ): Promise<ReportRun[]> {
   return await getDb()
     .select()
     .from(reportRuns)
-    .where(eq(reportRuns.userId, userId))
+    .where(runListWhere(userId, query))
     .orderBy(desc(reportRuns.createdAt), desc(reportRuns.id))
-    .limit(limit)
+    .limit(query.limit ?? RUN_LIST_LIMIT)
+    .offset(query.offset ?? 0)
+}
+
+/**
+ * How many runs match `query`, for the pager.
+ *
+ * Reads the same `where` the page does, so "showing 1-25 of 31" cannot claim a
+ * total the list would not produce.
+ */
+export async function countOwnedRuns(
+  userId: string,
+  query: RunListQuery = {}
+): Promise<number> {
+  const [row] = await getDb()
+    .select({ total: count() })
+    .from(reportRuns)
+    .where(runListWhere(userId, query))
+
+  return row?.total ?? 0
 }
 
 // --- User-scoped writes -----------------------------------------------------

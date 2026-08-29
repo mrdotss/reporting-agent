@@ -1022,6 +1022,70 @@ export const MESSAGE_CATALOG = {
     en: 'The collection window comes from the report profile\'s own period rule and resolves when the run is enqueued, in {timezone}. A period is local: "July 2026" means July in that zone, not July in UTC.',
     id: 'Jendela pengumpulan berasal dari aturan periode profil laporan dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: "Juli 2026" berarti Juli di zona tersebut, bukan Juli dalam UTC.',
   },
+  "ui.run_table.profile": {
+    en: "Profile",
+    id: "Profil",
+  },
+  "ui.run_table.connection": {
+    en: "Connection",
+    id: "Koneksi",
+  },
+  "ui.run_table.status": {
+    en: "Status",
+    id: "Status",
+  },
+  "ui.run_table.search_placeholder": {
+    en: "Search by profile…",
+    id: "Cari berdasarkan profil…",
+  },
+  "ui.run_table.search_label": {
+    en: "Search runs by report profile",
+    id: "Cari proses berdasarkan profil laporan",
+  },
+  "ui.run_table.filter_label": {
+    en: "Filter by status",
+    id: "Saring berdasarkan status",
+  },
+  "ui.run_table.status_all": {
+    en: "All",
+    id: "Semua",
+  },
+  "ui.run_table.status_completed": {
+    en: "Completed",
+    id: "Selesai",
+  },
+  "ui.run_table.status_failed": {
+    en: "Failed",
+    id: "Gagal",
+  },
+  "ui.run_table.status_running": {
+    en: "In flight",
+    id: "Berjalan",
+  },
+  "ui.run_table.none_shown": {
+    en: "No run matches these filters",
+    id: "Tidak ada proses yang cocok dengan saringan ini",
+  },
+  "ui.run_table.previous": {
+    en: "Previous",
+    id: "Sebelumnya",
+  },
+  "ui.run_table.next": {
+    en: "Next",
+    id: "Berikutnya",
+  },
+  "ui.run_table.request": {
+    en: "Request a report",
+    id: "Minta laporan",
+  },
+  "ui.run_table.version_prefix": {
+    en: "version",
+    id: "versi",
+  },
+  "ui.run_table.history": {
+    en: "Run history",
+    id: "Riwayat proses",
+  },
   "ui.run_list.aria_label": {
     en: "Report runs",
     id: "Proses laporan",
