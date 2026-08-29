@@ -251,6 +251,31 @@ def test_a_chart_emits_exactly_one_image_and_one_companion_table() -> None:
     assert document_xml(outcome.docx_bytes).count("<w:tbl>") == 1
 
 
+def addressed_figures(table: Table) -> dict[tuple[str, str], str]:
+    """The table as the verifier sees it: `(row_key, column_key)` -> formatted text.
+
+    `verify/anchors.py` resolves a cell by the key column's emitted text and the column's
+    header, so a test that compares against a flat ordered list is testing an iteration
+    order nothing depends on. This compares the addresses instead, which is what has to
+    hold for a figure to be findable at all.
+    """
+    return {
+        (row.key, table.columns[index].key): cell.figure.formatted
+        for row in table.rows
+        for index, cell in enumerate(row.cells)
+        if isinstance(cell, FigureCell)
+    }
+
+
+def plotted_addresses(node: Chart) -> dict[tuple[str, str], str]:
+    """The same addresses, derived from the plotted series rather than from the table."""
+    return {
+        (point.x, series.key): point.y.formatted
+        for series in C.plotted_series(node, messages=_MESSAGES)
+        for point in series.points
+    }
+
+
 def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> None:
     """Req 22.1 — no sampling, no thinning, no re-rounding. A table showing a subset would
     let the image assert something the table could not confirm."""
@@ -260,16 +285,12 @@ def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> Non
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-    assert len(table.rows) == len(plotted)
 
-    # The cell text is the ledger's formatted string, verbatim.
-    emitted = [
-        cell.figure.formatted
-        for row in table.rows
-        for cell in row.cells
-        if isinstance(cell, FigureCell)
-    ]
-    assert emitted == [point.y.formatted for point in plotted]
+    # One row per x, one column per series, so the row count is the distinct x count and
+    # the figure count is the plotted count. The cell text is the ledger's formatted
+    # string, verbatim, and it is reachable at the address the verifier will use.
+    assert len(table.rows) == len({point.x for point in plotted})
+    assert addressed_figures(table) == plotted_addresses(node)
 
 
 def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
@@ -288,22 +309,13 @@ def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-    assert len(table.rows) == len(plotted)
 
-    # Every panel's series keys must appear in the table's row keys — no panel
-    # is silently dropped from the table just because it was drawn on a
-    # different subplot.
+    # Every panel's series keys must appear among the table's COLUMN keys — no panel is
+    # silently dropped from the table just because it was drawn on a different subplot.
     panel_keys = {key for group in node.panels for key in group}
-    row_series_prefixes = {row.key.split("|", 1)[0] for row in table.rows}
-    assert panel_keys <= row_series_prefixes
+    assert panel_keys <= {column.key for column in table.columns}
 
-    emitted = [
-        cell.figure.formatted
-        for row in table.rows
-        for cell in row.cells
-        if isinstance(cell, FigureCell)
-    ]
-    assert emitted == [point.y.formatted for point in plotted]
+    assert addressed_figures(table) == plotted_addresses(node)
 
 
 def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
@@ -529,7 +541,7 @@ def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
     hashed_points = sum(len(series.points) for series in plotted)
-    assert len(table.rows) == hashed_points
+    assert len(addressed_figures(table)) == hashed_points
 
     sidecar = json.loads(C.sidecar_bytes(node, data_hash=C.chart_data_hash(node, messages=_MESSAGES), messages=_MESSAGES))
     assert sidecar["point_count"] == hashed_points
@@ -1167,7 +1179,7 @@ class TestTickThinning:
         assert tick_label_positions(1) == [0]
 
 
-def test_the_table_stays_three_columns_however_many_points_are_plotted() -> None:
+def test_the_table_width_never_follows_the_point_count() -> None:
     """The invariant a real July run broke, and the reason this file did not catch it.
 
     One row per series with a column per x was tried, to turn 93 rows into 3. It reaches
@@ -1180,30 +1192,49 @@ def test_the_table_stays_three_columns_however_many_points_are_plotted() -> None
     the end-to-end fixture plots **one**: at one point per series the matrix is two columns
     wide and looks perfectly well. So the guard is not "the shape is a matrix" but "the
     width does not follow the data", checked at a month's worth of days.
+
+    The shipping shape puts the x on the rows, so the width is one key column plus one
+    column per plotted series and the point count cannot reach it at all.
     """
     for points in (1, 4, 31, 90):
         node, _ = synthetic_chart(series_count=3, points_per_series=points)
         table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
-        assert len(table.columns) == 3, (
+        assert len(table.columns) == 4, (
             f"{points} points produced {len(table.columns)} columns; a companion table's "
             f"width must not follow its point count, or it stops fitting the page"
         )
-        assert len(table.rows) == 3 * points
+        assert len(table.rows) == points
 
+
+@pytest.mark.parametrize("series_count", [1, 3, 5, 9, 40])
+def test_the_table_is_never_wider_than_libreoffice_can_render(series_count: int) -> None:
+    """The width bound that keeps figures alive through the `.docx` -> PDF conversion.
+
+    Measured against real LibreOffice at a month of days: a ten-column table renders its
+    text extractably and an eleven-column one loses all of it. Req 22.9's five-series cap
+    is what holds this table under that, and it is load-bearing here and not only on the
+    image — which is why it is asserted against a series count far above the cap.
+    """
+    node, _ = synthetic_chart(series_count=series_count, points_per_series=31)
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+
+    assert len(table.columns) == 1 + len(C.plotted_series(node, messages=_MESSAGES))
+    assert len(table.columns) <= 1 + S.CATEGORICAL_LIMIT
+    assert len(table.columns) <= 10
 
 def test_the_aggregate_keeps_every_remainder_point_addressable() -> None:
     """Above the five-series cap the aggregate qualifies each point's x with the series it
-    came from, so two remainder series sharing a date stay distinct row keys."""
+    came from, so two remainder series sharing a date stay distinct row keys — which here
+    means distinct ROWS, each carrying its one value in the aggregate's column and empty
+    cells under the four series that were plotted in their own right."""
     node, _ = synthetic_chart(series_count=9, points_per_series=4)
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
-    assert len(table.columns) == 3
+    assert len(table.columns) == 1 + S.CATEGORICAL_LIMIT
     assert len({row.key for row in table.rows}) == len(table.rows), (
         "a repeated row key is a row the verifier cannot address (Req 21.5)"
     )
 
     plotted = C.plotted_series(node, messages=_MESSAGES)
-    assert sum(
-        1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
-    ) == sum(len(series.points) for series in plotted)
+    assert len(addressed_figures(table)) == sum(len(series.points) for series in plotted)
