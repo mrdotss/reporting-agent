@@ -93,6 +93,9 @@ DISTRIBUTION_HEADER_RECIPIENT: Final[str] = "doc.front_matter.distribution_recip
 DISTRIBUTION_HEADER_COMPANY: Final[str] = "doc.front_matter.distribution_company"
 DISTRIBUTION_HEADER_NOTE: Final[str] = "doc.front_matter.distribution_note"
 DOC_CONTROL_REVISION_HISTORY: Final[str] = "doc.front_matter.revision_history"
+REVISION_LABEL: Final[str] = "doc.front_matter.revision"
+REVISION_AUTHOR_LABEL: Final[str] = "doc.front_matter.revision_author"
+REVISION_NOTE_LABEL: Final[str] = "doc.front_matter.revision_note"
 
 APPROVER_HEADER_ROLE: Final[str] = "doc.front_matter.approver_role"
 APPROVER_HEADER_COMPANY: Final[str] = "doc.front_matter.approver_company"
@@ -537,9 +540,29 @@ def _emit_document_control(
             messages.text(DOC_CONTROL_REVISION_HISTORY), style=DOCUMENT_CONTROL_STYLE
         )
         row = run.revision_history
+        # One labelled row per field the run actually carried, in the same label/value
+        # shape as the naming block above it.
+        #
+        # Previously one row of `(revision, note + " (author)")`, which put a bare "11" in
+        # the label column — a number in the position every other row of this block uses
+        # for the name of the thing — and, on a run whose note is empty, a value cell
+        # reading " (Mayer Reflino Sitorus)": a parenthetical qualifying nothing. Since
+        # schema_version 3 the note is *always* empty, because the revision is derived
+        # from the count of prior runs for the period rather than typed, so that was the
+        # shape every current run rendered.
+        #
+        # Concatenation is what made the empty note visible, so there is none: a field the
+        # run did not carry contributes no row instead of a fragment of one. A pinned v1
+        # or v2 run whose note was typed by hand still renders it, which is what keeps
+        # those replays reading as they did.
+        revision_rows = [(messages.text(REVISION_LABEL), row.revision)]
+        if row.author:
+            revision_rows.append((messages.text(REVISION_AUTHOR_LABEL), row.author))
+        if row.note:
+            revision_rows.append((messages.text(REVISION_NOTE_LABEL), row.note))
         _emit_label_value_table(
             document,
-            [(row.revision, row.note + (f" ({row.author})" if row.author else ""))],
+            revision_rows,
             style_name=LAYOUT_TABLE_STYLE,
             paragraph_style=DOCUMENT_CONTROL_STYLE,
         )

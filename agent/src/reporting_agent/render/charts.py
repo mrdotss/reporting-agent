@@ -76,7 +76,6 @@ __all__ = [
     "OTHER_SERIES_KEY",
     "OTHER_SERIES_LABEL_ID",
     "QUALIFIER",
-    "SERIES_COLUMN_KEY",
     "VALUE_COLUMN_KEY",
     "X_COLUMN_KEY",
     "SIDECAR_SUFFIX",
@@ -100,7 +99,6 @@ EMPTY_CHART_TEXT_ID: Final[str] = "doc.chart.empty"
 document's pinned language. A chart that vanished is indistinguishable in the delivered
 document from a chart the author never configured."""
 
-SERIES_COLUMN_KEY: Final[str] = "series"
 X_COLUMN_KEY: Final[str] = "x"
 VALUE_COLUMN_KEY: Final[str] = "value"
 
@@ -297,36 +295,46 @@ def sidecar_bytes(node: Chart, *, data_hash: str, messages: Messages) -> bytes:
 
 
 def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Table:
-    """Every plotted point of every plotted series, as a data table — one row per point.
+    """Every plotted point of every plotted series — one row per x, one column per series.
 
     No sampling, no thinning, no re-rounding (Req 22.1): the cell text is the ledger's
-    `formatted` string, and the row set is exactly the plotted set. A table that showed a
-    subset would let the image assert something the table could not confirm.
+    `formatted` string, and the set of figures is exactly the plotted set. A table that
+    showed a subset would let the image assert something the table could not confirm.
 
     Its path is the chart node's own, so its identity is `cht:<path>` — the same identity
     written into the image's alt text. That is the pairing key, and deriving both from the
     node's path means they cannot disagree.
 
-    ## The key column carries the series *and* the x, and both are load-bearing
+    ## Why the x axis is the rows
 
-    The verifier resolves a row by the **emitted text of the key column**. A key column
-    holding only the series label repeats that text once per point, so three rows reading
-    "CPN-App" would be three rows it cannot tell apart. The x goes in beside it for that
-    reason, not for the reader's.
+    Req 22.1 demands every point; it does not say in what arrangement. There are at most
+    five series — Req 22.9's cap makes that structural — and there are as many x values as
+    the period has days. So the short dimension is the series and the long one is the x,
+    and the table is **six columns wide at the very most, whatever the period holds**.
 
-    ## Why this is not a matrix
+    That is the second arrangement tried and the first that both fits and reads. One row
+    per (series, point) was 93 rows for three machines over July, with the key column
+    repeating the series name beside an x the next column already held. Transposing it the
+    other way — a row per series, a column per x — collapsed that to three rows and
+    **thirty-two columns**, which LibreOffice lays out too narrow for the text to reach the
+    converted PDF: a real July run returned 146 `pdf_figure_missing` findings, every figure
+    of this table, on a `.docx` whose own twenty tables all resolved.
 
-    One row per series with a column per x is the obvious way to shrink this — three
-    machines over July becomes 3 rows rather than 93 — and it was tried. It reaches A4 as a
-    32-column table, and LibreOffice lays those columns out too narrow for their text to
-    survive into the converted PDF. A real July run came back with **146
-    `pdf_figure_missing` findings** — every figure of this table — on a `.docx` whose own
-    twenty tables all resolved. The `pdf` gate was right and the shape was wrong.
+    Measured against real LibreOffice at a month of days: ten columns render and eleven do
+    not. Six is the worst this can reach, which is why the cap is load-bearing here and not
+    only on the image.
 
-    The row count is affordable now for a different reason than it was before. A metric
-    section used to expand per resource, so three machines produced three charts and three
-    of these tables; it emits one of each now, and `metric_summary` carries the period in
-    four numbers in the body. This is the record underneath that, and a record may be long.
+    ## Both addresses are the document's own text
+
+    The verifier resolves a cell by `(row_key, column_key)`, and reads both **out of the
+    `.docx`** — the key column's emitted text and the column's header text. An x is unique
+    among rows and a series label is unique among columns, so this arrangement addresses
+    every figure without a key that repeats. The previous shape had to concatenate the x
+    into the series label for exactly that reason; here the two dimensions do it.
+
+    A series with no point at some x gets an `EmptyCell` — `day_series` omits a day it has
+    no value for rather than zero-filling it, and the distinction between "measured zero"
+    and "not measured" is one this table has no business collapsing.
 
     A chart with nothing to plot gets the explicit no-resources-matched row (Req 22.13),
     keyed the way `render/docx.py` recognises a notice row so it is styled as information
@@ -337,13 +345,6 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
     today by omission. Every call site supplies the run's pinned messages explicitly, and
     the tests are what make the update cheap.
     """
-
-    columns = (
-        Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.period")),
-        Column(key=X_COLUMN_KEY, header=messages.text("chart.axis.time")),
-        Column(key=VALUE_COLUMN_KEY, header=messages.text("doc.table.value")),
-    )
-
     series_set = plotted_series(node, messages=messages)
     if not any(series.points for series in series_set):
         # One column, so the notice reads as a notice rather than as a row with two blanks.
@@ -361,20 +362,34 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
             caption=node.caption,
         )
 
-    rows: list[Row] = []
+    # The x axis, in the order the points are plotted. Above the cap the aggregate's own
+    # x values arrive already qualified with the series they came from, so they are
+    # distinct rows carrying one value each rather than colliding with the real dates.
+    x_values: list[str] = []
     for series in series_set:
         for point in series.points:
-            rows.append(
-                Row(
-                    path=point.path,
-                    key=f"{series.key}|{point.x}",
-                    cells=(
-                        TextCell(path=point.path, text=f"{series.label} — {point.x}"),
-                        TextCell(path=point.path, text=point.x),
-                        _figure_cell(point.y),
-                    ),
-                )
+            if point.x not in x_values:
+                x_values.append(point.x)
+
+    columns = (
+        Column(key=X_COLUMN_KEY, header=messages.text("chart.axis.time")),
+        *(Column(key=series.key, header=series.label) for series in series_set),
+    )
+
+    by_series = [{point.x: point for point in series.points} for series in series_set]
+
+    rows: list[Row] = []
+    for x in x_values:
+        cells: list[object] = [TextCell(path=node.path, text=x)]
+        for lookup in by_series:
+            point = lookup.get(x)
+            cells.append(
+                _figure_cell(point.y) if point is not None else EmptyCell(path=node.path)
             )
+        # The row's own path is the chart node's: a row spans many points now, and no one
+        # of them is the row. Each cell still carries its own figure's path, which is what
+        # the ledger matches against, and the row is addressed by its x.
+        rows.append(Row(path=node.path, key=x, cells=tuple(cells)))  # type: ignore[arg-type]
 
     return Table(
         path=node.path,

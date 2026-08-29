@@ -47,9 +47,13 @@ from typing import Any
 import pytest
 
 from reporting_agent.artifacts import reports_key
+from reporting_agent.compile.messages import load_messages
+from reporting_agent.render.front_matter import APPROVER_HEADER_SIGNATURE
 from reporting_agent.events import TERMINAL_EVENT_TYPE
 from reporting_agent.redaction import discard_secrets
 from reporting_agent.verify.verifier import REQUIRED_GATES
+
+_MESSAGES = load_messages("en")
 from test_run_end_to_end_v2 import (
     ACTOR_ID,
     RUN_ID,
@@ -241,25 +245,44 @@ class TestV3SectionWalkReachesAPassingVerification:
             approver["name"]
             for approver in VALID_FRONT_MATTER["document_control"]["approvers"]
         }
+        signature_header = _MESSAGES.text(APPROVER_HEADER_SIGNATURE)
+
+        # The approvers table, found by its own header row rather than by looking
+        # for a name anywhere in the document. Any row *mentioning* an approver is
+        # not an approver row: the revision history names the author under
+        # "Issued by", so the looser rule read that two-column row as an approver
+        # row and called its second cell an unsigned signature box.
+        approver_tables = [
+            table
+            for table in document.tables
+            if [cell.text for cell in table.rows[0].cells][-1] == signature_header
+        ]
+        assert len(approver_tables) == 1, (
+            "expected exactly one approvers table in the delivered document, "
+            f"found {len(approver_tables)} — front matter may not have rendered"
+        )
+
         found_signature_column = False
-        for table in document.tables:
-            for row in table.rows:
-                cell_texts = [cell.text for cell in row.cells]
-                if any(name in cell_texts for name in approver_names):
-                    # This is an approver row. Its signature cell (the last
-                    # column) must be empty, never the approver's own name.
-                    found_signature_column = True
-                    signature_cell_text = cell_texts[-1]
-                    assert signature_cell_text == "", (
-                        f"approver row {cell_texts!r} carries a non-empty "
-                        f"signature cell {signature_cell_text!r} — expected an "
-                        f"empty ruled box"
-                    )
-                    assert signature_cell_text not in approver_names
+        for row in approver_tables[0].rows[1:]:
+            cell_texts = [cell.text for cell in row.cells]
+            if not any(name in cell_texts for name in approver_names):
+                # A declared role nobody was named for — it renders as a blank
+                # row to be signed by hand, and has no name to check.
+                continue
+            # Its signature cell (the last column) must be empty, never the
+            # approver's own name.
+            found_signature_column = True
+            signature_cell_text = cell_texts[-1]
+            assert signature_cell_text == "", (
+                f"approver row {cell_texts!r} carries a non-empty "
+                f"signature cell {signature_cell_text!r} — expected an "
+                f"empty ruled box"
+            )
+            assert signature_cell_text not in approver_names
 
         assert found_signature_column, (
-            "no approver row was found in the delivered document at all — "
-            "front matter may not have rendered"
+            "the approvers table carries no rows at all — front matter may not "
+            "have rendered"
         )
 
 

@@ -31,9 +31,13 @@ from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.blocks.base import (
     EMPTY_SCOPE_TEXT,
     MAX_TABLE_ROWS,
+    BlockContext,
+    BlockSpec,
+    DesignSettings,
     NO_DATA_TEXT,
     NO_GAPS_TEXT,
     OMITTED_ROW_LABEL,
+    RESOURCE_ID_CONFIG_KEY,
 )
 from reporting_agent.compile.messages import load_messages
 
@@ -47,6 +51,8 @@ from reporting_agent.compile.blocks.tables import (
     COLUMN_ATTRIBUTES,
     resource_attribute_text,
 )
+from reporting_agent.compile.figures import FigureLedger
+from reporting_agent.compile.scope import scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotValue, build_snapshot_view
 from reporting_agent.errors import CompileFailedError, ErrorCode
 
@@ -1509,3 +1515,140 @@ def test_blank_rows_table_rejects_a_columns_entry_named_no() -> None:
             ),
             view=view,
         )
+
+
+# ---------------------------------------------------------------------------
+# Attribute columns, and the per-resource narrowing
+# ---------------------------------------------------------------------------
+
+
+def test_an_attribute_column_reaches_the_table() -> None:
+    """`kind: "attribute"` columns are emitted, not silently dropped.
+
+    `read_column_entries` validated them against `COLUMN_ATTRIBUTES` and
+    `resource_attribute_text` could render every one, and in between the two
+    `compile_resource_table` read only the `metric` and `fact` entries — so an attribute
+    column passed save-time validation, passed compile, and arrived in the document as
+    nothing at all.
+
+    What that produced: `azure_subscription` declares `resource_type` + a `count` fact and
+    `resource_groups` declares `resource_group` + `resource_type` + the same fact, and both
+    rendered as the identical two-column `Resource | Count` table over every resource in
+    the subscription — twenty-three rows of resource ids, twice, under a blank column.
+    """
+    document = compile_document(
+        df.definition(
+            [df.block("inventory", "resource_table", {"columns": [
+                {"kind": "attribute", "attribute": "resource_group"},
+                {"kind": "attribute", "attribute": "location"},
+                df.CPU_AVG,
+            ]})],
+            metrics={VM: [df.CPU_AVG]},
+        ),
+        view=view_of(resources=[
+            sf.vm(resource_id="/vm/a", name="a", resource_group="rg-prod", location="southeastasia"),
+        ]),
+    )
+    table = table_named(document.document, "inventory")
+
+    # Attributes sit between the key column and the numbers.
+    assert [column.key for column in table.columns] == [
+        "resource", "resource_group", "location", f"{sf.CPU}:avg",
+    ]
+    row = table.rows[0]
+    assert [cell.text for cell in row.cells[:3] if isinstance(cell, TextCell)] == [
+        "a", "rg-prod", "southeastasia",
+    ]
+
+
+def test_an_attribute_column_carries_no_figure() -> None:
+    """An attribute is a string the inventory already held, so it emits as a `TextCell`.
+
+    It carries no figure, which means it is not in the ledger and the `facts` gate does not
+    check it — the same treatment the resource-name column has always had. A `TextCell`
+    rather than a `TextFactCell` because the value has no `collected_at` of its own: it came
+    off the resource record, not off a fact query.
+    """
+    document = compile_document(
+        df.definition(
+            [df.block("inventory", "resource_table", {"columns": [
+                {"kind": "attribute", "attribute": "power_state"},
+            ]})],
+            metrics={VM: [df.CPU_AVG]},
+        ),
+        view=view_of(resources=[sf.vm(resource_id="/vm/a", name="a", power_state="running")]),
+    )
+    row = table_named(document.document, "inventory").rows[0]
+
+    assert all(isinstance(cell, TextCell) for cell in row.cells)
+    assert [cell.text for cell in row.cells] == ["a", "running"]
+
+
+def test_resources_for_narrows_a_per_resource_block_to_its_own_resource() -> None:
+    """A block `expand_sections` produced per-resource narrows to that resource.
+
+    The section's scope is on every one of those blocks, so a compiler that resolved it
+    directly rendered the whole section in each: three NSGs produced three byte-identical
+    rule tables, and twenty produced twenty. `BlockContext.resources_for` narrows by the
+    `_resource_id` the expander wrote.
+
+    Exercised against `BlockContext` rather than through a definition on purpose:
+    `_resource_id` is not a config field any template may declare, and
+    `collect_definition_issues` rejects it as an undeclared key. It exists only between
+    the expander and the compiler within one run, which is what this asserts.
+    """
+    view = view_of(resources=[
+        sf.vm(resource_id="/vm/a", name="a"),
+        sf.vm(resource_id="/vm/b", name="b"),
+        sf.vm(resource_id="/vm/c", name="c"),
+    ])
+    context = BlockContext(
+        view=view,
+        ledger=FigureLedger(),
+        design=DesignSettings.from_plain(df.definition([df.block("b", "resource_table", {"columns": [df.CPU_AVG]})])["design"]),
+        default_scope=scope_rules_from_plain(df.scope()),
+        messages=_MESSAGES,
+    )
+
+    def spec(config: dict) -> BlockSpec:
+        return BlockSpec(id="b", type="resource_table", config=config, scope_override=None)
+
+    narrowed = context.resources_for(spec({RESOURCE_ID_CONFIG_KEY: "/vm/b"}))
+    assert [resource.resource_id for resource in narrowed] == ["/vm/b"]
+
+    # Opt-in: a block carrying no `_resource_id` is unaffected. Asserted directly, because
+    # a `.get` treating the absent case as falsy would silently empty every table.
+    every = context.resources_for(spec({}))
+    assert [resource.resource_id for resource in every] == ["/vm/a", "/vm/b", "/vm/c"]
+
+    # A resource the scope no longer resolves yields nothing, which every compiler already
+    # renders as the empty-scope notice rather than raising.
+    assert context.resources_for(spec({RESOURCE_ID_CONFIG_KEY: "/vm/gone"})) == ()
+
+
+def test_a_resource_name_attribute_column_does_not_duplicate_the_key_column() -> None:
+    """`resource_name` as an attribute is the key column, so it emits once.
+
+    The section catalogue declares one on five of its tables, always first — which is
+    where the automatic key column already puts the name. Emitting both produced two
+    columns headed "Resource", and `assert_header_row` refuses that table outright: the
+    verifier reads a column's key out of its header text, so two columns sharing a header
+    are two cells at one address. `virtual_machines` failed to render at all.
+    """
+    document = compile_document(
+        df.definition(
+            [df.block("vms", "resource_table", {"columns": [
+                {"kind": "attribute", "attribute": "resource_name"},
+                {"kind": "attribute", "attribute": "power_state"},
+            ]})],
+            metrics={VM: [df.CPU_AVG]},
+        ),
+        view=view_of(resources=[sf.vm(resource_id="/vm/a", name="a", power_state="running")]),
+    )
+    table = table_named(document.document, "vms")
+
+    assert [column.key for column in table.columns] == ["resource", "power_state"]
+    headers = [column.header for column in table.columns]
+    assert len(headers) == len(set(headers)), headers
+    assert [cell.text for cell in table.rows[0].cells] == ["a", "running"]
+

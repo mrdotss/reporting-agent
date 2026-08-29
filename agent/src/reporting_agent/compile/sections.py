@@ -34,7 +34,7 @@ from reporting_agent.catalog.loader import (
     SectionCatalogueEntry,
     SectionExpansionBlock,
 )
-from reporting_agent.compile.blocks.base import BlockSpec
+from reporting_agent.compile.blocks.base import RESOURCE_ID_CONFIG_KEY, BlockSpec
 from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotView
@@ -312,11 +312,20 @@ def _expand_one_section(
 
             for resource_ordinal, resource in enumerate(resolved):
                 block_id = f"{section_id}__{expansion_index}__{resource_ordinal}"
-                # Carry the section's selection as scope_override, plus a resource ordinal
-                # in config so the block compiler can pick the right one from the resolved
-                # set without the id being stored in the definition.
+                # Carry the section's selection as scope_override, plus the resource this
+                # block is *for*, so `BlockContext.resources_for` can narrow the section's
+                # resolution to it. Without that narrowing every block of the expansion
+                # renders the whole section scope, which is three identical NSG rule tables
+                # for three NSGs.
+                #
+                # The id rather than the ordinal it used to write: the expander resolves
+                # `scope_override or view.resources` and a compiler resolves
+                # `scope_override or default_scope`, and an ordinal into a list resolved a
+                # second way mis-selects silently if those ever differ. It never reaches the
+                # stored definition — this config is built per run, from the live snapshot,
+                # and a replay rebuilds it from the pinned one.
                 per_resource_config = dict(config)
-                per_resource_config["_resource_ordinal"] = resource_ordinal
+                per_resource_config[RESOURCE_ID_CONFIG_KEY] = resource.resource_id
                 if expansion.block == "heading":
                     # A per-resource heading names its resource. `resolved` is the
                     # snapshot's own order, so this is as deterministic as the ordinal

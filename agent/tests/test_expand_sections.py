@@ -697,18 +697,18 @@ class TestScopeOverride:
             assert VM_TYPE in spec.scope_override.resource_types
             assert "rg-prod" in spec.scope_override.resource_groups
 
-    def test_per_resource_block_carries_ordinal_in_config(self) -> None:
-        """per:'resource' blocks carry `_resource_ordinal` in config.
+    def test_per_resource_block_names_its_own_resource_in_config(self) -> None:
+        """per:'resource' blocks carry `_resource_id` in config — one each, all distinct.
 
         Uses `network_security_groups`, because the metric sections no longer expand
         per-resource at all — they emit one `metric_summary` and one chart whatever the
         estate size.
 
-        **Nothing reads this ordinal.** `expand_sections` writes it so a block compiler
-        can narrow to its own resource, and no compiler does: a `per: "resource"` block
-        resolves the whole section scope, so `network_security_groups` over three NSGs
-        emits three identical rule tables. This asserts what the expander produces, not
-        that the mechanism is complete — see the note in `sections.py`.
+        This is the address `BlockContext.resources_for` narrows by. It used to be an
+        ordinal that nothing read, so every block of the expansion resolved the whole
+        section scope and `network_security_groups` over three NSGs emitted three
+        identical rule tables. The id is what makes each block about one resource; see
+        `test_blocks.py` for the assertion that the tables then differ.
         """
         catalogue = _make_catalogue()
         nsg_type = "Microsoft.Network/networkSecurityGroups"
@@ -733,9 +733,13 @@ class TestScopeOverride:
         per_resource = [s for s in result if s.id.count("__") == 2]
         assert len(per_resource) > 0
 
-        ordinals = [s.config.get("_resource_ordinal") for s in per_resource]
-        assert 0 in ordinals
-        assert 1 in ordinals
+        named = [s.config.get("_resource_id") for s in per_resource]
+        assert all(name is not None for name in named), named
+        # Every block names a resource the section actually resolved, and no two name the
+        # same one — a repeated id would be the duplication this key exists to prevent,
+        # wearing a different shape.
+        assert set(named) == set(nsg_ids)
+        assert len(named) == len(set(named))
 
 
 # ---------------------------------------------------------------------------
