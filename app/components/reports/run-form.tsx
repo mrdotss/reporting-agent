@@ -73,6 +73,18 @@ const DEFAULT_TIMEZONE = "Asia/Jakarta"
  */
 const FRONT_MATTER_SCHEMA_VERSION = 2
 
+/**
+ * The lowest `schema_version` at which this form asks for **nothing** about the
+ * document.
+ *
+ * A v3 profile carries the document's name, its number pattern and its signatories,
+ * and `enqueueRun` derives the revision row from the account's own history — a
+ * re-run of one period is the second issue of one document, which is a fact rather
+ * than a field. So the whole Document details fieldset is a v2 surface now, and a
+ * v3 run is two selects and a button.
+ */
+const DERIVED_REVISION_SCHEMA_VERSION = 3
+
 /** What the route answers with. Parsed defensively — it is a network response. */
 type CreateResponse = {
   readonly run?: RunView
@@ -189,7 +201,8 @@ export function RunForm({
    */
   const requiresFrontMatter =
     selectedTemplate !== undefined &&
-    selectedTemplate.schemaVersion >= FRONT_MATTER_SCHEMA_VERSION
+    selectedTemplate.schemaVersion >= FRONT_MATTER_SCHEMA_VERSION &&
+    selectedTemplate.schemaVersion < DERIVED_REVISION_SCHEMA_VERSION
 
   // Trimmed once, and these are the values both the gate and the request body use, so
   // a note of three spaces cannot pass the check and then travel as whitespace.

@@ -420,6 +420,55 @@ export async function countOwnedRuns(
   return row?.total ?? 0
 }
 
+/**
+ * How many runs this user has already enqueued for one report profile over one
+ * period — the number the next run's revision counts from.
+ *
+ * ## Why this exists
+ *
+ * Requirements line 1057: *a re-run of one period is a revision of one document
+ * rather than a second document*. Two runs of July carry the same document number,
+ * and the revision row is the only thing telling the two apart. So the revision is
+ * a fact about the account's history, not something to type — and this is the
+ * count it derives from.
+ *
+ * Counted per **profile**, not per profile version: re-running July after editing
+ * the profile is still the second issue of the July document.
+ *
+ * Every status counts, including `failed`. A failed run produced no document, but
+ * it did consume an issue number, and reusing it would give two runs in the
+ * account's history the same revision — which is exactly the ambiguity the row
+ * exists to remove.
+ */
+export async function countRunsForProfilePeriod(
+  userId: string,
+  profile: {
+    readonly templateId: string
+    readonly periodStart: string
+    readonly periodEnd: string
+  }
+): Promise<number> {
+  const [row] = await getDb()
+    .select({ total: count() })
+    .from(reportRuns)
+    .where(
+      and(
+        eq(reportRuns.userId, userId),
+        eq(reportRuns.periodStart, profile.periodStart),
+        eq(reportRuns.periodEnd, profile.periodEnd),
+        inArray(
+          reportRuns.templateVersionId,
+          getDb()
+            .select({ id: reportTemplateVersions.id })
+            .from(reportTemplateVersions)
+            .where(eq(reportTemplateVersions.templateId, profile.templateId))
+        )
+      )
+    )
+
+  return row?.total ?? 0
+}
+
 // --- User-scoped writes -----------------------------------------------------
 
 /**
