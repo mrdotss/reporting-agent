@@ -427,9 +427,9 @@ class _Emitter:
         # rather than a run appended to the caption: the caption is the template author's
         # string and this is the compiler's, and a theme that wants to set them
         # differently needs two paragraphs to do it with.
-        if node.provenance:
-            provenance = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
-            provenance.add_run(node.provenance)
+        if node.note:
+            note = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
+            note.add_run(node.note)
 
     def emit_row(
         self,

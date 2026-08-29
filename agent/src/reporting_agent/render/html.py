@@ -375,9 +375,9 @@ class _Emitter:
         # caption does not, because wrapping it would change the markup of every table
         # that has no provenance to distinguish it from.
         caption_inner = html.escape(node.caption) if node.caption else ""
-        if node.provenance:
+        if node.note:
             caption_inner += (
-                f'<span data-role="provenance">{html.escape(node.provenance)}</span>'
+                f'<span data-role="note">{html.escape(node.note)}</span>'
             )
         caption = f"<caption>{caption_inner}</caption>" if caption_inner else ""
         self.write(

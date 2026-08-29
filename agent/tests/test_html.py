@@ -902,7 +902,7 @@ def test_an_agreed_instant_renders_once_in_the_caption_not_once_per_column() -> 
     # Stated once, in the caption.
     caption = re.search(r"<caption>(.*?)</caption>", outcome.html, re.S)
     assert caption is not None
-    assert f'<span data-role="provenance">' in caption.group(1)
+    assert '<span data-role="note">' in caption.group(1)
     assert caption.group(1).count(instant) == 1
 
     # And no instant column anywhere — that is the shape this replaced.
@@ -916,7 +916,7 @@ def test_an_agreed_instant_renders_once_in_the_caption_not_once_per_column() -> 
     assert "OS type" in outcome.html
 
 
-def test_a_table_with_no_provenance_keeps_its_bare_caption() -> None:
+def test_a_table_with_no_note_keeps_its_bare_caption() -> None:
     """A table whose facts disagree — or which carries none — renders exactly as before.
 
     The span is added for the instant, never around the author's caption, so no table
@@ -927,4 +927,4 @@ def test_a_table_with_no_provenance_keeps_its_bare_caption() -> None:
     )
 
     assert "<caption>Cap</caption>" in outcome.html
-    assert 'data-role="provenance"' not in outcome.html
+    assert 'data-role="note"' not in outcome.html

@@ -144,8 +144,8 @@ class TestFactColumnCompiles:
         assert table.columns[2].header == "OS type"
 
         # The instant is stated once, under the table.
-        assert table.provenance is not None
-        assert COLLECTED_AT_1 in table.provenance
+        assert table.note is not None
+        assert COLLECTED_AT_1 in table.note
 
         # One resource row
         assert len(table.rows) == 1
@@ -224,8 +224,10 @@ class TestFactColumnCompiles:
         assert isinstance(row.cells[1], FigureCell)
         assert isinstance(row.cells[2], EmptyCell)
 
-        # Nothing was collected, so nothing is claimed about when.
-        assert table.provenance is None
+        # Nothing was collected, so nothing is claimed about when — the note says which
+        # fact was asked for instead.
+        assert table.note is not None
+        assert FACT_KEY in table.note
 
     def test_two_resources_with_different_collected_at_get_distinct_timestamps(self) -> None:
         """Two facts with differing collected_at produce two distinct instant cells."""
@@ -363,8 +365,8 @@ class TestFactColumnCompiles:
 
         # The resource that carries nothing does not weaken the claim about the one that
         # does: the instant is still stated, and it is that fact's.
-        assert table.provenance is not None
-        assert COLLECTED_AT_1 in table.provenance
+        assert table.note is not None
+        assert COLLECTED_AT_1 in table.note
 
     def test_text_fact_anchored_to_table(self) -> None:
         """The TextFact is anchored: text_fact_anchors() returns its path mapped to
@@ -388,3 +390,86 @@ class TestFactColumnCompiles:
         for path, anchor in anchors.items():
             assert anchor.anchor_id is not None
             assert anchor.kind == "table"
+
+
+class TestFactOnlyTableWithNothingCollected:
+    """A fact-only table whose facts all answered nothing says so, under the grid.
+
+    This is the `Disks` table of the delivered report: three resources, seven headers,
+    every cell blank, and nothing telling the reader whether the disks have no sizes, or
+    the size was never asked for, or the request failed.
+    """
+
+    @staticmethod
+    def _fact_only_document(view):
+        return compile_document(
+            df.definition(
+                [df.block("disks", "resource_table", {
+                    "columns": [_fact_column("disk_size_gb"), _fact_column("disk_type")],
+                })],
+                metrics={VM: [df.CPU_AVG]},
+            ),
+            view=view,
+        )
+
+    def test_it_names_the_facts_that_answered_nothing(self) -> None:
+        rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
+        document = self._fact_only_document(_view(_vm_without_fact(rid, "vm-01")))
+
+        table = _table_named(document.document, "disks")
+
+        # The table keeps its shape — the resource is still listed — and the note says
+        # which facts were asked for and answered nothing.
+        assert len(table.rows) == 1
+        assert [column.key for column in table.columns] == [
+            "resource", "disk_size_gb", "disk_type",
+        ]
+        assert table.note is not None
+        assert "disk_size_gb" in table.note
+        assert "disk_type" in table.note
+
+    def test_a_metric_column_does_not_suppress_the_absence_note(self) -> None:
+        """A resolved CPU column does not explain a blank `disk_size_gb` one.
+
+        The note is a claim about the facts, and it is equally true and equally useful in
+        a table that also carries metrics — which is why the rule is about the facts alone
+        rather than about whether the table has any content at all.
+        """
+        rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
+        document = compile_document(
+            df.definition(
+                [df.block("mixed", "resource_table", {
+                    "columns": [df.CPU_AVG, _fact_column("disk_size_gb")],
+                })],
+                metrics={VM: [df.CPU_AVG]},
+            ),
+            view=_view(_vm_without_fact(rid, "vm-01")),
+        )
+
+        table = _table_named(document.document, "mixed")
+        assert [column.key for column in table.columns] == [
+            "resource", f"{sf.CPU}:avg", "disk_size_gb",
+        ]
+        assert isinstance(table.rows[0].cells[2], EmptyCell)
+        assert table.note is not None
+        assert "disk_size_gb" in table.note
+
+    def test_one_answered_fact_is_enough_to_replace_the_absence_note(self) -> None:
+        """The note claims *none* were collected, so one is enough to disprove it —
+        and what it says instead is when that one was collected."""
+        base = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines"
+        document = self._fact_only_document(
+            _view(
+                _vm_with_fact(f"{base}/vm-01", "vm-01", fact_key="disk_type", fact_value="Premium_LRS"),
+                _vm_without_fact(f"{base}/vm-02", "vm-02"),
+            )
+        )
+
+        table = _table_named(document.document, "disks")
+        assert len(table.rows) == 2
+        assert [column.key for column in table.columns] == [
+            "resource", "disk_size_gb", "disk_type",
+        ]
+        assert table.note is not None
+        assert COLLECTED_AT_1 in table.note
+        assert "disk_size_gb" not in table.note

@@ -466,6 +466,26 @@ def _resource_rows_table(
     with_observed_at = len(instants) > 1
     instant = next(iter(instants)) if len(instants) == 1 else None
 
+    # The compiler's line under the table: the one instant its facts agree on, or — when
+    # not one of them was answered — which keys were asked for. A grid of blanks tells a
+    # reader nothing about whether the fact has no value, was never requested, or failed.
+    #
+    # A note rather than a notice row in the table's place: a table listing 500 of 620
+    # matched resources is saying something even when none of its facts resolved, and
+    # replacing it would discard both the list and the omitted-row count.
+    if instants:
+        note = (
+            context.messages.text("doc.table.observed_at", instant=instant)
+            if instant is not None
+            else None
+        )
+    elif fact_keys:
+        note = context.messages.text(
+            "doc.notice.no_facts", keys=", ".join(fact_keys)
+        )
+    else:
+        note = None
+
     rows: list[Row] = [
         _resource_row(
             table_cursor.child("rows", ordinal), context, resource, refs,
@@ -493,11 +513,7 @@ def _resource_rows_table(
         columns=columns,
         rows=tuple(rows),
         caption=caption,
-        provenance=(
-            context.messages.text("doc.table.observed_at", instant=instant)
-            if instant is not None
-            else None
-        ),
+        note=note,
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))

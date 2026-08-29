@@ -293,6 +293,10 @@
       "en": "No resources matched this scope",
       "id": "Tidak ada sumber daya yang cocok dengan cakupan ini"
     },
+    "doc.notice.no_facts": {
+      "en": "None of these facts were collected for the resources in this table: {keys}. Each absence is recorded as a gap in the coverage appendix.",
+      "id": "Tidak satu pun fakta berikut dikumpulkan untuk sumber daya dalam tabel ini: {keys}. Setiap ketidakhadiran dicatat sebagai celah pada lampiran cakupan."
+    },
     "doc.notice.no_data": {
       "en": "No values recorded for these resources in this period",
       "id": "Tidak ada nilai yang tercatat untuk sumber daya ini pada periode ini"
