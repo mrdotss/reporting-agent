@@ -188,10 +188,10 @@ only in the git-ignored **`.env`**.
 
 ## What a green suite does not prove
 
-Nine defects reached production against a suite of ~4900 agent and ~3300 web tests.
-Not one was in code the tests ignored — every one was in code they covered heavily.
-They survived because each test asserted **one half of a contract**. Seven patterns,
-each of which has now cost a live run:
+Thirteen defects reached production against a suite of ~4900 agent and ~3300 web
+tests. Not one was in code the tests ignored — every one was in code they covered
+heavily. They survived because each test asserted **one half of a contract**. Eight
+patterns, each of which has now cost a live run:
 
 **A round trip is not two halves.** `collect/archive.py` serialized a `Decimal` to
 its exact digit string and `verify/replay.py` re-read it as a `str` the numeric
@@ -219,9 +219,19 @@ Assert the **specific** expected outcome per case, not merely that the outcome i
 acceptable; a case that stops testing what it says should fail, not pass by another
 route.
 
-**A capability is not a call site.** This one has now happened **five times** —
-`emit_front_matter`, `authored_matches`, `liftDefinition`, `FrontMatterForm` and
-`StepDesign` were each written, unit-tested, and imported by nothing. `StepDesign`
+**A capability is not a call site.** This one has now happened **seven times** —
+`emit_front_matter`, `authored_matches`, `liftDefinition`, `FrontMatterForm`,
+`StepDesign`, `resource_attribute_text` and `_resource_ordinal` were each written,
+unit-tested, and reached by nothing. The last two are the sharpest, because both sat
+*mid-pipeline* rather than at an edge: `read_column_entries` validated a
+`kind: "attribute"` column against `COLUMN_ATTRIBUTES`, `resource_attribute_text`
+could render every one of the seven, and `compile_resource_table` in between read only
+the `metric` and `fact` entries — so `azure_subscription` and `resource_groups`, which
+differ precisely in their attribute columns, both delivered as the identical blank
+`Resource | Count` table over all 23 resources. `_resource_ordinal` is the same shape
+with a comment admitting it: `expand_sections` wrote it "so the block compiler can pick
+the right one" and no compiler ever did, so a `per: "resource"` section rendered its
+whole scope once per resource — three NSGs, three byte-identical rule tables. `StepDesign`
 is the clearest: the wizard shell received the server-resolved `thumbnails` prop and
 bound it to `_thumbnails`, so four committed theme images and a tested picker sat
 behind a surface no consultant could reach, and every delivered report used the
@@ -240,6 +250,19 @@ correct run. → When two modules encode one rule, one of them owns the constant
 the other imports it, or a test reads both and asserts they agree. Two independent
 statements of one rule is one rule and one latent bug.
 
+**A fixture can be too small to express the failure.** Every chart fixture in the
+suite plots a handful of points and the end-to-end fixture plots **one**, so when the
+companion table was reshaped to a row per series with a column per x, every test saw a
+two-column table and passed. A real July is 32 columns, and LibreOffice lays those out
+too narrow for their text to survive the PDF conversion: the next live run returned 146
+`pdf_figure_missing` findings — every figure of that table — on a `.docx` whose other
+twenty tables all resolved. Measured afterwards against real LibreOffice at a month of
+days: **ten columns render extractably and eleven do not.** → A shape that scales with
+the data has to be tested at the size the data actually reaches, and for anything that
+must survive `docx → pdf`, tested *through the conversion*. `tests/` now asserts the
+width bound directly; keep any new table under ten columns, and measure rather than
+assume.
+
 **A fixture can be too clean to express the failure.** The lifetime bound had a test
 asserting exactly the right thing — "a fact collected in the same second the
 invocation began is inside the run" — that passed throughout, because its fixture
@@ -247,7 +270,12 @@ instant carried no microseconds and the production clock always does. The stored
 `collected_at` is truncated to whole seconds while the bound is not; the comparison
 was between two precisions and the fixture could not represent the gap. → When a
 test's subject is a **boundary**, the fixture has to carry the messiness the real
-value has. Round numbers hide exactly the class of bug boundaries produce.
+value has. Round numbers hide exactly the class of bug boundaries produce. The same
+shape reappeared in the revision row: every fixture supplied a note, so
+`note + f" ({author})"` was only ever exercised with both halves present, and since
+schema_version 3 derives the revision from a run count the note is *always* empty —
+every delivered document carried a value cell reading " (Mayer Reflino Sitorus)", a
+parenthetical qualifying nothing.
 
 The through-line: **a test that cannot fail for the reason the code can break is not
 a test.** Mutation-check anything load-bearing — reintroduce the defect and watch it
