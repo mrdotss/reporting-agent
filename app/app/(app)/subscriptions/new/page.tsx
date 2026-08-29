@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import Link from "next/link"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
-import { ConnectWizard } from "@/components/subscriptions/connect-wizard"
+import { ConnectFlow } from "@/components/subscriptions/connect-flow"
 import { ReaderRoleExplainer } from "@/components/subscriptions/reader-role-explainer"
 
 /**
@@ -67,7 +67,7 @@ export default function NewSubscriptionPage() {
         </div>
       </div>
 
-      <ConnectWizard
+      <ConnectFlow
         explainer={<ReaderRoleExplainer />}
         nowIso={new Date().toISOString()}
       />

@@ -719,8 +719,8 @@ export const MESSAGE_CATALOG = {
     id: "Asal data tidak tersedia untuk angka ini.",
   },
   "ui.run_form.subscription_label": {
-    en: "Subscription",
-    id: "Langganan",
+    en: "Connection",
+    id: "Koneksi",
   },
   "ui.run_form.template_label": {
     en: "Report profile",
@@ -767,8 +767,8 @@ export const MESSAGE_CATALOG = {
     id: "Dimulai",
   },
   "ui.run_list.subscription_removed": {
-    en: "Subscription removed",
-    id: "Langganan dihapus",
+    en: "Connection removed",
+    id: "Koneksi dihapus",
   },
   "ui.run_progress.completed": {
     en: "This run completed.",
@@ -855,8 +855,8 @@ export const MESSAGE_CATALOG = {
     id: "Tidak ada sampel penyimpangan yang dicatat untuk verifikasi ini.",
   },
   "ui.failure.subscription_label": {
-    en: "Subscription",
-    id: "Langganan",
+    en: "Connection",
+    id: "Koneksi",
   },
   "ui.failure.period_label": {
     en: "Period",
