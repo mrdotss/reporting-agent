@@ -845,6 +845,14 @@
       "en": "What the runtime reported",
       "id": "Yang dilaporkan runtime"
     },
+    "ui.inspect.heading": {
+      "en": "Inspect figures",
+      "id": "Periksa angka"
+    },
+    "ui.inspect.hint": {
+      "en": "— trace any number back to the snapshot it came from",
+      "id": "— telusuri setiap angka kembali ke snapshot asalnya"
+    },
     "ui.gap_list.pagination": {
       "en": "Showing {shownGroups} of {totalGroups} groups ({shownEntries} of {totalEntries} entries).",
       "id": "Menampilkan {shownGroups} dari {totalGroups} grup ({shownEntries} dari {totalEntries} entri)."
