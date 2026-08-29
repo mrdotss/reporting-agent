@@ -188,9 +188,9 @@ only in the git-ignored **`.env`**.
 
 ## What a green suite does not prove
 
-Six defects reached production against a suite of ~2900 agent and ~2200 web tests.
+Nine defects reached production against a suite of ~4900 agent and ~3300 web tests.
 Not one was in code the tests ignored — every one was in code they covered heavily.
-They survived because each test asserted **one half of a contract**. Four patterns,
+They survived because each test asserted **one half of a contract**. Seven patterns,
 each of which has now cost a live run:
 
 **A round trip is not two halves.** `collect/archive.py` serialized a `Decimal` to
@@ -218,6 +218,36 @@ three parametrized cases silently exercised one code path and a mutant survived.
 Assert the **specific** expected outcome per case, not merely that the outcome is
 acceptable; a case that stops testing what it says should fail, not pass by another
 route.
+
+**A capability is not a call site.** This one has now happened **five times** —
+`emit_front_matter`, `authored_matches`, `liftDefinition`, `FrontMatterForm` and
+`StepDesign` were each written, unit-tested, and imported by nothing. `StepDesign`
+is the clearest: the wizard shell received the server-resolved `thumbnails` prop and
+bound it to `_thumbnails`, so four committed theme images and a tested picker sat
+behind a surface no consultant could reach, and every delivered report used the
+draft default. The same shape at field scale — `ApproverEntry.company` was declared
+and collected and the pipeline never read it, so a column headed "Company" rendered
+the person's job title. → A unit test proves a component works; it says nothing
+about whether anything calls it. Assert the **wiring**: that the step renders, that
+the resolver carries the field, that the emitter reaches the value. An unused export
+in a feature branch is a missing call site, not a spare part.
+
+**A mirror pair drifts on whichever side is quieter.** `render/toc.py` classified a
+contents page by requiring a leader run of dots; `verify/toc.py` stated the same
+rule and accepted any whitespace. Both were tested, on fixtures each half had
+written for itself. The loose half matched an ordinary table row and failed a
+correct run. → When two modules encode one rule, one of them owns the constant and
+the other imports it, or a test reads both and asserts they agree. Two independent
+statements of one rule is one rule and one latent bug.
+
+**A fixture can be too clean to express the failure.** The lifetime bound had a test
+asserting exactly the right thing — "a fact collected in the same second the
+invocation began is inside the run" — that passed throughout, because its fixture
+instant carried no microseconds and the production clock always does. The stored
+`collected_at` is truncated to whole seconds while the bound is not; the comparison
+was between two precisions and the fixture could not represent the gap. → When a
+test's subject is a **boundary**, the fixture has to carry the messiness the real
+value has. Round numbers hide exactly the class of bug boundaries produce.
 
 The through-line: **a test that cannot fail for the reason the code can break is not
 a test.** Mutation-check anything load-bearing — reintroduce the defect and watch it

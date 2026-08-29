@@ -308,7 +308,7 @@ an error, so it produces neither an `error` event nor a `collection_log` gap.
 
 ## Shipping a new runtime version
 
-Three mechanics that are not obvious and each of which has caused a live outage.
+Four mechanics that are not obvious and each of which has caused a live outage.
 
 ### `update-agent-runtime` is a **full replace**, not a patch
 
@@ -324,13 +324,46 @@ V=$(aws bedrock-agentcore-control get-agent-runtime \
       --agent-runtime-id "$ID" --agent-runtime-version "$PREV" --region "$REGION" --output json)
 ENV=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['environmentVariables']))")
 # then pass --environment-variables "$ENV" plus --description, --lifecycle-configuration,
-# --network-configuration, --protocol-configuration, --role-arn on the update
+# --network-configuration, --protocol-configuration, --metadata-configuration, --role-arn
 ```
 
 Do **not** build that snapshot with a `--query` projection. Reading only the fields
 you remember to name is how the fields you forgot get deleted — dump the whole object
-and replay every one. Verify after the update that env keys, lifecycle, network and
-description all survived, rather than trusting the call.
+and replay every one. Verify after the update that env keys, lifecycle, network,
+metadata and description all survived, rather than trusting the call.
+
+**`--metadata-configuration` is in that list for a reason.** It carries
+`requireMMDSV2: true`. It is easy to forget because nothing references it at
+runtime, and dropping it silently relaxes the instance-metadata posture rather than
+failing anything — the one field whose loss the crash-loop symptom will *not* tell
+you about.
+
+**One field must be stripped rather than replayed.**
+`networkConfiguration.networkModeConfig.requireServiceS3Endpoint` is returned by
+`get-agent-runtime` and **rejected** by `update-agent-runtime` for runtimes created
+after 2026-06-11. It is server-managed, so dropping it from the input is not the
+full-replace hazard every other field is — but "replay the whole object" taken
+literally fails the call. Pop it, then replay everything else:
+
+```python
+network = json.loads(json.dumps(cur["networkConfiguration"]))
+network.get("networkModeConfig", {}).pop("requireServiceS3Endpoint", None)
+```
+
+Guard the replay by refusing to send a field that read back empty. A `get` that
+returns `{}` for `lifecycleConfiguration` and an update that cheerfully writes it is
+the full-replace hazard wearing a different hat.
+
+### The build clones GitHub, not your working tree
+
+CodeBuild project `reporting-agent-build` clones the repository at `main`. **Push
+before building.** A build started with unpushed commits rebuilds the previous commit
+and reports `SUCCEEDED`, which is the worst available outcome: a green build, a new
+image digest, a new runtime version, and none of your changes in it.
+
+Pin the build with `--source-version <sha>` so what was built is unambiguous
+afterwards, and confirm a **new digest** landed on `:latest` — an image pushed
+minutes ago rather than one whose timestamp predates the build.
 
 ### A `:latest` container URI is resolved at **version-creation** time
 

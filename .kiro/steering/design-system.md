@@ -368,6 +368,23 @@ calls it for every `annotate(...)` that renders a figure's `formatted` string.
 - **Never rely on colour alone.** Every series carries a **direct label** at the
   line end or on the bar — legends are a fallback, not the mechanism. Pair colour
   with **shape** (marker) and **dash pattern** for lines.
+- **A fallback drawn unconditionally is not a fallback.** The legend is emitted
+  only when the direct labels are *not* there to be read, and `label_indices` is
+  what decides that rather than a second statement of the rule. Drawn on every
+  multi-series chart it was a boxed duplicate sitting on the plotted lines and on
+  the very labels it repeated.
+- **The end label needs a gutter, and the gutter is a budget.** The axes stop at
+  `_AXES_RIGHT`, leaving the rest of the fixed figure width for the labels; a label
+  longer than `END_LABEL_MAX_CHARS` is **elided in the middle, never at the tail**,
+  because two series of one resource differ only in their last few characters —
+  cutting `(avg)` and `(max)` gives both the same label. The budget is **counted,
+  never measured**: reading font metrics at render time makes the emitted PNG
+  host-dependent, which is the same reason `subplots_adjust` is fixed rather than
+  `tight_layout`.
+- **Cap the printed tick labels.** A month ticked at every point is 31 rotated
+  labels in six inches, which reads as a diagonal band rather than as a scale. Keep
+  every k-th, evenly stepped; the companion table carries every point's x value
+  regardless, so nothing is lost by not printing them all.
 - **Deltas use glyph + magnitude, not hue.** `▲`/`▼` (Phosphor arrows) plus the
   signed value in mono. **Colour must not encode good/bad for utilization** — CPU
   rising is not "bad", and disk free space falling is not the same kind of "down"
@@ -501,6 +518,20 @@ to decide with. Selected card takes a `--ring` and a `--primary` check.
 Below the grid, the per-template tuning: accent colour, density
 (compact/normal/relaxed), table style (hairline/banded/bordered), number format,
 cover page toggle, logo, page size.
+
+**It lives on step 4 of the profile wizard, with the front matter**, because
+`lib/profiles/wizard.ts` maps both `front_matter` and `design` to that step: a
+`design.*` validation issue opens step 4, so a picker anywhere else would be a
+surface the wizard never navigates to when its own field fails. Front matter first,
+appearance second — what the document *says* before what it *looks like*.
+
+**The picker being built is not the picker being reachable.** `StepDesign`,
+`StylePresetPicker`, the thumbnail resolver and four committed page images all
+existed and were tested for weeks while nothing imported them: the shell took the
+server-resolved `thumbnails` prop and bound it to `_thumbnails`. Every profile
+silently shipped the draft default, and the delivered documents were editorial
+because nothing could select anything else. A picker with no call site is a
+dropdown of one.
 
 ### HTML preview vs rendered PDF — say it plainly
 **The HTML preview is an approximation. The rendered PDF is the truth.** They diverge

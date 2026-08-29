@@ -93,6 +93,33 @@ agent/
   excludes it **by construction** rather than by guessing from borders or cell
   count. Every figure is wrapped in the theme's **`Figure` character style**, which
   is what lets token extraction find figures without re-parsing prose.
+- **A labelled value is a row, not a concatenated sentence.** The cover and the
+  document control page put their structure inside `f"{label}: {value}"` strings for
+  as long as they existed — nothing aligned, every label re-read as prose, and a
+  reader who does not already know the document cannot tell the customer's name from
+  the report's subtitle. They are two-column blocks in the theme's borderless
+  `Layout Table`, the same style `anchors.py` already uses for a `row`. The same
+  applies to any list the definition carries as **rows**: the v3 `distribution` is
+  ordered `{recipient, company, note}` entries, and coercing them with `str()` put a
+  Python list repr in a signed report.
+- **A heading emitted `per: "resource"` is titled by its resource**, never from the
+  section catalogue. A per-resource heading that falls back to the section's own
+  `title_id` emits one string once per resource — three machines produced "Virtual
+  Machine Utilization" three times and named none of them. `compile/sections.py`
+  refuses the combination outright (`_assert_resource_heading_untitled`), because a
+  heading wanting a fixed title is a `per: "section"` heading. A section carrying
+  per-resource headings must also carry its own level-2 heading above them, or the
+  section's title appears nowhere — not in the document, not in the table of
+  contents.
+- **A table-of-contents entry is recognised by its leader run, not by proximity.**
+  `render/toc.py` and `verify/toc.py` both classify a PDF page as part of the
+  contents by finding a heading followed by three or more dot or ellipsis glyphs —
+  and **whitespace is not one of them**. Anything looser matches an ordinary table
+  row (`prod-web-01  12.00`), which classified a content page as contents, excluded
+  it from the content search, and failed a correct run twice over: once as
+  `toc_page_mismatch`, once as the unproven page numeral surviving into
+  `unmatched_prose_token`. The two sides are a **mirror pair** — the renderer had
+  the rule and the verifier did not, and nothing was asserting they agreed.
 - **Every theme in `themes/` must define the `Figure` character style**, plus the
   paragraph and table styles the blocks reference. A theme missing a referenced
   style is a **build-time failure**, not a silently unstyled run — add a test that
@@ -108,6 +135,15 @@ agent/
   when the **whole run** resolves to zero resources, not when one block does.
 - Every metric value is a **fixed-precision decimal string** end to end. No
   `float` survives into a snapshot, a ledger or a hash input.
+- **An instant is compared at the precision it is stored at.** A fact's
+  `collected_at` is written through `rfc3339_utc`, which **truncates** to whole
+  seconds (Req 4.3); `invocation_started_at` is a full-precision clock reading.
+  Comparing the two directly rejected any fact whose response arrived inside the
+  invocation's own second — truncation moves the fact to the start of that second,
+  putting it before a bound with a non-zero microsecond. Intermittent by
+  construction, so a fast subscription failed where a slow one passed. Truncation
+  only ever moves an instant **earlier**, which is why only the lower bound needed
+  flooring: nothing can be pushed past a bound read after every response arrived.
 - `snapshot.py` writes once. There is no update path.
 - Every Azure failure becomes a **typed entry in `collection_log`** — never a zero,
   never a silent skip, never a bare `except: pass`.
