@@ -502,6 +502,10 @@ export const MESSAGE_CATALOG = {
     en: "Note",
     id: "Keterangan",
   },
+  "doc.table.observed_at": {
+    en: "All values in this table were observed at {instant}.",
+    id: "Semua nilai dalam tabel ini diamati pada {instant}.",
+  },
   "doc.table.notice": {
     en: "Notice",
     id: "Catatan",

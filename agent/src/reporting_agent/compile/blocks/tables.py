@@ -45,7 +45,7 @@ whole report.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final
@@ -258,13 +258,103 @@ def _metric_columns(refs: Sequence[MetricRef]) -> tuple[Column, ...]:
     return tuple(Column(key=ref.key, header=ref.label) for ref in refs)
 
 
-def _fact_columns(fact_keys: Sequence[str]) -> tuple[Column, ...]:
-    """Two columns per fact key: <key> (the value) and <key>.observed_at (its timestamp)."""
+def _fact_columns(
+    fact_keys: Sequence[str], *, with_observed_at: bool
+) -> tuple[Column, ...]:
+    """One column per fact key, plus a `<key>.observed_at` column each when the facts in
+    this table disagree about when they were collected.
+
+    ## Why the instant columns are conditional
+
+    The second column exists so two facts on one resource carrying **different**
+    `collected_at` instants produce two distinct instant columns — that is the spec's
+    stated reason, and it is the case this keeps. What it stopped doing is emitting them
+    when every fact agrees, which is the ordinary case: six facts became twelve columns,
+    the headers wrapped to four lines, and an A4 page had no width left for the values.
+    One agreed instant is one line under the table (`Table.provenance`), not a column
+    beside every value.
+
+    The header is the fact key humanised — `os_type` reads as "OS type". A reader is being
+    shown a label, not a key; the key stays the column's identity, which is what the
+    verifier addresses cells by.
+    """
     result: list[Column] = []
     for key in fact_keys:
-        result.append(Column(key=key, header=key))
-        result.append(Column(key=f"{key}.observed_at", header=f"{key}.observed_at"))
+        result.append(Column(key=key, header=_fact_header(key)))
+        if with_observed_at:
+            result.append(
+                Column(key=f"{key}.observed_at", header=f"{_fact_header(key)} observed")
+            )
     return tuple(result)
+
+
+def _fact_header(key: str) -> str:
+    """A fact key as a column label: `private_ip` -> "Private IP".
+
+    Deliberately not a message-catalogue lookup. A fact key is provider data — the
+    catalogue would need an entry per key of every resource type, and a key added to
+    `facts.v1.json` would render as a missing-message error rather than as itself.
+    Initialisms the catalogue would otherwise lower-case are held in `_FACT_INITIALISMS`.
+
+    Sentence case, not title case: the catalogue already spells a two-word header
+    "Resources affected", and a table whose own headers disagree about that reads as two
+    tables. Initialisms keep their case wherever they fall, so `os_type` is "OS type" and
+    `disk_size_gb` is "Disk size GB".
+    """
+    words = [word for word in key.split("_") if word]
+    if not words:
+        return key
+    return " ".join(
+        _FACT_INITIALISMS.get(word) or (word.capitalize() if index == 0 else word)
+        for index, word in enumerate(words)
+    )
+
+
+_FACT_INITIALISMS: Final[Mapping[str, str]] = {
+    "ip": "IP",
+    "os": "OS",
+    "nic": "NIC",
+    "nsg": "NSG",
+    "gb": "GB",
+    "id": "ID",
+    "sku": "SKU",
+    "cpu": "CPU",
+    "vm": "VM",
+    "dns": "DNS",
+}
+"""Words a plain `.capitalize()` gets wrong. Everything else title-cases correctly."""
+
+
+def _fact_instants(
+    context: BlockContext,
+    resources: Sequence[ResourceView],
+    fact_keys: Sequence[str],
+) -> frozenset[str]:
+    """Every distinct `collected_at` among the named facts on the listed resources.
+
+    Three sizes, three meanings, and the caller needs to tell them apart:
+
+    * **one** — every fact agrees, so the instant is one line under the table;
+    * **more than one** — they disagree, which is what the per-fact `observed_at`
+      columns exist to show;
+    * **none** — no resource carries any of these facts. There is nothing to disagree
+      about and nothing to state, so the columns go too. That is the case that printed
+      the `Disks` table as three empty rows under seven headers.
+
+    Stops early past two, since no caller distinguishes two from ten. Pure over the
+    snapshot, so replay recompiles the same shape.
+    """
+    if not fact_keys:
+        return frozenset()
+    wanted = set(fact_keys)
+    instants: set[str] = set()
+    for resource in resources:
+        for fact in context.view.facts_for(resource.resource_id):
+            if fact.key in wanted:
+                instants.add(fact.collected_at)
+                if len(instants) > 1:
+                    return frozenset(instants)
+    return frozenset(instants)
 
 
 def _observed_at_fact_value(fact: FactTextValue) -> FactTextValue:
@@ -297,9 +387,15 @@ def _resource_row(
     *,
     with_tier: bool,
     fact_keys: Sequence[str] = (),
+    with_observed_at: bool = True,
 ) -> Row:
-    """One resource's row: its name, optionally its tier, then one cell per metric,
-    then two cells per fact key (value + observed_at)."""
+    """One resource's row: its name, optionally its tier, then one cell per metric, then a
+    cell per fact key — plus its instant when the table's facts disagree about theirs.
+
+    `with_observed_at` must match what `_fact_columns` was given for the same table, or the
+    row would carry a different number of cells than the header declares. Both come from
+    one call site (`_resource_rows_table`), which is what keeps them in step.
+    """
     cells: list[object] = [
         text_cell(cursor.child("cells", 0), resource.name),
     ]
@@ -326,18 +422,20 @@ def _resource_row(
                 # fact_unavailable: the resource does not carry this fact. EmptyCell,
                 # never a zero, never a raise (Req 4.3).
                 cells.append(empty_cell(cursor.child("cells", len(cells))))
-                cells.append(empty_cell(cursor.child("cells", len(cells))))
+                if with_observed_at:
+                    cells.append(empty_cell(cursor.child("cells", len(cells))))
             else:
                 # Value column: a TextFactCell anchored to the fact's value.
                 value_cursor = cursor.child("cells", len(cells))
                 text_fact = value_cursor.child("fact", 0).text_fact(fact)
                 cells.append(TextFactCell(path=value_cursor.path, fact=text_fact))
 
-                # Observed_at column: a TextFactCell anchored to the fact's collected_at.
-                obs_cursor = cursor.child("cells", len(cells))
-                obs_fact_value = _observed_at_fact_value(fact)
-                obs_text_fact = obs_cursor.child("fact", 0).text_fact(obs_fact_value)
-                cells.append(TextFactCell(path=obs_cursor.path, fact=obs_text_fact))
+                if with_observed_at:
+                    # Observed_at column: a TextFactCell anchored to the fact's collected_at.
+                    obs_cursor = cursor.child("cells", len(cells))
+                    obs_fact_value = _observed_at_fact_value(fact)
+                    obs_text_fact = obs_cursor.child("fact", 0).text_fact(obs_fact_value)
+                    cells.append(TextFactCell(path=obs_cursor.path, fact=obs_text_fact))
 
     return Row(path=cursor.path, key=resource.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
 
@@ -362,10 +460,16 @@ def _resource_rows_table(
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
 
+    # One decision, used by the header and by every row, so the two cannot disagree about
+    # how many cells a fact contributes.
+    instants = _fact_instants(context, shown, fact_keys)
+    with_observed_at = len(instants) > 1
+    instant = next(iter(instants)) if len(instants) == 1 else None
+
     rows: list[Row] = [
         _resource_row(
             table_cursor.child("rows", ordinal), context, resource, refs,
-            with_tier=with_tier, fact_keys=fact_keys,
+            with_tier=with_tier, fact_keys=fact_keys, with_observed_at=with_observed_at,
         )
         for ordinal, resource in enumerate(shown)
     ]
@@ -381,7 +485,7 @@ def _resource_rows_table(
         _resource_column(context.messages),
         *((_tier_column(context.messages),) if with_tier else ()),
         *_metric_columns(refs),
-        *_fact_columns(fact_keys),
+        *_fact_columns(fact_keys, with_observed_at=with_observed_at),
     )
     table = Table(
         path=table_cursor.path,
@@ -389,6 +493,11 @@ def _resource_rows_table(
         columns=columns,
         rows=tuple(rows),
         caption=caption,
+        provenance=(
+            context.messages.text("doc.table.observed_at", instant=instant)
+            if instant is not None
+            else None
+        ),
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))

@@ -422,6 +422,15 @@ class _Emitter:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
             caption.add_run(node.caption)
 
+        # The one instant every fact in this table was collected at, when they agree —
+        # what used to be an `observed_at` column beside every value. Its own paragraph
+        # rather than a run appended to the caption: the caption is the template author's
+        # string and this is the compiler's, and a theme that wants to set them
+        # differently needs two paragraphs to do it with.
+        if node.provenance:
+            provenance = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
+            provenance.add_run(node.provenance)
+
     def emit_row(
         self,
         table: DocxTable,

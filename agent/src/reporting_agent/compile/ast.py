@@ -977,6 +977,19 @@ class Table:
     columns: tuple[Column, ...] = field(default_factory=tuple)
     rows: tuple[Row, ...] = field(default_factory=tuple)
     caption: str | None = None
+    provenance: str | None = None
+    """When every fact in this table was collected at one instant, that instant — as one
+    line under the caption instead of a column beside every value.
+
+    Derived at compile time, never authored: `caption` is the template author's string and
+    nothing appends to it. Held here rather than concatenated into the caption because the
+    two have different owners and a renderer that wants to set them in different sizes
+    should be able to.
+
+    `None` when the table carries no facts, or when its facts disagree about their
+    instant — a disagreement is what the per-fact `<key>.observed_at` columns exist to
+    show, and those are emitted in that case instead.
+    """
 
     def __post_init__(self) -> None:
         at = f"table {self.path!r}"

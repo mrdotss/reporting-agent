@@ -117,11 +117,18 @@ function columnEntryKey(entry: ColumnEntryValue): string {
 /**
  * How many actual table columns one column entry produces at compile time.
  *
- * A fact entry emits **two** columns: `<key>` and `<key>.observed_at`.
- * A metric or attribute entry emits one.
+ * **One, for every kind.** A fact entry used to emit two — `<key>` and
+ * `<key>.observed_at` — but the compiler now emits the instant column only when the
+ * table's facts disagree about when they were collected, and states one agreed instant
+ * under the table instead.
+ *
+ * That condition depends on the run's data, which this wizard does not have: an author
+ * choosing columns has no snapshot to consult. So the count is the ordinary shape, and
+ * the copy below says a fact may gain a second column rather than promising it will.
+ * Over-counting here would tell an author their table is too wide when it is not.
  */
-export function compiledColumnCount(entry: ColumnEntryValue): number {
-  return entry.kind === "fact" ? 2 : 1
+export function compiledColumnCount(_entry: ColumnEntryValue): number {
+  return 1
 }
 
 /**
@@ -451,7 +458,7 @@ function ColumnListPicker({
         {factCount > 0 && (
           <span>
             {" "}
-            (each fact adds a value column and an observed-at column)
+            (a fact gains a second column only in a run where its instants differ)
           </span>
         )}
       </p>

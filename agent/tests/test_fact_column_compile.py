@@ -5,12 +5,14 @@ The claim this file machine-checks:
  1. A `resource_table` definition naming a `kind=fact` column, compiled through the **real
     pipeline** (`compile_document`), produces a `TextFactCell` anchored to a real cell — not
     one injected past the compiler via the `compiled` hook.
- 2. The **two columns per fact** rule: `<key>` (the value) and `<key>.observed_at` (the
-    `collected_at` timestamp as its own `TextFact` with its own anchor).
+ 2. The **instant columns are conditional**, on the distinct `collected_at` set of the
+    table's facts: none or one and there are no `<key>.observed_at` columns at all; more
+    than one and each fact gets its own, because a disagreement is the thing those columns
+    exist to show. One agreed instant becomes `Table.provenance`, one line under the table.
  3. Two facts with **differing `collected_at`** instants produce two distinct instant columns,
     not a table-level instant column.
- 4. A resource **missing** the fact gets two `EmptyCell` entries (fact_unavailable), never a
-    raise or an empty string.
+ 4. A resource **missing** the fact gets an `EmptyCell` (fact_unavailable), never a raise or
+    an empty string.
  5. The `TextFact` is minted through `BlockCursor.text_fact()` — provenance is structural,
     the ledger records it, and `assert_ledger_matches_tree` passes (the closing invariant
     that `compile_document` always runs).
@@ -109,8 +111,13 @@ def _walk(node):
 class TestFactColumnCompiles:
     """A fact-kind column, compiled through the real pipeline, produces TextFactCells."""
 
-    def test_one_fact_column_emits_two_columns_and_two_text_fact_cells(self) -> None:
-        """The basic case: one resource carrying the fact, one fact-kind column."""
+    def test_one_agreed_instant_emits_one_column_and_a_provenance_line(self) -> None:
+        """The ordinary case: every fact in the table shares one `collected_at`.
+
+        One column for the value, no instant column, and the instant stated once as
+        `Table.provenance`. Six facts used to mean twelve columns and a header that wrapped
+        to four lines; this is the rule that stopped that.
+        """
         rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
         view = _view(_vm_with_fact(rid, "vm-01"))
 
@@ -126,20 +133,29 @@ class TestFactColumnCompiles:
 
         table = _table_named(document.document, "facts_table")
 
-        # Columns: resource + cpu_avg + fact_key + fact_key.observed_at
-        assert len(table.columns) == 4
+        # Columns: resource + cpu_avg + fact_key. No instant column.
+        assert len(table.columns) == 3
         assert table.columns[2].key == FACT_KEY
-        assert table.columns[3].key == f"{FACT_KEY}.observed_at"
+        assert [column.key for column in table.columns].count(
+            f"{FACT_KEY}.observed_at"
+        ) == 0
+
+        # The header is the key humanised, while the key stays the cell address.
+        assert table.columns[2].header == "OS type"
+
+        # The instant is stated once, under the table.
+        assert table.provenance is not None
+        assert COLLECTED_AT_1 in table.provenance
 
         # One resource row
         assert len(table.rows) == 1
         row = table.rows[0]
 
-        # Cell layout: [TextCell(name), FigureCell(cpu_avg), TextFactCell(value), TextFactCell(observed_at)]
+        # Cell layout: [TextCell(name), FigureCell(cpu_avg), TextFactCell(value)]
+        assert len(row.cells) == 3
         assert isinstance(row.cells[0], TextCell)  # resource name
         assert isinstance(row.cells[1], FigureCell)  # cpu_avg figure
         assert isinstance(row.cells[2], TextFactCell)  # fact value
-        assert isinstance(row.cells[3], TextFactCell)  # fact observed_at
 
         # The fact value cell
         fact_cell = row.cells[2]
@@ -150,15 +166,14 @@ class TestFactColumnCompiles:
         assert fact_cell.fact.formatted == FACT_VALUE_1
         assert fact_cell.fact.snapshot_path.endswith("/value")
 
-        # The observed_at cell
-        obs_cell = row.cells[3]
-        assert obs_cell.fact.value == COLLECTED_AT_1
-        assert obs_cell.fact.key == f"{FACT_KEY}.observed_at"
-        assert obs_cell.fact.snapshot_path.endswith("/collected_at")
-        assert obs_cell.fact.formatted == COLLECTED_AT_1
-
     def test_text_facts_are_in_the_ledger(self) -> None:
-        """Both TextFacts (value and observed_at) are registered in the figure ledger."""
+        """The fact's TextFact is registered in the figure ledger.
+
+        One entry, not two: with the instant stated under the table there is no
+        `observed_at` cell to anchor. The instant is provenance rather than a figure — the
+        snapshot still carries it and replay still proves it, and `render/html.py` has
+        always treated it as an attribute rather than a cell.
+        """
         rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
         view = _view(_vm_with_fact(rid, "vm-01"))
 
@@ -175,17 +190,18 @@ class TestFactColumnCompiles:
         # The closing invariant (assert_ledger_matches_tree) already passed inside
         # compile_document. Verify the text_facts dict has entries.
         text_facts = document.ledger.text_facts()
-        assert len(text_facts) == 2  # value + observed_at
+        assert len(text_facts) == 1
 
-        paths = list(text_facts.keys())
-        values = list(text_facts.values())
-        # One is the value, one is the observed_at
-        fact_values = {tf.key for tf in values}
-        assert FACT_KEY in fact_values
-        assert f"{FACT_KEY}.observed_at" in fact_values
+        fact_values = {tf.key for tf in text_facts.values()}
+        assert fact_values == {FACT_KEY}
 
-    def test_missing_fact_produces_empty_cells_not_a_raise(self) -> None:
-        """A resource without the fact gets EmptyCell for both columns (fact_unavailable)."""
+    def test_missing_fact_produces_an_empty_cell_not_a_raise(self) -> None:
+        """A resource without the fact gets an EmptyCell (fact_unavailable).
+
+        No resource carries the fact, so there is no instant to state and no disagreement
+        to show — one empty column rather than two. This is the shape that printed the
+        `Disks` table as empty rows under seven headers.
+        """
         rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-no-fact"
         view = _view(_vm_without_fact(rid, "vm-no-fact"))
 
@@ -202,11 +218,14 @@ class TestFactColumnCompiles:
         table = _table_named(document.document, "facts_table")
         row = table.rows[0]
 
-        # Cell layout: [TextCell(name), FigureCell(cpu_avg), EmptyCell, EmptyCell]
+        # Cell layout: [TextCell(name), FigureCell(cpu_avg), EmptyCell]
+        assert len(row.cells) == 3
         assert isinstance(row.cells[0], TextCell)
         assert isinstance(row.cells[1], FigureCell)
         assert isinstance(row.cells[2], EmptyCell)
-        assert isinstance(row.cells[3], EmptyCell)
+
+        # Nothing was collected, so nothing is claimed about when.
+        assert table.provenance is None
 
     def test_two_resources_with_different_collected_at_get_distinct_timestamps(self) -> None:
         """Two facts with differing collected_at produce two distinct instant cells."""
@@ -260,13 +279,12 @@ class TestFactColumnCompiles:
 
         table = _table_named(document.document, "mixed")
 
-        # Columns: resource, cpu_avg, cpu_max, os_type, os_type.observed_at
-        assert len(table.columns) == 5
+        # Columns: resource, cpu_avg, cpu_max, os_type
+        assert len(table.columns) == 4
         assert table.columns[0].key == "resource"
         assert table.columns[1].key == f"{sf.CPU}:avg"
         assert table.columns[2].key == f"{sf.CPU}:max"
         assert table.columns[3].key == FACT_KEY
-        assert table.columns[4].key == f"{FACT_KEY}.observed_at"
 
     def test_multiple_fact_columns_each_emit_two_columns(self) -> None:
         """Two different fact keys produce 4 fact columns total."""
@@ -338,13 +356,15 @@ class TestFactColumnCompiles:
         table = _table_named(document.document, "partial")
         assert len(table.rows) == 2
 
-        # First resource has the fact
+        # One instant across the facts that exist, so one value column.
         assert isinstance(table.rows[0].cells[1], TextFactCell)
-        assert isinstance(table.rows[0].cells[2], TextFactCell)
-
-        # Second resource does not
         assert isinstance(table.rows[1].cells[1], EmptyCell)
-        assert isinstance(table.rows[1].cells[2], EmptyCell)
+        assert len(table.rows[0].cells) == len(table.rows[1].cells) == 2
+
+        # The resource that carries nothing does not weaken the claim about the one that
+        # does: the instant is still stated, and it is that fact's.
+        assert table.provenance is not None
+        assert COLLECTED_AT_1 in table.provenance
 
     def test_text_fact_anchored_to_table(self) -> None:
         """The TextFact is anchored: text_fact_anchors() returns its path mapped to
@@ -364,7 +384,7 @@ class TestFactColumnCompiles:
 
         # anchor_table was called, so text_fact_anchors has entries
         anchors = document.ledger.text_fact_anchors()
-        assert len(anchors) == 2  # value + observed_at
+        assert len(anchors) == 1  # the value; the instant is not a cell
         for path, anchor in anchors.items():
             assert anchor.anchor_id is not None
             assert anchor.kind == "table"
