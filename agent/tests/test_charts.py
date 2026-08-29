@@ -260,22 +260,16 @@ def test_the_companion_table_lists_every_plotted_point_with_no_thinning() -> Non
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+    assert len(table.rows) == len(plotted)
 
-    # One row per series, one column per x — and every plotted point still in it.
-    series_set = C.plotted_series(node, messages=_MESSAGES)
-    assert len(table.rows) == len(series_set)
-    x_values = {point.x for point in plotted}
-    assert len(table.columns) == len(x_values) + 1  # + the series column
-
-    # The cell text is the ledger's formatted string, verbatim, and the set is exactly
-    # the plotted set — that is the claim, and it does not depend on the row shape.
+    # The cell text is the ledger's formatted string, verbatim.
     emitted = [
         cell.figure.formatted
         for row in table.rows
         for cell in row.cells
         if isinstance(cell, FigureCell)
     ]
-    assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
+    assert emitted == [point.y.formatted for point in plotted]
 
 
 def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
@@ -294,14 +288,14 @@ def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
     assert plotted, "the fixture must plot something"
 
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-    assert len(table.rows) == len(C.plotted_series(node, messages=_MESSAGES))
+    assert len(table.rows) == len(plotted)
 
     # Every panel's series keys must appear in the table's row keys — no panel
     # is silently dropped from the table just because it was drawn on a
-    # different subplot. A row key is now the series key alone: the x that used
-    # to be concatenated into it is the column.
+    # different subplot.
     panel_keys = {key for group in node.panels for key in group}
-    assert panel_keys <= {row.key for row in table.rows}
+    row_series_prefixes = {row.key.split("|", 1)[0] for row in table.rows}
+    assert panel_keys <= row_series_prefixes
 
     emitted = [
         cell.figure.formatted
@@ -309,7 +303,7 @@ def test_the_companion_table_lists_every_panels_points_task_5_5() -> None:
         for cell in row.cells
         if isinstance(cell, FigureCell)
     ]
-    assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
+    assert emitted == [point.y.formatted for point in plotted]
 
 
 def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
@@ -535,17 +529,7 @@ def test_the_hash_and_the_table_describe_one_plotted_set() -> None:
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
     hashed_points = sum(len(series.points) for series in plotted)
-
-    # The hash is over the **plotted** set — four series plus the aggregate, above the
-    # cap. The table's rows are the **real** series, all nine, because the aggregate's
-    # qualified x values would otherwise each become a column. Both describe one point
-    # set: the aggregate's points are the remainder's points, the same figures at the
-    # same paths, so the figure count is the same number either way.
-    assert len(table.rows) == len(node.series)
-    assert len(plotted) == 5  # the cap: four ranked series plus one aggregate
-    assert sum(
-        1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
-    ) == hashed_points
+    assert len(table.rows) == hashed_points
 
     sidecar = json.loads(C.sidecar_bytes(node, data_hash=C.chart_data_hash(node, messages=_MESSAGES), messages=_MESSAGES))
     assert sidecar["point_count"] == hashed_points
@@ -1183,31 +1167,42 @@ class TestTickThinning:
         assert tick_label_positions(1) == [0]
 
 
-def test_the_aggregate_does_not_turn_the_matrix_into_one_column_per_point() -> None:
-    """Above the five-series cap the table stays as wide as the x axis, not as wide as
-    the fold.
+def test_the_table_stays_three_columns_however_many_points_are_plotted() -> None:
+    """The invariant a real July run broke, and the reason this file did not catch it.
 
-    `plotted_series` qualifies each aggregated point's x with the series it came from
-    (`prod-db-07 · 2026-07-03`) so two remainder series sharing a date stay distinct. In
-    a matrix those qualified values would each become their own **column**: twenty
-    machines over July is 31 real dates plus 16 x 31 qualified ones, a 527-column table
-    nobody can read.
+    One row per series with a column per x was tried, to turn 93 rows into 3. It reaches
+    A4 as a 32-column table, and LibreOffice lays those columns out too narrow for their
+    text to survive into the converted PDF — a July run came back with 146
+    `pdf_figure_missing` findings, every figure of this table, on a `.docx` whose own
+    twenty tables all resolved.
 
-    So the table iterates the chart's real series while the image plots the capped five.
+    Nothing here noticed, because every fixture in this file plots a handful of points and
+    the end-to-end fixture plots **one**: at one point per series the matrix is two columns
+    wide and looks perfectly well. So the guard is not "the shape is a matrix" but "the
+    width does not follow the data", checked at a month's worth of days.
     """
+    for points in (1, 4, 31, 90):
+        node, _ = synthetic_chart(series_count=3, points_per_series=points)
+        table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+
+        assert len(table.columns) == 3, (
+            f"{points} points produced {len(table.columns)} columns; a companion table's "
+            f"width must not follow its point count, or it stops fitting the page"
+        )
+        assert len(table.rows) == 3 * points
+
+
+def test_the_aggregate_keeps_every_remainder_point_addressable() -> None:
+    """Above the five-series cap the aggregate qualifies each point's x with the series it
+    came from, so two remainder series sharing a date stay distinct row keys."""
     node, _ = synthetic_chart(series_count=9, points_per_series=4)
     table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
 
-    # One row per real series, one column per x plus the series column.
-    assert len(table.rows) == 9
-    assert len(table.columns) == 5
-
-    # No column key carries the aggregate's qualifier.
-    assert not [c for c in table.columns if C.QUALIFIER in c.key], (
-        "a qualified x reached the columns, so the aggregate is being matrixed"
+    assert len(table.columns) == 3
+    assert len({row.key for row in table.rows}) == len(table.rows), (
+        "a repeated row key is a row the verifier cannot address (Req 21.5)"
     )
 
-    # And every plotted point is still present.
     plotted = C.plotted_series(node, messages=_MESSAGES)
     assert sum(
         1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
