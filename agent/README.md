@@ -288,15 +288,39 @@ Read the previous version and replay it whole:
 V=$(aws bedrock-agentcore-control get-agent-runtime \
       --agent-runtime-id "$ID" --agent-runtime-version "$PREV" \
       --region "$AWS_REGION" --output json)
-ENV=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['environmentVariables']))")
+# Every field is replayed from $V. Pull each one whole — never with a --query
+# projection, which is how the fields you forgot to name get deleted.
+field() { printf '%s' "$V" | python3 -c "import sys,json;print(json.dumps(json.load(sys.stdin)['$1']))"; }
+ENV=$(field environmentVariables)
+ARTIFACT=$(field agentRuntimeArtifact)
+PROTOCOL=$(field protocolConfiguration)
+LIFECYCLE=$(field lifecycleConfiguration)
+METADATA=$(field metadataConfiguration)
+ROLE_ARN=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.load(sys.stdin)['roleArn'])")
+DESC=$(printf '%s' "$V" | python3 -c "import sys,json;print(json.load(sys.stdin)['description'])")
+
+# `requireServiceS3Endpoint` is returned by get and REJECTED by update for runtimes
+# created after 2026-06-11. It is server-managed; strip it or the call fails.
+NETWORK=$(printf '%s' "$V" | python3 -c "
+import sys, json
+n = json.load(sys.stdin)['networkConfiguration']
+n.get('networkModeConfig', {}).pop('requireServiceS3Endpoint', None)
+print(json.dumps(n))")
 
 aws bedrock-agentcore-control update-agent-runtime \
   --agent-runtime-id "$ID" --region "$AWS_REGION" \
   --role-arn "$ROLE_ARN" --description "$DESC" \
   --agent-runtime-artifact "$ARTIFACT" --network-configuration "$NETWORK" \
   --protocol-configuration "$PROTOCOL" --lifecycle-configuration "$LIFECYCLE" \
+  --metadata-configuration "$METADATA" \
   --environment-variables "$ENV"
 ```
+
+**`--metadata-configuration` is not optional.** It carries `requireMMDSV2: true`,
+and a full replace that omits it deletes it — silently relaxing the
+instance-metadata posture rather than failing anything. It is the one field whose
+loss the crash-loop symptom will *not* tell you about, which is why it is easy to
+leave out and was left out of this recipe for the first twenty-odd deploys.
 
 Do **not** assemble that snapshot with a `--query` projection. Reading only the
 fields you remember to name is precisely how the ones you forgot get deleted — dump
@@ -309,8 +333,19 @@ import sys, json; d = json.load(sys.stdin)
 print(d['agentRuntimeVersion'], d['status'])
 print('env :', sorted(d.get('environmentVariables') or {}))
 print('life:', d.get('lifecycleConfiguration'))
+print('meta:', d.get('metadataConfiguration'))
 print('net :', d['networkConfiguration']['networkModeConfig'])"
 ```
+
+Better still, diff the whole object against a snapshot taken **before** the update:
+every field but `agentRuntimeVersion` and `lastUpdatedAt` should be byte-identical.
+A field-by-field eyeball only finds the fields you thought to print.
+
+**Push before you build.** CodeBuild clones the repository at `main` — it never sees
+your working tree. A build started with unpushed commits rebuilds the previous commit
+and reports `SUCCEEDED`: a green build, a fresh image digest, a new runtime version,
+and none of your changes in it. Pin it with `--source-version <sha>`, and confirm the
+digest on `:latest` was pushed by *this* build rather than an earlier one.
 
 **A `:latest` container URI resolves when the version is created, not when the image
 is pushed.** A build alone changes nothing about a running runtime; it needs an
