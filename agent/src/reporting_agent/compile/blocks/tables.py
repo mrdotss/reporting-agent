@@ -45,7 +45,7 @@ whole report.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Final
@@ -258,13 +258,103 @@ def _metric_columns(refs: Sequence[MetricRef]) -> tuple[Column, ...]:
     return tuple(Column(key=ref.key, header=ref.label) for ref in refs)
 
 
-def _fact_columns(fact_keys: Sequence[str]) -> tuple[Column, ...]:
-    """Two columns per fact key: <key> (the value) and <key>.observed_at (its timestamp)."""
+def _fact_columns(
+    fact_keys: Sequence[str], *, with_observed_at: bool
+) -> tuple[Column, ...]:
+    """One column per fact key, plus a `<key>.observed_at` column each when the facts in
+    this table disagree about when they were collected.
+
+    ## Why the instant columns are conditional
+
+    The second column exists so two facts on one resource carrying **different**
+    `collected_at` instants produce two distinct instant columns — that is the spec's
+    stated reason, and it is the case this keeps. What it stopped doing is emitting them
+    when every fact agrees, which is the ordinary case: six facts became twelve columns,
+    the headers wrapped to four lines, and an A4 page had no width left for the values.
+    One agreed instant is one line under the table (`Table.provenance`), not a column
+    beside every value.
+
+    The header is the fact key humanised — `os_type` reads as "OS type". A reader is being
+    shown a label, not a key; the key stays the column's identity, which is what the
+    verifier addresses cells by.
+    """
     result: list[Column] = []
     for key in fact_keys:
-        result.append(Column(key=key, header=key))
-        result.append(Column(key=f"{key}.observed_at", header=f"{key}.observed_at"))
+        result.append(Column(key=key, header=_fact_header(key)))
+        if with_observed_at:
+            result.append(
+                Column(key=f"{key}.observed_at", header=f"{_fact_header(key)} observed")
+            )
     return tuple(result)
+
+
+def _fact_header(key: str) -> str:
+    """A fact key as a column label: `private_ip` -> "Private IP".
+
+    Deliberately not a message-catalogue lookup. A fact key is provider data — the
+    catalogue would need an entry per key of every resource type, and a key added to
+    `facts.v1.json` would render as a missing-message error rather than as itself.
+    Initialisms the catalogue would otherwise lower-case are held in `_FACT_INITIALISMS`.
+
+    Sentence case, not title case: the catalogue already spells a two-word header
+    "Resources affected", and a table whose own headers disagree about that reads as two
+    tables. Initialisms keep their case wherever they fall, so `os_type` is "OS type" and
+    `disk_size_gb` is "Disk size GB".
+    """
+    words = [word for word in key.split("_") if word]
+    if not words:
+        return key
+    return " ".join(
+        _FACT_INITIALISMS.get(word) or (word.capitalize() if index == 0 else word)
+        for index, word in enumerate(words)
+    )
+
+
+_FACT_INITIALISMS: Final[Mapping[str, str]] = {
+    "ip": "IP",
+    "os": "OS",
+    "nic": "NIC",
+    "nsg": "NSG",
+    "gb": "GB",
+    "id": "ID",
+    "sku": "SKU",
+    "cpu": "CPU",
+    "vm": "VM",
+    "dns": "DNS",
+}
+"""Words a plain `.capitalize()` gets wrong. Everything else title-cases correctly."""
+
+
+def _fact_instants(
+    context: BlockContext,
+    resources: Sequence[ResourceView],
+    fact_keys: Sequence[str],
+) -> frozenset[str]:
+    """Every distinct `collected_at` among the named facts on the listed resources.
+
+    Three sizes, three meanings, and the caller needs to tell them apart:
+
+    * **one** — every fact agrees, so the instant is one line under the table;
+    * **more than one** — they disagree, which is what the per-fact `observed_at`
+      columns exist to show;
+    * **none** — no resource carries any of these facts. There is nothing to disagree
+      about and nothing to state, so the columns go too. That is the case that printed
+      the `Disks` table as three empty rows under seven headers.
+
+    Stops early past two, since no caller distinguishes two from ten. Pure over the
+    snapshot, so replay recompiles the same shape.
+    """
+    if not fact_keys:
+        return frozenset()
+    wanted = set(fact_keys)
+    instants: set[str] = set()
+    for resource in resources:
+        for fact in context.view.facts_for(resource.resource_id):
+            if fact.key in wanted:
+                instants.add(fact.collected_at)
+                if len(instants) > 1:
+                    return frozenset(instants)
+    return frozenset(instants)
 
 
 def _observed_at_fact_value(fact: FactTextValue) -> FactTextValue:
@@ -297,9 +387,15 @@ def _resource_row(
     *,
     with_tier: bool,
     fact_keys: Sequence[str] = (),
+    with_observed_at: bool = True,
 ) -> Row:
-    """One resource's row: its name, optionally its tier, then one cell per metric,
-    then two cells per fact key (value + observed_at)."""
+    """One resource's row: its name, optionally its tier, then one cell per metric, then a
+    cell per fact key — plus its instant when the table's facts disagree about theirs.
+
+    `with_observed_at` must match what `_fact_columns` was given for the same table, or the
+    row would carry a different number of cells than the header declares. Both come from
+    one call site (`_resource_rows_table`), which is what keeps them in step.
+    """
     cells: list[object] = [
         text_cell(cursor.child("cells", 0), resource.name),
     ]
@@ -326,18 +422,20 @@ def _resource_row(
                 # fact_unavailable: the resource does not carry this fact. EmptyCell,
                 # never a zero, never a raise (Req 4.3).
                 cells.append(empty_cell(cursor.child("cells", len(cells))))
-                cells.append(empty_cell(cursor.child("cells", len(cells))))
+                if with_observed_at:
+                    cells.append(empty_cell(cursor.child("cells", len(cells))))
             else:
                 # Value column: a TextFactCell anchored to the fact's value.
                 value_cursor = cursor.child("cells", len(cells))
                 text_fact = value_cursor.child("fact", 0).text_fact(fact)
                 cells.append(TextFactCell(path=value_cursor.path, fact=text_fact))
 
-                # Observed_at column: a TextFactCell anchored to the fact's collected_at.
-                obs_cursor = cursor.child("cells", len(cells))
-                obs_fact_value = _observed_at_fact_value(fact)
-                obs_text_fact = obs_cursor.child("fact", 0).text_fact(obs_fact_value)
-                cells.append(TextFactCell(path=obs_cursor.path, fact=obs_text_fact))
+                if with_observed_at:
+                    # Observed_at column: a TextFactCell anchored to the fact's collected_at.
+                    obs_cursor = cursor.child("cells", len(cells))
+                    obs_fact_value = _observed_at_fact_value(fact)
+                    obs_text_fact = obs_cursor.child("fact", 0).text_fact(obs_fact_value)
+                    cells.append(TextFactCell(path=obs_cursor.path, fact=obs_text_fact))
 
     return Row(path=cursor.path, key=resource.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
 
@@ -362,10 +460,36 @@ def _resource_rows_table(
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
 
+    # One decision, used by the header and by every row, so the two cannot disagree about
+    # how many cells a fact contributes.
+    instants = _fact_instants(context, shown, fact_keys)
+    with_observed_at = len(instants) > 1
+    instant = next(iter(instants)) if len(instants) == 1 else None
+
+    # The compiler's line under the table: the one instant its facts agree on, or — when
+    # not one of them was answered — which keys were asked for. A grid of blanks tells a
+    # reader nothing about whether the fact has no value, was never requested, or failed.
+    #
+    # A note rather than a notice row in the table's place: a table listing 500 of 620
+    # matched resources is saying something even when none of its facts resolved, and
+    # replacing it would discard both the list and the omitted-row count.
+    if instants:
+        note = (
+            context.messages.text("doc.table.observed_at", instant=instant)
+            if instant is not None
+            else None
+        )
+    elif fact_keys:
+        note = context.messages.text(
+            "doc.notice.no_facts", keys=", ".join(fact_keys)
+        )
+    else:
+        note = None
+
     rows: list[Row] = [
         _resource_row(
             table_cursor.child("rows", ordinal), context, resource, refs,
-            with_tier=with_tier, fact_keys=fact_keys,
+            with_tier=with_tier, fact_keys=fact_keys, with_observed_at=with_observed_at,
         )
         for ordinal, resource in enumerate(shown)
     ]
@@ -381,7 +505,7 @@ def _resource_rows_table(
         _resource_column(context.messages),
         *((_tier_column(context.messages),) if with_tier else ()),
         *_metric_columns(refs),
-        *_fact_columns(fact_keys),
+        *_fact_columns(fact_keys, with_observed_at=with_observed_at),
     )
     table = Table(
         path=table_cursor.path,
@@ -389,6 +513,7 @@ def _resource_rows_table(
         columns=columns,
         rows=tuple(rows),
         caption=caption,
+        note=note,
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))
@@ -437,6 +562,163 @@ def compile_top_n_table(
 
     ordered = (order_by, *(ref for ref in columns if ref.key != order_by.key))
     return _resource_rows_table(context, block, cursor, ordered, fact_keys=fact_keys)
+
+
+# ---------------------------------------------------------------------------
+# metric_summary — the block that replaced the per-day dump
+# ---------------------------------------------------------------------------
+
+SUMMARY_STATISTICS: Final[tuple[str, ...]] = ("avg", "p95", "max")
+"""The statistics a summary row reports, in column order.
+
+`avg` and `max` are exact — the collector computes both over every sample. `p95` is an
+**estimate** from the folded sketch and only exists where the Metric_Catalog declares it,
+which today is `Percentage CPU` alone; its column is omitted entirely for a metric that
+declares none rather than printed as a row of blanks.
+
+Deliberately not configurable. A summary whose columns varied per profile would be a
+second thing to author and a second thing to get wrong, and the point of the block is that
+one row describes one resource over one period the same way every time.
+"""
+
+
+def compile_metric_summary(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """One table per selected metric: a row per resource, a period in four numbers.
+
+    ## What this replaces
+
+    A month of `timeseries_chart` companion rows is one row per plotted point per series —
+    three machines over July is 93 rows, and twenty machines is 620. Nobody reads 620 rows
+    to learn that CPU sat near idle with one spike. This says that in three.
+
+    The daily values are not lost: they remain in the snapshot, in the ledger, and in the
+    chart's own companion table, which is where a reader who wants a specific day looks.
+
+    ## Peak at
+
+    A `TextCell` carrying the local day whose daily maximum equals the window maximum —
+    derived here by argmax over `day_series`, the same series the chart plots. Derived
+    rather than collected, and therefore not a figure: the figure is the peak itself, in
+    the column beside it. The derivation is pure over the snapshot, so a replay recomputes
+    the same day, and a date is masked as a date by `verify/masking.py`'s fourth stage.
+
+    Ties go to the **earliest** day. A resource that hit its maximum twice has no single
+    peak day, and picking the earlier one is at least a rule rather than whichever the
+    dictionary happened to yield.
+    """
+    refs = read_metric_refs(block, "metrics")
+    matched = resolve(context.scope_for(block), context.view)
+    style = context.design.table_style_name
+    caption = caption_of(block)
+
+    # One table per distinct metric name, in the order the section selected them. The
+    # statistics are this block's own, so two refs naming one metric with different
+    # statistics are one table, not two.
+    names: list[str] = []
+    for ref in refs:
+        if ref.name not in names:
+            names.append(ref.name)
+
+    nodes: list[Table] = []
+    for ordinal, name in enumerate(names):
+        table_cursor = cursor.child("nodes", ordinal)
+        if not matched:
+            nodes.append(
+                empty_scope_table(table_cursor, style, caption, messages=context.messages)
+            )
+            continue
+        nodes.append(
+            _metric_summary_table(
+                context, table_cursor, name, matched[:MAX_TABLE_ROWS], style, caption
+            )
+        )
+        cursor.anchor_table(table_cursor.path)
+
+    return BlockOutput(nodes=tuple(nodes))
+
+
+def _metric_summary_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    metric: str,
+    resources: Sequence[ResourceView],
+    style: str,
+    caption: str | None,
+) -> Table:
+    """One metric's summary table over `resources`."""
+    # A statistic earns its column only if some resource has it. `p95` is declared for one
+    # metric in the whole catalogue, so an unconditional column would be blank in every
+    # table but one.
+    present = tuple(
+        statistic
+        for statistic in SUMMARY_STATISTICS
+        if any(
+            context.view.stat(resource.resource_id, metric, statistic) is not None
+            for resource in resources
+        )
+    )
+
+    rows: list[Row] = []
+    for ordinal, resource in enumerate(resources):
+        row_cursor = table_cursor.child("rows", ordinal)
+        cells: list[object] = [text_cell(row_cursor.child("cells", 0), resource.name)]
+        for statistic in present:
+            cell_cursor = row_cursor.child("cells", len(cells))
+            value = context.view.stat(resource.resource_id, metric, statistic)
+            cells.append(
+                empty_cell(cell_cursor)
+                if value is None
+                else _figure_cell(cell_cursor, context, value)
+            )
+        peak_day = _peak_day(context, resource, metric)
+        cells.append(
+            text_cell(row_cursor.child("cells", len(cells)), peak_day)
+            if peak_day is not None
+            else empty_cell(row_cursor.child("cells", len(cells)))
+        )
+        rows.append(
+            Row(path=row_cursor.path, key=resource.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
+        )
+
+    columns = (
+        _resource_column(context.messages),
+        *(
+            Column(
+                key=f"{metric}:{statistic}",
+                header=context.messages.text(f"doc.summary.{statistic}"),
+            )
+            for statistic in present
+        ),
+        Column(key=f"{metric}:peak_at", header=context.messages.text("doc.summary.peak_at")),
+    )
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=columns,
+        rows=tuple(rows),
+        caption=caption or metric,
+    )
+
+
+def _peak_day(
+    context: BlockContext, resource: ResourceView, metric: str
+) -> str | None:
+    """The earliest local day whose daily maximum equals this resource's window maximum.
+
+    `None` when the window has no maximum, or when no day's maximum reaches it — the
+    second is possible when a day bucket is missing, and inventing a day for a peak whose
+    day was not collected would be the kind of quiet fabrication the whole product exists
+    to refuse.
+    """
+    window_max = context.view.stat(resource.resource_id, metric, "max")
+    if window_max is None:
+        return None
+    for local_day, value in context.view.day_series(resource.resource_id, metric, "max"):
+        if value.value == window_max.value:
+            return local_day
+    return None
 
 
 def compile_kpi_row(

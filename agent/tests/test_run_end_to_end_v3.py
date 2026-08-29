@@ -184,15 +184,29 @@ class TestV3SectionWalkReachesAPassingVerification:
         assert docx is not None and docx.body.startswith(b"PK\x03\x04")
         assert pdf is not None and pdf.body.startswith(b"%PDF-")
 
-    def test_the_delivered_docx_carries_a_two_panel_chart(
+    def test_the_delivered_docx_carries_one_chart_for_the_section(
         self, walked_v3: tuple[V2Walk, list[Event]]
     ) -> None:
-        """`vm_utilization`'s own metrics select CPU (0-100 range) and Available
-        Memory Bytes (billions) — an order of magnitude apart, which
-        `render/charts.py`'s panelling rule splits into two panels. Read from the
-        real delivered `.docx`, not from the compiled AST, so this is a claim
-        about what the run actually produced rather than about the compiler in
-        isolation."""
+        """`vm_utilization` emits **one** chart however many machines are in scope.
+
+        It used to emit one per machine — `per: "resource"` — and every one of them
+        plotted the whole section scope, so two VMs produced two identical charts.
+
+        ## What this replaces, and why the old assertion proved nothing
+
+        This test asserted "at least 2 inline shapes" and called that proof of a
+        two-panel split. It was wrong twice over. The two shapes came from the two
+        *charts*, not from two panels of one. And the fixture cannot exercise
+        panelling anyway: its docstring claimed Available Memory Bytes runs in the
+        billions, while the fake actually answers `15.00` against a CPU of `12.00` —
+        within the 10x factor `panel_groups` splits on, so one panel is the correct
+        outcome and always was.
+
+        Panelling is covered where it can be exercised, in `test_charts.py`'s
+        `two_magnitude_chart` fixture. What this test can honestly claim is what the
+        run produced: one chart image for the section, read from the delivered
+        `.docx` rather than from the compiled AST.
+        """
         walk, _ = walked_v3
         docx = walk.store.get(reports_key(ACTOR_ID, RUN_ID, "report.docx"))
         assert docx is not None
@@ -200,13 +214,11 @@ class TestV3SectionWalkReachesAPassingVerification:
         from docx import Document as open_docx
 
         document = open_docx(BytesIO(docx.body))
-        # A panelled chart is embedded as one image per panel plus one companion
-        # table per chart (Req 17's own render contract) — two inline shapes for
-        # a two-panel chart is what proves the split happened, without needing
-        # the compiled AST at all.
+        # One image per panel (Req 17's own render contract), and this chart has one
+        # panel. Two VMs in scope, one chart: the count does not follow the estate.
         inline_shapes = document.inline_shapes
-        assert len(inline_shapes) >= 2, (
-            f"expected at least 2 embedded chart panel images, got "
+        assert len(inline_shapes) == 1, (
+            f"expected exactly 1 embedded chart image for the one section chart, got "
             f"{len(inline_shapes)}"
         )
 

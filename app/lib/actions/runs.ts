@@ -30,7 +30,10 @@ import {
   deriveProgressToken,
   progressTokenHash,
 } from "@/lib/runs/progress-token"
-import { phaseDeadlineFor } from "@/lib/runs/state"
+import {
+  countRunsForProfilePeriod,
+  phaseDeadlineFor,
+} from "@/lib/runs/state"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 
 /**
@@ -287,6 +290,16 @@ export type EnqueueResult = {
 const CUSTOMER_NAME_SCHEMA_VERSION = 3
 
 /**
+ * The lowest `schema_version` at which the revision row is **derived** rather than
+ * submitted.
+ *
+ * Same version and the same reasoning as `CUSTOMER_NAME_SCHEMA_VERSION`: a v3
+ * profile carries the document's identity, so a run over it is not the place to
+ * retype what the profile already says.
+ */
+const DERIVED_REVISION_SCHEMA_VERSION = 3
+
+/**
  * Resolve the `customer_name` a run should carry, and which field (if any) is
  * missing, for one pinned `definition` and one submitted `input.customerName`
  * (Requirement 12.2, 12.8, 12.9, task 4.4).
@@ -306,6 +319,39 @@ const CUSTOMER_NAME_SCHEMA_VERSION = 3
  * that version, the value still comes from `input.customerName`, the field the
  * form still collects for a v2 pin, reported as `customerName` when absent.
  */
+/**
+ * The `author` a derived revision row carries: the profile's own Author signatory.
+ *
+ * Read from `front_matter.document_control.approvers`, the same list the document
+ * control page prints — so the name on the revision row and the name in the
+ * signature table are one value, and cannot disagree. Falls back to the empty
+ * string, which the renderer omits rather than substituting for.
+ *
+ * Defensive throughout: `front_matter` is typed `unknown` on a definition, and this
+ * runs against whatever a stored version happens to hold.
+ */
+export function resolveRevisionAuthor(definition: {
+  readonly front_matter?: unknown
+}): string {
+  const frontMatter = definition.front_matter
+  if (typeof frontMatter !== "object" || frontMatter === null) return ""
+
+  const control = (frontMatter as Record<string, unknown>).document_control
+  if (typeof control !== "object" || control === null) return ""
+
+  const approvers = (control as Record<string, unknown>).approvers
+  if (!Array.isArray(approvers)) return ""
+
+  for (const entry of approvers) {
+    if (typeof entry !== "object" || entry === null) continue
+    const record = entry as Record<string, unknown>
+    if (record.role !== "author") continue
+    return typeof record.name === "string" ? record.name.trim() : ""
+  }
+
+  return ""
+}
+
 export function resolveCustomerName(
   definition: {
     readonly schema_version?: unknown
@@ -484,7 +530,12 @@ export async function enqueueRun(
     if (missingCustomerNameField !== null) {
       missingFields.push(missingCustomerNameField)
     }
-    if (input.revisionHistoryRow === undefined) {
+    // At v3 the revision row is derived below rather than submitted, so its
+    // absence is not a missing field — see `DERIVED_REVISION_SCHEMA_VERSION`.
+    if (
+      schemaVersion < DERIVED_REVISION_SCHEMA_VERSION &&
+      input.revisionHistoryRow === undefined
+    ) {
       missingFields.push("revisionHistoryRow")
     }
 
@@ -518,7 +569,35 @@ export async function enqueueRun(
     tag_filters: { ...derived.tag_filters },
   }
 
-  // 6 — the insert. Derived first, so the values are in hand and the statement is
+  // 6 — the revision row, derived rather than typed at v3 and above.
+  //
+  //     Requirements line 1057: *a re-run of one period is a revision of one
+  //     document rather than a second document*. Two runs of July carry the same
+  //     document number, and this row is the only thing telling them apart — so
+  //     it is a fact about the account's history rather than a field, and asking
+  //     for it produced a "1.0" typed on every run forever.
+  //
+  //     Read before the insert, so the statement stays the only awaited operation
+  //     left (Requirement 37.2).
+  const revisionHistoryRow =
+    schemaVersion >= DERIVED_REVISION_SCHEMA_VERSION
+      ? {
+          revision: String(
+            (await countRunsForProfilePeriod(userId, {
+              templateId: input.templateId,
+              periodStart: period.start,
+              periodEnd: period.end,
+            })) + 1
+          ),
+          // No note. The renderer prints what it is given and composes nothing,
+          // and "First issue" invented here would be copy this action made up
+          // about a document it has not seen.
+          note: "",
+          author: resolveRevisionAuthor(definition),
+        }
+      : (input.revisionHistoryRow ?? null)
+
+  // 7 — the insert. Derived first, so the values are in hand and the statement is
   //     the only awaited operation left (Requirement 37.2).
   const runId = randomUUID()
 
@@ -554,7 +633,7 @@ export async function enqueueRun(
         // v1 pins. Sourced from the pinned version at schema_version >= 3,
         // from the submission at v2 — see the resolution above.
         customerName: resolvedCustomerName,
-        revisionHistoryRow: input.revisionHistoryRow ?? null,
+        revisionHistoryRow,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick
         // recomputes the token from this run's id when it invokes.
         progressTokenHash: progressTokenHash(deriveProgressToken(runId)),

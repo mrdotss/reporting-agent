@@ -121,6 +121,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "rich_text",
     "historical_trend",
     "blank_rows_table",
+    "metric_summary",
 )
 # --- END BLOCK TYPES ---
 
@@ -173,6 +174,11 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "timeseries_chart": {
         "required": ["metrics"],
         "optional": ["caption", "show_fidelity"],
+        "enums": {},
+    },
+    "metric_summary": {
+        "required": ["metrics"],
+        "optional": ["caption"],
         "enums": {},
     },
     "distribution_chart": {

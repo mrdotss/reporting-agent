@@ -1,11 +1,18 @@
 import type { Metadata } from "next"
 
-import { RunForm } from "@/components/reports/run-form"
-import { RunList } from "@/components/reports/run-list"
+import { RequestReportDialog } from "@/components/reports/request-report-dialog"
+import { RunFilters } from "@/components/reports/run-filters"
+import { RunTable } from "@/components/reports/run-table"
 import { requireSession } from "@/lib/auth/guard"
+import type { RunStatus } from "@/lib/db/schema"
 import { NO_RUN_VIEW_EXTRAS, toRunView, toTemplateView } from "@/lib/db/views"
 import { resolveRunExtrasBatch } from "@/lib/runs/detail"
-import { listOwnedRuns } from "@/lib/runs/state"
+import {
+  RUN_PAGE_SIZE,
+  countOwnedRuns,
+  listOwnedRuns,
+  type RunListQuery,
+} from "@/lib/runs/state"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 
@@ -34,15 +41,80 @@ export const metadata: Metadata = {
     "requested.",
 }
 
-export default async function ReportsPage() {
+/**
+ * The status groups a chip selects, and the only ones the URL admits.
+ *
+ * `running` is a group rather than a status: a consultant asking "what is in
+ * flight" does not distinguish `collecting` from `verifying`, and offering five
+ * chips for one question would be five chips.
+ */
+const STATUS_GROUPS = {
+  all: [],
+  completed: ["completed"],
+  failed: ["failed"],
+  running: ["queued", "claimed", "collecting", "compiling", "rendering", "verifying"],
+} as const satisfies Record<string, readonly RunStatus[]>
+
+type GroupKey = keyof typeof STATUS_GROUPS
+
+function readGroup(raw: string | undefined): GroupKey {
+  return raw !== undefined && raw in STATUS_GROUPS ? (raw as GroupKey) : "all"
+}
+
+/** A 1-based page from the URL, clamped to something a query can use. */
+function readPage(raw: string | undefined): number {
+  const parsed = Number.parseInt(raw ?? "1", 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1
+}
+
+export default async function ReportsPage({
+  searchParams,
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}>) {
   const user = await requireSession()
+
+  // The filters live in the URL so the server can read them — this page's list
+  // pages and filters in SQL, and a filter held in client state could only ever
+  // narrow the rows already fetched.
+  const params = await searchParams
+  const group = readGroup(
+    typeof params.status === "string" ? params.status : undefined
+  )
+  const search = typeof params.q === "string" ? params.q : ""
+  const page = readPage(typeof params.page === "string" ? params.page : undefined)
+
+  const query: RunListQuery = {
+    statuses: STATUS_GROUPS[group],
+    search,
+    limit: RUN_PAGE_SIZE,
+    offset: (page - 1) * RUN_PAGE_SIZE,
+  }
 
   // Both reads scoped by `user_id` (Requirements 9.7, 36.10), and both projected: only
   // `RunView` and `ConnectedSubscriptionView` cross to the browser, so the unmasked
   // subscription id, the tenant id, the client id, the ciphertext, `progress_token_hash`,
   // `dedupe_key` and the requested scope are absent by construction.
-  const [runs, subscriptions, templateRows] = await Promise.all([
-    listOwnedRuns(user.id),
+  // The chip counts share the search term but not the status, so each says how
+  // much *that* chip would show rather than how much the current view holds.
+  const [runs, total, counts, subscriptions, templateRows] = await Promise.all([
+    listOwnedRuns(user.id, query),
+    countOwnedRuns(user.id, { statuses: STATUS_GROUPS[group], search }),
+    (async () => {
+      const entries = await Promise.all(
+        (Object.keys(STATUS_GROUPS) as GroupKey[]).map(
+          async (key) =>
+            [
+              key,
+              await countOwnedRuns(user.id, {
+                statuses: STATUS_GROUPS[key],
+                search,
+              }),
+            ] as const
+        )
+      )
+      return Object.fromEntries(entries) as Record<GroupKey, number>
+    })(),
     listConnectedSubscriptions(user.id),
     listTemplates(user.id),
   ])
@@ -69,7 +141,7 @@ export default async function ReportsPage() {
   const now = new Date()
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-medium tracking-tight">
           Reports
@@ -83,24 +155,28 @@ export default async function ReportsPage() {
         </p>
       </div>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-sm font-medium tracking-tight">
-          Request a report
-        </h2>
+      <section className="flex flex-col gap-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-heading text-sm font-medium tracking-tight">
+            Run history
+          </h2>
 
-        <RunForm
-          subscriptions={subscriptions}
-          templates={templates}
-          nowIso={now.toISOString()}
+          <RequestReportDialog
+            subscriptions={subscriptions}
+            templates={templates}
+            nowIso={now.toISOString()}
+          />
+        </div>
+
+        <RunFilters
+          total={total}
+          shown={runs.length}
+          offset={query.offset ?? 0}
+          pageSize={RUN_PAGE_SIZE}
+          counts={counts}
         />
-      </section>
 
-      <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-sm font-medium tracking-tight">
-          Runs
-        </h2>
-
-        <RunList
+        <RunTable
           runs={runs.map((run) =>
             toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
           )}

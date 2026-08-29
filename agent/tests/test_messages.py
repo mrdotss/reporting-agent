@@ -132,6 +132,10 @@ def test_the_two_languages_are_actually_different_copy() -> None:
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
         "ui.run_list.utc_suffix",
+        # "Status" is the Indonesian word too. Translating it to something else
+        # to satisfy this assertion would be a mistranslation performed to please
+        # a test, which is the exact trade the docstring above warns against.
+        "ui.run_table.status",
         "ui.scan.group_data",
     }
     messages = raw_catalog()["messages"]

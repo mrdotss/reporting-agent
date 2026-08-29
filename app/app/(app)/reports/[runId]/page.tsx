@@ -4,7 +4,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { DownloadCard } from "@/components/reports/download-card"
-import { PaperRender } from "@/components/reports/paper-render"
+import { InspectFigures } from "@/components/reports/inspect-figures"
 import { RunProgress } from "@/components/reports/run-progress"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { VerificationPanel } from "@/components/reports/verification-panel"
@@ -231,19 +231,19 @@ export default async function RunPage({ params }: RunPageProps) {
       ) : null}
 
       {/*
-        Requirement 38 — the reading view, with provenance on every figure.
+        Requirement 38 — provenance on every figure, behind a disclosure.
+
+        It used to open expanded under the heading "The report", so every visit
+        to a run started with a long scroll past an approximation of a page whose
+        own banner says its pagination, column widths and font metrics differ
+        from the delivered file. Closed by default, it is still what answers
+        "where did this number come from" — the reveal it carries exists nowhere
+        else in the app.
+
         Rendered only where the emitted document is available; a run whose
         artifact is absent still shows everything above.
       */}
-      {documentHtml === null ? null : (
-        <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-sm font-medium tracking-tight">
-            The report
-          </h2>
-
-          <PaperRender html={documentHtml} />
-        </section>
-      )}
+      {documentHtml === null ? null : <InspectFigures html={documentHtml} />}
     </div>
   )
 }

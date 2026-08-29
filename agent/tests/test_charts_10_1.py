@@ -182,11 +182,22 @@ class TestLabelIndices:
             assert indices == frozenset({29})
 
     def test_thinning_removes_label_not_figure_from_table(self) -> None:
-        """The companion table records EVERY plotted point regardless of labels."""
+        """The companion table records EVERY plotted point regardless of labels.
+
+        Thinning is a decision about which points carry a printed *label on the image*;
+        the table is the record, and it carries all thirty either way. One row now — one
+        series — with a column per point rather than thirty rows.
+        """
+        from reporting_agent.compile.ast import FigureCell
+
         node, _ = _make_chart(series_count=1, points_per_series=30)
         table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
-        # Table has ALL 30 rows
-        assert len(table.rows) == 30
+
+        assert len(table.rows) == 1
+        assert len(table.columns) == 31  # the series column plus one per point
+        assert sum(
+            1 for row in table.rows for cell in row.cells if isinstance(cell, FigureCell)
+        ) == 30
 
 
 # --------------------------------------------------------------------------- #

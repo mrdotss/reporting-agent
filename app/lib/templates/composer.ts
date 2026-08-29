@@ -143,6 +143,7 @@ export const BLOCK_TYPE_LABELS = {
   rich_text: "Rich text",
   historical_trend: "Historical trend",
   blank_rows_table: "Blank rows table",
+  metric_summary: "Metric summary",
 } as const satisfies Record<BlockType, string>
 
 /** The label for `type`, or the raw type for an undeclared one. */

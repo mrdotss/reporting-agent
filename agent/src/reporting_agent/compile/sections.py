@@ -184,6 +184,9 @@ def _thread_metric_config(
     * `timeseries_chart` needs `config.metrics`: the section's own selected metrics,
       unchanged. A chart plots every selected metric as its own series (task 5.1-5.4's
       own panelling then decides how many panels those series need).
+    * `metric_summary` needs the same `config.metrics`, and takes it through the same
+      branch: it summarises exactly the metrics the chart plots, which is what keeps the
+      table under a chart describing the chart above it.
     * `top_n_table` needs `config.columns` (the section's own selected metrics again —
       the table shows every selected metric as a column) and `config.order_by` (which
       metric+statistic ranks the table). `order_by` is the catalogue entry's own
@@ -200,7 +203,7 @@ def _thread_metric_config(
     apply to today).
     """
     section_metrics = section.get("metrics")
-    if expansion.block == "timeseries_chart":
+    if expansion.block in ("timeseries_chart", "metric_summary"):
         if (
             "metrics" not in config
             and isinstance(section_metrics, Sequence)

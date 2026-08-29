@@ -67,7 +67,7 @@ type NavItem = {
  */
 const NAV_ITEMS: readonly NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: GaugeIcon },
-  { href: "/subscriptions", label: "Subscriptions", icon: PlugsConnectedIcon },
+  { href: "/subscriptions", label: "Connections", icon: PlugsConnectedIcon },
   { href: "/report-profiles", label: "Report Profiles", icon: StackIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
 ]

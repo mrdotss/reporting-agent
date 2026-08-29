@@ -141,6 +141,13 @@ afterEach(() => {
 
 function renderWizard(): void {
   render(<NewSubscriptionPage />)
+
+  // The flow opens on the source picker now (task 2.4): an Azure subscription, an
+  // AWS account and an on-premises estate do not share a form, so choosing between
+  // them selects the form rather than being a field inside one. Requirement 11.3-11.5
+  // say THE ONBOARDING WIZARD states the four facts, and this is how a consultant
+  // reaches it — every test below is about what the wizard does once entered.
+  fireEvent.click(screen.getByRole("button", { name: /Microsoft Azure/ }))
 }
 
 async function goToArtifacts(): Promise<void> {

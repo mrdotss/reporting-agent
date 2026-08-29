@@ -369,9 +369,17 @@ class _Emitter:
             body.append(self.row(node, row))
         rows.append(f"<tbody>{''.join(body)}</tbody>")
 
-        caption = (
-            f"<caption>{html.escape(node.caption)}</caption>" if node.caption else ""
-        )
+        # The caption element carries the author's caption and, when the table's facts
+        # agree about their instant, that instant too — the same line `docx.py` writes
+        # under the table. The instant gets a span so a stylesheet can set it apart; the
+        # caption does not, because wrapping it would change the markup of every table
+        # that has no provenance to distinguish it from.
+        caption_inner = html.escape(node.caption) if node.caption else ""
+        if node.note:
+            caption_inner += (
+                f'<span data-role="note">{html.escape(node.note)}</span>'
+            )
+        caption = f"<caption>{caption_inner}</caption>" if caption_inner else ""
         self.write(
             f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">{caption}'

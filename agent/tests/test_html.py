@@ -849,3 +849,82 @@ def test_every_declared_block_type_emits_without_error() -> None:
     outcome = H.emit_html(compiled.document, messages=mf.EN)
     assert outcome.figure_count == len(compiled.ledger) > 0
     assert outcome.table_count > 0
+
+
+# --------------------------------------------------------------------------- #
+# The provenance line — the instant that replaced the observed_at columns
+# --------------------------------------------------------------------------- #
+
+
+def _view_with_facts(*, collected_at: str):
+    """Two VMs whose `os_type` facts share one instant."""
+    from reporting_agent.collect.snapshot import FactEntry
+
+    def fact() -> FactEntry:
+        return FactEntry(
+            key="os_type",
+            value="Linux",
+            value_kind="text",
+            source="resource_graph",
+            collected_at=collected_at,
+            formatted="Linux",
+        )
+
+    base = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines"
+    return build_snapshot_view(
+        sf.build(
+            resources=[
+                sf.vm(resource_id=f"{base}/vm-01", name="vm-01", facts=(fact(),)),
+                sf.vm(resource_id=f"{base}/vm-02", name="vm-02", facts=(fact(),)),
+            ]
+        )
+    )
+
+
+def test_an_agreed_instant_renders_once_in_the_caption_not_once_per_column() -> None:
+    """The instant every fact shares is one span in the caption.
+
+    The `observed_at` columns it replaced are gone from the markup entirely — six facts
+    used to mean twelve `<th>` elements, half of them carrying a timestamp header.
+    """
+    instant = "2026-07-15T08:30:00Z"
+    _, outcome = emit(
+        [
+            df.block(
+                "facts",
+                "resource_table",
+                {"columns": [{"kind": "fact", "fact_key": "os_type"}]},
+            )
+        ],
+        view=_view_with_facts(collected_at=instant),
+    )
+
+    # Stated once, in the caption.
+    caption = re.search(r"<caption>(.*?)</caption>", outcome.html, re.S)
+    assert caption is not None
+    assert '<span data-role="note">' in caption.group(1)
+    assert caption.group(1).count(instant) == 1
+
+    # And no instant column anywhere — that is the shape this replaced.
+    assert "observed_at" not in outcome.html
+
+    # Each cell keeps its own `data-collected-at`: this emitter has always carried a text
+    # fact's provenance as an attribute, which is the precedent the caption line follows.
+    assert outcome.html.count(f'data-collected-at="{instant}"') == 2
+
+    # The header is the humanised key; the key stays the cell address.
+    assert "OS type" in outcome.html
+
+
+def test_a_table_with_no_note_keeps_its_bare_caption() -> None:
+    """A table whose facts disagree — or which carries none — renders exactly as before.
+
+    The span is added for the instant, never around the author's caption, so no table
+    that has nothing extra to say changes shape.
+    """
+    _, outcome = emit(
+        [df.block("t", "resource_table", {"columns": [df.CPU_AVG], "caption": "Cap"})]
+    )
+
+    assert "<caption>Cap</caption>" in outcome.html
+    assert 'data-role="note"' not in outcome.html

@@ -977,6 +977,26 @@ class Table:
     columns: tuple[Column, ...] = field(default_factory=tuple)
     rows: tuple[Row, ...] = field(default_factory=tuple)
     caption: str | None = None
+    note: str | None = None
+    """One line under the table, written by the **compiler** rather than by the author.
+
+    Two things need to say something about a fact table that the grid itself cannot, and
+    they are mutually exclusive — facts that agree about their instant have facts, and
+    facts that answered nothing have no instant:
+
+    * every fact was collected at one instant, so that instant is stated once here rather
+      than in a `<key>.observed_at` column beside every value;
+    * not one of the table's facts was answered, so the grid is a row of blanks and this
+      names the keys that were asked for.
+
+    Held separately from `caption` because the two have different owners — `caption` is
+    the template author's string and nothing appends to it — and because a theme that
+    wants to set them differently needs two paragraphs to do it with.
+
+    It never replaces the table. A table listing 500 of 620 matched resources is saying
+    something even when none of its facts resolved, and a notice row in its place would
+    discard both the list and the omitted-row count.
+    """
 
     def __post_init__(self) -> None:
         at = f"table {self.path!r}"

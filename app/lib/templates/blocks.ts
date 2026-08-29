@@ -46,10 +46,11 @@ export const BLOCK_TYPES = [
   "rich_text",
   "historical_trend",
   "blank_rows_table",
+  "metric_summary",
 ] as const
 // --- END BLOCK TYPES ---
 
-/** One of the eighteen declared block types (Requirement 6.1). */
+/** One of the nineteen declared block types (Requirement 6.1). */
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 /**
@@ -160,6 +161,17 @@ export const BLOCK_CONFIG = {
   timeseries_chart: {
     required: ["metrics"],
     optional: ["caption", "show_fidelity"],
+    enums: {},
+  },
+
+  // One table per selected metric: a row per resource carrying that metric's
+  // average, its estimated P95 where the catalogue declares one, its peak, and
+  // the day the peak fell on. The statistics are the block's own rather than a
+  // config field — see `SUMMARY_STATISTICS` on the agent side — so the only
+  // thing to select is which metrics get a summary.
+  metric_summary: {
+    required: ["metrics"],
+    optional: ["caption"],
     enums: {},
   },
 
