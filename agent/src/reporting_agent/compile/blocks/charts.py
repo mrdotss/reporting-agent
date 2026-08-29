@@ -62,7 +62,6 @@ from reporting_agent.compile.blocks.base import (
 )
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.historical import Selection
-from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue, SnapshotView
 from reporting_agent.errors import CompileFailedError
 
@@ -336,7 +335,7 @@ def compile_timeseries_chart(
     """
     refs = read_metric_refs(block, "metrics")
     chart_cursor = cursor.child("nodes", 0)
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     caption = caption_of(block)
 
     if not matched:
@@ -419,7 +418,7 @@ def compile_distribution_chart(
     ref = refs[0]
 
     chart_cursor = cursor.child("nodes", 0)
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     caption = caption_of(block)
 
     # Req 3.7, ahead of the metric lookup. Without this guard the two outcomes below

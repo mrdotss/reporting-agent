@@ -57,7 +57,6 @@ from reporting_agent.compile.blocks.base import (
     text_paragraph,
 )
 from reporting_agent.compile.figures import BlockCursor
-from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import SnapshotValue
 
 __all__ = ["MAX_PROSE_PARAGRAPHS", "compile_executive_summary"]
@@ -109,7 +108,7 @@ def compile_executive_summary(
         subscription_display_name=context.subscription_display_name,
         window=view.window.descriptor,
         grain=view.grain,
-        resource_count=len(resolve(context.scope_for(block), view)),
+        resource_count=len(context.resources_for(block, view)),
         gap_counts={gap_type: len(entries) for gap_type, entries in view.gaps_by_type()},
         figures=tuple(
             (figure.metric or figure.statistic, figure.formatted)

@@ -66,7 +66,7 @@ from reporting_agent.compile.figures import BlockCursor, FigureLedger
 from reporting_agent.compile.format import NumberFormat, number_format_from_definition
 from reporting_agent.compile.historical import Selection
 from reporting_agent.compile.messages import Messages, load_messages
-from reporting_agent.compile.scope import ScopeRules, scope_rules_from_plain
+from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import (
     SKU_CAPACITY_STATISTIC,
     SKU_METRIC_PREFIX,
@@ -96,6 +96,7 @@ __all__ = [
     "SKU_CAPABILITY_FIELDS",
     "TABLE_STYLES",
     "BlockContext",
+    "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
     "BlockSpec",
     "CapacityRef",
@@ -309,6 +310,17 @@ class DesignSettings:
 
 
 # --- the block, as a typed thing ----------------------------------------------------
+
+
+RESOURCE_ID_CONFIG_KEY: Final[str] = "_resource_id"
+"""Config key naming the one resource a `per: "resource"` block was expanded for.
+
+Written by `compile/sections.py`'s expander and read by `BlockContext.resources_for`,
+which are the only two places that may touch it. Leading underscore because it is not
+part of any block's authored config vocabulary: a template never declares it, the
+definition schema never carries it, and it exists only between the expander and the
+compiler within a single run.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -593,6 +605,38 @@ class BlockContext:
     def scope_for(self, block: BlockSpec) -> ScopeRules:
         """A block's own scope: its override, or the template default (Req 3.2)."""
         return block.scope_override if block.scope_override is not None else self.default_scope
+
+    def resources_for(self, block: BlockSpec, view: SnapshotView | None = None) -> tuple[ResourceView, ...]:
+        """The resources this block renders, in resolved-scope order.
+
+        `resolve(self.scope_for(block), self.view)` for an ordinary block — and for one
+        `expand_sections` produced **per resource**, that resolution narrowed to the single
+        resource the block was expanded for.
+
+        That narrowing is the whole reason this exists. A `per: "resource"` expansion emits
+        one BlockSpec per resolved resource, all four carrying the section's own scope, so
+        a compiler resolving that scope directly renders every resource in each of them:
+        `network_security_groups` over three NSGs emitted three identical rule tables, and
+        over twenty it emitted twenty. The expander wrote the resource into the config for
+        a compiler to narrow by and no compiler read it.
+
+        By **id** rather than by the ordinal the expander used to write, because the
+        expander resolves `scope_override or view.resources` while a compiler resolves
+        `scope_override or default_scope` — the same list in every case the catalogue
+        produces today, but an ordinal into a list resolved a second way is a silent
+        mis-selection the moment those diverge, and an id is not.
+
+        A `per: "resource"` block whose resource no longer resolves gets an empty tuple,
+        which every compiler already treats as "nothing to report" rather than an error.
+
+        `view` overrides the context's own — `narrative` counts resources against the view
+        it was handed rather than `context.view`, and both are the same object today.
+        """
+        matched = resolve(self.scope_for(block), self.view if view is None else view)
+        wanted = block.config.get(RESOURCE_ID_CONFIG_KEY)
+        if wanted is None:
+            return matched
+        return tuple(r for r in matched if r.resource_id == wanted)
 
     def cursor(self, block: BlockSpec) -> BlockCursor:
         """A fresh block-root cursor, rooted at this block's own id.
