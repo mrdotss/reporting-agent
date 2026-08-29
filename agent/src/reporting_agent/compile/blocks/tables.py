@@ -71,7 +71,6 @@ from reporting_agent.compile.blocks.base import (
 )
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.messages import Messages
-from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import FactTextValue, ResourceView, SnapshotValue
 
 __all__ = [
@@ -123,6 +122,40 @@ def _resource_column(messages: Messages) -> Column:
 
 def _tier_column(messages: Messages) -> Column:
     return Column(key="fidelity_tier", header=messages.text("doc.table.fidelity"))
+
+
+def _attribute_column(attribute: str, messages: Messages) -> Column:
+    """The header for one attribute column, keyed by the attribute's own name.
+
+    `fidelity_tier` reuses the tier column's header rather than declaring a second wording
+    for the same thing. Naming it *while* `show_fidelity` is set is a validation error, so
+    the two never both appear.
+
+    `resource_name` never reaches here — see :func:`_emitted_attributes`.
+    """
+    if attribute == "fidelity_tier":
+        return Column(key=attribute, header=messages.text("doc.table.fidelity"))
+    return Column(key=attribute, header=messages.text(f"doc.table.attr.{attribute}"))
+
+
+def _emitted_attributes(attributes: Sequence[str]) -> tuple[str, ...]:
+    """The declared attributes minus `resource_name`, which the key column already is.
+
+    Every `resource_table` opens with a key column carrying `resource.name`, so a
+    `resource_name` attribute column is that same string a second time. The section
+    catalogue declares one on five tables — always first, which is where the key column
+    already puts it: the author was saying "the name goes first", not asking for it twice.
+
+    Not merely redundant. `render/anchors.py::assert_header_row` refuses a table whose
+    columns share a header, because the verifier addresses a cell by `(row_key,
+    column_key)` and reads the column key out of the header text — two columns headed
+    "Resource" are two cells at one address. So emitting it would fail the render outright,
+    which is exactly what it did the first time these columns were wired up.
+
+    Dropped here rather than rejected at validation: an authored `resource_name` column is
+    a reasonable thing to have written and means precisely what the table already does.
+    """
+    return tuple(a for a in attributes if a != "resource_name")
 
 
 def resource_attribute_text(resource: ResourceView, attribute: str) -> str:
@@ -357,6 +390,42 @@ def _fact_instants(
     return frozenset(instants)
 
 
+def _answered_fact_keys(
+    context: BlockContext,
+    resources: Sequence[ResourceView],
+    fact_keys: Sequence[str],
+) -> tuple[str, ...]:
+    """The declared fact keys at least one listed resource actually carries, in the order
+    the template declared them.
+
+    A key no resource answers contributes a column of blanks across every row, and a blank
+    cell cannot distinguish "this resource has no NSG" from "the collector never reached
+    the NSG API". The column is dropped and the key is named in the table's note instead,
+    which says which of the two it was and points at the coverage appendix — the same
+    trade `metric_summary` makes for a metric that declares no percentile.
+
+    Per key rather than all-or-nothing: the VM network table asked for six facts and got
+    one, and printing five empty columns beside the answered one is the same failure at a
+    smaller scale.
+
+    Judged over `resources` — the rows this table will actually show — not over the whole
+    inventory, so a key answered only by a resource past `MAX_TABLE_ROWS` does not leave a
+    blank column behind on the rows that are visible. Pure over the snapshot, so replay
+    recompiles the same shape.
+    """
+    if not fact_keys:
+        return ()
+    wanted = set(fact_keys)
+    answered: set[str] = set()
+    for resource in resources:
+        for fact in context.view.facts_for(resource.resource_id):
+            if fact.key in wanted:
+                answered.add(fact.key)
+        if len(answered) == len(wanted):
+            break
+    return tuple(key for key in fact_keys if key in answered)
+
+
 def _observed_at_fact_value(fact: FactTextValue) -> FactTextValue:
     """A `FactTextValue` for the `collected_at` timestamp of an existing fact.
 
@@ -386,21 +455,34 @@ def _resource_row(
     refs: Sequence[MetricRef],
     *,
     with_tier: bool,
+    attributes: Sequence[str] = (),
     fact_keys: Sequence[str] = (),
     with_observed_at: bool = True,
 ) -> Row:
-    """One resource's row: its name, optionally its tier, then one cell per metric, then a
-    cell per fact key — plus its instant when the table's facts disagree about theirs.
+    """One resource's row: its name, optionally its tier, then a cell per declared
+    attribute, then one cell per metric, then a cell per fact key — plus its instant when
+    the table's facts disagree about theirs.
 
     `with_observed_at` must match what `_fact_columns` was given for the same table, or the
     row would carry a different number of cells than the header declares. Both come from
-    one call site (`_resource_rows_table`), which is what keeps them in step.
+    one call site (`_resource_rows_table`), which is what keeps them in step; `attributes`
+    is threaded the same way and for the same reason.
     """
     cells: list[object] = [
         text_cell(cursor.child("cells", 0), resource.name),
     ]
     if with_tier:
         cells.append(text_cell(cursor.child("cells", len(cells)), resource.fidelity_tier))
+
+    # Attributes before metrics: they are what the inventory already knew about the
+    # resource, and a reader identifies the row from them before reading its numbers.
+    for attribute in attributes:
+        cells.append(
+            text_cell(
+                cursor.child("cells", len(cells)),
+                resource_attribute_text(resource, attribute),
+            )
+        )
 
     for ref in refs:
         cell_cursor = cursor.child("cells", len(cells))
@@ -446,11 +528,12 @@ def _resource_rows_table(
     cursor: BlockCursor,
     refs: Sequence[MetricRef],
     *,
+    attributes: Sequence[str] = (),
     fact_keys: Sequence[str] = (),
 ) -> BlockOutput:
     """The shared body of `resource_table` and `top_n_table`."""
     table_cursor = cursor.child("nodes", 0)
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     style = context.design.table_style_name
     caption = caption_of(block)
 
@@ -460,36 +543,40 @@ def _resource_rows_table(
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
 
+    # A key nothing answered contributes no column; the note names it instead. Computed
+    # once here and passed to both the header and every row, so the two cannot disagree
+    # about which facts the table carries.
+    answered = _answered_fact_keys(context, shown, fact_keys)
+    unanswered = tuple(key for key in fact_keys if key not in answered)
+
     # One decision, used by the header and by every row, so the two cannot disagree about
     # how many cells a fact contributes.
-    instants = _fact_instants(context, shown, fact_keys)
+    instants = _fact_instants(context, shown, answered)
     with_observed_at = len(instants) > 1
     instant = next(iter(instants)) if len(instants) == 1 else None
 
-    # The compiler's line under the table: the one instant its facts agree on, or — when
-    # not one of them was answered — which keys were asked for. A grid of blanks tells a
-    # reader nothing about whether the fact has no value, was never requested, or failed.
+    # The compiler's line under the table: the one instant its facts agree on, and the
+    # keys that were asked for and answered nothing. Either can apply on its own and both
+    # can apply together — a table can have three facts observed at one instant and two
+    # that resolved for no resource at all.
     #
     # A note rather than a notice row in the table's place: a table listing 500 of 620
     # matched resources is saying something even when none of its facts resolved, and
     # replacing it would discard both the list and the omitted-row count.
-    if instants:
-        note = (
-            context.messages.text("doc.table.observed_at", instant=instant)
-            if instant is not None
-            else None
+    lines: list[str] = []
+    if instant is not None:
+        lines.append(context.messages.text("doc.table.observed_at", instant=instant))
+    if unanswered:
+        lines.append(
+            context.messages.text("doc.notice.no_facts", keys=", ".join(unanswered))
         )
-    elif fact_keys:
-        note = context.messages.text(
-            "doc.notice.no_facts", keys=", ".join(fact_keys)
-        )
-    else:
-        note = None
+    note = " ".join(lines) if lines else None
 
     rows: list[Row] = [
         _resource_row(
             table_cursor.child("rows", ordinal), context, resource, refs,
-            with_tier=with_tier, fact_keys=fact_keys, with_observed_at=with_observed_at,
+            with_tier=with_tier, attributes=attributes, fact_keys=answered,
+            with_observed_at=with_observed_at,
         )
         for ordinal, resource in enumerate(shown)
     ]
@@ -504,8 +591,9 @@ def _resource_rows_table(
     columns = (
         _resource_column(context.messages),
         *((_tier_column(context.messages),) if with_tier else ()),
+        *(_attribute_column(a, context.messages) for a in attributes),
         *_metric_columns(refs),
-        *_fact_columns(fact_keys, with_observed_at=with_observed_at),
+        *_fact_columns(answered, with_observed_at=with_observed_at),
     )
     table = Table(
         path=table_cursor.path,
@@ -531,9 +619,12 @@ def compile_resource_table(
     """
     entries = read_column_entries(block, "columns")
     refs = tuple(e.metric_ref for e in entries if e.kind == "metric" and e.metric_ref is not None)
+    attributes = _emitted_attributes(
+        [e.attribute for e in entries if e.kind == "attribute" and e.attribute is not None]
+    )
     fact_keys = tuple(e.fact_key for e in entries if e.kind == "fact" and e.fact_key is not None)
     return _resource_rows_table(
-        context, block, cursor, refs, fact_keys=fact_keys,
+        context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys,
     )
 
 
@@ -560,8 +651,13 @@ def compile_top_n_table(
         block.config.get("order_by"), block, "config.order_by"
     )
 
+    attributes = _emitted_attributes(
+        [e.attribute for e in entries if e.kind == "attribute" and e.attribute is not None]
+    )
     ordered = (order_by, *(ref for ref in columns if ref.key != order_by.key))
-    return _resource_rows_table(context, block, cursor, ordered, fact_keys=fact_keys)
+    return _resource_rows_table(
+        context, block, cursor, ordered, attributes=attributes, fact_keys=fact_keys
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -609,7 +705,7 @@ def compile_metric_summary(
     dictionary happened to yield.
     """
     refs = read_metric_refs(block, "metrics")
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     style = context.design.table_style_name
     caption = caption_of(block)
 
@@ -732,7 +828,7 @@ def compile_kpi_row(
     """
     refs = read_metric_refs(block, "metrics")
     table_cursor = cursor.child("nodes", 0)
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     style = context.design.table_style_name
     caption = caption_of(block)
 
@@ -827,7 +923,7 @@ def compile_capacity_vs_usage(
     )
 
     table_cursor = cursor.child("nodes", 0)
-    matched = resolve(context.scope_for(block), context.view)
+    matched = context.resources_for(block)
     style = context.design.table_style_name
     caption = caption_of(block)
 

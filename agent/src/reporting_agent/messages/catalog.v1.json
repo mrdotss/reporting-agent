@@ -145,6 +145,18 @@
       "en": "Note",
       "id": "Catatan"
     },
+    "doc.front_matter.revision": {
+      "en": "Revision",
+      "id": "Revisi"
+    },
+    "doc.front_matter.revision_author": {
+      "en": "Issued by",
+      "id": "Diterbitkan oleh"
+    },
+    "doc.front_matter.revision_note": {
+      "en": "Note",
+      "id": "Keterangan"
+    },
     "doc.front_matter.revision_history": {
       "en": "Revision history",
       "id": "Riwayat revisi"
@@ -456,6 +468,26 @@
     "doc.table.count": {
       "en": "Count",
       "id": "Jumlah"
+    },
+    "doc.table.attr.resource_group": {
+      "en": "Resource group",
+      "id": "Grup sumber daya"
+    },
+    "doc.table.attr.resource_type": {
+      "en": "Resource type",
+      "id": "Jenis sumber daya"
+    },
+    "doc.table.attr.location": {
+      "en": "Location",
+      "id": "Lokasi"
+    },
+    "doc.table.attr.sku_name": {
+      "en": "SKU",
+      "id": "SKU"
+    },
+    "doc.table.attr.power_state": {
+      "en": "Power state",
+      "id": "Status daya"
     },
     "doc.drift.added": {
       "en": "{count} resource(s) now match section {section_id} that did not when this profile was last authored: {resource_ids}.",

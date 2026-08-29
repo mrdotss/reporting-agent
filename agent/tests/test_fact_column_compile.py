@@ -198,12 +198,19 @@ class TestFactColumnCompiles:
     def test_missing_fact_produces_an_empty_cell_not_a_raise(self) -> None:
         """A resource without the fact gets an EmptyCell (fact_unavailable).
 
-        No resource carries the fact, so there is no instant to state and no disagreement
-        to show — one empty column rather than two. This is the shape that printed the
-        `Disks` table as empty rows under seven headers.
+        Two resources, because the column has to exist for the absence to be *in* it: a
+        key nothing answers contributes no column at all, and this is the other case — the
+        fact resolved for one machine and not the other, so the column stays and the
+        machine that has no answer gets a blank rather than a raise or an empty string.
+
+        One agreed instant across the answered facts, so there is no disagreement to show
+        and the instant is a note rather than a second column per fact.
         """
-        rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-no-fact"
-        view = _view(_vm_without_fact(rid, "vm-no-fact"))
+        base = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines"
+        view = _view(
+            _vm_with_fact(f"{base}/vm-has-fact", "vm-has-fact"),
+            _vm_without_fact(f"{base}/vm-no-fact", "vm-no-fact"),
+        )
 
         document = compile_document(
             df.definition(
@@ -216,18 +223,23 @@ class TestFactColumnCompiles:
         )
 
         table = _table_named(document.document, "facts_table")
-        row = table.rows[0]
+        assert [column.key for column in table.columns] == [
+            "resource", f"{sf.CPU}:avg", FACT_KEY,
+        ]
 
-        # Cell layout: [TextCell(name), FigureCell(cpu_avg), EmptyCell]
-        assert len(row.cells) == 3
-        assert isinstance(row.cells[0], TextCell)
-        assert isinstance(row.cells[1], FigureCell)
-        assert isinstance(row.cells[2], EmptyCell)
+        # Cell layout: [TextCell(name), FigureCell(cpu_avg), <fact>]
+        answered, missing = table.rows[0], table.rows[1]
+        assert isinstance(answered.cells[2], TextFactCell)
 
-        # Nothing was collected, so nothing is claimed about when — the note says which
-        # fact was asked for instead.
+        assert len(missing.cells) == 3
+        assert isinstance(missing.cells[0], TextCell)
+        assert isinstance(missing.cells[1], FigureCell)
+        assert isinstance(missing.cells[2], EmptyCell)
+
+        # The fact that did resolve agrees with itself about when, so that is the note —
+        # and no key answered nothing, so nothing is named as absent.
         assert table.note is not None
-        assert FACT_KEY in table.note
+        assert COLLECTED_AT_1 in table.note
 
     def test_two_resources_with_different_collected_at_get_distinct_timestamps(self) -> None:
         """Two facts with differing collected_at produce two distinct instant cells."""
@@ -421,9 +433,9 @@ class TestFactOnlyTableWithNothingCollected:
         # The table keeps its shape — the resource is still listed — and the note says
         # which facts were asked for and answered nothing.
         assert len(table.rows) == 1
-        assert [column.key for column in table.columns] == [
-            "resource", "disk_size_gb", "disk_type",
-        ]
+        # Neither key resolved for anything, so neither gets a column — the resource is
+        # still listed, and the note below says which facts were asked for.
+        assert [column.key for column in table.columns] == ["resource"]
         assert table.note is not None
         assert "disk_size_gb" in table.note
         assert "disk_type" in table.note
@@ -447,16 +459,23 @@ class TestFactOnlyTableWithNothingCollected:
         )
 
         table = _table_named(document.document, "mixed")
-        assert [column.key for column in table.columns] == [
-            "resource", f"{sf.CPU}:avg", "disk_size_gb",
-        ]
-        assert isinstance(table.rows[0].cells[2], EmptyCell)
+        # The metric column resolved and stays; the fact column answered nothing and goes.
+        assert [column.key for column in table.columns] == ["resource", f"{sf.CPU}:avg"]
+        # No third cell to be empty — the column is gone, which is the point.
+        assert len(table.rows[0].cells) == 2
         assert table.note is not None
         assert "disk_size_gb" in table.note
 
     def test_one_answered_fact_is_enough_to_replace_the_absence_note(self) -> None:
-        """The note claims *none* were collected, so one is enough to disprove it —
-        and what it says instead is when that one was collected."""
+        """One answered fact earns its column and an instant; the unanswered one is still
+        named.
+
+        The note used to be all-or-nothing — any single answered fact suppressed it for
+        every key in the table — so a `Disks` table that resolved `disk_type` and nothing
+        else said nothing at all about the five keys it printed as blanks. Now the two
+        halves are independent: the instant describes what was collected, and the absence
+        line names precisely what was not.
+        """
         base = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines"
         document = self._fact_only_document(
             _view(
@@ -467,9 +486,11 @@ class TestFactOnlyTableWithNothingCollected:
 
         table = _table_named(document.document, "disks")
         assert len(table.rows) == 2
-        assert [column.key for column in table.columns] == [
-            "resource", "disk_size_gb", "disk_type",
-        ]
+        # `disk_type` resolved for one of the two, so it keeps its column; `disk_size_gb`
+        # resolved for neither, so it loses one and is named in the note instead.
+        assert [column.key for column in table.columns] == ["resource", "disk_type"]
         assert table.note is not None
         assert COLLECTED_AT_1 in table.note
-        assert "disk_size_gb" not in table.note
+        # Named, because it answered nothing — and it is the only key that did.
+        assert "disk_size_gb" in table.note
+        assert "disk_type" not in table.note
