@@ -41,6 +41,7 @@ from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import charts as C
 from reporting_agent.render import chartstyle as S
+from reporting_agent.render import tablefit as F
 from reporting_agent.render import docx as D
 
 W: Final[str] = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -1238,3 +1239,106 @@ def test_the_aggregate_keeps_every_remainder_point_addressable() -> None:
 
     plotted = C.plotted_series(node, messages=_MESSAGES)
     assert len(addressed_figures(table)) == sum(len(series.points) for series in plotted)
+
+
+# --------------------------------------------------------------------------- #
+# The shape is chosen by width — run ef01a404
+# --------------------------------------------------------------------------- #
+
+
+def _chart_with_value_width(*, series_count: int, points: int, value: str) -> tuple[Chart, FigureLedger]:
+    """A chart whose every plotted figure formats to `value`, so a test can choose the
+    width of the data rather than only its shape."""
+    view = build_snapshot_view(
+        sf.build(resources=[
+            sf.vm(
+                resource_id="/vm/w", name="w",
+                statistics=[sf.exact(sf.AVAILABLE_MEMORY, "avg", value)],
+            )
+        ])
+    )
+    ledger = FigureLedger()
+    stat = view.stat("/vm/w", sf.AVAILABLE_MEMORY, "avg")
+    assert stat is not None
+
+    with compiling_against(view):
+        series = []
+        for series_index in range(series_count):
+            cursor = BlockCursor(block_id="c", ledger=ledger)
+            pts = []
+            for point_index in range(points):
+                figure = (
+                    cursor.child("series", series_index)
+                    .child("points", point_index)
+                    .child("figure", 0)
+                    .figure(stat)
+                )
+                pts.append(ChartPoint(
+                    path=figure_path("c", series_index, point_index),
+                    x=f"2026-07-{point_index + 1:02d}",
+                    y=figure,
+                ))
+            series.append(Series(
+                path=figure_path("c", series_index),
+                key=f"m{series_index}",
+                label=f"prod-db-0{series_index} — Available Memory Bytes (avg)",
+                points=tuple(pts),
+            ))
+        chart = Chart(
+            path=figure_path("c", 0), chart_type="line", title="S", unit="bytes",
+            encoding="categorical", series=tuple(series), panels=panel_groups(tuple(series)),
+        )
+    return chart, ledger
+
+
+def test_narrow_values_take_the_wide_shape() -> None:
+    """The compact arrangement, whenever the page can hold it: one row per x."""
+    node, _ = _chart_with_value_width(series_count=5, points=31, value="12")
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+
+    assert table.columns[0].key == C.X_COLUMN_KEY
+    assert len(table.rows) == 31
+    assert len(table.columns) == 6
+    assert F.fits_page(table)
+
+
+def test_wide_values_take_the_tall_shape() -> None:
+    """Run ef01a404, as a test.
+
+    Five series of `3,187,970,789.00 bytes` cannot be laid side by side on A4 — the
+    columns come out narrower than the value, LibreOffice wraps each one inside its cell,
+    and `verify/pdf.py` searches the converted text for the ledger string contiguously, so
+    a line break through the middle of it reads as a figure that never arrived. The live
+    run came back with 30 `pdf_figure_missing` findings, one per day of July, every one in
+    the single column that held the byte counts.
+
+    So the shape has to follow the width of the data, not only its cardinality.
+    """
+    node, _ = _chart_with_value_width(series_count=5, points=31, value="3187970789")
+    table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+
+    assert table.columns[0].key == C.SERIES_COLUMN_KEY
+    assert len(table.columns) == 3
+    assert len(table.rows) == 5 * 31
+
+
+def test_both_shapes_carry_every_plotted_point() -> None:
+    """Req 22.1 holds whichever arrangement is chosen — the shapes trade width for height
+    and nothing else. A fallback that thinned would let the image assert something the
+    table could not confirm, which is the whole reason the table exists."""
+    for value in ("12", "3187970789"):
+        node, _ = _chart_with_value_width(series_count=5, points=31, value=value)
+        table = C.companion_table(node, TABLE_STYLE, messages=_MESSAGES)
+        plotted = [
+            point
+            for series in C.plotted_series(node, messages=_MESSAGES)
+            for point in series.points
+        ]
+        emitted = [
+            cell.figure.formatted
+            for row in table.rows
+            for cell in row.cells
+            if isinstance(cell, FigureCell)
+        ]
+        assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
+        assert len({row.key for row in table.rows}) == len(table.rows)
