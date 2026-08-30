@@ -699,11 +699,29 @@ def _draw(
         panel_subtitle, fontfamily=style.CHART_FONT, fontsize=style.CHART_LABEL_SIZE
     )
 
-    # Y-axis: combine title and unit
+    # Y-axis: combine title and **this panel's** unit.
+    #
+    # `node.unit` is chart-wide, and `_unit_of` picks the first series' unit where they
+    # disagree — which is right for a chart node, whose `unit` describes the figure set as
+    # a whole. It is wrong for an axis. Panels are grouped by magnitude, which in practice
+    # groups by unit, so the panel holding `3,187,970,789.00 bytes` was labelled `percent`
+    # because a percentage series happened to sort first on the chart.
+    #
+    # Falls back to the chart's unit for a panel whose points carry none, so a chart that
+    # labelled its axis before still labels it the same way.
+    panel_unit = next(
+        (
+            point.y.unit
+            for series in series_set
+            for point in series.points
+            if point.y.unit
+        ),
+        node.unit,
+    )
     if y_axis_title:
-        axes.set_ylabel(f"{y_axis_title} ({node.unit})")
+        axes.set_ylabel(f"{y_axis_title} ({panel_unit})")
     else:
-        axes.set_ylabel(node.unit)
+        axes.set_ylabel(panel_unit)
 
     # X-axis: title only on the last (bottom) panel — see `is_last_panel`'s note above.
     if x_axis_title and is_last_panel:

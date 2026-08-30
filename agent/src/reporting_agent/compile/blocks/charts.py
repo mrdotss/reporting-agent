@@ -236,7 +236,10 @@ def compile_historical_trend(
         chart = Chart(
             path=chart_cursor.path,
             chart_type="line",
-            title=caption or f"Historical trend: {metric} ({statistic})",
+            title=caption
+            or context.messages.text(
+                "doc.chart.title.historical", metric=metric, statistic=statistic
+            ),
             unit=points[0].y.unit if points else "",
             encoding=ENCODING_SEQUENTIAL,
             series=historical_series,
@@ -387,10 +390,21 @@ def compile_timeseries_chart(
         )
 
     unit = _unit_of(series)
+    # Every distinct metric the chart plots, in the order the section selected them —
+    # not `refs[0]` alone. A section selecting CPU average, CPU maximum and available
+    # memory produced a three-panel chart titled "Percentage CPU (avg) over time", which
+    # names one of the three and silently disowns the panel holding the byte counts.
+    #
+    # Through the catalogue rather than an f-string, which is the other half of the same
+    # defect: `over time` was English in a title, and `compile/literals.py` could not see
+    # it because its scan reads string literals and this was an f-string. An Indonesian
+    # report carried an English chart title on every chart.
+    metric_names = ", ".join(dict.fromkeys(ref.label for ref in refs))
     chart = Chart(
         path=chart_cursor.path,
         chart_type="line",
-        title=caption or f"{refs[0].label} over time",
+        title=caption
+        or context.messages.text("doc.chart.title.over_time", metrics=metric_names),
         unit=unit,
         # One series is one ordered quantity over time; two or more are peers.
         encoding=ENCODING_SEQUENTIAL if len(series) == 1 else ENCODING_CATEGORICAL,
@@ -463,7 +477,8 @@ def compile_distribution_chart(
     chart = Chart(
         path=chart_cursor.path,
         chart_type="bar",
-        title=caption or f"Distribution of {ref.label}",
+        title=caption
+        or context.messages.text("doc.chart.title.distribution", metric=ref.label),
         unit=measured[0][3].unit,
         # Sorted values along an ordered axis: one ordered quantity, not a set of peers.
         encoding=ENCODING_SEQUENTIAL,

@@ -1079,14 +1079,41 @@ def test_chart_size_inches_reduces_to_the_single_chart_size_at_one_panel() -> No
     assert S.chart_size_inches(1) == S.CHART_SIZE_INCHES
 
 
-def test_chart_size_inches_grows_linearly_with_panel_count_plus_gaps() -> None:
+def test_chart_size_inches_grows_with_panel_count_until_the_page_stops_it() -> None:
+    """Linear while the stack fits, clamped once it would not.
+
+    `render/docx.py::emit_chart` embeds the PNG at a fixed 6in width and passes no height,
+    so python-docx keeps the aspect ratio and Word gets an image as tall as it was drawn —
+    which it **crops** rather than scales. Three panels at the full panel height is 10.2in
+    against roughly 9.7in of A4 text, and the delivered report showed the memory panel cut
+    through the middle of its own y-axis, every value above 3.30e9 missing from the page.
+
+    The old assertion here was `three == 3 * panel + 2 * gap`, which is precisely the
+    behaviour that produced that, asserted as though it were the requirement.
+    """
     from reporting_agent.render import chartstyle as S
 
     one = S.chart_size_inches(1)
-    three = S.chart_size_inches(3)
-    expected_height = 3 * S.CHART_PANEL_HEIGHT_INCHES + 2 * S.CHART_PANEL_GAP_INCHES
-    assert three[1] == pytest.approx(expected_height)
-    assert three[0] == one[0]  # width never changes
+    two = S.chart_size_inches(2)
+
+    # Unclamped while it fits, so the single-panel case keeps its byte-identical guarantee.
+    assert one[1] == pytest.approx(S.CHART_PANEL_HEIGHT_INCHES)
+    assert two[1] == pytest.approx(2 * S.CHART_PANEL_HEIGHT_INCHES + S.CHART_PANEL_GAP_INCHES)
+
+    # Width never changes — panelling stacks vertically.
+    for count in range(1, 9):
+        assert S.chart_size_inches(count)[0] == one[0]
+
+    # And no panel count, however large, produces an image the page cannot hold.
+    for count in range(1, 9):
+        assert S.chart_size_inches(count)[1] <= S.MAX_CHART_HEIGHT_INCHES + 1e-9, (
+            f"{count} panels draw an image taller than the page, which Word crops"
+        )
+
+    # Growth is still monotonic up to the clamp — a chart with more panels is never
+    # shorter than one with fewer.
+    heights = [S.chart_size_inches(n)[1] for n in range(1, 9)]
+    assert heights == sorted(heights)
 
 
 def test_chart_size_inches_rejects_zero_or_negative_panel_counts() -> None:
