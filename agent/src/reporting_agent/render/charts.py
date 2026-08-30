@@ -137,6 +137,13 @@ class ChartArtifacts:
     data_hash: str
     identity: str
     plotted_keys: tuple[str, ...]
+    image_svg: str = ""
+    """The same figure as vector, for the print stylesheet to embed.
+
+    Drawn once and serialised twice, so the raster in the `.docx` and the vector in the
+    styled PDF cannot show different charts. Last and defaulted so a caller constructing
+    one of these in a test needs only the raster, which is what every existing one does.
+    """
 
 
 # --------------------------------------------------------------------------- #
@@ -611,15 +618,32 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
                 metadata=dict(style.PNG_METADATA),
                 facecolor="white",
             )
+
+            # The same figure, serialised a second way. **One drawing, two encodings** —
+            # the PNG the `.docx` embeds and the SVG the print stylesheet does, which is
+            # what stops the Word file and the styled PDF from showing different charts.
+            #
+            # SVG for print because WeasyPrint embeds it natively as vector: crisp at any
+            # zoom, and smaller than this PNG at 200dpi. The `.docx` keeps the raster
+            # because Word's SVG support is unreliable and python-docx cannot emit one.
+            svg_buffer = io.StringIO()
+            figure.savefig(
+                svg_buffer,
+                format="svg",
+                metadata=dict(style.SVG_METADATA),
+                facecolor="white",
+            )
         finally:
             # Explicit, because a Figure created directly is not registered with pyplot and
             # would otherwise be reclaimed only by the collector — which under a long run is
             # a slow leak of several megabytes per chart.
             figure.clear()
         image = buffer.getvalue()
+        vector = svg_buffer.getvalue()
 
     return ChartArtifacts(
         image_png=image,
+        image_svg=vector,
         sidecar_json=sidecar_bytes(node, data_hash=data_hash, messages=messages),
         table=companion_table(node, table_style, messages=messages),
         data_hash=data_hash,
@@ -699,11 +723,29 @@ def _draw(
         panel_subtitle, fontfamily=style.CHART_FONT, fontsize=style.CHART_LABEL_SIZE
     )
 
-    # Y-axis: combine title and unit
+    # Y-axis: combine title and **this panel's** unit.
+    #
+    # `node.unit` is chart-wide, and `_unit_of` picks the first series' unit where they
+    # disagree — which is right for a chart node, whose `unit` describes the figure set as
+    # a whole. It is wrong for an axis. Panels are grouped by magnitude, which in practice
+    # groups by unit, so the panel holding `3,187,970,789.00 bytes` was labelled `percent`
+    # because a percentage series happened to sort first on the chart.
+    #
+    # Falls back to the chart's unit for a panel whose points carry none, so a chart that
+    # labelled its axis before still labels it the same way.
+    panel_unit = next(
+        (
+            point.y.unit
+            for series in series_set
+            for point in series.points
+            if point.y.unit
+        ),
+        node.unit,
+    )
     if y_axis_title:
-        axes.set_ylabel(f"{y_axis_title} ({node.unit})")
+        axes.set_ylabel(f"{y_axis_title} ({panel_unit})")
     else:
-        axes.set_ylabel(node.unit)
+        axes.set_ylabel(panel_unit)
 
     # X-axis: title only on the last (bottom) panel — see `is_last_panel`'s note above.
     if x_axis_title and is_last_panel:

@@ -63,6 +63,7 @@ __all__ = [
     "DASH_PATTERNS",
     "DESTRUCTIVE_VALUES",
     "MARKER_SHAPES",
+    "MAX_CHART_HEIGHT_INCHES",
     "MINIMUM_CVD_DELTA_E",
     "MINIMUM_SURFACE_CONTRAST",
     "PNG_METADATA",
@@ -70,6 +71,7 @@ __all__ = [
     "SEQUENTIAL_TOKENS",
     "SEQUENTIAL_VALUES",
     "SURFACE_VALUES",
+    "SVG_METADATA",
     "Theme",
     "assign_colors",
     "axis_label_color",
@@ -569,12 +571,42 @@ def chart_size_inches(panel_count: int) -> tuple[float, float]:
             f"always has at least one panel (an empty AST `panels` field means one "
             f"panel holding every series, not zero panels)."
         )
+    # The stack at full panel height, then clamped to what the page can hold. `docx.py`
+    # embeds the image at a fixed WIDTH and passes no height, so python-docx keeps the
+    # aspect ratio and Word gets an image as tall as it was drawn — which it **crops**
+    # rather than scales. Three panels at the full height is 10.2in against roughly 9.7in
+    # of A4 text, and the delivered report showed the memory panel cut through its own
+    # y-axis.
+    #
+    # `min` of the total rather than a divided per-panel height: dividing and
+    # re-multiplying returns 7.999999999999999 at five panels, and a figure size that
+    # wobbles with the panel count is a figure size that changes the PNG bytes for no
+    # reason a reader could see.
     height = (
         panel_count * CHART_PANEL_HEIGHT_INCHES
         + (panel_count - 1) * CHART_PANEL_GAP_INCHES
     )
-    return (CHART_WIDTH_INCHES, height)
+    return (CHART_WIDTH_INCHES, min(height, MAX_CHART_HEIGHT_INCHES))
 
+
+MAX_CHART_HEIGHT_INCHES: Final[float] = 8.0
+"""The tallest a chart image may be, whatever its panel count.
+
+`render/docx.py::emit_chart` embeds the PNG at a fixed width of 6in and passes no height,
+so python-docx preserves the aspect ratio and the image is as tall as it was drawn. Word
+does not scale an over-tall image down to the text block — it crops it. A three-panel
+chart at the full panel height is 10.2in tall against about 9.7in of A4 text at the
+themes' margins, and the delivered report showed the memory panel sliced through the
+middle of its own y-axis, with the values above 3.30e9 simply absent.
+
+8.0 rather than the 9.7 that would just fit: the chart is followed by its caption and
+usually by the first rows of its companion table, and a chart that exactly fills the text
+block pushes both to the next page on their own.
+
+One and two panels are below this at the full panel height, so they are unaffected — the
+byte-identical guarantee `CHART_PANEL_HEIGHT_INCHES` states for the single-panel case
+still holds, and only a chart that could not fit at all is redrawn.
+"""
 
 CHART_FONT: Final[str] = "DejaVu Sans"
 """Named explicitly, never resolved by fallback.
@@ -637,6 +669,14 @@ _FROZEN_RC_PARAMS: Final[Mapping[str, object]] = {
 
 Global mutation would make the emitted bytes depend on whether some other module had
 already changed an rcParam, which is the opposite of the guarantee."""
+
+SVG_METADATA: Final[Mapping[str, object]] = {"Date": None}
+"""Suppress the `<dc:date>` matplotlib writes into an SVG's RDF metadata.
+
+The same reasoning as :data:`PNG_METADATA`'s `Software`: a timestamp in the output makes
+two renders of one chart differ in bytes, which is exactly what the replay gate compares.
+`svg.hashsalt` in the frozen rc params covers the other source of drift — the element ids,
+which are otherwise salted per process."""
 
 PNG_METADATA: Final[Mapping[str, object]] = {"Software": None}
 """Suppresses the `Software` and creation-date chunks matplotlib writes into a PNG.

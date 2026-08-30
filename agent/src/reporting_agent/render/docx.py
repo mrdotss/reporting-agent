@@ -90,7 +90,7 @@ from reporting_agent.render.charts import (
     SIDECAR_SUFFIX,
     render_chart,
 )
-from reporting_agent.render.tablefit import allocate, column_demands
+from reporting_agent.render.tablefit import allocate, column_demands, header_demands
 from reporting_agent.render.themes import (
     FIGURE_CHARACTER_STYLE,
     PREVIEW_NOTICE_STYLE,
@@ -188,7 +188,7 @@ def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> N
     Sizing alone cannot save a table whose columns cannot *all* fit — see
     `tablefit.fits_page`, which is what keeps one from being built.
     """
-    allocation = allocate(column_demands(node))
+    allocation = allocate(column_demands(node), header_demands(node))
     total = sum(allocation)
     if not total:
         return

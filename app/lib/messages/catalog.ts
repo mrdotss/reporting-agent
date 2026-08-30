@@ -62,6 +62,18 @@ export const MESSAGE_CATALOG = {
     en: "over time",
     id: "sepanjang waktu",
   },
+  "doc.chart.title.over_time": {
+    en: "{metrics} over time",
+    id: "{metrics} dari waktu ke waktu",
+  },
+  "doc.chart.title.historical": {
+    en: "Historical trend: {metric} ({statistic})",
+    id: "Tren historis: {metric} ({statistic})",
+  },
+  "doc.chart.title.distribution": {
+    en: "Distribution of {metric}",
+    id: "Distribusi {metric}",
+  },
   "doc.chart.empty": {
     en: "This chart carries no plotted values",
     id: "Bagan ini tidak memuat nilai yang diplot",
