@@ -188,7 +188,7 @@ only in the git-ignored **`.env`**.
 
 ## What a green suite does not prove
 
-Thirteen defects reached production against a suite of ~4900 agent and ~3300 web
+Fourteen defects reached production against a suite of ~4900 agent and ~3300 web
 tests. Not one was in code the tests ignored — every one was in code they covered
 heavily. They survived because each test asserted **one half of a contract**. Eight
 patterns, each of which has now cost a live run:
@@ -256,12 +256,34 @@ companion table was reshaped to a row per series with a column per x, every test
 two-column table and passed. A real July is 32 columns, and LibreOffice lays those out
 too narrow for their text to survive the PDF conversion: the next live run returned 146
 `pdf_figure_missing` findings — every figure of that table — on a `.docx` whose other
-twenty tables all resolved. Measured afterwards against real LibreOffice at a month of
-days: **ten columns render extractably and eleven do not.** → A shape that scales with
-the data has to be tested at the size the data actually reaches, and for anything that
-must survive `docx → pdf`, tested *through the conversion*. `tests/` now asserts the
-width bound directly; keep any new table under ten columns, and measure rather than
-assume.
+twenty tables all resolved.
+
+**And then it happened again, one dimension over.** The replacement shape was measured
+at a month of rows and every figure survived — with the synthetic fixture's *short*
+values. The next live run, ef01a404, returned 30 findings, one per day of July, all in
+the single column holding `3,187,970,789.00 bytes` beside four columns of `0.20%`. Word
+divides a table's width equally unless told otherwise, so the memory column got exactly
+as much room as the percentages and LibreOffice wrapped every value inside its cell.
+Every character was on the page; none was findable, because `verify/pdf.py` matches the
+ledger string contiguously and the break fell in the middle of the number.
+
+→ A shape that scales with the data has to be tested at the size the data actually
+reaches, in **every** dimension it scales in — rows, columns, and the width of the
+values themselves — and for anything that must survive `docx → pdf`, tested *through the
+conversion*. `render/tablefit.py` now owns both the sizing and a measured page budget,
+with the LibreOffice measurements recorded beside the constant; `test_tablefit.py` holds
+the arithmetic and `test_docx.py` the round trip.
+
+A postscript worth its own line, because it nearly shipped: the first fix sized columns
+**in proportion** to their content, which is correct only while the total fits. Past
+that it scales everything down by one factor, so a six-character `79.88%` beside a
+thirty-eight-character `0.25% (p95, est. from hourly averages)` was squeezed to four and
+wrapped — a column Word's own equal division had handled perfectly well, broken by the
+sizing meant to help it. The allocator water-fills instead: a column is cut only when
+every column still in the running is getting the same share. **A fix that improves the
+common case by making the bad case worse is not a fix**, and the only reason this one
+was caught is that the end-to-end guard was mutation-checked and turned out to pass
+against the unfixed code — its fixture had three columns, and it takes six.
 
 **A fixture can be too clean to express the failure.** The lifetime bound had a test
 asserting exactly the right thing — "a fact collected in the same second the

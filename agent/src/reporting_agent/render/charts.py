@@ -47,6 +47,7 @@ import io
 import json
 from dataclasses import dataclass
 from decimal import Decimal
+from collections.abc import Sequence
 from typing import Final
 
 import matplotlib
@@ -69,6 +70,7 @@ from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT, NOTICE_COLUMN_
 from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import chartstyle as style
+from reporting_agent.render.tablefit import fits_page
 
 __all__ = [
     "CHART_ALT_TEXT_PREFIX",
@@ -76,6 +78,7 @@ __all__ = [
     "OTHER_SERIES_KEY",
     "OTHER_SERIES_LABEL_ID",
     "QUALIFIER",
+    "SERIES_COLUMN_KEY",
     "VALUE_COLUMN_KEY",
     "X_COLUMN_KEY",
     "SIDECAR_SUFFIX",
@@ -99,6 +102,7 @@ EMPTY_CHART_TEXT_ID: Final[str] = "doc.chart.empty"
 document's pinned language. A chart that vanished is indistinguishable in the delivered
 document from a chart the author never configured."""
 
+SERIES_COLUMN_KEY: Final[str] = "series"
 X_COLUMN_KEY: Final[str] = "x"
 VALUE_COLUMN_KEY: Final[str] = "value"
 
@@ -295,7 +299,7 @@ def sidecar_bytes(node: Chart, *, data_hash: str, messages: Messages) -> bytes:
 
 
 def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Table:
-    """Every plotted point of every plotted series — one row per x, one column per series.
+    """Every plotted point of every plotted series, in whichever of two shapes fits.
 
     No sampling, no thinning, no re-rounding (Req 22.1): the cell text is the ledger's
     `formatted` string, and the set of figures is exactly the plotted set. A table that
@@ -305,36 +309,24 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
     written into the image's alt text. That is the pairing key, and deriving both from the
     node's path means they cannot disagree.
 
-    ## Why the x axis is the rows
+    ## Two shapes, and why the choice is measured rather than fixed
 
-    Req 22.1 demands every point; it does not say in what arrangement. There are at most
-    five series — Req 22.9's cap makes that structural — and there are as many x values as
-    the period has days. So the short dimension is the series and the long one is the x,
-    and the table is **six columns wide at the very most, whatever the period holds**.
+    Req 22.1 demands every point; it does not say in what arrangement. The wide shape puts
+    the x on the rows and gives each series a column, which turns three machines over July
+    from 93 rows into 31. It only works while every column can be made wide enough to hold
+    its longest value on one line — `verify/pdf.py` searches the converted PDF for each
+    ledger string *contiguously*, so a value wrapped inside its cell is a
+    `pdf_figure_missing` finding even though every character of it is on the page. Run
+    ef01a404 is what that looks like: 30 findings, one per day of July, all in the single
+    column holding `3,187,970,789.00 bytes` beside four columns of `0.20%`.
 
-    That is the second arrangement tried and the first that both fits and reads. One row
-    per (series, point) was 93 rows for three machines over July, with the key column
-    repeating the series name beside an x the next column already held. Transposing it the
-    other way — a row per series, a column per x — collapsed that to three rows and
-    **thirty-two columns**, which LibreOffice lays out too narrow for the text to reach the
-    converted PDF: a real July run returned 146 `pdf_figure_missing` findings, every figure
-    of this table, on a `.docx` whose own twenty tables all resolved.
+    `tablefit` owns the arithmetic, measured against real LibreOffice. When the wide shape
+    does not fit, the tall one does — a row per (series, point), so every value has the
+    full width of a column to itself and no arrangement of the data can overflow it.
 
-    Measured against real LibreOffice at a month of days: ten columns render and eleven do
-    not. Six is the worst this can reach, which is why the cap is load-bearing here and not
-    only on the image.
-
-    ## Both addresses are the document's own text
-
-    The verifier resolves a cell by `(row_key, column_key)`, and reads both **out of the
-    `.docx`** — the key column's emitted text and the column's header text. An x is unique
-    among rows and a series label is unique among columns, so this arrangement addresses
-    every figure without a key that repeats. The previous shape had to concatenate the x
-    into the series label for exactly that reason; here the two dimensions do it.
-
-    A series with no point at some x gets an `EmptyCell` — `day_series` omits a day it has
-    no value for rather than zero-filling it, and the distinction between "measured zero"
-    and "not measured" is one this table has no business collapsing.
+    Neither shape is a fallback in the sense of being worse: they trade width for height,
+    and which one is right depends on how wide the values are, which is a property of the
+    metrics the section selected rather than something the code can decide once.
 
     A chart with nothing to plot gets the explicit no-resources-matched row (Req 22.13),
     keyed the way `render/docx.py` recognises a notice row so it is styled as information
@@ -362,6 +354,33 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
             caption=node.caption,
         )
 
+    wide = _x_major_table(node, table_style, series_set, messages=messages)
+    return wide if fits_page(wide) else _point_per_row_table(
+        node, table_style, series_set, messages=messages
+    )
+
+
+def _x_major_table(
+    node: Chart, table_style: str, series_set: Sequence[Series], *, messages: Messages
+) -> Table:
+    """One row per x, one column per series — the compact shape.
+
+    There are at most five series, because Req 22.9's cap makes that structural, and as
+    many x values as the period has days. So the short dimension is the series and the long
+    one is the x, and the table is **six columns wide at the very most, whatever the period
+    holds**.
+
+    Both of the verifier's addresses are the document's own text without concatenating
+    them: it resolves a cell by `(row_key, column_key)` and reads both out of the `.docx` —
+    the key column's emitted text and the column's header text. An x is unique among rows
+    and a series label is unique among columns, so this addresses every figure without a
+    key that repeats. The tall shape has to fold the x into the series label for exactly
+    that reason; here the two dimensions do it.
+
+    A series with no point at some x gets an `EmptyCell` — `day_series` omits a day it has
+    no value for rather than zero-filling it, and the distinction between "measured zero"
+    and "not measured" is one this table has no business collapsing.
+    """
     # The x axis, in the order the points are plotted. Above the cap the aggregate's own
     # x values arrive already qualified with the series they came from, so they are
     # distinct rows carrying one value each rather than colliding with the real dates.
@@ -390,6 +409,51 @@ def companion_table(node: Chart, table_style: str, *, messages: Messages) -> Tab
         # of them is the row. Each cell still carries its own figure's path, which is what
         # the ledger matches against, and the row is addressed by its x.
         rows.append(Row(path=node.path, key=x, cells=tuple(cells)))  # type: ignore[arg-type]
+
+    return Table(
+        path=node.path,
+        style=table_style,
+        columns=columns,
+        rows=tuple(rows),
+        caption=node.caption,
+    )
+
+
+def _point_per_row_table(
+    node: Chart, table_style: str, series_set: Sequence[Series], *, messages: Messages
+) -> Table:
+    """One row per (series, point) — the tall shape, for values too wide to sit side by
+    side.
+
+    Three columns whatever the data holds, so each value gets roughly a third of the page
+    and nothing can wrap. It is longer than the wide shape by a factor of the series count,
+    which is the price of that guarantee and the reason it is not used unconditionally.
+
+    The key column repeats the series label because a row key must be unique within the
+    table and the x alone is not: the same day appears once per series. It is a
+    concatenation of two strings the document already carries elsewhere, not a computed
+    value, so masking treats it as identifier text.
+    """
+    columns = (
+        Column(key=SERIES_COLUMN_KEY, header=messages.text("doc.table.period")),
+        Column(key=X_COLUMN_KEY, header=messages.text("chart.axis.time")),
+        Column(key=VALUE_COLUMN_KEY, header=messages.text("doc.table.value")),
+    )
+
+    rows: list[Row] = []
+    for series in series_set:
+        for point in series.points:
+            rows.append(
+                Row(
+                    path=point.path,
+                    key=f"{series.key}|{point.x}",
+                    cells=(
+                        TextCell(path=point.path, text=f"{series.label} — {point.x}"),
+                        TextCell(path=point.path, text=point.x),
+                        _figure_cell(point.y),
+                    ),
+                )
+            )
 
     return Table(
         path=node.path,

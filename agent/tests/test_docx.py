@@ -1278,6 +1278,83 @@ def test_every_ledger_figure_survives_into_the_converted_pdf(tmp_path: Path) -> 
 
 
 @pytest.mark.skipif(_SOFFICE is None, reason="LibreOffice is not installed")
+def test_a_wide_value_beside_narrow_ones_survives_conversion(tmp_path: Path) -> None:
+    """Run ef01a404: a column whose values are much longer than its neighbours'.
+
+    Word divides a table's width equally unless told otherwise, so a memory column holding
+    `3,187,970,789.00 bytes` was given exactly as much room as four columns of `0.20%`,
+    and LibreOffice wrapped every one of its values across two lines *inside the cell*.
+    Every character was on the page; none of them was findable, because `verify/pdf.py`
+    matches the ledger string contiguously and the break fell in the middle of the number.
+    The delivered run reported 30 `pdf_figure_missing` findings — one per day of July —
+    against a document that was correct in every other respect.
+
+    Nothing caught it because no fixture in this file mixes value widths: the emitter's own
+    tests use short percentages throughout, and the wide table this broke is built two
+    modules away in `render/charts.py`.
+    """
+    memory_ref = {"metric": sf.AVAILABLE_MEMORY, "statistic": "avg"}
+    cpu_min = {"metric": sf.CPU, "statistic": "min"}
+    refs = [df.CPU_AVG, df.CPU_MAX, cpu_min, df.CPU_P95, memory_ref]
+
+    # SIX columns, because that is what it takes. At three the memory column still gets a
+    # third of the page and fits at any division, so a three-column fixture passes whether
+    # or not the emitter sizes anything — which is exactly how the first version of this
+    # test came out green against the unfixed code.
+    view = build_snapshot_view(sf.build(resources=[
+        sf.vm(
+            resource_id="/vm/wide", name="prod-db-02",
+            statistics=[
+                sf.exact(sf.CPU, "avg", "0.20"),
+                sf.exact(sf.CPU, "max", "79.88"),
+                sf.exact(sf.CPU, "min", "0.11"),
+                sf.percentile(sf.CPU, "p95", "0.25"),
+                sf.exact(sf.AVAILABLE_MEMORY, "avg", "3187970789", unit="bytes", scale=2),
+            ],
+        )
+    ]))
+    compiled, outcome = render(
+        [df.block("wide", "resource_table", {"columns": refs})],
+        metrics={sf.VM_TYPE: refs},
+        view=view,
+    )
+    widest = max(
+        f.formatted for f in compiled.ledger.entries.values() if "bytes" in f.formatted
+    )
+    assert len(widest) >= 20, f"the fixture must carry a genuinely wide value, got {widest!r}"
+
+    source = tmp_path / "report.docx"
+    source.write_bytes(outcome.docx_bytes)
+
+    result = subprocess.run(
+        [
+            _SOFFICE, "--headless", "--norestore",
+            f"-env:UserInstallation=file://{tmp_path / 'profile'}",
+            "--convert-to", "pdf", "--outdir", str(tmp_path), str(source),
+        ],
+        capture_output=True, text=True,
+        env={"LANG": "C.UTF-8", "PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+        timeout=300, check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(tmp_path / "report.pdf"))
+    normalized = " ".join(" ".join(page.extract_text().split()) for page in reader.pages)
+
+    missing = [
+        figure.formatted
+        for figure in compiled.ledger.entries.values()
+        if figure.formatted not in normalized
+    ]
+    assert missing == [], (
+        f"{len(missing)} figure(s) wrapped inside their cell and are no longer contiguous "
+        f"in the converted PDF: {missing}"
+    )
+
+
+@pytest.mark.skipif(_SOFFICE is None, reason="LibreOffice is not installed")
 def test_a_figure_beside_a_case_transforming_style_survives_conversion(
     tmp_path: Path,
 ) -> None:

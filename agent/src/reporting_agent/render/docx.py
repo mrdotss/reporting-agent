@@ -45,6 +45,7 @@ from typing import Final
 
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_BREAK
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Twips
 from docx.table import Table as DocxTable
@@ -89,6 +90,7 @@ from reporting_agent.render.charts import (
     SIDECAR_SUFFIX,
     render_chart,
 )
+from reporting_agent.render.tablefit import allocate, column_demands
 from reporting_agent.render.themes import (
     FIGURE_CHARACTER_STYLE,
     PREVIEW_NOTICE_STYLE,
@@ -167,6 +169,44 @@ class RenderOutcome:
     is: this module cannot write, so it cannot leave a partial set behind."""
 
 
+def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> None:
+    """Divide `text_width` (in twips) between the columns in proportion to their demand.
+
+    Word divides a table's width equally by default, which is fine until one column holds
+    something much longer than its neighbours: a companion table with four CPU columns
+    (`0.20%`) and one memory column (`3,187,970,789.00 bytes`) gave all five the same
+    width, and LibreOffice wrapped the memory values across two lines inside their cells.
+    Every character was still on the page, but `verify/pdf.py` searches for the ledger
+    string contiguously and a line break falls in the middle of it — run ef01a404 came back
+    with 30 `pdf_figure_missing` findings, one per day of July, all in that one column, on a
+    table with room to spare in its other four.
+
+    Fixed layout rather than autofit, and the width is set on **every cell** as well as on
+    the grid column: Word honours the grid, LibreOffice honours the cells, and a document
+    this product renders has to convert correctly under LibreOffice specifically.
+
+    Sizing alone cannot save a table whose columns cannot *all* fit — see
+    `tablefit.fits_page`, which is what keeps one from being built.
+    """
+    allocation = allocate(column_demands(node))
+    total = sum(allocation)
+    if not total:
+        return
+
+    table.autofit = False
+    layout = OxmlElement("w:tblLayout")
+    layout.set(qn("w:type"), "fixed")
+    table._tbl.tblPr.append(layout)
+
+    widths = [Twips(int(text_width * share / total)) for share in allocation]
+    for ordinal, width in enumerate(widths):
+        table.columns[ordinal].width = width
+    for row in table.rows:
+        for ordinal, cell in enumerate(row.cells):
+            if ordinal < len(widths):
+                cell.width = widths[ordinal]
+
+
 @dataclass(slots=True)
 class _Emitter:
     """One render's mutable state. Not reused across renders."""
@@ -182,6 +222,17 @@ class _Emitter:
     text_facts_emitted: int = 0
     chart_hashes: dict[str, str] = field(default_factory=dict)
     chart_sidecars: dict[str, bytes] = field(default_factory=dict)
+
+    @property
+    def text_width(self) -> int:
+        """The width available to a table, in twips: the page less its two margins.
+
+        Read off the section rather than assumed from the page size, because the theme
+        sets the margins and `_apply_page_size` sets the page — a table sized against a
+        constant would overflow the moment either changed.
+        """
+        section = self.document.sections[0]
+        return int(section.page_width - section.left_margin - section.right_margin)
 
     # --- styles ---------------------------------------------------------------
 
@@ -417,6 +468,10 @@ class _Emitter:
                 at=f"{at} row {row_ordinal}",
                 anchor_kind=anchor_kind,
             )
+
+        # After every row, because the demand is measured from the cells the table
+        # actually carries rather than from its declaration.
+        _apply_column_widths(table, node, text_width=self.text_width)
 
         if node.caption:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
