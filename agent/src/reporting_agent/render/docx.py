@@ -393,7 +393,15 @@ class _Emitter:
         about the period plotted.
         """
         at = f"chart {node.path!r}"
-        artifacts = render_chart(node, table_style=self.design.table_style_name, messages=self.messages)
+        artifacts = render_chart(
+            node,
+            table_style=self.design.table_style_name,
+            # The theme the profile selected, so the chart's axes, ticks and value labels
+            # are the document's ink rather than the app's. The series colours are not the
+            # document's — see `chartstyle.ChartFurniture`.
+            preset=self.design.preset,
+            messages=self.messages,
+        )
 
         picture_paragraph = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
         run = picture_paragraph.add_run()

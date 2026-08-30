@@ -1408,3 +1408,48 @@ def test_the_svg_is_byte_identical_across_renders() -> None:
 
     assert first.image_svg == second.image_svg
     assert "dc:date" not in first.image_svg.lower()
+
+
+# --------------------------------------------------------------------------- #
+# Req 22.10 — the direct end labels must stay readable
+# --------------------------------------------------------------------------- #
+
+
+class TestStackWithoutOverlap:
+    """Two series ending at nearly the same value printed one label over the other.
+
+    The delivered chart showed it: `CPN-App — Percentage CPU (max)` and
+    `CPN-MCP — Percentage CPU (max)` both ended near 2.3% and overprinted, along with their
+    two numerals. Req 22.10 makes these labels the primary way a reader tells series apart
+    and the legend only a fallback, so this is the legend's failure mode reappearing inside
+    its replacement.
+    """
+
+    def test_labels_far_apart_are_left_where_they_are(self) -> None:
+        assert C.stack_without_overlap([0.0, 10.0, 20.0], 1.0) == [0.0, 10.0, 20.0]
+
+    def test_a_colliding_label_is_lifted_exactly_clear(self) -> None:
+        """Lifted by the least that separates them, not to a fixed slot."""
+        assert C.stack_without_overlap([2.32, 2.35], 1.0) == [2.32, 3.32]
+
+    def test_the_lowest_label_keeps_its_true_position(self) -> None:
+        """Only the ones above move, so at least one label is exactly where its line ends."""
+        stacked = C.stack_without_overlap([5.0, 5.1, 5.2, 5.3], 2.0)
+        assert stacked[0] == 5.0
+        assert stacked == [5.0, 7.0, 9.0, 11.0]
+
+    def test_no_pair_ends_closer_than_the_gap(self) -> None:
+        """The property, over a run that mixes collisions with clear space."""
+        values = [0.0, 0.05, 0.1, 8.0, 8.01, 20.0]
+        stacked = C.stack_without_overlap(values, 1.0)
+        for lower, upper in zip(stacked, stacked[1:], strict=False):
+            assert upper - lower >= 1.0 - 1e-9
+
+    def test_it_never_lowers_a_label(self) -> None:
+        values = [0.0, 0.05, 0.1, 8.0, 8.01, 20.0]
+        for original, placed in zip(values, C.stack_without_overlap(values, 1.0), strict=True):
+            assert placed >= original
+
+    def test_it_is_total_over_the_empty_and_single_cases(self) -> None:
+        assert C.stack_without_overlap([], 1.0) == []
+        assert C.stack_without_overlap([4.2], 1.0) == [4.2]
