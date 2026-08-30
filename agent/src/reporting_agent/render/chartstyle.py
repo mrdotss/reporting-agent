@@ -40,6 +40,7 @@ from __future__ import annotations
 import math
 import re
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import Final
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "CAT_OTHER",
     "CHART_DPI",
     "CHART_ENCODINGS",
+    "ChartFurniture",
     "CHART_FONT",
     "CHART_GRID_WIDTH",
     "CHART_LABEL_SIZE",
@@ -76,6 +78,8 @@ __all__ = [
     "assign_colors",
     "axis_label_color",
     "chart_size_inches",
+    "furniture_for_theme",
+    "furniture_from_palette",
     "color_for_key",
     "compare_by_code_point",
     "contrast_ratio",
@@ -711,6 +715,60 @@ def stroke_safe_token(encoding: str, theme: Theme = LIGHT) -> str:
     # the end furthest from the surface in both — the darkest on white, the lightest on a
     # dark card.
     return safe[-1]
+
+
+
+@dataclass(frozen=True, slots=True)
+class ChartFurniture:
+    """A chart's **non-data ink**: gridlines, axis rules, tick labels, value labels.
+
+    Separated from the categorical palette because the two answer to different things. The
+    series colours are a measured accessibility result and are the same in every document
+    (see :data:`CATEGORICAL_VALUES`). The furniture is the document's own — a chart sitting
+    in a navy `corporate` report should not rule its axes in the app's teal, and until this
+    existed it did, because `render/charts.py` knew the light/dark theme and nothing about
+    which of the four presets it was drawing into.
+
+    Every value is `#RRGGBB`, ready for matplotlib.
+    """
+
+    grid: str
+    axis_label: str
+    value_label: str
+
+
+def furniture_for_theme(theme: Theme = LIGHT) -> ChartFurniture:
+    """The furniture of a chart drawn outside a themed document — the app's own tokens.
+
+    The behaviour every caller had before presets were threaded through, kept as the
+    fallback so a chart rendered without one is unchanged to the byte.
+    """
+    return ChartFurniture(
+        grid=grid_color(theme),
+        axis_label=axis_label_color(theme),
+        value_label=value_label_color(theme),
+    )
+
+
+def furniture_from_palette(*, ink: str, muted: str, rule: str) -> ChartFurniture:
+    """The furniture of a chart drawn into one of the document themes.
+
+    Takes the three `RRGGBB` strings off a `themes.ThemeSpec.palette` rather than importing
+    `render/themes.py`, which would pull python-docx into a module whose whole claim is that
+    it is pure palette and colour conversion. The caller that already knows the preset does
+    the lookup; this only maps the roles.
+
+    The roles line up exactly, which is why no conversion is needed: `rule` is the theme's
+    hairline and becomes the gridline, `muted` is its secondary ink and becomes the tick
+    labels, `ink` is its body colour and becomes the numerals printed beside a point — the
+    same reasoning `value_label_color` records for taking `--foreground` rather than the
+    series colour.
+    """
+    return ChartFurniture(
+        grid=f"#{rule.lstrip('#')}",
+        axis_label=f"#{muted.lstrip('#')}",
+        value_label=f"#{ink.lstrip('#')}",
+    )
 
 
 def grid_color(theme: Theme = LIGHT) -> str:

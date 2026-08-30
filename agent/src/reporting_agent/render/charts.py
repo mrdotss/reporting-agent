@@ -89,6 +89,7 @@ __all__ = [
     "plotted_series",
     "render_chart",
     "sidecar_bytes",
+    "stack_without_overlap",
 ]
 
 CHART_ALT_TEXT_PREFIX: Final[str] = "Chart "
@@ -524,7 +525,14 @@ def _panel_groups_for(
     return groups if groups else ((),)
 
 
-def render_chart(node: Chart, *, table_style: str, theme: str = "light", messages: Messages) -> ChartArtifacts:
+def render_chart(
+    node: Chart,
+    *,
+    table_style: str,
+    theme: str = "light",
+    preset: str = "",
+    messages: Messages,
+) -> ChartArtifacts:
     """Emit one chart's image, sidecar and companion table.
 
     The image is drawn under :func:`chartstyle.frozen_rc_params` in a `rc_context`, so the
@@ -561,6 +569,11 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
     groups = _panel_groups_for(node, series_set)
     panel_count = len(groups)
 
+    # The document's own ink for everything that is not data. `preset` is the theme the
+    # profile selected; an empty one means "no document", which is what a preview or a test
+    # renders into, and keeps the app's light/dark tokens.
+    furniture = _furniture_for(preset, theme)
+
     with rc_context(style.frozen_rc_params()):
         figure = MplFigure(
             figsize=style.chart_size_inches(panel_count), dpi=style.CHART_DPI
@@ -589,6 +602,7 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
                     panel_series,
                     theme=theme,
                     messages=messages,
+                    furniture=furniture,
                     is_last_panel=(panel_index == panel_count - 1),
                 )
 
@@ -684,6 +698,109 @@ def _colour_for(series: Series, siblings: tuple[str, ...], node: Chart, theme: s
     return style.hex_for_token(style.color_for_key(series.key, siblings), theme)
 
 
+def stack_without_overlap(values: Sequence[float], minimum_gap: float) -> list[float]:
+    """`values`, in ascending order, lifted so no two sit closer together than
+    `minimum_gap`.
+
+    The arithmetic behind the direct line-end labels, separated from the drawing because
+    this is the part with a right answer. Two idle machines both averaging 0.2% end their
+    lines within a hair of each other, and labels drawn at their own heights print one over
+    the other — the legend's failure mode, reproduced inside the thing Req 22.10 introduced
+    to replace the legend.
+
+    Each label is lifted only as far as clearing the one below it requires, and never
+    lowered, so the lowest keeps its true position and the displacement above it is the
+    least that separates them. A label may therefore sit slightly above the point it names,
+    which is a smaller lie than two labels that cannot be read at all.
+
+    Pure, total, and order-preserving: the caller sorts, this spaces, and the two are
+    testable apart.
+    """
+    stacked: list[float] = []
+    for value in values:
+        height = value
+        if stacked and height - stacked[-1] < minimum_gap:
+            height = stacked[-1] + minimum_gap
+        stacked.append(height)
+    return stacked
+
+
+def _draw_end_labels(
+    axes,
+    entries: Sequence[tuple[float, float, str, str]],
+    *,
+    offset: tuple[float, float] = (3, 0),
+    align: str = "left",
+    mono: bool = False,
+) -> None:
+    """Place the direct line-end labels, pushed apart where they would overlap.
+
+    Req 22.10 makes these the primary way a reader tells two series apart, and the legend
+    only a fallback. Two idle machines both averaging 0.2% end their lines within a
+    hair of each other, so drawn at their own heights the two labels print one over the
+    other — which is exactly the failure the direct labelling exists to avoid, reproduced
+    inside it. The delivered chart showed it.
+
+    The rule is the simplest one that terminates: sort by height, walk upward, and lift any
+    label that would sit closer to the one below it than a line of text is tall. A label may
+    therefore be drawn slightly above the point it names, which is a smaller lie than two
+    labels that cannot be read at all — and the leader is the colour, which is unchanged.
+
+    Measured in **display** space and converted back, because "a line of text is tall" is a
+    typographic quantity and the data axis may be percentages or bytes.
+    """
+    if not entries:
+        return
+
+    figure = axes.get_figure()
+    # A line of text at the label size, in data units: transform two display points that
+    # differ by that many pixels and take the difference.
+    line_px = style.CHART_LABEL_SIZE * figure.dpi / 72.0 * 1.25
+    inverse = axes.transData.inverted()
+    origin = inverse.transform((0.0, 0.0))
+    stepped = inverse.transform((0.0, line_px))
+    minimum_gap = abs(stepped[1] - origin[1])
+
+    ordered = sorted(entries, key=lambda entry: entry[1])
+    heights = stack_without_overlap([entry[1] for entry in ordered], minimum_gap)
+
+    for (x, _value, text, colour), height in zip(ordered, heights, strict=True):
+        axes.annotate(
+            text,
+            xy=(x, height),
+            xytext=offset,
+            textcoords="offset points",
+            color=colour,
+            ha=align,
+            va="center",
+            fontsize=style.CHART_LABEL_SIZE,
+            annotation_clip=False,
+            **({"fontfamily": "monospace"} if mono else {}),
+        )
+
+
+def _furniture_for(preset: str, theme: str) -> style.ChartFurniture:
+    """The chart's non-data ink, from the document's theme where there is one.
+
+    Imported here rather than in `render/chartstyle.py`: that module's whole claim is that
+    it is pure palette and colour conversion, and `render/themes.py` pulls python-docx.
+    This module already draws, already imports matplotlib, and is the one that knows a
+    chart is being rendered into a document at all.
+
+    An unknown or empty preset falls back to the app's light/dark tokens, which is what a
+    preview and every existing test render with — so a chart drawn without a preset is
+    unchanged to the byte.
+    """
+    from reporting_agent.render.themes import THEME_SPECS
+
+    spec = THEME_SPECS.get(preset)
+    if spec is None:
+        return style.furniture_for_theme(theme)
+    return style.furniture_from_palette(
+        ink=spec.palette.ink, muted=spec.palette.muted, rule=spec.palette.rule
+    )
+
+
 def _draw(
     axes,
     node: Chart,
@@ -691,6 +808,7 @@ def _draw(
     *,
     theme: str,
     messages: Messages,
+    furniture: style.ChartFurniture | None = None,
     is_last_panel: bool = True,
 ) -> None:
     """Draw one panel's plotted set.
@@ -752,10 +870,21 @@ def _draw(
         axes.set_xlabel(x_axis_title)
 
     # --- Gridlines (Req 17.2) -------------------------------------------------
-    axes.grid(True, axis="y", color=style.grid_color(theme), linewidth=style.CHART_GRID_WIDTH)
-    axes.tick_params(colors=style.axis_label_color(theme))
-    for spine in axes.spines.values():
-        spine.set_color(style.grid_color(theme))
+    # The document's ink where the caller knew which document; the app's tokens otherwise.
+    ink = furniture if furniture is not None else style.furniture_for_theme(theme)
+
+    axes.grid(True, axis="y", color=ink.grid, linewidth=style.CHART_GRID_WIDTH)
+    axes.tick_params(colors=ink.axis_label)
+
+    # Two rules, not four. A closed box draws a frame around every panel and then repeats it
+    # `panel_count` times down the page, which reads as a stack of boxes rather than as one
+    # chart; the top and right rules carry nothing a reader uses, because the scale is on the
+    # left and the gridlines already carry the horizontals. What is left is an L: the value
+    # axis and the baseline.
+    for edge in ("top", "right"):
+        axes.spines[edge].set_visible(False)
+    for edge in ("left", "bottom"):
+        axes.spines[edge].set_color(ink.grid)
 
     if not any(series.points for series in series_set):
         # Req 22.13 — the image says so too, not only the companion table.
@@ -766,7 +895,7 @@ def _draw(
             transform=axes.transAxes,
             ha="center",
             va="center",
-            color=style.axis_label_color(theme),
+            color=ink.axis_label,
         )
         axes.set_xticks([])
         axes.set_yticks([])
@@ -774,6 +903,8 @@ def _draw(
 
     siblings = tuple(series.key for series in series_set)
     horizontal = node.chart_type == "hbar"
+    end_labels: list[tuple[float, float, str, str]] = []
+    end_values: list[tuple[float, float, str, str]] = []
 
     for slot, series in enumerate(series_set):
         colour = _colour_for(series, siblings, node, theme)
@@ -799,18 +930,31 @@ def _draw(
             if node.chart_type == "area":
                 axes.fill_between(range(len(values)), values, color=colour, alpha=0.15)
             # Req 22.10 — a direct label at the line end, so the legend is a fallback.
-            axes.annotate(
-                truncate_end_label(series.label),
-                xy=(len(values) - 1, values[-1]),
-                xytext=(3, 0),
-                textcoords="offset points",
-                color=colour,
-                va="center",
-                fontsize=style.CHART_LABEL_SIZE,
+            # Collected rather than drawn here: two series ending at nearly the same value
+            # would otherwise print one label over the other, which is a legend's failure
+            # mode reproduced in the thing meant to replace it. Placed once, below, where
+            # every end position is known.
+            end_labels.append(
+                (len(values) - 1, values[-1], truncate_end_label(series.label), colour)
             )
             # Direct value labels at labelled indices (Req 17.4)
             for index in sorted(labelled):
                 if index < len(values):
+                    # The last point already carries the series label, three points to its
+                    # right. A centred value there puts half its width into that gutter and
+                    # the two overprint — the delivered chart read `2.32%` through
+                    # `CPN-App — Percentage CPU (max)`. Right-aligning the final value hangs
+                    # it back over the line it belongs to, which is also where a reader
+                    # looking for it would follow the series.
+                    if index == len(values) - 1:
+                        # The final value sits where the series label does, and two series
+                        # ending close together stack two numerals on one another the same
+                        # way their labels did. Collected and placed with them.
+                        end_values.append(
+                            (index, values[index], series.points[index].y.formatted,
+                             ink.value_label)
+                        )
+                        continue
                     axes.annotate(
                         series.points[index].y.formatted,
                         xy=(index, values[index]),
@@ -818,7 +962,7 @@ def _draw(
                         textcoords="offset points",
                         ha="center",
                         va="bottom",
-                        color=style.value_label_color(theme),
+                        color=ink.value_label,
                         fontsize=style.CHART_LABEL_SIZE,
                         fontfamily="monospace",
                     )
@@ -853,10 +997,15 @@ def _draw(
                     textcoords="offset points",
                     ha="left" if horizontal else "center",
                     va="center" if horizontal else "bottom",
-                    color=style.value_label_color(theme),
+                    color=ink.value_label,
                     fontsize=style.CHART_LABEL_SIZE,
                     fontfamily="monospace",
                 )
+
+    # The numerals first, hung back over the line they belong to; then the series labels in
+    # the gutter. Both de-overlapped, and separately, because they occupy different columns.
+    _draw_end_labels(axes, end_values, offset=(-4, 0), align="right", mono=True)
+    _draw_end_labels(axes, end_labels)
 
     # --- Legend (Req 17.3) — the fallback, and only when it is one -------------
     #
