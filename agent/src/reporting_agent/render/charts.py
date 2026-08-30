@@ -137,6 +137,13 @@ class ChartArtifacts:
     data_hash: str
     identity: str
     plotted_keys: tuple[str, ...]
+    image_svg: str = ""
+    """The same figure as vector, for the print stylesheet to embed.
+
+    Drawn once and serialised twice, so the raster in the `.docx` and the vector in the
+    styled PDF cannot show different charts. Last and defaulted so a caller constructing
+    one of these in a test needs only the raster, which is what every existing one does.
+    """
 
 
 # --------------------------------------------------------------------------- #
@@ -611,15 +618,32 @@ def render_chart(node: Chart, *, table_style: str, theme: str = "light", message
                 metadata=dict(style.PNG_METADATA),
                 facecolor="white",
             )
+
+            # The same figure, serialised a second way. **One drawing, two encodings** —
+            # the PNG the `.docx` embeds and the SVG the print stylesheet does, which is
+            # what stops the Word file and the styled PDF from showing different charts.
+            #
+            # SVG for print because WeasyPrint embeds it natively as vector: crisp at any
+            # zoom, and smaller than this PNG at 200dpi. The `.docx` keeps the raster
+            # because Word's SVG support is unreliable and python-docx cannot emit one.
+            svg_buffer = io.StringIO()
+            figure.savefig(
+                svg_buffer,
+                format="svg",
+                metadata=dict(style.SVG_METADATA),
+                facecolor="white",
+            )
         finally:
             # Explicit, because a Figure created directly is not registered with pyplot and
             # would otherwise be reclaimed only by the collector — which under a long run is
             # a slow leak of several megabytes per chart.
             figure.clear()
         image = buffer.getvalue()
+        vector = svg_buffer.getvalue()
 
     return ChartArtifacts(
         image_png=image,
+        image_svg=vector,
         sidecar_json=sidecar_bytes(node, data_hash=data_hash, messages=messages),
         table=companion_table(node, table_style, messages=messages),
         data_hash=data_hash,

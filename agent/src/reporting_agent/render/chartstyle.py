@@ -71,6 +71,7 @@ __all__ = [
     "SEQUENTIAL_TOKENS",
     "SEQUENTIAL_VALUES",
     "SURFACE_VALUES",
+    "SVG_METADATA",
     "Theme",
     "assign_colors",
     "axis_label_color",
@@ -668,6 +669,14 @@ _FROZEN_RC_PARAMS: Final[Mapping[str, object]] = {
 
 Global mutation would make the emitted bytes depend on whether some other module had
 already changed an rcParam, which is the opposite of the guarantee."""
+
+SVG_METADATA: Final[Mapping[str, object]] = {"Date": None}
+"""Suppress the `<dc:date>` matplotlib writes into an SVG's RDF metadata.
+
+The same reasoning as :data:`PNG_METADATA`'s `Software`: a timestamp in the output makes
+two renders of one chart differ in bytes, which is exactly what the replay gate compares.
+`svg.hashsalt` in the frozen rc params covers the other source of drift — the element ids,
+which are otherwise salted per process."""
 
 PNG_METADATA: Final[Mapping[str, object]] = {"Software": None}
 """Suppresses the `Software` and creation-date chunks matplotlib writes into a PNG.

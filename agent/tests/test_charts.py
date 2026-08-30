@@ -1369,3 +1369,42 @@ def test_both_shapes_carry_every_plotted_point() -> None:
         ]
         assert sorted(emitted) == sorted(point.y.formatted for point in plotted)
         assert len({row.key for row in table.rows}) == len(table.rows)
+
+
+# --------------------------------------------------------------------------- #
+# One drawing, two encodings
+# --------------------------------------------------------------------------- #
+
+
+def test_the_svg_and_the_png_come_from_one_drawing() -> None:
+    """The `.docx` embeds the raster and the print stylesheet embeds the vector, and both
+    are serialised from the **same** `Figure` — so the Word file and the styled PDF cannot
+    show different charts.
+
+    A second `render_chart` call would be a second drawing under the same inputs and would
+    almost certainly agree; that is not the point. The point is that no code path exists
+    that could draw one without the other.
+    """
+    node, _ = synthetic_chart(series_count=3, points_per_series=31)
+    artifacts = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+
+    assert artifacts.image_png.startswith(b"\x89PNG")
+    assert artifacts.image_svg.lstrip().startswith("<?xml")
+    assert "<svg" in artifacts.image_svg
+
+
+def test_the_svg_is_byte_identical_across_renders() -> None:
+    """Determinism, on the same terms the PNG is held to.
+
+    Two sources of drift, both already closed: matplotlib salts SVG element ids per
+    process unless `svg.hashsalt` is fixed, which `frozen_rc_params` sets, and it writes a
+    `<dc:date>` into the RDF metadata unless suppressed, which `SVG_METADATA` does. Either
+    would make one chart differ between two runs, which is exactly what the replay gate
+    compares.
+    """
+    node, _ = synthetic_chart(series_count=3, points_per_series=31)
+    first = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+    second = C.render_chart(node, table_style=TABLE_STYLE, messages=_MESSAGES)
+
+    assert first.image_svg == second.image_svg
+    assert "dc:date" not in first.image_svg.lower()
