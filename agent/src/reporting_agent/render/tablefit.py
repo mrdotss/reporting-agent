@@ -29,6 +29,7 @@ from reporting_agent.compile.ast import FigureCell, Table, TextCell, TextFactCel
 __all__ = [
     "COLUMN_OVERHEAD_CHARS",
     "allocate",
+    "header_demands",
     "MAX_COLUMN_CHARS",
     "MIN_COLUMN_CHARS",
     "WIDTH_BUDGET_CHARS",
@@ -110,34 +111,33 @@ def column_demands(node: Table) -> tuple[int, ...]:
     return tuple(demands)
 
 
-def allocate(demands: Sequence[int]) -> tuple[float, ...]:
-    """Divide the page between columns, in the same character units as the demands.
+def header_demands(node: Table) -> tuple[int, ...]:
+    """Each column's **longest header word**, in characters.
 
-    **Water-filling, not proportional sharing.** Proportional is correct only while the
-    total fits: past that it scales every column down by the same factor, so a six-character
-    `79.88%` beside a thirty-eight-character `0.25% (p95, est. from hourly averages)` is
-    squeezed to four characters and wraps — a column that had been perfectly fine under
-    Word's equal division, broken by the sizing meant to help it.
+    Not the whole header — a column headed `CPN-App — Percentage CPU (avg)` cannot be given
+    thirty characters when its values need five and four of its siblings want the same. The
+    longest single word is what decides whether the header breaks at a space or through the
+    middle of a word, and `ALLOC ATION METHO D` is what the latter looks like on the page.
 
-    So a column never receives less than it asks for while any column is receiving more:
+    Subordinate to the values in :func:`allocate`, and deliberately so: a header may wrap
+    without consequence and a figure may not, so this is spent out of what the values did
+    not need rather than competing with them.
+    """
+    return tuple(
+        min(MAX_COLUMN_CHARS, max((len(word) for word in column.header.split()), default=0))
+        for column in node.columns
+    )
 
-    * every column whose demand is at or below an equal share of what is left takes exactly
-      its demand and leaves the table;
+
+def _water_fill(demands: Sequence[float], budget: float) -> list[float]:
+    """Divide `budget` between claims, giving a claim less than it asked for only when every
+    claim still in the running is receiving the same share.
+
+    * every claim at or below an equal share of what is left takes exactly what it asked
+      for and leaves the table;
     * whatever remains is divided again between the rest, until either nobody is under the
       share or the share is all there is.
-
-    The columns that end up short are therefore the widest ones, which is the right place
-    for a shortfall to land: the longest cell in a table is almost always prose — a list of
-    affected resource ids, an estimator label — and prose may wrap without consequence. A
-    figure is short, so it settles early and keeps its full width.
-
-    Returns character-unit widths summing to the page budget, which the caller scales into
-    whatever the section actually measures.
     """
-    budget = float(WIDTH_BUDGET_CHARS - COLUMN_OVERHEAD_CHARS * len(demands))
-    if budget <= 0 or not demands:
-        return tuple(float(d) for d in demands)
-
     allocation = [0.0] * len(demands)
     unsettled = set(range(len(demands)))
     remaining = budget
@@ -154,7 +154,58 @@ def allocate(demands: Sequence[int]) -> tuple[float, ...]:
             remaining -= demands[i]
         unsettled -= settled
 
-    return tuple(allocation)
+    return allocation
+
+
+def allocate(
+    demands: Sequence[int], headers: Sequence[int] | None = None
+) -> tuple[float, ...]:
+    """Divide the page between columns, in the same character units as the demands.
+
+    **Water-filling, not proportional sharing.** Proportional is correct only while the
+    total fits: past that it scales every column down by the same factor, so a six-character
+    `79.88%` beside a thirty-eight-character `0.25% (p95, est. from hourly averages)` is
+    squeezed to four characters and wraps — a column that had been perfectly fine under
+    Word's equal division, broken by the sizing meant to help it.
+
+    The columns that end up short are therefore the widest ones, which is the right place
+    for a shortfall to land: the longest cell in a table is almost always prose — a list of
+    affected resource ids, an estimator label — and prose may wrap without consequence. A
+    figure is short, so it settles early and keeps its full width.
+
+    ## Headers get what the values did not need, and only that
+
+    `headers` is a **second pass** over the slack, never a competing claim in the first.
+    Sizing columns by their values alone left `Allocation method` set as `ALLOC ATION METHO
+    D` over a column of six-character values — free for the verifier, which reads a column's
+    key out of the `.docx`, and plainly wrong on the page.
+
+    Folding the header into the first pass fixes that and breaks something worse. The
+    companion table's four percentage columns each want ten characters for the word
+    `PERCENTAGE` and need six for `0.20%`; the memory column beside them needs twenty-two
+    and its header's longest word is nine. Water-filling on the larger of the two claims
+    settles the four small ones first and leaves the memory column under ten — which is
+    precisely the wrap that withheld run ef01a404. So a header can only ever raise a column,
+    never lower one, and a table with no slack sets its headers exactly as it did before.
+
+    Returns character-unit widths summing to at most the page budget, which the caller
+    scales into whatever the section actually measures.
+    """
+    budget = float(WIDTH_BUDGET_CHARS - COLUMN_OVERHEAD_CHARS * len(demands))
+    if budget <= 0 or not demands:
+        return tuple(float(d) for d in demands)
+
+    base = _water_fill([float(d) for d in demands], budget)
+    if headers is None:
+        return tuple(base)
+
+    slack = budget - sum(base)
+    if slack <= 1e-9:
+        return tuple(base)
+
+    wanted = [max(0.0, float(h) - b) for h, b in zip(headers, base, strict=True)]
+    extra = _water_fill(wanted, slack)
+    return tuple(b + e for b, e in zip(base, extra, strict=True))
 
 
 def width_score(node: Table) -> int:

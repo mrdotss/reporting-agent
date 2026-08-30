@@ -20,6 +20,7 @@ from reporting_agent.compile.ast import Column, FigureCell, Row, Table, TextCell
 from reporting_agent.compile.figures import FigureLedger
 from reporting_agent.render.tablefit import (
     COLUMN_OVERHEAD_CHARS,
+    header_demands,
     MAX_COLUMN_CHARS,
     MIN_COLUMN_CHARS,
     WIDTH_BUDGET_CHARS,
@@ -141,3 +142,57 @@ def _scored(*demands: int) -> Table:
 def test_the_score_is_the_demands_plus_per_column_overhead() -> None:
     node = _scored(10, 17, 17, 17)
     assert width_score(node) == 61 + COLUMN_OVERHEAD_CHARS * 4 == 69
+
+
+class TestHeaderDemands:
+    def test_it_measures_the_longest_word_not_the_whole_header(self) -> None:
+        """A thirty-character header cannot have thirty characters in a six-column table.
+        What decides whether it breaks at a space or through a word is its longest word."""
+        node = Table(
+            path="t", style="s",
+            columns=(
+                Column(key="a", header="Allocation method"),
+                Column(key="b", header="CPN-App — Percentage CPU (avg)"),
+                Column(key="c", header="SKU"),
+            ),
+            rows=(Row(path="t.0", key="0", cells=(TextCell(path="t.0.0", text="x"),)),),
+        )
+        assert header_demands(node) == (10, 10, 3)
+
+
+class TestHeadersGetOnlyTheSlack:
+    """The second pass, and the reason it is a second pass."""
+
+    def test_a_header_raises_a_column_when_there_is_room(self) -> None:
+        """`Percentage CPU (avg)` over a column of `0.20%` was set as `PERCEN TAGE`. The
+        values need six characters and the table has room for ten, so it takes ten."""
+        values, headers = (10, 6, 6), (8, 10, 10)
+        assert allocate(values) == (10.0, 6.0, 6.0)
+        assert allocate(values, headers) == (10.0, 10.0, 10.0)
+
+    def test_a_header_never_takes_width_from_a_figure(self) -> None:
+        """The companion table, and the regression this ordering exists to prevent.
+
+        Four percentage columns each want ten characters for the word `PERCENTAGE` and need
+        six for `0.20%`; the memory column beside them needs twenty-two and its header's
+        longest word is nine. Water-filling on the larger of the two claims would settle the
+        four small ones first and leave memory under ten — the exact wrap that withheld run
+        ef01a404. So the memory column must come through at twenty-two either way.
+        """
+        values = (10, 6, 6, 22, 6, 6)
+        headers = (4, 10, 10, 9, 10, 10)
+
+        without = allocate(values)
+        with_headers = allocate(values, headers)
+
+        assert without[3] == with_headers[3] == 22.0
+        for before, after in zip(without, with_headers, strict=True):
+            assert after >= before, "a header pass may only ever raise a column"
+
+    def test_a_table_with_no_slack_is_left_exactly_as_it_was(self) -> None:
+        """Page 7's public-IP table: the association column carries a two-hundred-character
+        resource id and there is nothing spare. `Allocation method` still wraps, and that is
+        the honest outcome — the width is not there to give."""
+        values, headers = (15, 13, 6, 8, 40), (8, 7, 10, 3, 11)
+        assert allocate(values, headers) == allocate(values)
+
