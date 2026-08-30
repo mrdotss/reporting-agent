@@ -60,6 +60,14 @@ from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import RenderFailedError
 
 __all__ = [
+    "front_matter_sections",
+    "FrontMatterSection",
+    "FrontMatterPairs",
+    "FrontMatterPageBreak",
+    "FrontMatterNote",
+    "FrontMatterHeading",
+    "FrontMatterGrid",
+    "FrontMatterContents",
     "APPROVER_HEADER_COMPANY",
     "APPROVER_HEADER_NAME",
     "APPROVER_HEADER_ROLE",
@@ -266,6 +274,112 @@ class RunFacts:
 # ---------------------------------------------------------------------------
 
 
+
+# ---------------------------------------------------------------------------
+# The neutral description — what the front matter *is*, before either emitter
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterHeading:
+    """A line of its own, in a named paragraph style."""
+
+    text: str
+    style: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterPairs:
+    """A label/value block — the cover's facts, the naming block, the revision row."""
+
+    rows: tuple[tuple[str, str], ...]
+    table_style: str
+    paragraph_style: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterGrid:
+    """A headed table — the approvers, the distribution list.
+
+    `paragraph_style` is `None` for a table whose cells take the table style's own
+    formatting rather than a paragraph style, which is what the approvers table does and
+    the distribution table does not. Carried rather than inferred, because the difference
+    is visible in the delivered document and neither emitter should have to guess it.
+
+    `signature_column` names a column whose cells are left **empty** whatever the row
+    holds — Req 13.6's ruled box, which must never be filled with the approver's typed
+    name — and `images` supplies the bytes to place there where a signature was given.
+    """
+
+    headers: tuple[str, ...]
+    rows: tuple[tuple[str, ...], ...]
+    table_style: str
+    paragraph_style: str | None = None
+    signature_column: int | None = None
+    images: tuple[bytes | None, ...] = ()
+    row_height_twips: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterNote:
+    """A paragraph of prose — the free-text distribution block, the confidentiality
+    notice."""
+
+    text: str
+    style: str
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterContents:
+    """The table of contents: a heading and one entry per document heading.
+
+    Carries **no page numbers**. The `.docx` gets them from
+    `render/toc.py::apply_toc_page_numbers`, which measures the converted PDF; a CSS
+    print stylesheet generates them at pagination time. Neither is something this
+    description can know, and a guessed page number is a promise the document breaks.
+    """
+
+    label: str
+    entries: tuple[tuple[str, int], ...]
+    entry_style: str
+    label_style: str = "Title"
+    """`Title` so the contents heading does not appear in its own contents."""
+
+
+@dataclass(frozen=True, slots=True)
+class FrontMatterPageBreak:
+    """Where the front matter starts a new page."""
+
+
+FrontMatterSection = (
+    FrontMatterHeading
+    | FrontMatterPairs
+    | FrontMatterGrid
+    | FrontMatterNote
+    | FrontMatterContents
+    | FrontMatterPageBreak
+)
+"""One piece of front matter, described without saying how it is drawn.
+
+## Why this exists
+
+`emit_front_matter` wrote straight into a `DocxDocument`, so the cover, the document
+control page and the contents existed **only** as Word calls. The HTML emitter walks the
+block AST, and the front matter is not in the AST — it is fixed rather than composed and
+accepts no block — so `document.html` began at the first section heading, with no cover,
+no approvers and no contents at all.
+
+Giving the second emitter its own front-matter renderer would put the *order and content*
+of the front matter in two places, which is exactly what Req 24.1 forbids for blocks and
+for the same reason: two statements of one layout is one layout and one latent bug. So the
+order and content live here, once, and each emitter chooses elements for what it is given.
+
+The style names ride along rather than being resolved per emitter. That follows the body:
+`Table.style` on the AST is a Word style name and `render/html.py` emits it as
+`data-style`, so a stylesheet can key off the same vocabulary the theme uses.
+"""
+
+
 def document_number(pattern: str, *, run: RunFacts) -> str:
     """Apply the document-number pattern to one run.
 
@@ -310,6 +424,187 @@ def document_number(pattern: str, *, run: RunFacts) -> str:
 # ---------------------------------------------------------------------------
 
 
+
+def front_matter_sections(
+    *,
+    front_matter: FrontMatterConfig,
+    run: RunFacts,
+    messages: Messages,
+    heading_entries: tuple[tuple[str, int], ...] = (),
+    include_toc: bool = True,
+) -> tuple[FrontMatterSection, ...]:
+    """The front matter, in order, described without saying how it is drawn.
+
+    Cover, then document control, then the table of contents (Req 13.4). Not composable,
+    not reorderable, no block accepted inside it.
+
+    Where the cover-page flag is false, no cover content and no leading blank page — and
+    the document control page and the contents unchanged, because disabling the cover does
+    not disable the front matter (Req 13.9).
+
+    Pure over its arguments, so both emitters see the same front matter and a test can read
+    it without rendering anything.
+    """
+    from reporting_agent.compile.blocks.base import LAYOUT_TABLE_STYLE
+    from reporting_agent.render.themes import (
+        COVER_META_STYLE,
+        COVER_TITLE_STYLE,
+        DOCUMENT_CONTROL_STYLE,
+        SIGNATURE_TABLE_STYLE,
+        TOC_ENTRY_STYLE,
+    )
+    from reporting_agent.render.toc import TOC_LABEL_ID
+
+    _require_run_value(run.customer_name, "customer_name")
+    _require_run_value(run.period_display, "period_display")
+    _require_run_value(run.report_title, "report_title")
+    _require_run_value(run.run_id, "run_id")
+
+    pattern = front_matter.document_control.document_number_pattern
+    doc_number = document_number(pattern, run=run) if pattern else None
+    control = front_matter.document_control
+
+    sections: list[FrontMatterSection] = []
+
+    # --- cover (Req 13.4, 13.9) ----------------------------------------------
+    if front_matter.cover.enabled:
+        sections.append(FrontMatterHeading(run.report_title, COVER_TITLE_STYLE))
+        if front_matter.cover.subtitle:
+            sections.append(FrontMatterHeading(front_matter.cover.subtitle, COVER_META_STYLE))
+
+        cover_rows: list[tuple[str, str]] = [
+            (messages.text("doc.front_matter.prepared_for"), run.customer_name),
+            (messages.text("doc.front_matter.reporting_period"), run.period_display),
+        ]
+        # Req 13.8 — the same string here and on the document control page.
+        if doc_number:
+            cover_rows.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+        if front_matter.cover.contact_block:
+            cover_rows.append(
+                (messages.text("doc.front_matter.prepared_by"), front_matter.cover.contact_block)
+            )
+        sections.append(
+            FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
+        )
+        sections.append(FrontMatterPageBreak())
+
+    # --- document control (Req 13.5, 13.6) -----------------------------------
+    sections.append(
+        FrontMatterHeading(messages.text(DOC_CONTROL_TITLE), DOCUMENT_CONTROL_STYLE)
+    )
+
+    naming: list[tuple[str, str]] = []
+    if control.document_name:
+        naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
+    if doc_number:
+        naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+    naming.append((messages.text("doc.front_matter.prepared_for"), run.customer_name))
+    sections.append(
+        FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
+    )
+
+    # --- approvers (Req 13.6) ------------------------------------------------
+    approver_rows: list[tuple[str, ...]] = []
+    approver_images: list[bytes | None] = []
+    for role in APPROVER_ROLES:
+        entry = _find_approver(control.approvers, role)
+        role_label_id = APPROVER_ROLE_LABEL_IDS.get(role)
+        approver_rows.append(
+            (
+                messages.text(role_label_id) if role_label_id else role,
+                # The COMPANY column shows the approver's company; `title` remains the
+                # fallback so a profile that put its company there keeps rendering as it did.
+                (entry.company or entry.title) if entry else "",
+                entry.name if entry else "",
+                "",
+            )
+        )
+        approver_images.append(entry.signature_image if entry is not None else None)
+
+    sections.append(
+        FrontMatterGrid(
+            headers=(
+                messages.text(APPROVER_HEADER_ROLE),
+                messages.text(APPROVER_HEADER_COMPANY),
+                messages.text(APPROVER_HEADER_NAME),
+                messages.text(APPROVER_HEADER_SIGNATURE),
+            ),
+            rows=tuple(approver_rows),
+            table_style=SIGNATURE_TABLE_STYLE,
+            signature_column=3,
+            images=tuple(approver_images),
+            row_height_twips=SIGNATURE_BOX_HEIGHT_TWIPS,
+        )
+    )
+
+    # --- revision history ----------------------------------------------------
+    if run.revision_history:
+        row = run.revision_history
+        sections.append(
+            FrontMatterHeading(
+                messages.text(DOC_CONTROL_REVISION_HISTORY), DOCUMENT_CONTROL_STYLE
+            )
+        )
+        revision_rows = [(messages.text(REVISION_LABEL), row.revision)]
+        if row.author:
+            revision_rows.append((messages.text(REVISION_AUTHOR_LABEL), row.author))
+        if row.note:
+            revision_rows.append((messages.text(REVISION_NOTE_LABEL), row.note))
+        sections.append(
+            FrontMatterPairs(tuple(revision_rows), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
+        )
+
+    # --- distribution --------------------------------------------------------
+    if control.distribution_rows or control.distribution:
+        sections.append(
+            FrontMatterHeading(messages.text(DOC_CONTROL_DISTRIBUTION), DOCUMENT_CONTROL_STYLE)
+        )
+        if control.distribution_rows:
+            sections.append(
+                FrontMatterGrid(
+                    headers=(
+                        messages.text(DISTRIBUTION_HEADER_RECIPIENT),
+                        messages.text(DISTRIBUTION_HEADER_COMPANY),
+                        messages.text(DISTRIBUTION_HEADER_NOTE),
+                    ),
+                    rows=tuple(
+                        (row.recipient, row.company, row.note)
+                        for row in control.distribution_rows
+                    ),
+                    table_style=LAYOUT_TABLE_STYLE,
+                    paragraph_style=DOCUMENT_CONTROL_STYLE,
+                )
+            )
+        else:
+            # v1/v2 — one free-text block, unchanged.
+            sections.append(
+                FrontMatterNote(str(control.distribution), DOCUMENT_CONTROL_STYLE)
+            )
+
+    # --- confidentiality notice ----------------------------------------------
+    if control.confidentiality_notice_id:
+        sections.append(
+            FrontMatterNote(
+                messages.text(control.confidentiality_notice_id), DOCUMENT_CONTROL_STYLE
+            )
+        )
+
+    sections.append(FrontMatterPageBreak())
+
+    # --- table of contents (Req 14.3, 14.5, 14.11) ---------------------------
+    if include_toc and front_matter.toc.enabled:
+        sections.append(
+            FrontMatterContents(
+                label=messages.text(TOC_LABEL_ID),
+                entries=heading_entries,
+                entry_style=TOC_ENTRY_STYLE,
+            )
+        )
+        sections.append(FrontMatterPageBreak())
+
+    return tuple(sections)
+
+
 def emit_front_matter(
     document: DocxDocument,
     *,
@@ -319,60 +614,106 @@ def emit_front_matter(
     cursor: object = None,
     ledger: object = None,
 ) -> None:
-    """Emit cover, then document control, then the table of contents, in that order,
-    before every content block (Req 13.4).
+    """Render the front matter into a Word document.
 
-    Not composable, not reorderable, no block accepted inside it.
-
-    Where the definition's cover-page flag is false, emit NO cover content and NO leading
-    blank page, retain the cover configuration in the definition, and emit the document
-    control page and the table of contents unchanged — disabling the cover does not
-    disable the front matter (Req 13.9).
+    **What** the front matter is and **in what order** is `front_matter_sections`; this
+    chooses Word elements for it. The split is the same one the body already has between
+    the block compiler and `render/docx.py`, and it exists for the same reason: the styled
+    PDF renders the same sections through `render/html.py`, and two statements of one
+    layout is one layout and one latent bug.
 
     A per-run value that is absent is `RENDER_FAILED` naming that value, with no report
-    artifact and no substituted placeholder in its position (Req 13.15).
+    artifact and no substituted placeholder in its position (Req 13.15) — raised by the
+    builder, before anything is written.
     """
-    # --- validate per-run values (clause c) ------------------------------------------
-    _require_run_value(run.customer_name, "customer_name")
-    _require_run_value(run.period_display, "period_display")
-    _require_run_value(run.report_title, "report_title")
-    _require_run_value(run.run_id, "run_id")
-
-    # --- resolve document number if pattern is declared ------------------------------
-    doc_number: str | None = None
-    pattern = front_matter.document_control.document_number_pattern
-    if pattern:
-        doc_number = document_number(pattern, run=run)
-
-    # --- cover (Req 13.4, 13.9) -----------------------------------------------------
-    # Clause (a): if cover disabled, emit NO cover content and NO leading blank page.
-    if front_matter.cover.enabled:
-        _emit_cover(document, front_matter=front_matter, run=run, messages=messages,
-                    doc_number=doc_number)
-
-    # --- document control (Req 13.5, 13.6) ------------------------------------------
-    _emit_document_control(
-        document, front_matter=front_matter, run=run, messages=messages,
-        doc_number=doc_number,
-    )
-
-    # --- table of contents (Req 14.3, 14.5, 14.11) -----------------------------------
-    # Emit entries for pass 1 of the two-pass approach: heading text + tab, no page
-    # number. Pass 2 (apply_toc_page_numbers in render/toc.py) operates on the serialized
-    # docx bytes after conversion to measure actual page positions, then re-emits with
-    # the measured numbers as literal text.
     from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document
-    if should_emit_toc() and front_matter.toc.enabled:
-        _emit_toc(
+
+    sections = front_matter_sections(
+        front_matter=front_matter,
+        run=run,
+        messages=messages,
+        heading_entries=toc_entries_from_document(cursor) if cursor is not None else (),
+        include_toc=should_emit_toc(),
+    )
+    for section in sections:
+        _emit_section(document, section)
+
+
+def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
+    """One described section, as Word elements."""
+    if isinstance(section, FrontMatterHeading):
+        document.add_paragraph(section.text, style=section.style)
+
+    elif isinstance(section, FrontMatterPairs):
+        _emit_label_value_table(
             document,
-            heading_entries=toc_entries_from_document(cursor) if cursor is not None else (),
-            messages=messages,
+            section.rows,
+            style_name=section.table_style,
+            paragraph_style=section.paragraph_style,
         )
 
+    elif isinstance(section, FrontMatterGrid):
+        _emit_grid(document, section)
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
+    elif isinstance(section, FrontMatterNote):
+        document.add_paragraph(section.text, style=section.style)
+
+    elif isinstance(section, FrontMatterContents):
+        # Text plus a tab, whether or not a number follows, so pass 1 lays out to exactly
+        # the height pass 2 will — `render/toc.py::apply_toc_page_numbers` measures the
+        # converted PDF and re-emits with the numbers it found.
+        document.add_paragraph(section.label, style=section.label_style)
+        for heading_text, _level in section.entries:
+            paragraph = document.add_paragraph(style=section.entry_style)
+            paragraph.add_run(heading_text)
+            paragraph.add_run().add_tab()
+
+    elif isinstance(section, FrontMatterPageBreak):
+        _add_page_break(document)
+
+    else:  # pragma: no cover - the union is closed and every member is handled above
+        raise RenderFailedError(f"unhandled front matter section {type(section).__name__}")
+
+
+def _emit_grid(document: DocxDocument, section: FrontMatterGrid) -> None:
+    """A headed table, with the signature column's rules where it has one.
+
+    Req 13.6 clause (b): the signature cell is emitted **empty unconditionally** and never
+    the approver's typed name — set before any image placement, so an exception raised while
+    placing an image cannot leave a typed name behind it.
+    """
+    table = document.add_table(rows=1 + len(section.rows), cols=len(section.headers))
+    table.style = section.table_style
+
+    header_cells = table.rows[0].cells
+    for index, header in enumerate(section.headers):
+        if section.paragraph_style is None:
+            header_cells[index].text = header
+        else:
+            _set_cell_text(header_cells[index], header, section.paragraph_style)
+
+    for row_index, row in enumerate(section.rows):
+        cells = table.rows[row_index + 1].cells
+        for index, value in enumerate(row):
+            text = "" if index == section.signature_column else value
+            if section.paragraph_style is None:
+                cells[index].text = text
+            else:
+                _set_cell_text(cells[index], text, section.paragraph_style)
+
+        # Clause (c): a supplied signature is scaled to fit the theme's declared row
+        # height without changing it, so a signed row and an unsigned row occupy the same
+        # space and pagination never depends on who signed.
+        if section.signature_column is not None and row_index < len(section.images):
+            image = section.images[row_index]
+            if image is not None:
+                _place_signature_image(cells[section.signature_column], image)
+
+        if section.row_height_twips is not None:
+            # After either path, so `w:hRule="atLeast"` plus a scaled-to-fit image is what
+            # makes signed and unsigned rows the same size, rather than the image growing
+            # the row past it.
+            _set_row_height(table.rows[row_index + 1], section.row_height_twips)
 
 
 def _require_run_value(value: str, name: str) -> None:

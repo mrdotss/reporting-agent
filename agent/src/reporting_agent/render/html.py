@@ -44,6 +44,7 @@ from __future__ import annotations
 import html
 import json
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Final
 
 from reporting_agent.compile.ast import (
@@ -70,6 +71,8 @@ from reporting_agent.compile.messages import Messages
 from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
 
 __all__ = [
+    "FRONT_MATTER_CLASS_NAMES",
+    "emit_front_matter_html",
     "EMITTED_CLASS_NAMES",
     "EMPTY_CELL_TEXT",
     "FIGURE_CLASS",
@@ -532,6 +535,132 @@ def _paragraph_tag(style: str) -> tuple[str, str]:
     if style in ("Notice", "PreviewNotice"):
         return tag, f' class="{_CLS_NOTICE}"'
     return tag, ""
+
+
+FRONT_MATTER_CLASS_NAMES: Final[tuple[str, ...]] = (
+    "rpt-front-matter",
+    "rpt-cover",
+    "rpt-doc-control",
+    "rpt-pairs",
+    "rpt-grid",
+    "rpt-signature",
+    "rpt-note",
+)
+"""The classes the front matter emits, kept apart from `EMITTED_CLASS_NAMES` because the
+body's are asserted against the block AST and these have no block behind them."""
+
+_CLS_FRONT_MATTER: Final[str] = FRONT_MATTER_CLASS_NAMES[0]
+_CLS_PAIRS: Final[str] = FRONT_MATTER_CLASS_NAMES[3]
+_CLS_GRID: Final[str] = FRONT_MATTER_CLASS_NAMES[4]
+_CLS_SIGNATURE: Final[str] = FRONT_MATTER_CLASS_NAMES[5]
+_CLS_FM_NOTE: Final[str] = FRONT_MATTER_CLASS_NAMES[6]
+
+
+def emit_front_matter_html(sections: Sequence[object]) -> str:
+    """The front matter as HTML, from the same description `render/docx.py` renders.
+
+    The second consumer of `front_matter.front_matter_sections`, and the reason that
+    function exists: the front matter is not in the block AST — it is fixed rather than
+    composed and accepts no block — so this emitter, which walks the AST, produced a
+    document beginning at the first section heading, with no cover, no approvers and no
+    contents. `document.html` for a real run contained none of them.
+
+    Every style name rides through as `data-style`, exactly as `Table.style` does for the
+    body, so a print stylesheet keys off the same vocabulary the Word theme uses rather
+    than a second one invented here.
+
+    **No page numbers** (Req 24.4). The contents entries carry their text and nothing else,
+    matching `emit_toc_html`: Word gets its numbers from `render/toc.py` measuring the
+    converted PDF, and neither is something this emitter can know. A guessed number is a
+    promise the document breaks.
+
+    A print stylesheet could generate real ones with `target-counter`, but only against
+    anchors — which means an `id` on every heading and the heading's path carried into
+    `toc_entries_from_document`, which today yields text and level alone. Left for the
+    styled PDF to pick up rather than half-built here.
+    """
+    from reporting_agent.render.front_matter import (
+        FrontMatterContents,
+        FrontMatterGrid,
+        FrontMatterHeading,
+        FrontMatterNote,
+        FrontMatterPageBreak,
+        FrontMatterPairs,
+    )
+
+    parts: list[str] = []
+    for section in sections:
+        if isinstance(section, FrontMatterHeading):
+            parts.append(
+                f'<p class="{_CLS_BLOCK}" data-style='
+                f'"{html.escape(section.style, quote=True)}">'
+                f"{html.escape(section.text)}</p>"
+            )
+
+        elif isinstance(section, FrontMatterPairs):
+            rows = "".join(
+                f"<tr><th scope=\"row\">{html.escape(label)}</th>"
+                f"<td>{html.escape(value)}</td></tr>"
+                for label, value in section.rows
+            )
+            if rows:
+                parts.append(
+                    f'<table class="{_CLS_PAIRS}" data-style='
+                    f'"{html.escape(section.table_style, quote=True)}">'
+                    f"<tbody>{rows}</tbody></table>"
+                )
+
+        elif isinstance(section, FrontMatterGrid):
+            headers = "".join(
+                f'<th scope="col">{html.escape(header)}</th>' for header in section.headers
+            )
+            body = []
+            for row in section.rows:
+                cells = []
+                for index, value in enumerate(row):
+                    if index == section.signature_column:
+                        # Req 13.6 clause (b) — an empty ruled box, never the typed name.
+                        cells.append(f'<td class="{_CLS_SIGNATURE}"></td>')
+                    else:
+                        cells.append(f"<td>{html.escape(value)}</td>")
+                body.append(f"<tr>{''.join(cells)}</tr>")
+            parts.append(
+                f'<table class="{_CLS_GRID}" data-style='
+                f'"{html.escape(section.table_style, quote=True)}">'
+                f"<thead><tr>{headers}</tr></thead>"
+                f"<tbody>{''.join(body)}</tbody></table>"
+            )
+
+        elif isinstance(section, FrontMatterNote):
+            parts.append(
+                f'<p class="{_CLS_FM_NOTE}" data-style='
+                f'"{html.escape(section.style, quote=True)}">'
+                f"{html.escape(section.text)}</p>"
+            )
+
+        elif isinstance(section, FrontMatterContents):
+            entries = "".join(
+                f'<li class="{_CLS_TOC_ENTRY}" data-level="{level}">'
+                f"{html.escape(text)}</li>"
+                for text, level in section.entries
+            )
+            parts.append(
+                f'<nav class="{_CLS_TOC_NAV}"><p class="{_CLS_BLOCK}" data-style='
+                f'"{html.escape(section.label_style, quote=True)}">'
+                f"{html.escape(section.label)}</p>"
+                f'<ol class="{_CLS_TOC_LIST}">{entries}</ol></nav>'
+            )
+
+        elif isinstance(section, FrontMatterPageBreak):
+            parts.append(f'<hr class="{_CLS_BREAK}" />')
+
+        else:
+            raise HtmlEmitFailed(
+                f"no front matter emission is declared for {type(section).__name__}"
+            )
+
+    return f'<div class="{_CLS_FRONT_MATTER}">{"".join(parts)}</div>'
+
 
 
 def emit_html(document: object, *, messages: Messages) -> HtmlOutcome:
