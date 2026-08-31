@@ -82,6 +82,7 @@ import asyncio
 import io
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any, Final
 
@@ -1059,15 +1060,15 @@ async def _document_phases(
                 )
                 # Replace rendered and converted with the pass-2 artifacts so that
                 # docx_sha256 / pdf_sha256 are the pass-2 digests.
-                rendered = type(rendered)(
-                    docx_bytes=final_docx,
-                    table_identities=rendered.table_identities,
-                    advisories=rendered.advisories,
-                    figures_emitted=rendered.figures_emitted,
-                    text_facts_emitted=rendered.text_facts_emitted,
-                    chart_hashes=rendered.chart_hashes,
-                    chart_sidecars=rendered.chart_sidecars,
-                )
+                #
+                # `replace` rather than reconstructing field by field. The explicit form
+                # named seven fields, so `chart_vectors` and `chart_tables` — added for the
+                # styled PDF — would have been dropped here and nowhere else, on the one
+                # path that re-emits the document: every run with a table of contents would
+                # have produced a reading copy with no charts, and every run without one
+                # would have been fine. That is the same full-replace hazard
+                # `update-agent-runtime` has, in a dataclass.
+                rendered = replace(rendered, docx_bytes=final_docx)
                 from reporting_agent.render.pdf import ConversionOutcome, digest_of
                 converted = ConversionOutcome(
                     pdf_bytes=final_pdf,
@@ -1077,6 +1078,26 @@ async def _document_phases(
                 )
 
     yield steps.end(render_step["id"])
+
+    # --- the styled reading copy ------------------------------------------------------
+    #
+    # A third artifact, rendered from the same compiled AST through `render/html.py` and a
+    # print stylesheet. The delivered pair above is untouched and gated as it was; this is
+    # a reading copy, and it is checked for the same figures at advisory severity.
+    #
+    # Failures here never stop a run. A document whose every figure traced and whose twelve
+    # gates passed is not withheld because its reading copy failed to lay out — or because
+    # the image is missing a library, which is what an unavailable renderer means.
+    styled_pdf = await asyncio.to_thread(
+        _render_styled_pdf,
+        compiled=compiled,
+        rendered=rendered,
+        design=design,
+        messages=messages,
+        front_matter=front_matter,
+        run_facts=run_facts,
+    )
+    styled_text, styled_pages = _pdf_text(styled_pdf) if styled_pdf else ("", 0)
 
     # --- verifying ------------------------------------------------------------------
     await _report(progress, PHASE_VERIFYING, label="Verifying")
@@ -1099,6 +1120,8 @@ async def _document_phases(
         front_matter=front_matter,
         run_facts=run_facts,
         section_catalogue=section_catalogue,
+        styled_pdf_text=styled_text,
+        styled_pdf_pages=styled_pages,
     )
     yield steps.end(verify_step["id"])
 
@@ -1145,8 +1168,18 @@ async def _document_phases(
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
-        html=emit_html(compiled.document, messages=messages).html,
+        html=emit_html(
+            compiled.document,
+            messages=messages,
+            chart_vectors=rendered.chart_vectors,
+            chart_tables=rendered.chart_tables,
+        ).html,
         chart_sidecars=dict(rendered.chart_sidecars),
+        # Offered only where it rendered AND carries every figure. The verification result
+        # is the authority on the second: a reading copy that lost one is recorded as an
+        # advisory finding and simply not presented, while the delivered pair — which
+        # passed every gate — is unaffected.
+        styled_pdf_bytes=styled_pdf if not _styled_findings(result) else b"",
     )
     yield steps.end(upload_step["id"])
 
@@ -1193,6 +1226,73 @@ def _terminal_for(result: Mapping[str, Any]) -> AgentError:
     )
 
 
+
+
+def _styled_findings(result: Mapping[str, Any]) -> tuple[Any, ...]:
+    """The reading copy's own findings on a verification result.
+
+    Read back rather than carried forward from the gate, so the decision to present the
+    artifact and the record of why it was not are the same statement.
+    """
+    from reporting_agent.verify.findings import FINDING_STYLED_PDF_FIGURE_MISSING
+
+    return tuple(
+        finding
+        for finding in result.get("findings", ())
+        if finding.get("type") == FINDING_STYLED_PDF_FIGURE_MISSING
+    )
+
+
+def _render_styled_pdf(
+    *,
+    compiled: Any,
+    rendered: Any,
+    design: Any,
+    messages: Messages,
+    front_matter: object | None,
+    run_facts: object | None,
+) -> bytes:
+    """The styled reading copy, or `b""` where one could not be produced.
+
+    Never raises. Every reason this can fail — an image without cairo and pango, a
+    stylesheet that cannot lay out a document, a front matter this run does not have — is a
+    reason to deliver the `.docx` and its conversion without a reading copy, and none of
+    them is a reason to withhold a document that verified.
+
+    The charts come off `rendered` rather than being drawn again: `render/charts.py`
+    serialises one figure as both a PNG and an SVG, and taking the vector from the same
+    render is what stops the Word file and the reading copy from showing different charts.
+    """
+    from reporting_agent.render.front_matter import FrontMatterConfig, front_matter_sections
+    from reporting_agent.render.printpdf import render_print_pdf
+    from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document
+
+    try:
+        sections: tuple[object, ...] = ()
+        if isinstance(front_matter, FrontMatterConfig) and run_facts is not None:
+            sections = front_matter_sections(
+                front_matter=front_matter,
+                run=run_facts,  # type: ignore[arg-type]
+                messages=messages,
+                heading_entries=toc_entries_from_document(compiled.document),
+                include_toc=should_emit_toc(),
+            )
+        outcome = render_print_pdf(
+            compiled.document,
+            front_matter_sections=sections,
+            chart_vectors=rendered.chart_vectors,
+            chart_tables=rendered.chart_tables,
+            design=design,
+            messages=messages,
+            title=getattr(run_facts, "report_title", "") or "",
+            language=messages.language,
+        )
+        return outcome.pdf_bytes
+    except Exception:
+        logger.warning("the styled reading copy could not be rendered", exc_info=True)
+        return b""
+
+
 async def _verify(
     *,
     definition: Mapping[str, PlainData],
@@ -1209,6 +1309,8 @@ async def _verify(
     front_matter: object | None = None,
     run_facts: object | None = None,
     section_catalogue: object | None = None,
+    styled_pdf_text: str = "",
+    styled_pdf_pages: int = 0,
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -1259,6 +1361,8 @@ async def _verify(
             template_version_id=template_version_id,
             docx_bytes=rendered.docx_bytes,
             pdf_bytes=converted.pdf_bytes,
+            styled_pdf_text=styled_pdf_text,
+            styled_pdf_pages=styled_pdf_pages,
             ledger=compiled.ledger,
             ast=compiled.document,
             document=open_docx(io.BytesIO(rendered.docx_bytes)),

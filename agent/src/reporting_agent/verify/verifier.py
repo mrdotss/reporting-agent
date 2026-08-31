@@ -134,6 +134,13 @@ class VerifyInputs:
 
     pdf_text: str = ""
     pdf_pages: int = 0
+    styled_pdf_text: str = ""
+    styled_pdf_pages: int = 0
+    """The extracted text of the styled reading copy, where one was rendered.
+
+    Empty when the run produced none, which is not a failure — the delivered pair is the
+    `.docx` and its conversion, and the reading copy is a third artifact. Present, it is
+    checked for the same figures at advisory severity; see `verify/pdf.check_styled_pdf`."""
     pdf_sha256: str = ""
     snapshot_sha256: str = ""
 
@@ -281,6 +288,26 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     counts["pdf_figures_missing"] = len(fidelity.findings)
     counts["pdf_pages_read"] = fidelity.pages_read
     gates.add("pdf")
+
+    # --- the styled reading copy, advisory ---------------------------------------------
+    #
+    # Not a gate, and deliberately not in REQUIRED_GATES: a gate is something whose absence
+    # makes a `pass` verdict meaningless, and this artifact's absence does not. The
+    # delivered pair is checked above on its own terms. These findings say the reading copy
+    # lost a figure, which suppresses that copy and withholds nothing else.
+    styled_findings = (
+        pdf_pass.check_styled_pdf(
+            inputs.ledger,
+            text=inputs.styled_pdf_text,
+            pages_read=inputs.styled_pdf_pages,
+            number_format=_number_format(inputs.definition),
+        )
+        if inputs.styled_pdf_text
+        else ()
+    )
+    findings.extend(styled_findings)
+    counts["styled_pdf_figures_missing"] = len(styled_findings)
+    counts["styled_pdf_pages_read"] = inputs.styled_pdf_pages
 
     # --- 31: replay ------------------------------------------------------------------
     replay_outcome: ReplayOutcome

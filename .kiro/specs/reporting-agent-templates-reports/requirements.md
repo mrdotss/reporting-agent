@@ -1478,10 +1478,18 @@ that a client reading one and a colleague reading the other see identical number
 
 ##### Acceptance Criteria
 
-1. WHEN the Pdf_Converter produces a `.pdf`, THE Pdf_Converter SHALL convert the exact byte
-   content of the `.docx` the Docx_Renderer produced for that run, and SHALL render no `.pdf` from
-   the document AST, from the Figure_Ledger, from the Html_Emitter's output or from the snapshot,
-   so that the delivered `.docx` and the delivered `.pdf` cannot disagree.
+1. WHEN the Pdf_Converter produces `report.pdf`, THE Pdf_Converter SHALL convert the exact byte
+   content of the `.docx` the Docx_Renderer produced for that run, and SHALL produce that `.pdf`
+   from no other source — not from the document AST, not from the Figure_Ledger, not from the
+   Html_Emitter's output and not from the snapshot — so that the delivered `.docx` and the
+   delivered `.pdf` cannot disagree.
+
+   This binds `report.pdf` and the Pdf_Converter, and nothing else. Criterion 23.11 admits a
+   **separately named** reading copy produced by a different renderer from the Html_Emitter's
+   output; that copy is never `report.pdf`, never replaces it, and is subject to 23.13's own
+   check. The user story above is about the numbers a client and a colleague each read, and
+   23.13 is what holds it for the third artifact — not identical pagination, which two layout
+   engines cannot give and which nothing here has ever required.
 2. THE Pdf_Converter SHALL perform every conversion by invoking, in headless mode, the LibreOffice
    installed in the Agent_Runtime's `linux/arm64` container image, and SHALL perform no conversion
    through a network conversion service and no conversion outside that container.
@@ -1516,6 +1524,34 @@ that a client reading one and a colleague reading the other see identical number
     than `linux/arm64`, or finds the pre-warmed LibreOffice user profile absent, THEN THE
     Build_Pipeline SHALL fail that image build and SHALL publish no image, so that a cold profile
     is detected at build time rather than as a failed run.
+11. THE Agent_Runtime MAY additionally produce a **styled reading copy** as a third artifact,
+    rendered by the Print_Renderer from the Html_Emitter's output over the same document AST and
+    the same Figure_Ledger. Criterion 23.1 continues to govern the delivered `.docx` and `.pdf`
+    pair without exception: that `.pdf` SHALL remain the conversion of that `.docx`, and the
+    reading copy SHALL NOT replace it, SHALL be stored under a distinct name, and SHALL be
+    presented as a distinct artifact. The two PDFs are not required to paginate alike — they are
+    laid out by different engines — and are required to carry identical numbers, which criterion
+    23.13 is what checks.
+12. THE Print_Renderer SHALL embed each chart as the vector serialisation of the **same figure**
+    the Docx_Renderer embedded as a raster for that run, and SHALL draw no chart of its own, so
+    that the Word file and the reading copy cannot show different charts. THE Print_Renderer SHALL
+    emit each chart's companion table, so that no plotted point present in the `.docx` is absent
+    from the reading copy.
+13. WHEN a styled reading copy is produced, THE Verifier SHALL locate every Figure_Ledger
+    `formatted` string in that copy's extracted text on the same terms criterion 33.5 applies to
+    the converted `.pdf`, and SHALL record a finding of type `styled_pdf_figure_missing` for each
+    that is not located. Those findings SHALL be **advisory**: THE Agent_Runtime SHALL present no
+    reading copy for a run that produced any of them, and SHALL deliver the `.docx` and `.pdf`
+    pair for that run unchanged, because a document whose every figure traced and whose every gate
+    passed is not withheld over the layout of a reading copy.
+14. IF the styled reading copy cannot be rendered — the rendering libraries absent from the image,
+    the stylesheet unable to lay the document out, or the run carrying no front matter — THEN THE
+    Agent_Runtime SHALL complete that run normally, SHALL present the `.docx` and `.pdf` pair, and
+    SHALL present no reading copy, so that a third artifact can never withhold the first two.
+15. THE Build_Pipeline SHALL fail the image build IF the Print_Renderer cannot render a document,
+    IF it executes JavaScript, or IF it cannot embed inline SVG. The second is asserted because
+    the image is sized on it: a renderer with no JavaScript engine is what rules out the browser
+    a chart library would require, and therefore what makes the reading copy affordable at all.
 
 #### Requirement 24: The HTML emitter walks the same AST
 

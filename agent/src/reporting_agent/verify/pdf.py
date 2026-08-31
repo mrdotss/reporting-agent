@@ -54,6 +54,7 @@ from reporting_agent.compile.format import DEFAULT_NUMBER_FORMAT, NumberFormat
 from reporting_agent.errors import PdfConversionFailedError, VerificationFailedError
 from reporting_agent.verify.findings import (
     FINDING_PDF_FIGURE_MISSING,
+    FINDING_STYLED_PDF_FIGURE_MISSING,
     Finding,
     record_finding,
 )
@@ -61,6 +62,7 @@ from reporting_agent.verify.findings import (
 __all__ = [
     "PdfPass",
     "check_pdf",
+    "check_styled_pdf",
     "is_located",
     "normalize",
 ]
@@ -189,4 +191,49 @@ def check_pdf(
         entries_located=located,
         pages_read=pages_read,
         pdf_sha256=digest,
+    )
+
+
+def check_styled_pdf(
+    ledger: FigureLedger,
+    *,
+    text: str,
+    pages_read: int,
+    number_format: NumberFormat = DEFAULT_NUMBER_FORMAT,
+) -> tuple[Finding, ...]:
+    """Locate every ledger figure in the **styled** reading copy.
+
+    The same question `check_pdf` asks, of a different document, answered at a different
+    severity. `render/printpdf.py` renders that copy from the HTML emitter's output rather
+    than by converting the `.docx`, so it can lose a figure in ways the conversion cannot —
+    a table column narrower than its content, a `white-space` rule that lets a numeral wrap,
+    a chart whose companion table did not reach the markup. Each of those is a real defect
+    and each is reported.
+
+    **Advisory, not blocking.** The delivered pair is the `.docx` and its conversion, and
+    both are gated as they were. A verified document is not withheld because its reading
+    copy failed to lay out; the reading copy is not presented, and this says why.
+
+    No digest check and no empty-text refusal, which is the other difference. `check_pdf`
+    raises for both because it is asserting that the file in hand *is* the delivered
+    document; here a styled copy that rendered to nothing produces one finding per figure,
+    which is the same conclusion by the same route and needs no separate escalation.
+    """
+    decimal = number_format.decimal_separator
+    grouping = number_format.grouping_separator
+
+    return tuple(
+        record_finding(
+            FINDING_STYLED_PDF_FIGURE_MISSING,
+            f"the figure {figure.formatted!r} at {path} has no located occurrence in the "
+            f"styled reading copy across {pages_read} page(s); the delivered .docx and .pdf "
+            f"are unaffected and were gated on their own terms",
+            ast_path=str(path),
+            formatted=figure.formatted,
+            snapshot_path=figure.snapshot_path,
+        )
+        for path, figure in ledger.entries.items()
+        if not is_located(
+            normalize(figure.formatted), text, decimal=decimal, grouping=grouping
+        )
     )
