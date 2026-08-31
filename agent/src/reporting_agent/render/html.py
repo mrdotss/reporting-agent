@@ -44,7 +44,7 @@ from __future__ import annotations
 import html
 import json
 from dataclasses import dataclass, field
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 from reporting_agent.compile.ast import (
@@ -204,6 +204,8 @@ class HtmlOutcome:
 @dataclass(slots=True)
 class _Emitter:
     messages: Messages
+    chart_vectors: dict[str, str] = field(default_factory=dict)
+    chart_tables: dict[str, object] = field(default_factory=dict)
     parts: list[str] = field(default_factory=list)
     figure_count: int = 0
     table_count: int = 0
@@ -451,6 +453,14 @@ class _Emitter:
             else ""
         )
 
+        # The drawing, where the caller supplied one. Inline rather than an `<img>` with a
+        # data URI: WeasyPrint renders inline SVG as vector with its text still extractable,
+        # which is what lets the PDF gate find the figures in the chart as well as in the
+        # companion table. The series and points stay in the markup either way — they are
+        # the app's data and this emitter's own record of what was plotted.
+        vector = self.chart_vectors.get(node.anchor_id, "")
+        drawing = _inline_svg(vector) if vector else ""
+
         self.write(
             f'<figure class="{_CLS_CHART}" data-chart-type='
             f'"{html.escape(node.chart_type, quote=True)}"'
@@ -458,10 +468,19 @@ class _Emitter:
             f' data-unit="{html.escape(node.unit, quote=True)}"'
             f' data-panels="{html.escape(json.dumps(node.panels), quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
+            f"{drawing}"
             f"<figcaption>{html.escape(node.title)}</figcaption>"
             f'{period_markup}{indication}<div class="{_CLS_SERIES_SET}">{"".join(series_markup)}</div>'
             f"</figure>"
         )
+
+        # Req 22.1's companion table, where the caller supplied it. It is built by
+        # `render/charts.py` and is not in the AST, so this emitter cannot reach it on its
+        # own — and a reading copy carrying the picture without the points is a chart whose
+        # numbers nobody can check.
+        companion = self.chart_tables.get(node.anchor_id)
+        if companion is not None:
+            self.table(companion)  # type: ignore[arg-type]
 
     def series(self, series: Series) -> str:
         point_markups = [self.point(point) for point in series.points]
@@ -554,6 +573,22 @@ _CLS_PAIRS: Final[str] = FRONT_MATTER_CLASS_NAMES[3]
 _CLS_GRID: Final[str] = FRONT_MATTER_CLASS_NAMES[4]
 _CLS_SIGNATURE: Final[str] = FRONT_MATTER_CLASS_NAMES[5]
 _CLS_FM_NOTE: Final[str] = FRONT_MATTER_CLASS_NAMES[6]
+
+
+def _inline_svg(vector: str) -> str:
+    """A matplotlib SVG, ready to sit inside a `<figure>`.
+
+    matplotlib writes an XML declaration and a DOCTYPE before the `<svg>`, and both are
+    illegal in the middle of an HTML body — browsers and WeasyPrint alike stop parsing or
+    render them as text. The element itself is what belongs here, so the preamble is cut at
+    the opening tag.
+
+    Its `width`/`height` attributes are left alone and constrained by the stylesheet
+    instead, so a chart drawn at six inches fits whatever column it is placed in without
+    the drawing being re-scaled here — the numbers in it must stay the ledger's.
+    """
+    start = vector.find("<svg")
+    return vector[start:] if start != -1 else ""
 
 
 def emit_front_matter_html(sections: Sequence[object]) -> str:
@@ -663,7 +698,13 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
 
 
 
-def emit_html(document: object, *, messages: Messages) -> HtmlOutcome:
+def emit_html(
+    document: object,
+    *,
+    messages: Messages,
+    chart_vectors: Mapping[str, str] | None = None,
+    chart_tables: Mapping[str, object] | None = None,
+) -> HtmlOutcome:
     """Emit `document` as an HTML fragment (Req 24.1).
 
     A **fragment**, not a page: no `<html>`, no `<head>`, no stylesheet link. The app owns the
@@ -672,13 +713,28 @@ def emit_html(document: object, *, messages: Messages) -> HtmlOutcome:
 
     Raises :class:`HtmlEmitFailed` — and emits nothing at all — for a node type it declares no
     emission for (Req 24.8).
+
+    `chart_tables` maps a chart identity to its companion table node, and `chart_vectors`
+    to the SVG `render/charts.py` drew for it. Given
+    them, a chart emits the drawing; without them it emits its series and points as data
+    attributes and the app draws it. Both are the same chart — the SVG is the second
+    serialisation of the figure the `.docx` embeds as a PNG, carried through
+    `RenderOutcome.chart_vectors` rather than drawn again, so the print path cannot show a
+    chart the Word file does not.
+
+    The app passes none: it has Recharts, the palette mirrored in `palette.ts`, and a
+    reader who can hover a point. A PDF has none of that and needs the picture.
     """
     if not isinstance(document, Document):
         raise HtmlEmitFailed(
             f"emit_html takes a compiled Document, got {type(document).__name__}"
         )
 
-    emitter = _Emitter(messages=messages)
+    emitter = _Emitter(
+        messages=messages,
+        chart_vectors=dict(chart_vectors or {}),
+        chart_tables=dict(chart_tables or {}),
+    )
     for block in document.blocks:
         emitter.block(block)
 

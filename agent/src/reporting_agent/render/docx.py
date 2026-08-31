@@ -167,6 +167,21 @@ class RenderOutcome:
     """The chart data hash per chart identity, and the sidecar bytes to write beside each
     embedded image (Req 22.3). Returned rather than written for the same reason the document
     is: this module cannot write, so it cannot leave a partial set behind."""
+    chart_tables: Mapping[str, object] = field(default_factory=dict)
+    """Each chart's companion table node, by identity.
+
+    Built by `render/charts.py` rather than by the compiler, so it is **not in the AST** —
+    which means the HTML emitter, which walks the AST, never saw it. The `.docx` carried
+    every plotted point and the styled PDF carried none, and since Req 22.1's whole purpose
+    is that the image cannot assert something the table does not confirm, a reading copy
+    without it is a chart nobody can check."""
+    chart_vectors: Mapping[str, str] = field(default_factory=dict)
+    """The SVG of each chart, by the same identity, for the styled PDF to embed.
+
+    Carried out of *this* render rather than drawn again for the print path, because a
+    second `render_chart` call would be a second drawing and the two artifacts could
+    disagree about a chart while agreeing about everything else. `render/charts.py`
+    serialises one figure twice; this is how the vector half reaches the other emitter."""
 
 
 def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> None:
@@ -222,6 +237,8 @@ class _Emitter:
     text_facts_emitted: int = 0
     chart_hashes: dict[str, str] = field(default_factory=dict)
     chart_sidecars: dict[str, bytes] = field(default_factory=dict)
+    chart_tables: dict[str, object] = field(default_factory=dict)
+    chart_vectors: dict[str, str] = field(default_factory=dict)
 
     @property
     def text_width(self) -> int:
@@ -415,6 +432,8 @@ class _Emitter:
 
         self.chart_hashes[artifacts.identity] = artifacts.data_hash
         self.chart_sidecars[f"{artifacts.identity}{SIDECAR_SUFFIX}"] = artifacts.sidecar_json
+        self.chart_vectors[artifacts.identity] = artifacts.image_svg
+        self.chart_tables[artifacts.identity] = artifacts.table
 
         self.emit_table(
             artifacts.table,
@@ -787,6 +806,8 @@ def render_document(
         text_facts_emitted=emitter.text_facts_emitted,
         chart_hashes=dict(emitter.chart_hashes),
         chart_sidecars=dict(emitter.chart_sidecars),
+        chart_tables=dict(emitter.chart_tables),
+        chart_vectors=dict(emitter.chart_vectors),
     )
 
 
