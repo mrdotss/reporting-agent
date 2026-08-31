@@ -153,6 +153,40 @@ def test_the_image_installs_no_browser(dockerfile_body: str) -> None:
         assert browser not in dockerfile_body.lower(), browser
 
 
+def test_the_image_declares_an_entrypoint(dockerfile_body: str) -> None:
+    """The image must actually run something.
+
+    A `RUN` step appended to the end of this file deleted `EXPOSE` and `CMD`, and every
+    other assertion in this module still passed: the packages were installed, the fonts
+    were there, all five guards ran, the architecture was right. The build succeeded, the
+    image published, the runtime cut a version — and AgentCore answered every invocation
+    with "an error occurred when starting the runtime", with no container logs at all,
+    because there was no process to start.
+
+    Nothing else here looks at the tail of the file. The only visible symptom at build time
+    was the step count falling from 24 to 22.
+    """
+    assert 'CMD ["python", "-m", "reporting_agent.main"]' in dockerfile_body, (
+        "the image declares no CMD: it would build, publish, and start nothing"
+    )
+    assert "EXPOSE 8080" in dockerfile_body
+
+
+def test_the_entrypoint_is_the_last_instruction(instructions: list[str]) -> None:
+    """`CMD` last, so an instruction appended to the file cannot silently displace it.
+
+    This is the shape of the defect rather than a style rule: the truncation that removed
+    the entrypoint did so by writing past the end of the file, and an assertion that `CMD`
+    is present but not last would have passed just as happily on a file where a later
+    `RUN` had orphaned it.
+    """
+    directives = [line.split(None, 1)[0].upper() for line in instructions if line.strip()]
+    assert directives[-1] == "CMD", (
+        f"the last instruction is {directives[-1]}, not CMD; anything after the entrypoint "
+        f"is a step that runs at build time and leaves the image's own command behind it"
+    )
+
+
 def test_the_image_installs_no_java_runtime(dockerfile_body: str) -> None:
     """A `docx` to `pdf` conversion needs the Writer import filter and the PDF export
     filter, neither of which is Java. Naming a JRE would add a large arm64 layer for

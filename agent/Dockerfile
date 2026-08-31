@@ -269,3 +269,7 @@ print('weasyprint ok: renders, runs no javascript, embeds svg')"
 # an --assert-build entry point, so `.dockerignore` needs no re-inclusion, and the
 # reasoning lives beside the stylesheet it defends rather than inside a shell string.
 RUN python -m reporting_agent.render.printcss --assert-build
+
+EXPOSE 8080
+
+CMD ["python", "-m", "reporting_agent.main"]
