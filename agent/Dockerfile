@@ -38,20 +38,32 @@ WORKDIR /app
 # Ahead of the pip layers on purpose: this is the largest and least frequently
 # changed layer in the image, so a dependency bump must not reinstall it.
 #
-# `libreoffice-writer` + `libreoffice-core` and nothing else — no Calc, no Impress,
-# no JRE. docx -> pdf needs the Writer import filter and the PDF export filter;
-# --no-install-recommends is what keeps the rest of the suite out.
+# `libreoffice-writer` + `libreoffice-core` and no more of that suite — no Calc, no
+# Impress, no JRE. docx -> pdf needs the Writer import filter and the PDF export filter;
+# --no-install-recommends is what keeps the rest out.
 #
 # The two font packages are not optional decoration: every face named in
 # render/themes.py's THEME_SPECS comes from them (Liberation Sans/Serif,
 # DejaVu Sans/Sans Mono). A theme naming a font the container lacks renders through
 # LibreOffice's substitution, which changes line breaking and therefore pagination —
-# so the delivered PDF would paginate differently from the one that was reviewed.
+# so the delivered PDF would paginate differently from the one that was reviewed. They
+# serve WeasyPrint for the same reason and out of the same packages, so the styled PDF
+# and the converted one are set in the same faces.
+#
+# The four cairo/pango/gdk-pixbuf libraries are WeasyPrint's. It is pure Python but binds
+# them through cffi, and an import without them fails with a ctypes message about
+# `libpango-1.0-0` that reads like a missing wheel and is not. Together they are ~40MB
+# against Chromium's 300-400, which is the trade that made an HTML->PDF path affordable
+# on an image with a cold-start budget at all.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-writer \
       libreoffice-core \
       fonts-dejavu-core \
       fonts-liberation2 \
+      libcairo2 \
+      libpango-1.0-0 \
+      libpangoft2-1.0-0 \
+      libgdk-pixbuf-2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
 # The committed, fully pinned, hashed closure — the runtime closure only, so
@@ -229,6 +241,28 @@ RUN set -eu; \
     test -n "$(ls -A "$LO_PROFILE")" \
       || { echo "$LO_PROFILE is empty: the warm-up conversion did not populate it" >&2; exit 1; }; \
     echo "image assertions ok: aarch64, soffice present, profile warmed"
+
+# Fail the BUILD if WeasyPrint cannot render (Req 23.11).
+#
+# It imports its cairo/pango bindings lazily through cffi, so a missing system library is
+# not an ImportError at `import weasyprint` — it surfaces at the first render, which in a
+# deployed container is a failed customer run. This renders a document rather than
+# importing the module, for the same reason the LibreOffice warm-up above converts a real
+# .docx rather than checking that `soffice` is on PATH.
+#
+# It also asserts the two things the styled PDF depends on and that were measured rather
+# than assumed: that a <script> does NOT run — so no chart library can be reached this way,
+# and the charts must keep coming from matplotlib — and that inline SVG DOES render, which
+# is how they get there.
+RUN python -c "\
+import weasyprint, re; \
+pdf = weasyprint.HTML(string='<p>3,187,970,789.00 bytes</p>').write_pdf(); \
+assert pdf.startswith(b'%PDF-'), 'weasyprint produced no PDF'; \
+js = weasyprint.HTML(string=\"<p id='t'>NO</p><script>document.getElementById('t').textContent='YES'</script>\").write_pdf(); \
+assert b'YES' not in js, 'weasyprint executed JavaScript: the no-JS premise this image was sized on no longer holds'; \
+svg = weasyprint.HTML(string='<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"10\" height=\"10\"><rect width=\"10\" height=\"10\"/></svg>').write_pdf(); \
+assert svg.startswith(b'%PDF-'), 'weasyprint cannot render inline SVG'; \
+print('weasyprint ok: renders, runs no javascript, embeds svg')"
 
 EXPOSE 8080
 

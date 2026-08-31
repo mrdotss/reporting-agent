@@ -116,6 +116,11 @@ closure; the only thing that changes is that the skew cannot come back.
 The constraint leaves a `# via -c requirements-dev.lock` annotation on every entry in
 `requirements.lock`. That is uv's provenance comment, not something to tidy away.
 
+WeasyPrint's ten packages arrived through this path and none of them is compiled against
+anything the image lacks, but WeasyPrint itself binds cairo, pango and gdk-pixbuf through
+cffi at **render** time — so a lock that resolves and an image that installs prove nothing
+between them. The Dockerfile renders a document as a build assertion for that reason.
+
 `--universal` is what makes one lock serve both an x86 development machine and the
 arm64 image: it carries the hashes for every platform's wheel of each pinned version,
 and `pip` picks the one matching the marker. `--python-version 3.12` matters — a lock

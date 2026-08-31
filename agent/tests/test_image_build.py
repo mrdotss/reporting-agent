@@ -78,12 +78,21 @@ def dockerfile_body(instructions: list[str]) -> str:
         "libreoffice-core",
         "fonts-dejavu-core",
         "fonts-liberation2",
+        # WeasyPrint's cffi bindings. It is pure Python and imports without them, then
+        # fails at the first render with a ctypes message naming `libpango-1.0-0` that
+        # reads like a missing wheel — so their absence would surface as a failed customer
+        # run rather than a failed build.
+        "libcairo2",
+        "libpango-1.0-0",
+        "libpangoft2-1.0-0",
+        "libgdk-pixbuf-2.0-0",
     ],
 )
 def test_the_image_installs_the_required_system_package(
     package: str, dockerfile_body: str
 ) -> None:
-    """Req 23.2 — LibreOffice plus arm64 builds of the fonts the four themes reference."""
+    """Req 23.2 — LibreOffice, the fonts the four themes reference, and WeasyPrint's
+    rendering libraries, all as arm64 builds."""
     install = [line for line in dockerfile_body.splitlines() if "apt-get install" in line]
     assert install, "no apt-get install instruction at all"
     assert any(package in line for line in install), package
@@ -96,6 +105,41 @@ def test_the_install_takes_no_recommends_and_cleans_the_apt_lists(
     the cleanup the apt lists stay in the layer for nothing."""
     assert "--no-install-recommends" in dockerfile_body
     assert "rm -rf /var/lib/apt/lists" in dockerfile_body
+
+
+def test_the_build_asserts_weasyprint_can_actually_render(dockerfile_body: str) -> None:
+    """Rendering, not importing.
+
+    WeasyPrint binds cairo and pango lazily through cffi, so `import weasyprint` succeeds
+    on an image missing every one of them and the failure arrives at the first customer
+    run. The build renders a document, for the same reason the LibreOffice step converts a
+    real `.docx` rather than checking that `soffice` is on PATH.
+    """
+    assert "import weasyprint" in dockerfile_body
+    assert "write_pdf()" in dockerfile_body
+    assert "%PDF-" in dockerfile_body
+
+
+def test_the_build_asserts_the_no_javascript_premise_still_holds(
+    dockerfile_body: str,
+) -> None:
+    """The image was sized on WeasyPrint having no JavaScript engine.
+
+    That is what rules out Chart.js, Recharts and every shadcn chart, and therefore what
+    rules out the 300-400MB of Chromium they would need — which is the only reason an
+    HTML->PDF path fits an image with a cold-start budget. If a future version began
+    executing scripts, the premise behind both the size and the "charts come from
+    matplotlib" decision would have changed silently. The build asserts it instead.
+    """
+    assert "executed JavaScript" in dockerfile_body, (
+        "the build no longer checks that WeasyPrint runs no JavaScript"
+    )
+
+
+def test_the_image_installs_no_browser(dockerfile_body: str) -> None:
+    """The corollary. A headless browser is what this image deliberately does not have."""
+    for browser in ("chromium", "google-chrome", "firefox", "playwright", "puppeteer"):
+        assert browser not in dockerfile_body.lower(), browser
 
 
 def test_the_image_installs_no_java_runtime(dockerfile_body: str) -> None:
