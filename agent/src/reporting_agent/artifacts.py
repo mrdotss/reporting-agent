@@ -60,7 +60,10 @@ __all__ = [
     "DOCX_CONTENT_TYPE",
     "HTML_CONTENT_TYPE",
     "PDF_CONTENT_TYPE",
+    "STYLED_HTML_FAILED_NAME",
+    "STYLED_PDF_FAILED_NAME",
     "STYLED_PDF_NAME",
+    "write_styled_diagnostics",
     "PNG_CONTENT_TYPE",
     "REPORTS_SEGMENT",
     "ArtifactRef",
@@ -85,6 +88,13 @@ DOCX_CONTENT_TYPE: Final[str] = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 PDF_CONTENT_TYPE: Final[str] = "application/pdf"
+
+STYLED_PDF_FAILED_NAME: Final[str] = "report-styled.failed.pdf"
+STYLED_HTML_FAILED_NAME: Final[str] = "report-styled.failed.html"
+"""Where a suppressed reading copy and its markup are kept, for diagnosis only.
+
+Named `.failed.` so no reader mistakes one for a deliverable, and absent from
+`DOWNLOADABLE_LEAF_NAMES` so nothing can offer one."""
 
 STYLED_PDF_NAME: Final[str] = "report-styled.pdf"
 """The reading copy's filename.
@@ -387,6 +397,40 @@ async def write_report_artifacts(
             )
         )
     return tuple(refs)
+
+
+async def write_styled_diagnostics(
+    store: ObjectStore,
+    *,
+    actor_id: str,
+    run_id: str,
+    pdf_bytes: bytes,
+    html: str,
+) -> None:
+    """Keep a suppressed reading copy and the markup it was rendered from.
+
+    Deliberately **not** in :data:`DOWNLOADABLE_LEAF_NAMES`: these are evidence, not
+    deliverables, and nothing offers them. They exist because a `styled_pdf_figure_missing`
+    finding names a figure and not a cause — a figure can be absent from the markup, or
+    present and lost in layout, and those have different fixes that the finding cannot
+    distinguish. Without the page that failed, neither is answerable after the fact.
+
+    The stored `document.html` does not serve: it is emitted separately, carries no front
+    matter and no stylesheet, and is therefore not the document that was laid out.
+    """
+    tags = owner_tags(actor_id)
+    await store.put_bytes(
+        reports_key(actor_id, run_id, STYLED_PDF_FAILED_NAME),
+        pdf_bytes,
+        content_type=PDF_CONTENT_TYPE,
+        tags=tags,
+    )
+    await store.put_bytes(
+        reports_key(actor_id, run_id, STYLED_HTML_FAILED_NAME),
+        html.encode("utf-8"),
+        content_type=HTML_CONTENT_TYPE,
+        tags=tags,
+    )
 
 
 def ast_to_plain(node: object) -> Any:

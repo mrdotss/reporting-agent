@@ -87,6 +87,7 @@ from datetime import UTC, datetime
 from typing import Any, Final
 
 from reporting_agent.artifacts import (
+    write_styled_diagnostics,
     ArtifactRef,
     ast_to_plain,
     write_report_artifacts,
@@ -1088,7 +1089,7 @@ async def _document_phases(
     # Failures here never stop a run. A document whose every figure traced and whose twelve
     # gates passed is not withheld because its reading copy failed to lay out — or because
     # the image is missing a library, which is what an unavailable renderer means.
-    styled_pdf = await asyncio.to_thread(
+    styled = await asyncio.to_thread(
         _render_styled_pdf,
         compiled=compiled,
         rendered=rendered,
@@ -1097,7 +1098,7 @@ async def _document_phases(
         front_matter=front_matter,
         run_facts=run_facts,
     )
-    styled_text, styled_pages = _pdf_text(styled_pdf) if styled_pdf else ("", 0)
+    styled_text, styled_pages = _pdf_text(styled.pdf_bytes) if styled is not None else ("", 0)
 
     # --- verifying ------------------------------------------------------------------
     await _report(progress, PHASE_VERIFYING, label="Verifying")
@@ -1179,8 +1180,26 @@ async def _document_phases(
         # is the authority on the second: a reading copy that lost one is recorded as an
         # advisory finding and simply not presented, while the delivered pair — which
         # passed every gate — is unaffected.
-        styled_pdf_bytes=styled_pdf if not _styled_findings(result) else b"",
+        styled_pdf_bytes=(
+            styled.pdf_bytes if styled is not None and not _styled_findings(result) else b""
+        ),
     )
+
+    # A reading copy that lost a figure is suppressed, and then it is the only thing that
+    # can explain why. Both halves are kept under diagnostic names — not in
+    # `DOWNLOADABLE_LEAF_NAMES`, so nothing offers them — because the question "is the
+    # figure absent from the markup or lost in layout?" has two different answers and two
+    # different fixes, and neither is answerable from the finding alone. The stored
+    # `document.html` is emitted separately and is not this page: it carries no front
+    # matter and no stylesheet.
+    if styled is not None and _styled_findings(result):
+        await write_styled_diagnostics(
+            store,
+            actor_id=plan.actor_id,
+            run_id=plan.run_id,
+            pdf_bytes=styled.pdf_bytes,
+            html=styled.html,
+        )
     yield steps.end(upload_step["id"])
 
     for artifact in sink.artifacts:
@@ -1251,8 +1270,8 @@ def _render_styled_pdf(
     messages: Messages,
     front_matter: object | None,
     run_facts: object | None,
-) -> bytes:
-    """The styled reading copy, or `b""` where one could not be produced.
+) -> object | None:
+    """The styled reading copy and the markup it came from, or `None`.
 
     Never raises. Every reason this can fail — an image without cairo and pango, a
     stylesheet that cannot lay out a document, a front matter this run does not have — is a
@@ -1287,10 +1306,10 @@ def _render_styled_pdf(
             title=getattr(run_facts, "report_title", "") or "",
             language=messages.language,
         )
-        return outcome.pdf_bytes
+        return outcome
     except Exception:
         logger.warning("the styled reading copy could not be rendered", exc_info=True)
-        return b""
+        return None
 
 
 async def _verify(
