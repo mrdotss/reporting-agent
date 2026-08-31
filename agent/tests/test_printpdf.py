@@ -187,3 +187,47 @@ class TestTheRenderedArtifact:
             if figure.formatted not in text
         ]
         assert missing == [], missing
+
+
+class TestCellBoundariesReachTheExtractor:
+    """Run 6c2429fc, and the reason a correct document had its reading copy withheld.
+
+    `verify/pdf.py::is_located` refuses a match whose neighbour continues a number — what
+    stops `1.5` being found inside `21.53`. pypdf's extraction of WeasyPrint's output does
+    not preserve cell boundaries, so the run produced
+
+        '0.25% (p95, est. from hourly averages)79.88%'
+        '2026-07-020.22%'
+
+    and the gate concluded, of sixty figures plainly on the page, that each was part of a
+    longer numeral. Every one was in the markup; every one was in the PDF; a plain
+    containment check found all sixty.
+
+    Nothing recoverable fixes it from outside the document. A visitor over pypdf's
+    positioned runs recovers some boundaries and not others (60 -> 33);
+    `extraction_mode="layout"` halves it (60 -> 27); and no adjacency rule can distinguish
+    a lost cell boundary from an embedded numeral, because the neighbour may be an ordinary
+    date. So the document states its own boundaries.
+    """
+
+    def test_every_cell_ends_with_a_zero_width_space(self) -> None:
+        css = stylesheet("editorial")
+        assert 'content: "\\200b";' in css
+
+    def test_a_normal_space_would_not_have_worked(self) -> None:
+        """Recorded because it is the obvious first attempt and it fails silently: a space
+        and a non-breaking space are both trimmed at the end of a cell's line box and never
+        reach the content stream. Measured — both leave all sixty findings standing."""
+        css = stylesheet("editorial")
+        terminator = css.split('td::after,')[-1]
+        assert '"\\00a0"' not in terminator
+        assert "content: \" \";" not in terminator
+
+    @pytest.mark.skipif(
+        not _HAS_WEASYPRINT, reason="WeasyPrint cannot render on this machine"
+    )
+    def test_the_build_guard_passes_here_too(self) -> None:
+        from reporting_agent.render.printcss import _assert_cell_boundaries_survive
+
+        _assert_cell_boundaries_survive()
+
