@@ -746,12 +746,13 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
       resourceCount: 200,
       gapCount: 3,
       snapshotId: SNAPSHOT_ID,
-      // The snapshot key plus the two report keys, because this run's stored
+      // The snapshot key plus the three report keys, because this run's stored
       // verification passed — see the `artifactKeys` block below for the gate.
       artifactKeys: [
         EXPECTED_SNAPSHOT_KEY,
         reportArtifactKey(RUN_USER_ID, RUN_ID, "report.docx"),
         reportArtifactKey(RUN_USER_ID, RUN_ID, "report.pdf"),
+        reportArtifactKey(RUN_USER_ID, RUN_ID, "report-styled.pdf"),
       ],
       createdAt: "2026-08-01T03:00:00.000Z",
       updatedAt: "2026-08-01T03:07:30.000Z",
@@ -951,17 +952,22 @@ describe("artifactKeys — Requirements 37.5, 40.4", () => {
     }
   })
 
-  test("Requirement 40.4 — the two report keys appear only behind a passing verification", () => {
+  test("Requirement 40.4 — the report keys appear only behind a passing verification", () => {
     // The composed half of the gate, implemented in the projection rather than in a
     // component: there is no shape in which a browser holds a `.docx` or `.pdf` key
     // for a run whose document was never proven, so `DownloadCard` cannot render a
     // control for one however that component is written.
+    //
+    // `report-styled.pdf` is the reading copy (requirements 23.11-23.15). It is named
+    // here because this list is what *authorizes* a download — a run that produced no
+    // reading copy simply has no object at that key, which is a 404 and not a leak.
     expect(
       toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS).artifactKeys
     ).toEqual([
       EXPECTED_SNAPSHOT_KEY,
       reportArtifactKey(RUN_USER_ID, RUN_ID, "report.docx"),
       reportArtifactKey(RUN_USER_ID, RUN_ID, "report.pdf"),
+      reportArtifactKey(RUN_USER_ID, RUN_ID, "report-styled.pdf"),
     ])
 
     // A failing verification and an absent one are different facts, and neither is a
@@ -1184,6 +1190,7 @@ describe("Projection_Guard — Requirements 37.5, 37.6, 37.7, 37.11, 43.4, 43.6"
                     `${userId}/snapshots/${id}/snapshot.json`,
                     `${userId}/reports/${id}/report.docx`,
                     `${userId}/reports/${id}/report.pdf`,
+                    `${userId}/reports/${id}/report-styled.pdf`,
                   ]
                 : [`${userId}/snapshots/${id}/snapshot.json`]
           )

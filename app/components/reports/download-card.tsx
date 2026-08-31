@@ -50,6 +50,11 @@ const LABEL: Readonly<
 > = {
   "report.docx": "Word document",
   "report.pdf": "PDF",
+  // The reading copy (requirements 23.11-23.15): the same document laid out by a print
+  // stylesheet rather than converted from the Word file. Named for what distinguishes it
+  // to a reader, not for how it was produced — "PDF" and "PDF" would be two identical
+  // buttons.
+  "report-styled.pdf": "PDF (designed)",
 }
 
 export function DownloadCard({
