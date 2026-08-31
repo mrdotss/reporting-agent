@@ -264,6 +264,8 @@ svg = weasyprint.HTML(string='<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"
 assert svg.startswith(b'%PDF-'), 'weasyprint cannot render inline SVG'; \
 print('weasyprint ok: renders, runs no javascript, embeds svg')"
 
-EXPOSE 8080
-
-CMD ["python", "-m", "reporting_agent.main"]
+# Fail the BUILD if a figure in one table cell is unlocatable because the next cell was
+# welded to it (Req 23.13). Same shape as the four guards above: a module under src/ with
+# an --assert-build entry point, so `.dockerignore` needs no re-inclusion, and the
+# reasoning lives beside the stylesheet it defends rather than inside a shell string.
+RUN python -m reporting_agent.render.printcss --assert-build

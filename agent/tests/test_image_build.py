@@ -107,6 +107,17 @@ def test_the_install_takes_no_recommends_and_cleans_the_apt_lists(
     assert "rm -rf /var/lib/apt/lists" in dockerfile_body
 
 
+def test_the_build_asserts_cell_boundaries_reach_the_extractor(
+    dockerfile_body: str,
+) -> None:
+    """Run 6c2429fc suppressed a correct document's reading copy because pypdf's extraction
+    of WeasyPrint output welds adjacent table cells together, and the fidelity gate then
+    reads a figure as part of a longer numeral. The stylesheet ends every cell with a
+    zero-width space; this is the build asserting that it still works, in the environment
+    that has a real renderer and a real extractor."""
+    assert "reporting_agent.render.printcss --assert-build" in dockerfile_body
+
+
 def test_the_build_asserts_weasyprint_can_actually_render(dockerfile_body: str) -> None:
     """Rendering, not importing.
 
@@ -252,12 +263,13 @@ def test_the_profile_is_group_writable_for_an_arbitrary_uid(dockerfile_body: str
         "python -m reporting_agent.compile.ast --assert-build",
         "python -m reporting_agent.catalog.evidence --assert-build",
         "python -m reporting_agent.compile.literals --assert-build",
+        "python -m reporting_agent.render.printcss --assert-build",
     ],
 )
 def test_the_build_runs_the_guard(assertion: str, dockerfile_body: str) -> None:
     """Req 8.7, 23.10 and 2.6 — the build aborts and publishes nothing.
 
-    All three guards live in `src/` precisely so they can run here: `.dockerignore` excludes
+    All five guards live in `src/` precisely so they can run here: `.dockerignore` excludes
     `tests/**`, so a guard that only ran in the suite could not stop a bad image.
 
     The catalog guard is the one whose absence would be hardest to notice, because the
