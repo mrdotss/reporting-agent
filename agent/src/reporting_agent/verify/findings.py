@@ -53,6 +53,7 @@ __all__ = [
     "FINDING_HISTORICAL_POINT_OVERLAPPING",
     "FINDING_HISTORICAL_POINT_UNVERIFIED",
     "FINDING_LIST_LIMIT",
+    "FINDING_STYLED_PDF_FIGURE_MISSING",
     "FINDING_TEXT_FACT_ANCHOR_MISSING",
     "FINDING_TEXT_FACT_MISMATCH",
     "FINDING_TEXT_FACT_UNANCHORED",
@@ -163,11 +164,23 @@ FINDING_DRIFT_OBSERVED: Final[str] = "drift_observed"
 FINDING_PROSE_REVIEW_FINDING: Final[str] = "prose_review_finding"
 FINDING_FIDELITY_NOT_COMPARABLE: Final[str] = "fidelity_not_comparable"
 
+FINDING_STYLED_PDF_FIGURE_MISSING: Final[str] = "styled_pdf_figure_missing"
+"""A figure the styled reading copy does not carry locatably.
+
+**Advisory**, where the same fault in the converted `.pdf` is blocking, and the difference
+is which document it is about. The `.docx` and its LibreOffice conversion are the delivered
+pair Req 23.1 describes; the styled PDF is a third artifact, a reading copy of the same
+compiled AST laid out by a stylesheet. A figure missing from it is a real defect and says
+so, but withholding a document that verified — every figure traced, every gate passed — over
+the layout of its reading copy would be the wrong trade. The styled copy is simply not
+presented, and the finding records why."""
+
 ADVISORY_FINDING_TYPES: Final[tuple[str, ...]] = (
     FINDING_ARCHIVE_INCOMPLETE,
     FINDING_DRIFT_OBSERVED,
     FINDING_PROSE_REVIEW_FINDING,
     FINDING_FIDELITY_NOT_COMPARABLE,
+    FINDING_STYLED_PDF_FIGURE_MISSING,
 )
 
 DECLARED_FINDING_TYPES: Final[frozenset[str]] = frozenset(

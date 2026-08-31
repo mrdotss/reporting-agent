@@ -166,15 +166,27 @@ export function snapshotArtifactKey(userId: string, runId: string): string {
 }
 
 /**
- * The two artifacts a consultant may download, as `agent/.../artifacts.py` names
- * them (Requirement 43.1).
+ * The artifacts a consultant may download, as `agent/.../artifacts.py` names them
+ * (Requirement 43.1).
  *
  * The ledger, the AST, the prose bundle and the emitted HTML are written under the
  * same prefix and are deliberately **absent**: they exist for re-verification and for
  * the in-app reading view, no `report_file` event names them, and no download control
  * should reach them.
+ *
+ * `report-styled.pdf` is the reading copy (requirements 23.11-23.15) — the same document
+ * laid out by a print stylesheet rather than converted from the `.docx`. It is present
+ * here because this list is what **authorizes** a download, so an artifact absent from it
+ * is one the runtime writes, announces with a `report_file` event, and the app then
+ * refuses to serve. A run that produced none simply records no key for it, which every
+ * caller already handles: `recordedArtifactKeys` names what a completed run *may* hold,
+ * and a missing object is a missing object.
  */
-export const DOWNLOADABLE_LEAF_NAMES = ["report.docx", "report.pdf"] as const
+export const DOWNLOADABLE_LEAF_NAMES = [
+  "report.docx",
+  "report.pdf",
+  "report-styled.pdf",
+] as const
 
 export type DownloadableLeafName = (typeof DOWNLOADABLE_LEAF_NAMES)[number]
 

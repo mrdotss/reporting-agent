@@ -60,6 +60,7 @@ __all__ = [
     "DOCX_CONTENT_TYPE",
     "HTML_CONTENT_TYPE",
     "PDF_CONTENT_TYPE",
+    "STYLED_PDF_NAME",
     "PNG_CONTENT_TYPE",
     "REPORTS_SEGMENT",
     "ArtifactRef",
@@ -84,6 +85,14 @@ DOCX_CONTENT_TYPE: Final[str] = (
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 )
 PDF_CONTENT_TYPE: Final[str] = "application/pdf"
+
+STYLED_PDF_NAME: Final[str] = "report-styled.pdf"
+"""The reading copy's filename.
+
+Named beside `report.pdf` rather than replacing it: `report.pdf` is the conversion of the
+`.docx` that Req 23.1 requires the pair to agree through, and this is a third artifact laid
+out independently. A reader downloading both should be able to tell which is which from the
+name alone."""
 
 HTML_CONTENT_TYPE: Final[str] = "text/html; charset=utf-8"
 """The emitted paper rendering.
@@ -271,6 +280,7 @@ async def write_report_artifacts(
     html: str,
     chart_images: Mapping[str, bytes] | None = None,
     chart_sidecars: Mapping[str, bytes] | None = None,
+    styled_pdf_bytes: bytes = b"",
 ) -> tuple[ArtifactRef, ...]:
     """Write every artifact of a **passing** run, returning the two downloadable ones.
 
@@ -278,7 +288,12 @@ async def write_report_artifacts(
     8785 canonical form whose digest the verification result records, and re-serializing
     here would risk writing bytes whose digest is not the one recorded (Req 17.6).
 
-    The returned refs are the `.docx` and the `.pdf` only. The ledger, the AST, the prose,
+    `styled_pdf_bytes` is the reading copy, written and offered only when it was rendered
+    **and** carries every figure — the caller decides both, from the verification result.
+    An empty value writes nothing and returns no ref, which is what a run on an image
+    without the rendering libraries produces and is not a failure.
+
+    The returned refs are the `.docx`, the `.pdf`, and the reading copy where there is one. The ledger, the AST, the prose,
     the emitted HTML, the charts and their sidecars are written because a re-verification
     and the in-app paper rendering read them, not because anyone downloads them, so no
     `report_file` event names them.
@@ -340,7 +355,15 @@ async def write_report_artifacts(
             tags=tags,
         )
 
-    return (
+    if styled_pdf_bytes:
+        await store.put_bytes(
+            reports_key(actor_id, run_id, STYLED_PDF_NAME),
+            styled_pdf_bytes,
+            content_type=PDF_CONTENT_TYPE,
+            tags=tags,
+        )
+
+    refs = [
         ArtifactRef(
             key=reports_key(actor_id, run_id, "report.docx"),
             bucket=bucket,
@@ -353,7 +376,17 @@ async def write_report_artifacts(
             kind=ARTIFACT_KIND_PDF,
             bytes=len(pdf_bytes),
         ),
-    )
+    ]
+    if styled_pdf_bytes:
+        refs.append(
+            ArtifactRef(
+                key=reports_key(actor_id, run_id, STYLED_PDF_NAME),
+                bucket=bucket,
+                kind=ARTIFACT_KIND_PDF,
+                bytes=len(styled_pdf_bytes),
+            )
+        )
+    return tuple(refs)
 
 
 def ast_to_plain(node: object) -> Any:

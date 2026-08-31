@@ -53,6 +53,24 @@ dependencies = [
   # suite and on a developer machine; see the comment there. It ships a cp312
   # manylinux aarch64 wheel, so the arm64 image needs no build toolchain.
   "matplotlib==3.11.1",
+  # WeasyPrint renders the styled reading copy from the HTML emitter's output. It is a
+  # SECOND pdf, alongside the LibreOffice conversion of the .docx — that pair stays exactly
+  # as Req 23.1 describes it, converted from the Word file so the two cannot disagree — and
+  # it is gated on the same terms, because a customer opens it.
+  #
+  # Chosen over a headless browser after measuring both claims that decide it. WeasyPrint
+  # runs NO JavaScript: a <script> that rewrites the DOM leaves the original text in the
+  # output, so Chart.js, Recharts and every shadcn chart are unreachable without Chromium,
+  # which is 300-400MB on an image with a cold-start budget. And it renders inline SVG
+  # natively as vector with the text still extractable, which is what lets the chart come
+  # from the matplotlib renderer that already draws the .docx's PNG — one drawing, two
+  # encodings, rather than a second engine with its own opinion about which series are
+  # plotted.
+  #
+  # Pure Python, but it binds cairo, pango and gdk-pixbuf through cffi, so the Dockerfile
+  # installs those four system packages. They are the only non-LibreOffice system
+  # dependency this image has.
+  "weasyprint==69.0",
 ]
 
 # --- Three deliberate absences ------------------------------------------------
