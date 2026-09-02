@@ -55,6 +55,7 @@ def stylesheet(preset: str, *, page_size: str = "A4") -> str:
     caps = "uppercase" if spec.heading_all_caps else "none"
     band = f"#{palette.band}" if spec.banded_rows else "transparent"
 
+    small = spec.small_pt
     return f"""
 :root {{
   --accent: #{palette.accent};
@@ -67,28 +68,52 @@ def stylesheet(preset: str, *, page_size: str = "A4") -> str:
   --figure-face: "{spec.face.figure}", monospace;
 }}
 
+/* --- the page ------------------------------------------------------------
+   Furniture from `design/proposed/PdfPage.dc.html`: a running head over a
+   hairline, a footer under one, both in the muted ink at the small size and both
+   set in the heading face, so they read as apparatus rather than as text. */
 @page {{
   size: {size};
-  margin: 20mm 18mm 18mm 18mm;
-  @bottom-center {{
-    content: counter(page) " / " counter(pages);
-    font-family: var(--body-face);
-    font-size: {spec.small_pt - 0.5}pt;
-    color: var(--muted);
-  }}
-  @top-right {{
+  margin: 17mm 16mm 14mm 16mm;
+
+  @top-left {{
     content: string(section-title);
-    font-family: var(--body-face);
-    font-size: {spec.small_pt - 0.5}pt;
+    font-family: var(--heading-face);
+    font-size: {small - 1.5}pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: var(--muted);
+    vertical-align: bottom;
+    border-bottom: 0.4pt solid var(--rule);
+    width: 100%;
+    padding-bottom: 3pt;
+  }}
+  @bottom-left {{
+    content: string(confidentiality);
+    font-family: var(--heading-face);
+    font-size: {small - 1.5}pt;
+    color: var(--muted);
+    vertical-align: top;
+    border-top: 0.4pt solid var(--rule);
+    width: 100%;
+    padding-top: 3pt;
+  }}
+  @bottom-right {{
+    content: counter(page);
+    font-family: var(--figure-face);
+    font-size: {small - 1.5}pt;
+    color: var(--muted);
+    vertical-align: top;
+    padding-top: 3pt;
   }}
 }}
 
-/* The cover carries no running header: there is no section yet, and a page number on a
+/* The cover carries no apparatus: there is no section yet, and a page number on a
    cover is furniture nobody reads. */
 @page :first {{
-  @top-right {{ content: none; }}
-  @bottom-center {{ content: none; }}
+  @top-left {{ content: none; border-bottom: none; }}
+  @bottom-left {{ content: none; border-top: none; }}
+  @bottom-right {{ content: none; }}
 }}
 
 body {{
@@ -99,11 +124,18 @@ body {{
   color: var(--ink);
 }}
 
+/* --- headings ------------------------------------------------------------
+   A section heading is followed by a short accent bar — the one piece of ornament
+   the design uses, and what makes a section start read as a start. Drawn with
+   `::after` rather than a border so it is a fixed length rather than the width of
+   the words above it. */
 h1, h2, h3, h4 {{
   font-family: var(--heading-face);
   color: var(--accent);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   break-after: avoid;
-  margin: 1.4em 0 0.5em;
+  margin: 1.5em 0 0.15em;
   string-set: section-title content();
 }}
 h1 {{ font-size: {h1}pt; }}
@@ -111,119 +143,130 @@ h2 {{ font-size: {h2}pt; }}
 h3 {{ font-size: {h3}pt; text-transform: {caps}; }}
 h4 {{ font-size: {h4}pt; text-transform: {caps}; }}
 
-/* --- front matter ------------------------------------------------------- */
+h1::after, h2::after {{
+  content: "";
+  display: block;
+  width: 11mm;
+  height: 1.6pt;
+  background: var(--accent);
+  margin: 5pt 0 9pt;
+}}
+
+p {{ margin: 0 0 1em; }}
+
+/* --- front matter --------------------------------------------------------- */
 
 [data-style="Cover Title"] {{
   font-family: var(--heading-face);
   font-size: {spec.title_pt}pt;
   color: var(--accent);
-  margin: 0 0 0.2em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   line-height: 1.1;
+  margin: 0 0 0.15em;
+}}
+[data-style="Cover Title"]::after {{
+  content: "";
+  display: block;
+  width: 20mm;
+  height: 2pt;
+  background: var(--accent);
+  margin: 7pt 0 0;
 }}
 [data-style="Cover Meta"] {{
+  font-family: var(--heading-face);
   font-size: {spec.subtitle_pt}pt;
   color: var(--muted);
-  margin: 0 0 2em;
+  margin: 8pt 0 22mm;
 }}
 [data-style="Document Control"] {{
   font-family: var(--heading-face);
   font-size: {h3}pt;
+  font-weight: 700;
   color: var(--accent);
-  margin: 1.6em 0 0.4em;
+  margin: 1.6em 0 0.5em;
 }}
 [data-style="Title"] {{
   font-family: var(--heading-face);
   font-size: {h2}pt;
+  font-weight: 700;
   color: var(--accent);
   margin: 0 0 0.6em;
+}}
+
+/* The confidentiality notice is the footer's left-hand text as well as a line of
+   its own — captured from the document rather than restated here, so the words
+   stay the emitter's. */
+.rpt-note {{
+  color: var(--muted);
+  font-size: {small}pt;
+  string-set: confidentiality content();
 }}
 
 .rpt-pairs {{
   border-collapse: collapse;
   margin: 0 0 1.2em;
-  font-size: {spec.body_pt}pt;
+  font-size: {spec.body_pt - 0.5}pt;
 }}
 .rpt-pairs th {{
   text-align: left;
+  font-family: var(--heading-face);
   font-weight: 400;
+  font-size: {small}pt;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--muted);
-  padding: 2.5pt 18pt 2.5pt 0;
+  padding: 3pt 20pt 3pt 0;
   white-space: nowrap;
-  vertical-align: top;
+  vertical-align: baseline;
 }}
-.rpt-pairs td {{ padding: 2.5pt 0; vertical-align: top; }}
+.rpt-pairs td {{ padding: 3pt 0; vertical-align: baseline; }}
 
-.rpt-grid {{
+/* --- tables ---------------------------------------------------------------
+   Header rules in the accent at 1.4pt, row rules hairline. That weight difference
+   separates the head from the body without a box around either. */
+.rpt-grid,
+table.rpt-table {{
   width: 100%;
   border-collapse: collapse;
-  margin: 0.4em 0 1.4em;
-  font-size: {spec.small_pt}pt;
+  margin: 0.5em 0 0.3em;
+  font-size: {small + 1}pt;
 }}
-.rpt-grid th {{
-  text-align: left;
-  font-size: {spec.small_pt - 1}pt;
-  text-transform: uppercase;
+thead {{ display: table-header-group; }}
+tr {{ break-inside: avoid; }}
+
+.rpt-grid th,
+table.rpt-table th {{
+  font-family: var(--heading-face);
+  font-size: {small - 1}pt;
+  font-weight: 700;
   letter-spacing: 0.05em;
-  color: var(--muted);
-  border-bottom: 1pt solid var(--accent);
-  padding: 3pt 8pt 3pt 0;
+  text-transform: uppercase;
+  color: var(--ink);
+  text-align: left;
+  padding: 4pt 7pt 4pt 0;
+  border-bottom: 1.4pt solid var(--accent);
+  overflow-wrap: normal;
+  hyphens: none;
 }}
-.rpt-grid td {{
-  padding: 5pt 8pt 5pt 0;
-  border-bottom: 0.4pt solid var(--rule);
-  vertical-align: bottom;
+.rpt-grid td,
+table.rpt-table td {{
+  padding: 4.5pt 7pt 4.5pt 0;
+  border-bottom: 0.5pt solid var(--rule);
+  vertical-align: top;
+  /* `break-word`, never `anywhere`: `anywhere` lets the engine consider a break inside
+     a word when computing the column's minimum width, so a column of
+     `metric_not_selected` is squeezed to `metri c_no t_sel ected`. */
+  overflow-wrap: break-word;
 }}
+table.rpt-table tbody tr:nth-child(even) {{ background: var(--band); }}
+
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
 .rpt-signature {{
   border-bottom: 0.6pt solid var(--ink);
   min-width: 45mm;
   height: 14mm;
 }}
-
-.rpt-note {{ color: var(--muted); font-size: {spec.small_pt}pt; }}
-
-.rpt-toc {{ margin: 0.5em 0 0; }}
-.rpt-toc-list {{ list-style: none; padding: 0; margin: 0; }}
-.rpt-toc-entry {{
-  padding: 2.5pt 0;
-  border-bottom: 0.4pt dotted var(--rule);
-}}
-.rpt-toc-entry[data-level="2"] {{ padding-left: 8mm; }}
-.rpt-toc-entry[data-level="3"] {{ padding-left: 16mm; }}
-
-/* --- body --------------------------------------------------------------- */
-
-table.rpt-table {{
-  width: 100%;
-  border-collapse: collapse;
-  margin: 0.6em 0 0.3em;
-  font-size: {spec.small_pt}pt;
-}}
-thead {{ display: table-header-group; }}
-tr {{ break-inside: avoid; }}
-table.rpt-table th {{
-  font-size: {spec.small_pt - 1.5}pt;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  text-align: left;
-  font-weight: 700;
-  padding: 4pt 6pt 4pt 0;
-  border-bottom: 1.2pt solid var(--accent);
-  /* A header may wrap; it may not be broken through the middle of a word, which is what
-     the `.docx` does when a column is narrower than its longest header word. */
-  overflow-wrap: normal;
-  hyphens: none;
-}}
-table.rpt-table td {{
-  padding: 3.5pt 6pt 3.5pt 0;
-  border-bottom: 0.4pt solid var(--rule);
-  vertical-align: top;
-  /* `break-word`, never `anywhere`: `anywhere` lets the engine consider a break inside a
-     word when it computes the column's minimum width, so a column of `metric_not_selected`
-     is squeezed to `metri c_no t_sel ected`. */
-  overflow-wrap: break-word;
-}}
-table.rpt-table tbody tr:nth-child(even) {{ background: var(--band); }}
 
 /* Every cell ends with a zero-width space, and this is load-bearing rather than
    decorative.
@@ -262,31 +305,53 @@ table.rpt-table th::after,
 .rpt-pairs th::after,
 .rpt-pairs td::after {{ content: "\\200b"; }}
 
+/* --- figures --------------------------------------------------------------- */
+
 .rpt-figure {{
   font-family: var(--figure-face);
-  font-size: {spec.small_pt - 0.5}pt;
+  font-size: {small}pt;
+  font-variant-numeric: tabular-nums;
   /* A figure must never be broken across lines: `verify/pdf.py` searches the converted
-     text for the ledger string contiguously, and a line break through a numeral reads as a
-     figure that never arrived. This is the CSS statement of what cost two production runs
-     to establish in Word. */
+     text for the ledger string contiguously, and a line break through a numeral reads as
+     a figure that never arrived. This is the CSS statement of what cost two production
+     runs to establish in Word. */
   white-space: nowrap;
 }}
 
 caption {{
   caption-side: bottom;
   text-align: left;
-  font-size: {spec.small_pt - 0.5}pt;
+  font-family: var(--body-face);
+  font-size: {small - 1}pt;
   color: var(--muted);
   font-style: italic;
-  padding-top: 3pt;
+  line-height: 1.5;
+  padding-top: 4pt;
 }}
 .rpt-notice {{ color: var(--muted); font-style: italic; }}
+
+/* --- contents -------------------------------------------------------------- */
+
+.rpt-toc {{ margin: 0.5em 0 0; }}
+.rpt-toc-list {{ list-style: none; padding: 0; margin: 0; }}
+.rpt-toc-entry {{
+  padding: 3pt 0;
+  border-bottom: 0.4pt dotted var(--rule);
+  font-size: {spec.body_pt - 0.5}pt;
+}}
+.rpt-toc-entry[data-level="2"] {{ padding-left: 8mm; }}
+.rpt-toc-entry[data-level="3"] {{ padding-left: 16mm; }}
+
+/* --- charts ---------------------------------------------------------------- */
 
 .rpt-chart {{ margin: 0.8em 0 1.2em; break-inside: avoid; }}
 .rpt-chart svg {{ width: 100%; height: auto; }}
 .rpt-chart figcaption {{
-  font-size: {spec.small_pt}pt;
+  font-family: var(--body-face);
+  font-size: {small - 1}pt;
+  font-style: italic;
   color: var(--muted);
+  line-height: 1.5;
   margin-top: 4pt;
 }}
 /* The series and points are the app's data. The PDF has the drawing. */
@@ -294,7 +359,6 @@ caption {{
 
 hr.rpt-break {{ border: 0; margin: 0; break-after: page; }}
 """
-
 
 # ---------------------------------------------------------------------------
 # Build-time guard
