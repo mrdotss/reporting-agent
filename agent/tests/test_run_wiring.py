@@ -763,13 +763,28 @@ def test_the_collecting_callback_carries_exactly_the_keys_the_app_accepts(
         assert set(body) <= APP_ACCEPTED_KEYS, set(body) - APP_ACCEPTED_KEYS
         assert body["run_id"] == RUN_ID
 
-    # The one carrying counts is the one the determinate bar is fed from.
+    # The ones carrying counts are what the determinate bar is fed from, and they arrive
+    # in the order they were reported — which is the assertion, not an incidental fact
+    # about the last one.
+    #
+    # This used to assert `counted[-1]` carried `current == 0`, and it passed because
+    # delivery was **unordered**: `report` scheduled each callback as an independent task
+    # and whichever POST settled first was recorded first. The bar's last word was
+    # whichever one won the race. Ordering delivery made the sequence what the pipeline
+    # actually reports — 0 of 1 while metrics are folding, then 1 of 1 as the snapshot is
+    # built — and a determinate bar that ends anywhere but full is the defect, not the
+    # expectation.
     counted = [body for body in collecting if "total" in body]
     assert counted, "no `collecting` callback carried a total"
-    assert set(counted[-1]) == EXPECTED_COLLECTING_KEYS
-    assert counted[-1]["total"] == 1
-    assert counted[-1]["current"] == 0
-    assert counted[-1]["label"] == "Metrics"
+    for body in counted:
+        assert set(body) == EXPECTED_COLLECTING_KEYS
+
+    assert [
+        (body["current"], body["total"], body["label"]) for body in counted
+    ] == [(0, 1, "Metrics"), (1, 1, "Snapshot")], (
+        "the counted `collecting` callbacks did not arrive in the order the pipeline "
+        "reported them, so the bar the consultant watches moves backwards"
+    )
 
 
 def test_the_throttle_suppresses_a_second_in_phase_report_and_nothing_else(

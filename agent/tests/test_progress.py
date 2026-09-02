@@ -785,3 +785,123 @@ def test_a_disabled_reporter_sends_no_verification_callback():
     )
 
     assert transport.calls == []
+
+
+async def _drain_pending() -> None:
+    """Let every scheduled delivery finish, including ones chained behind others."""
+    for _ in range(50):
+        pending = [
+            task
+            for task in asyncio.all_tasks()
+            if task is not asyncio.current_task()
+            and task.get_name().startswith("progress-callback-")
+        ]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+    raise AssertionError("progress callbacks did not settle")
+
+
+class TestCallbacksArriveInTheOrderTheyWereReported:
+    """The endpoint advances a chain, so delivery order is not cosmetic.
+
+    `collecting -> compiling -> rendering -> verifying -> completed`, and criterion 38.10
+    refuses any hop that skips a link. Dispatch is concurrent by design — `report` must not
+    block a collector fold on the app's response — but two POSTs in flight at once arrive in
+    whatever order the network settles.
+
+    Run `442b4a63` is what that costs. `compiling` and `rendering` were scheduled 34 ms
+    apart; `rendering` landed first, was refused against a row still at `collecting`, and
+    retried immediately against the same stale row. `compiling` landed after. The row stayed
+    at `compiling` while the runtime rendered, verified and reported `completed` — each
+    refused for the same reason — and the reaper failed a complete, verified run as
+    `TIMEOUT` six minutes later.
+
+    Intermittent, too: the very next run delivered in order and advanced normally. So a test
+    that merely reports two phases and checks the order proves nothing — the bug needs the
+    first POST to be **slower than the second**, which is what `_OutOfOrderTransport` forces.
+    """
+
+    class _OutOfOrderTransport:
+        """Records arrival order, and delays the first request past the second.
+
+        Without the delay both requests complete in scheduling order on the event loop and
+        the assertion passes against the defect — the fixture would be too clean to express
+        the failure, which is the shape this repository has been bitten by before.
+        """
+
+        def __init__(self, first_delay: float = 0.05) -> None:
+            self.arrivals: list[str] = []
+            self._first_delay = first_delay
+            self._seen = 0
+
+        async def post_json(self, url, *, body, headers, timeout) -> int:
+            self._seen += 1
+            if self._seen == 1:
+                await asyncio.sleep(self._first_delay)
+            self.arrivals.append(str(body["phase"]))
+            return 204
+
+    def test_a_slow_first_callback_does_not_let_the_second_overtake_it(self) -> None:
+        async def scenario() -> None:
+            transport = self._OutOfOrderTransport()
+            target = reporter(transport, clock=FakeClock())
+
+            await target.report("compiling")
+            await target.report("rendering")
+            await _drain_pending()
+
+            assert transport.arrivals == ["compiling", "rendering"], (
+                "the second callback overtook the first, so the endpoint sees a hop that "
+                "skips a link and refuses it"
+            )
+        asyncio.run(scenario())
+
+    def test_the_whole_chain_arrives_in_order(self) -> None:
+        async def scenario() -> None:
+            transport = self._OutOfOrderTransport()
+            target = reporter(transport, clock=FakeClock())
+
+            for phase in ("collecting", "compiling", "rendering", "verifying"):
+                await target.report(phase)
+            await _drain_pending()
+
+            assert transport.arrivals == [
+                "collecting",
+                "compiling",
+                "rendering",
+                "verifying",
+            ]
+        asyncio.run(scenario())
+
+    def test_the_terminal_callback_waits_behind_the_chain(self) -> None:
+        async def scenario() -> None:
+            """`completed` is reachable only from `verifying`, and losing it costs a false
+            `TIMEOUT` on a finished run — the one callback whose ordering matters most."""
+            transport = self._OutOfOrderTransport()
+            target = reporter(transport, clock=FakeClock())
+
+            await target.report("rendering")
+            await target.report("verifying")
+            await target.report_terminal("completed")
+
+            assert transport.arrivals == ["rendering", "verifying", "completed"]
+        asyncio.run(scenario())
+
+    def test_a_refused_predecessor_does_not_stop_the_next_callback(self) -> None:
+        async def scenario() -> None:
+            """The chain orders delivery; it does not make one callback conditional on
+            another. A predecessor the app refuses is still the reaper's problem, and the
+            callbacks after it must still be attempted."""
+            transport = FakeTransport([404, 204, 204])
+            target = reporter(transport, clock=FakeClock())
+
+            await target.report("compiling")
+            await target.report("rendering")
+            await _drain_pending()
+
+            phases = [str(call["body"]["phase"]) for call in transport.calls]
+            assert "rendering" in phases, (
+                "a refused `compiling` stopped `rendering` from being sent at all"
+            )
+        asyncio.run(scenario())
