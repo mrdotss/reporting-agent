@@ -118,10 +118,18 @@ function formatPeriodDisplay(
  * longer, whatever the row count.
  *
  * **Thirty seconds, because ten was below the floor.** A cold AgentCore start —
- * pulling a 312 MB arm64 image and starting the container — measured 10.3s, 12.2s,
- * 12.4s and 13.3s across four consecutive deployments, against a budget of 10.0s.
- * Warm invocations are 0.7s to 1.5s, so this only ever bites the first run after an
- * idle period, which for a scheduled monthly report is nearly every run.
+ * pulling a 312 MB arm64 image and starting the container — measured 10.2s, 10.3s,
+ * 11.7s, 12.2s, 12.4s and 13.3s across five consecutive deployments, against a
+ * budget of 10.0s.
+ *
+ * What is cold is the **runtime**, not the session. Measured against v39 once it was
+ * warm: a fresh `runtimeSessionId` costs 1.3s to 4.8s, and reusing one costs 0.4s to
+ * 0.7s. Since `sessionIdForRun` derives from the run id, every run opens its own
+ * session and none of them ever reuse one — so the per-run figure is the middle
+ * number, and the 10-second one is what the *first* run after an idle period pays.
+ *
+ * `lifecycleConfiguration.idleRuntimeSessionTimeout` is 900 seconds, so for a report
+ * scheduled monthly that first run is very nearly every run.
  *
  * The failure it produced was not a slow run but an abandoned one. The budget
  * expiring discards the promise without consuming the stream, so `drainDetached`
