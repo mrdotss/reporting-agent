@@ -111,12 +111,30 @@ function formatPeriodDisplay(
 
 /**
  * Requirement 39.7's other half, applied to the invocation: an invocation that has
- * not produced a response stream within 10 seconds is a **failure to start**.
+ * not produced a response stream within this budget is a **failure to start**.
  *
- * It bounds the tick's own response (Requirement 39.9): ten concurrent invocations
- * each capped at ten seconds still fit, because none is awaited to completion.
+ * It bounds the tick's own response (Requirement 39.9). Invocations are started
+ * concurrently with `allSettled`, so a tick lasts as long as its slowest one and no
+ * longer, whatever the row count.
+ *
+ * **Thirty seconds, because ten was below the floor.** A cold AgentCore start —
+ * pulling a 312 MB arm64 image and starting the container — measured 10.3s, 12.2s,
+ * 12.4s and 13.3s across four consecutive deployments, against a budget of 10.0s.
+ * Warm invocations are 0.7s to 1.5s, so this only ever bites the first run after an
+ * idle period, which for a scheduled monthly report is nearly every run.
+ *
+ * The failure it produced was not a slow run but an abandoned one. The budget
+ * expiring discards the promise without consuming the stream, so `drainDetached`
+ * never runs, the row is left `claimed` per 39.13, and the deadline sweep then fails
+ * it as `TIMEOUT` — a run that never reached the agent at all, reported to the
+ * consultant as a phase that exceeded its deadline. Two live runs were lost that way
+ * in one afternoon.
+ *
+ * Thirty rather than fifteen so the margin survives an image that grows again;
+ * 39.12's 60-second reaper interval accommodates it with room, and no run's
+ * completion is awaited either way.
  */
-export const RUNTIME_START_TIMEOUT_MS = 10_000
+export const RUNTIME_START_TIMEOUT_MS = 30_000
 
 /** What starting one run's invocation did. */
 export type InvokeOutcome =
@@ -252,7 +270,7 @@ async function startWithin(
  *     what makes this a report run rather than a collection — see the comment at the
  *     read. A pinned version that cannot be read fails the run as
  *     `TEMPLATE_INVALID`; a row pinning none is the legal snapshot-only shape.
- *  5. **Invoke**, with a 10-second start budget, and release the stream with a
+ *  5. **Invoke**, with a 30-second start budget, and release the stream with a
  *     detached drain (Requirement 39.6).
  *
  * A failure to start is logged with secrets excluded, the row is **left at

@@ -309,7 +309,7 @@ describe("Requirement 39.13 — one row's failure does not abandon the others", 
       { kind: "invoked" },
       { kind: "failed", code: "AUTH_EXPIRED" },
       { kind: "skipped", reason: "the row is collecting rather than claimed" },
-      { kind: "not_started", reason: "no response stream within 10000ms" },
+      { kind: "not_started", reason: "no response stream within 30000ms" },
     ]
 
     const body = (await (await POST(tick())).json()) as TickBody

@@ -580,6 +580,7 @@ class SnapshotView:
     day_names: tuple[str, ...]
     _by_pointer: Mapping[str, SnapshotValue]
     _window_stats: Mapping[tuple[str, str, str, str], SnapshotValue]
+    _sample_counts: Mapping[tuple[str, str, str, str], SnapshotValue]
     _day_stats: Mapping[tuple[str, str, str, str, str], SnapshotValue]
     _tier_counts: Mapping[str, int]
     _statistic_count: int
@@ -631,6 +632,24 @@ class SnapshotView:
         opposite of what the gap vocabulary exists for.
         """
         return self._window_stats.get((resource_id, metric, statistic, instance or ""))
+
+    def sample_count_of(
+        self,
+        resource_id: str,
+        metric: str,
+        statistic: str,
+        *,
+        instance: str | None = None,
+    ) -> SnapshotValue | None:
+        """How many samples one window statistic was computed over, as a value.
+
+        Addressed by the same key as :meth:`stat` and returned as a `SnapshotValue` rather
+        than an `int`, so a block can mint it as a **figure**: a sample count printed as
+        text would be a numeral the verifier finds in the document and cannot match.
+
+        `None` when the statistic is absent, or present but declaring no sample count.
+        """
+        return self._sample_counts.get((resource_id, metric, statistic, instance or ""))
 
     def day_stat(
         self,
@@ -834,6 +853,7 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     by_pointer: dict[str, SnapshotValue] = {}
     facts_by_pointer: dict[str, FactTextValue] = {}
     window_stats: dict[tuple[str, str, str, str], SnapshotValue] = {}
+    sample_counts: dict[tuple[str, str, str, str], SnapshotValue] = {}
     day_stats: dict[tuple[str, str, str, str, str], SnapshotValue] = {}
     tier_counts: dict[str, int] = {}
     day_names: list[str] = []
@@ -907,6 +927,32 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
             window_stats[_window_key(value)] = value
             statistic_count += 1
 
+            # The statistic's own sample count, as a figure.
+            #
+            # A document reporting "0.18% average CPU" without saying how many samples
+            # that average is over reports a number whose weight the reader cannot judge:
+            # 89 231 samples and 3 read identically otherwise.
+            #
+            # It goes in the **cardinality namespace**, not at its own JSON position.
+            # `/resources/6/statistics/3/sample_count` is where the field lives, but every
+            # pointer outside `$counts` is required to resolve to a stored *decimal string*
+            # — the invariant that makes a measurement's provenance checkable — and a
+            # sample count is stored as a JSON integer. It is a count of the snapshot's own
+            # records, which is precisely what `$counts` was reserved for, so it is
+            # registered there and its `formula` names the samples it counted.
+            #
+            # Indexed apart from `window_stats`: it shares that dict's key — one resource,
+            # metric and statistic — and recording it there would overwrite the
+            # measurement with its own sample count.
+            if value.sample_count is not None:
+                sample_value = _cardinality_value(
+                    ("resources", str(index), "statistics", str(position), "samples"),
+                    value.sample_count,
+                    window.descriptor,
+                )
+                _record(by_pointer, sample_value)
+                sample_counts[_window_key(value)] = sample_value
+
         for bucket_position, raw_bucket in enumerate(
             _list_at(raw_resource, "day_buckets", at)
         ):
@@ -960,12 +1006,39 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     for gap in gaps:
         gap_type_counts[gap.gap_type] = gap_type_counts.get(gap.gap_type, 0) + 1
 
+    # The estate's own groupings, counted: how many resources each resource group,
+    # region and resource type holds, and how many distinct values each dimension has.
+    #
+    # These exist for `inventory_summary`, which reports the estate *as* its groupings —
+    # "five resource groups, this one holds 21" — rather than as a list of resources. A
+    # count that reaches the page must be a figure or the verifier finds an unmatched
+    # numeral, and the only honest way to make a count a figure is to derive it here,
+    # from the snapshot, where a replay derives it identically.
+    #
+    # Empty-string keys are skipped rather than counted under `""`: a resource carrying
+    # no resource group is a collection gap, already recorded as one, and inventing a
+    # group named "" to hold it would put a row in the rollup that names nothing.
+    group_counts: dict[str, int] = {}
+    region_counts: dict[str, int] = {}
+    type_counts: dict[str, int] = {}
+    for resource in resources:
+        for bucket, key in (
+            (group_counts, resource.resource_group),
+            (region_counts, resource.location),
+            (type_counts, resource.resource_type),
+        ):
+            if key:
+                bucket[key] = bucket.get(key, 0) + 1
+
     cardinalities: list[tuple[tuple[str, ...], int]] = [
         (("resources",), len(resources)),
         (("gaps",), len(gaps)),
         (("statistics",), statistic_count),
         (("day_buckets",), day_bucket_count),
         (("raw_archive", "objects"), _raw_archive_count(document)),
+        (("resource_group",), len(group_counts)),
+        (("location",), len(region_counts)),
+        (("resource_type",), len(type_counts)),
         *(
             (("fidelity_tier", tier), tier_count)
             for tier, tier_count in sorted(tier_counts.items())
@@ -973,6 +1046,18 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         *(
             (("gaps", "by_type", gap_type), gap_type_count)
             for gap_type, gap_type_count in sorted(gap_type_counts.items())
+        ),
+        *(
+            (("resource_group", "by_name", name), total)
+            for name, total in sorted(group_counts.items())
+        ),
+        *(
+            (("location", "by_name", name), total)
+            for name, total in sorted(region_counts.items())
+        ),
+        *(
+            (("resource_type", "by_name", name), total)
+            for name, total in sorted(type_counts.items())
         ),
     ]
     for tokens, total in cardinalities:
@@ -998,6 +1083,7 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         _by_pointer=MappingProxyType(by_pointer),
         _facts_by_pointer=MappingProxyType(facts_by_pointer),
         _window_stats=MappingProxyType(window_stats),
+        _sample_counts=MappingProxyType(sample_counts),
         _day_stats=MappingProxyType(day_stats),
         _tier_counts=MappingProxyType(dict(sorted(tier_counts.items()))),
         _statistic_count=statistic_count,

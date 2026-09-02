@@ -83,6 +83,22 @@
  * needs only the shape, not the parser. */
 export type TypeCounts = Readonly<Record<string, number>>
 
+/**
+ * How many **distinct values** the scan saw of each grouping dimension —
+ * `resource_group`, `region`, `resource_type`.
+ *
+ * A separate input from {@link TypeCounts} because it answers a different
+ * question. A type count says "twelve virtual machines"; this says "across three
+ * resource groups", which no per-type count implies. `inventory_summary` emits one
+ * row and one figure per distinct value, so without this its estimate could only be
+ * a guess.
+ *
+ * The scan already records both halves — `report_scans.resource_groups` and
+ * `.regions` alongside `.type_counts` — so this is a field the caller has, not one
+ * it has to derive. An absent dimension estimates zero.
+ */
+export type DistinctCounts = Readonly<Record<string, number>>
+
 /** The catalogue entry shape this estimator needs — a subset of `SectionEntry`
  * from `lib/profiles/sections.ts`, declared locally so this module stays
  * independent of that file's `server-only` boundary (see its own docstring). */
@@ -163,7 +179,20 @@ const TABLE_FAMILY = new Set([
   "top_n_table",
   "blank_rows_table",
   "metric_summary",
+  "inventory_summary",
 ])
+
+/** The counts a `group_by: "subscription"` summary prints as figures: total
+ * resources, resource groups, regions. The subscription id in the row above them
+ * is an identifier, not a quantity, and reaches the page as text. */
+const SUBSCRIPTION_SUMMARY_FIGURES = 3
+
+/** An expansion's declared `group_by`, or `""` when it declares none. */
+function readGroupBy(config: unknown): string {
+  if (typeof config !== "object" || config === null) return ""
+  const value = (config as Record<string, unknown>).group_by
+  return typeof value === "string" ? value : ""
+}
 const CHART_FAMILY = new Set([
   "timeseries_chart",
   "distribution_chart",
@@ -224,7 +253,8 @@ function shouldEmit(
 export function estimateEmit(
   section: AuthoredSectionForEstimate,
   scan: TypeCounts,
-  catalogue: readonly EstimatorCatalogueEntry[]
+  catalogue: readonly EstimatorCatalogueEntry[],
+  distinct: DistinctCounts = {}
 ): EmitEstimate {
   const entry = catalogue.find((candidate) => candidate.key === section.type)
   if (!entry) {
@@ -266,6 +296,32 @@ export function estimateEmit(
       headings += blockMultiplier
     } else if (CHART_FAMILY.has(expansion.block)) {
       charts += blockMultiplier
+    } else if (expansion.block === "inventory_summary") {
+      // An `inventory_summary` never reads a metric column, so the
+      // `matched × metricColumnCount` arithmetic below does not describe it.
+      // Its figures are the counts it prints:
+      //
+      //  * `group_by: "subscription"` — a fixed three (total resources,
+      //    resource groups, regions). The subscription id beside them is text.
+      //  * any other grouping — one per distinct value of that dimension, plus
+      //    one for a truncated table's own omitted count.
+      //
+      // The distinct-value count is **not derivable from `scan`**, which reports
+      // resources per *type*: how many resource groups or regions those fall
+      // across is a different question. It comes from `distinct`, which the scan
+      // records alongside the type counts (`report_scans.resource_groups` and
+      // `.regions`). A dimension the caller supplies no count for estimates zero
+      // rather than guessing — an author reads this to decide whether a section is
+      // worth including, and a fabricated number is worse than a modest one.
+      tables += blockMultiplier
+      const groupBy = readGroupBy(expansion.config)
+      if (groupBy === "subscription") {
+        figures += blockMultiplier * SUBSCRIPTION_SUMMARY_FIGURES
+      } else {
+        const rows = Math.min(distinct[groupBy] ?? 0, MAX_TABLE_ROWS)
+        figures += blockMultiplier * rows
+        if ((distinct[groupBy] ?? 0) > MAX_TABLE_ROWS) figures += blockMultiplier
+      }
     } else if (TABLE_FAMILY.has(expansion.block)) {
       tables += blockMultiplier
       const columns = metricColumnCount(expansion.config)

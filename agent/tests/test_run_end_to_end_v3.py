@@ -188,28 +188,38 @@ class TestV3SectionWalkReachesAPassingVerification:
         assert docx is not None and docx.body.startswith(b"PK\x03\x04")
         assert pdf is not None and pdf.body.startswith(b"%PDF-")
 
-    def test_the_delivered_docx_carries_one_chart_for_the_section(
+    def test_the_delivered_docx_carries_one_chart_per_machine(
         self, walked_v3: tuple[V2Walk, list[Event]]
     ) -> None:
-        """`vm_utilization` emits **one** chart however many machines are in scope.
+        """`vm_utilization` emits one chart **per machine in scope**.
 
-        It used to emit one per machine — `per: "resource"` — and every one of them
-        plotted the whole section scope, so two VMs produced two identical charts.
+        ## The two shapes this has had, and why it is back to per-machine
 
-        ## What this replaces, and why the old assertion proved nothing
+        It expanded `per: "resource"` originally, and every one of those charts
+        plotted the *whole* section scope — two VMs produced two identical charts. The
+        fix at the time collapsed the section to one chart for the fleet, and this test
+        asserted that one.
 
-        This test asserted "at least 2 inline shapes" and called that proof of a
-        two-panel split. It was wrong twice over. The two shapes came from the two
-        *charts*, not from two panels of one. And the fixture cannot exercise
-        panelling anyway: its docstring claimed Available Memory Bytes runs in the
-        billions, while the fake actually answers `15.00` against a CPU of `12.00` —
-        within the 10x factor `panel_groups` splits on, so one panel is the correct
-        outcome and always was.
+        `BlockContext.resources_for` now narrows a per-resource block to the resource
+        the expansion wrote into its config, so a per-machine chart plots that machine
+        alone. That is what the delivered report wants: a machine's size and OS above
+        its own graph, the artifact's "8.1 vm-amor".
+
+        So the count follows the estate again — deliberately — and the assertion that
+        matters is no longer "how many" but "one each". Two VMs, two charts.
+
+        ## What the assertion before this one got wrong, kept as a warning
+
+        It asserted "at least 2 inline shapes" and called that proof of a two-panel
+        split. It was wrong twice over. The two shapes came from the two *charts*, not
+        from two panels of one. And the fixture cannot exercise panelling anyway: its
+        docstring claimed Available Memory Bytes runs in the billions, while the fake
+        actually answers `15.00` against a CPU of `12.00` — within the 10x factor
+        `panel_groups` splits on, so one panel is the correct outcome and always was.
 
         Panelling is covered where it can be exercised, in `test_charts.py`'s
-        `two_magnitude_chart` fixture. What this test can honestly claim is what the
-        run produced: one chart image for the section, read from the delivered
-        `.docx` rather than from the compiled AST.
+        `two_magnitude_chart` fixture. What this test claims is what the run produced,
+        read from the delivered `.docx` rather than from the compiled AST.
         """
         walk, _ = walked_v3
         docx = walk.store.get(reports_key(ACTOR_ID, RUN_ID, "report.docx"))
@@ -218,12 +228,24 @@ class TestV3SectionWalkReachesAPassingVerification:
         from docx import Document as open_docx
 
         document = open_docx(BytesIO(docx.body))
-        # One image per panel (Req 17's own render contract), and this chart has one
-        # panel. Two VMs in scope, one chart: the count does not follow the estate.
+        # One image per panel (Req 17's own render contract) and one chart per machine;
+        # this fixture's two metrics share a panel (see above), so it is one image each.
+        # The fixture's own inventory, read from the delivered document rather than
+        # hardcoded: a per-machine heading is a Heading 3 under the section, so counting
+        # those counts the machines the section actually rendered. Deriving it here is
+        # what keeps this test honest if the fixture's estate ever changes size — a
+        # literal 2 would pass on a one-machine estate that emitted a spurious chart.
+        machines = sum(
+            1 for p in document.paragraphs if p.style.name == "Heading 3"
+        )
+        assert machines >= 2, (
+            f"the fixture must render at least two machines for this to mean anything, "
+            f"got {machines}"
+        )
         inline_shapes = document.inline_shapes
-        assert len(inline_shapes) == 1, (
-            f"expected exactly 1 embedded chart image for the one section chart, got "
-            f"{len(inline_shapes)}"
+        assert len(inline_shapes) == machines, (
+            f"expected exactly {machines} embedded chart images — one per machine in "
+            f"scope — got {len(inline_shapes)}"
         )
 
     def test_front_matter_shows_an_empty_ruled_box_for_every_unsigned_approver(

@@ -596,6 +596,46 @@ class TestHistoricalSelectionKeys:
         keys = _historical_selection_keys(defn)
         assert len(keys) == 1
 
+    def test_a_v3_definition_resolves_its_trend_through_the_catalogue(self) -> None:
+        """The defect: this read `blocks`, and a v3 definition has `sections`.
+
+        Every profile the wizard writes is v3. The `blocks` walk found nothing, no prior
+        run was ever selected, and the trend printed "No prior verified period is
+        available for this trend." while eleven passing prior runs sat in the database.
+        Nothing raised, because an empty trend is a state the block may legitimately
+        reach.
+        """
+        from reporting_agent.catalog.loader import load_section_catalogue
+
+        defn = {
+            "schema_version": 3,
+            "provider": "azure",
+            "sections": [
+                {
+                    "id": "sec_hist",
+                    "type": "historical_vm_utilization",
+                    "lookback": 3,
+                    "presentation": "chart_and_table",
+                    "metrics": [],
+                    "selection": {
+                        "resource_types": ["Microsoft.Compute/virtualMachines"]
+                    },
+                }
+            ],
+        }
+
+        keys = _historical_selection_keys(defn, catalogue=load_section_catalogue())
+
+        assert keys == {("Percentage CPU", "max", 3)}
+
+    def test_a_v3_definition_without_the_catalogue_refuses(self) -> None:
+        """Rather than falling through to the `blocks` walk, which would reproduce the
+        defect silently on the same input."""
+        from reporting_agent.errors import CompileFailedError
+
+        with pytest.raises(CompileFailedError, match="section catalogue"):
+            _historical_selection_keys({"schema_version": 3, "sections": []})
+
 
 class TestHistoricalBundle:
     def test_none_for_empty_selections(self) -> None:

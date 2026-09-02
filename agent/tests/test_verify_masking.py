@@ -34,6 +34,7 @@ from reporting_agent.verify.allowlist import (
 )
 from reporting_agent.verify.masking import (
     MASK_CHAR,
+    ledger_strings_of,
     mask_paragraph,
     masking_order,
     scan_paragraphs,
@@ -615,7 +616,22 @@ def _chrome_tokens(definition: dict, view: object) -> frozenset[str]:
     """Every numeric token a real render leaves after its own ledger strings are masked.
 
     Masking with the ledger and an **empty** allowlist is what isolates chrome: whatever still
-    carries a digit once every figure is masked out is, by definition, not a figure.
+    carries a digit once every ledger entry is masked out is, by definition, not one.
+
+    ## The ledger strings are figures **and** derived counts
+
+    `verifier.py` masks with `(*ledger.entries.values(), *ledger.derived_counts().values())`,
+    and this must use the same set or it reports chrome the real verification never sees. A
+    derived count — `historical_trend`'s "N of M prior periods plotted" — is a number the
+    verifier re-derives and admits, so leaving it out here makes its digits look like
+    unexplainable chrome.
+
+    Using `formatted_values()` alone hid that for a while: the null-context render's own
+    resource cardinality formatted as `0.00` under a two-decimal template and masked nothing,
+    so the trend statement's `0` survived on **both** sides and the subset assertion held.
+    Pinning a count's scale to zero (`compile/format.py#display_scale`) made that cardinality
+    format as `0`, which masks the trend statement's `0` in the null render and not in the
+    real one — and the guard fired on a difference that was an artifact of this helper.
     """
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
@@ -636,7 +652,12 @@ def _chrome_tokens(definition: dict, view: object) -> frozenset[str]:
         messages=load_messages("en"),
     )
     document = Document(io.BytesIO(outcome.docx_bytes))
-    order = masking_order(compiled.ledger.formatted_values())
+    order = ledger_strings_of(
+        (
+            *compiled.ledger.entries.values(),
+            *compiled.ledger.derived_counts().values(),
+        )
+    )
 
     found: set[str] = set()
     for paragraph in paragraph_texts(document):

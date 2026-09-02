@@ -38,6 +38,7 @@ from reporting_agent.compile.sections import (
     compute_section_drift,
     expand_sections,
 )
+from reporting_agent.compile.blocks.base import RESOURCE_ID_CONFIG_KEY
 from reporting_agent.compile.snapshot_view import SnapshotView, build_snapshot_view
 from reporting_agent.errors import CompileFailedError
 from snapshot_factory import (
@@ -183,20 +184,36 @@ class TestExpandSectionsBasic:
 
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
-        # azure_subscription has 2 expands_to entries: heading + resource_table, both per:"section"
+        # azure_subscription has 2 expands_to entries: heading + inventory_summary,
+        # both per:"section". It reports the subscription itself — its id and the three
+        # counts that describe the estate — rather than listing the estate's resources,
+        # which is what the resource_table it used to expand to did.
         assert len(result) == 2
         assert result[0].id == "sec_sub__0"
         assert result[0].type == "heading"
         assert result[1].id == "sec_sub__1"
-        assert result[1].type == "resource_table"
+        assert result[1].type == "inventory_summary"
+        assert result[1].config["group_by"] == "subscription"
 
-    def test_a_metric_section_expands_to_a_fixed_four_blocks(self) -> None:
-        """`vm_utilization` expands to the same four blocks whatever the estate size.
+    def test_a_metric_section_expands_per_machine_and_narrows_each_block(self) -> None:
+        """`vm_utilization` gives each machine its own heading, detail, chart and table.
 
-        It used to expand `per: "resource"` — a heading, a chart and a table each, per
-        machine. `_resource_ordinal` was written into their config and read nowhere, so
-        every one of those charts plotted the *whole* section scope: three machines meant
-        three identical charts and three identical tables, and twenty meant twenty.
+        ## The bug that made this `per: "section"` for a while, and why it is safe now
+
+        It expanded `per: "resource"` originally, and the expansion wrote a resource
+        *ordinal* into each block's config that no compiler read — so all four blocks
+        resolved the section's whole scope and three machines produced three identical
+        charts and three identical tables. The fix at the time was to collapse the section
+        to one chart and one fleet table.
+
+        `BlockContext.resources_for` now narrows a per-resource block to the resource id
+        the expansion wrote, and every compiler these blocks reach goes through it. So the
+        per-machine shape the report actually wants — the artifact's "8.1 vm-amor", with
+        that machine's size and OS above its own chart — is reachable again.
+
+        This asserts both halves: the blocks are emitted per machine, **and** each one
+        carries the id that narrows it. Asserting only the first would pass on exactly the
+        bug that caused the collapse.
         """
         catalogue = _make_catalogue()
         vm_ids = [
@@ -224,27 +241,59 @@ class TestExpandSectionsBasic:
 
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
-        # heading + metric_summary + timeseries_chart + top_n_table, all per:section.
+        # The section's own title, then four blocks per machine, then the fleet table.
         assert [spec.type for spec in result] == [
-            "heading", "metric_summary", "timeseries_chart", "top_n_table",
+            "heading",
+            *(
+                block
+                for _ in vm_ids
+                for block in (
+                    "heading",
+                    "resource_table",
+                    "timeseries_chart",
+                    "metric_summary",
+                )
+            ),
+            "top_n_table",
         ]
-        assert all("__" in spec.id and spec.id.count("__") == 1 for spec in result), (
-            "a per:section block carries no resource ordinal in its id"
+
+        section_heading = result[0]
+        assert section_heading.config["level"] == 2
+        assert section_heading.config["text"] == "Virtual Machine Utilization"
+        assert section_heading.id.count("__") == 1, "a per:section block carries no ordinal"
+
+        per_machine = result[1:-1]
+        assert all(spec.id.count("__") == 2 for spec in per_machine), (
+            "a per:resource block carries its resource ordinal in its id"
         )
 
-        heading = result[0]
-        assert heading.config["level"] == 2
-        assert heading.config["text"] == "Virtual Machine Utilization"
+        # The narrowing, asserted per block rather than per machine: every one of the four
+        # blocks a machine gets must carry that machine's id, or it renders the fleet.
+        for ordinal, resource_id in enumerate(vm_ids):
+            for spec in per_machine[ordinal * 4 : ordinal * 4 + 4]:
+                assert spec.config[RESOURCE_ID_CONFIG_KEY] == resource_id, (
+                    f"{spec.type} for machine {ordinal} resolves the whole section scope"
+                )
 
-        # The summary table is the one block that grows with the estate, and it grows in
-        # rows rather than in blocks.
-        assert result[1].config["metrics"] == [{"metric": CPU, "statistic": "avg"}]
+        # Each machine's own heading is titled by that machine, one level down.
+        machine_headings = [s for s in per_machine if s.type == "heading"]
+        assert [h.config["text"] for h in machine_headings] == [
+            rid.rsplit("/", 1)[-1] for rid in vm_ids
+        ]
+        assert all(h.config["level"] == 3 for h in machine_headings)
 
-        # Check the top_n_table is per:section
+        # The per-machine summary is transposed — one row per metric, for one machine.
+        for summary in (s for s in per_machine if s.type == "metric_summary"):
+            assert summary.config["orientation"] == "metric_major"
+            assert summary.config["metrics"] == [{"metric": CPU, "statistic": "avg"}]
+
+        # The detail table stacks its columns rather than spreading one row across seven.
+        for detail in (s for s in per_machine if s.type == "resource_table"):
+            assert detail.config["layout"] == "pairs"
+
+        # The fleet comparison stays per:section — it is the one table about all of them.
         top_n = [s for s in result if s.type == "top_n_table"]
         assert len(top_n) == 1
-        assert "__" in top_n[0].id
-        # per:section gets no __n suffix
         assert top_n[0].id.count("__") == 1
 
 
@@ -1101,7 +1150,7 @@ class TestZeroResourceSectionsAtCompileTime:
         definition = _make_v3_definition(sections=[
             {
                 "id": "sec_sub",
-                "type": "azure_subscription",
+                "type": "virtual_machines",
                 "position": 0,
                 "selection": {
                     "resource_types": [],
@@ -1117,15 +1166,21 @@ class TestZeroResourceSectionsAtCompileTime:
 
         compiled = compile_document(definition, view=view, catalogue=catalogue)
 
-        # sec_sub__1 is the resource_table expansion of azure_subscription (see
-        # the earlier task-3.4 test for why the id is derived this way).
-        table = compiled.nodes_by_block["sec_sub__1"][0]
+        # sec_sub__2 is the first resource_table expansion of virtual_machines — its
+        # `expands_to` is heading, heading, resource_table, … (see the earlier task-3.4
+        # test for why the id is derived this way).
+        #
+        # `virtual_machines` rather than `azure_subscription`, which no longer expands a
+        # resource_table at all: it reports the subscription's own counts, and "0 total
+        # resources" is the honest thing for it to say about an empty estate — the notice
+        # row belongs to a block that was going to list resources.
+        table = compiled.nodes_by_block["sec_sub__2"][0]
         expected_text = load_messages("en").text(EMPTY_SCOPE_TEXT)
 
         assert table.rows[0].cells[0].text == expected_text
         # The block did not vanish: it is present in nodes_by_block with its own
         # anchor, exactly as a section with matched resources would be.
-        assert "sec_sub__1" in compiled.nodes_by_block
+        assert "sec_sub__2" in compiled.nodes_by_block
 
     def test_a_v1_block_with_zero_matched_resources_still_emits_the_notice_row(
         self,
@@ -1190,7 +1245,7 @@ class TestZeroResourceSectionsAtCompileTime:
         v3_definition = _make_v3_definition(sections=[
             {
                 "id": "sec_sub",
-                "type": "azure_subscription",
+                "type": "virtual_machines",
                 "position": 0,
                 "selection": {
                     "resource_types": [],
@@ -1204,7 +1259,9 @@ class TestZeroResourceSectionsAtCompileTime:
             },
         ])
         v3_compiled = compile_document(v3_definition, view=view, catalogue=catalogue)
-        v3_table = v3_compiled.nodes_by_block["sec_sub__1"][0]
+        # __2, not __1: `virtual_machines` expands a section heading and a subsection
+        # heading before its first resource_table.
+        v3_table = v3_compiled.nodes_by_block["sec_sub__2"][0]
 
         v1_definition = {
             "schema_version": 1,
@@ -1219,7 +1276,9 @@ class TestZeroResourceSectionsAtCompileTime:
             "metrics": {},
             "blocks": [
                 {
-                    "id": "sec_sub__1",
+                    # The id the v3 path derives, so the two paths' figure paths — which
+                    # are rooted at the block id — compare equal too.
+                    "id": "sec_sub__2",
                     "type": "resource_table",
                     "config": {
                         "columns": [
@@ -1231,7 +1290,7 @@ class TestZeroResourceSectionsAtCompileTime:
             ],
         }
         v1_compiled = compile_document(v1_definition, view=view)
-        v1_table = v1_compiled.nodes_by_block["sec_sub__1"][0]
+        v1_table = v1_compiled.nodes_by_block["sec_sub__2"][0]
 
         # Same notice row, same style, same structure — the empty-scope branch
         # does not know or care which schema version produced the BlockSpec it
@@ -1442,7 +1501,7 @@ class TestComputeSectionDrift:
         definition = _make_v3_definition(sections=[
             {
                 "id": "sec_sub",
-                "type": "azure_subscription",
+                "type": "virtual_machines",
                 "position": 0,
                 "selection": {
                     "resource_types": [],
@@ -1598,3 +1657,114 @@ def test_no_section_expands_a_resource_blind_block_per_resource() -> None:
         f"these expansions repeat a block that ignores its resource, once per resource: "
         f"{offenders}"
     )
+
+
+# ---------------------------------------------------------------------------
+# historical_trend_keys — the keys the pipeline fetches prior runs for
+# ---------------------------------------------------------------------------
+
+
+class TestHistoricalTrendKeys:
+    """The keys a v3 definition's sections resolve to for historical selection.
+
+    The defect these guard: the pipeline resolved trend keys by walking
+    ``definition["blocks"]``, the v2 shape. Every profile the wizard writes is v3 and
+    carries ``sections``, so the walk returned the empty set, no prior run was ever
+    selected, and every ``historical_trend`` block printed "No prior verified period is
+    available for this trend." against a database holding eleven passing prior runs.
+
+    Nothing raised and no gate fired, because an empty trend is a state the block is
+    *supposed* to be able to reach. Only comparing the keys against what
+    ``expand_sections`` actually emits catches it — which is what these do.
+    """
+
+    @staticmethod
+    def _definition() -> dict[str, object]:
+        """The shipped `historical_vm_utilization` section as the wizard writes it."""
+        return {
+            "schema_version": 3,
+            "provider": "azure",
+            "sections": [
+                {
+                    "id": "sec_hist",
+                    "type": "historical_vm_utilization",
+                    "lookback": 3,
+                    "presentation": "chart_and_table",
+                    "metrics": [
+                        {"metric": CPU, "statistic": "avg"},
+                        {"metric": CPU, "statistic": "max"},
+                    ],
+                    "selection": {"resource_types": [VM_TYPE]},
+                }
+            ],
+        }
+
+    def test_a_v3_section_resolves_its_trend_key(self) -> None:
+        from reporting_agent.compile.sections import historical_trend_keys
+
+        keys = historical_trend_keys(
+            self._definition(), catalogue=load_section_catalogue()
+        )
+
+        assert keys == {(CPU, "max", 3)}, (
+            "the shipped historical section declares trend_metric Percentage CPU/max "
+            "and a lookback of 3; an empty set here is the defect that emptied every trend"
+        )
+
+    def test_the_keys_match_what_expand_sections_emits(self) -> None:
+        """The guard that keeps the two walkers from drifting.
+
+        `historical_trend_keys` is a second reading of the same definition, made without
+        a snapshot view. If it ever resolves a different metric, statistic or lookback
+        than the block the expansion actually compiles, the pipeline fetches candidates
+        under one key and the block looks them up under another — which presents exactly
+        as this defect did: a correct-looking report with an empty trend.
+        """
+        from reporting_agent.compile.sections import historical_trend_keys
+
+        definition = self._definition()
+        catalogue = load_section_catalogue()
+        view = _make_view(["/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-a"])
+
+        specs = expand_sections(
+            definition, catalogue=catalogue, view=view, messages=_make_messages()
+        )
+        emitted = {
+            (
+                spec.config["metric"],
+                spec.config["statistic"],
+                spec.config["lookback"],
+            )
+            for spec in specs
+            if spec.type == "historical_trend"
+        }
+        assert emitted, "the fixture must expand a historical_trend block to guard anything"
+
+        assert historical_trend_keys(definition, catalogue=catalogue) == emitted
+
+    def test_a_table_only_section_emits_no_block_and_no_key(self) -> None:
+        """Presentation gates both, or the pipeline loads snapshots nothing plots."""
+        from reporting_agent.compile.sections import historical_trend_keys
+
+        definition = self._definition()
+        definition["sections"][0]["presentation"] = "table_only"  # type: ignore[index]
+        catalogue = load_section_catalogue()
+        view = _make_view(["/subscriptions/s/resourceGroups/rg/providers/Microsoft.Compute/virtualMachines/vm-a"])
+
+        specs = expand_sections(
+            definition, catalogue=catalogue, view=view, messages=_make_messages()
+        )
+        assert not [s for s in specs if s.type == "historical_trend"]
+        assert historical_trend_keys(definition, catalogue=catalogue) == set()
+
+    def test_a_v2_definition_resolves_nothing_through_this_path(self) -> None:
+        """`sections` absent is not an error — it is the v2 shape, handled by the
+        pipeline's own `blocks` walk, which this function must not shadow."""
+        from reporting_agent.compile.sections import historical_trend_keys
+
+        assert (
+            historical_trend_keys(
+                {"schema_version": 2, "blocks": []}, catalogue=load_section_catalogue()
+            )
+            == set()
+        )

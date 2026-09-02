@@ -254,7 +254,15 @@ async def run_generate_report(
     # input reasoning: verify_report cannot re-derive it because the verify payload carries
     # no candidate list).
     actor_id = plan.actor_id
-    hist_keys = _historical_selection_keys(definition)
+    # Loaded once and threaded to both readers: the key walker below and the compile's
+    # own `section_catalogue` argument. Two independent loads would be two chances for
+    # them to disagree about what a section expands to.
+    section_catalogue = (
+        load_section_catalogue(loaded_catalog=catalog)
+        if definition.get("schema_version") == 3
+        else None
+    )
+    hist_keys = _historical_selection_keys(definition, catalogue=section_catalogue)
     historical_selections: dict[HistoricalSelectionKey, Selection] = {}
     historical_source: _HistoricalSourceFromStore | None = None
 
@@ -321,11 +329,7 @@ async def run_generate_report(
         historical_source=historical_source,
         front_matter=_resolve_front_matter_config(definition),
         run_facts=_resolve_run_facts(payload, definition, run_id=plan.run_id),
-        section_catalogue=(
-            load_section_catalogue(loaded_catalog=catalog)
-            if definition.get("schema_version") == 3
-            else None
-        ),
+        section_catalogue=section_catalogue,
     ):
         yield event
 
@@ -1620,12 +1624,39 @@ def _block_count(definition: Mapping[str, PlainData]) -> int:
 
 def _historical_selection_keys(
     definition: Mapping[str, PlainData],
+    *,
+    catalogue: object | None = None,
 ) -> set[HistoricalSelectionKey]:
     """Extract distinct `(metric, statistic, lookback)` keys from `historical_trend` blocks.
 
     Returns the empty set when the definition has no such block — which is the normal case
     and the one where no selection work is needed.
+
+    A **v3** definition carries `sections`, not `blocks`, and its trend keys are resolved
+    by `compile/sections.py::historical_trend_keys` against the section catalogue — the
+    same function the expansion itself uses, so the keys fetched and the blocks compiled
+    cannot disagree. Reading only `blocks` here made every v3 profile's trend print "no
+    prior verified period" against a database holding eleven passing prior runs, with no
+    error anywhere: an empty key set selects no candidates, and a `historical_trend` block
+    with no candidates is *supposed* to be able to say that.
+
+    A v3 definition with no `catalogue` **raises**, rather than falling through to the
+    `blocks` walk that returns nothing. Falling through would reproduce the original
+    defect exactly — silently, on the same input, with the same invisible symptom — and a
+    caller that forgot the catalogue has made a mistake this function can see.
     """
+    if definition.get("schema_version") == 3:
+        if catalogue is None:
+            raise CompileFailedError(
+                "a v3 definition's historical-trend keys cannot be resolved without the "
+                "section catalogue: its trends live in `sections`, not `blocks`, and "
+                "answering from `blocks` would report no trend on a profile that "
+                "declares one"
+            )
+        from reporting_agent.compile.sections import historical_trend_keys
+
+        return historical_trend_keys(definition, catalogue=catalogue)  # type: ignore[arg-type]
+
     blocks = definition.get("blocks")
     if not isinstance(blocks, Sequence):
         return set()

@@ -70,7 +70,9 @@ from reporting_agent.compile.blocks.base import (
     text_cell,
 )
 from reporting_agent.compile.figures import BlockCursor
+from reporting_agent.compile.definition import BLOCK_CONFIG
 from reporting_agent.compile.messages import Messages
+from reporting_agent.errors import CompileFailedError
 from reporting_agent.compile.snapshot_view import FactTextValue, ResourceView, SnapshotValue
 
 __all__ = [
@@ -78,6 +80,7 @@ __all__ = [
     "COLUMN_KINDS",
     "ColumnEntry",
     "compile_capacity_vs_usage",
+    "compile_inventory_summary",
     "compile_kpi_row",
     "compile_resource_table",
     "compile_top_n_table",
@@ -623,9 +626,120 @@ def compile_resource_table(
         [e.attribute for e in entries if e.kind == "attribute" and e.attribute is not None]
     )
     fact_keys = tuple(e.fact_key for e in entries if e.kind == "fact" and e.fact_key is not None)
+    if str(block.config.get("layout") or "rows") == "pairs":
+        return _resource_pairs_table(
+            context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys
+        )
     return _resource_rows_table(
         context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys,
     )
+
+
+def _resource_pairs_table(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    refs: Sequence[MetricRef],
+    *,
+    attributes: Sequence[str] = (),
+    fact_keys: Sequence[str] = (),
+) -> BlockOutput:
+    """One resource's columns turned into rows: a label beside its value.
+
+    `layout: "pairs"` exists for a section that expands **per resource**. A machine's own
+    page wants Size, Operating system, Private IP and Resource group stacked down the
+    page, not spread across a five-column table with a single row under it — which is
+    what the default layout produces there, and which reads as a table someone forgot
+    to finish.
+
+    Every cell is built by the same helpers the row layout uses, so a fact is a
+    `TextFactCell` and a metric is a `FigureCell` here exactly as it is there. Only the
+    arrangement differs; nothing about provenance does.
+
+    Narrowed to the **first** resolved resource. A per-resource expansion resolves to
+    exactly one, and refusing to guess for a scope that resolved to several is better
+    than silently profiling one of them: a caller wanting all of them wants the row
+    layout, which is the default.
+    """
+    table_cursor = cursor.child("nodes", 0)
+    matched = context.resources_for(block)
+    style = context.design.table_style_name
+    caption = caption_of(block)
+    messages = context.messages
+
+    if not matched:
+        return BlockOutput(
+            nodes=(empty_scope_table(table_cursor, style, caption, messages=messages),)
+        )
+
+    resource = matched[0]
+    rows: list[Row] = []
+    by_key = {f.key: f for f in context.view.facts_for(resource.resource_id)}
+
+    def add(label: str, key: str, build) -> None:
+        row_cursor = table_cursor.child("rows", len(rows))
+        value_cursor = row_cursor.child("cells", 1)
+        cell = build(value_cursor)
+        rows.append(
+            Row(
+                path=row_cursor.path,
+                key=key,
+                cells=(text_cell(row_cursor.child("cells", 0), label), cell),
+            )
+        )
+
+    # In the order the columns were **declared**, not grouped by kind. A machine's card
+    # reads Size, OS, Private IP, Resource group because the catalogue lists them that
+    # way; emitting every attribute and then every fact would put the resource group
+    # above the size no matter how the section was authored, and the author would have no
+    # way to change it.
+    for entry in read_column_entries(block, "columns"):
+        if entry.kind == "attribute" and entry.attribute is not None:
+            if entry.attribute not in attributes:
+                continue
+            text = resource_attribute_text(resource, entry.attribute)
+            add(
+                _attribute_column(entry.attribute, messages).header,
+                f"attr:{entry.attribute}",
+                lambda c, text=text: text_cell(c, text),
+            )
+        elif entry.kind == "fact" and entry.fact_key is not None:
+            fact = by_key.get(entry.fact_key)
+            if fact is None:
+                # A key the profile asked for and this resource does not answer
+                # contributes no row. The row layout drops the whole column for the same
+                # reason; here the equivalent is dropping the pair, not printing a label
+                # beside a blank.
+                continue
+            add(
+                _fact_header(entry.fact_key),
+                f"fact:{entry.fact_key}",
+                lambda c, fact=fact: TextFactCell(
+                    path=c.path, fact=c.child("fact", 0).text_fact(fact)
+                ),
+            )
+        elif entry.kind == "metric" and entry.metric_ref is not None:
+            value = resolve_stat(context.view, resource, entry.metric_ref)
+            add(
+                entry.metric_ref.label,
+                entry.metric_ref.key,
+                lambda c, value=value: (
+                    empty_cell(c) if value is None else _figure_cell(c, context, value)
+                ),
+            )
+
+    table = Table(
+        path=table_cursor.path,
+        style=style,
+        columns=(
+            Column(key="field", header=messages.text("doc.table.field")),
+            Column(key="value", header=messages.text("doc.table.value")),
+        ),
+        rows=tuple(rows),
+        caption=caption,
+    )
+    cursor.anchor_table(table_cursor.path)
+    return BlockOutput(nodes=(table,))
 
 
 def compile_top_n_table(
@@ -664,11 +778,11 @@ def compile_top_n_table(
 # metric_summary — the block that replaced the per-day dump
 # ---------------------------------------------------------------------------
 
-SUMMARY_STATISTICS: Final[tuple[str, ...]] = ("avg", "p95", "max")
+SUMMARY_STATISTICS: Final[tuple[str, ...]] = ("avg", "p95", "max", "min")
 """The statistics a summary row reports, in column order.
 
-`avg` and `max` are exact — the collector computes both over every sample. `p95` is an
-**estimate** from the folded sketch and only exists where the Metric_Catalog declares it,
+`avg`, `max` and `min` are exact — the collector computes all three over every sample.
+`p95` is an **estimate** from the folded sketch and only exists where the Metric_Catalog declares it,
 which today is `Percentage CPU` alone; its column is omitted entirely for a metric that
 declares none rather than printed as a row of blanks.
 
@@ -716,6 +830,22 @@ def compile_metric_summary(
     for ref in refs:
         if ref.name not in names:
             names.append(ref.name)
+
+    if str(block.config.get("orientation") or "resource_major") == "metric_major":
+        table_cursor = cursor.child("nodes", 0)
+        if not matched:
+            return BlockOutput(
+                nodes=(
+                    empty_scope_table(
+                        table_cursor, style, caption, messages=context.messages
+                    ),
+                )
+            )
+        table = _metric_major_table(
+            context, table_cursor, names, matched[0], style, caption
+        )
+        cursor.anchor_table(table_cursor.path)
+        return BlockOutput(nodes=(table,))
 
     nodes: list[Table] = []
     for ordinal, name in enumerate(names):
@@ -979,3 +1109,356 @@ def compile_capacity_vs_usage(
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))
+
+
+def _metric_major_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    metrics: Sequence[str],
+    resource: ResourceView,
+    style: str,
+    caption: str | None,
+) -> Table:
+    """One resource's metrics, one per row: the transpose of the fleet summary.
+
+    The fleet table answers "which machine is busiest" and needs a row per machine. A
+    per-machine section answers "what is this machine doing" and needs a row per metric —
+    same numbers, same figures, same ledger, turned ninety degrees. Emitting the
+    resource-major shape into a per-resource section produces one table per metric each
+    holding exactly one row, which is the defect this exists to fix.
+
+    The `Samples` column is `sample_count_of`, minted as a figure like every other number
+    here. It is the column that tells a reader whether a 0.18% average is over 89 231
+    samples or over three, and printing the first four numbers without it invites the
+    reader to trust all of them equally.
+    """
+    messages = context.messages
+
+    # A statistic earns its column only if some metric on this resource has it — the same
+    # rule the resource-major table applies across resources, applied across metrics.
+    present = tuple(
+        statistic
+        for statistic in SUMMARY_STATISTICS
+        if any(
+            context.view.stat(resource.resource_id, metric, statistic) is not None
+            for metric in metrics
+        )
+    )
+    with_samples = any(
+        context.view.sample_count_of(resource.resource_id, metric, statistic) is not None
+        for metric in metrics
+        for statistic in present
+    )
+
+    rows: list[Row] = []
+    for ordinal, metric in enumerate(metrics):
+        row_cursor = table_cursor.child("rows", ordinal)
+        cells: list[object] = [text_cell(row_cursor.child("cells", 0), metric)]
+        for statistic in present:
+            cell_cursor = row_cursor.child("cells", len(cells))
+            value = context.view.stat(resource.resource_id, metric, statistic)
+            cells.append(
+                empty_cell(cell_cursor)
+                if value is None
+                else _figure_cell(cell_cursor, context, value)
+            )
+        if with_samples:
+            # One sample count per row, not per statistic: the collector computes every
+            # window statistic of one metric over one set of samples, so four identical
+            # counts across the row would be four figures making one claim. The first
+            # present statistic's count is that claim.
+            cell_cursor = row_cursor.child("cells", len(cells))
+            samples = next(
+                (
+                    found
+                    for statistic in present
+                    if (
+                        found := context.view.sample_count_of(
+                            resource.resource_id, metric, statistic
+                        )
+                    )
+                    is not None
+                ),
+                None,
+            )
+            cells.append(
+                empty_cell(cell_cursor)
+                if samples is None
+                else _figure_cell(cell_cursor, context, samples)
+            )
+        rows.append(Row(path=row_cursor.path, key=metric, cells=tuple(cells)))
+
+    columns = (
+        Column(key="metric", header=messages.text("doc.table.metric")),
+        *(
+            Column(
+                key=f"{statistic}",
+                header=messages.text(f"doc.summary.{statistic}"),
+            )
+            for statistic in present
+        ),
+        *(
+            (Column(key="samples", header=messages.text("doc.summary.samples")),)
+            if with_samples
+            else ()
+        ),
+    )
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=columns,
+        rows=tuple(rows),
+        caption=caption or resource.name,
+    )
+
+
+# ---------------------------------------------------------------------------
+# inventory_summary — the estate reported as its own groupings
+# ---------------------------------------------------------------------------
+
+INVENTORY_GROUP_BY: Final[tuple[str, ...]] = (
+    "subscription",
+    "resource_group",
+    "region",
+    "resource_type",
+)
+"""The four groupings, mirrored in `compile/definition.py`'s `BLOCK_CONFIG` enum."""
+
+_INVENTORY_DIMENSION: Final[dict[str, str]] = {
+    "resource_group": "resource_group",
+    "region": "location",
+    "resource_type": "resource_type",
+}
+"""`group_by` value → the snapshot dimension it counts over.
+
+`region` is the reader's word and `location` is the snapshot's; the mapping is here so
+the catalogue can say `region` without the snapshot having to rename a field.
+"""
+
+assert set(INVENTORY_GROUP_BY) == set(
+    BLOCK_CONFIG["inventory_summary"]["enums"]["group_by"]
+), (
+    "the groupings this compiler handles and the ones the validator admits disagree: "
+    f"{sorted(set(INVENTORY_GROUP_BY) ^ set(BLOCK_CONFIG['inventory_summary']['enums']['group_by']))}"
+)
+assert set(_INVENTORY_DIMENSION) == set(INVENTORY_GROUP_BY) - {"subscription"}, (
+    "every grouping but `subscription` is a rollup and needs a snapshot dimension to "
+    f"count over: {sorted(set(INVENTORY_GROUP_BY) - {'subscription'} ^ set(_INVENTORY_DIMENSION))}"
+)
+assert all(
+    hasattr(ResourceView, dimension) for dimension in _INVENTORY_DIMENSION.values()
+), (
+    "a rollup dimension names no field on ResourceView, so `getattr` would silently "
+    "group every resource under the empty string and the table would come out empty: "
+    f"{sorted(d for d in _INVENTORY_DIMENSION.values() if not hasattr(ResourceView, d))}"
+)
+
+
+def compile_inventory_summary(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """The estate as its groupings, not as a list of its resources.
+
+    ## The defect this replaces
+
+    `azure_subscription` and `resource_groups` both expanded to a `resource_table` whose
+    columns were an attribute plus `{"kind": "fact", "fact_key": "count"}`. No resource
+    answers a fact called `count` — a `resource_table` emits one row **per resource** —
+    so a section meant to say "23 resources across 2 groups" printed 23 rows of resource
+    type with an empty column beside them. Nothing failed: an unanswered fact key
+    contributes no column and says so in the note, which is correct behaviour for a fact
+    that happens to be unanswered and useless for a count that was never a fact.
+
+    ## Two shapes, one block
+
+    * ``group_by: "subscription"`` — a **pairs** table: subscription id, total resources,
+      resource groups, regions. One row per property, two columns, no header row.
+    * ``group_by: "resource_group" | "region" | "resource_type"`` — one row per distinct
+      value of that dimension, ordered by resource count descending then name ascending,
+      with the count in the last column.
+
+    They are one block because they answer one question at two grains, and because the
+    counts on both sides come from the same place.
+
+    ## Why every count here is a figure
+
+    A count printed as text is a numeral the verifier finds in the document and cannot
+    match to anything, which is `unmatched_prose_token`. So each count is resolved
+    through `SnapshotView.cardinality`, which mints it as a `SnapshotValue` carrying its
+    own snapshot pointer and a `formula` naming the collection counted. A replay derives
+    the identical value from the identical snapshot, and the verifier re-resolves the
+    pointer rather than trusting the page.
+
+    That is also why this block never computes a count itself. `len(matched)` would be
+    just as correct and would produce a number with no provenance — the distinction the
+    whole document format exists to preserve.
+    """
+    group_by = str(block.config.get("group_by") or "")
+    if group_by not in INVENTORY_GROUP_BY:
+        raise CompileFailedError(
+            f"inventory_summary block {block.id!r} declares group_by={group_by!r}, "
+            f"which is not one of {', '.join(INVENTORY_GROUP_BY)}"
+        )
+
+    table_cursor = cursor.child("nodes", 0)
+    style = context.design.table_style_name
+    caption = caption_of(block)
+
+    if group_by == "subscription":
+        table = _subscription_pairs_table(context, table_cursor, style, caption)
+    else:
+        table = _dimension_rollup_table(
+            context, table_cursor, _INVENTORY_DIMENSION[group_by], style, caption
+        )
+    cursor.anchor_table(table_cursor.path)
+    return BlockOutput(nodes=(table,))
+
+
+def _subscription_pairs_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    style: str,
+    caption: str | None,
+) -> Table:
+    """Subscription id and the three estate-wide counts, one property per row.
+
+    The subscription id is plain text, not a figure: it is an identifier that happens to
+    contain digits, and minting it as a quantity would put a number in the ledger that no
+    arithmetic is true of. It reaches the reader through the static-text allowlist
+    instead — `verify/allowlist.py`'s null-context render keeps `subscription_id`
+    (it describes *where* the collection happened, not what was measured), so this row
+    renders identically there and its digits are admitted as chrome.
+    """
+    messages = context.messages
+    rows: list[Row] = []
+
+    subscription_id = context.view.subscription_id
+    if subscription_id:
+        row_cursor = table_cursor.child("rows", len(rows))
+        rows.append(
+            Row(
+                path=row_cursor.path,
+                key="subscription_id",
+                cells=(
+                    text_cell(
+                        row_cursor.child("cells", 0),
+                        messages.text("doc.inventory.subscription_id"),
+                    ),
+                    text_cell(row_cursor.child("cells", 1), subscription_id),
+                ),
+            )
+        )
+
+    for key, label_id, tokens in (
+        ("total_resources", "doc.inventory.total_resources", ("resources",)),
+        ("resource_groups", "doc.inventory.resource_groups", ("resource_group",)),
+        ("regions", "doc.inventory.regions", ("location",)),
+    ):
+        value = context.view.cardinality(*tokens)
+        if value is None:
+            continue
+        row_cursor = table_cursor.child("rows", len(rows))
+        rows.append(
+            Row(
+                path=row_cursor.path,
+                key=key,
+                cells=(
+                    text_cell(row_cursor.child("cells", 0), messages.text(label_id)),
+                    _figure_cell(row_cursor.child("cells", 1), context, value),
+                ),
+            )
+        )
+
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=(
+            Column(key="field", header=messages.text("doc.table.field")),
+            Column(key="value", header=messages.text("doc.table.value")),
+        ),
+        rows=tuple(rows),
+        caption=caption,
+    )
+
+
+def _dimension_rollup_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    dimension: str,
+    style: str,
+    caption: str | None,
+) -> Table:
+    """One row per distinct value of `dimension`, with its resource count.
+
+    Ordered by count descending, then by name ascending — the artifact's "ordered by
+    resource count" with a total order rather than a partial one, so two groups holding
+    four resources each land in the same order on every replay.
+
+    A resource group also carries its region, which is the estate's own second dimension
+    and the column the reader needs to tell `rg-app-sea` from `rg-app-idn`. A group
+    spanning regions gets both, comma-joined, rather than the first one found — a group
+    is not required to be single-region and silently reporting one of two would be a
+    wrong fact rather than a missing one.
+    """
+    messages = context.messages
+    resources = context.view.resources
+
+    members: dict[str, list[ResourceView]] = {}
+    for resource in resources:
+        key = getattr(resource, dimension, "")
+        if key:
+            members.setdefault(key, []).append(resource)
+
+    if not members:
+        return empty_scope_table(table_cursor, style, caption, messages=messages)
+
+    counted: list[tuple[str, SnapshotValue | None, list[ResourceView]]] = [
+        (name, context.view.cardinality(dimension, "by_name", name), group)
+        for name, group in members.items()
+    ]
+    counted.sort(key=lambda entry: (-len(entry[2]), entry[0]))
+
+    with_region = dimension == "resource_group"
+    rows: list[Row] = []
+    for ordinal, (name, value, group) in enumerate(counted[:MAX_TABLE_ROWS]):
+        row_cursor = table_cursor.child("rows", ordinal)
+        cells: list[object] = [text_cell(row_cursor.child("cells", 0), name)]
+        if with_region:
+            regions = ", ".join(sorted({r.location for r in group if r.location}))
+            cells.append(text_cell(row_cursor.child("cells", len(cells)), regions))
+        count_cursor = row_cursor.child("cells", len(cells))
+        cells.append(
+            empty_cell(count_cursor)
+            if value is None
+            else _figure_cell(count_cursor, context, value)
+        )
+        rows.append(Row(path=row_cursor.path, key=name, cells=tuple(cells)))
+
+    truncation = omitted_row(
+        table_cursor.child("rows", len(rows)),
+        context.view,
+        len(rows),
+        len(counted),
+        messages=messages,
+        total_tokens=(dimension,),
+        cells=3 if with_region else 2,
+    )
+    if truncation is not None:
+        rows.append(truncation)
+
+    columns = (
+        Column(key="name", header=messages.text("doc.inventory.name")),
+        *(
+            (Column(key="region", header=messages.text("doc.inventory.region")),)
+            if with_region
+            else ()
+        ),
+        Column(key="count", header=messages.text("doc.inventory.resources")),
+    )
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=columns,
+        rows=tuple(rows),
+        caption=caption,
+    )

@@ -207,6 +207,10 @@ const CONFIG_DEFAULTS: Readonly<Record<string, unknown>> = {
   run_b: "",
   level: 2,
   text: "",
+  // Required *and* enum-constrained — the `?? ""` fallback below would generate a
+  // starting state the Template_Validator rejects, which is a generator defect that
+  // reads as a property failure. Mirrors `composer.ts`'s own default.
+  group_by: "subscription",
 }
 
 function configSchemaFor(type: Exclude<BlockType, "row">): {

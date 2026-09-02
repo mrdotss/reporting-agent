@@ -188,9 +188,9 @@ only in the git-ignored **`.env`**.
 
 ## What a green suite does not prove
 
-Fourteen defects reached production against a suite of ~4900 agent and ~3300 web
+Fifteen defects reached production against a suite of ~4900 agent and ~3300 web
 tests. Not one was in code the tests ignored — every one was in code they covered
-heavily. They survived because each test asserted **one half of a contract**. Eight
+heavily. They survived because each test asserted **one half of a contract**. Nine
 patterns, each of which has now cost a live run:
 
 **A round trip is not two halves.** `collect/archive.py` serialized a `Decimal` to
@@ -298,6 +298,20 @@ shape reappeared in the revision row: every fixture supplied a note, so
 schema_version 3 derives the revision from a run count the note is *always* empty —
 every delivered document carried a value cell reading " (Mayer Reflino Sitorus)", a
 parenthetical qualifying nothing.
+
+**A reader of one schema version is a reader of none.** `report_pipeline.py` resolved
+`historical_trend` blocks by walking `definition["blocks"]` — the v2 shape. Every
+profile the wizard writes is v3 and carries `sections`, so the walk returned the empty
+set, no prior run was ever selected, and every trend printed "No prior verified period
+is available for this trend." against a database holding eleven passing July runs.
+Nothing raised, no gate fired, and no test failed: an empty trend is a state the block
+is *supposed* to be able to reach, so the defect's only symptom was a correct-looking
+report with an empty section. It survived because the walker was a **second reading**
+of the definition, written beside the compiler rather than inside it. → When one thing
+must be read twice, the second reader belongs in the module that owns the rules and
+calls the same helpers the first one does — and the guard is not "the second reader
+returns something", it is "the second reader and the real expansion agree", which is
+the only assertion the mutant fails.
 
 The through-line: **a test that cannot fail for the reason the code can break is not
 a test.** Mutation-check anything load-bearing — reintroduce the defect and watch it

@@ -290,6 +290,41 @@ table.rpt-table td {{
   padding-right: 0;
 }}
 
+/* A body table whose first column is keyed `field` is a **profile**, not a data table:
+   the subscription's own id and counts, or one machine's size, OS and resource group.
+   `ReportA.dc.html` sets those with a weighted key column at 32% and the value inked
+   beside it, which is the same treatment the document-control page's pairs get — the
+   two are the same object at different places in the document.
+
+   Selected on `data-column-key` rather than on a class, because the class would have to
+   come from the AST and the AST deliberately does not carry presentation. The emitter
+   already writes each cell's column key (`render/html.py`), which is the table's own
+   vocabulary, and `field`/`value` is what `compile/blocks/tables.py`'s two pairs
+   builders name their columns. A plain attribute selector, not `:has()` — WeasyPrint's
+   support for that is untested here and this renders in a container this host cannot
+   run. */
+table.rpt-table th[data-column-key="field"],
+table.rpt-table td[data-column-key="field"] {{
+  width: 32%;
+  background: transparent;
+  font-family: var(--heading-face);
+  font-weight: 700;
+  color: var(--ink);
+  text-align: left;
+  letter-spacing: 0;
+  text-transform: none;
+}}
+table.rpt-table td[data-column-key="value"] {{
+  color: var(--ink);
+}}
+
+/* A rollup's count column is a quantity and reads right-aligned, like every other
+   figure column. `ReportA.dc.html` sets `Resources` that way beside the group name. */
+table.rpt-table th[data-column-key="count"],
+table.rpt-table td[data-column-key="count"] {{
+  text-align: right;
+}}
+
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
 .rpt-signature {{ height: 13mm; min-width: 40mm; }}
 
