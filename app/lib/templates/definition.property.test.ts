@@ -440,6 +440,18 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
     // length-matching path is covered directly in `test_blocks.py` and this
     // file's own compile-path tests instead, not by the generator.
     supplied_rows: () => [],
+    // inventory_summary — which grouping the block reports the estate at. Cycled
+    // rather than pinned, so the generator exercises the pairs shape
+    // (`subscription`) and the rollup shape (the other three) alike.
+    group_by: (seed) =>
+      ["subscription", "resource_group", "region", "resource_type"][seed % 4],
+    // resource_table — `rows` stacks a resource's columns down the page for a
+    // section that expands per machine; `pairs` is the other declared value.
+    layout: (seed) => (seed % 2 === 0 ? "rows" : "pairs"),
+    // metric_summary — `resource_major` is the fleet table (a row per machine),
+    // `metric_major` its transpose for one machine's own page.
+    orientation: (seed) =>
+      seed % 2 === 0 ? "resource_major" : "metric_major",
   }
 
 type BlockConfigSchemaShape = {

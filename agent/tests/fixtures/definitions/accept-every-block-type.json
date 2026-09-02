@@ -87,6 +87,13 @@
     },
     {
       "config": {
+        "group_by": "resource_group"
+      },
+      "id": "b-inventory-summary",
+      "type": "inventory_summary"
+    },
+    {
+      "config": {
         "metrics": [
           {
             "metric": "Percentage CPU",

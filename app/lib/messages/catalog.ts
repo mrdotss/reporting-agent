@@ -502,6 +502,42 @@ export const MESSAGE_CATALOG = {
     en: "Peak at",
     id: "Puncak pada",
   },
+  "doc.summary.min": {
+    en: "Minimum",
+    id: "Terendah",
+  },
+  "doc.summary.samples": {
+    en: "Samples",
+    id: "Sampel",
+  },
+  "doc.inventory.subscription_id": {
+    en: "Subscription ID",
+    id: "ID Langganan",
+  },
+  "doc.inventory.total_resources": {
+    en: "Total Resources",
+    id: "Total Sumber Daya",
+  },
+  "doc.inventory.resource_groups": {
+    en: "Resource Groups",
+    id: "Grup Sumber Daya",
+  },
+  "doc.inventory.regions": {
+    en: "Regions",
+    id: "Wilayah",
+  },
+  "doc.inventory.name": {
+    en: "Name",
+    id: "Nama",
+  },
+  "doc.inventory.region": {
+    en: "Region",
+    id: "Wilayah",
+  },
+  "doc.inventory.resources": {
+    en: "Resources",
+    id: "Sumber Daya",
+  },
   "doc.table.basis": {
     en: "Basis",
     id: "Dasar",

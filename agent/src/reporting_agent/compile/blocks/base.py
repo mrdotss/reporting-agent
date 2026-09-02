@@ -936,7 +936,14 @@ def _notice_table(
 
 
 def omitted_row(
-    cursor: BlockCursor, view: SnapshotView, shown: int, matched: int, *, messages: Messages
+    cursor: BlockCursor,
+    view: SnapshotView,
+    shown: int,
+    matched: int,
+    *,
+    messages: Messages,
+    total_tokens: Sequence[str] = ("resources",),
+    cells: int = 2,
 ) -> Row | None:
     """The final row of a truncated table, stating its own truncation (Req 16.2).
 
@@ -957,25 +964,39 @@ def omitted_row(
     allowlistable. It may not carry a **quantity the compiler computed**, because nothing can
     vouch for one.
 
-    So the row says plainly that the table is capped, and the one number it carries is the
-    snapshot's own resource cardinality as a **figure**. A reader sees a capped table beside
-    the size of the fleet, which is the fact the truncation is about.
+    So the row says plainly that the table is capped, and the one number it carries is a
+    snapshot **cardinality**, as a figure. A reader sees a capped table beside the size of
+    the collection it was capped from, which is the fact the truncation is about.
+
+    ## `total_tokens` — which cardinality, and why it is a parameter
+
+    A resource table's truncation is about the fleet, so the default is the resource count.
+    An `inventory_summary` rollup's rows are resource *groups*, and telling a reader that
+    500 of 23 resources are listed would be a true number answering the wrong question. The
+    caller names the collection its own rows came from, and the cardinality is still read
+    from the snapshot rather than computed here.
+
+    `cells` widens the row to the table's own column count so the trailing figure stays in
+    the last column: a three-column rollup would otherwise put the count under the region.
     """
     if matched <= shown:
         return None
 
-    total = view.cardinality("resources")
+    total = view.cardinality(*total_tokens)
     if total is None:  # pragma: no cover - the walk always indexes it
         return None
 
-    figure_cursor = cursor.child("cells", 1).child("figure", 0)
+    assert cells >= 2, "an omitted row carries a label and a figure at minimum"
+    last = cells - 1
+    figure_cursor = cursor.child("cells", last).child("figure", 0)
     figure = figure_cursor.figure(total)
     return Row(
         path=cursor.path,
         key="omitted",
         cells=(
             text_cell(cursor.child("cells", 0), messages.text(OMITTED_ROW_LABEL)),
-            FigureCell(path=cursor.child("cells", 1).path, figure=figure),
+            *(empty_cell(cursor.child("cells", n)) for n in range(1, last)),
+            FigureCell(path=cursor.child("cells", last).path, figure=figure),
         ),
     )
 

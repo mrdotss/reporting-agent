@@ -1858,8 +1858,10 @@ that a stuck row does not page me at three in the morning.
    100 rows per request.
 8. THE Reaper SHALL be the only writer of the `TIMEOUT` code, because a timed-out run's
    container may already be gone.
-9. WHEN the Reaper completes a request, THE Reaper SHALL return a response within 10 seconds of
-   receiving that request and SHALL await no run's completion.
+9. WHEN the Reaper completes a request, THE Reaper SHALL return a response within 35 seconds of
+   receiving that request and SHALL await no run's completion. Invocations are started
+   concurrently, so a request lasts as long as its slowest invocation and no longer, whatever
+   the row count; criterion 39.12's 60-second interval accommodates that with margin.
 10. WHEN the Reaper claims a row whose `connected_subscriptions` row carries `scope_verified`
     false or carries a `secret_expires_at` at or before the current instant, THE Reaper SHALL set
     that run to `status` `failed` with `error_code` `SCOPE_UNVERIFIED` for the unverified case and
@@ -1870,10 +1872,18 @@ that a stuck row does not page me at three in the morning.
 12. WHILE the Web_App is deployed, THE Web_App SHALL schedule a Reaper request at an interval of
     at most 60 seconds, so that the 900-second `queued` budget of criterion 36.9 tolerates at
     least 14 consecutive missed requests before a queued run is failed as `TIMEOUT`.
-13. IF an invocation fails to start or returns no response stream within 10 seconds, THEN THE
+13. IF an invocation fails to start or returns no response stream within 30 seconds, THEN THE
     Reaper SHALL record that failure in a log line excluding every secret, SHALL leave that row
     at `claimed` for the deadline sweep, and SHALL continue initiating the invocations for the
     remaining claimed rows.
+
+    Thirty rather than the ten this criterion first named, because ten was below the floor. A
+    cold Agent_Runtime start — pulling the arm64 image and starting the container — measured
+    10.3, 12.2, 12.4 and 13.3 seconds across four consecutive deployments; warm invocations
+    measured under 1.5. The budget expiring does not slow a run, it abandons one: the stream is
+    never consumed, the row is left `claimed` by this criterion, and the deadline sweep then
+    fails it as `TIMEOUT` — a run that never reached the agent, reported to the consultant as a
+    phase that exceeded its deadline.
 
 #### Requirement 40: The SSE relay is cosmetic
 

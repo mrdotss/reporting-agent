@@ -122,6 +122,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "historical_trend",
     "blank_rows_table",
     "metric_summary",
+    "inventory_summary",
 )
 # --- END BLOCK TYPES ---
 
@@ -162,8 +163,8 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     },
     "resource_table": {
         "required": ["columns"],
-        "optional": ["caption", "show_fidelity"],
-        "enums": {},
+        "optional": ["caption", "show_fidelity", "layout"],
+        "enums": {"layout": ["rows", "pairs"]},
     },
     "top_n_table": {
         "required": ["columns", "order_by"],
@@ -178,8 +179,15 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     },
     "metric_summary": {
         "required": ["metrics"],
+        "optional": ["caption", "orientation"],
+        "enums": {"orientation": ["resource_major", "metric_major"]},
+    },
+    "inventory_summary": {
+        "required": ["group_by"],
         "optional": ["caption"],
-        "enums": {},
+        "enums": {
+            "group_by": ["subscription", "resource_group", "region", "resource_type"]
+        },
     },
     "distribution_chart": {
         "required": ["metrics"],

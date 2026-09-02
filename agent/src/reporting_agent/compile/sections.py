@@ -46,6 +46,7 @@ __all__ = [
     "SectionDrift",
     "compute_section_drift",
     "expand_sections",
+    "historical_trend_keys",
 ]
 
 # The canonical group ordering.  Every section declares one of these.
@@ -100,6 +101,21 @@ def _build_scope_override(section: Mapping[str, object]) -> ScopeRules | None:
     if selection is None:
         return None
     return scope_rules_from_plain(selection, at=f"section {section.get('id', '?')}.selection")
+
+
+def _presentation_of(section: Mapping[str, object]) -> str:
+    """A section's declared presentation, defaulting to ``chart_and_table``.
+
+    Named rather than inlined because two callers resolve it — `_expand_one_section`,
+    which decides which blocks to emit, and `historical_trend_keys`, which decides which
+    prior runs to fetch for them. Those two must agree: a section presented `table_only`
+    emits no `historical_trend` block, and fetching its candidates would load snapshots
+    for a block that is never compiled.
+    """
+    presentation = section.get("presentation", "chart_and_table")
+    if not isinstance(presentation, str) or not presentation:
+        return "chart_and_table"
+    return presentation
 
 
 def _should_emit(
@@ -269,49 +285,96 @@ def _expand_one_section(
     For ``per: "section"`` entries: one BlockSpec with id ``<section_id>__<exp_index>``.
     For ``per: "resource"`` entries: one BlockSpec per resolved resource, with id
     ``<section_id>__<exp_index>__<resource_ordinal>``.
+
+    ## Consecutive per-resource expansions are emitted resource-major
+
+    A run of adjacent ``per: "resource"`` expansions emits **every block of one resource
+    before moving to the next**, not every resource of one block. `vm_utilization`
+    expands to a heading, a detail table, a chart and a summary per machine; block-major
+    order would put all three headings together, then all three detail tables, then all
+    three charts — a section that lists its machines' names, then their sizes, then their
+    graphs, with nothing connecting a graph to the name four pages above it.
+
+    This changes nothing for a section with a single per-resource expansion, where the
+    two orders coincide — which is every section that shipped before `vm_utilization`
+    grew its per-machine shape, so no existing block id or position moves.
+
+    Block **ids** keep the ``<expansion_index>__<resource_ordinal>`` scheme regardless of
+    emission order: an id names which expansion and which resource a block came from, and
+    tying it to document position instead would renumber every block whenever a section
+    gained one.
     """
     section_id: str = section.get("id", "")  # type: ignore[assignment]
     if not isinstance(section_id, str) or not section_id:
         raise CompileFailedError("a section carries no usable id")
 
     scope_override = _build_scope_override(section)
-    presentation: str = section.get("presentation", "chart_and_table")  # type: ignore[assignment]
-    if not isinstance(presentation, str):
-        presentation = "chart_and_table"
+    presentation = _presentation_of(section)
 
     result: list[BlockSpec] = []
     expansion_index = 0
 
+    # The emitted expansions, paired with the index each one keeps in its block ids.
+    #
+    # An expansion filtered out by presentation consumes **no** index — the numbering is
+    # over what was emitted, not over what the catalogue declared. That is what shipped,
+    # and it is what every stored ledger's figure paths are rooted at, so changing it
+    # would move the block ids of already-delivered reports and fail their replay on a
+    # document nothing is wrong with. The numbering is separated from the emission loop
+    # here only so a run of per-resource expansions can be emitted resource-major below;
+    # which index each one gets is unchanged.
+    emitted: list[tuple[int, SectionExpansionBlock]] = []
     for expansion in entry.expands_to:
-        if not _should_emit(expansion, presentation):
-            continue
+        if _should_emit(expansion, presentation):
+            emitted.append((expansion_index, expansion))
+            expansion_index += 1
 
-        # Build the config from the catalogue's declared config
-        config: dict[str, object] = dict(expansion.config)
-        if expansion.block == "heading" and expansion.per == "section":
-            _resolve_heading_text(expansion, entry, config, messages)
-        _thread_metric_config(expansion, entry, section, config)
+    position = 0
+    while position < len(emitted):
+        index, expansion = emitted[position]
 
         if expansion.per == "section":
-            block_id = f"{section_id}__{expansion_index}"
+            config: dict[str, object] = dict(expansion.config)
+            if expansion.block == "heading":
+                _resolve_heading_text(expansion, entry, config, messages)
+            _thread_metric_config(expansion, entry, section, config)
             result.append(BlockSpec(
-                id=block_id,
+                id=f"{section_id}__{index}",
                 type=expansion.block,
                 config=config,
                 scope_override=scope_override,
             ))
-        elif expansion.per == "resource":
-            if expansion.block == "heading":
-                _assert_resource_heading_untitled(entry, config)
+            position += 1
+            continue
 
-            # Resolve to get the deterministic resource order
-            if scope_override is not None:
-                resolved = resolve(scope_override, view)
-            else:
-                resolved = view.resources
+        if expansion.per != "resource":
+            raise CompileFailedError(
+                f"section {section_id!r}: expansion block declares unknown per={expansion.per!r}"
+            )
 
-            for resource_ordinal, resource in enumerate(resolved):
-                block_id = f"{section_id}__{expansion_index}__{resource_ordinal}"
+        # The whole adjacent run of per-resource expansions, emitted resource-major.
+        run: list[tuple[int, SectionExpansionBlock]] = []
+        while position < len(emitted) and emitted[position][1].per == "resource":
+            run.append(emitted[position])
+            position += 1
+
+        run_configs: list[tuple[int, SectionExpansionBlock, dict[str, object]]] = []
+        for run_index, run_expansion in run:
+            run_config: dict[str, object] = dict(run_expansion.config)
+            if run_expansion.block == "heading":
+                _assert_resource_heading_untitled(entry, run_config)
+            _thread_metric_config(run_expansion, entry, section, run_config)
+            run_configs.append((run_index, run_expansion, run_config))
+
+        # Resolve to get the deterministic resource order
+        if scope_override is not None:
+            resolved = resolve(scope_override, view)
+        else:
+            resolved = view.resources
+
+        for resource_ordinal, resource in enumerate(resolved):
+            for index, expansion, config in run_configs:
+                block_id = f"{section_id}__{index}__{resource_ordinal}"
                 # Carry the section's selection as scope_override, plus the resource this
                 # block is *for*, so `BlockContext.resources_for` can narrow the section's
                 # resolution to it. Without that narrowing every block of the expansion
@@ -337,12 +400,6 @@ def _expand_one_section(
                     config=per_resource_config,
                     scope_override=scope_override,
                 ))
-        else:
-            raise CompileFailedError(
-                f"section {section_id!r}: expansion block declares unknown per={expansion.per!r}"
-            )
-
-        expansion_index += 1
 
     return tuple(result)
 
@@ -441,6 +498,74 @@ def compute_section_drift(
         drifts.append(SectionDrift(section_id=section_id, added=added, removed=removed))
 
     return tuple(drifts)
+
+
+def historical_trend_keys(
+    definition: Mapping[str, object],
+    *,
+    catalogue: LoadedSectionCatalogue,
+) -> set[tuple[str, str, int]]:
+    """The distinct ``(metric, statistic, lookback)`` keys a v3 definition's sections
+    will compile into ``historical_trend`` blocks.
+
+    **Pure**, and deliberately **view-free**: a `historical_trend` expansion is declared
+    `per: "section"`, so no resource resolution changes which keys exist. That is what
+    lets the pipeline call this *before* it has a snapshot view — it needs the keys in
+    order to fetch the prior runs whose values the compile will then plot.
+
+    ## Why this lives beside `expand_sections` rather than in the pipeline
+
+    The pipeline's own walker read `definition["blocks"]` — the v2 shape — and a v3
+    definition carries `sections`, so it returned the empty set for every profile the
+    wizard writes. Nothing failed: the keys being empty means no candidate is ever
+    selected, and `historical_trend` then compiles the "no prior verified period"
+    statement, which is a sentence the block is *supposed* to be able to print. A
+    correct-looking report with an empty trend was the only symptom.
+
+    The repair is not a second walker that knows about sections; it is one function, in
+    the module that owns the expansion rules, calling the same `_should_emit` and
+    `_thread_metric_config` the expansion itself calls. A key this returns and a block
+    `expand_sections` emits cannot disagree about the catalogue's `trend_metric` or the
+    section's `lookback`, because neither reads those directly.
+    """
+    raw_sections = definition.get("sections")
+    if not isinstance(raw_sections, Sequence) or isinstance(raw_sections, str):
+        return set()
+
+    keys: set[tuple[str, str, int]] = set()
+    for section in raw_sections:
+        if not isinstance(section, Mapping):
+            continue
+        section_type = section.get("type")
+        if not isinstance(section_type, str) or not section_type:
+            continue
+        entry = catalogue.by_key(section_type)
+        if entry is None:
+            # Not this function's failure to report. `expand_sections` raises
+            # `CompileFailedError` on an unknown type a few moments later, with the
+            # section id in the message; refusing here would only move that same
+            # failure earlier and word it worse.
+            continue
+
+        presentation = _presentation_of(section)
+        for expansion in entry.expands_to:
+            if expansion.block != "historical_trend":
+                continue
+            if not _should_emit(expansion, presentation):
+                continue
+            config: dict[str, object] = dict(expansion.config)
+            _thread_metric_config(expansion, entry, section, config)
+            metric = config.get("metric")
+            statistic = config.get("statistic")
+            lookback = config.get("lookback")
+            if (
+                isinstance(metric, str)
+                and isinstance(statistic, str)
+                and isinstance(lookback, int)
+                and not isinstance(lookback, bool)
+            ):
+                keys.add((metric, statistic, lookback))
+    return keys
 
 
 def expand_sections(

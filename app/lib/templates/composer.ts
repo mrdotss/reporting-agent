@@ -144,6 +144,7 @@ export const BLOCK_TYPE_LABELS = {
   historical_trend: "Historical trend",
   blank_rows_table: "Blank rows table",
   metric_summary: "Metric summary",
+  inventory_summary: "Inventory summary",
 } as const satisfies Record<BlockType, string>
 
 /** The label for `type`, or the raw type for an undeclared one. */
@@ -176,6 +177,11 @@ const DEFAULT_CONFIG_VALUES: Readonly<Record<string, unknown>> = {
   run_b: "",
   level: 2,
   text: "",
+  // The only required field that is also enum-constrained, so the `?? ""` fallback
+  // below would produce a block the validator rejects the moment it is inserted.
+  // `subscription` is the whole-estate view, which is the one an author who has not
+  // chosen a grouping means.
+  group_by: "subscription",
 }
 
 function defaultConfigFor(

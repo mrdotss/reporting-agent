@@ -47,6 +47,7 @@ export const BLOCK_TYPES = [
   "historical_trend",
   "blank_rows_table",
   "metric_summary",
+  "inventory_summary",
 ] as const
 // --- END BLOCK TYPES ---
 
@@ -138,8 +139,8 @@ export const BLOCK_CONFIG = {
   // table shows per resource.
   resource_table: {
     required: ["columns"],
-    optional: ["caption", "show_fidelity"],
-    enums: {},
+    optional: ["caption", "show_fidelity", "layout"],
+    enums: { layout: ["rows", "pairs"] },
   },
 
   // The one entry design.md's cross-language-mirror example gives verbatim
@@ -171,8 +172,15 @@ export const BLOCK_CONFIG = {
   // thing to select is which metrics get a summary.
   metric_summary: {
     required: ["metrics"],
+    optional: ["caption", "orientation"],
+    enums: { orientation: ["resource_major", "metric_major"] },
+  },
+  inventory_summary: {
+    required: ["group_by"],
     optional: ["caption"],
-    enums: {},
+    enums: {
+      group_by: ["subscription", "resource_group", "region", "resource_type"],
+    },
   },
 
   // Same reasoning as `timeseries_chart` — Req 16.14 governs both chart block

@@ -109,7 +109,7 @@
         "headings": 1,
         "charts": 0,
         "tables": 1,
-        "figures": 0,
+        "figures": 3,
         "matches_zero_resources": false
       }
     },
@@ -192,7 +192,7 @@
       }
     },
     {
-      "name": "resource_groups (two resource_table expansions, no chart family), matched resources",
+      "name": "resource_groups (heading plus one inventory_summary, no chart family), matched resources",
       "catalogue_entry": "resource_groups",
       "section": {
         "type": "resource_groups",
@@ -209,11 +209,14 @@
       "scan_type_counts": {
         "microsoft.compute/virtualmachines": 10
       },
+      "scan_distinct_counts": {
+        "resource_group": 3
+      },
       "expected": {
         "headings": 1,
         "charts": 0,
         "tables": 1,
-        "figures": 0,
+        "figures": 3,
         "matches_zero_resources": false
       }
     },

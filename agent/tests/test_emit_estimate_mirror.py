@@ -148,16 +148,30 @@ def _snapshot_view_for(case: dict[str, Any]):
     corpus case's `scan_type_counts` declares, with every metric the section
     type's catalogue expansion actually declares as a real statistic on every
     resource — the honest common case the estimator itself assumes (see
-    `emit.ts`'s module docstring)."""
+    `emit.ts`'s module docstring).
+
+    `scan_distinct_counts` spreads those resources across that many resource
+    groups. It exists because `inventory_summary` reports the estate *as* its
+    groupings — one row and one figure per distinct resource group — and how many
+    groups a set of resources falls across is not derivable from a count per
+    resource type. The real scan records it (`report_scans.resource_groups`), the
+    estimator reads it, and this builder has to honour it or the two halves would
+    be counting rows of different tables.
+
+    Absent, it is one group: what every case did before the field existed, so no
+    existing case's counts move."""
     catalogue = _catalogue_for(case)
     metrics = _metric_refs_for(catalogue, case["section"]["type"])
+    distinct = case.get("scan_distinct_counts") or {}
+    group_count = max(1, int(distinct.get("resource_group", 1)))
 
     resources = []
     ordinal = 0
     for resource_type, count in case["scan_type_counts"].items():
         for _ in range(count):
             ordinal += 1
-            rid = f"/subscriptions/sub-1/resourceGroups/rg-prod/providers/{resource_type}/res-{ordinal}"
+            group = f"rg-prod-{ordinal % group_count}" if group_count > 1 else "rg-prod"
+            rid = f"/subscriptions/sub-1/resourceGroups/{group}/providers/{resource_type}/res-{ordinal}"
             statistics = tuple(
                 exact(metric, statistic, "50.00")
                 for metric, statistic in metrics
@@ -174,6 +188,7 @@ def _snapshot_view_for(case: dict[str, Any]):
                         # stores it — this is what makes the case-folding case
                         # in the corpus meaningful on this side too.
                         resource_type=resource_type,
+                        resource_group=group,
                     ),
                     sku=SkuCapacity(
                         name="Standard_D2s_v5",

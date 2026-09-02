@@ -311,12 +311,44 @@ def unit_suffix(unit: str, *, at: str) -> str:
     )
 
 
-def display_scale(number_format: NumberFormat, catalog_scale: int, *, at: str) -> int:
+def display_scale(
+    number_format: NumberFormat, catalog_scale: int, *, at: str, unit: str = ""
+) -> int:
     """`max(number_format.decimal_places, catalog_scale)` (Req 18.4).
 
     The catalog scale is a **floor**. A template asking for fewer digits than the
     measurement carries is ignored; asking for more adds zeros.
+
+    ## A count takes the catalog scale alone, not the template's floor
+
+    A template's `decimal_places` says how precisely to show a *measurement*: CPU at
+    `0.18` or at `0.1800` are two presentations of one reading, and the wider one is a
+    legitimate preference. A cardinality is not a reading. There is no such thing as
+    `23.00` resources or `2.00` resource groups — those digits are not precision, they
+    are noise where a whole number belongs, and an estate of `23.00` resources reads as
+    though something was measured.
+
+    So for `count` the template's preference does not apply and the value's own scale
+    stands. It is **not** pinned to zero: this function must not cut into the catalog
+    scale for any unit, and a `count` carrying a scale of 1 must still format at 1 or
+    `format_figure` would stop being the total, precision-preserving function
+    `test_format_property.py` holds it to. Every cardinality
+    `SnapshotView` mints declares scale 0, so in practice this is what makes a count
+    read as `23`; the generality is what keeps the rule honest.
     """
+    if unit == "count":
+        if (
+            isinstance(catalog_scale, bool)
+            or not isinstance(catalog_scale, int)
+            or not MIN_SCALE <= catalog_scale <= MAX_SCALE
+        ):
+            raise CompileFailedError(
+                f"{at}: the Metric_Catalog declares no usable fractional-digit count for "
+                f"this value (got {catalog_scale!r}). No default scale is applied — "
+                f"publishing a figure at a guessed precision is a claim about how well "
+                f"something was measured, made on the basis of nothing."
+            )
+        return catalog_scale
     if (
         isinstance(catalog_scale, bool)
         or not isinstance(catalog_scale, int)
@@ -481,7 +513,7 @@ def format_figure(
     """
     at = f"figure {path!r}"
 
-    scale = display_scale(number_format, catalog_scale, at=at)
+    scale = display_scale(number_format, catalog_scale, at=at, unit=unit)
     suffix = unit_suffix(unit, at=at)
     quantized = _quantize(_as_decimal(value, at=at), scale, at=at)
     rendered = f"{_render_digits(quantized, scale, number_format)}{suffix}"
