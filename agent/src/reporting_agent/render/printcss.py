@@ -69,34 +69,23 @@ def stylesheet(preset: str, *, page_size: str = "A4") -> str:
 }}
 
 /* --- the page ------------------------------------------------------------
-   Furniture from `design/proposed/PdfPage.dc.html`: a running head over a
-   hairline, a footer under one, both in the muted ink at the small size and both
-   set in the heading face, so they read as apparatus rather than as text. */
+   `design/proposed/ReportA.dc.html` puts a running head over a hairline at the top of
+   every page and the page number alone at the bottom right, in the figure face.
+   Nothing else is furniture. */
 @page {{
   size: {size};
   margin: 17mm 16mm 14mm 16mm;
 
   @top-left {{
-    content: string(section-title);
+    content: string(running-head);
     font-family: var(--heading-face);
-    font-size: {small - 1.5}pt;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: {small - 1}pt;
+    font-weight: 700;
     color: var(--muted);
     vertical-align: bottom;
-    border-bottom: 0.4pt solid var(--rule);
+    border-bottom: 0.5pt solid var(--rule);
     width: 100%;
-    padding-bottom: 3pt;
-  }}
-  @bottom-left {{
-    content: string(confidentiality);
-    font-family: var(--heading-face);
-    font-size: {small - 1.5}pt;
-    color: var(--muted);
-    vertical-align: top;
-    border-top: 0.4pt solid var(--rule);
-    width: 100%;
-    padding-top: 3pt;
+    padding-bottom: 4pt;
   }}
   @bottom-right {{
     content: counter(page);
@@ -104,169 +93,155 @@ def stylesheet(preset: str, *, page_size: str = "A4") -> str:
     font-size: {small - 1.5}pt;
     color: var(--muted);
     vertical-align: top;
-    padding-top: 3pt;
+    padding-top: 6pt;
   }}
 }}
 
-/* The cover carries no apparatus: there is no section yet, and a page number on a
-   cover is furniture nobody reads. */
+/* The cover carries no apparatus — there is no section yet, and a page number on a
+   cover is furniture nobody reads. It carries the accent band instead. */
 @page :first {{
   @top-left {{ content: none; border-bottom: none; }}
-  @bottom-left {{ content: none; border-top: none; }}
   @bottom-right {{ content: none; }}
+  border-top: 4pt solid var(--accent);
 }}
 
 body {{
   margin: 0;
   font-family: var(--body-face);
   font-size: {spec.body_pt}pt;
-  line-height: {spec.line_spacing};
+  line-height: 1.65;
   color: var(--ink);
 }}
 
+p {{ margin: 0 0 1em; }}
+
 /* --- headings ------------------------------------------------------------
-   A section heading is followed by a short accent bar — the one piece of ornament
-   the design uses, and what makes a section start read as a start. Drawn with
-   `::after` rather than a border so it is a fixed length rather than the width of
-   the words above it. */
+   The section's own name becomes the running head, captured with `string-set` so the
+   words stay the emitter's. The short accent rule under a heading is the design's one
+   piece of ornament and what makes a section start read as a start. */
 h1, h2, h3, h4 {{
   font-family: var(--heading-face);
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 700;
   letter-spacing: -0.01em;
   break-after: avoid;
-  margin: 1.5em 0 0.15em;
-  string-set: section-title content();
+  margin: 1.6em 0 0.15em;
+  string-set: running-head content();
 }}
 h1 {{ font-size: {h1}pt; }}
 h2 {{ font-size: {h2}pt; }}
-h3 {{ font-size: {h3}pt; text-transform: {caps}; }}
-h4 {{ font-size: {h4}pt; text-transform: {caps}; }}
+h3 {{ font-size: {h3}pt; text-transform: {caps}; margin: 1.3em 0 0.5em; }}
+h4 {{ font-size: {h4}pt; text-transform: {caps}; margin: 1.2em 0 0.4em; }}
 
 h1::after, h2::after {{
   content: "";
   display: block;
-  width: 11mm;
+  width: 9mm;
   height: 1.6pt;
   background: var(--accent);
-  margin: 5pt 0 9pt;
+  margin: 6pt 0 10pt;
 }}
-
-p {{ margin: 0 0 1em; }}
 
 /* --- front matter --------------------------------------------------------- */
 
 [data-style="Cover Title"] {{
   font-family: var(--heading-face);
   font-size: {spec.title_pt}pt;
-  color: var(--accent);
+  color: var(--ink);
   font-weight: 700;
   letter-spacing: -0.02em;
-  line-height: 1.1;
+  line-height: 1.2;
   margin: 0 0 0.15em;
-}}
-[data-style="Cover Title"]::after {{
-  content: "";
-  display: block;
-  width: 20mm;
-  height: 2pt;
-  background: var(--accent);
-  margin: 7pt 0 0;
 }}
 [data-style="Cover Meta"] {{
   font-family: var(--heading-face);
-  font-size: {spec.subtitle_pt}pt;
+  font-size: {small}pt;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--muted);
-  margin: 8pt 0 22mm;
+  margin: 10pt 0 20mm;
 }}
 [data-style="Document Control"] {{
   font-family: var(--heading-face);
   font-size: {h3}pt;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ink);
   margin: 1.6em 0 0.5em;
 }}
 [data-style="Title"] {{
   font-family: var(--heading-face);
   font-size: {h2}pt;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--ink);
   margin: 0 0 0.6em;
 }}
 
-/* The confidentiality notice is the footer's left-hand text as well as a line of
-   its own — captured from the document rather than restated here, so the words
-   stay the emitter's. */
-.rpt-note {{
-  color: var(--muted);
-  font-size: {small}pt;
-  string-set: confidentiality content();
-}}
-
-.rpt-pairs {{
-  border-collapse: collapse;
-  margin: 0 0 1.2em;
-  font-size: {spec.body_pt - 0.5}pt;
-}}
-.rpt-pairs th {{
-  text-align: left;
-  font-family: var(--heading-face);
-  font-weight: 400;
-  font-size: {small}pt;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--muted);
-  padding: 3pt 20pt 3pt 0;
-  white-space: nowrap;
-  vertical-align: baseline;
-}}
-.rpt-pairs td {{ padding: 3pt 0; vertical-align: baseline; }}
+.rpt-note {{ color: var(--muted); font-size: {small}pt; }}
 
 /* --- tables ---------------------------------------------------------------
-   Header rules in the accent at 1.4pt, row rules hairline. That weight difference
-   separates the head from the body without a box around either. */
+   Boxed cells with a shaded header, from `ReportA.dc.html`'s `table.d`. Full rules
+   rather than horizontal hairlines: these are dense inventory grids read down a column
+   as often as across a row, and a reader tracking `Private IP` down twenty machines
+   needs that column to have an edge. */
+.rpt-pairs,
 .rpt-grid,
 table.rpt-table {{
   width: 100%;
   border-collapse: collapse;
-  margin: 0.5em 0 0.3em;
-  font-size: {small + 1}pt;
+  margin: 0.4em 0 0.9em;
+  font-size: {small}pt;
 }}
 thead {{ display: table-header-group; }}
 tr {{ break-inside: avoid; }}
 
 .rpt-grid th,
 table.rpt-table th {{
+  background: var(--band);
+  border: 0.5pt solid var(--rule);
   font-family: var(--heading-face);
-  font-size: {small - 1}pt;
+  font-size: {small - 0.5}pt;
   font-weight: 700;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--ink);
   text-align: left;
-  padding: 4pt 7pt 4pt 0;
-  border-bottom: 1.4pt solid var(--accent);
+  padding: 3.5pt 5pt;
+  vertical-align: bottom;
   overflow-wrap: normal;
   hyphens: none;
 }}
 .rpt-grid td,
 table.rpt-table td {{
-  padding: 4.5pt 7pt 4.5pt 0;
-  border-bottom: 0.5pt solid var(--rule);
+  border: 0.5pt solid var(--rule);
+  padding: 3.5pt 5pt;
   vertical-align: top;
+  color: var(--ink);
   /* `break-word`, never `anywhere`: `anywhere` lets the engine consider a break inside
      a word when computing the column's minimum width, so a column of
      `metric_not_selected` is squeezed to `metri c_no t_sel ected`. */
   overflow-wrap: break-word;
 }}
-table.rpt-table tbody tr:nth-child(even) {{ background: var(--band); }}
+
+/* A label/value block reads as a key column rather than a grid: the label carries the
+   weight and the value carries the ink, at `ReportA.dc.html`'s 32%. */
+.rpt-pairs th {{
+  width: 32%;
+  text-align: left;
+  font-family: var(--heading-face);
+  font-weight: 700;
+  font-size: {small}pt;
+  color: var(--ink);
+  padding: 3pt 10pt 3pt 0;
+  vertical-align: baseline;
+}}
+.rpt-pairs td {{
+  padding: 3pt 0;
+  vertical-align: baseline;
+  color: var(--ink);
+}}
 
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
-.rpt-signature {{
-  border-bottom: 0.6pt solid var(--ink);
-  min-width: 45mm;
-  height: 14mm;
-}}
+.rpt-signature {{ height: 13mm; min-width: 40mm; }}
 
 /* Every cell ends with a zero-width space, and this is load-bearing rather than
    decorative.
@@ -305,11 +280,12 @@ table.rpt-table th::after,
 .rpt-pairs th::after,
 .rpt-pairs td::after {{ content: "\\200b"; }}
 
-/* --- figures --------------------------------------------------------------- */
-
+/* --- figures ---------------------------------------------------------------
+   Tabular and right-aligned, so a column of numbers lines up on its digits and a
+   reader can compare magnitudes down it without reading any of them. */
 .rpt-figure {{
   font-family: var(--figure-face);
-  font-size: {small}pt;
+  font-size: {small - 0.5}pt;
   font-variant-numeric: tabular-nums;
   /* A figure must never be broken across lines: `verify/pdf.py` searches the converted
      text for the ledger string contiguously, and a line break through a numeral reads as
@@ -317,6 +293,8 @@ table.rpt-table th::after,
      runs to establish in Word. */
   white-space: nowrap;
 }}
+table.rpt-table td:has(> .rpt-figure),
+.rpt-grid td:has(> .rpt-figure) {{ text-align: right; }}
 
 caption {{
   caption-side: bottom;
@@ -324,7 +302,6 @@ caption {{
   font-family: var(--body-face);
   font-size: {small - 1}pt;
   color: var(--muted);
-  font-style: italic;
   line-height: 1.5;
   padding-top: 4pt;
 }}
@@ -335,8 +312,8 @@ caption {{
 .rpt-toc {{ margin: 0.5em 0 0; }}
 .rpt-toc-list {{ list-style: none; padding: 0; margin: 0; }}
 .rpt-toc-entry {{
-  padding: 3pt 0;
-  border-bottom: 0.4pt dotted var(--rule);
+  padding: 3.5pt 0;
+  border-bottom: 0.4pt solid var(--rule);
   font-size: {spec.body_pt - 0.5}pt;
 }}
 .rpt-toc-entry[data-level="2"] {{ padding-left: 8mm; }}
@@ -344,12 +321,11 @@ caption {{
 
 /* --- charts ---------------------------------------------------------------- */
 
-.rpt-chart {{ margin: 0.8em 0 1.2em; break-inside: avoid; }}
+.rpt-chart {{ margin: 0.7em 0 1em; break-inside: avoid; }}
 .rpt-chart svg {{ width: 100%; height: auto; }}
 .rpt-chart figcaption {{
   font-family: var(--body-face);
   font-size: {small - 1}pt;
-  font-style: italic;
   color: var(--muted);
   line-height: 1.5;
   margin-top: 4pt;
