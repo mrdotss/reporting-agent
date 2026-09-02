@@ -62,6 +62,7 @@ from reporting_agent.compile.blocks.base import (
 )
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.historical import Selection
+from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue, SnapshotView
 from reporting_agent.errors import CompileFailedError
 
@@ -212,11 +213,9 @@ def compile_historical_trend(
     count_plotted = len(points)
     count_requested = lookback
 
-    # Build exclusion reason summary for the statement
-    exclusion_summary = _exclusion_summary(selection)
-
     # Build the statements
     messages = context.messages
+    exclusion_summary = _exclusion_summary(selection, messages)
     nodes: list[object] = []
 
     if count_plotted == 0:
@@ -299,16 +298,45 @@ def _find_historical_value(
     return None
 
 
-def _exclusion_summary(selection: Selection) -> str:
-    """Build a human-readable summary of exclusion reasons."""
+def _exclusion_summary(selection: Selection, messages: Messages) -> str:
+    """The distinct typed reasons prior periods were excluded, in the document's language.
+
+    Criterion 19.2 asks the statement to name "the count of periods plotted, the count of
+    periods requested and **the typed exclusion reasons**". The first two are the two
+    `derived_count`s minted beside this; the third is these reasons, and it is not a count.
+
+    ## This used to emit `period_overlapping: 10; status_not_completed: 12`
+
+    Which is a **quantity the compiler computed**, written into a text node. The verifier
+    extracts every numeric token from the rendered document and requires each to match
+    either a ledger `formatted` value or the derived static-text allowlist, and a
+    per-reason tally is neither: it is arithmetic over a selection that appears nowhere in
+    the snapshot. Run `34ed5dce` was withheld for the tokens `10;` and `12` in exactly this
+    sentence — a correct report, refused for a number nothing could vouch for.
+
+    `omitted_row` in `compile/blocks/base.py` documents the same rule and made the same
+    choice for the same reason: say plainly what happened, and carry no numeral that is not
+    a figure.
+
+    **It stayed unreachable until the trend started working.** `selection.exclusions` is
+    empty when no candidate was ever fetched, and until `_historical_selection_keys` learned
+    to read a v3 definition's `sections`, no candidate ever was — so this returned `""` on
+    every run and the defect had no way to show itself.
+
+    The reasons resolve through the Message_Catalog rather than printing their identifiers,
+    the way `doc.gap.<type>` does for a collection gap. `tests/test_messages.py` asserts
+    every declared reason has an entry, so a seventh reason cannot render as a
+    missing-message error.
+    """
     if not selection.exclusions:
         return ""
-    from collections import Counter
-    counts: Counter[str] = Counter()
-    for excl in selection.exclusions:
-        counts[excl.reason] += 1
-    parts = [f"{reason}: {count}" for reason, count in sorted(counts.items())]
-    return "; ".join(parts)
+    seen: list[str] = []
+    for exclusion in selection.exclusions:
+        if exclusion.reason not in seen:
+            seen.append(exclusion.reason)
+    return ", ".join(
+        messages.text(f"doc.historical.exclusion.{reason}") for reason in sorted(seen)
+    )
 
 
 def _point(

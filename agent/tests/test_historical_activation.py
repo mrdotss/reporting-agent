@@ -684,3 +684,101 @@ class TestStoredSelection:
     def test_bad_key_format_skipped(self) -> None:
         stored = _StoredSelection({"selections": {"badkey": {"selected": []}}})
         assert stored.selections == {}
+
+
+class TestTheTrendStatementSurvivesMasking:
+    """The trend statement is prose, so every numeral in it must be a ledger entry.
+
+    Run `34ed5dce` was withheld for two tokens — `10;` and `12` — in this one sentence.
+    `_exclusion_summary` built `period_overlapping: 10; status_not_completed: 12`, and a
+    per-reason tally is arithmetic over a selection that appears nowhere in the snapshot:
+    no ledger entry matches it and no allowlist admits it.
+
+    **Nothing caught it because nothing had ever run it.** `selection.exclusions` is empty
+    unless candidates were fetched and rejected, and until `_historical_selection_keys`
+    learned to read a v3 definition's `sections`, no candidate was ever fetched. Every
+    fixture in this file passed `exclusions=()`, so the branch that builds the summary had
+    no test at all — the code was live, reachable and unexercised.
+
+    So this drives a selection with **real exclusions**, which is the state the defect
+    needs, and asserts against the actual masking the verifier performs.
+    """
+
+    @staticmethod
+    def _statement_paragraphs(selection) -> tuple[list[str], object]:
+        """Compile the trend with `selection` and return its paragraphs and ledger."""
+        from reporting_agent.compile.blocks import compile_document
+        import snapshot_factory as sf
+        from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+        defn = _historical_definition()
+        view = build_snapshot_view(sf.two_vm_snapshot())
+        compiled = compile_document(
+            defn,
+            view=view,
+            historical_selections={("Percentage CPU", "avg", 6): selection},
+        )
+        texts: list[str] = []
+        for node in compiled.nodes_by_block["trend"]:
+            inlines = getattr(node, "inlines", None)
+            if inlines is not None:
+                texts.append("".join(i.text for i in inlines))
+        return texts, compiled.ledger
+
+    def _selection_with_every_reason(self):
+        from reporting_agent.compile.historical import EXCLUSION_REASONS, Exclusion, Selection
+
+        # More than one exclusion per reason: a per-reason tally only produces a numeral
+        # when some reason has a count, and a fixture with one each would have let
+        # `reason: 1` through while still looking like coverage.
+        return Selection(
+            selected=(),
+            exclusions=tuple(
+                Exclusion(f"run-{reason}-{n}", reason)
+                for reason in EXCLUSION_REASONS
+                for n in range(3)
+            ),
+        )
+
+    def test_the_statement_names_every_reason(self) -> None:
+        from reporting_agent.compile.historical import EXCLUSION_REASONS
+        from reporting_agent.compile.messages import load_messages
+
+        texts, _ = self._statement_paragraphs(self._selection_with_every_reason())
+        joined = " ".join(texts)
+        messages = load_messages("en")
+        for reason in EXCLUSION_REASONS:
+            phrase = messages.text(f"doc.historical.exclusion.{reason}")
+            assert phrase in joined, f"the statement does not name {reason!r}"
+
+    def test_no_numeral_in_the_statement_escapes_the_ledger(self) -> None:
+        """The assertion the defect fails: mask with the ledger and see what is left.
+
+        Masking with the real ledger and an empty allowlist is what isolates a numeral the
+        verifier cannot account for — the same thing `verify/masking.py` does to produce an
+        `unmatched_prose_token`. The two counts the statement legitimately carries are
+        `derived_count`s and mask away; a per-reason tally does not.
+        """
+        import re
+
+        from reporting_agent.verify.masking import ledger_strings_of, mask_paragraph
+
+        texts, ledger = self._statement_paragraphs(self._selection_with_every_reason())
+        assert texts, "the trend emitted no statement, so this asserts nothing"
+
+        order = ledger_strings_of(
+            (*ledger.entries.values(), *ledger.derived_counts().values())
+        )
+        survivors: list[str] = []
+        for text in texts:
+            masked = mask_paragraph(text, ledger_strings=order, allowlist=())
+            survivors.extend(
+                text[m.start() : m.end()]
+                for m in re.finditer(r"\S+", masked)
+                if re.search(r"\d", m.group())
+            )
+
+        assert survivors == [], (
+            f"these numerals in the trend statement match no ledger entry, so the "
+            f"verifier refuses the document that carries them: {survivors}"
+        )

@@ -172,6 +172,48 @@ def test_every_declared_gap_type_has_an_explanation() -> None:
     )
 
 
+def test_every_declared_exclusion_reason_has_a_catalog_entry() -> None:
+    """A `historical_trend` names why a prior period was not plotted, and it resolves each
+    reason through the catalog rather than printing its identifier.
+
+    Derived from `EXCLUSION_REASONS` rather than a literal list, so a seventh reason added
+    to the selector cannot reach a delivered document as a missing-message error. The same
+    shape as the gap-type guard above, for the same reason.
+
+    This sentence is also where run `34ed5dce` was withheld: it used to carry a per-reason
+    tally (`period_overlapping: 10; status_not_completed: 12`), and a count the compiler
+    computed is a numeral no ledger entry matches. The reasons carry no digits at all,
+    which is what makes the statement masking-safe by construction.
+    """
+    from reporting_agent.compile.historical import EXCLUSION_REASONS
+
+    declared = raw_catalog()["messages"]
+    missing = [
+        reason
+        for reason in sorted(EXCLUSION_REASONS)
+        if f"doc.historical.exclusion.{reason}" not in declared
+    ]
+
+    assert missing == [], (
+        f"these exclusion reasons have no `doc.historical.exclusion.<reason>` entry in "
+        f"the catalog: {missing}"
+    )
+
+    with_digits = sorted(
+        reason
+        for reason in EXCLUSION_REASONS
+        if any(
+            character.isdigit()
+            for language in ("en", "id")
+            for character in declared[f"doc.historical.exclusion.{reason}"][language]
+        )
+    )
+    assert with_digits == [], (
+        f"an exclusion reason's copy carries a digit, which the trend statement would "
+        f"place in a text node no ledger entry can match: {with_digits}"
+    )
+
+
 # --- the resolver -------------------------------------------------------------------
 
 

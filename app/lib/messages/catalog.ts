@@ -742,6 +742,30 @@ export const MESSAGE_CATALOG = {
     en: "Historical trend: {count} of {requested} prior periods plotted. {exclusions}",
     id: "Tren historis: {count} dari {requested} periode sebelumnya diplot. {exclusions}",
   },
+  "doc.historical.exclusion.status_not_completed": {
+    en: "a prior run that did not complete",
+    id: "proses sebelumnya yang tidak selesai",
+  },
+  "doc.historical.exclusion.verification_not_passed": {
+    en: "a prior run whose verification did not pass",
+    id: "proses sebelumnya yang verifikasinya tidak lulus",
+  },
+  "doc.historical.exclusion.period_overlapping": {
+    en: "a prior period overlapping one already plotted",
+    id: "periode sebelumnya yang tumpang tindih dengan yang sudah diplot",
+  },
+  "doc.historical.exclusion.beyond_lookback": {
+    en: "a prior period older than the declared lookback",
+    id: "periode sebelumnya yang lebih lama dari rentang yang dideklarasikan",
+  },
+  "doc.historical.exclusion.metric_absent_in_snapshot": {
+    en: "a prior run whose snapshot carries no value for this metric",
+    id: "proses sebelumnya yang snapshot-nya tidak memuat nilai untuk metrik ini",
+  },
+  "doc.historical.exclusion.fidelity_tier_differs": {
+    en: "a prior run collected at a different fidelity tier",
+    id: "proses sebelumnya yang dikumpulkan pada tingkat fidelitas berbeda",
+  },
   "doc.historical.no_prior_runs": {
     en: "No prior verified period is available for this trend.",
     id: "Tidak ada periode terverifikasi sebelumnya yang tersedia untuk tren ini.",
