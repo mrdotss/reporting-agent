@@ -63,6 +63,7 @@ __all__ = [
     "DOCUMENT_PHASES",
     "PROGRESS_MAX_ATTEMPTS",
     "PROGRESS_THROTTLE_S",
+    "TERMINAL_ORDERING_BUDGET_S",
     "PROGRESS_TIMEOUT_S",
     "TERMINAL_PHASES",
     "TOKEN_HEADER",
@@ -84,6 +85,14 @@ retry covers is a dropped connection rather than a busy server."""
 
 PROGRESS_THROTTLE_S: Final[float] = 5.0
 """Req 38.15 — at most one *in-phase progress* callback per phase per 5 seconds."""
+
+TERMINAL_ORDERING_BUDGET_S: Final[float] = PROGRESS_TIMEOUT_S * PROGRESS_MAX_ATTEMPTS
+"""How long a terminal callback waits for the transitions before it to be delivered.
+
+The endpoint advances a chain, so `completed` sent before `verifying` lands is refused
+(criterion 38.10) — but the container exits once the terminal callback returns, so this
+wait cannot be unbounded. One full delivery budget: past it the app is not answering, and
+a late terminal callback is no worse than an unsent one."""
 
 TOKEN_HEADER: Final[str] = "X-Rpt-Progress-Token"
 """Req 38.2 — where the run-scoped token is presented, and the only place it appears."""
@@ -323,6 +332,14 @@ class ProgressReporter:
         self._current_phase: str | None = None
         self._last_sent_at: dict[str, float] = {}
         self._pending: set[asyncio.Task[None]] = set()
+        self._previous_delivery: asyncio.Task[None] | None = None
+        """The most recently scheduled delivery, which the next one waits behind.
+
+        Callbacks are dispatched without blocking the pipeline, but they must **arrive**
+        in the order they were reported: the endpoint's transition table is a chain
+        (`collecting -> compiling -> rendering -> verifying -> completed`) and it refuses
+        any hop that skips a link. See :meth:`_deliver_in_order`.
+        """
         self._terminal_sent = False
 
         # Belt and braces. `main.py` registers the token when it parses the context
@@ -391,8 +408,10 @@ class ProgressReporter:
 
             body = self._build_body(phase, current=current, total=total, label=label)
             task = asyncio.create_task(
-                self._deliver(phase, body), name=f"progress-callback-{phase}"
+                self._deliver_in_order(self._previous_delivery, phase, body),
+                name=f"progress-callback-{phase}",
             )
+            self._previous_delivery = task
             self._pending.add(task)
             task.add_done_callback(self._pending.discard)
         except Exception as exc:  # Req 38.4: this may not end the run
@@ -448,6 +467,32 @@ class ProgressReporter:
             self._last_sent_at[phase] = self._clock()
             self._terminal_sent = True
 
+            # Behind the intermediate chain, for the reason `_deliver_in_order` gives:
+            # `completed` is reachable only from `verifying`, so a terminal callback that
+            # overtakes the transition before it is refused — and this is the one callback
+            # whose loss costs a false `TIMEOUT` on a finished run.
+            #
+            # **Bounded**, unlike the intermediate chain. The container exits after this
+            # returns, so an unbounded wait would let one hung intermediate hold shutdown
+            # open for as long as the app stays unresponsive. One delivery budget is the
+            # bound: if the predecessors have not settled within the time a single delivery
+            # is allowed, the app is not answering, and a terminal callback sent late and
+            # refused is no worse than one never sent at all — while a terminal callback
+            # sent *on time* is the difference between a completed run and a false
+            # `TIMEOUT`. `aclose` cancels whatever is still pending straight after.
+            previous = self._previous_delivery
+            if previous is not None and not previous.done():
+                try:
+                    await asyncio.wait_for(
+                        asyncio.shield(previous), timeout=TERMINAL_ORDERING_BUDGET_S
+                    )
+                except Exception:
+                    logger.warning(
+                        "the callbacks before %r had not settled within %.0fs; sending "
+                        "the terminal callback anyway rather than holding shutdown open.",
+                        phase,
+                        TERMINAL_ORDERING_BUDGET_S,
+                    )
             await self._deliver(phase, body)
         except Exception as exc:  # Req 38.4
             logger.warning(
@@ -594,6 +639,44 @@ class ProgressReporter:
         await self._deliver("verification", body, url=self._verification_url)
 
     # --- delivery --------------------------------------------------------------------
+
+    async def _deliver_in_order(
+        self,
+        previous: asyncio.Task[None] | None,
+        phase: str,
+        body: Mapping[str, Any],
+    ) -> None:
+        """Wait for the delivery scheduled before this one, then POST this one.
+
+        ## Why dispatch is concurrent and delivery is not
+
+        :meth:`report` returns as soon as a callback is scheduled, so a collector fold
+        is never blocked on the app's response — that is the point of the task, and it
+        stays. What could not stay is two POSTs in flight at once, because the endpoint
+        advances a **chain**: `collecting -> compiling -> rendering -> verifying ->
+        completed`, and criterion 38.10 refuses any hop that skips a link.
+
+        Two independent tasks arrive in whatever order the network settles. Run
+        `442b4a63` scheduled `compiling` and `rendering` 34 ms apart; `rendering` landed
+        first, was refused as `unreachable_target` against a row still at `collecting`,
+        and retried 250 ms later against the same stale row. Then `compiling` landed.
+        The row sat at `compiling` while the runtime finished the report, verified it,
+        and reported `completed` — every one of those refused for the same reason — and
+        six minutes later the reaper failed a **complete, verified run** as `TIMEOUT`.
+
+        It is intermittent, which is worse than broken: the same code delivered run
+        `e0483528` in order on the next attempt and it advanced normally.
+
+        ## Waiting on the predecessor's completion, not its success
+
+        `gather(..., return_exceptions=True)` because a predecessor that failed, was
+        refused, or was cancelled must not stop this callback from being attempted. The
+        chain orders delivery; it does not make one callback conditional on another. A
+        callback that never lands is still the reaper's problem, exactly as before.
+        """
+        if previous is not None and not previous.done():
+            await asyncio.gather(previous, return_exceptions=True)
+        await self._deliver(phase, body)
 
     async def _deliver(
         self, phase: str, body: Mapping[str, Any], *, url: str | None = None
