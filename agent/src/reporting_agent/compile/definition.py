@@ -180,7 +180,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "metric_summary": {
         "required": ["metrics"],
         "optional": ["caption", "orientation"],
-        "enums": {"orientation": ["resource_major", "metric_major"]},
+        "enums": {"orientation": ["resource_major", "statistic_major"]},
     },
     "inventory_summary": {
         "required": ["group_by"],

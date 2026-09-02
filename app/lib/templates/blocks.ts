@@ -173,7 +173,7 @@ export const BLOCK_CONFIG = {
   metric_summary: {
     required: ["metrics"],
     optional: ["caption", "orientation"],
-    enums: { orientation: ["resource_major", "metric_major"] },
+    enums: { orientation: ["resource_major", "statistic_major"] },
   },
   inventory_summary: {
     required: ["group_by"],

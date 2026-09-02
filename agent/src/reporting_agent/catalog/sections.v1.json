@@ -156,7 +156,7 @@
             { "block": "heading", "config": { "level": 3 }, "per": "resource" },
             { "block": "resource_table", "per": "resource", "config": { "layout": "pairs", "columns": [{"kind": "fact", "fact_key": "vm_size"}, {"kind": "fact", "fact_key": "os_type"}, {"kind": "fact", "fact_key": "os_build"}, {"kind": "fact", "fact_key": "private_ip"}, {"kind": "attribute", "attribute": "resource_group"}, {"kind": "attribute", "attribute": "location"}, {"kind": "attribute", "attribute": "power_state"}] }, "when_presentation": ["chart_and_table", "table_only"] },
             { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
-            { "block": "metric_summary", "per": "resource", "config": { "orientation": "metric_major" }, "when_presentation": ["chart_and_table", "table_only"] },
+            { "block": "metric_summary", "per": "resource", "config": { "orientation": "statistic_major" }, "when_presentation": ["chart_and_table", "table_only"] },
             { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
           ]
         },
