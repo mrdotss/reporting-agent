@@ -282,9 +282,12 @@ class TestExpandSectionsBasic:
         ]
         assert all(h.config["level"] == 3 for h in machine_headings)
 
-        # The per-machine summary is transposed — one row per metric, for one machine.
+        # The per-machine summary is transposed — one table per metric, a row per
+        # statistic. Not the artifact's metric-major grid: that needs 132 characters of a
+        # 70-character page once a byte metric and an estimated percentile share a table,
+        # and every figure in it wraps out of the PDF's reach.
         for summary in (s for s in per_machine if s.type == "metric_summary"):
-            assert summary.config["orientation"] == "metric_major"
+            assert summary.config["orientation"] == "statistic_major"
             assert summary.config["metrics"] == [{"metric": CPU, "statistic": "avg"}]
 
         # The detail table stacks its columns rather than spreading one row across seven.

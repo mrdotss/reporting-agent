@@ -831,21 +831,24 @@ def compile_metric_summary(
         if ref.name not in names:
             names.append(ref.name)
 
-    if str(block.config.get("orientation") or "resource_major") == "metric_major":
-        table_cursor = cursor.child("nodes", 0)
-        if not matched:
-            return BlockOutput(
-                nodes=(
+    if str(block.config.get("orientation") or "resource_major") == "statistic_major":
+        nodes: list[Table] = []
+        for ordinal, name in enumerate(names):
+            table_cursor = cursor.child("nodes", ordinal)
+            if not matched:
+                nodes.append(
                     empty_scope_table(
                         table_cursor, style, caption, messages=context.messages
-                    ),
+                    )
+                )
+                continue
+            nodes.append(
+                _statistic_major_table(
+                    context, table_cursor, name, matched[0], style, caption
                 )
             )
-        table = _metric_major_table(
-            context, table_cursor, names, matched[0], style, caption
-        )
-        cursor.anchor_table(table_cursor.path)
-        return BlockOutput(nodes=(table,))
+            cursor.anchor_table(table_cursor.path)
+        return BlockOutput(nodes=tuple(nodes))
 
     nodes: list[Table] = []
     for ordinal, name in enumerate(names):
@@ -1111,92 +1114,82 @@ def compile_capacity_vs_usage(
     return BlockOutput(nodes=(table,))
 
 
-def _metric_major_table(
+def _statistic_major_table(
     context: BlockContext,
     table_cursor: BlockCursor,
-    metrics: Sequence[str],
+    metric: str,
     resource: ResourceView,
     style: str,
     caption: str | None,
 ) -> Table:
-    """One resource's metrics, one per row: the transpose of the fleet summary.
+    """One machine's one metric, a row per statistic: `Statistic | Value | Samples`.
 
-    The fleet table answers "which machine is busiest" and needs a row per machine. A
-    per-machine section answers "what is this machine doing" and needs a row per metric —
-    same numbers, same figures, same ledger, turned ninety degrees. Emitting the
-    resource-major shape into a per-resource section produces one table per metric each
-    holding exactly one row, which is the defect this exists to fix.
+    ## Why not one row per metric, which is what the artifact draws
 
-    The `Samples` column is `sample_count_of`, minted as a figure like every other number
-    here. It is the column that tells a reader whether a 0.18% average is over 89 231
-    samples or over three, and printing the first four numbers without it invites the
-    reader to trust all of them equally.
+    The artifact's per-machine table is metric-major — `Metric | Average | Maximum |
+    Minimum | Samples`, one row per metric — and that shape was built first. Against the
+    real estate it needs **132 characters of a 70-character page**: three byte-valued
+    columns at 22 characters each (`3,489,660,928.00 bytes`) beside a P95 whose estimator
+    label is inside the formatted string (`0.25% (p95, est. from hourly averages)`, 38).
+    `tablefit.allocate` water-fills that to 10.4 characters a column, every value wraps,
+    and a wrapped figure has no contiguous occurrence in the extracted PDF text — six
+    `pdf_figure_missing` findings, and a report withheld.
+
+    The artifact's shape fits because the artifact writes `6.88 GB`, not
+    `3,489,660,928.00 bytes`. Scaling bytes is the real fix and it is not available
+    here: `format_figure` is the one place a figure becomes a string, `verify_report`
+    requires a recompiled ledger to be byte-identical to the stored one, and changing
+    the string would fail re-verification for every report already delivered. See
+    `compile/format.py::display_scale`, where the same constraint blocks a count from
+    reading `23` instead of `23.00`.
+
+    So this transposes the other way. One table per metric keeps the wide values apart:
+    a byte metric's table is `Statistic(10) + Value(22) + Samples(9)`, and the CPU table
+    carries the 38-character P95 alone. Both fit, every figure stays on one line, and
+    the reader still gets one machine's numbers under that machine's heading.
     """
     messages = context.messages
-
-    # A statistic earns its column only if some metric on this resource has it — the same
-    # rule the resource-major table applies across resources, applied across metrics.
     present = tuple(
         statistic
         for statistic in SUMMARY_STATISTICS
-        if any(
-            context.view.stat(resource.resource_id, metric, statistic) is not None
-            for metric in metrics
-        )
+        if context.view.stat(resource.resource_id, metric, statistic) is not None
     )
     with_samples = any(
         context.view.sample_count_of(resource.resource_id, metric, statistic) is not None
-        for metric in metrics
         for statistic in present
     )
 
     rows: list[Row] = []
-    for ordinal, metric in enumerate(metrics):
+    for ordinal, statistic in enumerate(present):
         row_cursor = table_cursor.child("rows", ordinal)
-        cells: list[object] = [text_cell(row_cursor.child("cells", 0), metric)]
-        for statistic in present:
-            cell_cursor = row_cursor.child("cells", len(cells))
-            value = context.view.stat(resource.resource_id, metric, statistic)
-            cells.append(
-                empty_cell(cell_cursor)
-                if value is None
-                else _figure_cell(cell_cursor, context, value)
+        cells: list[object] = [
+            text_cell(
+                row_cursor.child("cells", 0),
+                messages.text(f"doc.summary.{statistic}"),
             )
+        ]
+        value_cursor = row_cursor.child("cells", 1)
+        value = context.view.stat(resource.resource_id, metric, statistic)
+        cells.append(
+            empty_cell(value_cursor)
+            if value is None
+            else _figure_cell(value_cursor, context, value)
+        )
         if with_samples:
-            # One sample count per row, not per statistic: the collector computes every
-            # window statistic of one metric over one set of samples, so four identical
-            # counts across the row would be four figures making one claim. The first
-            # present statistic's count is that claim.
-            cell_cursor = row_cursor.child("cells", len(cells))
-            samples = next(
-                (
-                    found
-                    for statistic in present
-                    if (
-                        found := context.view.sample_count_of(
-                            resource.resource_id, metric, statistic
-                        )
-                    )
-                    is not None
-                ),
-                None,
+            samples_cursor = row_cursor.child("cells", 2)
+            samples = context.view.sample_count_of(
+                resource.resource_id, metric, statistic
             )
             cells.append(
-                empty_cell(cell_cursor)
+                empty_cell(samples_cursor)
                 if samples is None
-                else _figure_cell(cell_cursor, context, samples)
+                else _figure_cell(samples_cursor, context, samples)
             )
-        rows.append(Row(path=row_cursor.path, key=metric, cells=tuple(cells)))
+        rows.append(Row(path=row_cursor.path, key=statistic, cells=tuple(cells)))
 
     columns = (
-        Column(key="metric", header=messages.text("doc.table.metric")),
-        *(
-            Column(
-                key=f"{statistic}",
-                header=messages.text(f"doc.summary.{statistic}"),
-            )
-            for statistic in present
-        ),
+        Column(key="statistic", header=messages.text("doc.table.statistic")),
+        Column(key="value", header=messages.text("doc.table.value")),
         *(
             (Column(key="samples", header=messages.text("doc.summary.samples")),)
             if with_samples
@@ -1208,9 +1201,8 @@ def _metric_major_table(
         style=style,
         columns=columns,
         rows=tuple(rows),
-        caption=caption or resource.name,
+        caption=caption or metric,
     )
-
 
 # ---------------------------------------------------------------------------
 # inventory_summary — the estate reported as its own groupings

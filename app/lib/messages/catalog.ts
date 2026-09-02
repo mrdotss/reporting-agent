@@ -626,6 +626,10 @@ export const MESSAGE_CATALOG = {
     en: "Scope",
     id: "Cakupan",
   },
+  "doc.table.statistic": {
+    en: "Statistic",
+    id: "Statistik",
+  },
   "doc.table.series": {
     en: "Series",
     id: "Seri",
