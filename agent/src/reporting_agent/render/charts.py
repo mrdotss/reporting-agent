@@ -53,6 +53,7 @@ from typing import Final
 import matplotlib
 from matplotlib import rc_context
 from matplotlib.figure import Figure as MplFigure
+from matplotlib.ticker import MaxNLocator
 
 from reporting_agent.compile.ast import (
     Chart,
@@ -574,7 +575,7 @@ def render_chart(
     # renders into, and keeps the app's light/dark tokens.
     furniture = _furniture_for(preset, theme)
 
-    with rc_context(style.frozen_rc_params()):
+    with rc_context(style.frozen_rc_params(furniture.body_face)):
         figure = MplFigure(
             figsize=style.chart_size_inches(panel_count), dpi=style.CHART_DPI
         )
@@ -587,8 +588,17 @@ def render_chart(
         title_text = node.title
         if node.period_label:
             title_text = f"{node.title}\n{node.period_label}"
+        # Left-aligned, in the document's accent and heading face — the way every other
+        # heading in the report is set. A centred banner in a face the document uses
+        # nowhere else is what made the chart read as a picture pasted into the page
+        # rather than as part of it.
         figure.suptitle(
-            title_text, fontfamily=style.CHART_FONT, fontsize=style.CHART_TITLE_SIZE
+            title_text,
+            fontfamily=furniture.heading_face,
+            fontsize=style.CHART_TITLE_SIZE,
+            color=furniture.accent or furniture.value_label,
+            x=_TITLE_LEFT,
+            ha="left",
         )
 
         try:
@@ -620,8 +630,20 @@ def render_chart(
             # `panel_count` charts with visible whitespace between them. Single-panel
             # charts (`panel_count == 1`) ignore `hspace` entirely, so this changes
             # nothing about their emitted bytes.
+            #
+            # `top` and `bottom` are computed from **inches** rather than fixed fractions.
+            # The title needs the same half-inch and the rotated dates the same inch
+            # whatever the panel count, but a fraction of a figure that grows from 3.2in to
+            # 8in does not: at three panels a `bottom` of 0.28 reserved 2.24in for labels
+            # that need under one, and the chart sat in the top two-thirds of its own image
+            # with a band of white beneath it.
+            height = figure.get_figheight()
             figure.subplots_adjust(
-                left=0.12, right=_AXES_RIGHT, top=0.86, bottom=0.28, hspace=0.5
+                left=0.12,
+                right=_AXES_RIGHT,
+                top=1.0 - _TITLE_BAND_INCHES / height,
+                bottom=_XLABEL_BAND_INCHES / height,
+                hspace=0.5,
             )
 
             buffer = io.BytesIO()
@@ -732,6 +754,7 @@ def _draw_end_labels(
     offset: tuple[float, float] = (3, 0),
     align: str = "left",
     mono: bool = False,
+    face: str = "",
 ) -> None:
     """Place the direct line-end labels, pushed apart where they would overlap.
 
@@ -775,7 +798,7 @@ def _draw_end_labels(
             va="center",
             fontsize=style.CHART_LABEL_SIZE,
             annotation_clip=False,
-            **({"fontfamily": "monospace"} if mono else {}),
+            **({"fontfamily": face} if face else {}),
         )
 
 
@@ -797,7 +820,13 @@ def _furniture_for(preset: str, theme: str) -> style.ChartFurniture:
     if spec is None:
         return style.furniture_for_theme(theme)
     return style.furniture_from_palette(
-        ink=spec.palette.ink, muted=spec.palette.muted, rule=spec.palette.rule
+        ink=spec.palette.ink,
+        muted=spec.palette.muted,
+        rule=spec.palette.rule,
+        accent=spec.palette.accent,
+        heading_face=spec.face.heading,
+        body_face=spec.face.body,
+        figure_face=spec.face.figure,
     )
 
 
@@ -823,6 +852,10 @@ def _draw(
     labels on every panel would say the same thing `panel_count` times for no reason —
     only the bottom panel needs them (Req 17.3).
     """
+    # The document's ink and faces where the caller knew which document; the app's tokens
+    # otherwise. Resolved first because every text element below is set with it.
+    ink = furniture if furniture is not None else style.furniture_for_theme(theme)
+
     # --- Axis titles (Req 17.1, 17.11) ----------------------------------------
     # Resolved from the message catalog. An absent id with a unit is acceptable;
     # a present id with no catalog value raises RENDER_FAILED.
@@ -837,8 +870,14 @@ def _draw(
     # holds, so "a reader knows which is the maximum without a legend" — the
     # requirement's own phrasing — holds even on a panel with no chart title.
     panel_subtitle = ", ".join(dict.fromkeys(series.label for series in series_set))
+    # The panel's own series, named quietly: this says which lines are here, and a reader
+    # meets it after the chart's title rather than competing with it.
     axes.set_title(
-        panel_subtitle, fontfamily=style.CHART_FONT, fontsize=style.CHART_LABEL_SIZE
+        panel_subtitle,
+        fontfamily=ink.body_face,
+        fontsize=style.CHART_LABEL_SIZE,
+        color=ink.axis_label,
+        loc="left",
     )
 
     # Y-axis: combine title and **this panel's** unit.
@@ -860,21 +899,33 @@ def _draw(
         ),
         node.unit,
     )
-    if y_axis_title:
-        axes.set_ylabel(f"{y_axis_title} ({panel_unit})")
-    else:
-        axes.set_ylabel(panel_unit)
+    axes.set_ylabel(
+        f"{y_axis_title} ({panel_unit})" if y_axis_title else panel_unit,
+        fontfamily=ink.body_face,
+        fontsize=style.CHART_LABEL_SIZE,
+        color=ink.axis_label,
+    )
 
     # X-axis: title only on the last (bottom) panel — see `is_last_panel`'s note above.
     if x_axis_title and is_last_panel:
         axes.set_xlabel(x_axis_title)
 
     # --- Gridlines (Req 17.2) -------------------------------------------------
-    # The document's ink where the caller knew which document; the app's tokens otherwise.
-    ink = furniture if furniture is not None else style.furniture_for_theme(theme)
-
     axes.grid(True, axis="y", color=ink.grid, linewidth=style.CHART_GRID_WIDTH)
-    axes.tick_params(colors=ink.axis_label)
+    # Labels without tick marks: the gridline already says where the value is, and a mark
+    # beside it says the same thing twice.
+    axes.tick_params(colors=ink.axis_label, length=0, labelsize=style.CHART_LABEL_SIZE - 0.5)
+
+    # Three or four horizontals, not eight. The panel is there to show a shape; the
+    # companion table is where a reader reads a number, and every one of them is in it.
+    axes.yaxis.set_major_locator(MaxNLocator(nbins=4, prune=None))
+
+    # matplotlib's `1e9` offset is the axis quietly restating the scale. It stays — a
+    # reader needs it to know these are billions — but it is apparatus, not data.
+    offset = axes.yaxis.get_offset_text()
+    offset.set_color(ink.axis_label)
+    offset.set_fontsize(style.CHART_LABEL_SIZE - 1)
+    offset.set_fontfamily(ink.body_face)
 
     # Two rules, not four. A closed box draws a frame around every panel and then repeats it
     # `panel_count` times down the page, which reads as a stack of boxes rather than as one
@@ -918,11 +969,16 @@ def _draw(
         if node.chart_type in ("line", "area"):
             marker = style.marker_for_key(series.key, siblings)
             dashes = style.dash_for_key(series.key, siblings)
+            # Markers every `stride` points rather than on all of them. At a month of
+            # days the marks stop reading as a shape and start reading as a texture, which
+            # is the opposite of what they are for.
+            stride = max(1, len(values) // style.MARKER_STRIDE_TARGET)
             line, = axes.plot(
                 range(len(values)),
                 values,
                 color=colour,
                 marker=marker,
+                markevery=stride,
                 label=series.label,
             )
             if dashes is not None:
@@ -964,7 +1020,7 @@ def _draw(
                         va="bottom",
                         color=ink.value_label,
                         fontsize=style.CHART_LABEL_SIZE,
-                        fontfamily="monospace",
+                        fontfamily=ink.figure_face,
                     )
             ticks = tick_label_positions(len(labels))
             axes.set_xticks(ticks)
@@ -999,13 +1055,15 @@ def _draw(
                     va="center" if horizontal else "bottom",
                     color=ink.value_label,
                     fontsize=style.CHART_LABEL_SIZE,
-                    fontfamily="monospace",
+                    fontfamily=ink.figure_face,
                 )
 
     # The numerals first, hung back over the line they belong to; then the series labels in
     # the gutter. Both de-overlapped, and separately, because they occupy different columns.
-    _draw_end_labels(axes, end_values, offset=(-4, 0), align="right", mono=True)
-    _draw_end_labels(axes, end_labels)
+    _draw_end_labels(
+        axes, end_values, offset=(-4, 0), align="right", mono=True, face=ink.figure_face
+    )
+    _draw_end_labels(axes, end_labels, face=ink.body_face)
 
     # --- Legend (Req 17.3) — the fallback, and only when it is one -------------
     #
@@ -1028,6 +1086,19 @@ def _draw(
             framealpha=0.8,
         )
 
+
+_TITLE_BAND_INCHES: Final[float] = 0.8
+"""Space above the first panel, for the chart title and its breathing room."""
+
+_XLABEL_BAND_INCHES: Final[float] = 0.95
+"""Space below the last panel, for the rotated date labels and the axis title.
+
+Both are absolute because what they hold is: a line of 7pt type rotated 45 degrees
+occupies the same inch whether it sits under one panel or five."""
+
+_TITLE_LEFT: Final[float] = 0.12
+"""The chart title's left edge, in figure coordinates — the same `left` the axes take, so
+the title starts where the plot does rather than floating over the y-axis labels."""
 
 _AXES_RIGHT: Final[float] = 0.74
 """Where the axes stop, leaving the rest of the figure width as the end-label gutter."""

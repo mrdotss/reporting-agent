@@ -622,6 +622,17 @@ label lands, which changes the bytes."""
 
 CHART_STROKE_WIDTH: Final[float] = 1.6
 CHART_MARKER_SIZE: Final[float] = 4.0
+
+MARKER_STRIDE_TARGET: Final[int] = 7
+"""About how many markers one series should carry, however many points it plots.
+
+Markers are the second channel Req 22.9's palette relies on — colour, dash and shape — so
+they are thinned rather than dropped: a reader who cannot separate the hues can still tell
+a triangle from a diamond, and the dash pattern remains on every segment either way.
+
+Thirty-one of them along a line is not that reader's aid, it is a texture. `design/proposed/
+PdfPage.dc.html` draws its lines with none at all; seven keeps the shape identifiable at a
+glance and lets the line be a line."""
 CHART_GRID_WIDTH: Final[float] = 0.6
 CHART_LABEL_SIZE: Final[float] = 7.0
 CHART_TITLE_SIZE: Final[float] = 9.0
@@ -690,9 +701,22 @@ chart differ in their metadata chunk and the `.docx` containing them differs too
 determinism failure with no visible cause."""
 
 
-def frozen_rc_params() -> dict[str, object]:
-    """A fresh copy of the pinned `rcParams`, for `matplotlib.rc_context`."""
-    return dict(_FROZEN_RC_PARAMS)
+def frozen_rc_params(face: str = "") -> dict[str, object]:
+    """A fresh copy of the pinned `rcParams`, for `matplotlib.rc_context`.
+
+    `face` names the font the **tick labels** are set in — the one text matplotlib draws
+    without this module getting a call site to pass `fontfamily` to. Empty keeps
+    :data:`CHART_FONT`, which is what a chart drawn outside a themed document has always
+    used and what keeps its bytes unchanged.
+
+    Set as `font.family` directly rather than through the serif/sans-serif indirection:
+    deciding which bucket `Liberation Serif` belongs in from its name is a guess, and the
+    fonts are installed and named exactly.
+    """
+    params = dict(_FROZEN_RC_PARAMS)
+    if face:
+        params["font.family"] = face
+    return params
 
 
 def stroke_safe_token(encoding: str, theme: Theme = LIGHT) -> str:
@@ -735,6 +759,19 @@ class ChartFurniture:
     grid: str
     axis_label: str
     value_label: str
+    accent: str = ""
+    """The document's accent, for the chart's own title — empty outside a themed document,
+    where the title stays in the body ink it always had."""
+    heading_face: str = CHART_FONT
+    body_face: str = CHART_FONT
+    figure_face: str = "monospace"
+    """The three faces the document is set in.
+
+    The chart was set in `DejaVu Sans` whatever the document was, so an `editorial` report
+    in Liberation Serif carried charts in a face that appears nowhere else in it. Every one
+    is a font the image installs and every one is named explicitly — a fallback would
+    resolve to whatever the host has, which changes glyph widths, which changes where every
+    label lands, which changes the bytes."""
 
 
 def furniture_for_theme(theme: Theme = LIGHT) -> ChartFurniture:
@@ -750,7 +787,16 @@ def furniture_for_theme(theme: Theme = LIGHT) -> ChartFurniture:
     )
 
 
-def furniture_from_palette(*, ink: str, muted: str, rule: str) -> ChartFurniture:
+def furniture_from_palette(
+    *,
+    ink: str,
+    muted: str,
+    rule: str,
+    accent: str = "",
+    heading_face: str = CHART_FONT,
+    body_face: str = CHART_FONT,
+    figure_face: str = "monospace",
+) -> ChartFurniture:
     """The furniture of a chart drawn into one of the document themes.
 
     Takes the three `RRGGBB` strings off a `themes.ThemeSpec.palette` rather than importing
@@ -768,6 +814,10 @@ def furniture_from_palette(*, ink: str, muted: str, rule: str) -> ChartFurniture
         grid=f"#{rule.lstrip('#')}",
         axis_label=f"#{muted.lstrip('#')}",
         value_label=f"#{ink.lstrip('#')}",
+        accent=f"#{accent.lstrip('#')}" if accent else "",
+        heading_face=heading_face,
+        body_face=body_face,
+        figure_face=figure_face,
     )
 
 
