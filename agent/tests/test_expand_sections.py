@@ -1559,3 +1559,42 @@ class TestCatalogueHeadingShape:
                 f"{entry.key}: its first heading is per-resource, so the section's own "
                 f"title never appears in the document or its table of contents"
             )
+
+
+def test_no_section_expands_a_resource_blind_block_per_resource() -> None:
+    """A `per: "resource"` expansion must be a block that reads its own resource.
+
+    `historical_vm_utilization` declared `historical_trend` per resource, and that block
+    plots one metric across prior **periods** — it has no resource dimension and never
+    consults `_resource_id`. Three machines therefore produced three byte-identical trend
+    blocks, each saying `0 of 3 prior periods plotted`, one after another.
+
+    `BlockContext.resources_for` did not catch it the way it caught the NSG tables: that
+    narrowing works by filtering a block's resolved scope, and a block which never resolves
+    a scope has nothing to narrow.
+
+    So the rule is declared here instead. A block type belongs in this set only if its
+    compiler is genuinely blind to which resource it was expanded for.
+    """
+    import json
+    from pathlib import Path
+
+    resource_blind = {"historical_trend"}
+
+    catalogue = json.loads(
+        (
+            Path(__file__).resolve().parent.parent
+            / "src/reporting_agent/catalog/sections.v1.json"
+        ).read_text()
+    )
+    offenders = []
+    for provider, block in catalogue["providers"].items():
+        for section in block["sections"]:
+            for expansion in section.get("expands_to", ()):
+                if expansion.get("per") == "resource" and expansion["block"] in resource_blind:
+                    offenders.append(f"{provider}/{section['key']}/{expansion['block']}")
+
+    assert offenders == [], (
+        f"these expansions repeat a block that ignores its resource, once per resource: "
+        f"{offenders}"
+    )

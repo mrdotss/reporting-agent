@@ -180,7 +180,7 @@
           },
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "historical_trend", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] }
+            { "block": "historical_trend", "per": "section", "when_presentation": ["chart_and_table", "chart_only"] }
           ]
         },
         {

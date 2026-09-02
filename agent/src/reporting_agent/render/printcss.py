@@ -162,12 +162,31 @@ h1::after, h2::after {{
   color: var(--muted);
   margin: 10pt 0 20mm;
 }}
+/* The document-control page's own title, and then its subsections. `ReportA.dc.html`
+   sets the first as the page heading with the accent rule under it and the rest as
+   `h3.ss` — small, bold, tight. Both arrive with the same style name, so the later
+   siblings are what separates them. */
 [data-style="Document Control"] {{
   font-family: var(--heading-face);
-  font-size: {h3}pt;
+  font-size: {h2}pt;
   font-weight: 700;
   color: var(--ink);
-  margin: 1.6em 0 0.5em;
+  margin: 0 0 0.15em;
+}}
+[data-style="Document Control"]::after {{
+  content: "";
+  display: block;
+  width: 9mm;
+  height: 1.6pt;
+  background: var(--accent);
+  margin: 6pt 0 10pt;
+}}
+[data-style="Document Control"] ~ [data-style="Document Control"] {{
+  font-size: {h4}pt;
+  margin: 1.4em 0 0.4em;
+}}
+[data-style="Document Control"] ~ [data-style="Document Control"]::after {{
+  content: none;
 }}
 [data-style="Title"] {{
   font-family: var(--heading-face);
@@ -222,22 +241,53 @@ table.rpt-table td {{
   overflow-wrap: break-word;
 }}
 
-/* A label/value block reads as a key column rather than a grid: the label carries the
-   weight and the value carries the ink, at `ReportA.dc.html`'s 32%. */
+/* A label/value block on the document-control page is a boxed grid with a key column,
+   at `ReportA.dc.html`'s 32%: label weighted, value inked. */
 .rpt-pairs th {{
   width: 32%;
+  background: transparent;
+  border: 0.5pt solid var(--rule);
   text-align: left;
   font-family: var(--heading-face);
   font-weight: 700;
   font-size: {small}pt;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--ink);
-  padding: 3pt 10pt 3pt 0;
-  vertical-align: baseline;
+  padding: 3.5pt 5pt;
+  vertical-align: top;
 }}
 .rpt-pairs td {{
-  padding: 3pt 0;
-  vertical-align: baseline;
+  border: 0.5pt solid var(--rule);
+  padding: 3.5pt 5pt;
+  vertical-align: top;
   color: var(--ink);
+}}
+
+/* The cover's own facts are not that grid. `ReportA.dc.html` sets them borderless under
+   a hairline, the label muted and the value carrying the weight — a title block, not a
+   table of record. It is the first such block in the front matter, which is what
+   distinguishes it: nothing in the markup says "cover", and nothing should, because the
+   cover is a position rather than a kind. */
+.rpt-front-matter > .rpt-pairs:first-of-type {{
+  border-top: 0.5pt solid var(--rule);
+  margin-top: 14pt;
+  padding-top: 10pt;
+}}
+.rpt-front-matter > .rpt-pairs:first-of-type th,
+.rpt-front-matter > .rpt-pairs:first-of-type td {{
+  border: 0;
+  padding: 3pt 22pt 3pt 0;
+}}
+.rpt-front-matter > .rpt-pairs:first-of-type th {{
+  font-family: var(--body-face);
+  font-weight: 400;
+  color: var(--muted);
+  width: 34%;
+}}
+.rpt-front-matter > .rpt-pairs:first-of-type td {{
+  font-weight: 700;
+  padding-right: 0;
 }}
 
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
@@ -311,13 +361,25 @@ caption {{
 
 .rpt-toc {{ margin: 0.5em 0 0; }}
 .rpt-toc-list {{ list-style: none; padding: 0; margin: 0; }}
+/* Weighted at the top level, indented and muted below it, and no rules between —
+   `ReportA.dc.html`'s contents is a hierarchy, and a rule under every line flattens one
+   into a list. */
 .rpt-toc-entry {{
   padding: 3.5pt 0;
-  border-bottom: 0.4pt solid var(--rule);
   font-size: {spec.body_pt - 0.5}pt;
+  font-weight: 700;
+  color: var(--ink);
 }}
-.rpt-toc-entry[data-level="2"] {{ padding-left: 8mm; }}
-.rpt-toc-entry[data-level="3"] {{ padding-left: 16mm; }}
+.rpt-toc-entry[data-level="2"] {{
+  padding: 2.5pt 0 2.5pt 7mm;
+  font-weight: 400;
+  color: var(--muted);
+}}
+.rpt-toc-entry[data-level="3"] {{
+  padding: 2.5pt 0 2.5pt 14mm;
+  font-weight: 400;
+  color: var(--muted);
+}}
 
 /* --- charts ---------------------------------------------------------------- */
 
