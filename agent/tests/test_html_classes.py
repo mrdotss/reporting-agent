@@ -47,6 +47,15 @@ _ALL_BLOCKS = [
     df.block("h", "heading", {"text": "Title", "level": 1}),
     df.block("p", "rich_text", {"text": "Body paragraph."}),
     df.block("t", "resource_table", {"columns": [df.CPU_AVG, df.CPU_MAX], "caption": "Table"}),
+    # A fact column, so the fixture produces a `TextFactCell` and therefore `rpt-fact`.
+    # Without one the equality guard below cannot tell "the emitter stopped writing that
+    # class" from "the fixture never asked for it" — and `rpt-fact` is what exempts a
+    # text fact from the figure's `nowrap`, which is the whole reason it exists.
+    df.block(
+        "tf",
+        "resource_table",
+        {"columns": [{"kind": "fact", "fact_key": "os_type"}], "caption": "Facts"},
+    ),
     df.block("k", "kpi_row", {"metrics": [df.CPU_AVG]}),
     df.block("g", "gaps_and_coverage", {}),
     df.block("c", "timeseries_chart", {"metrics": [df.CPU_AVG]}),
@@ -68,6 +77,46 @@ _TOC_BLOCKS = [
 ]
 
 
+
+def _snapshot_with_a_fact() -> dict:
+    """`two_vm_snapshot` with an `os_type` fact on every resource.
+
+    The default fixture carries statistics and no facts, so nothing in it produces a
+    `TextFactCell` — and the equality guard below cannot distinguish "the emitter stopped
+    writing `rpt-fact`" from "the fixture never asked for one". A class that exists to
+    exempt text facts from a figure's `nowrap` has to be exercised by a text fact.
+    """
+    from reporting_agent.collect.snapshot import FactEntry, ResourceSnapshot
+    from dataclasses import replace as dc_replace
+
+    snapshot = sf.two_vm_snapshot()
+    os_type = FactEntry(
+        key="os_type",
+        value="Linux",
+        value_kind="text",
+        source="resource_graph",
+        collected_at="2026-08-31T00:00:00Z",
+        formatted="Linux",
+    )
+    snapshot["resources"] = [
+        {**resource, "facts": [*(resource.get("facts") or []), _as_plain(os_type)]}
+        for resource in snapshot["resources"]
+    ]
+    return snapshot
+
+
+def _as_plain(fact) -> dict:
+    """A `FactEntry` as the plain mapping a snapshot document carries."""
+    return {
+        "key": fact.key,
+        "value": fact.value,
+        "value_kind": fact.value_kind,
+        "source": fact.source,
+        "collected_at": fact.collected_at,
+        "formatted": fact.formatted,
+    }
+
+
 def _emit_all():
     """Compile and emit a document exercising every node type.
 
@@ -79,7 +128,7 @@ def _emit_all():
     We also inject a second Chart with empty series to exercise ``rpt-notice`` (the
     empty-scope indication inside a chart with no data).
     """
-    view = build_snapshot_view(sf.two_vm_snapshot())
+    view = build_snapshot_view(_snapshot_with_a_fact())
     compiled = compile_document(
         df.definition(_ALL_BLOCKS, design=DESIGN), view=view
     )
@@ -187,10 +236,18 @@ def test_toc_classes_are_subset_of_declaration() -> None:
     )
 
 
-def test_emitted_class_names_has_exactly_seventeen_entries() -> None:
-    """The declaration carries exactly seventeen names."""
-    assert len(EMITTED_CLASS_NAMES) == 17, (
-        f"Expected 17 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
+def test_emitted_class_names_has_exactly_eighteen_entries() -> None:
+    """The declaration carries exactly eighteen names.
+
+    Grew to eighteen with `rpt-fact`, which a text fact wears **alongside** `rpt-figure`.
+    The shared class keeps the app's provenance reveal one interaction over both; the
+    second one is what lets `printcss.py` exempt a fact from the `white-space: nowrap`
+    that exists for figures, and from the right-alignment that exists for numerals. An
+    ARM resource id under `nowrap` is one unbreakable 130-character token, and it ran off
+    the right edge of the Public IP table.
+    """
+    assert len(EMITTED_CLASS_NAMES) == 18, (
+        f"Expected 18 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
     )
 
 
@@ -210,7 +267,7 @@ def test_every_declared_class_appears_in_fixture_output() -> None:
     This is the EQUALITY direction the subset check cannot provide: dropping an
     emission silently passes a subset assertion, but fails here because the fixture
     no longer produces it. The two fixtures together (document + TOC) cover all
-    seventeen names.
+    eighteen names.
     """
     outcome = _emit_all()
     toc_markup = _emit_toc()

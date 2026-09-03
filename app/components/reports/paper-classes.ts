@@ -30,6 +30,12 @@ export const EMITTED_CLASS_NAMES = [
   "rpt-toc",
   "rpt-toc-list",
   "rpt-toc-entry",
+  // Appended, never inserted: the agent's `_CLS_*` constants index its half of this
+  // list by position. A text fact wears `rpt-fact` alongside `rpt-figure` — the shared
+  // class keeps the provenance reveal one interaction over both, and the second lets a
+  // stylesheet exempt a fact from the `nowrap` and the right-alignment that exist for
+  // numerals.
+  "rpt-fact",
 ] as const
 // --- END EMITTED_CLASS_NAMES ---
 
