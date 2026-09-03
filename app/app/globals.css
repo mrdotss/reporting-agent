@@ -369,6 +369,32 @@
     font-size: 0.875em;
 }
 
+/* The contents line: section number, then the heading. No page number here and none
+   coming — this preview determines no pagination, and the styled PDF's `target-counter`
+   generates nothing in a browser without paged media. That is the same contents the
+   in-app preview has always shown, now with the section number in front of it. */
+.rpt-toc-link {
+    display: grid;
+    grid-template-columns: 3em 1fr;
+    column-gap: 0.5em;
+    align-items: baseline;
+    color: inherit;
+    text-decoration: none;
+}
+
+.rpt-toc-link:hover .rpt-toc-text {
+    text-decoration: underline;
+}
+
+.rpt-toc-number {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+}
+
+.rpt-toc-text {
+    min-width: 0;
+}
+
 .rpt-chart-period {
     color: var(--muted-foreground);
     font-size: 0.875em;

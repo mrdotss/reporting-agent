@@ -1,0 +1,1 @@
+ALTER TABLE "brands" ADD COLUMN "confidentiality_notice" text;

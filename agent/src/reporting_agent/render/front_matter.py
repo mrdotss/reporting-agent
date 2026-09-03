@@ -62,6 +62,7 @@ from reporting_agent.errors import RenderFailedError
 
 __all__ = [
     "front_matter_sections",
+    "ContentsEntry",
     "FrontMatterSection",
     "FrontMatterPairs",
     "FrontMatterPageBreak",
@@ -245,6 +246,20 @@ class DocumentControlConfig:
     document_name: str | None = None
     document_number_pattern: str | None = None
     confidentiality_notice_id: str | None = None
+
+    confidentiality_notice: str | None = None
+    """The notice itself, as prose, resolved from the Brand when the version was saved.
+
+    Prose and not a message id, because the notice names the consultancy that owns the
+    document — "...is owned by PT. Helios Informatika Nusantara..." — and no catalogue
+    entry can carry a per-tenant name: a catalogue holds fixed copy every tenant shares.
+    Requirement 12.7 makes it Brand-owned and not editable per profile, and the Brand
+    glossary entry lists "confidentiality-notice text" among what a Brand carries.
+
+    :attr:`confidentiality_notice_id` stays for the catalogue-sourced notice it was always
+    meant to name. Where both are present the prose wins, because it is the one a person
+    wrote for this account."""
+
     distribution: str | None = None
     distribution_rows: tuple[DistributionRow, ...] = ()
     approvers: tuple[ApproverEntry, ...] = ()
@@ -391,6 +406,21 @@ class FrontMatterLogo:
 
 
 @dataclass(frozen=True, slots=True)
+class ContentsEntry:
+    """One line of the contents: a heading's text, its level, its section number and the
+    id of the heading it points at.
+
+    `number` and `anchor` are printed by the styled reading copy and by nothing else —
+    see `render/toc.py::section_numbers` for why a section number in the `.docx` would
+    fail the prose gate on a correct report."""
+
+    text: str
+    level: int
+    number: str
+    anchor: str
+
+
+@dataclass(frozen=True, slots=True)
 class FrontMatterContents:
     """The table of contents: a heading and one entry per document heading.
 
@@ -401,7 +431,7 @@ class FrontMatterContents:
     """
 
     label: str
-    entries: tuple[tuple[str, int], ...]
+    entries: tuple[ContentsEntry, ...]
     entry_style: str
     label_style: str = "Title"
     """`Title` so the contents heading does not appear in its own contents."""
@@ -722,12 +752,18 @@ def front_matter_sections(
             )
 
     # --- confidentiality notice ----------------------------------------------
-    if control.confidentiality_notice_id:
+    # Under its own heading, as `ReportA.dc.html` prints it: the notice is a distinct
+    # section of the document control page, not a trailing paragraph of the distribution
+    # list. Nothing is emitted at all when no notice is configured — an empty heading
+    # would be a promise of text that is not there.
+    notice = _confidentiality_notice(control, messages)
+    if notice is not None:
         sections.append(
-            FrontMatterNote(
-                messages.text(control.confidentiality_notice_id), DOCUMENT_CONTROL_STYLE
+            FrontMatterHeading(
+                messages.text(DOC_CONTROL_CONFIDENTIALITY), DOCUMENT_CONTROL_STYLE
             )
         )
+        sections.append(FrontMatterNote(notice, DOCUMENT_CONTROL_STYLE))
 
     sections.append(FrontMatterPageBreak())
 
@@ -736,7 +772,7 @@ def front_matter_sections(
         sections.append(
             FrontMatterContents(
                 label=messages.text(TOC_LABEL_ID),
-                entries=heading_entries,
+                entries=_contents_entries(heading_entries),
                 entry_style=TOC_ENTRY_STYLE,
             )
         )
@@ -818,9 +854,11 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
         # the height pass 2 will — `render/toc.py::apply_toc_page_numbers` measures the
         # converted PDF and re-emits with the numbers it found.
         document.add_paragraph(section.label, style=section.label_style)
-        for heading_text, _level in section.entries:
+        for entry in section.entries:
             paragraph = document.add_paragraph(style=section.entry_style)
-            paragraph.add_run(heading_text)
+            # The text alone. The section number is deliberately not printed here: see
+            # `render/toc.py::section_numbers`.
+            paragraph.add_run(entry.text)
             paragraph.add_run().add_tab()
 
     elif isinstance(section, FrontMatterPageBreak):
@@ -1070,13 +1108,55 @@ def _emit_document_control(
     )
 
     # --- confidentiality notice ----------------------------------------------
-    if front_matter.document_control.confidentiality_notice_id:
+    notice = _confidentiality_notice(front_matter.document_control, messages)
+    if notice is not None:
+        # A paragraph in the document-control style, exactly as `_emit_distribution`
+        # emits its own heading: the two are the same kind of thing on the same page, and
+        # a second heading mechanism here would be a second thing to style.
         document.add_paragraph(
-            messages.text(front_matter.document_control.confidentiality_notice_id),
-            style=DOCUMENT_CONTROL_STYLE,
+            messages.text(DOC_CONTROL_CONFIDENTIALITY), style=DOCUMENT_CONTROL_STYLE
         )
+        document.add_paragraph(notice, style=DOCUMENT_CONTROL_STYLE)
 
     _add_page_break(document)
+
+
+
+
+def _contents_entries(
+    heading_entries: Sequence[tuple[str, int]],
+) -> tuple[ContentsEntry, ...]:
+    """Number and anchor a heading sequence, in the order the document presents it."""
+    from reporting_agent.render.toc import heading_anchor, section_numbers
+
+    numbers = section_numbers([level for _text, level in heading_entries])
+    return tuple(
+        ContentsEntry(
+            text=text,
+            level=level,
+            number=number,
+            anchor=heading_anchor(ordinal),
+        )
+        for ordinal, ((text, level), number) in enumerate(
+            zip(heading_entries, numbers, strict=True), start=1
+        )
+    )
+
+
+def _confidentiality_notice(
+    control: DocumentControlConfig, messages: Messages
+) -> str | None:
+    """The notice's text, or `None` where none is configured.
+
+    One function for both emitters, so the `.docx` and the reading copy cannot disagree
+    about which of the two fields wins — the prose a person wrote for this account, over
+    a catalogue id naming copy every tenant shares.
+    """
+    if control.confidentiality_notice:
+        return control.confidentiality_notice
+    if control.confidentiality_notice_id:
+        return messages.text(control.confidentiality_notice_id)
+    return None
 
 
 def _emit_distribution(

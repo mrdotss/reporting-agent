@@ -158,6 +158,21 @@ class NumberFormat:
     decimal_separator: str = "."
     grouping_separator: str = ","
 
+    trim_trailing_zeros: bool = False
+    """Whether a fraction that is all zeros is dropped, and a trailing zero inside one
+    removed: `23.00` reads as `23`, `23.10` as `23.1`, `23.15` unchanged.
+
+    **Defaults to `False`, and that default is load-bearing.** A stored definition that
+    does not declare this key — every definition saved before it existed — recompiles to
+    the identical `formatted` strings it always did, which is what keeps
+    `run_verify_report` able to re-verify a delivered report. Every version saved since
+    declares it explicitly, so the version says which way it renders instead of
+    inheriting whatever the code does this week.
+
+    Not a preference anybody can set: it is a compatibility pin. See
+    :func:`display_scale` for why presentation could not improve until formatting was
+    pinned the way the template version and the catalog already are."""
+
     def __post_init__(self) -> None:
         if (
             isinstance(self.decimal_places, bool)
@@ -173,6 +188,11 @@ class NumberFormat:
             raise CompileFailedError(
                 f"number_format.group_thousands must be a boolean, got "
                 f"{self.group_thousands!r}"
+            )
+        if not isinstance(self.trim_trailing_zeros, bool):
+            raise CompileFailedError(
+                f"number_format.trim_trailing_zeros must be a boolean, got "
+                f"{self.trim_trailing_zeros!r}"
             )
         for name, separator in (
             ("decimal_separator", self.decimal_separator),
@@ -290,6 +310,9 @@ def number_format_from_definition(
         group_thousands=bool(raw_number_format.get("group_thousands", True)),
         decimal_separator=decimal_separator,
         grouping_separator=grouping_separator,
+        # Absent means False, never True: an old definition has to render the way it
+        # rendered when it was delivered.
+        trim_trailing_zeros=bool(raw_number_format.get("trim_trailing_zeros", False)),
     )
 
 
@@ -430,8 +453,19 @@ def _render_digits(value: Decimal, scale: int, number_format: NumberFormat) -> s
         groups.append(remaining)
         integer_part = number_format.grouping_separator.join(reversed(groups))
 
+    if number_format.trim_trailing_zeros:
+        # `23.00` reads as `23` and `23.10` as `23.1`. Applied to the digits **after**
+        # quantization, never to the scale: the value was still quantized to the display
+        # scale, so the catalog's floor still decides how much precision is claimed, and
+        # what is dropped here is only the part of the claim that says nothing.
+        #
+        # `rstrip("0")` and not `Decimal.normalize()`, which also rewrites the integer
+        # part — `Decimal("1000").normalize()` is `1E+3`, and this function exists partly
+        # to keep that spelling out of a document.
+        fraction = fraction.rstrip("0")
+
     rendered = integer_part
-    if scale > 0:
+    if scale > 0 and fraction:
         rendered = f"{integer_part}{number_format.decimal_separator}{fraction}"
 
     return f"-{rendered}" if negative else rendered

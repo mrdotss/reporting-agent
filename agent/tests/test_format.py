@@ -486,3 +486,110 @@ def test_an_empty_value_is_refused() -> None:
 
     assert raised.value.code is ErrorCode.COMPILE_FAILED
     assert TEXT_FACT_AT in str(raised.value)
+
+
+# --------------------------------------------------------------------------- #
+# `trim_trailing_zeros` — the presentation decision, pinned per version
+# --------------------------------------------------------------------------- #
+
+
+TRIMMING = NumberFormat(decimal_places=2, trim_trailing_zeros=True)
+NOT_TRIMMING = NumberFormat(decimal_places=2)
+
+
+@pytest.mark.parametrize(
+    ("value", "trimmed", "untrimmed"),
+    [
+        # The rule, in the terms it was asked for: a fraction that is all zeros goes, a
+        # trailing zero inside one goes, and a fraction that says something stays.
+        ("23.00", "23", "23.00"),
+        ("23.10", "23.1", "23.10"),
+        ("23.15", "23.15", "23.15"),
+        # Zero keeps its single spelling, and a negative keeps its sign.
+        ("0.00", "0", "0.00"),
+        ("-0.50", "-0.5", "-0.50"),
+        # Grouping is unaffected: it belongs to the integer part.
+        ("1234.00", "1,234", "1,234.00"),
+        ("1234.50", "1,234.5", "1,234.50"),
+    ],
+)
+def test_a_fraction_that_says_nothing_is_dropped(
+    value: str, trimmed: str, untrimmed: str
+) -> None:
+    for number_format, expected in ((TRIMMING, trimmed), (NOT_TRIMMING, untrimmed)):
+        assert (
+            format_figure(
+                Decimal(value),
+                unit="count",
+                catalog_scale=2,
+                number_format=number_format,
+                path=PATH,
+            )
+            == expected
+        )
+
+
+def test_trimming_is_off_unless_a_definition_asks_for_it() -> None:
+    """The default is the load-bearing half.
+
+    `run_verify_report` recompiles a stored report and requires a byte-identical figure
+    ledger, `formatted` strings included. Every definition saved before this key existed
+    declares nothing, so it must reach the formatter as `False` and render exactly as it
+    rendered on the day it was delivered. A default of `True` here would fail
+    re-verification for every delivered report at once, on documents nothing is wrong with.
+    """
+    assert NumberFormat().trim_trailing_zeros is False
+    assert DEFAULT_NUMBER_FORMAT.trim_trailing_zeros is False
+
+
+def test_an_absent_key_parses_as_off_and_a_declared_one_is_honoured() -> None:
+    from reporting_agent.compile.format import number_format_from_definition
+
+    assert (
+        number_format_from_definition({}, language="en").trim_trailing_zeros is False
+    )
+    assert (
+        number_format_from_definition(
+            {"trim_trailing_zeros": True}, language="en"
+        ).trim_trailing_zeros
+        is True
+    )
+
+
+def test_the_integer_part_is_never_touched() -> None:
+    """`Decimal.normalize()` would render 1000 as `1E+3`. `rstrip` on the fraction alone
+    is why this function still emits the spelling a reader expects."""
+    assert (
+        format_figure(
+            Decimal("1000.00"),
+            unit="count",
+            catalog_scale=2,
+            number_format=TRIMMING,
+            path=PATH,
+        )
+        == "1,000"
+    )
+
+
+def test_the_catalog_floor_still_decides_what_precision_is_claimed() -> None:
+    """Trimming applies to the digits after quantization, never to the scale.
+
+    A value measured at two places still quantizes to two — what is dropped is only the
+    part of the claim that says nothing. A value that rounds to a non-zero fraction keeps
+    every digit the measurement earned.
+    """
+    assert (
+        format_figure(
+            Decimal("12.48"),
+            unit="percent",
+            catalog_scale=2,
+            number_format=NumberFormat(decimal_places=0, trim_trailing_zeros=True),
+            path=PATH,
+        )
+        == "12.48%"
+    )
+
+
+def test_a_non_boolean_is_refused_rather_than_coerced() -> None:
+    with pytest.raises(CompileFailedError):
+        NumberFormat(trim_trailing_zeros="yes")  # type: ignore[arg-type]

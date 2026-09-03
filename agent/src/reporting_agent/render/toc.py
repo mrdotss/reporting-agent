@@ -73,6 +73,7 @@ consumer imports the name.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Final
 
 __all__ = [
@@ -85,6 +86,8 @@ __all__ = [
     "TOC_HEADING_STYLES",
     "TOC_LABEL_ID",
     "apply_toc_page_numbers",
+    "heading_anchor",
+    "section_numbers",
     "should_emit_toc",
     "toc_entries_from_document",
 ]
@@ -175,6 +178,61 @@ TOC_HEADING_STYLES: Final[frozenset[str]] = frozenset(
 
 TOC_LABEL_ID: Final[str] = "doc.front_matter.toc_heading"
 """The string id for the TOC section heading, resolved through the message catalog."""
+
+
+
+# --- section numbers and anchors, for the styled reading copy only -------------------
+
+
+def heading_anchor(ordinal: int) -> str:
+    """The id a heading carries in the styled reading copy, from its 1-based position
+    among the headings the contents lists.
+
+    Derived from the ordinal rather than from the heading's text, which is not unique —
+    a per-machine section repeats "Network addressing" once per machine — and rather than
+    from the AST path, which would have to be threaded through `FrontMatterContents` and
+    is not otherwise wanted there. Both walks that need it (the contents, and the body
+    emitter) traverse `document.blocks` in order under the same predicate, so counting
+    independently produces the same ordinal for the same heading.
+    """
+    return f"rpt-heading-{ordinal}"
+
+
+def section_numbers(levels: Sequence[int]) -> tuple[str, ...]:
+    """Hierarchical section numbers for a sequence of heading levels.
+
+    `[1, 1, 2, 2, 1]` numbers as `1, 2, 2.1, 2.2, 3`, which is what `ReportA.dc.html`'s
+    contents page shows. Pure over the level sequence, so the numbers are the same on
+    every run over one document and can be computed independently wherever they are needed.
+
+    A level that jumps deeper by more than one — a `Heading 3` directly under a
+    `Heading 1`, which the compiler does not emit but a hand-written definition could —
+    opens the intermediate counters at zero rather than raising, so a malformed outline
+    produces `1.0.1` and a readable contents page instead of a failed render.
+
+    ## Why these do not reach the `.docx`
+
+    `verify/allowlist.py::derive_allowlist` renders the document under a **null context**
+    and treats the numeric tokens it finds as the document's static chrome; anything
+    numeric in the real render that the null render did not produce fails the prose gate.
+    A section that expands per resource emits no sub-headings under a null context and
+    several under real data, so `8.1`–`8.7` would exist in the delivered document and in
+    no allowlist — and a correct report would be withheld for its own contents page.
+
+    The styled reading copy has no prose gate, so the numbers live there: `render/html.py`
+    prints them and `render/docx.py` does not.
+    """
+    counters: list[int] = []
+    numbers: list[str] = []
+    for level in levels:
+        depth = max(1, level)
+        if depth > len(counters):
+            counters.extend([0] * (depth - len(counters)))
+        else:
+            del counters[depth:]
+        counters[depth - 1] += 1
+        numbers.append(".".join(str(count) for count in counters))
+    return tuple(numbers)
 
 
 def should_emit_toc() -> bool:

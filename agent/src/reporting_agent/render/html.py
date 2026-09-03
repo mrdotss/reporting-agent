@@ -69,7 +69,12 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
 from reporting_agent.compile.messages import Messages
-from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
+from reporting_agent.render.toc import (
+    ADOPTED_APPROACH,
+    TOC_APPROACH_NONE,
+    heading_anchor,
+    section_numbers,
+)
 
 __all__ = [
     "FRONT_MATTER_CLASS_NAMES",
@@ -107,11 +112,14 @@ EMITTED_CLASS_NAMES: Final[tuple[str, ...]] = (
     # Appended, never inserted: the `_CLS_*` constants below index into this tuple by
     # position, so a name added in the middle silently renames every class after it.
     "rpt-fact",
+    "rpt-toc-link",
+    "rpt-toc-number",
+    "rpt-toc-text",
 )
 # --- END EMITTED_CLASS_NAMES ---
 """Every class name the HTML emitter may write into a ``class`` attribute.
 
-Thirteen names, declared **once**. Every emit site below takes its class from this
+Declared **once**. Every emit site below takes its class from this
 collection rather than from an inline literal. `agent/tests/test_html_classes.py`
 asserts no `class="rpt-` literal appears in this file outside this declaration, and
 that a runtime-produced document's class set is a subset of this tuple.
@@ -137,6 +145,10 @@ _CLS_LAYOUT_ROW: Final[str] = EMITTED_CLASS_NAMES[13]  # rpt-layout-row
 _CLS_TOC_NAV: Final[str] = EMITTED_CLASS_NAMES[14]     # rpt-toc
 _CLS_TOC_LIST: Final[str] = EMITTED_CLASS_NAMES[15]    # rpt-toc-list
 _CLS_TOC_ENTRY: Final[str] = EMITTED_CLASS_NAMES[16]   # rpt-toc-entry
+
+_CLS_TOC_LINK: Final[str] = EMITTED_CLASS_NAMES[18]    # rpt-toc-link
+_CLS_TOC_NUMBER: Final[str] = EMITTED_CLASS_NAMES[19]  # rpt-toc-number
+_CLS_TOC_TEXT: Final[str] = EMITTED_CLASS_NAMES[20]    # rpt-toc-text
 
 FIGURE_CLASS: Final[str] = _CLS_FIGURE
 FACT_CLASS: Final[str] = EMITTED_CLASS_NAMES[17]     # rpt-fact
@@ -215,6 +227,10 @@ class _Emitter:
     figure_count: int = 0
     table_count: int = 0
     text_fact_count: int = 0
+
+    heading_ordinal: int = 0
+    """How many contents-listed headings have been written, so the next one takes the id
+    its contents entry points at."""
 
     def write(self, markup: str) -> None:
         self.parts.append(markup)
@@ -347,8 +363,19 @@ class _Emitter:
     def paragraph(self, node: Paragraph) -> None:
         tag, extra = _paragraph_tag(node.style)
         body = self.inlines(node.inlines, at=f"paragraph {node.path!r}")
+        # A heading the contents lists gets the id that contents entry points at. Counted
+        # here rather than passed in: the contents walks `document.blocks` in order under
+        # this same predicate, so the two arrive at the same ordinal for the same heading
+        # without either having to know about the other.
+        identifier = ""
+        if node.style in _TOC_HEADING_STYLES and _heading_text_of(node):
+            self.heading_ordinal += 1
+            identifier = (
+                f' id="{html.escape(heading_anchor(self.heading_ordinal), quote=True)}"'
+            )
         self.write(
-            f'<{tag} class="{_CLS_BLOCK}" data-style="{html.escape(node.style, quote=True)}"'
+            f'<{tag} class="{_CLS_BLOCK}"{identifier} '
+            f'data-style="{html.escape(node.style, quote=True)}"'
             f'{extra} data-path="{html.escape(str(node.path), quote=True)}">{body}</{tag}>'
         )
 
@@ -714,10 +741,17 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
                 )
 
         elif isinstance(section, FrontMatterContents):
+            # The number, the heading, and a link to it. The link is what lets the print
+            # stylesheet resolve a page number with `target-counter(attr(href), page)` —
+            # WeasyPrint knows where the anchor landed, and this module still determines
+            # no pagination itself (Req 24.4): it emits a reference, not a number.
             entries = "".join(
-                f'<li class="{_CLS_TOC_ENTRY}" data-level="{level}">'
-                f"{html.escape(text)}</li>"
-                for text, level in section.entries
+                f'<li class="{_CLS_TOC_ENTRY}" data-level="{entry.level}">'
+                f'<a class="{_CLS_TOC_LINK}" href="#{html.escape(entry.anchor, quote=True)}">'
+                f'<span class="{_CLS_TOC_NUMBER}">{html.escape(entry.number)}</span>'
+                f'<span class="{_CLS_TOC_TEXT}">{html.escape(entry.text)}</span>'
+                f"</a></li>"
+                for entry in section.entries
             )
             parts.append(
                 f'<nav class="{_CLS_TOC_NAV}"><p class="{_CLS_BLOCK}" data-style='
@@ -808,6 +842,23 @@ _TOC_CLS_NAV: Final[str] = _CLS_TOC_NAV
 _TOC_CLS_LIST: Final[str] = _CLS_TOC_LIST
 
 
+
+def _heading_text_of(node: Paragraph) -> str:
+    """A heading paragraph's text, by the same rule `toc_entries_from_document` uses.
+
+    A heading whose inlines render to nothing is not listed in the contents, so it must
+    not consume an ordinal here either — the two counts have to agree exactly or every
+    contents link after the disagreement points at the wrong heading.
+    """
+    parts: list[str] = []
+    for inline in node.inlines:
+        if isinstance(inline, Text):
+            parts.append(inline.text)
+        elif isinstance(inline, Figure):
+            parts.append(inline.formatted or "")
+    return "".join(parts).strip()
+
+
 def _colgroup(node: Table) -> str:
     """A `<colgroup>` giving each column a percentage of the table's width.
 
@@ -889,11 +940,21 @@ def emit_toc_html(document: object) -> str:
     if not headings:
         return ""
 
+    # The same numbering and the same anchors the front-matter contents uses: two
+    # renderings of one document's contents that disagreed about section numbers would be
+    # a defect a reader sees and no test catches.
+    numbers = section_numbers([level for level, _text in headings])
     items: list[str] = []
-    for level, text in headings:
+    for ordinal, ((level, text), number) in enumerate(
+        zip(headings, numbers, strict=True), start=1
+    ):
         items.append(
             f'<li class="{_TOC_CLS_ENTRY}" data-level="{level}">'
-            f"{html.escape(text)}</li>"
+            f'<a class="{_CLS_TOC_LINK}" '
+            f'href="#{html.escape(heading_anchor(ordinal), quote=True)}">'
+            f'<span class="{_CLS_TOC_NUMBER}">{html.escape(number)}</span>'
+            f'<span class="{_CLS_TOC_TEXT}">{html.escape(text)}</span>'
+            f"</a></li>"
         )
 
     return (

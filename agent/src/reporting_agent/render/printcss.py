@@ -455,6 +455,32 @@ caption {{
   color: var(--muted);
 }}
 
+/* The line itself: number, heading, leader, page. A grid rather than a float, so a
+   heading long enough to wrap keeps its page number on the first line and its
+   continuation clear of the number column. */
+.rpt-toc-link {{
+  display: grid;
+  grid-template-columns: 10mm 1fr auto;
+  column-gap: 2mm;
+  align-items: baseline;
+  color: inherit;
+  text-decoration: none;
+}}
+.rpt-toc-number {{ font-variant-numeric: tabular-nums; }}
+.rpt-toc-text {{ min-width: 0; }}
+
+/* The page number the reading copy can honestly print.
+   `render/html.py` emits no pagination and cannot — it is markup, and where a heading
+   lands is not knowable until the pages exist. It emits an `href` to the heading's own
+   id instead, and this resolves it at pagination time, when WeasyPrint knows. A browser
+   with no paged media generates nothing here, which is why the in-app preview has always
+   shown a contents with no page numbers and still does. */
+.rpt-toc-link::after {{
+  content: target-counter(attr(href), page);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}}
+
 /* --- charts ---------------------------------------------------------------- */
 
 .rpt-chart {{ margin: 0.7em 0 1em; break-inside: avoid; }}

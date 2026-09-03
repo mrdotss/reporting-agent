@@ -410,6 +410,11 @@ NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
         "group_thousands",
         "decimal_separator",
         "grouping_separator",
+        # v3 only, and optional even here. A definition that does not declare it renders
+        # the way it always did — which is what lets `run_verify_report` re-verify a
+        # report delivered before the key existed. See
+        # `compile/format.py::NumberFormat.trim_trailing_zeros`.
+        "trim_trailing_zeros",
     ),
 }
 
@@ -1682,6 +1687,11 @@ _DOCUMENT_CONTROL_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         "document_name",
         "document_number_pattern",
         "confidentiality_notice_id",
+        # The notice as prose, resolved from the Brand when the version was saved — the
+        # same way `design` is resolved rather than referenced. Prose and not an id
+        # because the notice names the consultancy that owns the document, which no
+        # message-catalogue entry can carry: a catalogue holds copy every tenant shares.
+        "confidentiality_notice",
         "distribution",
         "approvers",
     }
@@ -1708,6 +1718,10 @@ an optional signature. A future task decides whether the renderer prefers `compa
 
 CONTACT_BLOCK_MAX_LENGTH: Final[int] = 500
 DOCUMENT_NAME_MAX_LENGTH: Final[int] = 200
+
+CONFIDENTIALITY_NOTICE_MAX_LENGTH: Final[int] = 2000
+"""Generous for the two or three sentences a notice actually is, and bounded because it
+is copy that lands on a page with a fixed height."""
 DISTRIBUTION_MAX_LENGTH: Final[int] = 500
 SUBTITLE_MAX_LENGTH: Final[int] = 200
 APPROVER_NAME_MAX_LENGTH: Final[int] = 120
@@ -1807,6 +1821,13 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
 
     _optional_bounded_string(
         control, "document_name", path, walk, DOCUMENT_NAME_MAX_LENGTH
+    )
+    _optional_bounded_string(
+        control,
+        "confidentiality_notice",
+        path,
+        walk,
+        CONFIDENTIALITY_NOTICE_MAX_LENGTH,
     )
 
     # Req 12.7 — at schema_version 3 the confidentiality notice is inherited from the Brand
@@ -2249,6 +2270,15 @@ def _validate_number_format(value: object, path: Path, walk: _Walk) -> None:
 
     if not _is_boolean(value.get("group_thousands")):
         walk.add((*path, "group_thousands"), "group_thousands must be a boolean.")
+
+    # Optional where it is admitted at all: absent means the pre-existing rendering, so a
+    # stored definition is not made invalid by a key that did not exist when it was saved.
+    if "trim_trailing_zeros" in allowed and "trim_trailing_zeros" in value:
+        if not _is_boolean(value.get("trim_trailing_zeros")):
+            walk.add(
+                (*path, "trim_trailing_zeros"),
+                "trim_trailing_zeros must be a boolean.",
+            )
 
 
 def _validate_design(design: object, path: Path, walk: _Walk) -> None:
