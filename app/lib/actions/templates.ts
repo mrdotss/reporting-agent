@@ -1,5 +1,7 @@
 import "server-only"
 
+import { resolveLogoIntoDefinition } from "@/lib/templates/logo"
+
 import {
   collectDefinitionIssues,
   validateMetricSelectionAgainstCatalog,
@@ -234,7 +236,24 @@ export async function publishTemplateVersion(
   // learns Brands exist. The version carries the full DesignSpec inline, and a
   // Brand edit applies to the NEXT version, never retroactively.
   const brand = await ensureBrand(userId)
-  const resolvedDefinition = resolveDesignFromBrand(definition, brand)
+  const withBrand = resolveDesignFromBrand(definition, brand)
+
+  // --- Resolve the cover logo into stored bytes ------------------------------
+  // Same seam and the same reason: a saved version must be self-contained. The
+  // logo is a URL a profile author typed, and fetching it while rendering would
+  // mean the runtime requesting an address chosen by the person whose report it
+  // is, from inside the VPC. It is fetched once here, validated by its own magic
+  // number, and stored; the version carries the key. A logo that changes at that
+  // URL afterwards does not change a report already delivered.
+  //
+  // The previous version's URL and key are passed so an unchanged logo is not
+  // re-fetched and re-stored on every save.
+  const previousCover = coverOf(existingVersion?.definition ?? null)
+  const resolvedDefinition = await resolveLogoIntoDefinition(
+    withBrand as Record<string, unknown>,
+    userId,
+    previousCover
+  )
 
   return await store.insertVersion(userId, templateId, {
     definition: resolvedDefinition,
@@ -242,6 +261,24 @@ export async function publishTemplateVersion(
       resolvedDefinition as Parameters<typeof definitionSha256>[0]
     ),
   })
+}
+
+
+/** The previous version's logo URL and resolved key, for the reuse check. */
+function coverOf(definition: unknown): {
+  readonly logo?: string | null
+  readonly logoKey?: string | null
+} {
+  if (definition === null || typeof definition !== "object") return {}
+  const front = (definition as Record<string, unknown>)["front_matter"]
+  if (front === null || typeof front !== "object") return {}
+  const cover = (front as Record<string, unknown>)["cover"]
+  if (cover === null || typeof cover !== "object") return {}
+  const record = cover as Record<string, unknown>
+  return {
+    logo: typeof record["logo"] === "string" ? record["logo"] : null,
+    logoKey: typeof record["logo_key"] === "string" ? record["logo_key"] : null,
+  }
 }
 
 // --- Brand resolution --------------------------------------------------------

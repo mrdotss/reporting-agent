@@ -41,6 +41,7 @@ is never a verification input.
 
 from __future__ import annotations
 
+import base64
 import html
 import json
 from dataclasses import dataclass, field
@@ -694,11 +695,23 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
             # The block reserved for the logo, sized in points so the cover lays out the
             # same whether or not one is ever placed into it. Empty on purpose — an empty
             # dashed box labelled LOGO belongs to a mock-up, not to a signed document.
-            parts.append(
-                f'<div class="{_CLS_FM_LOGO}" '
-                f'style="height:{section.height_pt:g}pt;width:{section.width_pt:g}pt">'
-                f"</div>"
+            box = (
+                f'style="height:{section.height_pt:g}pt;'
+                f'width:{section.width_pt:g}pt"'
             )
+            if section.image is None:
+                parts.append(f'<div class="{_CLS_FM_LOGO}" {box}></div>')
+            else:
+                # A data URI, because the reading copy is rendered from this markup by a
+                # process with no access to the artifact bucket and no business making a
+                # network request to draw a cover. The bytes are already in hand.
+                encoded = base64.b64encode(section.image).decode("ascii")
+                media = _image_media_type(section.image)
+                parts.append(
+                    f'<div class="{_CLS_FM_LOGO}" {box}>'
+                    f'<img alt="" src="data:{media};base64,{encoded}" '
+                    f'style="height:100%;width:auto" /></div>'
+                )
 
         elif isinstance(section, FrontMatterContents):
             entries = "".join(
@@ -829,6 +842,18 @@ def _colgroup(node: Table) -> str:
         f'<col style="width:{width / total * 100:.4f}%" />' for width in widths
     )
     return f"<colgroup>{cols}</colgroup>"
+
+
+def _image_media_type(image: bytes) -> str:
+    """`image/png` or `image/jpeg`, from the bytes' own magic number.
+
+    Read from the content rather than from the key's extension, which is a name somebody
+    chose: `lib/brands/signature-validation.ts` already refuses an upload whose magic
+    number is neither, so these are the only two that can be here, and a mislabelled data
+    URI renders as a broken image rather than as an error anybody sees.
+    """
+    return "image/jpeg" if image[:3] == b"\xff\xd8\xff" else "image/png"
+
 
 def emit_toc_html(document: object) -> str:
     """Emit the table of contents as a list of headings carrying **no page number**.

@@ -203,6 +203,18 @@ class CoverConfig:
 
     enabled: bool = True
     logo: str | None = None
+    logo_key: str | None = None
+    """The stored object the logo's bytes live at, resolved from :attr:`logo` by the app.
+
+    `logo` is the URL a profile author typed and is what the wizard shows back to them.
+    Fetching it at render time would mean the runtime issuing a request to a
+    user-supplied address from inside the VPC — an endpoint chosen by the person whose
+    report it is, which is the shape of every SSRF. The app resolves it once when a
+    version is saved, validates the bytes as an image the way it already validates an
+    uploaded signature, and writes the key here."""
+
+    logo_image: bytes | None = None
+    """The bytes at :attr:`logo_key`, where this run could read them."""
     contact_block: str | None = None
     subtitle: str | None = None
 
@@ -370,6 +382,12 @@ class FrontMatterLogo:
 
     height_pt: float
     width_pt: float
+    image: bytes | None = None
+    """The logo itself, where this run could read it.
+
+    `None` reserves the space and draws nothing — a profile that names a logo the run
+    could not fetch lays out exactly as it will once the fetch succeeds, rather than
+    shifting every element on the cover the first time it works."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -540,7 +558,11 @@ def front_matter_sections(
         # The logo's space, above everything, as `ReportA.dc.html` opens its cover.
         if front_matter.cover.logo:
             sections.append(
-                FrontMatterLogo(height_pt=LOGO_HEIGHT_PT, width_pt=LOGO_WIDTH_PT)
+                FrontMatterLogo(
+                    height_pt=LOGO_HEIGHT_PT,
+                    width_pt=LOGO_WIDTH_PT,
+                    image=front_matter.cover.logo_image,
+                )
             )
         # The eyebrow, above the title: the document's own name in small muted caps, the
         # way `ReportA.dc.html` opens its cover with "Preventive Maintenance Report" over
@@ -777,13 +799,19 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
         document.add_paragraph(section.text, style=section.style)
 
     elif isinstance(section, FrontMatterLogo):
-        # An empty paragraph whose exact height reserves the block, so the cover lays out
-        # the same whether or not a logo is ever placed into it. No border and no
-        # placeholder text: an empty dashed box labelled LOGO is a mock-up's device, and
-        # this is a document somebody signs.
+        # The logo, or the space it will occupy. No border and no placeholder text: an
+        # empty dashed box labelled LOGO is a mock-up's device, and this is a document
+        # somebody signs.
         paragraph = document.add_paragraph()
         paragraph.paragraph_format.space_after = Pt(0)
-        paragraph.paragraph_format.line_spacing = Pt(section.height_pt)
+        if section.image is None:
+            paragraph.paragraph_format.line_spacing = Pt(section.height_pt)
+        else:
+            # Height alone, so the image keeps its own aspect ratio inside the block the
+            # cover reserved for it — constraining both would stretch somebody's logo.
+            paragraph.add_run().add_picture(
+                io.BytesIO(section.image), height=Pt(section.height_pt)
+            )
 
     elif isinstance(section, FrontMatterContents):
         # Text plus a tab, whether or not a number follows, so pass 1 lays out to exactly

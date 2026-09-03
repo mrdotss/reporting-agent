@@ -11,6 +11,7 @@ Tests cover:
 
 from __future__ import annotations
 
+import asyncio
 import base64
 
 import pytest
@@ -24,6 +25,7 @@ from reporting_agent.render.front_matter import (
     CoverConfig,
     DocumentControlConfig,
     FrontMatterConfig,
+    FrontMatterLogo,
     RevisionHistoryRow,
     RunFacts,
     emit_front_matter,
@@ -767,3 +769,270 @@ class TestResolveFrontMatterConfigCarriesEveryField:
         control = config.document_control
         assert control.distribution == "Internal only"
         assert control.distribution_rows == ()
+
+
+class TestFrontMatterImages:
+    """The bytes behind `signature_key` and `logo_key`.
+
+    `ApproverEntry.signature_image` was declared when the front matter was written and
+    `_place_signature_image` has always known how to draw one, but nothing ever loaded
+    the bytes — so an approver who uploaded a signature got the identical empty ruled box
+    as one who had not. `report_pipeline._load_front_matter_images` is the missing middle,
+    and these are the properties that make it safe to have: it reads only this run's own
+    objects, and it never fails a report.
+    """
+
+    # Real 1×1 images, not a magic number followed by zeros: the docx emitter hands
+    # these to python-docx, which parses the header to size the shape and refuses a
+    # truncated file.
+    PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg=="
+    )
+    JPEG = base64.b64decode(
+        "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a"
+        "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA"
+        "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+    )
+
+    class _Store:
+        """The two `ObjectStore` behaviours this loader depends on, and nothing else."""
+
+        def __init__(self, objects: dict[str, bytes]) -> None:
+            self.objects = objects
+            self.reads: list[str] = []
+
+        async def get_bytes(self, key: str) -> bytes:
+            self.reads.append(key)
+            if key not in self.objects:
+                raise KeyError(key)
+            return self.objects[key]
+
+    def _definition(self, *, logo_key: str | None, signature_key: str | None) -> dict:
+        cover: dict[str, object] = {"logo": "https://cdn.example/logo.png"}
+        if logo_key is not None:
+            cover["logo_key"] = logo_key
+        approver: dict[str, object] = {"role": "author", "name": "R. Prakoso"}
+        if signature_key is not None:
+            approver["signature_key"] = signature_key
+        return {
+            "front_matter": {
+                "cover": cover,
+                "document_control": {"approvers": [approver]},
+            }
+        }
+
+    def _load(self, definition: dict, store: object, actor: str = "alice") -> dict:
+        # `asyncio.run` rather than a plugin marker, matching `test_collect_pipeline.py`
+        # and the rest of the suite: the loader is the only awaitable here.
+        from reporting_agent.report_pipeline import _load_front_matter_images
+
+        return asyncio.run(
+            _load_front_matter_images(definition, store=store, actor_id=actor)
+        )
+
+    def test_both_kinds_of_image_are_read(self) -> None:
+        store = self._Store({
+            "alice/logos/l.png": self.PNG,
+            "alice/signatures/s.png": self.JPEG,
+        })
+
+        images = self._load(
+            self._definition(
+                logo_key="alice/logos/l.png",
+                signature_key="alice/signatures/s.png",
+            ),
+            store,
+        )
+
+        assert images == {
+            "alice/logos/l.png": self.PNG,
+            "alice/signatures/s.png": self.JPEG,
+        }
+
+    def test_another_tenants_key_is_never_read(self) -> None:
+        """Ownership is checked *before* the read, not after: a definition naming
+        another tenant's object must not produce a GET at all. The prefix check is on
+        the whole first segment, so `alice-evil/...` is not `alice`'s."""
+        store = self._Store({
+            "bob/logos/l.png": self.PNG,
+            "alice-evil/signatures/s.png": self.PNG,
+        })
+
+        images = self._load(
+            self._definition(
+                logo_key="bob/logos/l.png",
+                signature_key="alice-evil/signatures/s.png",
+            ),
+            store,
+        )
+
+        assert images == {}
+        assert store.reads == []
+
+    def test_a_key_that_cannot_be_read_is_not_fatal(self) -> None:
+        """Withholding a delivered report because a logo would not load is the wrong
+        trade by a wide margin — and the resulting document is the one criterion 13.6
+        clause (b) already requires for an approver who supplied no signature."""
+        store = self._Store({"alice/logos/l.png": self.PNG})
+
+        images = self._load(
+            self._definition(
+                logo_key="alice/logos/l.png",
+                signature_key="alice/signatures/missing.png",
+            ),
+            store,
+        )
+
+        assert images == {"alice/logos/l.png": self.PNG}
+
+    def test_a_definition_naming_no_images_reads_nothing(self) -> None:
+        store = self._Store({"alice/logos/l.png": self.PNG})
+
+        images = self._load(
+            self._definition(logo_key=None, signature_key=None), store
+        )
+
+        assert images == {}
+        assert store.reads == []
+
+    def test_the_loaded_bytes_reach_both_config_fields(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config(
+            self._definition(
+                logo_key="alice/logos/l.png",
+                signature_key="alice/signatures/s.png",
+            ),
+            {"alice/logos/l.png": self.PNG, "alice/signatures/s.png": self.JPEG},
+        )
+
+        assert config.cover.logo_key == "alice/logos/l.png"
+        assert config.cover.logo_image == self.PNG
+        assert config.document_control.approvers[0].signature_image == self.JPEG
+
+    def test_an_unreadable_key_leaves_the_fields_none(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config(
+            self._definition(
+                logo_key="alice/logos/l.png",
+                signature_key="alice/signatures/s.png",
+            ),
+            {},
+        )
+
+        assert config.cover.logo_key == "alice/logos/l.png"
+        assert config.cover.logo_image is None
+        assert config.document_control.approvers[0].signature_image is None
+
+
+class TestCoverLogoIsDrawn:
+    """A configured logo reaches both emitters, and an unfetchable one reserves the same
+    space rather than shifting every element on the cover."""
+
+    # Real 1×1 images, not a magic number followed by zeros: the docx emitter hands
+    # these to python-docx, which parses the header to size the shape and refuses a
+    # truncated file.
+    PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg=="
+    )
+    JPEG = base64.b64decode(
+        "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0a"
+        "HBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAA"
+        "AAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
+    )
+
+    def _logo(self, image: bytes | None) -> object:
+        return FrontMatterLogo(height_pt=34.0, width_pt=104.0, image=image)
+
+    def test_the_html_emitter_inlines_the_bytes_as_a_data_uri(self) -> None:
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html([self._logo(self.PNG)])
+
+        expected = base64.b64encode(self.PNG).decode("ascii")
+        assert f'src="data:image/png;base64,{expected}"' in markup
+
+    def test_the_media_type_comes_from_the_bytes_not_the_key(self) -> None:
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html([self._logo(self.JPEG)])
+
+        assert "data:image/jpeg;base64," in markup
+        assert "image/png" not in markup
+
+    def test_the_reading_copy_makes_no_network_request_for_the_logo(self) -> None:
+        """The bytes are already in hand, and the process that rasterises this markup
+        has no access to the artifact bucket and no business reaching the internet."""
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html([self._logo(self.PNG)])
+
+        assert "http://" not in markup
+        assert "https://" not in markup
+
+    def test_an_absent_logo_still_reserves_its_block(self) -> None:
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html([self._logo(None)])
+
+        assert "height:34pt" in markup
+        assert "<img" not in markup
+
+    def test_the_docx_emitter_places_the_picture(self) -> None:
+        from reporting_agent.render.front_matter import _emit_section
+
+        document = load_theme("editorial")
+        before = len(document.inline_shapes)
+        _emit_section(document, self._logo(self.PNG))
+
+        assert len(document.inline_shapes) == before + 1
+
+    def test_the_configs_bytes_reach_the_section(self) -> None:
+        """The join between the two halves: `_load_front_matter_images` puts the bytes on
+        `CoverConfig`, and `front_matter_sections` is what carries them to the emitters.
+        Without this, both halves can be right and the cover still draw nothing."""
+        from reporting_agent.render.front_matter import front_matter_sections
+
+        sections = front_matter_sections(
+            front_matter=FrontMatterConfig(
+                cover=CoverConfig(
+                    enabled=True,
+                    logo="https://cdn.example/logo.png",
+                    logo_key="alice/logos/l.png",
+                    logo_image=self.PNG,
+                ),
+                document_control=DocumentControlConfig(document_name="Report"),
+            ),
+            run=_run(),
+            messages=load_messages("en"),
+        )
+
+        logo = next(s for s in sections if isinstance(s, FrontMatterLogo))
+        assert logo.image == self.PNG
+
+    def test_a_cover_with_no_stored_bytes_still_reserves_the_block(self) -> None:
+        from reporting_agent.render.front_matter import front_matter_sections
+
+        sections = front_matter_sections(
+            front_matter=FrontMatterConfig(
+                cover=CoverConfig(enabled=True, logo="https://cdn.example/logo.png"),
+                document_control=DocumentControlConfig(document_name="Report"),
+            ),
+            run=_run(),
+            messages=load_messages("en"),
+        )
+
+        logo = next(s for s in sections if isinstance(s, FrontMatterLogo))
+        assert logo.image is None
+        assert logo.height_pt > 0
+
+    def test_the_docx_emitter_places_nothing_when_there_are_no_bytes(self) -> None:
+        from reporting_agent.render.front_matter import _emit_section
+
+        document = load_theme("editorial")
+        _emit_section(document, self._logo(None))
+
+        assert len(document.inline_shapes) == 0
