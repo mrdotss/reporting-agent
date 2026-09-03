@@ -56,18 +56,32 @@ _DOCUMENT: Final[str] = (
 
 
 class PrintOutcome:
-    """The rendered bytes and the HTML they came from.
+    """The rendered bytes, the HTML they came from, and the figures left out of both.
 
     The HTML is returned rather than discarded because it is what a failure is diagnosed
     from: a figure missing from this PDF is either missing from the markup or lost in
     layout, and those have different fixes.
+
+    `omitted_figure_paths` is the third: a figure that was never asked to appear. The
+    reading copy carries no chart companion table (criterion 23.12), so every plotted
+    point lives only in the `.docx`, and the reading copy's own locate check must not
+    report the ones it was told not to print. The renderer names them because the renderer
+    is what dropped them — a verifier re-deriving "which figures were probably in a
+    companion table" would be a second opinion about a decision already made here, and the
+    two would drift the first time a chart changed shape.
     """
 
-    __slots__ = ("pdf_bytes", "html")
+    __slots__ = ("pdf_bytes", "html", "omitted_figure_paths")
 
-    def __init__(self, pdf_bytes: bytes, html: str) -> None:
+    def __init__(
+        self,
+        pdf_bytes: bytes,
+        html: str,
+        omitted_figure_paths: frozenset[str] = frozenset(),
+    ) -> None:
         self.pdf_bytes = pdf_bytes
         self.html = html
+        self.omitted_figure_paths = omitted_figure_paths
 
 
 def print_document_html(
@@ -136,11 +150,16 @@ def render_print_pdf(
     """
     from reporting_agent.render.html import emit_front_matter_html, emit_html
 
+    # **No companion tables** (criterion 23.12). The `.docx` carries every plotted point
+    # as criterion 22.1 requires and remains the record; the reading copy carries the
+    # chart. A month of daily points is 31 rows per machine, and three machines turned one
+    # readable page into four pages of a table nobody reads — the artifact this copy is
+    # styled from prints the chart and a statistic summary, and that is what it is for.
     body = emit_html(
         document,
         messages=messages,
         chart_vectors=chart_vectors,
-        chart_tables=chart_tables,
+        chart_tables=None,
     ).html
     front_matter = emit_front_matter_html(front_matter_sections)
     page = print_document_html(
@@ -150,4 +169,23 @@ def render_print_pdf(
         title=title,
         language=language,
     )
-    return PrintOutcome(print_pdf_bytes(page), page)
+    return PrintOutcome(
+        print_pdf_bytes(page), page, _figure_paths_in(chart_tables)
+    )
+
+
+def _figure_paths_in(chart_tables: Mapping[str, object]) -> frozenset[str]:
+    """Every figure path inside the companion tables this renderer did not emit.
+
+    Read off the very tables that were dropped, so the exemption cannot name a figure the
+    reading copy actually carries, nor miss one it does not.
+    """
+    from reporting_agent.compile.ast import FigureCell
+
+    paths: set[str] = set()
+    for table in chart_tables.values():
+        for row in getattr(table, "rows", ()):
+            for cell in getattr(row, "cells", ()):
+                if isinstance(cell, FigureCell):
+                    paths.add(str(cell.figure.path))
+    return frozenset(paths)

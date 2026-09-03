@@ -1535,12 +1535,31 @@ that a client reading one and a colleague reading the other see identical number
 12. THE Print_Renderer SHALL embed each chart as the vector serialisation of the **same figure**
     the Docx_Renderer embedded as a raster for that run, and SHALL draw no chart of its own, so
     that the Word file and the reading copy cannot show different charts. THE Print_Renderer SHALL
-    emit each chart's companion table, so that no plotted point present in the `.docx` is absent
-    from the reading copy.
+    emit **no** chart companion table, and SHALL name the figure paths it thereby omitted so that
+    criterion 23.13 can exempt them.
+
+    This criterion previously required the companion table, "so that no plotted point present in
+    the `.docx` is absent from the reading copy". That reasoning applied the delivered pair's
+    standard to an artifact that is not the delivered pair. Criterion 22.1 governs the `.docx`
+    without exception — exactly one companion table per chart, every plotted point, no sampling
+    and no thinning — and the `.docx` remains the record a figure is proven against. The reading
+    copy is what a person reads: a month of daily points is thirty-one rows per resource, and a
+    three-machine estate turned one readable page into four pages of a table nobody reads, in the
+    one artifact whose entire purpose is that somebody reads it.
+
+    The omitted paths are named by the Print_Renderer rather than re-derived by the Verifier,
+    because the Print_Renderer is what dropped them: a Verifier inferring which figures were
+    probably inside a companion table would hold a second opinion about a decision already made,
+    and the two would part company the first time a chart changed shape.
 13. WHEN a styled reading copy is produced, THE Verifier SHALL locate every Figure_Ledger
-    `formatted` string in that copy's extracted text on the same terms criterion 33.5 applies to
-    the converted `.pdf`, and SHALL record a finding of type `styled_pdf_figure_missing` for each
-    that is not located. Those findings SHALL be **advisory**: THE Agent_Runtime SHALL present no
+    `formatted` string **except those criterion 23.12 names as omitted** in that copy's extracted
+    text on the same terms criterion 33.5 applies to the converted `.pdf`, and SHALL record a
+    finding of type `styled_pdf_figure_missing` for each that is not located. The exemption is
+    what keeps this criterion meaningful rather than absolute: without it every plotted point
+    would be reported missing, and since one finding suppresses the whole copy, no reading copy
+    would ever be presented. A figure that is neither omitted nor located is still a finding,
+    which is the case this exists for — a numeral that wrapped, a column narrower than its
+    content, a table that never reached the markup. Those findings SHALL be **advisory**: THE Agent_Runtime SHALL present no
     reading copy for a run that produced any of them, and SHALL deliver the `.docx` and `.pdf`
     pair for that run unchanged, because a document whose every figure traced and whose every gate
     passed is not withheld over the layout of a reading copy.

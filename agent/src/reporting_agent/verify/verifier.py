@@ -141,6 +141,11 @@ class VerifyInputs:
     Empty when the run produced none, which is not a failure — the delivered pair is the
     `.docx` and its conversion, and the reading copy is a third artifact. Present, it is
     checked for the same figures at advisory severity; see `verify/pdf.check_styled_pdf`."""
+    styled_pdf_omitted: frozenset[str] = frozenset()
+    """The figure paths the reading copy was told not to carry (criterion 23.12).
+
+    Named by `render/printpdf.py`, which read them off the companion tables it dropped,
+    and passed through rather than re-derived — see `check_styled_pdf`."""
     pdf_sha256: str = ""
     snapshot_sha256: str = ""
 
@@ -301,6 +306,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
             text=inputs.styled_pdf_text,
             pages_read=inputs.styled_pdf_pages,
             number_format=_number_format(inputs.definition),
+            omitted=inputs.styled_pdf_omitted,
         )
         if inputs.styled_pdf_text
         else ()

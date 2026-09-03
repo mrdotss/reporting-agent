@@ -511,9 +511,20 @@ class AzureProvider:
         # `["Microsoft.Network/networkSecurityGroups"]`, so "either section is
         # offerable" and "this query is worth issuing" are one condition, not two
         # that could disagree.
-        if any(
-            name.casefold() in _CHILD_RESOURCE_PARENT_TYPES
-            for name in scope["resource_types"]
+        #
+        # **An empty `resource_types` is unconstrained, and this gate has to read it the
+        # same way the query does.** `inventory_query` applies its `| where type in~ (...)`
+        # only `if resource_types`, so an empty list collects every type — which is how the
+        # Enesis run collected three network security groups and a virtual network in the
+        # first place. This gate read the same empty list as "names neither parent",
+        # because `any()` over nothing is false, and issued no child query at all. Every
+        # security rule and every subnet was therefore missing from every report whose
+        # profile did not enumerate resource types by hand, with **no gap recorded** —
+        # nothing had been asked for, so nothing was reported absent. The section printed
+        # "None of these facts were collected" and looked like a collection failure.
+        requested = scope["resource_types"]
+        if not requested or any(
+            name.casefold() in _CHILD_RESOURCE_PARENT_TYPES for name in requested
         ):
             child_result = await self.inventory.discover_child_resources(
                 subscription_id=scope["subscription_id"],

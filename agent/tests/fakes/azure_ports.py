@@ -169,13 +169,16 @@ class FakeInventoryPort:
     ) -> RawHttpResponse:
         """The next scripted response, from the **same** shared queue (task 6.1).
 
-        `AzureProvider.discover` calls this only when the scope actually requests a
-        resource type that has a synthetic child type (e.g. VNets, for subnets) —
-        never unconditionally — so a test scripting only `query_resources`'s own
-        responses and never requesting such a type is unaffected. A test that DOES
-        request one and forgets to script this call's response gets
+        `AzureProvider.discover` calls this when the scope requests a resource type that
+        has a synthetic child type (e.g. VNets, for subnets) **or when the scope is
+        unconstrained** — `resource_types: []` means every type, which is what
+        `inventory_query` does with it, and reading it any other way was how every
+        security rule and every subnet went uncollected without a gap.
+
+        So a test whose scope is empty must script this call too. Forgetting gets
         `ExhaustedScriptError` rather than a silent success, the same discipline every
-        other method on this fake already gives.
+        other method on this fake already gives — and that is exactly how the widened
+        gate announced itself.
         """
         result = self._state.record_and_pop(
             port_name="FakeInventoryPort",

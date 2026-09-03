@@ -2161,7 +2161,14 @@ def test_the_gap_reaches_the_snapshot_and_is_counted() -> None:
         "sku": "",
     }
     harness = Harness(
-        inventory=[inventory_page([inventory_row("prod-web-01"), sql_row])],
+        # The second page answers `query_child_resources`, which an unconstrained scope
+        # now issues: `resource_types: []` means every type, and the child-resource gate
+        # reads it the way `inventory_query` does. Empty, because this fixture has no VNet
+        # and no NSG for either leg of the combined query to expand.
+        inventory=[
+            inventory_page([inventory_row("prod-web-01"), sql_row]),
+            inventory_page([]),
+        ],
         skus=[sku_listing()],
         definitions=[definitions_response(*DECLARED_METRICS)],
         batches=[batch_response([WEB_01])],

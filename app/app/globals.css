@@ -312,6 +312,14 @@
     margin-inline-start: 0.5ch;
 }
 
+/* A text fact wears `.rpt-figure` too, so the provenance reveal is one interaction over
+   both. This is where they part: a fact can be an ARM resource id — one unbreakable
+   token past a hundred characters — and it has to wrap inside its cell rather than push
+   the table wider than the page. Figures never wrap; `agent/.../printcss.py` says why. */
+.rpt-fact {
+    overflow-wrap: anywhere;
+}
+
 .rpt-column {
     /* Layout-row column — styled by the layout-row's grid/flex. */
 }

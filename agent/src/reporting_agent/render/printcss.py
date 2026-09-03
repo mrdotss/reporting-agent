@@ -206,6 +206,15 @@ h1::after, h2::after {{
 .rpt-pairs,
 .rpt-grid,
 table.rpt-table {{
+  /* Every column's width is declared by the emitter's `<colgroup>`, from the same
+     `render/tablefit.py` allocation the `.docx` sizes its columns with — so `fixed`
+     here is not "equal columns", it is "the columns the document already agreed on".
+
+     `auto` sizes a column to its widest content, and a cell holding an ARM resource id
+     is one unbreakable token past a hundred characters: the column grew to fit it and
+     the Public IP table ran off the right edge of the page. Under `fixed` the column is
+     bounded and `overflow-wrap: break-word` below can do its job. */
+  table-layout: fixed;
   width: 100%;
   border-collapse: collapse;
   margin: 0.4em 0 0.9em;
@@ -235,10 +244,15 @@ table.rpt-table td {{
   padding: 3.5pt 5pt;
   vertical-align: top;
   color: var(--ink);
-  /* `break-word`, never `anywhere`: `anywhere` lets the engine consider a break inside
-     a word when computing the column's minimum width, so a column of
-     `metric_not_selected` is squeezed to `metri c_no t_sel ected`. */
-  overflow-wrap: break-word;
+  /* `anywhere`, and only because the column widths are now **declared**.
+     `anywhere` lets the engine consider a break inside a word when computing a column's
+     minimum width, which under `table-layout: auto` squeezed a column of
+     `metric_not_selected` to `metri c_no t_sel ected` — the reason this said
+     `break-word` before. Under `fixed` no column is sized from its content, so that
+     cost is gone, and `break-word` is not enough on its own: it declines to break a
+     token with no break opportunity of its own, which is exactly what an ARM resource
+     id is. */
+  overflow-wrap: anywhere;
 }}
 
 /* A label/value block on the document-control page is a boxed grid with a key column,
@@ -378,8 +392,25 @@ table.rpt-table th::after,
      runs to establish in Word. */
   white-space: nowrap;
 }}
-table.rpt-table td:has(> .rpt-figure),
-.rpt-grid td:has(> .rpt-figure) {{ text-align: right; }}
+
+/* A text fact wears `.rpt-figure` too, so the app's provenance reveal is one interaction
+   over both — see `render/html.py::text_fact`. The `nowrap` above must not follow it
+   here. That rule exists because `verify/pdf.py` searches for a **figure's** formatted
+   string contiguously, and both PDF gates read `ledger.entries`, which holds figures
+   alone; a fact is checked by `verify/facts.py` against the `.docx` instead.
+
+   Under `nowrap` an ARM resource id is one unbreakable 130-character token, and it ran
+   off the right edge of the Public IP table rather than wrapping inside its column. */
+.rpt-fact {{
+  white-space: normal;
+  overflow-wrap: anywhere;
+}}
+/* Numbers right, text left. The `:not(.rpt-fact)` is the same distinction `nowrap`
+   needs: a column of figures lines up on its digits, and a text fact — an ARM id, a SKU
+   name, `Static` — is prose that happens to be checked, and reads left like prose.
+   `ReportB.dc.html` sets its per-machine detail values that way. */
+table.rpt-table td:has(> .rpt-figure:not(.rpt-fact)),
+.rpt-grid td:has(> .rpt-figure:not(.rpt-fact)) {{ text-align: right; }}
 
 caption {{
   caption-side: bottom;

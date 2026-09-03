@@ -103,6 +103,9 @@ EMITTED_CLASS_NAMES: Final[tuple[str, ...]] = (
     "rpt-toc",
     "rpt-toc-list",
     "rpt-toc-entry",
+    # Appended, never inserted: the `_CLS_*` constants below index into this tuple by
+    # position, so a name added in the middle silently renames every class after it.
+    "rpt-fact",
 )
 # --- END EMITTED_CLASS_NAMES ---
 """Every class name the HTML emitter may write into a ``class`` attribute.
@@ -135,6 +138,7 @@ _CLS_TOC_LIST: Final[str] = EMITTED_CLASS_NAMES[15]    # rpt-toc-list
 _CLS_TOC_ENTRY: Final[str] = EMITTED_CLASS_NAMES[16]   # rpt-toc-entry
 
 FIGURE_CLASS: Final[str] = _CLS_FIGURE
+FACT_CLASS: Final[str] = EMITTED_CLASS_NAMES[17]     # rpt-fact
 """The class every figure element carries.
 
 `design-system.md` requires every figure in the monospace face with **tabular** numerals
@@ -274,7 +278,16 @@ class _Emitter:
             )
 
         attributes = [
-            f'class="{FIGURE_CLASS}"',
+            # Both classes. `rpt-figure` keeps the provenance reveal one interaction, as
+            # this method's docstring describes; `rpt-fact` is what lets a stylesheet tell
+            # the two apart, and they must be told apart at least once:
+            # `printcss.py` sets `white-space: nowrap` on `.rpt-figure` because
+            # `verify/pdf.py` searches for a figure's `formatted` string **contiguously**
+            # and a numeral broken across lines reads as a figure that never arrived. A
+            # text fact is not searched that way — both PDF gates read `ledger.entries`,
+            # which holds figures alone — and an ARM resource id under `nowrap` is 130
+            # unbreakable characters that ran straight off the right edge of the page.
+            f'class="{FIGURE_CLASS} {FACT_CLASS}"',
             f'data-snapshot-path="{html.escape(fact.snapshot_path, quote=True)}"',
             f'data-figure-path="{html.escape(str(fact.path), quote=True)}"',
             f'data-fact-key="{html.escape(fact.key, quote=True)}"',
@@ -388,7 +401,7 @@ class _Emitter:
         self.write(
             f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">{caption}'
-            f"{''.join(rows)}</table>"
+            f"{_colgroup(node)}{''.join(rows)}</table>"
         )
 
     def row(self, node: Table, row: Row) -> str:
@@ -767,6 +780,41 @@ _TOC_CLS_ENTRY: Final[str] = _CLS_TOC_ENTRY
 _TOC_CLS_NAV: Final[str] = _CLS_TOC_NAV
 _TOC_CLS_LIST: Final[str] = _CLS_TOC_LIST
 
+
+def _colgroup(node: Table) -> str:
+    """A `<colgroup>` giving each column a percentage of the table's width.
+
+    ## Why a table needs declared widths at all
+
+    Without them a print stylesheet has to lay the table out with `table-layout: auto`,
+    which sizes each column to its widest content. A cell holding an ARM resource id —
+    `/subscriptions/4e818b57-…/resourceGroups/…/providers/…` — is one unbreakable token
+    over a hundred characters long, so its column grows to fit and the table runs off
+    the page. `overflow-wrap: break-word` does not save it: the break is only considered
+    once the box is constrained, and under auto layout nothing constrains it.
+
+    Declared widths let the stylesheet use `table-layout: fixed`, where every column is
+    bounded and the long token wraps inside its own cell.
+
+    ## The widths are the ones the `.docx` already uses
+
+    `render/tablefit.py` is the single place a column's share of the page is decided,
+    and `render/docx.py` sizes its own columns from it. Reading the same allocation here
+    is what stops the two renderers disagreeing about how wide a column is — the
+    disagreement being the thing that made one of them overflow while the other did not.
+    """
+    from reporting_agent.render.tablefit import allocate, column_demands, header_demands
+
+    if not node.columns:
+        return ""
+    widths = allocate(column_demands(node), header_demands(node))
+    total = sum(widths)
+    if total <= 0:
+        return ""
+    cols = "".join(
+        f'<col style="width:{width / total * 100:.4f}%" />' for width in widths
+    )
+    return f"<colgroup>{cols}</colgroup>"
 
 def emit_toc_html(document: object) -> str:
     """Emit the table of contents as a list of headings carrying **no page number**.

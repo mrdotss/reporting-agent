@@ -1127,6 +1127,9 @@ async def _document_phases(
         section_catalogue=section_catalogue,
         styled_pdf_text=styled_text,
         styled_pdf_pages=styled_pages,
+        styled_pdf_omitted=(
+            styled.omitted_figure_paths if styled is not None else frozenset()
+        ),
     )
     yield steps.end(verify_step["id"])
 
@@ -1334,6 +1337,7 @@ async def _verify(
     section_catalogue: object | None = None,
     styled_pdf_text: str = "",
     styled_pdf_pages: int = 0,
+    styled_pdf_omitted: frozenset[str] = frozenset(),
 ) -> Mapping[str, Any]:
     """Assemble the verifier's inputs and run every gate.
 
@@ -1386,6 +1390,7 @@ async def _verify(
             pdf_bytes=converted.pdf_bytes,
             styled_pdf_text=styled_pdf_text,
             styled_pdf_pages=styled_pdf_pages,
+            styled_pdf_omitted=styled_pdf_omitted,
             ledger=compiled.ledger,
             ast=compiled.document,
             document=open_docx(io.BytesIO(rendered.docx_bytes)),

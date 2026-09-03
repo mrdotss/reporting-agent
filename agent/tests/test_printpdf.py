@@ -231,3 +231,168 @@ class TestCellBoundariesReachTheExtractor:
 
         _assert_cell_boundaries_survive()
 
+
+
+class TestTheReadingCopyOmitsCompanionTables:
+    """Criterion 23.12 — the reading copy carries the chart, the `.docx` carries the points.
+
+    22.1 still governs the `.docx` without exception: exactly one companion table per
+    chart, every plotted point, no sampling and no thinning. That is the record a figure
+    is proven against. The reading copy is what a person reads, and a month of daily
+    points is thirty-one rows per resource — three machines turned one readable page into
+    four pages of a table nobody reads, in the one artifact whose purpose is being read.
+
+    The pair of assertions is the whole contract: the table does not reach the markup,
+    **and** every figure that was in it is named, so criterion 23.13 exempts exactly those
+    and no more. Naming too few suppresses every reading copy ever produced; naming too
+    many hides a real layout defect.
+
+    These drive the emitter and the exemption directly rather than `render_print_pdf`,
+    which binds pango and cannot run outside the image. The render itself is asserted at
+    image build time (`agent/Dockerfile`).
+    """
+
+    @staticmethod
+    def _rendered():
+        from reporting_agent.compile.blocks import compile_document
+        from reporting_agent.compile.snapshot_view import build_snapshot_view
+        from reporting_agent.render.docx import render_document
+
+        design_plain = {
+            "preset": "corporate",
+            "accent_color": "#1f6f78",
+            "density": "normal",
+            "table_style": "hairline",
+            "number_format": {"decimal_places": 2, "group_thousands": True},
+            "cover_page": True,
+            "logo": None,
+            "page_size": "A4",
+        }
+        definition = df.definition(
+            [
+                df.block("c", "timeseries_chart", {"metrics": [df.CPU_AVG]}),
+                # A figure that is **not** a plotted point, so the exemption has something
+                # to discriminate against. A chart-only document exempts every figure it
+                # has, which would let a gate that exempted everything pass this suite.
+                df.block("t", "resource_table", {"columns": [df.CPU_AVG]}),
+            ],
+            design=design_plain,
+        )
+        compiled = compile_document(
+            definition, view=build_snapshot_view(sf.two_vm_snapshot())
+        )
+        rendered = render_document(
+            compiled.document,
+            ledger=compiled.ledger,
+            design=DesignSettings.from_plain(design_plain),
+            messages=load_messages("en"),
+            preview=False,
+        )
+        return compiled, rendered
+
+    def test_the_body_the_reading_copy_renders_carries_no_companion_table(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        compiled, rendered = self._rendered()
+        assert rendered.chart_tables, "the fixture rendered no companion table to omit"
+
+        omitted = printpdf._figure_paths_in(rendered.chart_tables)
+        assert omitted, "the renderer named no omitted figure"
+
+        # Driven through `render_print_pdf` itself, with only the pango-bound render
+        # stubbed. Asserting on a body this test assembled would leave the one decision
+        # under test — that `render_print_pdf` passes no companion table — untested: the
+        # first version of this did exactly that, and a mutant restoring the tables passed
+        # it silently.
+        captured: dict[str, str] = {}
+
+        def _capture(page: str) -> bytes:
+            captured["page"] = page
+            return b"%PDF-1.7 stub"
+
+        monkeypatch.setattr(printpdf, "print_pdf_bytes", _capture)
+        outcome = printpdf.render_print_pdf(
+            compiled.document,
+            front_matter_sections=(),
+            chart_vectors=rendered.chart_vectors,
+            chart_tables=rendered.chart_tables,
+            design=DesignSettings.from_plain(
+                {
+                    "preset": "corporate",
+                    "accent_color": "#1f6f78",
+                    "density": "normal",
+                    "table_style": "hairline",
+                    "number_format": {"decimal_places": 2, "group_thousands": True},
+                    "cover_page": True,
+                    "logo": None,
+                    "page_size": "A4",
+                }
+            ),
+            messages=load_messages("en"),
+            title="T",
+        )
+        without = captured["page"]
+        assert outcome.omitted_figure_paths == omitted
+
+        with_tables = emit_html(
+            compiled.document,
+            messages=load_messages("en"),
+            chart_vectors=rendered.chart_vectors,
+            chart_tables=rendered.chart_tables,
+        ).html
+        assert with_tables.count("<table") == without.count("<table") + len(
+            rendered.chart_tables
+        ), "omitting the companion tables removed a different number of tables"
+        assert without.count("<table") == 1, (
+            "the reading copy should keep the resource table and drop only the chart's"
+        )
+
+        # The plotted points remain in the markup, inside `.rpt-series-set`, which
+        # `printcss.py` hides with `display: none` — so they reach no page and no
+        # extracted text. That is precisely why the gate needs the exemption rather than
+        # being able to find them anyway, and asserting it here keeps the two facts
+        # together: the points are in the DOM, and they are not on the page.
+        for path in omitted:
+            assert f'data-figure-path="{path}"' in without
+        assert 'class="rpt-series-set"' in without
+
+    def test_every_omitted_figure_is_named_and_no_other(self) -> None:
+        """Exactly the companion tables' figures — not a superset, not a subset."""
+        from reporting_agent.compile.ast import FigureCell
+
+        _compiled, rendered = self._rendered()
+        expected = {
+            str(cell.figure.path)
+            for table in rendered.chart_tables.values()
+            for row in table.rows
+            for cell in row.cells
+            if isinstance(cell, FigureCell)
+        }
+
+        assert printpdf._figure_paths_in(rendered.chart_tables) == frozenset(expected)
+
+    def test_the_gate_exempts_them_and_still_reports_a_real_absence(self) -> None:
+        """23.13's exemption, and the case it must not swallow.
+
+        A figure the renderer omitted is not a finding. A figure it did not omit and the
+        text does not carry still is — a numeral that wrapped, a column too narrow — which
+        is the whole reason the check exists.
+        """
+        from reporting_agent.verify.pdf import check_styled_pdf
+
+        compiled, rendered = self._rendered()
+        omitted = printpdf._figure_paths_in(rendered.chart_tables)
+
+        # Empty text: without the exemption every figure in the ledger is a finding.
+        unexempt = check_styled_pdf(compiled.ledger, text="", pages_read=1)
+        exempt = check_styled_pdf(
+            compiled.ledger, text="", pages_read=1, omitted=omitted
+        )
+
+        assert len(unexempt) > len(exempt), (
+            "the exemption removed no finding, so it is not connected to the gate"
+        )
+        assert {f["ast_path"] for f in exempt}.isdisjoint(omitted)
+        assert exempt, (
+            "every figure was exempted, so a genuinely missing one could not be reported"
+        )
