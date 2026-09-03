@@ -339,6 +339,14 @@ table.rpt-table td[data-column-key="count"] {{
   text-align: right;
 }}
 
+/* The logo's reserved block. The emitter carries its own height and width inline, so
+   this only has to stop the box collapsing and keep it out of the text flow's baseline —
+   an empty div with no content is otherwise zero-height whatever its `height` says. */
+.rpt-logo {{
+  display: block;
+  margin: 0 0 18pt;
+}}
+
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
 .rpt-signature {{ height: 13mm; min-width: 40mm; }}
 

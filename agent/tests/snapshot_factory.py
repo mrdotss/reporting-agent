@@ -334,3 +334,43 @@ def snapshot_with_every_gap_type() -> dict:
             ),
         ],
     )
+
+
+def two_vm_snapshot_with_child_resources() -> dict:
+    """`two_vm_snapshot` plus two security rules that share a name.
+
+    Two different network security groups each carry a rule called `default-allow-ssh`,
+    which is ordinary in Azure — a rule name is unique inside its own group and nowhere
+    else. It is also the shape that refused a whole document once the child-resource query
+    started working: a table keyed on the resource name had two rows it could not tell
+    apart. A fixture with one child resource, or with two differently named ones, cannot
+    express that.
+    """
+    from reporting_agent.collect.snapshot import ResourceSnapshot
+
+    document = two_vm_snapshot()
+    base = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/rg-net/providers"
+    children = []
+    for nsg in ("nsg-web", "nsg-app"):
+        rule_id = f"{base}/Microsoft.Network/networkSecurityGroups/{nsg}/securityRules/default-allow-ssh"
+        children.append(
+            {
+                "resource_id": rule_id,
+                "name": "default-allow-ssh",
+                "resource_type": "Microsoft.Network/networkSecurityGroups/securityRules",
+                "location": "southeastasia",
+                "resource_group": "rg-net",
+                "tags": {},
+                # `unknown`, as the collector records for a resource with no power
+                # state — the field is required non-empty and a child resource has none.
+                "power_state": "unknown",
+                "power_state_raw": "",
+                "fidelity_tier": "baseline",
+                "sku": {"name": ""},
+                "statistics": [],
+                "day_buckets": [],
+                "facts": [],
+            }
+        )
+    document["resources"] = [*document["resources"], *children]
+    return document
