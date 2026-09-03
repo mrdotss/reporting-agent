@@ -42,7 +42,7 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 12
+DECLARED_TYPE_COUNT = 13
 """7 metric-bearing types, plus four fact-only additions across tasks 6.1-6.3:
 `Microsoft.Network/virtualNetworks/subnets` (a child, declares `child_of`),
 `Microsoft.Network/virtualNetworks` (first-class, its parent),
@@ -156,6 +156,11 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
         "Microsoft.Network/virtualNetworks",
         "Microsoft.Network/publicIPAddresses",
         "Microsoft.Network/networkSecurityGroups",
+        # Same reason as the two above: a network interface is first-class and counts
+        # toward every headline total, and Azure publishes no platform metric for one. It
+        # is declared for its facts alone — the subnet, private address, public address and
+        # NSG that section 4.2 reports live on the interface and not on the machine.
+        "Microsoft.Network/networkInterfaces",
     }
 
 
@@ -332,13 +337,22 @@ def test_projectable_is_ordered_by_key_and_deduplicated_across_types() -> None:
     `sku_name` with the identical projection, and a query naming one column twice is a query
     Resource Graph rejects.
     """
-    declaration = load_catalog().facts
-    pairs = declaration.projectable()
+    from reporting_agent.azure.provider import _non_child_projections
+
+    # Asserted on the pairs `inventory_query` is actually given, not on the union across
+    # every type. A child type's facts go into their own `mv-expand` query and share no
+    # column with this one, so one key can legitimately mean two expressions across that
+    # line — a network interface's `subnet` is a name extracted from an id, and
+    # `Microsoft.Network/virtualNetworks/subnets`'s is `subnet.name` from its own expansion.
+    # The union cannot hold both and be a column list; this scope can, and is the one the
+    # query builder reads.
+    pairs = _non_child_projections(load_catalog())
     keys = [key for key, _ in pairs]
 
     assert keys == sorted(keys)
     assert len(keys) == len(set(keys))
     # The dedup is real, not vacuous: there genuinely are repeated declarations behind it.
+    declaration = load_catalog().facts
     projectable_entries = [
         entry for entry in declaration.entries if entry.projectable
     ]
@@ -358,10 +372,20 @@ def test_one_key_is_one_column_across_every_type_in_the_shipped_file() -> None:
     Asserted as one projection per key across the file, which is the property the query
     builder actually needs; the de-duplication test above only shows the pairs collapse.
     """
+    # Over the **first-class** types, which are the ones sharing `inventory_query`'s single
+    # `project` clause. A child type is projected by its own `mv-expand` query and shares no
+    # column with them, so it is excluded here for the same reason `_non_child_projections`
+    # excludes it there — and `test_a_child_type_may_reuse_a_first_class_key` below pins that
+    # the exclusion is real rather than a hole.
+    catalog = load_catalog()
+    child_types = {name.casefold() for name in child_type_names(catalog)}
     by_key: dict[str, set[str]] = {}
-    for entry in load_catalog().facts.entries:
-        if entry.projectable and entry.projection:
-            by_key.setdefault(entry.key, set()).add(entry.projection)
+    for declared in catalog.facts.resource_types:
+        if declared.resource_type.casefold() in child_types:
+            continue
+        for entry in declared.facts:
+            if entry.projectable and entry.projection:
+                by_key.setdefault(entry.key, set()).add(entry.projection)
 
     disagreeing = {key: paths for key, paths in by_key.items() if len(paths) > 1}
     assert disagreeing == {}
@@ -1017,3 +1041,29 @@ def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
         "Microsoft.Network/virtualNetworks/subnets",
         "Microsoft.Network/networkSecurityGroups/securityRules",
     )
+
+
+def test_a_child_type_may_reuse_a_first_class_key_and_only_one_reaches_the_query() -> None:
+    """`subnet` is declared twice, and the two are not interchangeable.
+
+    A network interface's `subnet` is a name extracted from
+    `properties.ipConfigurations[0].properties.subnet.id`, which `inventory_query` can
+    evaluate. `Microsoft.Network/virtualNetworks/subnets`'s is `tostring(subnet.name)`,
+    which names an identifier that exists only inside `subnet_inventory_query`'s own
+    `mv-expand` — put it in the main query and every fact of every type fails together.
+
+    Excluding by **key** rather than by owning type dropped both, so section 4.2's subnet
+    column was silently empty on a document where nothing said why. This pins the fix in
+    both directions: the interface's projection is present, and the subnet's is not.
+    """
+    from reporting_agent.azure.provider import _non_child_projections
+
+    pairs = dict(_non_child_projections(load_catalog()))
+
+    assert "subnet" in pairs
+    assert "ipConfigurations" in pairs["subnet"]
+    assert "subnet.name" not in pairs["subnet"]
+
+    # And nothing a child type declares alone reaches the main query at all.
+    assert "address_prefix" not in pairs
+    assert "priority" not in pairs

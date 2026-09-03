@@ -15,8 +15,20 @@
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "inventory_summary", "per": "section", "config": { "group_by": "subscription" } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "inventory_summary",
+              "per": "section",
+              "config": {
+                "group_by": "subscription"
+              }
+            }
           ]
         },
         {
@@ -31,8 +43,20 @@
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "inventory_summary", "per": "section", "config": { "group_by": "resource_group" } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "inventory_summary",
+              "per": "section",
+              "config": {
+                "group_by": "resource_group"
+              }
+            }
           ]
         },
         {
@@ -42,13 +66,79 @@
           "group": "inventory",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Network/virtualNetworks"],
-          "needs_fact_sources": ["resource_graph"],
+          "needs_resource_types": [
+            "Microsoft.Network/virtualNetworks"
+          ],
+          "needs_fact_sources": [
+            "resource_graph"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "_scope": "children", "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "ip_configuration_count"}] } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "address_space"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "dns_servers"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "peering"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "peering_state"
+                  }
+                ]
+              }
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "subnet"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "address_prefix"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "ip_configuration_count"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -58,18 +148,143 @@
           "group": "inventory",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
-          "needs_fact_sources": ["resource_graph"],
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "needs_fact_sources": [
+            "resource_graph"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.inventory" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "size"}, {"kind": "fact", "fact_key": "os_type"}, {"kind": "fact", "fact_key": "os_build"}, {"kind": "attribute", "attribute": "power_state"}], "subsection": "4.1" } },
-            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.network" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "nic"}, {"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "private_ip"}, {"kind": "fact", "fact_key": "public_ip"}, {"kind": "fact", "fact_key": "nsg"}], "subsection": "4.2" } },
-            { "block": "heading", "config": { "level": 3, "title_id": "doc.section.virtual_machines.disks" }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "disk_name"}, {"kind": "fact", "fact_key": "disk_size_gb"}, {"kind": "fact", "fact_key": "disk_type"}, {"kind": "fact", "fact_key": "caching"}], "subsection": "4.3" } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3,
+                "title_id": "doc.section.virtual_machines.inventory"
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "vm_size"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "os_type"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "power_state"
+                  }
+                ],
+                "subsection": "4.1"
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3,
+                "title_id": "doc.section.virtual_machines.network"
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "machine"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "subnet"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "private_ip"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "public_ip"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "nsg"
+                  }
+                ],
+                "subsection": "4.2",
+                "_types": [
+                  "Microsoft.Network/networkInterfaces"
+                ]
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3,
+                "title_id": "doc.section.virtual_machines.disks"
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "sku_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "disk_size_gb"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "os_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "disk_state"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "machine"
+                  }
+                ],
+                "subsection": "4.3",
+                "_types": [
+                  "Microsoft.Compute/disks"
+                ]
+              }
+            }
           ]
         },
         {
@@ -79,13 +294,50 @@
           "group": "inventory",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Network/publicIPAddresses"],
-          "needs_fact_sources": ["resource_graph"],
+          "needs_resource_types": [
+            "Microsoft.Network/publicIPAddresses"
+          ],
+          "needs_fact_sources": [
+            "resource_graph"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "address"}, {"kind": "fact", "fact_key": "allocation_method"}, {"kind": "fact", "fact_key": "sku"}, {"kind": "fact", "fact_key": "association"}] } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "address"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "allocation_method"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "sku"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "association"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -95,13 +347,67 @@
           "group": "inventory",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Network/networkSecurityGroups"],
-          "needs_fact_sources": ["resource_graph"],
+          "needs_resource_types": [
+            "Microsoft.Network/networkSecurityGroups"
+          ],
+          "needs_fact_sources": [
+            "resource_graph"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "_scope": "children", "columns": [{"kind": "fact", "fact_key": "priority"}, {"kind": "fact", "fact_key": "direction"}, {"kind": "fact", "fact_key": "protocol"}, {"kind": "fact", "fact_key": "source"}, {"kind": "fact", "fact_key": "destination"}, {"kind": "fact", "fact_key": "port"}, {"kind": "fact", "fact_key": "action"}], "omit_default_rules_above": 65000 } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "priority"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "direction"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "protocol"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "source"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "destination"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "port"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "action"
+                  }
+                ],
+                "omit_default_rules_above": 65000
+              }
+            }
           ],
           "notes": "Azure default rules at priority 65000 and above are omitted; the section reports rules an operator wrote."
         },
@@ -112,13 +418,50 @@
           "group": "inventory",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
-          "needs_fact_sources": ["capacity"],
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "needs_fact_sources": [
+            "capacity"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "reservation_name"}, {"kind": "fact", "fact_key": "sku"}, {"kind": "fact", "fact_key": "quantity"}, {"kind": "fact", "fact_key": "expiry"}, {"kind": "fact", "fact_key": "utilization"}] } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "reservation_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "sku"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "quantity"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "expiry"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "utilization"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -128,36 +471,148 @@
           "group": "utilisation",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
           "needs_fact_sources": [],
           "metric_bearing": true,
-          "order_by": { "metric": "Percentage CPU", "statistic": "max" },
+          "order_by": {
+            "metric": "Percentage CPU",
+            "statistic": "max"
+          },
           "presets": {
             "standard_utilization": [
-              { "metric": "Percentage CPU", "statistic": "avg" },
-              { "metric": "Percentage CPU", "statistic": "max" },
-              { "metric": "Available Memory Bytes", "statistic": "avg" }
+              {
+                "metric": "Percentage CPU",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Percentage CPU",
+                "statistic": "max"
+              }
             ],
             "capacity_planning": [
-              { "metric": "Percentage CPU", "statistic": "avg" },
-              { "metric": "Percentage CPU", "statistic": "max" },
-              { "metric": "Percentage CPU", "statistic": "p95" },
-              { "metric": "Available Memory Bytes", "statistic": "avg" },
-              { "metric": "Available Memory Bytes", "statistic": "min" },
-              { "metric": "Disk Read Bytes", "statistic": "avg" },
-              { "metric": "Disk Write Bytes", "statistic": "avg" },
-              { "metric": "Network In Total", "statistic": "avg" },
-              { "metric": "Network Out Total", "statistic": "avg" }
+              {
+                "metric": "Percentage CPU",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Percentage CPU",
+                "statistic": "max"
+              },
+              {
+                "metric": "Percentage CPU",
+                "statistic": "p95"
+              },
+              {
+                "metric": "Available Memory Bytes",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Available Memory Bytes",
+                "statistic": "min"
+              },
+              {
+                "metric": "Disk Read Bytes",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Disk Write Bytes",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Network In Total",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Network Out Total",
+                "statistic": "avg"
+              }
             ],
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "heading", "config": { "level": 3 }, "per": "resource" },
-            { "block": "resource_table", "per": "resource", "config": { "layout": "pairs", "columns": [{"kind": "fact", "fact_key": "vm_size"}, {"kind": "fact", "fact_key": "os_type"}, {"kind": "fact", "fact_key": "os_build"}, {"kind": "fact", "fact_key": "private_ip"}, {"kind": "attribute", "attribute": "resource_group"}, {"kind": "attribute", "attribute": "location"}, {"kind": "attribute", "attribute": "power_state"}] }, "when_presentation": ["chart_and_table", "table_only"] },
-            { "block": "timeseries_chart", "per": "resource", "when_presentation": ["chart_and_table", "chart_only"] },
-            { "block": "metric_summary", "per": "resource", "config": { "orientation": "statistic_major" }, "when_presentation": ["chart_and_table", "table_only"] },
-            { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "vm_size"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "os_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "os_build"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "private_ip"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_group"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "power_state"
+                  }
+                ]
+              },
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            },
+            {
+              "block": "metric_summary",
+              "per": "resource",
+              "config": {
+                "orientation": "statistic_major"
+              },
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "top_n_table",
+              "per": "section",
+              "config": {
+                "caption_id": "doc.section.fleet_summary"
+              }
+            }
           ]
         },
         {
@@ -167,22 +622,46 @@
           "group": "utilisation",
           "position": "free",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
           "needs_fact_sources": [],
           "metric_bearing": true,
           "optional": true,
           "draws_from_prior_verified_runs": true,
-          "trend_metric": { "metric": "Percentage CPU", "statistic": "max" },
+          "trend_metric": {
+            "metric": "Percentage CPU",
+            "statistic": "max"
+          },
           "presets": {
             "standard_utilization": [
-              { "metric": "Percentage CPU", "statistic": "avg" },
-              { "metric": "Percentage CPU", "statistic": "max" }
+              {
+                "metric": "Percentage CPU",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Percentage CPU",
+                "statistic": "max"
+              }
             ],
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "historical_trend", "per": "section", "when_presentation": ["chart_and_table", "chart_only"] }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "historical_trend",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            }
           ]
         },
         {
@@ -199,20 +678,58 @@
           ],
           "needs_fact_sources": [],
           "metric_bearing": true,
-          "order_by": { "metric": "cpu_percent", "statistic": "max" },
+          "order_by": {
+            "metric": "cpu_percent",
+            "statistic": "max"
+          },
           "presets": {
             "standard_utilization": [
-              { "metric": "cpu_percent", "statistic": "avg" },
-              { "metric": "cpu_percent", "statistic": "max" },
-              { "metric": "storage_percent", "statistic": "avg" }
+              {
+                "metric": "cpu_percent",
+                "statistic": "avg"
+              },
+              {
+                "metric": "cpu_percent",
+                "statistic": "max"
+              },
+              {
+                "metric": "storage_percent",
+                "statistic": "avg"
+              }
             ],
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "metric_summary", "per": "section", "when_presentation": ["chart_and_table", "table_only"] },
-            { "block": "timeseries_chart", "per": "section", "when_presentation": ["chart_and_table", "chart_only"] },
-            { "block": "top_n_table", "per": "section", "config": { "caption_id": "doc.section.fleet_summary" } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "metric_summary",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            },
+            {
+              "block": "top_n_table",
+              "per": "section",
+              "config": {
+                "caption_id": "doc.section.fleet_summary"
+              }
+            }
           ]
         },
         {
@@ -230,18 +747,53 @@
           "metric_bearing": true,
           "presets": {
             "standard_utilization": [
-              { "metric": "BytesReceived", "statistic": "avg" },
-              { "metric": "BytesSent", "statistic": "avg" },
-              { "metric": "Availability", "statistic": "avg" },
-              { "metric": "Egress", "statistic": "avg" },
-              { "metric": "Ingress", "statistic": "avg" }
+              {
+                "metric": "BytesReceived",
+                "statistic": "avg"
+              },
+              {
+                "metric": "BytesSent",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Availability",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Egress",
+                "statistic": "avg"
+              },
+              {
+                "metric": "Ingress",
+                "statistic": "avg"
+              }
             ],
             "everything": "*"
           },
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "metric_summary", "per": "section", "when_presentation": ["chart_and_table", "table_only"] },
-            { "block": "timeseries_chart", "per": "section", "when_presentation": ["chart_and_table", "chart_only"] }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "metric_summary",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            }
           ]
         },
         {
@@ -251,13 +803,50 @@
           "group": "closing",
           "position": "fixed",
           "repeatable": false,
-          "needs_resource_types": ["Microsoft.Compute/virtualMachines"],
-          "needs_fact_sources": ["recovery_services"],
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "needs_fact_sources": [
+            "recovery_services"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "attribute", "attribute": "resource_name"}, {"kind": "fact", "fact_key": "vault"}, {"kind": "fact", "fact_key": "policy"}, {"kind": "fact", "fact_key": "last_backup"}, {"kind": "fact", "fact_key": "retention_days"}] } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "vault"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "policy"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "last_backup"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "retention_days"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -273,8 +862,26 @@
           "author_filled": true,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "blank_rows_table", "per": "section", "config": { "columns": ["Case", "Date", "Solution", "Description"], "rows": 5 } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "blank_rows_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  "Case",
+                  "Date",
+                  "Solution",
+                  "Description"
+                ],
+                "rows": 5
+              }
+            }
           ]
         },
         {
@@ -285,12 +892,39 @@
           "position": "fixed",
           "repeatable": false,
           "needs_resource_types": [],
-          "needs_fact_sources": ["advisor"],
+          "needs_fact_sources": [
+            "advisor"
+          ],
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "section", "config": { "columns": [{"kind": "fact", "fact_key": "category"}, {"kind": "fact", "fact_key": "impact"}, {"kind": "fact", "fact_key": "recommendation"}] } }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "category"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "impact"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "recommendation"
+                  }
+                ]
+              }
+            }
           ]
         },
         {
@@ -305,9 +939,21 @@
           "metric_bearing": false,
           "presets": {},
           "expands_to": [
-            { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "gaps_and_coverage", "per": "section" },
-            { "block": "verification_record", "per": "section" }
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "section"
+            },
+            {
+              "block": "gaps_and_coverage",
+              "per": "section"
+            },
+            {
+              "block": "verification_record",
+              "per": "section"
+            }
           ]
         }
       ]

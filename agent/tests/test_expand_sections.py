@@ -787,11 +787,23 @@ class TestScopeOverride:
 
         named = [s.config.get("_resource_id") for s in per_resource]
         assert all(name is not None for name in named), named
-        # Every block names a resource the section actually resolved, and no two name the
-        # same one — a repeated id would be the duplication this key exists to prevent,
-        # wearing a different shape.
+        # Every block names a resource the section actually resolved.
         assert set(named) == set(nsg_ids)
-        assert len(named) == len(set(named))
+
+        # And within **one** expansion index, no two blocks name the same resource — the
+        # duplication this key exists to prevent. Asserted per index rather than over the
+        # flat list because a section may expand more than one block per resource, and
+        # `network_security_groups` now does: a heading naming the group, then its rules.
+        # A flat uniqueness check would have called that the bug it is the fix for.
+        by_expansion: dict[str, list[object]] = {}
+        for spec in per_resource:
+            expansion_index = spec.id.rsplit("__", 1)[0]
+            by_expansion.setdefault(expansion_index, []).append(
+                spec.config.get("_resource_id")
+            )
+        for expansion_index, ids in by_expansion.items():
+            assert len(ids) == len(set(ids)), expansion_index
+            assert set(ids) == set(nsg_ids), expansion_index
 
 
 # ---------------------------------------------------------------------------
@@ -1843,9 +1855,21 @@ class TestAPerResourceTableCanShowThatResourcesChildren:
 
     def test_the_shipped_sections_declare_it(self) -> None:
         """Both sections that render a child resource beside its parent, so a future one
-        that forgets the flag is visible here rather than as an empty table."""
+        that forgets the flag is visible here rather than as an empty table.
+
+        Identified by the **columns**, not by position: a section may legitimately carry a
+        per-resource table about the parent as well as one about its children, and
+        `virtual_network` now does — a virtual network's own address space and peering
+        above the list of its subnets, as `ReportA.dc.html` lays it out. Asserting that
+        every per-resource table is child-scoped would forbid that; asserting that a table
+        declaring child facts is child-scoped is the property that actually matters.
+        """
         catalogue = _make_catalogue()
-        for key in ("network_security_groups", "virtual_network"):
+        child_facts = {
+            "network_security_groups": {"priority", "direction", "port", "action"},
+            "virtual_network": {"subnet", "address_prefix", "ip_configuration_count"},
+        }
+        for key, keys_of_children in child_facts.items():
             entry = catalogue.by_key(key)
             assert entry is not None
             tables = [
@@ -1854,8 +1878,30 @@ class TestAPerResourceTableCanShowThatResourcesChildren:
                 if block.block == "resource_table" and block.per == "resource"
             ]
             assert tables, f"{key} declares no per-resource table"
-            for block in tables:
+
+            child_tables = [
+                block
+                for block in tables
+                if {
+                    column.get("fact_key")
+                    for column in dict(block.config).get("columns", [])
+                    if isinstance(column, dict)
+                }
+                & keys_of_children
+            ]
+            assert child_tables, f"{key} declares no table over its child resources"
+            for block in child_tables:
                 assert dict(block.config).get("_scope") == "children", (
                     f"{key}'s per-resource table resolves the parent, so it shows none "
                     f"of the child facts it declares columns for"
+                )
+
+            # And the converse: a table that declares no child fact must NOT be
+            # child-scoped, or it would resolve subnets and ask them for a virtual
+            # network's address space.
+            for block in tables:
+                if block in child_tables:
+                    continue
+                assert dict(block.config).get("_scope") is None, (
+                    f"{key} declares a child-scoped table that asks for no child fact"
                 )

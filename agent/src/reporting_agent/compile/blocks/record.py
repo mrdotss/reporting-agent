@@ -168,7 +168,7 @@ def compile_gaps_and_coverage(
         for ordinal, (gap_type, entries) in enumerate(grouped):
             row_cursor = table_cursor.child("rows", ordinal)
             affected = ", ".join(
-                dict.fromkeys(entry.resource_id for entry in entries)
+                dict.fromkeys(_short_name(entry.resource_id) for entry in entries)
             )
             count = view.cardinality("gaps", "by_type", gap_type)
             value_cursor = row_cursor.child("cells", 2)
@@ -204,6 +204,25 @@ def compile_gaps_and_coverage(
     nodes.extend(_drift_statements(context, cursor, start_index=1))
 
     return BlockOutput(nodes=tuple(nodes))  # type: ignore[arg-type]
+
+
+
+def _short_name(resource_id: str) -> str:
+    """The resource's own name, from the end of its ARM id.
+
+    A gap row naming eleven resources by full id is one cell holding a thousand characters
+    of `/subscriptions/<uuid>/resourceGroups/<rg>/providers/...` repeated eleven times,
+    which wraps to half a page and tells a reader nothing the name does not. ARM puts the
+    name in the last segment, so that is what this reads.
+
+    The **display** is shortened and nothing else: the gap's own `resource_id` is
+    unchanged in the snapshot and in `gaps_by_type`, so the appendix still identifies
+    exactly what it always did and a reader who needs the full id has it where it is
+    recorded. A value with no separator is returned as it is rather than emptied — a gap
+    keyed by something that is not a path is still a gap worth naming.
+    """
+    _, separator, last = resource_id.rpartition("/")
+    return last if separator and last else resource_id
 
 
 def _drift_statements(

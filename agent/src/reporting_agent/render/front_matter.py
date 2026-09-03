@@ -397,6 +397,9 @@ class FrontMatterLogo:
 
     height_pt: float
     width_pt: float
+    space_after_pt: float = 0.0
+    """The gap beneath it. See :data:`LOGO_SPACE_AFTER_PT`."""
+
     image: bytes | None = None
     """The logo itself, where this run could read it.
 
@@ -474,6 +477,14 @@ The style names ride along rather than being resolved per emitter. That follows 
 
 LOGO_HEIGHT_PT: Final[float] = 34.0
 LOGO_WIDTH_PT: Final[float] = 104.0
+
+LOGO_SPACE_AFTER_PT: Final[float] = 44.0
+"""The gap between the logo and the eyebrow beneath it.
+
+`ReportA.dc.html` sets 56px under a 34px logo on a 640px-wide page standing in for A4 —
+a gap two-thirds again the logo's own height, which is what stops the mark reading as a
+heading for the title. Emitted as paragraph space rather than as an empty paragraph so
+the two emitters can express it identically and neither has a blank line to lose."""
 """The block `ReportA.dc.html` reserves for the logo, in points.
 
 Its own 104x34 CSS pixels read as points here because the artifact is drawn at 96dpi on an
@@ -591,6 +602,7 @@ def front_matter_sections(
                 FrontMatterLogo(
                     height_pt=LOGO_HEIGHT_PT,
                     width_pt=LOGO_WIDTH_PT,
+                    space_after_pt=LOGO_SPACE_AFTER_PT,
                     image=front_matter.cover.logo_image,
                 )
             )
@@ -839,7 +851,7 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
         # empty dashed box labelled LOGO is a mock-up's device, and this is a document
         # somebody signs.
         paragraph = document.add_paragraph()
-        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.space_after = Pt(section.space_after_pt)
         if section.image is None:
             paragraph.paragraph_format.line_spacing = Pt(section.height_pt)
         else:

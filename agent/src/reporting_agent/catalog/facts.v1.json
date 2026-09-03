@@ -160,6 +160,13 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(tostring(properties.osType), tostring(properties.storageProfile.osDisk.osType))"
+        },
+        {
+          "key": "machine",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(properties.virtualMachine.id)), extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(managedBy)))"
         }
       ]
     },
@@ -318,6 +325,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(properties.addressSpace.addressPrefixes[0])"
+        },
+        {
+          "key": "dns_servers",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "strcat_array(properties.dhcpOptions.dnsServers, \", \")"
+        },
+        {
+          "key": "peering",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "extract(@\"/virtualNetworks/([^/]+)$\", 1, tostring(properties.virtualNetworkPeerings[0].properties.remoteVirtualNetwork.id))"
+        },
+        {
+          "key": "peering_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.virtualNetworkPeerings[0].properties.peeringState)"
         }
       ]
     },
@@ -442,6 +470,45 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(rule.properties.access)"
+        }
+      ]
+    },
+    "Microsoft.Network/networkInterfaces": {
+      "facts": [
+        {
+          "key": "machine",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "coalesce(extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(properties.virtualMachine.id)), extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(managedBy)))"
+        },
+        {
+          "key": "subnet",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "extract(@\"/subnets/([^/]+)$\", 1, tostring(properties.ipConfigurations[0].properties.subnet.id))"
+        },
+        {
+          "key": "private_ip",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.ipConfigurations[0].properties.privateIPAddress)"
+        },
+        {
+          "key": "public_ip",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "extract(@\"/publicIPAddresses/([^/]+)$\", 1, tostring(properties.ipConfigurations[0].properties.publicIPAddress.id))"
+        },
+        {
+          "key": "nsg",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "extract(@\"/networkSecurityGroups/([^/]+)$\", 1, tostring(properties.networkSecurityGroup.id))"
         }
       ]
     }

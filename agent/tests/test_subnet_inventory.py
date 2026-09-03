@@ -300,14 +300,15 @@ def test_a_child_types_facts_are_excluded_from_the_general_projection_union() ->
     make the WHOLE inventory query fail, for every resource type, on every run, the
     moment `Microsoft.Network/virtualNetworks/subnets` declares any projectable fact.
 
-    `_non_child_projections` is the fix: the same union, minus every key any declared
-    child type owns — task 6.3 adds a second child type
-    (`Microsoft.Network/networkSecurityGroups/securityRules`) with its own four
-    excluded keys, so this test derives the excluded set from the real catalogue's own
-    `child_type_names` rather than hardcoding subnet's four keys, which is what keeps
-    it correct as more child types are declared. Proven against the real, shipped
-    catalogue, not a hand-built one — this is the fact declaration `AzureProvider.
-    discover` actually loads and passes to `inventory.discover`.
+    `_non_child_projections` is the fix, and it excludes by **owning type** rather than by
+    key. The difference is live: a network interface declares `subnet` too — the name read
+    out of `properties.ipConfigurations[0].properties.subnet.id`, which this query *can*
+    evaluate — and excluding by key dropped that one along with the child's, so section
+    4.2's subnet column was empty and nothing said why. A key owned only by a child type is
+    still absent; a key a first-class type also declares keeps that type's expression.
+
+    Proven against the real, shipped catalogue, not a hand-built one — this is the fact
+    declaration `AzureProvider.discover` actually loads and passes to `inventory.discover`.
     """
     from reporting_agent.azure.provider import _non_child_projections
     from reporting_agent.catalog.loader import child_type_names, load_catalog
@@ -323,18 +324,39 @@ def test_a_child_types_facts_are_excluded_from_the_general_projection_union() ->
         if declared.resource_type in children
         for entry in declared.facts
     }
-    for key in ("subnet", "address_prefix", "ip_configuration_count", "peering_state"):
+    first_class_keys = {
+        entry.key
+        for declared in catalog.facts.resource_types
+        if declared.resource_type not in children
+        for entry in declared.facts
+        if entry.projectable and entry.projection
+    }
+
+    # Owned by a child type and by nothing else: these must never ride this query.
+    # `peering_state` left this list when the parent type declared it too — a peering is a
+    # property of a virtual network, not of a subnet, and the two now read it by the
+    # identical expression, so it is covered by the both-sides case below rather than here.
+    for key in ("address_prefix", "ip_configuration_count"):
         assert key in child_keys, "this guard is only meaningful while these are subnet keys"
+        assert key not in first_class_keys, (
+            f"{key!r} is no longer child-only, so it proves nothing here"
+        )
         assert key not in filtered_keys, (
             f"{key!r} is declared only by the child type "
             f"{SUBNET_CHILD_RESOURCE_TYPE!r} and must never ride inventory_query's "
             f"own projection clause"
         )
 
-    # And the fix must not have thrown out anything else: every non-child projectable
-    # fact the catalogue declares is still present.
-    unfiltered_keys = {key for key, _ in catalog.facts.projectable()}
-    assert filtered_keys == unfiltered_keys - child_keys
+    # Declared on both sides of the line. It belongs here — as the interface's expression,
+    # never as the subnet's, which names an identifier this query does not bind.
+    assert "subnet" in child_keys and "subnet" in first_class_keys
+    assert "subnet" in filtered_keys
+    assert "ipConfigurations" in dict(filtered)["subnet"]
+    assert "subnet.name" not in dict(filtered)["subnet"]
+
+    # And the fix must not have thrown out anything else: every projectable fact a
+    # first-class type declares is still present.
+    assert filtered_keys == first_class_keys
 
 
 def test_mutation_check_a_naive_unfiltered_union_would_have_broken_every_run() -> None:
