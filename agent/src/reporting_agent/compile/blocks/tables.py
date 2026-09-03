@@ -52,6 +52,7 @@ from typing import Final
 
 from reporting_agent.compile.ast import Column, FigureCell, Row, Table, TextFactCell
 from reporting_agent.compile.blocks.base import (
+    EMPTY_MESSAGE_CONFIG_KEY,
     MAX_TABLE_ROWS,
     BlockContext,
     BlockOutput,
@@ -325,6 +326,16 @@ def _fact_columns(
     return tuple(result)
 
 
+
+def _empty_message_id(block: BlockSpec) -> str | None:
+    """The sentence this block declared for its own empty result, if any.
+
+    See `compile/blocks/base.py::EMPTY_MESSAGE_CONFIG_KEY`.
+    """
+    declared = block.config.get(EMPTY_MESSAGE_CONFIG_KEY)
+    return declared if isinstance(declared, str) and declared else None
+
+
 def _fact_header(key: str) -> str:
     """A fact key as a column label: `private_ip` -> "Private IP".
 
@@ -542,7 +553,10 @@ def _resource_rows_table(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
+        return BlockOutput(nodes=(empty_scope_table(
+            table_cursor, style, caption, messages=context.messages,
+            message_id=_empty_message_id(block),
+        ),))
 
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]
@@ -991,7 +1005,10 @@ def compile_kpi_row(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
+        return BlockOutput(nodes=(empty_scope_table(
+            table_cursor, style, caption, messages=context.messages,
+            message_id=_empty_message_id(block),
+        ),))
 
     rows: list[Row] = []
     for ordinal, ref in enumerate(refs):
@@ -1086,7 +1103,10 @@ def compile_capacity_vs_usage(
     caption = caption_of(block)
 
     if not matched:
-        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=context.messages),))
+        return BlockOutput(nodes=(empty_scope_table(
+            table_cursor, style, caption, messages=context.messages,
+            message_id=_empty_message_id(block),
+        ),))
 
     with_tier = shows_fidelity(block)
     shown = matched[:MAX_TABLE_ROWS]

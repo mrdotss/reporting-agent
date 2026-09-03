@@ -99,6 +99,9 @@ __all__ = [
     "CHILD_SCOPE_CHILDREN",
     "CHILD_SCOPE_CONFIG_KEY",
     "RESOURCE_TYPES_CONFIG_KEY",
+    "EMPTY_MESSAGE_CONFIG_KEY",
+    "FACT_FILTER_KEY",
+    "FACT_FILTER_VALUE_KEY",
     "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
     "BlockSpec",
@@ -157,6 +160,21 @@ Declared by the section catalogue on the expansion, carried in the block's confi
 the resource id the expander wrote, and read by `BlockContext.resources_for`. Underscored
 like `_resource_id` because it is written per run from the live snapshot and never reaches
 a stored definition."""
+
+FACT_FILTER_KEY: Final[str] = "filter_fact"
+FACT_FILTER_VALUE_KEY: Final[str] = "filter_value"
+"""How one table narrows to the resources whose named fact holds one value.
+
+A network security group's rules are listed under an `Inbound` label and an `Outbound`
+one, as `ReportA.dc.html` lists them: two tables over one group's rules, each showing the
+rules that govern traffic in that direction. One table sorted by direction would put the
+two together and leave the reader to find the boundary.
+
+Compared case-insensitively against the fact's stored value, because Azure spells a
+direction `Inbound` and a catalogue reads better lowercase. Unlike `_scope` and
+`_resource_id`, these two are ordinary catalogue configuration rather than something the
+expander writes per run, so they are **not** underscored — they belong in a stored
+definition and describe the table rather than the run."""
 
 RESOURCE_TYPES_CONFIG_KEY: Final[str] = "_types"
 """How one block of a section narrows to resource types **other than the section's**.
@@ -675,7 +693,9 @@ class BlockContext:
         source = self.view if view is None else view
         wanted = block.config.get(RESOURCE_ID_CONFIG_KEY)
         if wanted is None:
-            return resolve(self.scope_for(block), source)
+            return self._narrow_by_fact(
+                block, resolve(self.scope_for(block), source), source
+            )
 
         if block.config.get(CHILD_SCOPE_CONFIG_KEY) == CHILD_SCOPE_CHILDREN:
             # **This resource's children, not this resource.**
@@ -697,14 +717,47 @@ class BlockContext:
             # `is_child_type` still decides child-ness, from the `child_of` declaration.
             prefix = f"{wanted}/"
             folded = prefix.casefold()
-            return tuple(
-                r
-                for r in source.resources
-                if r.resource_id.casefold().startswith(folded)
+            return self._narrow_by_fact(
+                block,
+                tuple(
+                    r
+                    for r in source.resources
+                    if r.resource_id.casefold().startswith(folded)
+                ),
+                source,
             )
 
         matched = resolve(self.scope_for(block), source)
-        return tuple(r for r in matched if r.resource_id == wanted)
+        return self._narrow_by_fact(
+            block, tuple(r for r in matched if r.resource_id == wanted), source
+        )
+
+    def _narrow_by_fact(
+        self,
+        block: BlockSpec,
+        resources: tuple[ResourceView, ...],
+        source: SnapshotView,
+    ) -> tuple[ResourceView, ...]:
+        """`resources`, narrowed to those whose declared fact holds the declared value.
+
+        See :data:`FACT_FILTER_KEY`. A block declaring no filter is returned unchanged, and
+        so is one whose resources answer the key with nothing — an empty result reaches the
+        compiler's own no-data branch, which says the filter was right and the data is
+        missing rather than blaming the filter.
+        """
+        key = block.config.get(FACT_FILTER_KEY)
+        value = block.config.get(FACT_FILTER_VALUE_KEY)
+        if not isinstance(key, str) or not isinstance(value, str):
+            return resources
+
+        wanted = value.casefold()
+        narrowed: list[ResourceView] = []
+        for resource in resources:
+            for fact in source.facts_for(resource.resource_id):
+                if fact.key == key and str(fact.value).casefold() == wanted:
+                    narrowed.append(resource)
+                    break
+        return tuple(narrowed)
 
     def cursor(self, block: BlockSpec) -> BlockCursor:
         """A fresh block-root cursor, rooted at this block's own id.
@@ -909,8 +962,23 @@ def text_cell(cursor: BlockCursor, text: str) -> TextCell:
     return TextCell(path=cursor.path, text=text)
 
 
+EMPTY_MESSAGE_CONFIG_KEY: Final[str] = "empty_message_id"
+"""How a table says what its own empty result means.
+
+`No resources matched this scope` is right for a filter that found nothing and wrong for
+one whose emptiness is itself the finding: a network security group with no outbound rule
+is not a group the filter missed, it is a group whose outbound traffic follows Azure's
+defaults, and a reader needs to be told which. Declared by the catalogue on the block, so
+the sentence belongs to the table that knows what it was looking for."""
+
+
 def empty_scope_table(
-    cursor: BlockCursor, style: str, caption: str | None, *, messages: Messages
+    cursor: BlockCursor,
+    style: str,
+    caption: str | None,
+    *,
+    messages: Messages,
+    message_id: str | None = None,
 ) -> Table:
     """The one explicit row a block emits when its scope matched nothing (Req 3.7, 16.10).
 
@@ -923,13 +991,25 @@ def empty_scope_table(
     would have had — a reader scanning for the section finds it where it belongs, with its
     caption, saying plainly that nothing matched. A block that collapsed to nothing is
     indistinguishable from one that was never configured.
+
+    `message_id` replaces the sentence where the block declared one — see
+    :data:`EMPTY_MESSAGE_CONFIG_KEY`.
     """
+    # Branched rather than `messages.text(message_id or EMPTY_SCOPE_TEXT)`, so the
+    # constant stays a direct `.text()` argument: `compile/literals.py`'s scan requires an
+    # id constant to appear nowhere else, which is what keeps a string id from drifting
+    # into being used as copy.
+    text = (
+        messages.text(message_id)
+        if message_id
+        else messages.text(EMPTY_SCOPE_TEXT)
+    )
     return _notice_table(
         cursor,
         style,
         caption,
         key="empty-scope",
-        text=messages.text(EMPTY_SCOPE_TEXT),
+        text=text,
         header=messages.text(NOTICE_COLUMN_HEADER),
     )
 

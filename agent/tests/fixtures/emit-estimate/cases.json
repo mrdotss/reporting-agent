@@ -305,9 +305,9 @@
         "microsoft.network/networksecuritygroups": 3
       },
       "expected": {
-        "headings": 4,
+        "headings": 10,
         "charts": 0,
-        "tables": 3,
+        "tables": 6,
         "figures": 0,
         "matches_zero_resources": false
       }

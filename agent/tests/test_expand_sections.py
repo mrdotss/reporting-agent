@@ -1905,3 +1905,160 @@ class TestAPerResourceTableCanShowThatResourcesChildren:
                 assert dict(block.config).get("_scope") is None, (
                     f"{key} declares a child-scoped table that asks for no child fact"
                 )
+
+
+class TestADirectionLabelRepeatsUnderEachResource:
+    """A network security group's rules under an `Inbound` label and an `Outbound` one.
+
+    `_assert_resource_heading_untitled` refuses a fixed title on a per-resource heading,
+    and it is right to: the same section title once per machine is the defect it was
+    written for. A direction label is the case where that repetition is the intent, so the
+    catalogue declares it rather than the guard guessing.
+    """
+
+    def _blocks(self) -> tuple:
+        catalogue = _make_catalogue()
+        nsg_type = "Microsoft.Network/networkSecurityGroups"
+        ids = [
+            f"/subscriptions/sub-1/resourceGroups/rg-prod/providers/{nsg_type}/nsg-0{n}"
+            for n in (1, 2)
+        ]
+        view = _make_view(ids, resource_type=nsg_type)
+        definition = _make_v3_definition(sections=[{
+            "id": "sec_nsg", "type": "network_security_groups", "position": 1,
+            "selection": {"resource_types": [nsg_type], "resource_groups": [],
+                          "tag_filters": [], "top_n": None, "sort": None},
+            "metrics": [], "presentation": "table_only",
+        }])
+        return expand_sections(
+            definition, catalogue=catalogue, view=view, messages=_make_messages()
+        )
+
+    def test_the_label_survives_the_resource_name_assignment(self) -> None:
+        """The half that shipped broken first: the expander writes `resource.name` over
+        every per-resource heading's text, which put the group's name where `Inbound`
+        belongs. A label resolves its own title and keeps it."""
+        headings = [
+            dict(spec.config).get("text")
+            for spec in self._blocks()
+            if spec.type == "heading"
+        ]
+
+        assert "Inbound" in headings
+        assert "Outbound" in headings
+
+    def test_each_group_gets_both_labels_and_both_tables(self) -> None:
+        blocks = self._blocks()
+        by_resource: dict[str, list[str]] = {}
+        for spec in blocks:
+            config = dict(spec.config)
+            resource = config.get("_resource_id")
+            if resource is None:
+                continue
+            by_resource.setdefault(str(resource), []).append(
+                str(config.get("filter_value") or config.get("text") or spec.type)
+            )
+
+        assert len(by_resource) == 2
+        for parts in by_resource.values():
+            assert parts.count("Inbound") == 2   # the label and the table's filter
+            assert parts.count("Outbound") == 2
+
+    def test_the_two_tables_filter_on_opposite_directions(self) -> None:
+        filters = [
+            (dict(s.config).get("filter_fact"), dict(s.config).get("filter_value"))
+            for s in self._blocks()
+            if s.type == "resource_table"
+        ]
+
+        assert set(filters) == {("direction", "Inbound"), ("direction", "Outbound")}
+
+    def test_an_untitled_per_resource_heading_still_names_its_resource(self) -> None:
+        """The guard's own case is unaffected: the group's own heading is still its name."""
+        named = [
+            dict(s.config).get("text")
+            for s in self._blocks()
+            # Per-resource headings only: the section's own heading is a `per: "section"`
+            # block carrying the section title, and it names no resource by design.
+            if s.type == "heading"
+            and dict(s.config).get("_resource_id") is not None
+            and dict(s.config).get("text") not in ("Inbound", "Outbound")
+        ]
+
+        assert named, "the group's own heading is missing"
+        assert all("nsg-0" in str(name) for name in named), named
+
+
+class TestTheChartPlotsTheRankingMetricAlone:
+    """`ReportB.dc.html` charts Percentage CPU alone — maximum over average — and reports
+    memory, disk and network in the statistics table beneath it. A chart plotting every
+    selected metric stacks a panel per magnitude, so a section selecting four metrics
+    spent most of a page per machine on panels nobody asked to see full-size."""
+
+    def _configs(self, metrics: list[dict]) -> dict[str, list]:
+        catalogue = _make_catalogue()
+        vm_type = "Microsoft.Compute/virtualMachines"
+        view = _make_view(
+            [f"/subscriptions/sub-1/resourceGroups/rg/providers/{vm_type}/vm-1"],
+            resource_type=vm_type,
+        )
+        definition = _make_v3_definition(sections=[{
+            "id": "sec_vm", "type": "vm_utilization", "position": 1,
+            "selection": {"resource_types": [vm_type], "resource_groups": [],
+                          "tag_filters": [], "top_n": None, "sort": None},
+            "metrics": metrics, "presentation": "chart_and_table",
+        }])
+        blocks = expand_sections(
+            definition, catalogue=catalogue, view=view, messages=_make_messages()
+        )
+        return {
+            spec.type: list(dict(spec.config).get("metrics") or [])
+            for spec in blocks
+            if spec.type in ("timeseries_chart", "metric_summary")
+        }
+
+    SELECTED = [
+        {"metric": "Percentage CPU", "statistic": "avg"},
+        {"metric": "Percentage CPU", "statistic": "max"},
+        {"metric": "Available Memory Bytes", "statistic": "avg"},
+    ]
+
+    def test_the_chart_keeps_only_the_ranking_metric(self) -> None:
+        configs = self._configs(self.SELECTED)
+
+        assert [m["metric"] for m in configs["timeseries_chart"]] == [
+            "Percentage CPU",
+            "Percentage CPU",
+        ]
+        assert {m["statistic"] for m in configs["timeseries_chart"]} == {"avg", "max"}
+
+    def test_the_summary_table_still_reports_every_selected_metric(self) -> None:
+        """The narrowing is the chart's alone — nothing is dropped from the report."""
+        configs = self._configs(self.SELECTED)
+
+        assert configs["metric_summary"] == self.SELECTED
+
+    def test_a_section_that_did_not_select_the_ranking_metric_keeps_its_chart(self) -> None:
+        """A profile that dropped CPU keeps the chart it chose rather than losing it."""
+        selected = [{"metric": "Available Memory Bytes", "statistic": "avg"}]
+
+        assert self._configs(selected)["timeseries_chart"] == selected
+
+    def test_the_marker_never_reaches_a_block_config(self) -> None:
+        """`metrics_from` is a catalogue instruction, not something a compiler reads."""
+        catalogue = _make_catalogue()
+        vm_type = "Microsoft.Compute/virtualMachines"
+        view = _make_view(
+            [f"/subscriptions/sub-1/resourceGroups/rg/providers/{vm_type}/vm-1"],
+            resource_type=vm_type,
+        )
+        definition = _make_v3_definition(sections=[{
+            "id": "sec_vm", "type": "vm_utilization", "position": 1,
+            "selection": {"resource_types": [vm_type], "resource_groups": [],
+                          "tag_filters": [], "top_n": None, "sort": None},
+            "metrics": self.SELECTED, "presentation": "chart_and_table",
+        }])
+
+        for spec in expand_sections(definition, catalogue=catalogue, view=view,
+                                    messages=_make_messages()):
+            assert "metrics_from" not in dict(spec.config)
