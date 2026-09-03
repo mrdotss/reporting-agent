@@ -161,9 +161,53 @@ class TestTheDescriptionIsTheOrder:
         assert "R. Prakoso" in markup  # the name is in its own column, not the box
 
     def test_the_contents_carry_no_page_number(self) -> None:
-        """Req 24.4 — the HTML emitter determines no pagination, so it promises none."""
+        """Req 24.4 — the HTML emitter determines no pagination, so it promises none.
+
+        It emits a **reference** and not a number: an `href` to the heading's own id, which
+        `printcss.py` resolves with `target-counter(attr(href), page)` at pagination time.
+        WeasyPrint knows where the anchor landed and this module does not, which is the
+        whole distinction. A browser with no paged media renders the entry with no number
+        at all, which is what the in-app preview has always shown.
+
+        Asserted as the absence of a resolved page number rather than the absence of every
+        digit — the earlier form of this test — because the entry now legitimately carries
+        a **section** number, which is derived from the heading sequence and says nothing
+        about pages.
+        """
         contents = next(s for s in _full_sections() if isinstance(s, FrontMatterContents))
         markup = emit_front_matter_html([contents])
+
         assert "Azure Subscription Overview" in markup
-        assert not any(character.isdigit() for character in
-                       markup.split('data-level="')[1].split("</li>")[0][2:])
+        # The reference, not a number.
+        assert 'href="#rpt-heading-1"' in markup
+        # Nothing that resolves pagination: no page counter, no total, no "page N of M".
+        for forbidden in ("data-page", "page-number", " of ", "counter(page"):
+            assert forbidden not in markup
+
+    def test_the_contents_number_their_sections(self) -> None:
+        """Two level-1 headings number 1 and 2, and each links to its own heading."""
+        contents = next(s for s in _full_sections() if isinstance(s, FrontMatterContents))
+
+        assert [(e.number, e.anchor) for e in contents.entries] == [
+            ("1", "rpt-heading-1"),
+            ("2", "rpt-heading-2"),
+        ]
+
+    def test_an_entrys_anchor_is_the_id_the_body_gives_that_heading(self) -> None:
+        """The join. The contents counts headings and so does the body emitter, and if the
+        two ever disagreed every link after the disagreement would point one heading off.
+        """
+        from reporting_agent.compile.ast import Document, Paragraph, Text
+        from reporting_agent.render.html import emit_html
+
+        document = Document(blocks=(
+            Paragraph(path="b1:0", style="Heading 1",
+                      inlines=(Text(path="b1:0", text="Azure Subscription Overview"),)),
+            Paragraph(path="b2:0", style="Heading 1",
+                      inlines=(Text(path="b2:0", text="Resource Groups"),)),
+        ))
+        body = emit_html(document, messages=_MESSAGES).html
+
+        contents = next(s for s in _full_sections() if isinstance(s, FrontMatterContents))
+        for entry in contents.entries:
+            assert f'id="{entry.anchor}"' in body

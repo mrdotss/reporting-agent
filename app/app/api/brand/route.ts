@@ -36,6 +36,7 @@ export async function PATCH(request: Request) {
     "coverPage",
     "defaultApproverNames",
     "confidentialityNoticeId",
+    "confidentialityNotice",
   ] as const
 
   const updates: Record<string, unknown> = {}

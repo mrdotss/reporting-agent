@@ -24,6 +24,7 @@ const FAKE_BRAND: Brand = {
   coverPage: true,
   defaultApproverNames: { author: "Alice", reviewer: "Bob" },
   confidentialityNoticeId: null,
+  confidentialityNotice: null,
   createdAt: new Date("2026-08-01T00:00:00Z"),
   updatedAt: new Date("2026-08-01T01:00:00Z"),
 }
@@ -34,6 +35,7 @@ describe("BrandView projection guard", () => {
 
     expect(Object.keys(view).sort()).toEqual([
       "accentColor",
+      "confidentialityNotice",
       "confidentialityNoticeId",
       "coverPage",
       "createdAt",

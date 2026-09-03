@@ -285,6 +285,10 @@ export const NUMBER_FORMAT_KEYS = {
     "group_thousands",
     "decimal_separator",
     "grouping_separator",
+    // v3 only, and optional even here. A definition that does not declare it renders the
+    // way it always did — which is what lets the runtime re-verify a report delivered
+    // before the key existed. See `compile/format.py::NumberFormat.trim_trailing_zeros`.
+    "trim_trailing_zeros",
   ],
 } as const
 
@@ -1027,6 +1031,10 @@ export const APPROVER_ROLES = [
 
 export const CONTACT_BLOCK_MAX_LENGTH = 500
 export const DOCUMENT_NAME_MAX_LENGTH = 200
+
+/** Generous for the two or three sentences a notice actually is, and bounded because it
+ * is copy that lands on a page with a fixed height. */
+export const CONFIDENTIALITY_NOTICE_MAX_LENGTH = 2000
 export const DISTRIBUTION_MAX_LENGTH = 500
 export const SUBTITLE_MAX_LENGTH = 200
 export const APPROVER_NAME_MAX_LENGTH = 120
@@ -1046,6 +1054,11 @@ const DOCUMENT_CONTROL_ALLOWED_KEYS = [
   "document_name",
   "document_number_pattern",
   "confidentiality_notice_id",
+  // The notice as prose, resolved from the Brand when the version is saved — the same way
+  // `design` is resolved rather than referenced. Prose and not an id because the notice
+  // names the consultancy that owns the document, which no message-catalogue entry can
+  // carry: a catalogue holds copy every tenant shares.
+  "confidentiality_notice",
   "distribution",
   "approvers",
 ] as const
@@ -1234,6 +1247,13 @@ function validateDocumentControl(
     path,
     issues,
     DOCUMENT_NAME_MAX_LENGTH
+  )
+  optionalBoundedString(
+    control,
+    "confidentiality_notice",
+    path,
+    issues,
+    CONFIDENTIALITY_NOTICE_MAX_LENGTH
   )
 
   // Requirement 12.7 — at schema_version 3 the confidentiality notice is inherited from the
@@ -2648,6 +2668,20 @@ function validateNumberFormat(
       issues,
       [...path, "group_thousands"],
       "group_thousands must be a boolean."
+    )
+  }
+
+  // Optional where it is admitted at all: absent means the pre-existing rendering, so a
+  // stored definition is not made invalid by a key that did not exist when it was saved.
+  if (
+    allowedKeys.includes("trim_trailing_zeros") &&
+    "trim_trailing_zeros" in value &&
+    !isBoolean(value["trim_trailing_zeros"])
+  ) {
+    addIssue(
+      issues,
+      [...path, "trim_trailing_zeros"],
+      "trim_trailing_zeros must be a boolean."
     )
   }
 }

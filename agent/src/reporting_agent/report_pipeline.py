@@ -915,6 +915,7 @@ def _resolve_front_matter_config(
             document_name=str(dc_raw["document_name"]) if dc_raw.get("document_name") else None,
             document_number_pattern=str(dc_raw["document_number_pattern"]) if dc_raw.get("document_number_pattern") else None,
             confidentiality_notice_id=str(dc_raw["confidentiality_notice_id"]) if dc_raw.get("confidentiality_notice_id") else None,
+            confidentiality_notice=str(dc_raw["confidentiality_notice"]) if dc_raw.get("confidentiality_notice") else None,
             distribution=distribution_text,
             distribution_rows=distribution_rows,
             approvers=approvers,

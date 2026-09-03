@@ -722,6 +722,21 @@ export const brands = pgTable(
     /** FK into a future confidentiality_notices table. Nullable for now. */
     confidentialityNoticeId: text("confidentiality_notice_id"),
 
+    /**
+     * The confidentiality notice itself, as prose.
+     *
+     * Requirement 12.7 makes the notice Brand-owned and not editable per profile, and the
+     * glossary entry for Brand lists "confidentiality-notice text" among what it carries.
+     * That is text, not an id: the notice names the consultancy that owns the document
+     * ("...is owned by PT. Helios Informatika Nusantara..."), so no message-catalogue
+     * entry could express it — a catalogue holds fixed copy shared by every tenant.
+     *
+     * `confidentialityNoticeId` above stays for the catalogue-sourced notice it was always
+     * meant to reference. Nullable, and null means the document control page prints no
+     * confidentiality section at all rather than an empty heading.
+     */
+    confidentialityNotice: text("confidentiality_notice"),
+
     createdAt: instant("created_at").notNull().defaultNow(),
 
     updatedAt: instant("updated_at")

@@ -69,7 +69,11 @@ from reporting_agent.verify.findings import (
     VerificationResult,
     build_result,
 )
-from reporting_agent.verify.masking import ledger_strings_of, scan_paragraphs
+from reporting_agent.verify.masking import (
+    ledger_strings_of,
+    scan_paragraphs,
+    text_fact_strings_by_block,
+)
 from reporting_agent.verify.ports import MetricRequeryPort
 from reporting_agent.verify.replay import ReplayPlan, replay
 from reporting_agent.verify.tokens import numeric_tokens, paragraph_texts
@@ -262,6 +266,9 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     prose = scan_paragraphs(
         paragraphs, ledger_strings=ledger_strings, allowlist=allowlist,
         proven_toc_numerals=toc_result.proven_toc_numerals,
+        # Grouped by table identity, so a proven text fact excuses its own cell and
+        # nothing else in the document.
+        text_fact_strings=text_fact_strings_by_block(inputs.ledger),
     )
     findings.extend(prose)
     counts["unmatched_prose_tokens"] = len(prose)

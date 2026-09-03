@@ -236,7 +236,10 @@ export async function publishTemplateVersion(
   // learns Brands exist. The version carries the full DesignSpec inline, and a
   // Brand edit applies to the NEXT version, never retroactively.
   const brand = await ensureBrand(userId)
-  const withBrand = resolveDesignFromBrand(definition, brand)
+  const withBrand = resolveNoticeFromBrand(
+    resolveDesignFromBrand(definition, brand),
+    brand
+  )
 
   // --- Resolve the cover logo into stored bytes ------------------------------
   // Same seam and the same reason: a saved version must be self-contained. The
@@ -297,6 +300,34 @@ function coverOf(definition: unknown): {
  * development and would protect nothing day to day. This function is where the
  * frozen-at-publish guarantee actually lives, so this is the seam the guard needs.
  */
+/**
+ * The Brand's number format, with `trim_trailing_zeros` pinned on for v3.
+ *
+ * `23.00` for a count of twenty-three resources reads as though something was measured to
+ * two decimals; the estate has twenty-three. So a fraction that is all zeros is dropped
+ * and a trailing zero inside one removed — `23.00` → `23`, `23.10` → `23.1`, `23.15`
+ * unchanged.
+ *
+ * Written **into the version** rather than switched on in the renderer, and that is the
+ * whole point. `run_verify_report` recompiles a stored report and requires a
+ * byte-identical figure ledger, `formatted` strings included, so a formatter that changed
+ * behaviour globally would fail re-verification for every report already delivered — on
+ * documents nothing is wrong with. A version that does not declare the key renders the way
+ * it always did; one saved from here declares it and says so.
+ *
+ * v3 only, because that is the only schema version whose `number_format` admits the key.
+ * A v1 or v2 definition keeps the Brand's format unchanged rather than being handed a
+ * field its own validator would reject.
+ */
+function numberFormatFor(
+  definition: Record<string, unknown>,
+  brand: Brand
+): Record<string, unknown> {
+  const format = (brand.numberFormat ?? {}) as Record<string, unknown>
+  if (definition["schema_version"] !== 3) return format
+  return { ...format, trim_trailing_zeros: true }
+}
+
 export function resolveDesignFromBrand(
   definition: unknown,
   brand: Brand
@@ -312,10 +343,54 @@ export function resolveDesignFromBrand(
       accent_color: brand.accentColor,
       density: brand.density,
       table_style: brand.tableStyle,
-      number_format: brand.numberFormat,
+      number_format: numberFormatFor(def, brand),
       cover_page: brand.coverPage,
       logo: brand.logoKey,
       page_size: brand.pageSize,
     },
+  }
+}
+
+/**
+ * The definition with the Brand's confidentiality notice written into
+ * `front_matter.document_control.confidentiality_notice`.
+ *
+ * Requirement 12.7 makes the notice Brand-owned and not editable per profile, and names
+ * the Brand as where it is edited. Something still has to do the inheriting, and this is
+ * it — the same seam and the same reason as {@link resolveDesignFromBrand}: a saved
+ * version carries the notice inline, so editing the Brand tomorrow does not change the
+ * wording on a report somebody signed today.
+ *
+ * A Brand with no notice removes the key rather than writing an empty string, so the
+ * document control page prints no confidentiality section at all. An empty heading over
+ * nothing is worse than no heading.
+ */
+export function resolveNoticeFromBrand(
+  definition: unknown,
+  brand: Brand
+): unknown {
+  if (typeof definition !== "object" || definition === null) return definition
+
+  const def = definition as Record<string, unknown>
+  const front = def["front_matter"]
+  const frontMatter = (
+    front !== null && typeof front === "object" ? front : {}
+  ) as Record<string, unknown>
+  const control = frontMatter["document_control"]
+  const documentControl = (
+    control !== null && typeof control === "object" ? control : {}
+  ) as Record<string, unknown>
+
+  const notice = brand.confidentialityNotice
+  const resolved = { ...documentControl }
+  if (typeof notice === "string" && notice.trim() !== "") {
+    resolved["confidentiality_notice"] = notice
+  } else {
+    delete resolved["confidentiality_notice"]
+  }
+
+  return {
+    ...def,
+    front_matter: { ...frontMatter, document_control: resolved },
   }
 }

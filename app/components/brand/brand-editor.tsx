@@ -6,7 +6,11 @@ import { CheckCircle } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import type { BrandView } from "@/lib/db/views"
 import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
-import { DESIGN_PRESETS, type DesignPreset } from "@/lib/templates/definition"
+import {
+  CONFIDENTIALITY_NOTICE_MAX_LENGTH,
+  DESIGN_PRESETS,
+  type DesignPreset,
+} from "@/lib/templates/definition"
 
 /**
  * The Brand editor (Requirement 2.4, 2.5).
@@ -30,6 +34,7 @@ export function BrandEditor({
     brand.themePreset as DesignPreset
   )
   const [accentColor, setAccentColor] = useState(brand.accentColor)
+  const [notice, setNotice] = useState(brand.confidentialityNotice ?? "")
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
 
@@ -43,6 +48,9 @@ export function BrandEditor({
         body: JSON.stringify({
           themePreset: preset,
           accentColor,
+          // An empty box means no notice, not an empty one: the document control page
+          // then prints no confidentiality section rather than a heading over nothing.
+          confidentialityNotice: notice.trim() === "" ? null : notice,
         }),
       })
       if (res.ok) setSaved(true)
@@ -115,6 +123,31 @@ export function BrandEditor({
             className="h-9 w-32 rounded-lg border border-input bg-background px-3 font-mono text-sm"
           />
         </div>
+      </section>
+
+      {/* Confidentiality notice */}
+      <section className="flex flex-col gap-2">
+        <h2 className="font-heading text-base font-medium">
+          Confidentiality notice
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Printed on every report&rsquo;s document control page, under its own
+          heading. It lives here rather than on a profile because it is the same
+          sentence on every document you issue — and a report already delivered
+          keeps the wording it was signed with, so editing this changes the next
+          report, not an old one. Leave it empty to print no notice at all.
+        </p>
+        <textarea
+          value={notice}
+          maxLength={CONFIDENTIALITY_NOTICE_MAX_LENGTH}
+          rows={4}
+          placeholder="The information in this document is confidential and is owned by …"
+          onChange={(e) => setNotice(e.target.value)}
+          className="rounded-lg border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+        />
+        <span className="text-xs text-muted-foreground">
+          {notice.length} / {CONFIDENTIALITY_NOTICE_MAX_LENGTH}
+        </span>
       </section>
 
       {/* Save */}

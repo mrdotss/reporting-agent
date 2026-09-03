@@ -27,7 +27,10 @@
 
 import { describe, expect, test } from "vitest"
 
-import { resolveDesignFromBrand } from "@/lib/actions/templates"
+import {
+  resolveDesignFromBrand,
+  resolveNoticeFromBrand,
+} from "@/lib/actions/templates"
 import type { Brand } from "@/lib/db/schema"
 
 function brand(overrides: Partial<Brand> = {}): Brand {
@@ -45,6 +48,7 @@ function brand(overrides: Partial<Brand> = {}): Brand {
     coverPage: true,
     defaultApproverNames: {},
     confidentialityNoticeId: "doc.notice.confidential",
+    confidentialityNotice: null,
     createdAt: new Date("2026-01-01T00:00:00.000Z"),
     updatedAt: new Date("2026-01-01T00:00:00.000Z"),
     ...overrides,
@@ -154,5 +158,131 @@ describe("resolveDesignFromBrand — the frozen-at-publish mechanism", () => {
     for (const value of [null, undefined, 42, "definition", true]) {
       expect(resolveDesignFromBrand(value, brand())).toBe(value)
     }
+  })
+})
+
+
+/**
+ * The confidentiality notice, resolved on the same seam and for the same reason.
+ *
+ * Requirement 12.7 makes the notice Brand-owned and not editable per profile, and names
+ * the Brand as where it is edited — but nothing did the inheriting, so the notice could
+ * never appear on a document control page no matter what anyone typed. These are the
+ * properties of the resolve that closes that.
+ */
+describe("resolveNoticeFromBrand", () => {
+  const NOTICE =
+    "The information in this document is confidential and is owned by " +
+    "PT. Helios Informatika Nusantara."
+
+  const V3 = {
+    schema_version: 3,
+    front_matter: {
+      cover: { enabled: true },
+      document_control: { document_name: "Monthly Report" },
+    },
+  }
+
+  function noticeOf(resolved: unknown): unknown {
+    const front = (resolved as { front_matter: Record<string, unknown> })
+      .front_matter
+    const control = front["document_control"] as Record<string, unknown>
+    return control["confidentiality_notice"]
+  }
+
+  test("the Brand's notice is written INLINE into the definition", () => {
+    // Inline, not referenced: editing the Brand tomorrow must not change the wording on a
+    // report somebody signed today. Same guarantee `definition.design` already has.
+    const resolved = resolveNoticeFromBrand(
+      V3,
+      brand({ confidentialityNotice: NOTICE })
+    )
+
+    expect(noticeOf(resolved)).toBe(NOTICE)
+  })
+
+  test("the rest of document_control survives the resolve", () => {
+    const resolved = resolveNoticeFromBrand(
+      V3,
+      brand({ confidentialityNotice: NOTICE })
+    )
+    const front = (resolved as { front_matter: Record<string, unknown> })
+      .front_matter
+    const control = front["document_control"] as Record<string, unknown>
+
+    expect(control["document_name"]).toBe("Monthly Report")
+    expect(front["cover"]).toEqual({ enabled: true })
+  })
+
+  test("a Brand with no notice removes the key rather than writing an empty one", () => {
+    // An empty string would give the renderer something truthy to print a heading over.
+    const carried = {
+      ...V3,
+      front_matter: {
+        ...V3.front_matter,
+        document_control: {
+          ...V3.front_matter.document_control,
+          confidentiality_notice: "left over from a previous Brand",
+        },
+      },
+    }
+
+    const resolved = resolveNoticeFromBrand(
+      carried,
+      brand({ confidentialityNotice: null })
+    )
+
+    expect(noticeOf(resolved)).toBeUndefined()
+  })
+
+  test("a whitespace-only Brand notice counts as none", () => {
+    const resolved = resolveNoticeFromBrand(
+      V3,
+      brand({ confidentialityNotice: "   \n  " })
+    )
+
+    expect(noticeOf(resolved)).toBeUndefined()
+  })
+
+  test("a profile that carries its own notice does not keep it", () => {
+    // Requirement 12.7's "not editable per profile", as a behaviour rather than a comment:
+    // whatever a definition arrives with, what is stored is the Brand's.
+    const authored = {
+      ...V3,
+      front_matter: {
+        ...V3.front_matter,
+        document_control: {
+          ...V3.front_matter.document_control,
+          confidentiality_notice: "Something the profile author typed.",
+        },
+      },
+    }
+
+    const resolved = resolveNoticeFromBrand(
+      authored,
+      brand({ confidentialityNotice: NOTICE })
+    )
+
+    expect(noticeOf(resolved)).toBe(NOTICE)
+  })
+
+  test("the definition it was given is not mutated", () => {
+    const resolved = resolveNoticeFromBrand(
+      V3,
+      brand({ confidentialityNotice: NOTICE })
+    )
+
+    expect(noticeOf(V3)).toBeUndefined()
+    expect(resolved).not.toBe(V3)
+  })
+
+  test("a definition with no front_matter at all gains one", () => {
+    // A v1/v2 definition, or a malformed one: the resolve must not throw on the save path.
+    const resolved = resolveNoticeFromBrand(
+      { schema_version: 2 },
+      brand({ confidentialityNotice: NOTICE })
+    )
+
+    expect(noticeOf(resolved)).toBe(NOTICE)
   })
 })

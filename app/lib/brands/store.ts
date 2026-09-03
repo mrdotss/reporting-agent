@@ -56,6 +56,7 @@ export async function ensureBrand(userId: string): Promise<Brand> {
       coverPage: true,
       defaultApproverNames: null,
       confidentialityNoticeId: null,
+      confidentialityNotice: null,
     })
     .returning()
 
@@ -108,6 +109,7 @@ export async function updateBrand(
       | "coverPage"
       | "defaultApproverNames"
       | "confidentialityNoticeId"
+      | "confidentialityNotice"
     >
   >
 ): Promise<Brand | undefined> {

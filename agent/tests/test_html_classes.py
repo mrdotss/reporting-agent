@@ -236,18 +236,22 @@ def test_toc_classes_are_subset_of_declaration() -> None:
     )
 
 
-def test_emitted_class_names_has_exactly_eighteen_entries() -> None:
-    """The declaration carries exactly eighteen names.
+def test_emitted_class_names_has_exactly_twenty_one_entries() -> None:
+    """The declaration carries exactly twenty-one names.
 
     Grew to eighteen with `rpt-fact`, which a text fact wears **alongside** `rpt-figure`.
+    Grew to twenty-one with the contents entry's three: the link that gives the print
+    stylesheet a `target-counter` reference for a page number, and the number and text
+    spans that let the section number sit in its own column rather than run into the
+    heading.
     The shared class keeps the app's provenance reveal one interaction over both; the
     second one is what lets `printcss.py` exempt a fact from the `white-space: nowrap`
     that exists for figures, and from the right-alignment that exists for numerals. An
     ARM resource id under `nowrap` is one unbreakable 130-character token, and it ran off
     the right edge of the Public IP table.
     """
-    assert len(EMITTED_CLASS_NAMES) == 18, (
-        f"Expected 18 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
+    assert len(EMITTED_CLASS_NAMES) == 21, (
+        f"Expected 21 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
     )
 
 
@@ -267,7 +271,7 @@ def test_every_declared_class_appears_in_fixture_output() -> None:
     This is the EQUALITY direction the subset check cannot provide: dropping an
     emission silently passes a subset assertion, but fails here because the fixture
     no longer produces it. The two fixtures together (document + TOC) cover all
-    eighteen names.
+    twenty-one names.
     """
     outcome = _emit_all()
     toc_markup = _emit_toc()

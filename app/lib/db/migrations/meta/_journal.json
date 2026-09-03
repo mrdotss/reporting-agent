@@ -78,6 +78,13 @@
       "when": 1787786627910,
       "tag": "0010_great_toad",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1788429389325,
+      "tag": "0011_overrated_susan_delgado",
+      "breakpoints": true
     }
   ]
 }

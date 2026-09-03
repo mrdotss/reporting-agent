@@ -88,7 +88,7 @@ def _quantize(value: Decimal, scale: int) -> Decimal:
 @st.composite
 def number_formats(draw: st.DrawFn) -> NumberFormat:
     """Decimal places 0-3 x grouping on/off x a decimal separator of `.` or `,` x a
-    grouping separator of `,`, `.` or an apostrophe.
+    grouping separator of `,`, `.` or an apostrophe x trailing-zero trimming on/off.
 
     Equal separators are filtered out rather than generated and discarded downstream: a
     number format whose decimal and grouping separators are the same is refused by
@@ -108,6 +108,12 @@ def number_formats(draw: st.DrawFn) -> NumberFormat:
         group_thousands=draw(st.booleans()),
         decimal_separator=decimal_separator,
         grouping_separator=grouping_separator,
+        # Drawn rather than fixed, so every Property 1 assertion runs under both
+        # renderings. The no-collision property below is the one that matters most here:
+        # trimming maps more values onto shorter strings, so it is exactly the change that
+        # could let two measurements collapse onto one token and let the verifier match a
+        # document against the wrong ledger entry.
+        trim_trailing_zeros=draw(st.booleans()),
     )
 
 

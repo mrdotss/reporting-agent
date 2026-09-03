@@ -65,6 +65,7 @@ __all__ = [
     "masking_order",
     "scan_paragraphs",
     "survivors_in",
+    "text_fact_strings_by_block",
 ]
 
 MASK_CHAR: Final[str] = "\u0007"
@@ -231,14 +232,23 @@ def mask_paragraph(
     *,
     ledger_strings: Sequence[str],
     allowlist: Sequence[str],
+    proven_here: Sequence[str] = (),
 ) -> str:
     """Run the five stages over `text`, returning the overwritten buffer.
 
-    Pure and total: the same input and the same two vocabularies produce the same
-    output on every call, which is what Property 2's idempotence clause pins.
+    Pure and total: the same input and the same vocabularies produce the same output on
+    every call, which is what Property 2's idempotence clause pins.
+
+    `proven_here` joins stage 1, and its **scope** is the whole of its justification: these
+    are the text facts anchored in *this* paragraph's own block, proven cell-by-cell by
+    `verify/facts.py` against the snapshot's text side. Passing them per paragraph rather
+    than adding them to `ledger_strings` is the same narrowing `proven_toc_numerals`
+    already makes and for the same reason — a global entry would admit `443` anywhere in
+    the document, and a port number invented in prose three sections away would pass.
     """
     buffer = list(text)
     _mask_literals(buffer, ledger_strings)  # stage 1
+    _mask_literals(buffer, proven_here)  # stage 1, scoped to this block
     _mask_pattern(buffer, _IDENTIFIER)  # stage 2
     _mask_pattern(buffer, _STRUCTURED)  # stage 3
     _mask_pattern(buffer, _TEMPORAL)  # stage 4
@@ -252,6 +262,7 @@ def survivors_in(
     ledger_strings: Sequence[str],
     allowlist: Sequence[str],
     scoped_ordinal: int,
+    proven_here: Sequence[str] = (),
 ) -> tuple[Survivor, ...]:
     """Every maximal whitespace-delimited token still carrying a digit.
 
@@ -261,7 +272,10 @@ def survivors_in(
     row of control characters.
     """
     masked = mask_paragraph(
-        paragraph.text, ledger_strings=ledger_strings, allowlist=allowlist
+        paragraph.text,
+        ledger_strings=ledger_strings,
+        allowlist=allowlist,
+        proven_here=proven_here,
     )
     found: list[Survivor] = []
     for match in re.finditer(r"\S+", masked):
@@ -285,6 +299,7 @@ def scan_paragraphs(
     ledger_strings: Iterable[str],
     allowlist: Iterable[str],
     proven_toc_numerals: Mapping[int, frozenset[str]] = {},
+    text_fact_strings: Mapping[str, frozenset[str]] = {},
 ) -> tuple[Finding, ...]:
     """One `unmatched_prose_token` finding per survivor, over every paragraph.
 
@@ -327,11 +342,17 @@ def scan_paragraphs(
         # The set of page-number strings proven correct for THIS specific paragraph.
         admitted_numerals = proven_toc_numerals.get(paragraph.ordinal, frozenset())
 
+        # The text facts anchored in THIS paragraph's own table, and no other's.
+        proven_here = masking_order(
+            text_fact_strings.get(paragraph.block_id or "", frozenset())
+        )
+
         for survivor in survivors_in(
             paragraph,
             ledger_strings=ledger_order,
             allowlist=allowlist_order,
             scoped_ordinal=counters[scope],
+            proven_here=proven_here,
         ):
             # If this survivor is a proven TOC page number for this paragraph, skip it.
             survivor_text = str(survivor)
@@ -358,6 +379,49 @@ def scan_paragraphs(
                 )
             )
     return tuple(findings)
+
+
+
+def text_fact_strings_by_block(
+    ledger: object,
+) -> Mapping[str, frozenset[str]]:
+    """Every anchored text fact's `formatted` string, grouped by the table it sits in.
+
+    ## Why a text fact has to be maskable at all
+
+    A `TextFact` is a collected value with provenance: `verify/facts.py` resolves each one
+    to its cell and compares character for character, and `compile/ast.py::TextFact`
+    re-resolves its `snapshot_path` against the snapshot's text side. It is at least as
+    proven as a `Figure`. But `ledger_strings_of` reads only figures and derived counts, so
+    a text fact whose value happens to contain a digit — a port `443`, an NSG rule priority
+    `310` — survived every masking stage and was reported as a number that came from
+    nowhere. The rules table this product renders is made almost entirely of them, so the
+    verification recorded twenty-one blocking findings on a document in which every value
+    was correct and traceable.
+
+    ## Why grouped by block rather than added to the ledger vocabulary
+
+    `compile/ast.py::TextFact` warns, correctly, against routing text facts through the
+    numeric masking path: a globally-masked value is one the soundness pass stops asking
+    about, so an invented `443` anywhere in the document would pass under cover of a real
+    one. Grouping by the anchor's table identity keeps that from being true — a value is
+    admitted only inside the table whose cell was proven to hold it, which is exactly the
+    narrowing `proven_toc_numerals` applies to a page number.
+
+    A text fact with no anchor contributes nothing: `verify/facts.py` reports it as
+    `text_fact_unanchored` and it has not been checked against anything, so it may not
+    excuse a token either.
+    """
+    facts = ledger.text_facts()  # type: ignore[attr-defined]
+    anchors = ledger.text_fact_anchors()  # type: ignore[attr-defined]
+
+    grouped: dict[str, set[str]] = {}
+    for path, fact in facts.items():
+        anchor = anchors.get(path)
+        if anchor is None:
+            continue
+        grouped.setdefault(anchor.anchor_id, set()).add(fact.formatted)
+    return {identity: frozenset(values) for identity, values in grouped.items()}
 
 
 def ledger_strings_of(ledger: Mapping[str, object] | Iterable[object]) -> tuple[str, ...]:

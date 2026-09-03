@@ -29,6 +29,7 @@ from reporting_agent.render.front_matter import (
     RevisionHistoryRow,
     RunFacts,
     emit_front_matter,
+    front_matter_sections,
 )
 from reporting_agent.render.themes import load_theme
 
@@ -48,6 +49,12 @@ it would work."""
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _messages():
+    """This file constructs messages per test rather than holding a module constant;
+    this is that call in one place for the classes below."""
+    return load_messages("en")
 
 
 def _run(
@@ -1036,3 +1043,125 @@ class TestCoverLogoIsDrawn:
         _emit_section(document, self._logo(None))
 
         assert len(document.inline_shapes) == 0
+
+
+class TestConfidentialityNotice:
+    """Requirement 12.7 — the notice is Brand-owned, printed under its own heading.
+
+    It never appeared in a delivered document, and not for one reason: the Brand editor
+    exposed no control, nothing resolved the Brand's value into the definition, and the
+    wizard deliberately wrote nothing, citing a Brand that never supplied it. This covers
+    the renderer's half — that a notice which *is* configured reaches both emitters under a
+    heading, and that one which is not prints nothing rather than an empty heading.
+    """
+
+    NOTICE = (
+        "The information in this document is confidential and is owned by "
+        "PT. Helios Informatika Nusantara."
+    )
+
+    def _sections(self, **control) -> tuple:
+        return front_matter_sections(
+            front_matter=FrontMatterConfig(
+                cover=CoverConfig(enabled=False),
+                document_control=DocumentControlConfig(
+                    document_name="Report", **control
+                ),
+            ),
+            run=_run(),
+            messages=_messages(),
+        )
+
+    def _heading_texts(self, sections) -> list[str]:
+        from reporting_agent.render.front_matter import FrontMatterHeading
+
+        return [s.text for s in sections if isinstance(s, FrontMatterHeading)]
+
+    def _note_texts(self, sections) -> list[str]:
+        from reporting_agent.render.front_matter import FrontMatterNote
+
+        return [s.text for s in sections if isinstance(s, FrontMatterNote)]
+
+    def test_the_prose_is_printed_under_its_own_heading(self) -> None:
+        sections = self._sections(confidentiality_notice=self.NOTICE)
+
+        assert (
+            _messages().text("doc.front_matter.confidentiality")
+            in self._heading_texts(sections)
+        )
+        assert self.NOTICE in self._note_texts(sections)
+
+    def test_the_heading_comes_before_the_notice(self) -> None:
+        from reporting_agent.render.front_matter import (
+            FrontMatterHeading,
+            FrontMatterNote,
+        )
+
+        sections = self._sections(confidentiality_notice=self.NOTICE)
+        heading = _messages().text("doc.front_matter.confidentiality")
+
+        index_of_heading = next(
+            i
+            for i, s in enumerate(sections)
+            if isinstance(s, FrontMatterHeading) and s.text == heading
+        )
+        index_of_notice = next(
+            i
+            for i, s in enumerate(sections)
+            if isinstance(s, FrontMatterNote) and s.text == self.NOTICE
+        )
+        assert index_of_heading < index_of_notice
+
+    def test_no_notice_prints_no_heading(self) -> None:
+        """An empty heading over nothing is worse than no heading."""
+        sections = self._sections()
+
+        assert (
+            _messages().text("doc.front_matter.confidentiality")
+            not in self._heading_texts(sections)
+        )
+
+    def test_the_prose_wins_over_a_catalogue_id(self) -> None:
+        """A person wrote one of these for this account; the other names copy every
+        tenant shares."""
+        sections = self._sections(
+            confidentiality_notice=self.NOTICE,
+            confidentiality_notice_id="doc.front_matter.confidentiality",
+        )
+
+        assert self.NOTICE in self._note_texts(sections)
+
+    def test_the_catalogue_id_still_works_on_its_own(self) -> None:
+        """v1 and v2 definitions carry an id and no prose, and must render as they did."""
+        sections = self._sections(
+            confidentiality_notice_id="doc.front_matter.confidentiality"
+        )
+
+        assert (
+            _messages().text("doc.front_matter.confidentiality")
+            in self._note_texts(sections)
+        )
+
+    def test_both_emitters_print_it(self) -> None:
+        from reporting_agent.render.html import emit_front_matter_html
+
+        sections = self._sections(confidentiality_notice=self.NOTICE)
+
+        markup = emit_front_matter_html(list(sections))
+        assert self.NOTICE in markup
+
+        document = load_theme("editorial")
+        for section in sections:
+            from reporting_agent.render.front_matter import _emit_section
+
+            _emit_section(document, section)
+        assert self.NOTICE in _document_text(document)
+
+    def test_the_definition_carries_it_to_the_config(self) -> None:
+        from reporting_agent.report_pipeline import _resolve_front_matter_config
+
+        config = _resolve_front_matter_config({
+            "front_matter": {"document_control": {"confidentiality_notice": self.NOTICE}}
+        })
+
+        assert config.document_control.confidentiality_notice == self.NOTICE

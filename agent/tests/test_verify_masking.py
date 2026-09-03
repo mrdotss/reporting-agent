@@ -862,3 +862,126 @@ def test_text_facts_only_ledger_produces_empty_ledger_strings() -> None:
     assert result == (), (
         f"expected an empty tuple for a text-fact-only ledger, got {result!r}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# A proven text fact excuses its own cell, and nothing else
+# --------------------------------------------------------------------------- #
+#
+# The defect this covers was delivered: run 4694afc1 recorded twenty-one blocking
+# `unmatched_prose_token` findings over one NSG security-rules table, on values that were
+# every one of them collected, anchored and proven — `310`, `1020`, `443`, `22`. A
+# `TextFact` is checked by `verify/facts.py` against the snapshot's text side, but
+# `ledger_strings_of` reads only figures and derived counts, so a text fact whose value is
+# a bare numeral looked exactly like a number that came from nowhere.
+
+
+class _Anchor:
+    def __init__(self, anchor_id: str) -> None:
+        self.anchor_id = anchor_id
+
+
+class _Fact:
+    def __init__(self, formatted: str) -> None:
+        self.formatted = formatted
+
+
+class _LedgerWithTextFacts:
+    """The two accessors `text_fact_strings_by_block` reads, and nothing else."""
+
+    def __init__(self, facts: dict[str, tuple[str, str | None]]) -> None:
+        self._facts = {path: _Fact(value) for path, (value, _) in facts.items()}
+        self._anchors = {
+            path: _Anchor(anchor)
+            for path, (_, anchor) in facts.items()
+            if anchor is not None
+        }
+
+    def text_facts(self):
+        return self._facts
+
+    def text_fact_anchors(self):
+        return self._anchors
+
+
+def test_a_proven_text_fact_is_admitted_inside_its_own_table() -> None:
+    from reporting_agent.verify.masking import text_fact_strings_by_block
+
+    ledger = _LedgerWithTextFacts({
+        "tbl:rules:0/rows/0/cells/1/fact/0": ("443", "tbl:rules:0"),
+        "tbl:rules:0/rows/1/cells/1/fact/0": ("310", "tbl:rules:0"),
+    })
+
+    findings = scan_paragraphs(
+        [_paragraph("443", block_id="tbl:rules:0"),
+         _paragraph("310", block_id="tbl:rules:0")],
+        ledger_strings=(),
+        allowlist=(),
+        text_fact_strings=text_fact_strings_by_block(ledger),
+    )
+
+    assert findings == ()
+
+
+def test_the_same_value_is_not_admitted_in_another_block() -> None:
+    """The narrowing, and the reason this is not simply added to the ledger vocabulary.
+
+    `compile/ast.py::TextFact` warns against routing text facts through numeric masking,
+    because a globally-masked value is one the soundness pass stops asking about. Scoping
+    to the anchor's own table keeps the warning satisfied: a `443` invented in prose three
+    sections away is still a survivor.
+    """
+    from reporting_agent.verify.masking import text_fact_strings_by_block
+
+    ledger = _LedgerWithTextFacts({
+        "tbl:rules:0/rows/0/cells/1/fact/0": ("443", "tbl:rules:0"),
+    })
+    admitted = text_fact_strings_by_block(ledger)
+
+    for elsewhere in (
+        _paragraph("443", block_id="tbl:machines:0"),
+        _paragraph("443", block_id=None),
+    ):
+        findings = scan_paragraphs(
+            [elsewhere], ledger_strings=(), allowlist=(),
+            text_fact_strings=admitted,
+        )
+        assert [f["substring"] for f in findings] == ["443"]
+
+
+def test_an_unanchored_text_fact_admits_nothing() -> None:
+    """`verify/facts.py` reports it as `text_fact_unanchored` — it has been checked
+    against nothing, so it may not excuse a token either."""
+    from reporting_agent.verify.masking import text_fact_strings_by_block
+
+    ledger = _LedgerWithTextFacts({
+        "tbl:rules:0/rows/0/cells/1/fact/0": ("443", None),
+    })
+
+    assert text_fact_strings_by_block(ledger) == {}
+
+    findings = scan_paragraphs(
+        [_paragraph("443", block_id="tbl:rules:0")],
+        ledger_strings=(), allowlist=(),
+        text_fact_strings=text_fact_strings_by_block(ledger),
+    )
+    assert [f["substring"] for f in findings] == ["443"]
+
+
+def test_a_value_the_ledger_does_not_hold_still_survives_in_that_table() -> None:
+    """Masking admits the **ledger's** string, never the document's. A cell showing `444`
+    where the ledger says `443` matches no admitted string and is still reported — which
+    is what makes this safe rather than a hole."""
+    from reporting_agent.verify.masking import text_fact_strings_by_block
+
+    ledger = _LedgerWithTextFacts({
+        "tbl:rules:0/rows/0/cells/1/fact/0": ("443", "tbl:rules:0"),
+    })
+
+    findings = scan_paragraphs(
+        [_paragraph("the rule allows 444", block_id="tbl:rules:0")],
+        ledger_strings=(), allowlist=(),
+        text_fact_strings=text_fact_strings_by_block(ledger),
+    )
+
+    assert [f["substring"] for f in findings] == ["444"]

@@ -922,6 +922,7 @@ export type BrandView = {
   coverPage: boolean
   defaultApproverNames: unknown
   confidentialityNoticeId: string | null
+  confidentialityNotice: string | null
   createdAt: string
   updatedAt: string
 }
@@ -941,6 +942,7 @@ export function toBrandView(row: Brand): BrandView {
     coverPage: row.coverPage,
     defaultApproverNames: row.defaultApproverNames,
     confidentialityNoticeId: row.confidentialityNoticeId,
+    confidentialityNotice: row.confidentialityNotice,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   }

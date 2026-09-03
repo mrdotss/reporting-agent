@@ -187,13 +187,31 @@ def st_address(draw: st.DrawFn) -> str:
 
 
 @st.composite
+def st_bare_numeral(draw: st.DrawFn) -> str:
+    """A value that is nothing but digits — an NSG rule priority, a destination port.
+
+    The fourth pool, added after a delivered run recorded twenty-one blocking
+    `unmatched_prose_token` findings on a security-rules table in which every value was
+    correct. The three pools above all *look* like something to the masking stages: a
+    digit-free word is never extracted, an identifier is consumed by stage 2, an address by
+    stage 3. A bare numeral looks exactly like a figure that is missing from the ledger,
+    which is what the soundness pass reported it as.
+    """
+    return str(draw(st.integers(min_value=0, max_value=65535)))
+
+
+@st.composite
 def st_text_fact_value(draw: st.DrawFn) -> tuple[str, str]:
     """A text fact value and its pool name."""
-    pool = draw(st.sampled_from(["digit_free", "identifier", "address"]))
+    pool = draw(
+        st.sampled_from(["digit_free", "identifier", "address", "bare_numeral"])
+    )
     if pool == "digit_free":
         return draw(st_digit_free()), pool
     elif pool == "identifier":
         return draw(st_identifier()), pool
+    elif pool == "bare_numeral":
+        return draw(st_bare_numeral()), pool
     else:
         return draw(st_address()), pool
 
@@ -494,6 +512,43 @@ def test_identifier_mutation_yields_mismatch_and_zero_unmatched_prose(
     prose_findings = [f for f in result.findings if f["type"] == FINDING_UNMATCHED_PROSE_TOKEN]
     assert len(prose_findings) == 0, (
         f"identifier mutation must not produce unmatched_prose_token, got {prose_findings}"
+    )
+
+
+@st.composite
+def st_bare_numeral_mutated(draw: st.DrawFn) -> tuple[str, str]:
+    """A bare numeral and its mutation."""
+    value = draw(st_bare_numeral())
+    mutated, _kind = draw(st_mutate(value))
+    return value, mutated
+
+
+@given(pair=st_bare_numeral_mutated())
+@example(pair=("443", "444"))
+@example(pair=("310", "320"))
+@example(pair=("22", "23"))
+def test_bare_numeral_mutation_yields_mismatch(
+    pair: tuple[str, str],
+) -> None:
+    """A bare numeral's mutation → `text_fact_mismatch`.
+
+    The property that makes it safe for `verify/masking.py` to admit a proven text fact's
+    string inside its own table. The admitted string comes from the **ledger**, which comes
+    from the snapshot; a document showing `444` where the ledger says `443` matches no
+    admitted string, so masking hides nothing — and this check catches it regardless.
+    """
+    value, mutated = pair
+    path_str = _make_path(0, 0, 0)
+    facts_spec = [(value, "bare_numeral", 0, 0, 0)]
+    mutated_values = {path_str: mutated}
+    ledger, grids = _build_scenario(facts_spec, mutated_values=mutated_values)
+    result = check_text_facts(ledger, grids)
+
+    mismatch_findings = [
+        f for f in result.findings if f["type"] == FINDING_TEXT_FACT_MISMATCH
+    ]
+    assert len(mismatch_findings) >= 1, (
+        f"expected text_fact_mismatch for {value!r} → {mutated!r}, got {result.findings}"
     )
 
 

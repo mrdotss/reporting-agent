@@ -36,6 +36,12 @@ export const EMITTED_CLASS_NAMES = [
   // stylesheet exempt a fact from the `nowrap` and the right-alignment that exist for
   // numerals.
   "rpt-fact",
+  // The contents entry's three. `rpt-toc-link` is what gives the print stylesheet a
+  // `target-counter(attr(href), page)` reference for a page number; the number and text
+  // spans let the section number sit in its own column rather than run into the heading.
+  "rpt-toc-link",
+  "rpt-toc-number",
+  "rpt-toc-text",
 ] as const
 // --- END EMITTED_CLASS_NAMES ---
 
