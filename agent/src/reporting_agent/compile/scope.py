@@ -64,6 +64,8 @@ turn an ordinary empty block into a failed run.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
@@ -254,9 +256,43 @@ def _tag_filters(raw: object, at: str) -> tuple[TagFilter, ...]:
 # --- matching -----------------------------------------------------------------------
 
 
+@lru_cache(maxsize=1)
+def _child_type_names() -> frozenset[str]:
+    """Every declared child type, folded. Read once from the bundled catalogue.
+
+    `catalog/loader.py::is_child_type` is the authority and it reads a type's own
+    `child_of` declaration — never a structural inference, for the reason that module
+    spells out: "an id with more segments, say" is the same accident that made
+    `Microsoft.Network/publicIPAddresses` look like a child type when it is a first-class
+    resource with no metric to declare.
+    """
+    from reporting_agent.catalog.loader import child_type_names, load_catalog
+
+    return frozenset(name.casefold() for name in child_type_names(load_catalog()))
+
+
 def _matches_any_type(scope: ScopeRules, resource: ResourceView) -> bool:
     if not scope.resource_types:
-        return True
+        # **Unconstrained means every deployed resource, not every ARM row.**
+        #
+        # A subnet and a security rule are addressable resources and the snapshot holds
+        # them as such, but `catalog/loader.py::is_child_type` is explicit that one is
+        # "not a deployed thing in the sense a reader takes from `47 resources`" and
+        # "contributes to no headline count" — which is why the scan partitions
+        # `type_counts` from `child_type_counts`. A scope that names no type is asking for
+        # the estate, and the estate is the first list.
+        #
+        # Until the child-resource query worked, no child resource existed and the two
+        # readings could not differ. The first run that collected eleven security rules
+        # put them into every unconstrained section, and two rules named
+        # `default-allow-ssh` under different groups made the recommendations table's key
+        # column repeat — `render/anchors.py` refused the document rather than emit rows
+        # its verifier could not address, which is the correct refusal of a table that
+        # should never have listed them.
+        #
+        # A section that wants child resources names the child type, which is exactly what
+        # sections 3 and 6 do to render a subnet or a rule beside its parent.
+        return resource.resource_type.casefold() not in _child_type_names()
     folded = resource.resource_type.casefold()
     return any(declared.casefold() == folded for declared in scope.resource_types)
 

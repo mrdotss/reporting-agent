@@ -577,6 +577,8 @@ FRONT_MATTER_CLASS_NAMES: Final[tuple[str, ...]] = (
     "rpt-grid",
     "rpt-signature",
     "rpt-note",
+    # Appended, never inserted: the `_CLS_*` constants below index this tuple by position.
+    "rpt-logo",
 )
 """The classes the front matter emits, kept apart from `EMITTED_CLASS_NAMES` because the
 body's are asserted against the block AST and these have no block behind them."""
@@ -586,6 +588,7 @@ _CLS_PAIRS: Final[str] = FRONT_MATTER_CLASS_NAMES[3]
 _CLS_GRID: Final[str] = FRONT_MATTER_CLASS_NAMES[4]
 _CLS_SIGNATURE: Final[str] = FRONT_MATTER_CLASS_NAMES[5]
 _CLS_FM_NOTE: Final[str] = FRONT_MATTER_CLASS_NAMES[6]
+_CLS_FM_LOGO: Final[str] = FRONT_MATTER_CLASS_NAMES[7]
 
 
 def _inline_svg(vector: str) -> str:
@@ -631,6 +634,7 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
         FrontMatterContents,
         FrontMatterGrid,
         FrontMatterHeading,
+        FrontMatterLogo,
         FrontMatterNote,
         FrontMatterPageBreak,
         FrontMatterPairs,
@@ -684,6 +688,16 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
                 f'<p class="{_CLS_FM_NOTE}" data-style='
                 f'"{html.escape(section.style, quote=True)}">'
                 f"{html.escape(section.text)}</p>"
+            )
+
+        elif isinstance(section, FrontMatterLogo):
+            # The block reserved for the logo, sized in points so the cover lays out the
+            # same whether or not one is ever placed into it. Empty on purpose — an empty
+            # dashed box labelled LOGO belongs to a mock-up, not to a signed document.
+            parts.append(
+                f'<div class="{_CLS_FM_LOGO}" '
+                f'style="height:{section.height_pt:g}pt;width:{section.width_pt:g}pt">'
+                f"</div>"
             )
 
         elif isinstance(section, FrontMatterContents):

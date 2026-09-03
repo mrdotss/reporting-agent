@@ -52,6 +52,7 @@ from typing import Final
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_BREAK
 from docx.oxml.ns import qn
+from docx.shared import Pt
 
 from reporting_agent.compile.definition import (
     APPROVER_ROLES,
@@ -64,6 +65,7 @@ __all__ = [
     "FrontMatterSection",
     "FrontMatterPairs",
     "FrontMatterPageBreak",
+    "FrontMatterLogo",
     "FrontMatterNote",
     "FrontMatterHeading",
     "FrontMatterGrid",
@@ -348,6 +350,29 @@ class FrontMatterNote:
 
 
 @dataclass(frozen=True, slots=True)
+class FrontMatterLogo:
+    """Reserved space at the top of the cover, where a logo goes.
+
+    **Space, not a picture.** `front_matter.cover.logo` holds a key — a URL on the
+    profiles written so far — and nothing in this pipeline fetches a remote image at
+    render time. Drawing one would mean a network call from inside the VPC that no other
+    stage makes and that fails closed on a private subnet, and a cover that sometimes has
+    a logo and sometimes does not is worse than one that reliably has room for it.
+
+    So this reserves the block the artifact reserves — `ReportA.dc.html` opens its cover
+    with a 104x34 box above the eyebrow — and stays empty. When the logo arrives as bytes,
+    the way an approver's `signature_image` already does, it fills this box and nothing
+    else about the cover moves.
+
+    Emitted only where a logo is configured: a profile that names none gets no gap where
+    one would have been.
+    """
+
+    height_pt: float
+    width_pt: float
+
+
+@dataclass(frozen=True, slots=True)
 class FrontMatterContents:
     """The table of contents: a heading and one entry per document heading.
 
@@ -374,6 +399,7 @@ FrontMatterSection = (
     | FrontMatterPairs
     | FrontMatterGrid
     | FrontMatterNote
+    | FrontMatterLogo
     | FrontMatterContents
     | FrontMatterPageBreak
 )
@@ -396,6 +422,15 @@ The style names ride along rather than being resolved per emitter. That follows 
 `Table.style` on the AST is a Word style name and `render/html.py` emits it as
 `data-style`, so a stylesheet can key off the same vocabulary the theme uses.
 """
+
+
+LOGO_HEIGHT_PT: Final[float] = 34.0
+LOGO_WIDTH_PT: Final[float] = 104.0
+"""The block `ReportA.dc.html` reserves for the logo, in points.
+
+Its own 104x34 CSS pixels read as points here because the artifact is drawn at 96dpi on an
+A4 page and this stylesheet lays one out at 72 — close enough that the cover's proportions
+carry, and a reserved block is not a measurement anybody checks."""
 
 
 RUN_PLACEHOLDER_LENGTH: Final[int] = 8
@@ -502,6 +537,11 @@ def front_matter_sections(
 
     # --- cover (Req 13.4, 13.9) ----------------------------------------------
     if front_matter.cover.enabled:
+        # The logo's space, above everything, as `ReportA.dc.html` opens its cover.
+        if front_matter.cover.logo:
+            sections.append(
+                FrontMatterLogo(height_pt=LOGO_HEIGHT_PT, width_pt=LOGO_WIDTH_PT)
+            )
         # The eyebrow, above the title: the document's own name in small muted caps, the
         # way `ReportA.dc.html` opens its cover with "Preventive Maintenance Report" over
         # "Marketing Riset Azure Usage Report". The two are different things — one names
@@ -735,6 +775,15 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
 
     elif isinstance(section, FrontMatterNote):
         document.add_paragraph(section.text, style=section.style)
+
+    elif isinstance(section, FrontMatterLogo):
+        # An empty paragraph whose exact height reserves the block, so the cover lays out
+        # the same whether or not a logo is ever placed into it. No border and no
+        # placeholder text: an empty dashed box labelled LOGO is a mock-up's device, and
+        # this is a document somebody signs.
+        paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(0)
+        paragraph.paragraph_format.line_spacing = Pt(section.height_pt)
 
     elif isinstance(section, FrontMatterContents):
         # Text plus a tab, whether or not a number follows, so pass 1 lays out to exactly

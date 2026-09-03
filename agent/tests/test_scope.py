@@ -323,3 +323,77 @@ def test_the_requested_metrics_are_sorted_and_deduplicated() -> None:
     )
     names = requested.metrics_by_resource_type[VM]
     assert list(names) == sorted(set(names))
+
+
+# --------------------------------------------------------------------------- #
+# An unconstrained scope resolves the estate, not every ARM row
+# --------------------------------------------------------------------------- #
+
+
+class TestAnUnconstrainedScopeExcludesChildTypes:
+    """`resource_types: []` asks for the estate, and a child type is not part of it.
+
+    `catalog/loader.py::is_child_type` is explicit: a subnet and a security rule are
+    addressable resources the snapshot holds as such, but neither is "a deployed thing in
+    the sense a reader takes from `47 resources`", and neither "contributes to any
+    headline count" — which is why the scan partitions `type_counts` from
+    `child_type_counts`.
+
+    Until the child-resource query actually worked, no child resource existed and the two
+    readings of an empty list could not differ. The first run that collected eleven
+    security rules swept them into every unconstrained section; two rules named
+    `default-allow-ssh` under different groups made the recommendations table's key column
+    repeat, and `render/anchors.py` refused the whole document — correctly, since it could
+    not address those rows, but for a table that should never have listed them.
+    """
+
+    @staticmethod
+    def _view():
+        from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+        return build_snapshot_view(sf.two_vm_snapshot_with_child_resources())
+
+    def test_an_empty_scope_matches_no_child_resource(self) -> None:
+        from reporting_agent.compile.scope import resolve, scope_rules_from_plain
+
+        view = self._view()
+        assert any(
+            "securityrules" in r.resource_type.casefold() for r in view.resources
+        ), "the fixture carries no child resource, so this asserts nothing"
+
+        matched = resolve(
+            scope_rules_from_plain(
+                {"resource_types": [], "resource_groups": [], "tag_filters": []},
+                at="test",
+            ),
+            view,
+        )
+
+        assert matched, "an unconstrained scope matched nothing at all"
+        assert not [
+            r for r in matched if "securityrules" in r.resource_type.casefold()
+        ], "an unconstrained scope swept in a child resource"
+
+    def test_a_scope_naming_the_child_type_still_matches_it(self) -> None:
+        """Excluding by default is not excluding at all: a section that wants rules names
+        the child type, which is how sections 3 and 6 render one beside its parent."""
+        from reporting_agent.compile.scope import resolve, scope_rules_from_plain
+
+        matched = resolve(
+            scope_rules_from_plain(
+                {
+                    "resource_types": [
+                        "Microsoft.Network/networkSecurityGroups/securityRules"
+                    ],
+                    "resource_groups": [],
+                    "tag_filters": [],
+                },
+                at="test",
+            ),
+            self._view(),
+        )
+
+        assert matched, "naming the child type explicitly matched nothing"
+        assert all(
+            "securityrules" in r.resource_type.casefold() for r in matched
+        ), "naming the child type matched something else too"

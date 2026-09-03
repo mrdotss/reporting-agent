@@ -55,7 +55,15 @@ def _run(**kw) -> RunFacts:
 
 
 FULL = FrontMatterConfig(
-    cover=CoverConfig(enabled=True, subtitle="Monthly", contact_block="ops@acme.example"),
+    cover=CoverConfig(
+        enabled=True,
+        subtitle="Monthly",
+        contact_block="ops@acme.example",
+        # A configured logo, so the cover produces its reserved block and both emitters
+        # are exercised on it. Without one the kind is declared and nothing makes it,
+        # which is exactly what the guard below refuses.
+        logo="brand/helios.png",
+    ),
     document_control=DocumentControlConfig(
         document_name="Monthly Infrastructure Report",
         document_number_pattern="FRM.SOP.019-{year}-{month}",
@@ -121,7 +129,10 @@ class TestBothEmittersCoverEveryKind:
 class TestTheDescriptionIsTheOrder:
     def test_cover_precedes_document_control_precedes_contents(self) -> None:
         kinds = [type(s).__name__ for s in _full_sections()]
-        assert kinds[0] == "FrontMatterHeading"
+        # The logo's reserved block opens the cover, above the eyebrow, as
+        # `ReportA.dc.html` opens its own — so it is first wherever a logo is configured.
+        assert kinds[0] == "FrontMatterLogo"
+        assert kinds[1] == "FrontMatterHeading"
         assert kinds.index("FrontMatterContents") == len(kinds) - 2
 
     def test_disabling_the_cover_keeps_the_rest(self) -> None:
