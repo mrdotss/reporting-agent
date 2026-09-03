@@ -119,8 +119,15 @@ function formatPeriodDisplay(
  *
  * **Thirty seconds, because ten was below the floor.** A cold AgentCore start —
  * pulling a 312 MB arm64 image and starting the container — measured 10.2s, 10.3s,
- * 11.7s, 12.2s, 12.4s and 13.3s across five consecutive deployments, against a
- * budget of 10.0s.
+ * 11.7s, 12.2s, 12.4s, 13.3s and **22.7s** across seven consecutive deployments,
+ * against a budget of 10.0s.
+ *
+ * That last one is the number to hold on to. Six observations clustered near twelve
+ * seconds and the seventh was nearly twice the worst of them, on the same image size and
+ * the same runtime — so the spread is the platform's, not the image's, and the headroom
+ * against this budget is **seven seconds, not seventeen**. Anyone weighing a change that
+ * grows the image, or tempted to trim this budget back toward the cluster, should price
+ * it against 22.7s and not against the average.
  *
  * What is cold is the **runtime**, not the session. Measured against v39 once it was
  * warm: a fresh `runtimeSessionId` costs 1.3s to 4.8s, and reusing one costs 0.4s to
