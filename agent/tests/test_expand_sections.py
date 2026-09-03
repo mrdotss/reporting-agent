@@ -1771,3 +1771,91 @@ class TestHistoricalTrendKeys:
             )
             == set()
         )
+
+
+class TestAPerResourceTableCanShowThatResourcesChildren:
+    """`_scope: children` — a network security group's table shows its **rules**.
+
+    A security rule and a subnet are their own resources carrying their own facts. The
+    sections that render them expand per *parent*, one table under each group or network,
+    and narrowing to the parent gave that table the parent — which answers none of a
+    rule's keys. Section 6 reported "None of these facts were collected for the resources
+    in this table: priority, direction, protocol, …" about eleven rules whose seven facts
+    were in the snapshot beside it.
+
+    Containment is read from the id, which is where ARM puts it. That is not the
+    structural inference `catalog/loader.py` warns against: that warning is about deciding
+    a **type** is a child by counting segments, and `is_child_type` still answers that from
+    the `child_of` declaration. This asks a different question of a different string —
+    which parent does *this* resource belong to.
+    """
+
+    @staticmethod
+    def _view_with_rules():
+        import snapshot_factory as sf
+        from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+        return build_snapshot_view(sf.two_vm_snapshot_with_child_resources())
+
+    def test_the_table_resolves_the_parents_children(self) -> None:
+        from reporting_agent.compile.blocks.base import (
+            BlockSpec,
+            CHILD_SCOPE_CHILDREN,
+            CHILD_SCOPE_CONFIG_KEY,
+            RESOURCE_ID_CONFIG_KEY,
+        )
+
+        view = self._view_with_rules()
+        parent = next(
+            r.resource_id
+            for r in view.resources
+            if r.resource_type.casefold().endswith("networksecuritygroups")
+        )
+        block = BlockSpec(
+            id="b",
+            type="resource_table",
+            config={
+                "columns": [],
+                RESOURCE_ID_CONFIG_KEY: parent,
+                CHILD_SCOPE_CONFIG_KEY: CHILD_SCOPE_CHILDREN,
+            },
+        )
+        from reporting_agent.compile.blocks.base import BlockContext, DesignSettings
+        from reporting_agent.compile.figures import FigureLedger
+        from reporting_agent.compile.scope import scope_rules_from_plain
+
+        resolved = BlockContext(
+            view=view,
+            ledger=FigureLedger(),
+            messages=_make_messages(),
+            design=DesignSettings(),
+            default_scope=scope_rules_from_plain(
+                {"resource_types": [], "resource_groups": [], "tag_filters": []},
+                at="test",
+            ),
+        ).resources_for(block)
+
+        assert resolved, "the parent's children did not resolve"
+        assert all(r.resource_id.startswith(parent + "/") for r in resolved)
+        assert parent not in {r.resource_id for r in resolved}, (
+            "the parent resolved into its own children's table"
+        )
+
+    def test_the_shipped_sections_declare_it(self) -> None:
+        """Both sections that render a child resource beside its parent, so a future one
+        that forgets the flag is visible here rather than as an empty table."""
+        catalogue = _make_catalogue()
+        for key in ("network_security_groups", "virtual_network"):
+            entry = catalogue.by_key(key)
+            assert entry is not None
+            tables = [
+                block
+                for block in entry.expands_to
+                if block.block == "resource_table" and block.per == "resource"
+            ]
+            assert tables, f"{key} declares no per-resource table"
+            for block in tables:
+                assert dict(block.config).get("_scope") == "children", (
+                    f"{key}'s per-resource table resolves the parent, so it shows none "
+                    f"of the child facts it declares columns for"
+                )

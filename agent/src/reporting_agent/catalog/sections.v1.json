@@ -48,7 +48,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "ip_configuration_count"}] } }
+            { "block": "resource_table", "per": "resource", "config": { "_scope": "children", "columns": [{"kind": "fact", "fact_key": "subnet"}, {"kind": "fact", "fact_key": "address_prefix"}, {"kind": "fact", "fact_key": "ip_configuration_count"}] } }
           ]
         },
         {
@@ -101,7 +101,7 @@
           "presets": {},
           "expands_to": [
             { "block": "heading", "config": { "level": 2 }, "per": "section" },
-            { "block": "resource_table", "per": "resource", "config": { "columns": [{"kind": "fact", "fact_key": "priority"}, {"kind": "fact", "fact_key": "direction"}, {"kind": "fact", "fact_key": "protocol"}, {"kind": "fact", "fact_key": "source"}, {"kind": "fact", "fact_key": "destination"}, {"kind": "fact", "fact_key": "port"}, {"kind": "fact", "fact_key": "action"}], "omit_default_rules_above": 65000 } }
+            { "block": "resource_table", "per": "resource", "config": { "_scope": "children", "columns": [{"kind": "fact", "fact_key": "priority"}, {"kind": "fact", "fact_key": "direction"}, {"kind": "fact", "fact_key": "protocol"}, {"kind": "fact", "fact_key": "source"}, {"kind": "fact", "fact_key": "destination"}, {"kind": "fact", "fact_key": "port"}, {"kind": "fact", "fact_key": "action"}], "omit_default_rules_above": 65000 } }
           ],
           "notes": "Azure default rules at priority 65000 and above are omitted; the section reports rules an operator wrote."
         },

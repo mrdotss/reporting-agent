@@ -35,7 +35,7 @@ from reporting_agent.catalog.loader import (
     SectionExpansionBlock,
     load_section_catalogue,
 )
-from reporting_agent.collect.snapshot import ResourceSnapshot, SkuCapacity
+from reporting_agent.collect.snapshot import FactEntry, ResourceSnapshot, SkuCapacity
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from snapshot_factory import build as build_fixture
@@ -143,6 +143,41 @@ def _metric_refs_for(catalogue: LoadedSectionCatalogue, section_type: str) -> li
     return refs
 
 
+
+def _declared_facts(resource_type: str) -> tuple[FactEntry, ...]:
+    """One answered fact per key the catalogue declares for `resource_type`.
+
+    A resource that answers none of its declared facts is a resource whose table now
+    prints the no-data notice instead of a grid — correct behaviour, and not what these
+    cases are about. The case named "matched count exceeds the 500-row table cap" has to
+    produce a **table** for its cap to bite; with every fact unanswered it produced a
+    one-row notice and no truncation figure, and the corpus disagreed with the estimator
+    over a path neither was testing.
+
+    The value is the same for every key on purpose: what these cases count is columns and
+    rows, and a fact's content has no bearing on either.
+    """
+    from reporting_agent.catalog.loader import load_catalog
+
+    declared = load_catalog().facts
+    for entry in declared.resource_types:
+        if entry.resource_type.casefold() != resource_type.casefold():
+            continue
+        return tuple(
+            FactEntry(
+                key=fact.key,
+                value="present",
+                value_kind="text",
+                source="resource_graph",
+                collected_at="2026-08-31T00:00:00Z",
+                formatted="present",
+            )
+            for fact in entry.facts
+            if fact.value_kind == "text"
+        )
+    return ()
+
+
 def _snapshot_view_for(case: dict[str, Any]):
     """Build a real SnapshotView carrying exactly the resource counts the
     corpus case's `scan_type_counts` declares, with every metric the section
@@ -197,7 +232,7 @@ def _snapshot_view_for(case: dict[str, Any]):
                     ),
                     statistics=statistics,
                     day_buckets=(),
-                    facts=(),
+                    facts=_declared_facts(resource_type),
                 )
             )
 

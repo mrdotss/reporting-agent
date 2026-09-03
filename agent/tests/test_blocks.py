@@ -1652,3 +1652,67 @@ def test_a_resource_name_attribute_column_does_not_duplicate_the_key_column() ->
     assert len(headers) == len(set(headers)), headers
     assert [cell.text for cell in table.rows[0].cells] == ["a", "running"]
 
+
+
+class TestATableWithNothingToShowSaysSo:
+    """A fact table whose every declared key came back empty prints the notice, not names.
+
+    `Reserved Instances` scopes to virtual machines on purpose — it answers "which of my
+    machines does a reservation cover" — so a subscription with **no** reservations
+    produced a table headed `Resource` listing CPN-App, CPN-MCP and RAAS-App. Under that
+    heading a reader takes it as *these are your reserved instances*, which is the opposite
+    of true, and a note underneath naming five unanswered fact keys is not what carries.
+    The disk table and the network-security-group table said the same about themselves.
+
+    The notice already existed for exactly this — `no_data_table`, "the scope matched
+    resources and none of them carry a value" — and the table simply never reached for it.
+    """
+
+    @staticmethod
+    def _table(columns, snapshot=None):
+        view = build_snapshot_view(snapshot or sf.two_vm_snapshot())
+        compiled = compile_document(
+            df.definition([df.block("t", "resource_table", {"columns": columns})]),
+            view=view,
+        )
+        return compiled.nodes_by_block["t"][0]
+
+    def test_only_unanswered_facts_produce_the_notice(self) -> None:
+        table = self._table([{"kind": "fact", "fact_key": "reservation_name"}])
+
+        assert [c.header for c in table.columns] == ["Scope"], (
+            "the table still lists its resources under a column of names"
+        )
+        assert len(table.rows) == 1
+        assert table.rows[0].key == "no-data"
+
+    def test_a_resolving_column_keeps_the_table(self) -> None:
+        """Only where there is nothing else to show. A declared attribute or metric that
+        did resolve is content, and a table carrying one has rows worth printing."""
+        table = self._table(
+            [
+                {"kind": "fact", "fact_key": "reservation_name"},
+                {"kind": "attribute", "attribute": "resource_group"},
+            ]
+        )
+
+        assert [c.header for c in table.columns] != ["Scope"]
+        assert len(table.rows) == 2, "both machines should still be listed"
+
+    def test_an_answered_fact_keeps_the_table(self) -> None:
+        snapshot = sf.two_vm_snapshot()
+        for resource in snapshot["resources"]:
+            resource["facts"] = [
+                {
+                    "key": "os_type",
+                    "value": "Linux",
+                    "value_kind": "text",
+                    "source": "resource_graph",
+                    "collected_at": "2026-08-31T00:00:00Z",
+                    "formatted": "Linux",
+                }
+            ]
+        table = self._table([{"kind": "fact", "fact_key": "os_type"}], snapshot)
+
+        assert [c.header for c in table.columns] != ["Scope"]
+        assert len(table.rows) == 2
