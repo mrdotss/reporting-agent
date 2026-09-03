@@ -294,3 +294,47 @@ def test_an_unconstrained_scope_still_discovers_child_resources() -> None:
         "an unconstrained scope collected the parent NSG but none of its rules, so the "
         "section renders every rule fact as uncollected with no gap explaining it"
     )
+
+
+def test_the_child_page_is_returned_for_fact_folding() -> None:
+    """The child query's page must reach `collect_facts`, or its facts are lost.
+
+    The query projects a `fact_` column per fact the child type declares — a rule's
+    `priority`, a subnet's `address_prefix` — and `azure/facts.py::_fold_pages` is what
+    turns those columns into facts. `discover_child_resources` returned its resources and
+    not its page, so eleven security rules reached the snapshot carrying **no facts at
+    all** and section 6 reported "None of these facts were collected" about a resource
+    whose facts were sitting in the archived response.
+
+    It also made the run unreproducible. `verify/replay.py` folds **every archived
+    object**, and this page is archived unconditionally. Replay folded the facts the live
+    run had not, recorded eight `fact_unavailable` gaps for the columns the response left
+    empty, and produced a snapshot digest that could not match the recorded one —
+    `REPLAY_MISMATCH`, on a run where nothing was wrong with the data.
+
+    That asymmetry is the thing to guard: the live fold and the replay fold have to agree
+    about which archived pages produce facts, and a page that is archived but not folded
+    is exactly where they part.
+    """
+    import test_azure_provider as tap
+
+    harness = tap.Harness(
+        inventory=[
+            tap.inventory_page([_nsg_row()]),
+            RawHttpResponse(status=200, headers={}, body=_rule_page_body()),
+        ]
+    )
+    scope = tap.ScopeSpec(
+        subscription_id=SUBSCRIPTION,
+        resource_types=["Microsoft.Network/networkSecurityGroups"],
+        resource_groups=[],
+        tag_filters={},
+    )
+
+    result = asyncio.run(harness.provider.discover(scope))
+
+    pages = list(result.get("inventory_pages") or ())
+    assert len(pages) >= 2, (
+        "the child-resource page was not returned for fact folding, so every fact on a "
+        "subnet or a security rule is dropped and the replay disagrees about the snapshot"
+    )
