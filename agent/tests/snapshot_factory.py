@@ -352,7 +352,28 @@ def two_vm_snapshot_with_child_resources() -> dict:
     base = f"/subscriptions/{SUBSCRIPTION_ID}/resourceGroups/rg-net/providers"
     children = []
     for nsg in ("nsg-web", "nsg-app"):
-        rule_id = f"{base}/Microsoft.Network/networkSecurityGroups/{nsg}/securityRules/default-allow-ssh"
+        nsg_id = f"{base}/Microsoft.Network/networkSecurityGroups/{nsg}"
+        # The parent, so a per-parent table has something to be narrowed from. A rule
+        # without its group is a fixture that cannot express the containment the section
+        # renders.
+        children.append(
+            {
+                "resource_id": nsg_id,
+                "name": nsg,
+                "resource_type": "Microsoft.Network/networkSecurityGroups",
+                "location": "southeastasia",
+                "resource_group": "rg-net",
+                "tags": {},
+                "power_state": "unknown",
+                "power_state_raw": "",
+                "fidelity_tier": "baseline",
+                "sku": {"name": ""},
+                "statistics": [],
+                "day_buckets": [],
+                "facts": [],
+            }
+        )
+        rule_id = f"{nsg_id}/securityRules/default-allow-ssh"
         children.append(
             {
                 "resource_id": rule_id,

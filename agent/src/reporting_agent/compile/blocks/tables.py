@@ -60,6 +60,7 @@ from reporting_agent.compile.blocks.base import (
     caption_of,
     empty_cell,
     empty_scope_table,
+    no_data_table,
     omitted_row,
     read_capacity_ref,
     read_metric_ref,
@@ -551,6 +552,30 @@ def _resource_rows_table(
     # about which facts the table carries.
     answered = _answered_fact_keys(context, shown, fact_keys)
     unanswered = tuple(key for key in fact_keys if key not in answered)
+
+    # A table whose every declared column came back empty says so, rather than printing a
+    # column of names beside nothing.
+    #
+    # `Reserved Instances` scopes to virtual machines on purpose — it answers "which of my
+    # machines a reservation covers" — so a subscription with no reservations produced a
+    # table headed `Resource` listing CPN-App, CPN-MCP and RAAS-App, which reads as
+    # *these are your reserved instances*. It is the opposite of true, and the note
+    # underneath explaining that five fact keys were unanswered is not what a reader takes
+    # from a list of their own machines under that heading. The disk table and the
+    # network-security-group table said the same thing about themselves.
+    #
+    # Only where the table has nothing else to show: a declared attribute or metric that
+    # did resolve is content, and a table carrying one is a table with rows worth printing.
+    # `resource_name` does not count, because `_emitted_attributes` drops it — the key
+    # column already is that string.
+    if fact_keys and not answered and not attributes and not refs:
+        return BlockOutput(
+            nodes=(
+                no_data_table(
+                    table_cursor, style, caption, messages=context.messages
+                ),
+            )
+        )
 
     # One decision, used by the header and by every row, so the two cannot disagree about
     # how many cells a fact contributes.

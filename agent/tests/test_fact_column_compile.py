@@ -405,11 +405,23 @@ class TestFactColumnCompiles:
 
 
 class TestFactOnlyTableWithNothingCollected:
-    """A fact-only table whose facts all answered nothing says so, under the grid.
+    """A fact-only table whose facts all answered nothing prints the notice, not a grid.
 
     This is the `Disks` table of the delivered report: three resources, seven headers,
     every cell blank, and nothing telling the reader whether the disks have no sizes, or
     the size was never asked for, or the request failed.
+
+    **A note under the grid was the first answer and it was not enough.** The table still
+    printed a column of the reader's own resource names under its own heading, and that is
+    what a reader takes from it — `Reserved Instances` listed three virtual machines for a
+    subscription that owns no reservation, which reads as *these are your reserved
+    instances*, and a sentence below naming five unanswered fact keys does not undo it.
+
+    So a table with no answered fact **and nothing else to show** emits `no_data_table` —
+    the notice that already existed for "the scope matched resources and none of them
+    carry a value". A table that also carries a resolved metric or attribute keeps its
+    grid, and keeps the note about the facts that answered nothing: there the note is
+    beside content rather than instead of it.
     """
 
     @staticmethod
@@ -430,15 +442,11 @@ class TestFactOnlyTableWithNothingCollected:
 
         table = _table_named(document.document, "disks")
 
-        # The table keeps its shape — the resource is still listed — and the note says
-        # which facts were asked for and answered nothing.
+        # Nothing resolved and there is nothing else in the table, so it says so rather
+        # than listing the machine under a heading about its disks.
+        assert [column.key for column in table.columns] == ["notice"]
         assert len(table.rows) == 1
-        # Neither key resolved for anything, so neither gets a column — the resource is
-        # still listed, and the note below says which facts were asked for.
-        assert [column.key for column in table.columns] == ["resource"]
-        assert table.note is not None
-        assert "disk_size_gb" in table.note
-        assert "disk_type" in table.note
+        assert table.rows[0].key == "no-data"
 
     def test_a_metric_column_does_not_suppress_the_absence_note(self) -> None:
         """A resolved CPU column does not explain a blank `disk_size_gb` one.

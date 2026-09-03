@@ -96,6 +96,8 @@ __all__ = [
     "SKU_CAPABILITY_FIELDS",
     "TABLE_STYLES",
     "BlockContext",
+    "CHILD_SCOPE_CHILDREN",
+    "CHILD_SCOPE_CONFIG_KEY",
     "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
     "BlockSpec",
@@ -144,6 +146,17 @@ PARAGRAPH_STYLES: Final[tuple[str, ...]] = (
 `Body Text` on purpose**: `design-system.md` requires those rows in mist neutrals rather
 than in `--destructive`, because an empty result is information and not an error. Making it
 a style rather than inline formatting is what lets a theme honour that."""
+
+CHILD_SCOPE_CONFIG_KEY: Final[str] = "_scope"
+CHILD_SCOPE_CHILDREN: Final[str] = "children"
+"""How a per-resource expansion says it wants the resource's **children** rather than the
+resource itself — a network security group's rules, a virtual network's subnets.
+
+Declared by the section catalogue on the expansion, carried in the block's config beside
+the resource id the expander wrote, and read by `BlockContext.resources_for`. Underscored
+like `_resource_id` because it is written per run from the live snapshot and never reaches
+a stored definition."""
+
 
 TABLE_STYLES: Final[tuple[str, ...]] = (
     "Table Hairline",
@@ -632,10 +645,38 @@ class BlockContext:
         `view` overrides the context's own — `narrative` counts resources against the view
         it was handed rather than `context.view`, and both are the same object today.
         """
-        matched = resolve(self.scope_for(block), self.view if view is None else view)
+        source = self.view if view is None else view
         wanted = block.config.get(RESOURCE_ID_CONFIG_KEY)
         if wanted is None:
-            return matched
+            return resolve(self.scope_for(block), source)
+
+        if block.config.get(CHILD_SCOPE_CONFIG_KEY) == CHILD_SCOPE_CHILDREN:
+            # **This resource's children, not this resource.**
+            #
+            # A security rule and a subnet are their own resources carrying their own
+            # facts — a rule's `priority`, `direction`, `port`; a subnet's
+            # `address_prefix` — and the section that renders them expands per *parent*,
+            # one table under each network security group or virtual network. Narrowing to
+            # the parent gave that table the parent, which answers none of those keys, and
+            # section 6 reported "None of these facts were collected" about rules whose
+            # values were in the snapshot beside it.
+            #
+            # Containment is read from the **id**, which is where ARM puts it:
+            # `.../networkSecurityGroups/nsg-web/securityRules/allow-https` is under
+            # `.../networkSecurityGroups/nsg-web`. That is not the structural inference
+            # `catalog/loader.py` warns against — that warning is about deciding a *type*
+            # is a child by counting segments, and this asks a different question of a
+            # different string: which parent does this particular resource belong to.
+            # `is_child_type` still decides child-ness, from the `child_of` declaration.
+            prefix = f"{wanted}/"
+            folded = prefix.casefold()
+            return tuple(
+                r
+                for r in source.resources
+                if r.resource_id.casefold().startswith(folded)
+            )
+
+        matched = resolve(self.scope_for(block), source)
         return tuple(r for r in matched if r.resource_id == wanted)
 
     def cursor(self, block: BlockSpec) -> BlockCursor:

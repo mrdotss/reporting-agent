@@ -383,7 +383,7 @@
           "value_kind": "text",
           "source": "resource_graph",
           "projectable": true,
-          "projection": "tostring(properties.ipConfiguration.id)"
+          "projection": "coalesce(extract(@\"/networkInterfaces/([^/]+)\", 1, tostring(properties.ipConfiguration.id)), tostring(properties.ipConfiguration.id))"
         }
       ]
     },
