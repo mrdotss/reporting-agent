@@ -530,7 +530,9 @@ class TestMessageResolution:
         tables = _tables(doc)
         approvers_table = _approvers_table(doc)
         header_row = approvers_table.rows[0]
-        assert header_row.cells[0].text == "Role"
+        # Blank, as `ReportA.dc.html` leaves it: the column holds Author, Quality
+        # Control, Reviewed By and Customer, and a reader does not need those captioned.
+        assert header_row.cells[0].text == ""
         assert header_row.cells[1].text == "Company"
         assert header_row.cells[2].text == "Name"
         assert header_row.cells[3].text == "Signature"
@@ -546,7 +548,9 @@ class TestMessageResolution:
         tables = _tables(doc)
         approvers_table = _approvers_table(doc)
         header_row = approvers_table.rows[0]
-        assert header_row.cells[0].text == "Peran"
+        # Blank, as `ReportA.dc.html` leaves it: the column holds Author, Quality
+        # Control, Reviewed By and Customer, and a reader does not need those captioned.
+        assert header_row.cells[0].text == ""
         assert header_row.cells[1].text == "Perusahaan"
         assert header_row.cells[2].text == "Nama"
         assert header_row.cells[3].text == "Tanda tangan"

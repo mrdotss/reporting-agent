@@ -122,6 +122,42 @@ export const MESSAGE_CATALOG = {
     en: "Catalog version",
     id: "Versi katalog",
   },
+  "doc.front_matter.document_title": {
+    en: "Document Title",
+    id: "Judul Dokumen",
+  },
+  "doc.front_matter.customer_name": {
+    en: "Customer Name",
+    id: "Nama Pelanggan",
+  },
+  "doc.front_matter.title": {
+    en: "Title",
+    id: "Judul",
+  },
+  "doc.front_matter.customer": {
+    en: "Customer",
+    id: "Pelanggan",
+  },
+  "doc.front_matter.period": {
+    en: "Period",
+    id: "Periode",
+  },
+  "doc.front_matter.revision_version": {
+    en: "Version",
+    id: "Versi",
+  },
+  "doc.front_matter.revision_issue_date": {
+    en: "Issue Date",
+    id: "Tanggal Terbit",
+  },
+  "doc.front_matter.revision_pages_changed": {
+    en: "Pages Changed",
+    id: "Halaman Berubah",
+  },
+  "doc.front_matter.verification_note": {
+    en: "Confidential. Every figure in this document is verified against snapshot {snapshot} and can be traced back to the response that produced it.",
+    id: "Rahasia. Setiap angka dalam dokumen ini diverifikasi terhadap snapshot {snapshot} dan dapat ditelusuri kembali ke respons yang menghasilkannya.",
+  },
   "doc.front_matter.document_control": {
     en: "Document control",
     id: "Kendali dokumen",

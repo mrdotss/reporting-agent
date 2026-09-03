@@ -76,6 +76,15 @@ __all__ = [
     "DOC_CONTROL_CONFIDENTIALITY",
     "DOC_CONTROL_DISTRIBUTION",
     "DOC_CONTROL_DOCUMENT_NAME",
+    "REVISION_PAGES_CHANGED_LABEL",
+    "REVISION_ISSUE_DATE_LABEL",
+    "REVISION_VERSION_LABEL",
+    "COVER_VERIFICATION_NOTE",
+    "COVER_PERIOD_LABEL",
+    "COVER_CUSTOMER_LABEL",
+    "DOC_CONTROL_TITLE_ROW",
+    "DOC_CONTROL_CUSTOMER_NAME",
+    "DOC_CONTROL_DOCUMENT_TITLE",
     "DOC_CONTROL_DOCUMENT_NUMBER",
     "DOC_CONTROL_REVISION_HISTORY",
     "DOC_CONTROL_TITLE",
@@ -94,6 +103,15 @@ __all__ = [
 
 DOC_CONTROL_TITLE: Final[str] = "doc.front_matter.document_control"
 DOC_CONTROL_DOCUMENT_NAME: Final[str] = "doc.front_matter.document_name"
+DOC_CONTROL_DOCUMENT_TITLE: Final[str] = "doc.front_matter.document_title"
+DOC_CONTROL_CUSTOMER_NAME: Final[str] = "doc.front_matter.customer_name"
+DOC_CONTROL_TITLE_ROW: Final[str] = "doc.front_matter.title"
+COVER_CUSTOMER_LABEL: Final[str] = "doc.front_matter.customer"
+COVER_PERIOD_LABEL: Final[str] = "doc.front_matter.period"
+COVER_VERIFICATION_NOTE: Final[str] = "doc.front_matter.verification_note"
+REVISION_VERSION_LABEL: Final[str] = "doc.front_matter.revision_version"
+REVISION_ISSUE_DATE_LABEL: Final[str] = "doc.front_matter.revision_issue_date"
+REVISION_PAGES_CHANGED_LABEL: Final[str] = "doc.front_matter.revision_pages_changed"
 DOC_CONTROL_DOCUMENT_NUMBER: Final[str] = "doc.front_matter.document_number"
 DOC_CONTROL_CONFIDENTIALITY: Final[str] = "doc.front_matter.confidentiality"
 DOC_CONTROL_DISTRIBUTION: Final[str] = "doc.front_matter.distribution"
@@ -380,6 +398,22 @@ The style names ride along rather than being resolved per emitter. That follows 
 """
 
 
+RUN_PLACEHOLDER_LENGTH: Final[int] = 8
+"""How much of the run id `{run}` contributes to a document number.
+
+A run id is a 36-character UUID, and substituting it whole produced
+`FRM.SOP.019-2026-08.91286d3a-bb51-4c1c-88af-af9069dcf321` on the cover of a signed
+document — a number nobody can read out, quote in an email, or write on a printout, which
+is the entire job of a document number. The artifact this front matter is styled from
+prints `FRM.SOP.0XX-26-816.01`.
+
+Eight hex characters, because `{run}` is what distinguishes two runs of one template and
+one period (see below) and it has to keep doing that: four billion values within a single
+template-and-period pair is not a collision anyone will meet. It is a **prefix**, not a
+hash, so the number still reads back to its run by inspection.
+"""
+
+
 def document_number(pattern: str, *, run: RunFacts) -> str:
     """Apply the document-number pattern to one run.
 
@@ -399,7 +433,7 @@ def document_number(pattern: str, *, run: RunFacts) -> str:
         "{template}": run.template_id,
         "{year}": run.period_start_year,
         "{month}": run.period_start_month,
-        "{run}": run.run_id,
+        "{run}": run.run_id[:RUN_PLACEHOLDER_LENGTH],
     }
 
     # Validate that every required substitution value is non-empty.
@@ -468,13 +502,27 @@ def front_matter_sections(
 
     # --- cover (Req 13.4, 13.9) ----------------------------------------------
     if front_matter.cover.enabled:
+        # The eyebrow, above the title: the document's own name in small muted caps, the
+        # way `ReportA.dc.html` opens its cover with "Preventive Maintenance Report" over
+        # "Marketing Riset Azure Usage Report". The two are different things — one names
+        # the kind of document, the other names this one — and the cover said only the
+        # second, so a reader could not tell a maintenance report from a usage report
+        # without reading the contents.
+        if control.document_name:
+            sections.append(
+                FrontMatterHeading(control.document_name, COVER_META_STYLE)
+            )
         sections.append(FrontMatterHeading(run.report_title, COVER_TITLE_STYLE))
+        # The period, large, under the title — `ReportA`'s "July 2026". It also appears
+        # in the pairs below as a precise range with its timezone; this is the same fact
+        # at reading distance, which is what a cover is for.
+        sections.append(FrontMatterHeading(run.period_display, COVER_META_STYLE))
         if front_matter.cover.subtitle:
             sections.append(FrontMatterHeading(front_matter.cover.subtitle, COVER_META_STYLE))
 
         cover_rows: list[tuple[str, str]] = [
-            (messages.text("doc.front_matter.prepared_for"), run.customer_name),
-            (messages.text("doc.front_matter.reporting_period"), run.period_display),
+            (messages.text(COVER_CUSTOMER_LABEL), run.customer_name),
+            (messages.text(COVER_PERIOD_LABEL), run.period_display),
         ]
         # Req 13.8 — the same string here and on the document control page.
         if doc_number:
@@ -493,12 +541,22 @@ def front_matter_sections(
         FrontMatterHeading(messages.text(DOC_CONTROL_TITLE), DOCUMENT_CONTROL_STYLE)
     )
 
-    naming: list[tuple[str, str]] = []
+    # `ReportA.dc.html`'s own four rows, under their own subheading: who it is for, what
+    # it is called, what kind of document it is, and its number. The previous three
+    # (document name, number, prepared for) named the document twice and the reader once.
+    sections.append(
+        FrontMatterHeading(
+            messages.text(DOC_CONTROL_DOCUMENT_TITLE), DOCUMENT_CONTROL_STYLE
+        )
+    )
+    naming: list[tuple[str, str]] = [
+        (messages.text(DOC_CONTROL_CUSTOMER_NAME), run.customer_name),
+        (messages.text(DOC_CONTROL_TITLE_ROW), run.report_title),
+    ]
     if control.document_name:
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
     if doc_number:
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
-    naming.append((messages.text("doc.front_matter.prepared_for"), run.customer_name))
     sections.append(
         FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
     )
@@ -524,7 +582,11 @@ def front_matter_sections(
     sections.append(
         FrontMatterGrid(
             headers=(
-                messages.text(APPROVER_HEADER_ROLE),
+                # Blank, as `ReportA.dc.html` leaves it. The column holds Author, Quality
+                # Control, Reviewed By and Customer — a reader does not need to be told
+                # those are roles, and "Role" over them is a caption for the obvious that
+                # the artifact spends no width on.
+                "",
                 messages.text(APPROVER_HEADER_COMPANY),
                 messages.text(APPROVER_HEADER_NAME),
                 messages.text(APPROVER_HEADER_SIGNATURE),
@@ -545,13 +607,29 @@ def front_matter_sections(
                 messages.text(DOC_CONTROL_REVISION_HISTORY), DOCUMENT_CONTROL_STYLE
             )
         )
-        revision_rows = [(messages.text(REVISION_LABEL), row.revision)]
-        if row.author:
-            revision_rows.append((messages.text(REVISION_AUTHOR_LABEL), row.author))
-        if row.note:
-            revision_rows.append((messages.text(REVISION_NOTE_LABEL), row.note))
+        # A table with a header row, as `ReportA.dc.html` draws it — `Version | Issue
+        # Date | Pages Changed | Notes`, one row per revision. It was a label/value pairs
+        # block, which reads as a property of the document rather than as its history:
+        # a revision history with one row still has to look like a list somebody will add
+        # a second row to.
+        #
+        # `Issue Date` carries the author, and `Pages Changed` an em dash. Neither is
+        # invented: the row this front matter is handed declares a revision, an author and
+        # a note, and nothing in the run record knows which pages a re-run changed. An
+        # em dash is how the artifact itself fills that column for a first issue, and
+        # printing a date the run never recorded would be worse than printing nothing.
         sections.append(
-            FrontMatterPairs(tuple(revision_rows), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
+            FrontMatterGrid(
+                headers=(
+                    messages.text(REVISION_VERSION_LABEL),
+                    messages.text(REVISION_AUTHOR_LABEL),
+                    messages.text(REVISION_PAGES_CHANGED_LABEL),
+                    messages.text(REVISION_NOTE_LABEL),
+                ),
+                rows=((row.revision, row.author or "", "\u2014", row.note or ""),),
+                table_style=LAYOUT_TABLE_STYLE,
+                paragraph_style=DOCUMENT_CONTROL_STYLE,
+            )
         )
 
     # --- distribution --------------------------------------------------------

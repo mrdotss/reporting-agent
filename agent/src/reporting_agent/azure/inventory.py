@@ -85,6 +85,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from reporting_agent.redaction import scrub
+
 from reporting_agent.azure.ports import InventoryPort, RawHttpResponse
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.log import (
@@ -134,6 +136,12 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+_ERROR_BODY_LOG_LIMIT: Final[int] = 600
+"""How much of a failed query's response body reaches the log.
+
+Enough for Resource Graph's own syntax message and the position it names, and short
+enough that a log line is not an echo of the query that produced it."""
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -912,11 +920,24 @@ class InventoryCollector:
 
         response = await self._port.query_child_resources(subscription_id=subscription_id)
         if not response.ok:
+            # The status alone said a query failed and not why. A 400 from Resource Graph
+            # is a **syntax error in the KQL this package wrote**, and its body names the
+            # position — which is the whole diagnosis, and it was being discarded. One run
+            # reported `status 400` for a query whose `| project` clause carried
+            # `powerState = "", , fact_subnet = ...`; the body would have said so, and
+            # instead every subnet and every security rule was quietly absent from the
+            # report with a one-line warning that could not be acted on.
+            #
+            # Scrubbed and bounded: a response body is provider text, so it goes through
+            # the same redaction every other logged provider string does, and a long body
+            # is cut rather than filling the log with an echo of the query.
+            detail = scrub(response.body.decode("utf-8", errors="replace")) or ""
             logger.warning(
                 "the child-resource query for subscription %r returned status %d; "
-                "no child resource is recorded for this run.",
+                "no child resource is recorded for this run. The service said: %s",
                 subscription_id,
                 response.status,
+                detail[:_ERROR_BODY_LOG_LIMIT],
             )
             return DiscoverResult(resources=[], gaps=[])
 

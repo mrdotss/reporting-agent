@@ -510,7 +510,11 @@ def subnet_inventory_query(*, subscription_id: str) -> str:
         "          resourceGroup = resourceGroup,",
         "          tags = tags,",
         '          sku = "",',
-        '          powerState = "",',
+        # No trailing comma: every fact line below opens with its own `,`, the way
+        # `inventory_query`'s own projection loop does. Carrying one here produced
+        # `powerState = "", , fact_...` — which Resource Graph answers with a 400, and
+        # which no test could see because none of them read the query as a whole.
+        '          powerState = ""',
         "          , fact_subnet = tostring(subnet.name)",
         "          , fact_address_prefix = tostring(subnet.properties.addressPrefix)",
         "          , fact_ip_configuration_count = tostring("
@@ -585,7 +589,11 @@ def security_rule_inventory_query(*, subscription_id: str) -> str:
         "          resourceGroup = resourceGroup,",
         "          tags = tags,",
         '          sku = "",',
-        '          powerState = "",',
+        # No trailing comma: every fact line below opens with its own `,`, the way
+        # `inventory_query`'s own projection loop does. Carrying one here produced
+        # `powerState = "", , fact_...` — which Resource Graph answers with a 400, and
+        # which no test could see because none of them read the query as a whole.
+        '          powerState = ""',
         "          , fact_priority = tostring(rule.properties.priority)",
         "          , fact_direction = tostring(rule.properties.direction)",
         "          , fact_protocol = tostring(rule.properties.protocol)",

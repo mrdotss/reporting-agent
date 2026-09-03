@@ -458,3 +458,97 @@ def test_child_resources_are_filtered_by_the_same_group_and_tag_scope() -> None:
 
     result = asyncio.run(harness.provider.discover(vnet_scope))
     assert result["resources"] == []
+
+
+# --------------------------------------------------------------------------- #
+# Every Resource Graph query this module writes must parse
+# --------------------------------------------------------------------------- #
+
+
+def _every_resource_graph_query() -> dict[str, str]:
+    """Each query builder in `azure/clients.py`, called with plausible arguments.
+
+    Enumerated from `__all__` rather than listed here, so a fourth query added later is
+    covered without this test being edited — the same reason the gap-type and
+    exclusion-reason guards derive their subjects from the declarations they check.
+    """
+    import inspect
+
+    from reporting_agent.azure import clients
+
+    built: dict[str, str] = {}
+    for name in clients.__all__:
+        if not name.endswith("_query"):
+            continue
+        builder = getattr(clients, name)
+        parameters = inspect.signature(builder).parameters
+        arguments: dict[str, object] = {}
+        if "subscription_id" in parameters:
+            arguments["subscription_id"] = "3f2b0000-0000-0000-0000-000000000000"
+        if "resource_types" in parameters:
+            arguments["resource_types"] = ["Microsoft.Compute/virtualMachines"]
+        if "fact_projections" in parameters:
+            arguments["fact_projections"] = [("os_type", "tostring(properties.osType)")]
+        try:
+            built[name] = builder(**arguments)
+        except TypeError:  # pragma: no cover - a builder needing arguments not modelled
+            continue
+    return built
+
+
+def test_no_query_carries_an_empty_projection_column() -> None:
+    """A `| project` column list must name a column between every pair of commas.
+
+    `subnet_inventory_query` and `security_rule_inventory_query` both ended their fixed
+    columns with `powerState = "",` and then opened every fact line with its own `,`,
+    producing `powerState = "", , fact_subnet = ...`. Resource Graph answers that with a
+    **400**, and the collector logs "the child-resource query returned status 400; no
+    child resource is recorded for this run" and carries on — so every subnet and every
+    security rule was silently absent from every report.
+
+    Nothing caught it because every test in this file and in
+    `test_security_rule_inventory.py` asserts on *fragments* — that the query contains an
+    `mv-expand`, that it names the right type, that a fact column is projected. A fragment
+    assertion cannot see a comma between two fragments. This reads the whole clause.
+
+    `inventory_query` had it right all along: its last fixed column carries no trailing
+    comma because its projection loop supplies one per fact line. The two child queries
+    copied the shape and kept the comma.
+    """
+    import re
+
+    for name, query in _every_resource_graph_query().items():
+        for clause in re.findall(r"\| project (.+?)(?=\n\| |\Z)", query, re.S):
+            columns = [part.strip() for part in clause.split(",")]
+            empty = [index for index, part in enumerate(columns) if not part]
+            assert not empty, (
+                f"{name}: the `| project` clause has an empty column at position(s) "
+                f"{empty}, which Resource Graph answers with a 400. Clause:\n{clause}"
+            )
+
+
+def test_no_query_contains_two_commas_in_a_row() -> None:
+    """The same defect stated the way it appears in the text, so the failure names it.
+
+    Kept beside the clause check rather than folded into it: this one is legible in a
+    diff and cannot be argued with, and it is the exact shape a builder that appends its
+    own separator produces.
+    """
+    import re
+
+    for name, query in _every_resource_graph_query().items():
+        assert not re.search(r",\s*,", query, re.S), (
+            f"{name} contains two consecutive commas, so it does not parse"
+        )
+
+
+def test_the_guard_covers_every_query_the_module_exports() -> None:
+    """Non-vacuity: a builder this could not call is a builder it does not check."""
+    from reporting_agent.azure import clients
+
+    exported = {name for name in clients.__all__ if name.endswith("_query")}
+    built = set(_every_resource_graph_query())
+
+    assert built == exported, (
+        f"these query builders were not exercised: {sorted(exported - built)}"
+    )
