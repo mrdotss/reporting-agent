@@ -371,6 +371,15 @@
               "per": "resource"
             },
             {
+              "block": "heading",
+              "config": {
+                "level": 4,
+                "title_id": "doc.section.nsg.inbound",
+                "repeats_per_resource": true
+              },
+              "per": "resource"
+            },
+            {
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -405,7 +414,60 @@
                     "fact_key": "action"
                   }
                 ],
-                "omit_default_rules_above": 65000
+                "omit_default_rules_above": 65000,
+                "filter_fact": "direction",
+                "filter_value": "Inbound",
+                "empty_message_id": "doc.section.nsg.no_rules"
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 4,
+                "title_id": "doc.section.nsg.outbound",
+                "repeats_per_resource": true
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "priority"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "direction"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "protocol"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "source"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "destination"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "port"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "action"
+                  }
+                ],
+                "omit_default_rules_above": 65000,
+                "filter_fact": "direction",
+                "filter_value": "Outbound",
+                "empty_message_id": "doc.section.nsg.no_rules"
               }
             }
           ],
@@ -593,7 +655,10 @@
               "when_presentation": [
                 "chart_and_table",
                 "chart_only"
-              ]
+              ],
+              "config": {
+                "metrics_from": "order_by_metric"
+              }
             },
             {
               "block": "metric_summary",

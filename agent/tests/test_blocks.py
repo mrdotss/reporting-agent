@@ -1716,3 +1716,85 @@ class TestATableWithNothingToShowSaysSo:
 
         assert [c.header for c in table.columns] != ["Scope"]
         assert len(table.rows) == 2
+
+
+def test_a_table_narrows_to_the_resources_whose_fact_holds_a_declared_value() -> None:
+    """`filter_fact`/`filter_value` — the mechanism behind Inbound and Outbound.
+
+    A network security group's rules are listed under an `Inbound` label and an `Outbound`
+    one, two tables over one group's children. One table sorted by direction would put the
+    two together and leave a reader to find the boundary.
+
+    Exercised against `BlockContext` directly, like `_resource_id` above: what matters is
+    that the narrowing happens at all, which the expansion tests cannot see — they assert
+    the config the catalogue declares and would pass against a `resources_for` that read
+    neither key.
+    """
+    from reporting_agent.compile.blocks.base import (
+        FACT_FILTER_KEY,
+        FACT_FILTER_VALUE_KEY,
+    )
+    from reporting_agent.collect.snapshot import FactEntry
+
+    def rule(name: str, direction: str) -> object:
+        return sf.vm(
+            resource_id=f"/nsg/one/securityRules/{name}",
+            name=name,
+            facts=(
+                FactEntry(
+                    key="direction",
+                    value=direction,
+                    value_kind="text",
+                    source="resource_graph",
+                    collected_at="2026-08-01T00:00:00Z",
+                    formatted=direction,
+                ),
+            ),
+        )
+
+    view = view_of(resources=[
+        rule("allow-https", "Inbound"),
+        rule("allow-ssh", "Inbound"),
+        rule("deny-internet-out", "Outbound"),
+    ])
+    context = BlockContext(
+        view=view,
+        ledger=FigureLedger(),
+        design=DesignSettings.from_plain(
+            df.definition([df.block("b", "resource_table", {"columns": [df.CPU_AVG]})])["design"]
+        ),
+        default_scope=scope_rules_from_plain(df.scope()),
+        messages=_MESSAGES,
+    )
+
+    def spec(config: dict) -> BlockSpec:
+        return BlockSpec(id="b", type="resource_table", config=config, scope_override=None)
+
+    inbound = context.resources_for(
+        spec({FACT_FILTER_KEY: "direction", FACT_FILTER_VALUE_KEY: "Inbound"})
+    )
+    assert [r.name for r in inbound] == ["allow-https", "allow-ssh"]
+
+    outbound = context.resources_for(
+        spec({FACT_FILTER_KEY: "direction", FACT_FILTER_VALUE_KEY: "Outbound"})
+    )
+    assert [r.name for r in outbound] == ["deny-internet-out"]
+
+    # Case-insensitive: Azure spells a direction `Inbound` and a catalogue reads better
+    # lowercase, and neither spelling may decide whether a rule appears.
+    assert [
+        r.name
+        for r in context.resources_for(
+            spec({FACT_FILTER_KEY: "direction", FACT_FILTER_VALUE_KEY: "inbound"})
+        )
+    ] == ["allow-https", "allow-ssh"]
+
+    # Opt-in, like `_resource_id`: a block declaring no filter sees everything, and a
+    # `.get` treating the absent case as a match for `None` would empty every table.
+    assert len(context.resources_for(spec({}))) == 3
+
+    # A value nothing answers yields nothing, which the compiler renders as its declared
+    # empty-result sentence rather than raising.
+    assert context.resources_for(
+        spec({FACT_FILTER_KEY: "direction", FACT_FILTER_VALUE_KEY: "Sideways"})
+    ) == ()

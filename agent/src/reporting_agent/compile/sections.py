@@ -174,7 +174,16 @@ def _assert_resource_heading_untitled(
     which shipped in `vm_utilization`, `database_utilization` and
     `app_service_and_storage`. A per-resource heading names its resource; a heading that
     wants a fixed title is a `per: "section"` heading.
+
+    Unless the repetition is the point, and it is declared to be. A network security
+    group's rules are listed under an `Inbound` label and an `Outbound` one, once per
+    group, exactly as `ReportA.dc.html` lists them — the same fixed string once per
+    resource is the correct rendering there. `repeats_per_resource: true` is how the
+    catalogue says so, so the defect this guard names stays a failure and the deliberate
+    case stays expressible without either one having to look like the other.
     """
+    if config.get("repeats_per_resource") is True:
+        return
     if "title_id" in config:
         raise CompileFailedError(
             f"section {entry.key!r}: a per-resource heading declares "
@@ -225,7 +234,27 @@ def _thread_metric_config(
             and isinstance(section_metrics, Sequence)
             and not isinstance(section_metrics, str)
         ):
-            config["metrics"] = list(section_metrics)
+            selected = list(section_metrics)
+            # `metrics_from: "order_by_metric"` narrows a block to the one metric the
+            # catalogue entry ranks by, keeping every statistic the section selected for
+            # it. `ReportB.dc.html` charts Percentage CPU alone — maximum over average —
+            # and reports memory, disk and network in the statistics table beneath it. A
+            # chart plotting every selected metric stacks a panel per magnitude, so a
+            # section selecting four metrics spent most of a page per machine on panels
+            # nobody asked to see full-size.
+            if config.pop("metrics_from", None) == "order_by_metric" and entry.order_by:
+                wanted = entry.order_by[0].casefold()
+                narrowed = [
+                    metric
+                    for metric in selected
+                    if isinstance(metric, Mapping)
+                    and str(metric.get("metric", "")).casefold() == wanted
+                ]
+                # Only where the section actually selected it. A profile that dropped the
+                # ranking metric keeps the chart it chose rather than losing it entirely.
+                if narrowed:
+                    selected = narrowed
+            config["metrics"] = selected
     elif expansion.block == "resource_table":
         # A metric-bearing section's per-resource resource_table needs the same
         # `columns` the chart needs `metrics` — the section's own selected metrics,
@@ -363,6 +392,12 @@ def _expand_one_section(
             run_config: dict[str, object] = dict(run_expansion.config)
             if run_expansion.block == "heading":
                 _assert_resource_heading_untitled(entry, run_config)
+                # A label repeated under each resource resolves its own title here, the
+                # way a per-section heading does. Resolving it below, where the resource
+                # name is written, would be too late — that assignment is what a label
+                # exists to opt out of.
+                if run_config.pop("repeats_per_resource", None) is True:
+                    _resolve_heading_text(run_expansion, entry, run_config, messages)
             _thread_metric_config(run_expansion, entry, section, run_config)
             run_configs.append((run_index, run_expansion, run_config))
 
@@ -389,10 +424,14 @@ def _expand_one_section(
                 # and a replay rebuilds it from the pinned one.
                 per_resource_config = dict(config)
                 per_resource_config[RESOURCE_ID_CONFIG_KEY] = resource.resource_id
-                if expansion.block == "heading":
+                if expansion.block == "heading" and "text" not in per_resource_config:
                     # A per-resource heading names its resource. `resolved` is the
                     # snapshot's own order, so this is as deterministic as the ordinal
                     # beside it.
+                    #
+                    # Unless it already carries a text: a label declared with
+                    # `repeats_per_resource` resolved its own title above, and overwriting
+                    # it here would put the group's name where `Inbound` belongs.
                     per_resource_config["text"] = resource.name
                 result.append(BlockSpec(
                     id=block_id,

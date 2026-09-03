@@ -482,6 +482,18 @@ export const MESSAGE_CATALOG = {
     en: "Network Security Groups",
     id: "Grup Keamanan Jaringan",
   },
+  "doc.section.nsg.inbound": {
+    en: "Inbound",
+    id: "Masuk",
+  },
+  "doc.section.nsg.no_rules": {
+    en: "No rules are defined in this direction, so traffic follows Azure's default security rules.",
+    id: "Tidak ada aturan yang ditetapkan pada arah ini, sehingga lalu lintas mengikuti aturan keamanan bawaan Azure.",
+  },
+  "doc.section.nsg.outbound": {
+    en: "Outbound",
+    id: "Keluar",
+  },
   "doc.section.public_ip_addresses": {
     en: "Public IP Addresses",
     id: "Alamat IP Publik",

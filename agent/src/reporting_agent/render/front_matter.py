@@ -400,6 +400,9 @@ class FrontMatterLogo:
     space_after_pt: float = 0.0
     """The gap beneath it. See :data:`LOGO_SPACE_AFTER_PT`."""
 
+    space_before_pt: float = 0.0
+    """The gap above it. See :data:`COVER_SPACE_BEFORE_PT`."""
+
     image: bytes | None = None
     """The logo itself, where this run could read it.
 
@@ -477,6 +480,21 @@ The style names ride along rather than being resolved per emitter. That follows 
 
 LOGO_HEIGHT_PT: Final[float] = 34.0
 LOGO_WIDTH_PT: Final[float] = 104.0
+
+COVER_SPACE_BEFORE_PT: Final[float] = 150.0
+"""The space above the cover's first element.
+
+`ReportA.dc.html` centres the whole cover block in the page rather than starting it at the
+top margin — the logo sits about a third of the way down, with the title and the fact list
+below it and the confidentiality line at the foot. Emitted as space **before** the first
+element rather than as a vertical alignment property, because that is the one expression
+both emitters have: Word's `w:vAlign` centres a whole section and would take the footer
+line with it, and the reading copy's page box has no height for `justify-content` to
+distribute until it is paginated.
+
+150pt is a little under a fifth of A4's 842pt, which puts a cover carrying a logo, an
+eyebrow, a title, a period and four fact rows on the page's optical centre rather than its
+arithmetic one — the artifact's own arrangement, where the block sits slightly high."""
 
 LOGO_SPACE_AFTER_PT: Final[float] = 44.0
 """The gap between the logo and the eyebrow beneath it.
@@ -602,6 +620,7 @@ def front_matter_sections(
                 FrontMatterLogo(
                     height_pt=LOGO_HEIGHT_PT,
                     width_pt=LOGO_WIDTH_PT,
+                    space_before_pt=COVER_SPACE_BEFORE_PT,
                     space_after_pt=LOGO_SPACE_AFTER_PT,
                     image=front_matter.cover.logo_image,
                 )
@@ -851,6 +870,7 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
         # empty dashed box labelled LOGO is a mock-up's device, and this is a document
         # somebody signs.
         paragraph = document.add_paragraph()
+        paragraph.paragraph_format.space_before = Pt(section.space_before_pt)
         paragraph.paragraph_format.space_after = Pt(section.space_after_pt)
         if section.image is None:
             paragraph.paragraph_format.line_spacing = Pt(section.height_pt)

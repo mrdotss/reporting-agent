@@ -220,6 +220,22 @@ class TestV3SectionWalkReachesAPassingVerification:
         Panelling is covered where it can be exercised, in `test_charts.py`'s
         `two_magnitude_chart` fixture. What this test claims is what the run produced,
         read from the delivered `.docx` rather than from the compiled AST.
+
+        ## And why it is now one chart, not two
+
+        `vm_utilization`'s chart plots the catalogue entry's ranking metric alone —
+        Percentage CPU — and leaves memory, disk and network to the statistics table
+        beneath it, which is how `ReportB.dc.html` arranges section 8. This fixture's
+        whole point is a **per-resource 403 on CPU** for one of its two machines, so that
+        machine's CPU is a recorded gap and its chart is the no-data notice rather than an
+        image.
+
+        That is the correct document. A chart drawn from Available Memory Bytes under a
+        heading naming Percentage CPU would report a metric the run did not collect for
+        that machine, and the machine's memory is still reported — in the summary table,
+        where it is labelled as itself. So the count is one image per machine **whose
+        charted metric has data**, derived below from the gap the fixture creates rather
+        than hardcoded, and the machine without one is asserted to carry the notice.
         """
         walk, _ = walked_v3
         docx = walk.store.get(reports_key(ACTOR_ID, RUN_ID, "report.docx"))
@@ -242,11 +258,43 @@ class TestV3SectionWalkReachesAPassingVerification:
             f"the fixture must render at least two machines for this to mean anything, "
             f"got {machines}"
         )
+        # The machines whose charted metric the run actually collected. The fixture answers
+        # a per-resource 403 on CPU for exactly one of them, so this is one fewer than
+        # `machines` — derived from the run's own gaps rather than written as `machines - 1`,
+        # which would pass on a fixture that had stopped creating the gap at all.
+        import json as _json
+        from reporting_agent.collect.snapshot import snapshot_key
+
+        stored = walk.store.get(snapshot_key(ACTOR_ID, RUN_ID))
+        assert stored is not None
+        gapped = {
+            gap.get("resource_id")
+            for gap in _json.loads(stored.body)["gaps"]
+            if gap.get("metric") == "Percentage CPU"
+        }
+        assert gapped, "the fixture must record a CPU gap for this to mean anything"
+        charted = machines - len(gapped)
+        assert charted >= 1
+
         inline_shapes = document.inline_shapes
-        assert len(inline_shapes) == machines, (
-            f"expected exactly {machines} embedded chart images — one per machine in "
-            f"scope — got {len(inline_shapes)}"
+        assert len(inline_shapes) == charted, (
+            f"expected exactly {charted} embedded chart images — one per machine whose "
+            f"charted metric was collected — got {len(inline_shapes)}"
         )
+
+        # And the machine without one says so, rather than silently having no chart. The
+        # notice is a one-row data table (`no_data_table`), so it lives in a cell and not
+        # in `document.paragraphs`.
+        cells = [
+            cell.text
+            for table in document.tables
+            for row in table.rows
+            for cell in row.cells
+        ]
+        assert any(
+            "No values recorded for these resources in this period" in text
+            for text in cells
+        ), "the machine whose CPU is a gap must carry the no-data notice"
 
     def test_front_matter_shows_an_empty_ruled_box_for_every_unsigned_approver(
         self, walked_v3: tuple[V2Walk, list[Event]]
