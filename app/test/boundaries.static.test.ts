@@ -1657,6 +1657,10 @@ const SPEC_SERVER_ONLY_MODULES = [
   TEMPLATE_STORE,
   VERIFICATION_STORE,
   path.join("lib", "templates", "catalog.ts"),
+  // Fetches a profile's cover logo URL and writes the bytes to S3 when a version is
+  // saved. Marked for the fetch as much as for the write: it is the one module that
+  // requests an address a user typed, and a client component must not be able to name it.
+  path.join("lib", "templates", "logo.ts"),
   path.join("lib", "templates", "preview.ts"),
   path.join("lib", "templates", "seed.ts"),
   path.join("lib", "templates", "theme-thumbnails.ts"),

@@ -1032,7 +1032,16 @@ export const SUBTITLE_MAX_LENGTH = 200
 export const APPROVER_NAME_MAX_LENGTH = 120
 export const APPROVER_TITLE_MAX_LENGTH = 120
 
-const COVER_ALLOWED_KEYS = ["logo", "contact_block", "subtitle"] as const
+const COVER_ALLOWED_KEYS = [
+  "logo",
+  // The stored object the logo's bytes live at, written when a version is saved by
+  // resolving `logo` once. A key, never a URL and never the bytes — the same separation
+  // `signature_key` draws, so the runtime reads its own bucket and never issues a request
+  // to an address a profile author chose.
+  "logo_key",
+  "contact_block",
+  "subtitle",
+] as const
 const DOCUMENT_CONTROL_ALLOWED_KEYS = [
   "document_name",
   "document_number_pattern",
@@ -1185,6 +1194,7 @@ function validateCover(
   }
 
   optionalBoundedString(cover, "logo", path, issues, LOGO_MAX_LENGTH)
+  optionalBoundedString(cover, "logo_key", path, issues, LOGO_MAX_LENGTH)
   optionalBoundedString(
     cover,
     "contact_block",

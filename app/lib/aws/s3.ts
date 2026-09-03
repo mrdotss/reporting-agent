@@ -410,6 +410,57 @@ export async function putSignature(
   )
 }
 
+// --- Cover logos -----------------------------------------------------------
+//
+// A profile's cover logo is a URL its author typed. The app fetches it once when
+// a version is saved and stores the bytes here, so the runtime reads its own
+// bucket rather than issuing a request to an address someone else chose — the
+// same separation a signature already has, arrived at from the other direction.
+
+/** The second segment a cover logo lives under. */
+export const ARTIFACT_SEGMENT_LOGOS = "logos"
+
+/**
+ * Where a resolved cover logo's bytes live — `<userId>/logos/<uuid>.<ext>`.
+ *
+ * Owner-prefixed like every other artifact key, so the runtime's first-segment
+ * ownership check already covers it without having to learn what a logo is, and
+ * a definition naming another tenant's object reads nothing.
+ *
+ * A fresh id per resolution, rather than a name derived from the URL: a saved
+ * version is immutable, and a key two versions could share is a key whose object
+ * one of them can change under the other.
+ */
+export function logoKey(userId: string, extension: "png" | "jpeg"): string {
+  const ext = extension === "jpeg" ? "jpg" : "png"
+  return `${userId}/${ARTIFACT_SEGMENT_LOGOS}/${randomUUID()}.${ext}`
+}
+
+/**
+ * Write a fetched logo's bytes to its key.
+ *
+ * The same contract {@link putSignature} states, and for the same reason: the
+ * caller has already sniffed the content and minted the key, and this performs
+ * no validation of its own. It is a distinct function rather than a call to
+ * {@link putSignature} with a `logos/` key so that the two kinds of image keep
+ * separate entry points — if either ever needs its own storage class, tagging or
+ * ceiling, there is a place to put it.
+ */
+export async function putLogo(
+  key: string,
+  bytes: Uint8Array,
+  contentType: "image/png" | "image/jpeg"
+): Promise<void> {
+  await getS3Client().send(
+    new PutObjectCommand({
+      Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+      Key: key,
+      Body: bytes,
+      ContentType: contentType,
+    })
+  )
+}
+
 /**
  * A presigned GET for one signature image, so the wizard can render a
  * preview of an already-uploaded signature without the bytes passing
