@@ -747,6 +747,42 @@ def stack_without_overlap(values: Sequence[float], minimum_gap: float) -> list[f
     return stacked
 
 
+
+def short_series_label(series, series_set) -> str:
+    """A series' label, reduced to what distinguishes it from its neighbours.
+
+    `ReportB.dc.html` labels the two lines of a per-machine CPU chart `Max` and `Avg`, not
+    `vm-amor — Percentage CPU (max)` twice over. The long form is right on a fleet chart,
+    where the resource is what tells two lines apart, and wrong on a chart of one machine
+    and one metric: there the resource and the metric are already in the chart's title and
+    in the heading above it, and repeating them spends the whole right gutter on the part
+    that is identical. The delivered chart overflowed the image with them.
+
+    So: where every series plots the **same resource and the same metric**, the statistic
+    alone is the label. Read from each series' own figures rather than parsed out of the
+    label string — `Figure` carries `metric`, `resource_id` and `statistic`, and a label is
+    prose that a locale or a rename may change.
+
+    Anything else keeps its full label, including a series with no points to read a figure
+    from: an unlabelled line is worse than a long label.
+    """
+    def facets(entry) -> set[tuple[str, str]]:
+        return {(point.y.metric or "", point.y.resource_id or "") for point in entry.points}
+
+    seen: set[tuple[str, str]] = set()
+    for entry in series_set:
+        if not entry.points:
+            return series.label
+        seen |= facets(entry)
+    if len(seen) != 1:
+        return series.label
+
+    statistics = {point.y.statistic for point in series.points if point.y.statistic}
+    if len(statistics) != 1:
+        return series.label
+    return next(iter(statistics)).capitalize()
+
+
 def _draw_end_labels(
     axes,
     entries: Sequence[tuple[float, float, str, str]],
@@ -869,7 +905,9 @@ def _draw(
     # chart with `panel_count` panels. Every panel still states which series it
     # holds, so "a reader knows which is the maximum without a legend" — the
     # requirement's own phrasing — holds even on a panel with no chart title.
-    panel_subtitle = ", ".join(dict.fromkeys(series.label for series in series_set))
+    panel_subtitle = ", ".join(
+        dict.fromkeys(short_series_label(series, series_set) for series in series_set)
+    )
     # The panel's own series, named quietly: this says which lines are here, and a reader
     # meets it after the chart's title rather than competing with it.
     axes.set_title(
@@ -991,7 +1029,12 @@ def _draw(
             # mode reproduced in the thing meant to replace it. Placed once, below, where
             # every end position is known.
             end_labels.append(
-                (len(values) - 1, values[-1], truncate_end_label(series.label), colour)
+                (
+                    len(values) - 1,
+                    values[-1],
+                    truncate_end_label(short_series_label(series, series_set)),
+                    colour,
+                )
             )
             # Direct value labels at labelled indices (Req 17.4)
             for index in sorted(labelled):
@@ -1024,7 +1067,11 @@ def _draw(
                     )
             ticks = tick_label_positions(len(labels))
             axes.set_xticks(ticks)
-            axes.set_xticklabels([labels[i] for i in ticks], rotation=45, ha="right")
+            # Horizontal, as `ReportB.dc.html` prints them: `1 Jul` under the first point
+            # and `31 Jul` under the last, on the baseline. Rotated 45 degrees they formed
+            # a diagonal band as deep as the panel above it, which on a chart this short is
+            # more space spent on the axis than on the data.
+            axes.set_xticklabels([labels[i] for i in ticks], rotation=0, ha="center")
         else:
             offset = _bar_offsets(len(series_set), slot)
             positions = [index + offset for index in range(len(values))]
@@ -1060,10 +1107,22 @@ def _draw(
 
     # The numerals first, hung back over the line they belong to; then the series labels in
     # the gutter. Both de-overlapped, and separately, because they occupy different columns.
-    _draw_end_labels(
-        axes, end_values, offset=(-4, 0), align="right", mono=True, face=ink.figure_face
-    )
+    # Both in the right gutter, the value on the line under its own label — the
+    # arrangement `ReportB.dc.html` uses, `Max` over `18.30%`. Right-aligned inside the
+    # axes, the value hung over the end of the line it named and the label began
+    # immediately to its right, so the delivered chart read `9.89%` through
+    # `CPN-App — Percentage CPU (max)`. Stacking cannot collide: both sets are placed from
+    # the same line-end heights by the same rule, so a value sits exactly one line below
+    # the label it belongs to however the two series end.
     _draw_end_labels(axes, end_labels, face=ink.body_face)
+    _draw_end_labels(
+        axes,
+        end_values,
+        offset=(3, -_VALUE_UNDER_LABEL_POINTS),
+        align="left",
+        mono=True,
+        face=ink.figure_face,
+    )
 
     # --- Legend (Req 17.3) — the fallback, and only when it is one -------------
     #
@@ -1087,14 +1146,19 @@ def _draw(
         )
 
 
-_TITLE_BAND_INCHES: Final[float] = 0.8
-"""Space above the first panel, for the chart title and its breathing room."""
+_TITLE_BAND_INCHES: Final[float] = 0.45
+"""Space above the first panel, for the chart title and its breathing room.
 
-_XLABEL_BAND_INCHES: Final[float] = 0.95
-"""Space below the last panel, for the rotated date labels and the axis title.
+One line of title type and its air. It was 0.8 against a 3.2in panel; against a 1.5in one
+that reserved half a panel's height for a single line."""
 
-Both are absolute because what they hold is: a line of 7pt type rotated 45 degrees
-occupies the same inch whether it sits under one panel or five."""
+_XLABEL_BAND_INCHES: Final[float] = 0.45
+"""Space below the last panel, for the date labels and the axis title.
+
+Both are absolute because what they hold is: a line of 7pt type occupies the same inch
+whether it sits under one panel or five. It was 0.95 while the labels were rotated 45
+degrees, where the band had to hold a date's whole diagonal; horizontal, it holds one
+line of type and its air."""
 
 _TITLE_LEFT: Final[float] = 0.12
 """The chart title's left edge, in figure coordinates — the same `left` the axes take, so
@@ -1115,14 +1179,23 @@ at render time makes the emitted PNG host-dependent.
 
 _ELLIPSIS: Final[str] = "\u2026"
 
-MAX_X_TICK_LABELS: Final[int] = 12
+_VALUE_UNDER_LABEL_POINTS: Final[float] = 8.0
+"""How far below its series label the final value sits, in points.
+
+One line of label type plus a little air, so the pair reads as one block rather than as
+two annotations that happen to be near each other."""
+
+MAX_X_TICK_LABELS: Final[int] = 5
 """The most x tick labels one panel prints.
 
-A 31-day window ticked at every point produces 31 rotated labels in 6 inches — about
-0.19in each — which overlap into an unreadable diagonal band. Every k-th label, where k
-is chosen so at most this many survive, keeps them legible; the companion table carries
-every point's x value regardless (Req 22.1), so nothing is lost by not printing them all.
-"""
+A 31-day window ticked at every point produces 31 labels in 6 inches — about 0.19in each,
+which overlap whatever their angle. Twelve fitted while they were rotated 45 degrees and
+overlap now that they are horizontal: a date reads about 0.7in flat, so six is the most
+six inches holds with air between them. `ReportB.dc.html` prints four.
+
+Every k-th label, where k is chosen so at most this many survive; the companion table
+carries every point's x value regardless (Req 22.1), so nothing is lost by not printing
+them all."""
 
 
 def truncate_end_label(label: str, budget: int = END_LABEL_MAX_CHARS) -> str:

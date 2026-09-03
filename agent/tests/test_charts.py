@@ -1453,3 +1453,179 @@ class TestStackWithoutOverlap:
     def test_it_is_total_over_the_empty_and_single_cases(self) -> None:
         assert C.stack_without_overlap([], 1.0) == []
         assert C.stack_without_overlap([4.2], 1.0) == [4.2]
+
+
+# --------------------------------------------------------------------------- #
+# A series' label is reduced to what distinguishes it
+# --------------------------------------------------------------------------- #
+
+
+class TestShortSeriesLabel:
+    """`ReportB.dc.html` labels a per-machine CPU chart's two lines `Max` and `Avg`.
+
+    The full form — `CPN-App — Percentage CPU (max)` — is right on a fleet chart, where
+    the resource is what tells two lines apart. On a chart of one machine and one metric
+    it spends the whole right gutter on the half that is identical, and the delivered
+    chart ran the label off the edge of the image.
+    """
+
+    def _series(self, key: str, statistic: str, *, metric: str, resource: str, index: int = 0):
+        """One series, built through `BlockCursor.figure` under `compiling_against` —
+        a `Figure` refuses construction outside it, which is the provenance guarantee this
+        file's own fixtures already go through."""
+        from dataclasses import dataclass
+
+        from reporting_agent.compile.ast import ChartPoint, Series
+        from reporting_agent.compile.estimators import ESTIMATOR_EXACT_COUNT_WEIGHTED
+        from reporting_agent.compile.snapshot_view import SnapshotValue
+
+        @dataclass(frozen=True, slots=True)
+        class _FixedValueResolver:
+            """Resolves any pointer to one fixed value — the same seam
+            `two_magnitude_chart` uses, and for the same reason."""
+
+            value: SnapshotValue
+
+            def resolve_all(self, raw_pointer: str) -> tuple[SnapshotValue, ...]:
+                return (self.value,)
+
+            def resolve_text_all(self, raw_pointer: str) -> tuple[str, ...]:
+                return ()
+
+        ledger = FigureLedger()
+        cursor = BlockCursor(block_id="c", ledger=ledger)
+        points = []
+        for point_index in range(2):
+            value = SnapshotValue(
+                value=Decimal("10.00"),
+                unit="percent",
+                statistic=statistic,
+                estimator=ESTIMATOR_EXACT_COUNT_WEIGHTED,
+                fidelity_tier="baseline",
+                scale=2,
+                pointer="/resources/r0/metrics/m0/value",
+                estimated=None,
+                metric=metric,
+                resource_id=resource,
+                window="",
+            )
+            with compiling_against(_FixedValueResolver(value)):
+                figure = (
+                    cursor.child("series", index)
+                    .child("points", point_index)
+                    .child("figure", 0)
+                    .figure(value)
+                )
+            points.append(
+                ChartPoint(
+                    path=figure_path("c", index, point_index),
+                    x=f"2026-08-0{point_index + 1}",
+                    y=figure,
+                )
+            )
+        return Series(
+            path=figure_path("c", index),
+            key=key,
+            label=f"{resource} \u2014 {metric} ({statistic})",
+            points=tuple(points),
+        )
+
+    def test_one_resource_and_one_metric_reduces_to_the_statistic(self) -> None:
+        from reporting_agent.render.charts import short_series_label
+
+        avg = self._series("a", "avg", metric="Percentage CPU", resource="/vm/one")
+        maximum = self._series("m", "max", metric="Percentage CPU", resource="/vm/one", index=1)
+        both = (avg, maximum)
+
+        assert short_series_label(avg, both) == "Avg"
+        assert short_series_label(maximum, both) == "Max"
+
+    def test_two_resources_keep_their_full_labels(self) -> None:
+        """A fleet chart's lines are told apart by the machine, so the machine stays."""
+        from reporting_agent.render.charts import short_series_label
+
+        one = self._series("a", "avg", metric="Percentage CPU", resource="/vm/one")
+        two = self._series("b", "avg", metric="Percentage CPU", resource="/vm/two", index=1)
+        both = (one, two)
+
+        assert short_series_label(one, both) == one.label
+        assert short_series_label(two, both) == two.label
+
+    def test_two_metrics_keep_their_full_labels(self) -> None:
+        """`Avg` and `Avg` would be one label twice over."""
+        from reporting_agent.render.charts import short_series_label
+
+        cpu = self._series("a", "avg", metric="Percentage CPU", resource="/vm/one")
+        memory = self._series(
+            "b", "avg", metric="Available Memory Bytes", resource="/vm/one", index=1
+        )
+        both = (cpu, memory)
+
+        assert short_series_label(cpu, both) == cpu.label
+        assert short_series_label(memory, both) == memory.label
+
+    def test_a_series_with_no_points_keeps_its_label(self) -> None:
+        """An unlabelled line is worse than a long label."""
+        from reporting_agent.compile.ast import Series
+        from reporting_agent.render.charts import short_series_label
+
+        empty = Series(path=figure_path("c", 0), key="e", label="an empty series")
+        assert short_series_label(empty, (empty,)) == "an empty series"
+
+    def test_an_empty_series_beside_a_populated_one_stops_the_shortening(self) -> None:
+        """A series with no points answers nothing about which resource or metric the set
+        plots, so the set cannot be established as single-faceted and every label stays
+        long. Skipping it instead would shorten on the evidence of the others and label a
+        line that might be a third resource's `Avg`."""
+        from reporting_agent.compile.ast import Series
+        from reporting_agent.render.charts import short_series_label
+
+        avg = self._series("a", "avg", metric="Percentage CPU", resource="/vm/one")
+        empty = Series(path=figure_path("c", 1), key="e", label="an empty series")
+        both = (avg, empty)
+
+        assert short_series_label(avg, both) == avg.label
+
+    def test_a_figure_carrying_no_statistic_keeps_the_full_label(self) -> None:
+        """`Figure.statistic` is optional — a derived figure carries none — and
+        `.capitalize()` on nothing is not a label.
+
+        Stood in rather than built, because `dataclasses.replace` on a real `Figure` re-runs
+        its provenance check and this case is about a field being absent, not about where
+        the value came from. `short_series_label` reads four attributes; these carry them.
+        """
+        from types import SimpleNamespace
+
+        from reporting_agent.render.charts import short_series_label
+
+        def point(statistic):
+            return SimpleNamespace(
+                y=SimpleNamespace(
+                    metric="Percentage CPU",
+                    resource_id="/vm/one",
+                    statistic=statistic,
+                )
+            )
+
+        stripped = SimpleNamespace(
+            label="/vm/one — Percentage CPU", points=(point(None), point(None))
+        )
+        assert short_series_label(stripped, (stripped,)) == stripped.label
+
+        # And a series whose points disagree about the statistic — which nothing builds
+        # today, so this pins the guard rather than an observed case.
+        mixed = SimpleNamespace(
+            label="/vm/one — Percentage CPU", points=(point("avg"), point("max"))
+        )
+        assert short_series_label(mixed, (mixed,)) == mixed.label
+
+    def test_the_short_label_fits_the_gutter(self) -> None:
+        """The defect this exists for, stated as the property: the reduced label is well
+        inside `END_LABEL_MAX_CHARS`, so it is never middle-elided and never overflows."""
+        from reporting_agent.render.charts import END_LABEL_MAX_CHARS, short_series_label
+
+        avg = self._series("a", "avg", metric="Percentage CPU", resource="/vm/one")
+        maximum = self._series("m", "max", metric="Percentage CPU", resource="/vm/one", index=1)
+
+        for series in (avg, maximum):
+            assert len(short_series_label(series, (avg, maximum))) <= END_LABEL_MAX_CHARS // 3

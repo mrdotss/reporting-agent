@@ -95,18 +95,32 @@ class TestShippedCatalogue:
         for block in vm.expands_to:
             assert block.per == "section"
 
-    def test_section_6_notes_default_rule_omission(
+    def test_section_6_reports_both_rule_arrays_and_says_which_is_which(
         self, raw_sections: dict
     ):
-        """Section 6 declares that Azure default rules at priority >= 65000 are omitted."""
+        """Section 6 declares that both of an NSG's rule arrays are reported, labelled.
+
+        It used to declare the opposite — that Azure's defaults at priority 65000 and above
+        were omitted — and `omit_default_rules_above: 65000` sat in the block config, read
+        by nothing. Omitting them left the section unable to answer what governs outbound
+        traffic on a group whose operator wrote no outbound rule, which is most of them.
+        """
         azure_sections = raw_sections["providers"]["azure"]["sections"]
         nsg = next(s for s in azure_sections if s["key"] == "network_security_groups")
+
         assert "notes" in nsg
-        assert "65000" in nsg["notes"]
-        # The omit config is also in the expands_to
-        expansion = nsg["expands_to"]
-        table_block = next(b for b in expansion if b["block"] == "resource_table")
-        assert table_block["config"]["omit_default_rules_above"] == 65000
+        assert "origin" in nsg["notes"]
+        assert "Default" in nsg["notes"]
+
+        tables = [b for b in nsg["expands_to"] if b["block"] == "resource_table"]
+        assert tables, "section 6 declares no rule table"
+        for table in tables:
+            # The inert config is gone rather than left to read as a live rule.
+            assert "omit_default_rules_above" not in table["config"]
+            columns = table["config"]["columns"]
+            assert any(c.get("fact_key") == "origin" for c in columns), (
+                "a table reporting both arrays must say which array each row came from"
+            )
 
     def test_section_9_optional_and_prior_verified(
         self, sections: LoadedSectionCatalogue
