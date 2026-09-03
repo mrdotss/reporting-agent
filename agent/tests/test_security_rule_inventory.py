@@ -252,3 +252,45 @@ def test_discover_issues_the_combined_query_when_only_nsgs_are_in_scope() -> Non
     assert any(
         record["resource_type"] == SECURITY_RULE_CHILD_RESOURCE_TYPE for record in result["resources"]
     )
+
+
+def test_an_unconstrained_scope_still_discovers_child_resources() -> None:
+    """`resource_types: []` means every type, and this gate has to read it that way.
+
+    `inventory_query` applies its `| where type in~ (...)` only `if resource_types`, so an
+    empty list collects everything — which is how a real run collected three network
+    security groups in the first place. The gate on `discover_child_resources` read the
+    same empty list as "names neither parent", because `any()` over nothing is false, and
+    issued no child query at all.
+
+    The consequence was silent and total: every security rule and every subnet missing
+    from every report whose profile did not enumerate resource types by hand, with **no
+    gap recorded** — nothing had been asked for, so nothing was reported absent. Section 6
+    printed "None of these facts were collected for the resources in this table: priority,
+    direction, protocol, …" and read as a collection failure.
+
+    Every other test in this file names its types explicitly, which is why none of them
+    could see it. The empty scope is the one a profile produces by default.
+    """
+    import test_azure_provider as tap
+
+    harness = tap.Harness(
+        inventory=[
+            tap.inventory_page([_nsg_row()]),
+            RawHttpResponse(status=200, headers={}, body=_rule_page_body()),
+        ]
+    )
+    unconstrained = tap.ScopeSpec(
+        subscription_id=SUBSCRIPTION,
+        resource_types=[],
+        resource_groups=[],
+        tag_filters={},
+    )
+
+    result = asyncio.run(harness.provider.discover(unconstrained))
+    types = {record["resource_type"] for record in result["resources"]}
+
+    assert SECURITY_RULE_CHILD_RESOURCE_TYPE in types, (
+        "an unconstrained scope collected the parent NSG but none of its rules, so the "
+        "section renders every rule fact as uncollected with no gap explaining it"
+    )

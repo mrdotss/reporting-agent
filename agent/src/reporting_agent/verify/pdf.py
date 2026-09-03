@@ -200,6 +200,7 @@ def check_styled_pdf(
     text: str,
     pages_read: int,
     number_format: NumberFormat = DEFAULT_NUMBER_FORMAT,
+    omitted: frozenset[str] = frozenset(),
 ) -> tuple[Finding, ...]:
     """Locate every ledger figure in the **styled** reading copy.
 
@@ -218,6 +219,20 @@ def check_styled_pdf(
     raises for both because it is asserting that the file in hand *is* the delivered
     document; here a styled copy that rendered to nothing produces one finding per figure,
     which is the same conclusion by the same route and needs no separate escalation.
+
+    ## `omitted` — the figures this copy was told not to carry
+
+    Criterion 23.12 leaves the chart companion table out of the reading copy, so every
+    plotted point is in the `.docx` alone. Reporting those as missing would be reporting
+    the design as a defect — and since a single such finding suppresses the whole reading
+    copy (23.13), it would suppress every copy ever produced.
+
+    The set comes from `render/printpdf.py`, which read it off the tables it dropped. It
+    is **not** re-derived here: a verifier guessing which figures were probably in a
+    companion table is a second opinion about a decision the renderer already made, and
+    the two would part company the first time a chart changed shape. A figure absent from
+    this set and from the text is still a finding, which is the case that matters — a
+    numeral that wrapped, a column too narrow, a table that never reached the markup.
     """
     decimal = number_format.decimal_separator
     grouping = number_format.grouping_separator
@@ -233,7 +248,8 @@ def check_styled_pdf(
             snapshot_path=figure.snapshot_path,
         )
         for path, figure in ledger.entries.items()
-        if not is_located(
+        if str(path) not in omitted
+        and not is_located(
             normalize(figure.formatted), text, decimal=decimal, grouping=grouping
         )
     )
