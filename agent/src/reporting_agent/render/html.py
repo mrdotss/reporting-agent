@@ -724,7 +724,8 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
             # dashed box labelled LOGO belongs to a mock-up, not to a signed document.
             box = (
                 f'style="height:{section.height_pt:g}pt;'
-                f'width:{section.width_pt:g}pt"'
+                f'width:{section.width_pt:g}pt;'
+                f'margin-bottom:{section.space_after_pt:g}pt"'
             )
             if section.image is None:
                 parts.append(f'<div class="{_CLS_FM_LOGO}" {box}></div>')

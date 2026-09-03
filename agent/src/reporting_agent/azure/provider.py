@@ -285,20 +285,28 @@ def _non_child_projections(
     and the whole query would fail — for every resource type, on every run — the moment
     a child type declares even one projectable fact.
 
-    Filtered per resource type rather than once over the flattened union, because two
-    resource types can legitimately declare the identical `(key, projection)` pair
-    (`sku_name`, say) and `projectable()`'s own de-duplication already handles that; this
-    function only has to remove entries whose **owning type** is a child type, which
-    `FactDeclaration.for_resource_type` already answers per type.
+    Collected from the **non-child types' own declarations**, not by subtracting child
+    keys from the flattened union. The difference is load-bearing wherever one key is
+    declared on both sides of that line: a network interface declares `subnet` — the name
+    read out of `properties.ipConfigurations[0].properties.subnet.id`, valid in this query —
+    and so does `Microsoft.Network/virtualNetworks/subnets`, whose `tostring(subnet.name)`
+    is not. Excluding by key dropped **both**, so section 4.2 printed no subnet column and
+    nothing said why; excluding by owning type keeps the one that belongs here.
+
+    Two non-child types can legitimately declare the identical `(key, projection)` pair
+    (`sku_name`, say); `dict` de-duplicates them to the one column the query needs, and the
+    loader has already refused the case where two such types disagree about the expression.
+    Ordered by key, matching `projectable()`, so the query text is stable across runs.
     """
     child_types = {name.casefold() for name in child_type_names(catalog)}
-    excluded_keys: set[str] = set()
+    projections: dict[str, str] = {}
     for declared in catalog.facts.resource_types:
         if declared.resource_type.casefold() in child_types:
-            excluded_keys.update(entry.key for entry in declared.facts)
-    return tuple(
-        pair for pair in catalog.facts.projectable() if pair[0] not in excluded_keys
-    )
+            continue
+        for entry in declared.facts:
+            if entry.projectable and entry.projection:
+                projections.setdefault(entry.key, entry.projection)
+    return tuple(sorted(projections.items()))
 
 
 def _matches_resource_groups(resource: ResourceRecord, groups: Sequence[str]) -> bool:

@@ -47,7 +47,7 @@ configured, and the reader cannot tell an empty result from a missing section.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Final, Protocol
 
 from reporting_agent.compile.ast import (
@@ -98,6 +98,7 @@ __all__ = [
     "BlockContext",
     "CHILD_SCOPE_CHILDREN",
     "CHILD_SCOPE_CONFIG_KEY",
+    "RESOURCE_TYPES_CONFIG_KEY",
     "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
     "BlockSpec",
@@ -156,6 +157,22 @@ Declared by the section catalogue on the expansion, carried in the block's confi
 the resource id the expander wrote, and read by `BlockContext.resources_for`. Underscored
 like `_resource_id` because it is written per run from the live snapshot and never reaches
 a stored definition."""
+
+RESOURCE_TYPES_CONFIG_KEY: Final[str] = "_types"
+"""How one block of a section narrows to resource types **other than the section's**.
+
+Section 4 is titled Virtual Machines and needs virtual machines to exist, but two of its
+three tables are not about virtual machines: 4.2 lists network interfaces, because the
+subnet, private address and NSG live on the interface and not on the machine, and 4.3
+lists managed disks, because an unattached disk is exactly what that table exists to show
+and no machine references it. Both asked `Microsoft.Compute/virtualMachines` for facts it
+does not declare, so both printed the no-data notice while the values sat in the snapshot
+beside them.
+
+Replaces the scope's `resource_types` and leaves every other dimension alone, so a profile
+narrowing section 4 to one resource group still gets that resource group's interfaces and
+not the subscription's. Declared by the catalogue on the expansion, like
+`CHILD_SCOPE_CONFIG_KEY`, and underscored for the same reason."""
 
 
 TABLE_STYLES: Final[tuple[str, ...]] = (
@@ -616,8 +633,18 @@ class BlockContext:
     """
 
     def scope_for(self, block: BlockSpec) -> ScopeRules:
-        """A block's own scope: its override, or the template default (Req 3.2)."""
-        return block.scope_override if block.scope_override is not None else self.default_scope
+        """A block's own scope: its override, or the template default (Req 3.2) — with the
+        resource types the block declares for itself, where it declares any.
+
+        See :data:`RESOURCE_TYPES_CONFIG_KEY`. Only the type dimension is replaced: a
+        profile that narrowed the section to one resource group keeps that narrowing, so
+        the interfaces a machine table's companion lists are the same estate's.
+        """
+        scope = block.scope_override if block.scope_override is not None else self.default_scope
+        declared = block.config.get(RESOURCE_TYPES_CONFIG_KEY)
+        if isinstance(declared, Sequence) and not isinstance(declared, str) and declared:
+            return replace(scope, resource_types=tuple(str(t) for t in declared))
+        return scope
 
     def resources_for(self, block: BlockSpec, view: SnapshotView | None = None) -> tuple[ResourceView, ...]:
         """The resources this block renders, in resolved-scope order.

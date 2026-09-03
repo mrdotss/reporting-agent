@@ -969,6 +969,14 @@ def _load_facts(
             for reason in child_of_reasons
         )
 
+        # A child type's facts are projected by their **own** query — `subnet_inventory_query`
+        # and `security_rule_inventory_query` each `mv-expand` a nested array and write their
+        # own `fact_<key>` terms — so they never share a column with `inventory_query`'s and
+        # cannot collide with it. Passing a throwaway map keeps the shared-column rule to the
+        # query it is actually about: without this, a network interface could not declare
+        # `subnet` because a subnet already does, though the two are never in one query.
+        shared_columns = {} if child_of is not None else projection_of_key
+
         declared.append(
             ResourceTypeFacts(
                 resource_type=resource_type,
@@ -976,7 +984,7 @@ def _load_facts(
                     resource_type,
                     raw_entry,
                     invalid=invalid,
-                    projection_of_key=projection_of_key,
+                    projection_of_key=shared_columns,
                 ),
                 child_of=child_of,
             )
@@ -1018,7 +1026,9 @@ def _validate_facts(
     """Validate one resource type's declared facts, degrading per entry.
 
     `projection_of_key` carries the first projection seen for each key **across every
-    resource type processed so far**, because a projectable fact's column name is derived
+    first-class resource type processed so far** — a child type is passed its own empty map,
+    because its facts are projected by its own `mv-expand` query and share no column with
+    `inventory_query`'s. Because a projectable fact's column name is derived
     from its key alone: `azure/clients.py` emits one `fact_<key> = <projection>` term per
     `(key, projection)` pair into a single query serving the whole scope, so two types
     declaring one key with two different expressions would name `fact_<key>` twice and

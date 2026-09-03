@@ -8,14 +8,19 @@
       "section": {
         "type": "synthetic_metric_table",
         "selection": {
-          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
           "resource_groups": [],
           "tag_filters": [],
           "top_n": null,
           "sort": null
         },
         "metrics": [
-          { "metric": "Percentage CPU", "statistic": "avg" }
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
         ],
         "presentation": "table_only"
       },
@@ -37,7 +42,9 @@
       "section": {
         "type": "synthetic_two_metric_table",
         "selection": {
-          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
           "resource_groups": [],
           "tag_filters": [],
           "top_n": null,
@@ -64,14 +71,19 @@
       "section": {
         "type": "synthetic_metric_table",
         "selection": {
-          "resource_types": ["Microsoft.Compute/virtualMachines"],
+          "resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
           "resource_groups": [],
           "tag_filters": [],
           "top_n": null,
           "sort": null
         },
         "metrics": [
-          { "metric": "Percentage CPU", "statistic": "avg" }
+          {
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
         ],
         "presentation": "table_only"
       },
@@ -171,8 +183,12 @@
       "section": {
         "type": "public_ip_addresses",
         "selection": {
-          "resource_types": ["Microsoft.Network/publicIPAddresses"],
-          "resource_groups": ["rg-prod"],
+          "resource_types": [
+            "Microsoft.Network/publicIPAddresses"
+          ],
+          "resource_groups": [
+            "rg-prod"
+          ],
           "tag_filters": [],
           "top_n": null,
           "sort": null
@@ -289,7 +305,7 @@
         "microsoft.network/networksecuritygroups": 3
       },
       "expected": {
-        "headings": 1,
+        "headings": 4,
         "charts": 0,
         "tables": 3,
         "figures": 0,
