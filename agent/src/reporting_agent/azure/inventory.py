@@ -958,7 +958,26 @@ class InventoryCollector:
         resources: dict[str, ResourceRecord] = {}
         self._fold_page(response.body, resources, gaps, fidelity_tier=fidelity_tier)
 
-        return DiscoverResult(resources=sort_inventory(resources.values()), gaps=gaps)
+        return DiscoverResult(
+            resources=sort_inventory(resources.values()),
+            gaps=gaps,
+            # **The page, so its facts are folded.** This query projects a `fact_` column
+            # per fact the child type declares — a subnet's `address_prefix`, a rule's
+            # `priority` — and `azure/facts.py::_fold_pages` is what turns those columns
+            # into facts and their absences into gaps. Returning the resources without the
+            # page folded the child rows and dropped every fact on them, so a security
+            # rule reached the snapshot carrying nothing and section 6 said "None of these
+            # facts were collected" about a resource whose facts were in the response.
+            #
+            # It also made the run unreproducible: `verify/replay.py` folds **every
+            # archived object**, and this page was archived. Replay found the facts the
+            # live run had not, recorded eight `fact_unavailable` gaps for the ones the
+            # response left empty, and produced a snapshot digest that could not match —
+            # `REPLAY_MISMATCH` on a run where nothing was wrong with the data.
+            inventory_pages=[
+                InventoryPage(body=response.body, received_at=received_at)
+            ],
+        )
 
     async def _archive_page(
         self,

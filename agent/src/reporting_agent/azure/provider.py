@@ -73,6 +73,7 @@ from reporting_agent.azure.facts import FactArchiveContext, FactCollector
 from reporting_agent.azure.inventory import (
     InventoryArchiveContext,
     InventoryCollector,
+    InventoryPage,
 )
 from reporting_agent.azure.metrics import MetricsCollector
 from reporting_agent.azure.ports import (
@@ -522,6 +523,9 @@ class AzureProvider:
         # profile did not enumerate resource types by hand, with **no gap recorded** —
         # nothing had been asked for, so nothing was reported absent. The section printed
         # "None of these facts were collected" and looked like a collection failure.
+        # Empty unless the child query runs, which is what the main result's own pages
+        # are joined with below.
+        child_inventory_pages: list[InventoryPage] = []
         requested = scope["resource_types"]
         if not requested or any(
             name.casefold() in _CHILD_RESOURCE_PARENT_TYPES for name in requested
@@ -553,6 +557,7 @@ class AzureProvider:
             ]
             resources.extend(filtered_children)
             gaps.extend(child_result["gaps"])
+            child_inventory_pages = list(child_result.get("inventory_pages") or ())
 
         discovered = DiscoverResult(
             resources=sort_inventory(resources),
@@ -562,7 +567,15 @@ class AzureProvider:
             # page names. A row a group or tag filter excluded contributes a fact for a
             # resource the snapshot does not carry, which the Snapshot_Builder ignores —
             # whereas trimming the pages here would mean two derivations of one filter.
-            inventory_pages=list(result.get("inventory_pages") or ()),
+            # Both queries' pages: the main inventory's and the child-resource query's.
+            # `collect_facts` folds a page against the resource ids that page names, so
+            # the child page is where a subnet's or a security rule's own facts come from
+            # — and omitting it dropped every one of them while `verify/replay.py`, which
+            # folds every archived object, found them and disagreed about the snapshot.
+            inventory_pages=[
+                *(result.get("inventory_pages") or ()),
+                *child_inventory_pages,
+            ],
         )
         assert_inventory_sorted(discovered["resources"])
         assert_plain_data(discovered)
