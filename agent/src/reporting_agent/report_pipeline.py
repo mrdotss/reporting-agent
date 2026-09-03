@@ -129,6 +129,7 @@ from reporting_agent.events import (
 )
 from reporting_agent.progress import ProgressReporter
 from reporting_agent.providers.base import PlainData
+from reporting_agent.redaction import scrub_exception
 from reporting_agent.storage.base import ObjectStore
 from reporting_agent.verify import historical as historical_pass
 from reporting_agent.verify.findings import (
@@ -262,6 +263,12 @@ async def run_generate_report(
         if definition.get("schema_version") == 3
         else None
     )
+    # Loaded before the document phases, because the front matter is described once and
+    # both emitters draw from that description — a signature fetched later would be a
+    # second description that the `.docx` and the reading copy could disagree about.
+    front_matter_images = await _load_front_matter_images(
+        definition, store=store, actor_id=actor_id
+    )
     hist_keys = _historical_selection_keys(definition, catalogue=section_catalogue)
     historical_selections: dict[HistoricalSelectionKey, Selection] = {}
     historical_source: _HistoricalSourceFromStore | None = None
@@ -327,7 +334,7 @@ async def run_generate_report(
         now=now,
         historical_selections=historical_selections or None,
         historical_source=historical_source,
-        front_matter=_resolve_front_matter_config(definition),
+        front_matter=_resolve_front_matter_config(definition, front_matter_images),
         run_facts=_resolve_run_facts(payload, definition, run_id=plan.run_id),
         section_catalogue=section_catalogue,
     ):
@@ -736,8 +743,77 @@ async def select_historical_runs(
 # --------------------------------------------------------------------------- #
 
 
+async def _load_front_matter_images(
+    definition: Mapping[str, PlainData],
+    *,
+    store: ObjectStore,
+    actor_id: str,
+) -> dict[str, bytes]:
+    """Every front-matter image the definition references, by key.
+
+    ## Why this exists at all
+
+    `ApproverEntry.signature_image` has been declared since the front matter was written,
+    `render/front_matter.py::_place_signature_image` has always known how to draw one, and
+    the definition has carried `signature_key` since v3. Nothing loaded the bytes. So an
+    approver who uploaded a signature got the same empty ruled box as one who had not —
+    the two indistinguishable in the delivered document, which is the one place the
+    difference matters.
+
+    ## Never fatal
+
+    A key that is missing, unreadable, or owned by somebody else yields no bytes and no
+    exception. Criterion 13.6 clause (b) already requires an unsupplied signature to
+    render as a ruled box and never as the typed name, so the failure mode of "could not
+    read it" and the ordinary case of "none was given" produce the identical, correct
+    document. Withholding a report because a logo would not load would be the wrong trade
+    by a wide margin.
+
+    Ownership is checked before the read rather than trusted: a key is only fetched when
+    its first segment is this run's actor, so a definition naming another tenant's object
+    reads nothing. `collect/snapshot.py::snapshot_key` draws the same first-segment line
+    for the same reason.
+    """
+    keys: set[str] = set()
+    front = definition.get("front_matter")
+    if isinstance(front, Mapping):
+        control = front.get("document_control")
+        if isinstance(control, Mapping):
+            approvers = control.get("approvers")
+            if isinstance(approvers, Sequence) and not isinstance(approvers, str):
+                for entry in approvers:
+                    if isinstance(entry, Mapping):
+                        key = entry.get("signature_key")
+                        if isinstance(key, str) and key:
+                            keys.add(key)
+        cover = front.get("cover")
+        if isinstance(cover, Mapping):
+            key = cover.get("logo_key")
+            if isinstance(key, str) and key:
+                keys.add(key)
+
+    images: dict[str, bytes] = {}
+    for key in sorted(keys):
+        if key.split("/", 1)[0] != actor_id:
+            logger.warning(
+                "a front-matter image key names an actor other than this run's; "
+                "nothing is read and the document renders without it."
+            )
+            continue
+        try:
+            images[key] = await store.get_bytes(key)
+        except Exception as exc:
+            logger.warning(
+                "a front-matter image could not be read; the document renders without "
+                "it: %s",
+                scrub_exception(exc),
+            )
+    return images
+
+
 def _resolve_front_matter_config(
     definition: Mapping[str, PlainData],
+    images: Mapping[str, bytes] | None = None,
 ) -> object | None:
     """Build a `FrontMatterConfig` from the definition's `front_matter` section.
 
@@ -779,9 +855,12 @@ def _resolve_front_matter_config(
     cover_raw = fm_raw.get("cover")
     cover = CoverConfig(enabled=cover_page_enabled)
     if isinstance(cover_raw, Mapping):
+        logo_key = str(cover_raw["logo_key"]) if cover_raw.get("logo_key") else None
         cover = CoverConfig(
             enabled=bool(cover_raw.get("enabled", True)) and cover_page_enabled,
             logo=str(cover_raw["logo"]) if cover_raw.get("logo") else None,
+            logo_key=logo_key,
+            logo_image=(images or {}).get(logo_key or ""),
             contact_block=str(cover_raw["contact_block"]) if cover_raw.get("contact_block") else None,
             subtitle=str(cover_raw["subtitle"]) if cover_raw.get("subtitle") else None,
         )
@@ -804,6 +883,14 @@ def _resolve_front_matter_config(
                         # `ApproverEntry` since it was written; dropped here, so the
                         # approvers table had nothing to put in its Company column.
                         company=str(item.get("company") or ""),
+                        # The uploaded signature's bytes, where this run could read them.
+                        # `None` renders the ruled box criterion 13.6 clause (b) requires,
+                        # which is also what an approver who uploaded nothing gets — the
+                        # two are the same document and always were; what changed is that
+                        # an approver who *did* upload one now differs from both.
+                        signature_image=(images or {}).get(
+                            str(item.get("signature_key") or "")
+                        ),
                     ))
             approvers = tuple(entries)
         distribution_raw = dc_raw.get("distribution")
@@ -1860,7 +1947,12 @@ async def run_verify_report(
         store=store,
         actor_id=actor_id,
         historical_selections=hist_selections,
-        front_matter=_resolve_front_matter_config(definition),
+        front_matter=_resolve_front_matter_config(
+            definition,
+            await _load_front_matter_images(
+                definition, store=store, actor_id=actor_id
+            ),
+        ),
         run_facts=_resolve_run_facts(payload, definition, run_id=run_id),
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)
