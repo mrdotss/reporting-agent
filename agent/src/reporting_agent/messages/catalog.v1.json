@@ -194,8 +194,8 @@
       "id": "Riwayat revisi"
     },
     "doc.front_matter.revision_issue_date": {
-      "en": "Issue Date",
-      "id": "Tanggal Terbit"
+      "en": "Published date",
+      "id": "Tanggal penerbitan"
     },
     "doc.front_matter.revision_note": {
       "en": "Note",
