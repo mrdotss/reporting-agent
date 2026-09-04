@@ -54,9 +54,9 @@ import {
   colorForKey,
   compareByCodePoint,
   cssVar,
-  dashForKey,
+  dashForPosition,
   hashKey,
-  markerForKey,
+  markerForPosition,
   paletteFor,
   slotForKey,
   splitForPlotting,
@@ -755,14 +755,19 @@ describe("colour is assigned by stable key, never by index", () => {
     expect(hashKey("")).toBe(0x811c9dc5)
   })
 
-  it("pairs each colour with a marker and a dash from the same slot", () => {
-    // The redundancy has to be consistent, or a legend swatch and a line would
-    // disagree about which series they belong to.
-    for (const key of ["cpu", "memory", "prod-web-01"]) {
-      const slot = CATEGORICAL_TOKENS.indexOf(colorForKey(key))
-      expect(markerForKey(key)).toBe(MARKER_SHAPES[slot])
-      expect(dashForKey(key)).toBe(DASH_PATTERNS[slot])
+  it("takes the marker and the dash from the plotted position, not the colour", () => {
+    // The colour's slot is `hash(key) % 5`, which Req 22.8 requires of the colour so one
+    // metric keeps one hue across a report. Read for the dash as well it meant a chart of
+    // one series drew a lone dash-dot line, and a chart of two drew both dashed.
+    for (let index = 0; index < MARKER_SHAPES.length; index += 1) {
+      expect(markerForPosition(index)).toBe(MARKER_SHAPES[index])
+      expect(dashForPosition(index)).toBe(DASH_PATTERNS[index])
     }
+    // The first series plotted is solid, whatever it is called.
+    expect(dashForPosition(0)).toBe("0")
+    // And past the vocabulary it wraps rather than reading off the end.
+    expect(markerForPosition(MARKER_SHAPES.length)).toBe(MARKER_SHAPES[0])
+    expect(dashForPosition(DASH_PATTERNS.length)).toBe("0")
   })
 
   it("declares one marker and one dash per categorical slot", () => {

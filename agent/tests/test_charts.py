@@ -691,17 +691,24 @@ def test_destructive_appears_on_no_series_gridline_or_label() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_every_line_series_carries_a_marker_and_a_dash_from_its_own_slot() -> None:
+def test_every_line_series_carries_a_marker_and_a_dash_no_sibling_shares() -> None:
+    """Req 22.10's actual demand: within one chart, every line series is told apart by its
+    marker shape and by its dash pattern. Distinctness is the property — which slot each
+    one draws from is not, and reading them off the colour's hash slot bought nothing."""
     node, _ = synthetic_chart(series_count=4, points_per_series=3, chart_type="line")
-    siblings = tuple(series.key for series in node.series)
-    markers = {S.marker_for_key(series.key, siblings) for series in node.series}
-    dashes = {S.dash_for_key(series.key, siblings) for series in node.series}
+    markers = {S.marker_for_position(index) for index in range(len(node.series))}
+    dashes = {S.dash_for_position(index) for index in range(len(node.series))}
     assert len(markers) == len(node.series), markers
     assert len(dashes) == len(node.series), dashes
 
 
-def test_the_first_slot_is_solid_so_a_single_series_chart_is_not_dashed() -> None:
+def test_a_single_series_chart_is_not_dashed() -> None:
+    """It could be, and usually was. The pattern came from `hash(key) % 5`, so six of the
+    seven keys a real report plots — `cpu`, `disk`, `net`, `Percentage CPU`, `vm-amor`,
+    `CPN-App` — drew a lone dash-dot line on a chart with nothing to be distinguished
+    from."""
     assert S.DASH_PATTERNS[0] is None
+    assert S.dash_for_position(0) is None
 
 
 # --------------------------------------------------------------------------- #

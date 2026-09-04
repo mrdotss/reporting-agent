@@ -805,6 +805,28 @@ def short_series_label(series, series_set) -> str:
     return next(iter(statistics)).capitalize()
 
 
+def _panel_caption(subtitle: str, unit: str, y_axis_title: str) -> str:
+    """The small label above a panel: which series are here, and in what unit.
+
+    Set as the artboard sets it — upper case, letters spaced apart, muted. That treatment
+    is what makes it read as a label on the panel rather than as a second title competing
+    with the chart's own, and it is the reason the y-axis title could be dropped: the unit
+    it carried moved here.
+
+    Spaced only while it stays short. A fleet panel's caption is resource names, and a
+    letter-spaced `C P N - A P P ,   C P N - M C P` is unreadable in a way the terse
+    `M A X` is not — so the treatment applies to the terse case it was designed for and
+    the long case is left alone.
+    """
+    parts = [part for part in (subtitle, y_axis_title or unit) if part]
+    if not parts:
+        return ""
+    caption = _CAPTION_SEPARATOR.join(parts).upper()
+    if len(caption) > _CAPTION_SPACED_MAX_CHARS:
+        return caption
+    return " ".join(caption)
+
+
 def _band_colour(series_set, node, theme: str, ink) -> str:
     """The band's tint — the first plotted series' own stroke, so the fill and the line
     a reader follows are the same colour rather than two the palette chose separately."""
@@ -1027,15 +1049,6 @@ def _draw(
     panel_subtitle = ", ".join(
         dict.fromkeys(short_series_label(series, series_set) for series in series_set)
     )
-    # The panel's own series, named quietly: this says which lines are here, and a reader
-    # meets it after the chart's title rather than competing with it.
-    axes.set_title(
-        panel_subtitle,
-        fontfamily=ink.body_face,
-        fontsize=style.CHART_LABEL_SIZE,
-        color=ink.axis_label,
-        loc="left",
-    )
 
     # Y-axis: combine title and **this panel's** unit.
     #
@@ -1056,11 +1069,21 @@ def _draw(
         ),
         node.unit,
     )
-    axes.set_ylabel(
-        f"{y_axis_title} ({panel_unit})" if y_axis_title else panel_unit,
+    # The unit rides on the panel caption rather than on a rotated axis title.
+    #
+    # `percent` set sideways down the left edge is the single most dated thing on the
+    # chart, and it spends a quarter-inch of a 1.5in panel saying what `9.89%` in the
+    # gutter says anyway. The approved artboard has no y-axis title at all; keeping the
+    # unit in the caption keeps what a `bytes` panel genuinely needs — the gutter's
+    # `3,187,970,789.00` does not name its own unit — without the rotation.
+    axes.set_ylabel("")
+    axes.set_title(
+        _panel_caption(panel_subtitle, panel_unit, y_axis_title),
         fontfamily=ink.body_face,
-        fontsize=style.CHART_LABEL_SIZE,
+        fontsize=style.CHART_LABEL_SIZE - 0.5,
         color=ink.axis_label,
+        loc="left",
+        pad=6.0,
     )
 
     # X-axis: title only on the last (bottom) panel — see `is_last_panel`'s note above.
@@ -1073,9 +1096,10 @@ def _draw(
     # beside it says the same thing twice.
     axes.tick_params(colors=ink.axis_label, length=0, labelsize=style.CHART_LABEL_SIZE - 0.5)
 
-    # Three or four horizontals, not eight. The panel is there to show a shape; the
-    # companion table is where a reader reads a number, and every one of them is in it.
-    axes.yaxis.set_major_locator(MaxNLocator(nbins=4, prune=None))
+    # Three horizontals, not eight, and not the four that were here. The panel is there to
+    # show a shape; the companion table is where a reader reads a number, and every one of
+    # them is in it. The artboard draws exactly three.
+    axes.yaxis.set_major_locator(MaxNLocator(nbins=_GRID_LINES, prune=None))
 
     # matplotlib's `1e9` offset is the axis quietly restating the scale. It stays — a
     # reader needs it to know these are billions — but it is apparatus, not data.
@@ -1084,15 +1108,14 @@ def _draw(
     offset.set_fontsize(style.CHART_LABEL_SIZE - 1)
     offset.set_fontfamily(ink.body_face)
 
-    # Two rules, not four. A closed box draws a frame around every panel and then repeats it
-    # `panel_count` times down the page, which reads as a stack of boxes rather than as one
-    # chart; the top and right rules carry nothing a reader uses, because the scale is on the
-    # left and the gridlines already carry the horizontals. What is left is an L: the value
-    # axis and the baseline.
-    for edge in ("top", "right"):
+    # No rules at all. This was an L — the value axis and the baseline — on the reasoning
+    # that a closed box repeated `panel_count` times reads as a stack of boxes. The same
+    # argument finishes the job: the gridlines already carry the horizontals and the tick
+    # labels already carry the scale, so the two remaining rules draw a corner around
+    # something that needs no border. The artboard has none, and dropping them is most of
+    # what separates a chart that looks drawn from one that looks plotted.
+    for edge in axes.spines:
         axes.spines[edge].set_visible(False)
-    for edge in ("left", "bottom"):
-        axes.spines[edge].set_color(ink.grid)
 
     if not any(series.points for series in series_set):
         # Req 22.13 — the image says so too, not only the companion table.
@@ -1163,8 +1186,8 @@ def _draw(
             axes.set_xticks(ticks)
             axes.set_xticklabels([labels[i] for i in ticks], rotation=0, ha="center")
         elif node.chart_type in ("line", "area"):
-            marker = style.marker_for_key(series.key, siblings)
-            dashes = style.dash_for_key(series.key, siblings)
+            marker = style.marker_for_position(slot)
+            dashes = style.dash_for_position(slot)
             # Markers every `stride` points rather than on all of them. At a month of
             # days the marks stop reading as a shape and start reading as a texture, which
             # is the opposite of what they are for.
@@ -1182,6 +1205,22 @@ def _draw(
             if node.chart_type == "area":
                 axes.fill_between(range(len(values)), values, color=colour, alpha=0.15)
             _fill_under(axes, values, colour=colour, shape=shape)
+            if shape.fill in ("flat", "gradient") and values:
+                # The endpoint dot the artboard draws on the two area shapes: the line
+                # stops at the last day collected, and a bare stroke end does not say
+                # whether it stopped or ran off the panel. Ringed in the page colour so it
+                # reads as a terminus rather than as a marker the series carries.
+                axes.plot(
+                    [len(values) - 1],
+                    [values[-1]],
+                    marker="o",
+                    markersize=style.CHART_ENDPOINT_SIZE,
+                    markerfacecolor=colour,
+                    markeredgecolor="white",
+                    markeredgewidth=0.9,
+                    linestyle="none",
+                    zorder=3,
+                )
             # Req 22.10 — a direct label at the line end, so the legend is a fallback.
             # Collected rather than drawn here: two series ending at nearly the same value
             # would otherwise print one label over the other, which is a legend's failure
@@ -1290,11 +1329,13 @@ def _draw(
         axes.grid(False)
         axes.set_xticks([])
         axes.set_yticks([])
-        for edge in ("left", "bottom"):
-            axes.spines[edge].set_visible(False)
         axes.set_ylabel("")
         axes.set_xlabel("")
-        axes.set_title("")
+        # `loc="left"`, and it is not optional. matplotlib keeps a separate title artist
+        # per location, so a bare `set_title("")` clears the centre one — which nothing
+        # ever set — and leaves the left-aligned caption drawn. The sparkline shipped with
+        # its caption still on it for exactly that reason.
+        axes.set_title("", loc="left")
 
     # One floor for both, so the pair travels together — see `_draw_end_labels`.
     label_floor = _VALUE_UNDER_LABEL_POINTS + _AXIS_CLEARANCE_POINTS
@@ -1370,6 +1411,19 @@ at render time makes the emitted PNG host-dependent.
 """
 
 _ELLIPSIS: Final[str] = "\u2026"
+
+_GRID_LINES: Final[int] = 3
+"""Horizontal gridlines per panel, as a `MaxNLocator` bin count.
+
+Three, which is what the approved artboard draws. It was four, which on a 1.5in panel put
+a rule every 25 pixels and turned the background into ruled paper."""
+
+_CAPTION_SEPARATOR: Final[str] = " \u00b7 "
+"""Between the caption's series names and its unit — a middle dot, so `MAX · PERCENT`
+reads as two facts rather than as one hyphenated phrase."""
+
+_CAPTION_SPACED_MAX_CHARS: Final[int] = 18
+"""Above this the caption is set unspaced. See `_panel_caption`."""
 
 _PAIR_LINES: Final[float] = 2.0
 """Lines of text one series' end annotation occupies: its label, and its value beneath."""

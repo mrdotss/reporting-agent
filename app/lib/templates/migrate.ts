@@ -52,7 +52,8 @@ import {
  *
  * The target is 2 (not MAX_SUPPORTED_SCHEMA_VERSION) because no automatic
  * v2→v3 lift exists yet — the sections restructure is an author-driven step
- * in the wizard, not a code migration. See `lib/profiles/lift.ts` (task 3.12).
+ * in the wizard, not a code migration. A `lib/profiles/lift.ts` explored one and
+ * was deleted unused: nothing in the app ever called it.
  */
 export const MIGRATION_SOURCE_VERSION = MIN_SCHEMA_VERSION
 export const MIGRATION_TARGET_VERSION = 2 as const

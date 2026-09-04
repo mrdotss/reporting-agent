@@ -460,11 +460,26 @@ def test_a_collision_is_resolved_rather_than_relocated() -> None:
     assert len(set(assigned.values())) == 2, assigned
 
 
-def test_the_marker_and_dash_follow_the_colour() -> None:
-    for key in ("cpu", "memory", "prod-web-01"):
-        slot = C.CATEGORICAL_TOKENS.index(C.color_for_key(key))
-        assert C.marker_for_key(key) == C.MARKER_SHAPES[slot]
-        assert C.dash_for_key(key) == C.DASH_PATTERNS[slot]
+def test_the_marker_and_dash_follow_the_plotted_position() -> None:
+    """Not the colour's slot, which is what they followed.
+
+    The colour's slot is `hash(key) % 5`, which Req 22.8 requires of the colour so one
+    metric keeps one hue across a report. Read for the dash as well it meant a chart of one
+    series drew a lone dash-dot line — the thing `DASH_PATTERNS[0] is None` exists to
+    prevent — and a chart of two drew both dashed, so neither was the line being followed.
+    """
+    for index in range(len(C.MARKER_SHAPES)):
+        assert C.marker_for_position(index) == C.MARKER_SHAPES[index]
+        assert C.dash_for_position(index) == C.DASH_PATTERNS[index]
+
+    # The first series plotted is solid, whatever it is called.
+    assert C.dash_for_position(0) is None
+
+    # And past the vocabulary it wraps rather than raising — a chart can carry at most
+    # `CATEGORICAL_LIMIT` series, so this is unreachable through a document, but an
+    # IndexError deep in a draw call is a bad way to learn that.
+    assert C.marker_for_position(len(C.MARKER_SHAPES)) == C.MARKER_SHAPES[0]
+    assert C.dash_for_position(len(C.DASH_PATTERNS)) is None
 
 
 # --------------------------------------------------------------------------- #
