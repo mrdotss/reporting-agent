@@ -11,13 +11,8 @@ import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { sectionByKey } from "@/lib/profiles/sections"
 import * as store from "@/lib/templates/store"
 import { definitionSha256 } from "@/lib/templates/version"
-import { ensureBrand } from "@/lib/brands/store"
 
-import type {
-  ReportTemplate,
-  ReportTemplateVersion,
-  Brand,
-} from "@/lib/db/schema"
+import type { ReportTemplate, ReportTemplateVersion } from "@/lib/db/schema"
 
 /**
  * The template operations, as thin wrappers over `lib/templates/store.ts`
@@ -120,7 +115,7 @@ export async function saveDraft(
  * Whether `incoming`'s `provider` conflicts with `existingDefinition`'s, and if so,
  * the `FieldIssue` to refuse the publish with. `null` when there is no conflict.
  *
- * **Pure**, like {@link resolveDesignFromBrand}, and for the same reason: the
+ * **Pure**, like {@link pinNumberFormat}, and for the same reason: the
  * publish path around it (`publishTemplateVersion` → `store.readLatestVersion`) only
  * runs against a real Postgres, so a test driving the whole path would not run in
  * ordinary development. This function is the actual decision; the caller only reads
@@ -230,16 +225,14 @@ export async function publishTemplateVersion(
   )
   if (providerIssue !== null) throw new TemplateInvalidError([providerIssue])
 
-  // --- Resolve Brand into definition.design (Requirement 2.6, 2.7) ---------
-  // A saved version must be SELF-CONTAINED against later Brand edits: the Brand
-  // is resolved here, between validation and insertion, so the renderer never
-  // learns Brands exist. The version carries the full DesignSpec inline, and a
-  // Brand edit applies to the NEXT version, never retroactively.
-  const brand = await ensureBrand(userId)
-  const withBrand = resolveNoticeFromBrand(
-    resolveDesignFromBrand(definition, brand),
-    brand
-  )
+  // --- The design is the profile's own -------------------------------------
+  // It was resolved from a Brand here, on Requirement 2.6/2.7's reading that one
+  // consultancy has one visual identity. The Brand is gone: a profile is a
+  // per-customer engagement, and resolving overwrote the theme, accent, cover and
+  // logo the wizard's own controls had just set — so those controls edited values
+  // the save discarded. The definition carries what a consultant chose; this seam
+  // only pins what a stored version must record about itself.
+  const pinned = pinNumberFormat(definition)
 
   // --- Resolve the cover logo into stored bytes ------------------------------
   // Same seam and the same reason: a saved version must be self-contained. The
@@ -253,7 +246,7 @@ export async function publishTemplateVersion(
   // re-fetched and re-stored on every save.
   const previousCover = coverOf(existingVersion?.definition ?? null)
   const resolvedDefinition = await resolveLogoIntoDefinition(
-    withBrand as Record<string, unknown>,
+    pinned as Record<string, unknown>,
     userId,
     previousCover
   )
@@ -292,24 +285,10 @@ function coverOf(definition: unknown): {
   }
 }
 
-// --- Brand resolution --------------------------------------------------------
+// --- What a saved version pins about itself ----------------------------------
 
 /**
- * Write the Brand's design values into `definition.design`, producing a
- * self-contained definition that is immune to later Brand edits.
- *
- * This is the mechanism that implements Requirement 2.7: a report is an audit
- * artifact, so the design values are frozen at publish time rather than
- * dereferenced at render time. The renderer never learns that Brands exist.
- *
- * **Exported for test.** The publish path itself is only reachable with a real
- * Postgres (its store tests are integration tests, which skip without a database),
- * so a test driving `publishTemplateVersion` end to end would not run in ordinary
- * development and would protect nothing day to day. This function is where the
- * frozen-at-publish guarantee actually lives, so this is the seam the guard needs.
- */
-/**
- * The Brand's number format, with `trim_trailing_zeros` pinned on for v3.
+ * The definition with `number_format.trim_trailing_zeros` pinned on for v3.
  *
  * `23.00` for a count of twenty-three resources reads as though something was measured to
  * two decimals; the estate has twenty-three. So a fraction that is all zeros is dropped
@@ -324,93 +303,36 @@ function coverOf(definition: unknown): {
  * it always did; one saved from here declares it and says so.
  *
  * v3 only, because that is the only schema version whose `number_format` admits the key.
- * A v1 or v2 definition keeps the Brand's format unchanged rather than being handed a
- * field its own validator would reject.
+ * A v1 or v2 definition passes through untouched rather than being handed a field its own
+ * validator would reject.
+ *
+ * **Exported for test.** The publish path itself is only reachable with a real Postgres
+ * (its store tests are integration tests, which skip without a database), so a test driving
+ * `publishTemplateVersion` end to end would not run in ordinary development and would
+ * protect nothing day to day. This function is where the pin actually happens, so this is
+ * the seam the guard needs.
  */
-function numberFormatFor(
-  definition: Record<string, unknown>,
-  brand: Brand
-): Record<string, unknown> {
-  const format = (brand.numberFormat ?? {}) as Record<string, unknown>
-  if (definition["schema_version"] !== 3) return format
-  return { ...format, trim_trailing_zeros: true }
-}
-
-export function resolveDesignFromBrand(
-  definition: unknown,
-  brand: Brand
-): unknown {
+export function pinNumberFormat(definition: unknown): unknown {
   if (typeof definition !== "object" || definition === null) return definition
 
   const def = definition as Record<string, unknown>
+  if (def["schema_version"] !== 3) return definition
+
+  const design = def["design"]
+  if (design === null || typeof design !== "object") return definition
+  const designRecord = design as Record<string, unknown>
+
+  const format = designRecord["number_format"]
+  const formatRecord =
+    format !== null && typeof format === "object"
+      ? (format as Record<string, unknown>)
+      : {}
 
   return {
     ...def,
     design: {
-      preset: brand.themePreset,
-      accent_color: brand.accentColor,
-      density: brand.density,
-      table_style: brand.tableStyle,
-      number_format: numberFormatFor(def, brand),
-      cover_page: brand.coverPage,
-      logo: brand.logoKey,
-      page_size: brand.pageSize,
+      ...designRecord,
+      number_format: { ...formatRecord, trim_trailing_zeros: true },
     },
-  }
-}
-
-/**
- * The definition with the Brand's confidentiality notice written into
- * `front_matter.document_control.confidentiality_notice`.
- *
- * Requirement 12.7 makes the notice Brand-owned and not editable per profile, and names
- * the Brand as where it is edited. Something still has to do the inheriting, and this is
- * it — the same seam and the same reason as {@link resolveDesignFromBrand}: a saved
- * version carries the notice inline, so editing the Brand tomorrow does not change the
- * wording on a report somebody signed today.
- *
- * **The profile wins.** The notice began Brand-owned, on Requirement 12.7's reading that
- * one consultancy issues one notice; a profile is a per-customer engagement and the
- * wording is negotiated per engagement, so the wizard authors it now and this resolve is
- * a **fallback**: it fills in the Brand's notice only for a profile that declares none.
- * That is what keeps a notice already typed on the Brand working after the move, without
- * making it override the one a profile author wrote.
- *
- * A profile and a Brand that both declare nothing leave the key absent rather than an
- * empty string, so the document control page prints no confidentiality section at all.
- * An empty heading over nothing is worse than no heading.
- */
-export function resolveNoticeFromBrand(
-  definition: unknown,
-  brand: Brand
-): unknown {
-  if (typeof definition !== "object" || definition === null) return definition
-
-  const def = definition as Record<string, unknown>
-  const front = def["front_matter"]
-  const frontMatter = (
-    front !== null && typeof front === "object" ? front : {}
-  ) as Record<string, unknown>
-  const control = frontMatter["document_control"]
-  const documentControl = (
-    control !== null && typeof control === "object" ? control : {}
-  ) as Record<string, unknown>
-
-  const authored = documentControl["confidentiality_notice"]
-  const notice =
-    typeof authored === "string" && authored.trim() !== ""
-      ? authored
-      : brand.confidentialityNotice
-
-  const resolved = { ...documentControl }
-  if (typeof notice === "string" && notice.trim() !== "") {
-    resolved["confidentiality_notice"] = notice
-  } else {
-    delete resolved["confidentiality_notice"]
-  }
-
-  return {
-    ...def,
-    front_matter: { ...frontMatter, document_control: resolved },
   }
 }

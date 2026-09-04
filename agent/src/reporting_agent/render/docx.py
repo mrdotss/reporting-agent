@@ -417,6 +417,10 @@ class _Emitter:
             # are the document's ink rather than the app's. The series colours are not the
             # document's — see `chartstyle.ChartFurniture`.
             preset=self.design.preset,
+            # The shape and the face the profile chose. Both default to what shipped
+            # before the fields existed, so a version naming neither draws as it did.
+            chart_style=self.design.chart_style,
+            chart_font=self.design.chart_font,
             messages=self.messages,
         )
 

@@ -1629,3 +1629,344 @@ class TestShortSeriesLabel:
 
         for series in (avg, maximum):
             assert len(short_series_label(series, (avg, maximum))) <= END_LABEL_MAX_CHARS // 3
+
+
+# --------------------------------------------------------------------------- #
+# The profile's chart style and chart font
+#
+# Six shapes and three faces, chosen in the wizard's Appearance step and carried to here
+# through `DesignSettings`. The rule that governs all of them: **appearance is not data**.
+# A style changes what the reader sees and must never change what the verifier checks, so
+# every test below that renders also asserts the chart data hash is where it was.
+# --------------------------------------------------------------------------- #
+
+
+class TestChartStyleAndFont:
+    def _node(self, *, series_count: int = 2, points: int = 12):
+        return synthetic_chart(series_count=series_count, points_per_series=points)[0]
+
+    def _render(self, node, *, chart_style: str, chart_font: str = "grotesque"):
+        return C.render_chart(
+            node,
+            table_style="Table Hairline",
+            preset="editorial",
+            chart_style=chart_style,
+            chart_font=chart_font,
+            messages=load_messages("en"),
+        )
+
+    def test_every_declared_style_and_font_renders(self) -> None:
+        node = self._node()
+        for name in S.CHART_STYLES:
+            for face in ("document", "grotesque", "monospace"):
+                artifacts = self._render(node, chart_style=name, chart_font=face)
+                assert artifacts.image_png.startswith(b"\x89PNG"), (name, face)
+                assert artifacts.image_svg.lstrip().startswith("<?xml"), (name, face)
+
+    def test_the_data_hash_is_blind_to_the_style_and_the_face(self) -> None:
+        """The property the twelve gates depend on.
+
+        `chart_data_hash` is over the plotted decimal strings, and the verifier recomputes
+        it from the stored tree. If a style could move it, choosing a different chart in the
+        wizard would fail `chart_hash_mismatch` on every replay of an unchanged report.
+        """
+        node = self._node()
+        hashes = {
+            self._render(node, chart_style=name, chart_font=face).data_hash
+            for name in S.CHART_STYLES
+            for face in ("document", "grotesque", "monospace")
+        }
+        assert len(hashes) == 1
+
+    def test_the_companion_table_is_blind_to_the_style(self) -> None:
+        """The same, for the half of the pair the verifier actually reads."""
+        node = self._node()
+        tables = {
+            _table_shape(self._render(node, chart_style=name).table)
+            for name in S.CHART_STYLES
+        }
+        assert len(tables) == 1
+
+    def test_an_unrecognised_style_draws_the_shape_that_shipped(self) -> None:
+        """A definition naming a style this build does not have renders rather than raising.
+
+        The wizard's validator is the gate on the name; this is what happens to a stored
+        profile written by a newer app than the agent replaying it. Falling back to the
+        shipped shape keeps that report deliverable — refusing to draw would make an
+        appearance field able to fail a run, which is precisely what appearance may not do.
+        """
+        node = self._node()
+        assert S.chart_style_spec("nonsense") == S.chart_style_spec("stacked")
+        assert (
+            self._render(node, chart_style="nonsense").image_png
+            == self._render(node, chart_style="stacked").image_png
+        )
+
+    def test_a_single_panel_style_draws_one_panel(self) -> None:
+        """Not asserted through the picture: the figure's height is derived from the panel
+        count, so one panel is a materially shorter image than two.
+
+        The two-magnitude chart, because that is the only one the default grouping splits —
+        `synthetic_chart`'s series share a magnitude and already occupy one panel, so it
+        could not tell the override from the default.
+        """
+        node, _ = two_magnitude_chart()
+        assert S.chart_style_spec("stacked").panels == "magnitude"
+        assert S.chart_style_spec("columns").panels == "single"
+        assert _png_height(self._render(node, chart_style="columns").image_png) < _png_height(
+            self._render(node, chart_style="stacked").image_png
+        )
+
+    def test_every_style_gives_every_series_its_direct_label(self, monkeypatch) -> None:
+        """Req 22.10 under all six shapes.
+
+        The columns shape shipped without this and drew no series label at all: two dodged
+        series a hundredfold apart in scale read as one, because the shorter one's bar was
+        under a pixel high and nothing named it.
+        """
+        node = self._node(series_count=2)
+        captured: list[str] = []
+        # Bound once, outside the loop. Re-reading the module attribute per iteration would
+        # capture the previous iteration's own spy and recur.
+        original = C._draw_end_labels
+
+        def spy(axes, entries, **kwargs):
+            captured.extend(entry[2] for entry in entries)
+            return original(axes, entries, **kwargs)
+
+        monkeypatch.setattr(C, "_draw_end_labels", spy)
+        for name in S.CHART_STYLES:
+            captured.clear()
+            self._render(node, chart_style=name)
+            for series in node.series:
+                assert any(
+                    C.short_series_label(series, node.series) == text for text in captured
+                ), f"{name} drew no direct label for {series.key}"
+
+    def test_the_bare_furniture_style_strips_the_axes(self) -> None:
+        """A sparkline is the shape and its last value. The exact figures are in the
+        companion table either way, which is what makes dropping the ticks honest."""
+        assert S.chart_style_spec("sparkline").furniture == "bare"
+        node = self._node()
+        # Fewer pixels of ink than the same data with a full frame around it: the gridlines,
+        # the tick labels, the axis title and the spines are all gone.
+        assert len(self._render(node, chart_style="sparkline").image_png) < len(
+            self._render(node, chart_style="stacked").image_png
+        )
+
+    def test_the_face_resolves_from_the_choice_and_the_theme(self) -> None:
+        assert S.chart_font_face("grotesque", body_face="Liberation Serif") == "DejaVu Sans"
+        assert (
+            S.chart_font_face("monospace", body_face="Liberation Serif")
+            == "DejaVu Sans Mono"
+        )
+        # `document` is the whole reason this is a function rather than a mapping: it is
+        # whatever the preset sets the body in, which is not knowable in `chartstyle.py`.
+        assert (
+            S.chart_font_face("document", body_face="Liberation Serif")
+            == "Liberation Serif"
+        )
+        # And an unknown choice draws in the face every chart used before the field existed.
+        assert S.chart_font_face("art-deco", body_face="Liberation Serif") == "DejaVu Sans"
+
+    def test_the_resolved_face_is_what_the_panel_is_drawn_with(self, monkeypatch) -> None:
+        """Asserted on the furniture handed to `_draw`, not on the emitted bytes.
+
+        Bytes would have been the stronger check and are the wrong one here: `document`
+        resolves to the preset's Liberation Serif, which this host does not have and
+        matplotlib silently substitutes — so a byte comparison passes in the image and fails
+        on a laptop, which is a test about the machine rather than about the code.
+        """
+        node = self._node()
+        faces: list[str] = []
+        original = C._draw
+
+        def spy(axes, *args, **kwargs):
+            faces.append(kwargs["furniture"].body_face)
+            return original(axes, *args, **kwargs)
+
+        monkeypatch.setattr(C, "_draw", spy)
+        for choice, expected in (
+            ("grotesque", "DejaVu Sans"),
+            ("monospace", "DejaVu Sans Mono"),
+        ):
+            faces.clear()
+            self._render(node, chart_style="soft_area", chart_font=choice)
+            assert faces and set(faces) == {expected}
+
+        faces.clear()
+        self._render(node, chart_style="soft_area", chart_font="document")
+        assert faces and set(faces) == {C._furniture_for("editorial", "light").body_face}
+
+    def test_the_renderer_draws_exactly_the_styles_the_validator_accepts(self) -> None:
+        """The drift guard. A style the wizard offers and this module has never heard of
+        would save cleanly and then draw as `stacked` — a profile field that looks like it
+        works. A style drawn here and missing from the validator is unreachable."""
+        from reporting_agent.compile import definition as V
+
+        assert set(S.CHART_STYLES) == set(V.CHART_STYLES)
+        assert set(S.CHART_FONT_CHOICES) == set(V.CHART_FONTS)
+
+    def test_the_profiles_choice_reaches_the_renderer(self, monkeypatch) -> None:
+        """The wire between the two halves, and the only part of this feature the user can
+        actually see. Every other test here calls `render_chart` with a style directly; this
+        is the one that asserts a **definition** naming one arrives with it.
+
+        Without this, deleting the two keyword arguments at the `docx.py` call site left the
+        whole suite green while every chart in every report drew the shipped default.
+        """
+        received: list[dict] = []
+        original = D.render_chart
+
+        def spy(node, **kwargs):
+            received.append(kwargs)
+            return original(node, **kwargs)
+
+        monkeypatch.setattr(D, "render_chart", spy)
+        compiled = compile_charts([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])
+        D.render_document(
+            compiled.document,
+            ledger=compiled.ledger,
+            design=DesignSettings.from_plain(
+                {**DESIGN, "chart_style": "range_band", "chart_font": "monospace"}
+            ),
+            messages=_MESSAGES,
+        )
+        assert received, "no chart was rendered"
+        for call in received:
+            assert call["chart_style"] == "range_band"
+            assert call["chart_font"] == "monospace"
+
+    def test_the_shipped_shape_is_what_a_profile_naming_nothing_gets(self) -> None:
+        """The defaults are the old behaviour, so a stored version from before these fields
+        existed replays to the same picture it delivered."""
+        settings = DesignSettings.from_plain({})
+        assert settings.chart_style == "stacked"
+        assert settings.chart_font == "grotesque"
+
+        # And a `design` that is not an object at all, which takes the other branch: the
+        # two defaults are written twice, once on the dataclass and once in `from_plain`,
+        # the way every field here is, so both have to be asserted or one can drift.
+        for absent in (None, "editorial", []):
+            fallback = DesignSettings.from_plain(absent)
+            assert (fallback.chart_style, fallback.chart_font) == ("stacked", "grotesque")
+
+
+class TestEndLabelPlacement:
+    """The right gutter — where a series' name and its final value are drawn.
+
+    Two defects live here, both only reachable once a style could put every series on one
+    panel: a near-zero series printed its value under the axis and through the date labels,
+    and one pair's value printed through the next pair's label.
+    """
+
+    def _axes(self):
+        from matplotlib.figure import Figure as _Figure
+
+        figure = _Figure(figsize=(6.0, 1.5), dpi=200)
+        axes = figure.add_subplot(1, 1, 1)
+        axes.set_ylim(0.0, 28.0)
+        axes.set_xlim(0.0, 30.0)
+        figure.subplots_adjust(left=0.12, right=C._AXES_RIGHT, top=0.7, bottom=0.3)
+        return figure, axes
+
+    def _drawn(self, axes):
+        """Each annotation's text and its y in **display** pixels — which is the space the
+        overlap happens in, and the only space in which "a line of text" is a length."""
+        placed = []
+        for child in axes.texts:
+            x, y = axes.transData.transform(child.xy)
+            offset = child.get_position()
+            placed.append(
+                (child.get_text(), y + offset[1] * axes.get_figure().dpi / 72.0)
+            )
+        return placed
+
+    def test_a_near_zero_series_keeps_its_value_inside_the_panel(self) -> None:
+        figure, axes = self._axes()
+        C._draw_end_labels(
+            axes,
+            [(29.0, 0.19, "0.19%", "#000000")],
+            offset=(3, -C._VALUE_UNDER_LABEL_POINTS),
+            floor_points=C._VALUE_UNDER_LABEL_POINTS + C._AXIS_CLEARANCE_POINTS,
+            occupied_lines=C._PAIR_LINES,
+        )
+        floor_px = axes.transData.transform((0.0, axes.get_ylim()[0]))[1]
+        for _text, y in self._drawn(axes):
+            assert y > floor_px, "a value was drawn below the axis, over the date labels"
+
+    def test_a_label_and_the_value_below_it_clear_the_next_pair(self) -> None:
+        """Two series ending 9.89 and 0.19 apart on one panel — the observed case.
+
+        Each entry occupies two lines, not one, so spacing the labels a single line apart
+        left the upper label's value sitting on the lower label.
+        """
+        figure, axes = self._axes()
+        entries = [(29.0, 9.89, "Max", "#7b2d4e"), (29.0, 0.19, "Avg", "#1b5e20")]
+        values = [(29.0, 9.89, "9.89%", "#000000"), (29.0, 0.19, "0.19%", "#000000")]
+        floor = C._VALUE_UNDER_LABEL_POINTS + C._AXIS_CLEARANCE_POINTS
+        C._draw_end_labels(
+            axes, entries, floor_points=floor, occupied_lines=C._PAIR_LINES
+        )
+        C._draw_end_labels(
+            axes,
+            values,
+            offset=(3, -C._VALUE_UNDER_LABEL_POINTS),
+            floor_points=floor,
+            occupied_lines=C._PAIR_LINES,
+        )
+
+        line_px = S.CHART_LABEL_SIZE * axes.get_figure().dpi / 72.0
+        heights = sorted(y for _text, y in self._drawn(axes))
+        gaps = [b - a for a, b in zip(heights, heights[1:])]
+        assert all(gap >= line_px for gap in gaps), (
+            f"two end annotations sit {min(gaps):.1f}px apart, "
+            f"inside one {line_px:.1f}px line: {self._drawn(axes)}"
+        )
+
+    def test_the_panels_are_positioned_before_anything_is_drawn_on_them(
+        self, monkeypatch
+    ) -> None:
+        """The ordering the gutter arithmetic depends on.
+
+        `_draw_end_labels` converts a line of text from pixels into data units through
+        `axes.transData`, and that transform is a function of how tall the axes box is.
+        `subplots_adjust` used to run after every panel was drawn, so the labels were spaced
+        against a box that then shrank — two lines of room reserved, a little over one
+        delivered. Asserting the box is already the final one at draw time is the fix stated
+        as a property, rather than a second copy of the overlap arithmetic.
+        """
+        seen: list[tuple[float, ...]] = []
+        original = C._draw
+
+        def spy(axes, *args, **kwargs):
+            seen.append(tuple(round(value, 6) for value in axes.get_position().bounds))
+            return original(axes, *args, **kwargs)
+
+        monkeypatch.setattr(C, "_draw", spy)
+        node = synthetic_chart(series_count=2, points_per_series=8)[0]
+        C.render_chart(
+            node,
+            table_style="Table Hairline",
+            preset="editorial",
+            chart_style="columns",
+            messages=load_messages("en"),
+        )
+        assert seen, "no panel was drawn"
+        for left, _bottom, width, _height in seen:
+            assert left == pytest.approx(0.12)
+            assert left + width == pytest.approx(C._AXES_RIGHT)
+
+
+def _png_height(data: bytes) -> int:
+    """A PNG's pixel height, from its IHDR — bytes 20-24 of the fixed-layout header."""
+    assert data.startswith(b"\x89PNG")
+    return int.from_bytes(data[20:24], "big")
+
+
+def _table_shape(table) -> tuple:
+    """A companion table reduced to what the verifier reads: its cells' text, in order."""
+    return tuple(
+        tuple(getattr(cell, "text", getattr(cell, "formatted", "")) for cell in row.cells)
+        for row in table.rows
+    )

@@ -20,9 +20,9 @@ import {
  * `logo_key`. The runtime then reads its own artifact bucket, which is what it
  * already does for an approver's signature.
  *
- * It is also the same reason `resolveDesignFromBrand` sits on this seam: a
- * saved version has to be self-contained. A logo that changed at the URL after
- * a report was delivered must not change what that report shows.
+ * It is the same reason `pinNumberFormat` sits on this seam: a saved version has
+ * to be self-contained. A logo that changed at the URL after a report was
+ * delivered must not change what that report shows.
  *
  * ## Never blocks a save
  *

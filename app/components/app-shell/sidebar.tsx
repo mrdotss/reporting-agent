@@ -7,7 +7,6 @@ import {
   FileTextIcon,
   GaugeIcon,
   type Icon,
-  PaletteIcon,
   PlugsConnectedIcon,
   StackIcon,
   ShieldCheckIcon,
@@ -71,11 +70,6 @@ const NAV_ITEMS: readonly NavItem[] = [
   { href: "/subscriptions", label: "Connections", icon: PlugsConnectedIcon },
   { href: "/report-profiles", label: "Report Profiles", icon: StackIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
-  // `/brand` shipped without a way to reach it. Requirement 12.7 makes the
-  // confidentiality notice Brand-owned and tells the Profile_Wizard to name the Brand
-  // as where it is edited — which it cannot usefully do while the only route there is
-  // typing the URL.
-  { href: "/brand", label: "Brand", icon: PaletteIcon },
 ]
 
 /**

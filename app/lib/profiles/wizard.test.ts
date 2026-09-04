@@ -100,18 +100,19 @@ function withoutField(field: string): unknown {
   return copy
 }
 
-describe("five steps in a fixed order", () => {
-  test("there are exactly five, numbered 1 to 5", () => {
+describe("six steps in a fixed order", () => {
+  test("there are exactly six, numbered 1 to 6", () => {
     expect(WIZARD_STEPS).toHaveLength(WIZARD_STEP_COUNT)
-    expect(WIZARD_STEPS.map((step) => step.number)).toEqual([1, 2, 3, 4, 5])
+    expect(WIZARD_STEPS.map((step) => step.number)).toEqual([1, 2, 3, 4, 5, 6])
   })
 
-  test("the order is identity, sections, period, document, preview", () => {
+  test("the order is identity, sections, period, document, appearance, preview", () => {
     expect(WIZARD_STEPS.map((step) => step.id)).toEqual([
       "identity",
       "sections",
       "period",
       "document",
+      "appearance",
       "preview",
     ])
   })
@@ -141,7 +142,7 @@ describe("every v3 definition field has a step to show it on", () => {
     ["sections", "sections"],
     ["period", "period"],
     ["front_matter", "document"],
-    ["design", "document"],
+    ["design", "appearance"],
   ] as const)("a %s issue belongs to the %s step", (field, expected) => {
     expect(stepForIssue({ path: [field, "nested"], message: "x" })).toBe(
       expected
@@ -181,7 +182,10 @@ describe("a failing step blocks only itself", () => {
   test("issues are grouped onto the step that owns them", () => {
     const issues = issuesByStep(withoutField("design"))
 
-    expect(issues.document.length).toBeGreaterThan(0)
+    // `design` moved to step 5 with the controls that set it, so a missing design is a
+    // problem the Appearance step opens on — not one step 4 is blamed for.
+    expect(issues.appearance.length).toBeGreaterThan(0)
+    expect(issues.document).toEqual([])
     expect(issues.identity).toEqual([])
     expect(issues.sections).toEqual([])
   })
@@ -222,8 +226,8 @@ describe("step movement clamps at both ends", () => {
 })
 
 describe("reopening resumes rather than restarts", () => {
-  test("a complete draft opens on step 5", () => {
-    expect(openingStep(VALID_V3).number).toBe(5)
+  test("a complete draft opens on the last step", () => {
+    expect(openingStep(VALID_V3).number).toBe(6)
   })
 
   test("a draft failing the period opens on step 3", () => {

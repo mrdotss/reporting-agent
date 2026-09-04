@@ -66,9 +66,10 @@ export type CoverFormValues = {
   /**
    * Whether the cover page is printed at all.
    *
-   * This is the profile's own control. `design.cover_page` also gates it and is
-   * resolved from the Brand at save, so a toggle bound to *that* changed nothing —
-   * which is what the design step's now-removed checkbox did.
+   * This is the profile's own control, and the only one. `design.cover_page` also gates
+   * the cover; the design step once carried a checkbox bound to *that*, which changed
+   * nothing because the value was overwritten at save. Both the checkbox and the
+   * overwriting are gone, and this field is now the single place the cover is turned off.
    */
   readonly enabled: boolean
   readonly logo: string | null
@@ -105,21 +106,21 @@ export type DocumentControlFormValues = {
   /**
    * `null` at v1/v2 (the profile carries no `confidentiality_notice_id` field at
    * all in the wizard's own draft-mode shape) — schema_version 3 never accepts
-   * this key on the profile either way (Requirement 12.7: inherited from the
-   * Brand, resolved at publish), so the form never renders a control for it.
-   * Retained on the type only so a caller reading a v1/v2 stored value round-trips
-   * it unchanged; this form never writes to it.
+   * this key on the profile either way (Requirement 12.7; see the validator's own
+   * note), so the form never renders a control for it. Retained on the type only so a
+   * caller reading a v1/v2 stored value round-trips it unchanged; this form never
+   * writes to it.
    */
   readonly confidentiality_notice_id: string | null
 
   /**
    * The confidentiality notice, as prose, authored **on the profile**.
    *
-   * It lived on the Brand first, on Requirement 12.7's reading that one consultancy
-   * issues one notice. In practice a profile is a per-customer engagement and the
-   * wording is negotiated per engagement, so the profile owns it and the wizard is
-   * where it is written. A Brand that still carries one supplies the value for a
-   * profile that declares none, so nothing typed there is lost.
+   * It lived on a separate Brand record first, on Requirement 12.7's reading that one
+   * consultancy issues one notice. In practice a profile is a per-customer engagement and
+   * the wording is negotiated per engagement, so the profile owns it and this is where it
+   * is written — an empty box means no notice, and the document control page then prints
+   * no confidentiality section rather than a heading over nothing.
    */
   readonly confidentiality_notice: string | null
 

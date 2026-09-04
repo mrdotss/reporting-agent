@@ -9,27 +9,20 @@ import {
   type FrontMatterFormValues,
   type TocFormValues,
 } from "@/components/templates/front-matter-form"
-import { StepDesign } from "@/components/templates/step-design"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 /**
  * Step 4 — Document: the front matter's cover, document control and table of
- * contents (Requirements 12.1, 13.1-13.9, 14.1-14.4), and the document's
- * appearance (Requirements 7.1, 7.2, 13.2, 13.5).
+ * contents (Requirements 12.1, 13.1-13.9, 14.1-14.4).
  *
- * ## Why `design` renders here rather than on a step of its own
+ * ## Why `design` is no longer here
  *
- * `lib/profiles/wizard.ts` maps **both** `front_matter` and `design` to this
- * step (`STEP_FOR_FIELD`), and the step's own summary promises "document
- * appearance". That mapping is the reason a sixth step would be wrong: an issue
- * on a `design.*` path already opens *this* step, so a picker living anywhere
- * else would be a step the wizard never navigates to when its own field fails.
- *
- * `StepDesign` is therefore composed in below the front matter, which is also
- * the order of the decision — what the document *says* before what it *looks
- * like*. It owns the whole `design` key and this component does not read or
- * write it.
+ * It was, on the reasoning that `STEP_FOR_FIELD` mapped both `front_matter` and
+ * `design` to this step, so a picker anywhere else would be a step the wizard
+ * never navigated to when its own field failed. That was true of the mapping, not
+ * of the design: the mapping moved with the controls. `design` now opens step 5,
+ * which is where a chart style, a chart font and a theme are chosen together —
+ * and this component neither reads nor writes the key.
  *
  * ## `front_matter` reads defensively, because its type does not exist yet
  *
@@ -44,12 +37,12 @@ import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
  *
  * ## `confidentiality_notice_id` has no control here, on purpose
  *
- * Requirement 12.7: at `schema_version` 3 the confidentiality notice is inherited
- * from the Brand and resolved at publish (`resolveDesignFromBrand`'s own
- * pattern) — the validator rejects the key on a v3 profile outright. This step
- * therefore never writes it, and `FrontMatterForm`'s own type keeps the field only
- * so a v1/v2 stored value would round-trip unchanged if this step were ever
- * reused there, which it is not today (this wizard is v3-only).
+ * Requirement 12.7: at `schema_version` 3 the notice is prose the profile owns, written in
+ * the box this step renders — `confidentiality_notice_id` is not a v3 field, and the
+ * validator rejects it outright. This step therefore never writes it, and
+ * `FrontMatterForm`'s own type keeps the field only so a v1/v2 stored value would
+ * round-trip unchanged if this step were ever reused there, which it is not today (this
+ * wizard is v3-only).
  */
 
 function readCover(frontMatter: unknown): CoverFormValues {
@@ -220,13 +213,9 @@ function toWire(values: FrontMatterFormValues): Record<string, unknown> {
 export function StepDocument({
   definition,
   onChange,
-  thumbnails,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
-  /** Resolved on the server — see `StepDesign`'s own note. Passed straight
-   * through: this component never inspects a thumbnail. */
-  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const values: FrontMatterFormValues = {
     cover: readCover(definition.front_matter),
@@ -245,24 +234,6 @@ export function StepDocument({
           })
         }
       />
-
-      <div className="flex flex-col gap-5 border-t border-border pt-8">
-        <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
-            Appearance
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            The theme the document is rendered against, and what the theme
-            leaves tunable.
-          </p>
-        </div>
-
-        <StepDesign
-          definition={definition}
-          onChange={onChange}
-          thumbnails={thumbnails}
-        />
-      </div>
     </div>
   )
 }

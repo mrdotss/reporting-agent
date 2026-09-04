@@ -30,15 +30,15 @@ import {
  * times.
  *
  * The mapping is by **first path segment**, and that works because the
- * definition's seven v3 top-level fields map cleanly onto five steps.
+ * definition's seven v3 top-level fields map cleanly onto six steps.
  * {@link STEP_FOR_FIELD} is exhaustive over `REQUIRED_TOP_LEVEL_KEYS[3]` and
  * `wizard.test.ts` asserts it stays that way.
  */
 
-export const WIZARD_STEP_COUNT = 5
+export const WIZARD_STEP_COUNT = 6
 
 export type WizardStepId =
-  "identity" | "sections" | "period" | "document" | "preview"
+  "identity" | "sections" | "period" | "document" | "appearance" | "preview"
 
 export type WizardStep = {
   readonly id: WizardStepId
@@ -50,7 +50,7 @@ export type WizardStep = {
 }
 
 /**
- * The five steps, in a fixed order.
+ * The six steps, in a fixed order.
  *
  * The order is a constant rather than a configuration. Sections reference metrics
  * and resource types, so they must be selected before the period (which references
@@ -80,11 +80,17 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
     id: "document",
     number: 4,
     title: "Document",
-    summary: "Front matter, approvers, distribution, and document appearance.",
+    summary: "Front matter, approvers, distribution and the table of contents.",
+  },
+  {
+    id: "appearance",
+    number: 5,
+    title: "Appearance",
+    summary: "How every chart is drawn, and the theme the document is rendered against.",
   },
   {
     id: "preview",
-    number: 5,
+    number: 6,
     title: "Preview",
     summary: "What the document will look like, and saving the version.",
   },
@@ -108,7 +114,9 @@ export const STEP_FOR_FIELD: Readonly<Record<string, WizardStepId>> = {
   sections: "sections",
   period: "period",
   front_matter: "document",
-  design: "document",
+  // The design moved out of step 4 with the Appearance block it describes, so a
+  // design issue opens the step whose controls actually set it.
+  design: "appearance",
 }
 
 /**
@@ -137,6 +145,7 @@ const NO_ISSUES: StepIssues = Object.freeze({
   sections: [],
   period: [],
   document: [],
+  appearance: [],
   preview: [],
 })
 
@@ -156,6 +165,7 @@ export function issuesByStep(definition: unknown): StepIssues {
     sections: [],
     period: [],
     document: [],
+    appearance: [],
     preview: [],
   }
 
@@ -278,6 +288,7 @@ export function completionProblems(
     sections: [],
     period: [],
     document: [],
+    appearance: [],
     preview: [],
   }
 

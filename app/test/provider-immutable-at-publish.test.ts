@@ -3,9 +3,9 @@
  *
  * `checkProviderImmutable` is the decision `publishTemplateVersion` calls before
  * writing a new version. Extracted as a pure function for the same reason
- * `resolveDesignFromBrand` is (see `brand-resolve-at-publish.test.ts`): the publish
- * path around it only runs against a real Postgres, so a test driving the whole
- * path would not run in ordinary development. This one runs everywhere.
+ * `pinNumberFormat` is: the publish path around it only runs against a real Postgres,
+ * so a test driving the whole path would not run in ordinary development. This one runs
+ * everywhere.
  */
 
 import { describe, expect, test } from "vitest"

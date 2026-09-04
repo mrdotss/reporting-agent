@@ -24,8 +24,9 @@ lives here rather than only in the test suite.
 Everything here is pure and closed over constants: the same chart node produces the same
 bytes on any machine, which `tests/test_charts.py` asserts by byte equality over two
 renders. The `rcParams` block and the figure emission live in `render/charts.py`; this
-module is only the palette and the colour conversion, so a chart's *style* and a chart's
-*data* cannot be confused for one another.
+module is the palette, the colour conversion and the **style vocabulary** — the shapes and
+faces a profile may name, as data — so a chart's *style* and a chart's *data* cannot be
+confused for one another.
 
 ## The floats here are not a violation of the decimal rule
 
@@ -53,6 +54,12 @@ __all__ = [
     "CHART_ENCODINGS",
     "ChartFurniture",
     "CHART_FONT",
+    "CHART_FONT_CHOICES",
+    "CHART_FONT_FAMILIES",
+    "CHART_STYLES",
+    "ChartStyleSpec",
+    "chart_font_face",
+    "chart_style_spec",
     "CHART_GRID_WIDTH",
     "CHART_LABEL_SIZE",
     "CHART_MARKER_SIZE",
@@ -619,6 +626,108 @@ matplotlib ships DejaVu Sans in its own wheel, so it is present wherever matplot
 and the image installs `fonts-dejavu-core` as well, for LibreOffice. A fallback would
 resolve to whatever the host has, which changes glyph widths, which changes where every
 label lands, which changes the bytes."""
+
+
+# --- The chart styles a profile may choose ----------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ChartStyleSpec:
+    """What one chart style asks the renderer to draw.
+
+    The six differ along four axes and nothing else, which is what keeps the drawing code
+    one path with four decisions rather than six drawing functions that drift apart.
+    """
+
+    fill: str
+    """`"none"`, `"gradient"`, `"flat"` or `"band"` — what sits under the line.
+
+    `"gradient"` is the only one that puts a **bitmap** in the SVG: matplotlib draws a
+    ramp as an image and clips it to the curve. Everything else stays vector, which the
+    wizard says out loud because the styled PDF is otherwise pure vector and someone
+    choosing on that basis has no other way to know."""
+
+    mark: str
+    """`"line"` or `"bar"`."""
+
+    panels: str
+    """`"magnitude"` splits by order of magnitude (the shipped behaviour); `"single"`
+    draws every series on one axis.
+
+    `"single"` is only honest where the series share a scale. A 0.19% average against a
+    27% peak collapses onto the baseline — which is why `stacked` is the default and why
+    the single-panel styles plot one metric."""
+
+    furniture: str
+    """`"full"` draws the axes, ticks and grid; `"bare"` draws none of it.
+
+    `"bare"` is the sparkline's: a row that shows a shape and its last value, where the
+    exact figures are read from the table beneath rather than off an axis."""
+
+
+_CHART_STYLE_SPECS: Final[Mapping[str, ChartStyleSpec]] = {
+    "stacked": ChartStyleSpec("none", "line", "magnitude", "full"),
+    "soft_area": ChartStyleSpec("gradient", "line", "single", "full"),
+    "flat_area": ChartStyleSpec("flat", "line", "single", "full"),
+    "range_band": ChartStyleSpec("band", "line", "single", "full"),
+    "columns": ChartStyleSpec("none", "bar", "single", "full"),
+    "sparkline": ChartStyleSpec("none", "line", "single", "bare"),
+}
+
+
+CHART_STYLES: Final[tuple[str, ...]] = tuple(_CHART_STYLE_SPECS)
+"""The shapes this renderer can actually draw.
+
+Derived from the spec table rather than restated, so a style cannot be declared here and
+left undrawn. `tests/test_charts.py` asserts it equals the validator's own `CHART_STYLES`
+in `compile/definition.py`: a name the wizard offers and this module has never heard of
+would be accepted on save and then silently drawn as `stacked`, which is a profile field
+that looks like it works.
+"""
+
+
+def chart_style_spec(name: str) -> ChartStyleSpec:
+    """The spec for `name`, or the shipped default.
+
+    An unknown name falls back to `stacked` rather than raising: the validator has already
+    refused an unrecognised value on the way in, so reaching here with one means a stored
+    definition predates a style being renamed, and a chart drawn the old way is a better
+    answer than a failed run.
+    """
+    return _CHART_STYLE_SPECS.get(name, _CHART_STYLE_SPECS["stacked"])
+
+
+CHART_FONT_FAMILIES: Final[Mapping[str, str]] = {
+    "grotesque": "DejaVu Sans",
+    "monospace": "DejaVu Sans Mono",
+}
+"""The two faces that name a family directly.
+
+`document` is absent on purpose — it resolves to whatever the **theme** uses, which is
+not knowable here. See :func:`chart_font_face`.
+
+Both are families the image already carries (`fonts-dejavu-core`), so choosing one costs
+nothing at build time and no chart can ask for a face matplotlib would silently
+substitute — which would make the emitted PNG depend on what happened to be installed."""
+
+
+CHART_FONT_CHOICES: Final[tuple[str, ...]] = ("document", *CHART_FONT_FAMILIES)
+"""The faces a profile may name, `document` included — which is why this is not just
+`CHART_FONT_FAMILIES`'s keys. Guarded against the validator's list the same way
+`CHART_STYLES` is."""
+
+
+def chart_font_face(choice: str, *, body_face: str) -> str:
+    """The family a chart's labels are set in.
+
+    `document` returns the theme's own body face, so the chart stops looking like a
+    different document; the other two name a family directly. An unknown choice falls back
+    to `grotesque`, which is what every chart drawn before this field used.
+    """
+    if choice == "document" and body_face:
+        return body_face
+    return CHART_FONT_FAMILIES.get(choice, CHART_FONT_FAMILIES["grotesque"])
+
 
 CHART_STROKE_WIDTH: Final[float] = 1.6
 CHART_MARKER_SIZE: Final[float] = 4.0

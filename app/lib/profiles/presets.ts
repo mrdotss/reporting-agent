@@ -15,8 +15,8 @@
  *
  * So the preset is a UI tier, not a stored value: choosing one writes its metrics
  * into the section's own `metrics[]`, and the pinned version stays self-contained —
- * the same reasoning that resolves a Brand into `design` at publish rather than
- * dereferencing it at render.
+ * the same reasoning that pins a profile's own design values into the stored version
+ * rather than dereferencing anything at render.
  *
  * **There is deliberately no `preset` key in the stored schema.** Which preset a
  * section currently matches is *derived* by comparing its metrics against the

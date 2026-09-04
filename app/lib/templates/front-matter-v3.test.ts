@@ -13,8 +13,8 @@ import { collectDefinitionIssues } from "@/lib/templates/definition"
  * `distribution`, no `confidentiality_notice_id` — so it does not exercise any of
  * the branches this task adds. This file builds its own minimal valid v3
  * definition and targets exactly the new branches: `distribution` as rows,
- * `confidentiality_notice_id` becoming Brand-only, and the approver `company` /
- * `signature_key` fields.
+ * `confidentiality_notice_id` ceasing to be a v3 field at all, and the approver
+ * `company` / `signature_key` fields.
  */
 
 function validV3Definition(): Record<string, unknown> {
@@ -187,7 +187,7 @@ describe("Requirement 12.6 — distribution becomes rows at v3, stays a string a
   })
 })
 
-describe("Requirement 12.7 — confidentiality is Brand-inherited at v3, not author-editable", () => {
+describe("Requirement 12.7 — at v3 the notice is prose on the profile, not an id", () => {
   test("a v3 definition carrying confidentiality_notice_id is rejected", () => {
     const definition = validV3Definition()
     const control = (definition.front_matter as Record<string, unknown>)
@@ -198,8 +198,13 @@ describe("Requirement 12.7 — confidentiality is Brand-inherited at v3, not aut
     expect(pathsOf(issues)).toContain(
       "front_matter.document_control.confidentiality_notice_id"
     )
+    // The message has to say where the notice *does* go. It used to point at a Brand
+    // page, which no longer exists — an error naming a place the reader cannot open is
+    // worse than no explanation.
     expect(
-      issues.some((issue) => issue.message.includes("inherited from the Brand"))
+      issues.some((issue) =>
+        issue.message.includes("document_control.confidentiality_notice")
+      )
     ).toBe(true)
   })
 

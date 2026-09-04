@@ -45,13 +45,15 @@ from __future__ import annotations
 import hashlib
 import io
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from collections.abc import Sequence
 from typing import Final
 
 import matplotlib
+import numpy as np
 from matplotlib import rc_context
+from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure as MplFigure
 from matplotlib.ticker import MaxNLocator
 
@@ -532,6 +534,8 @@ def render_chart(
     table_style: str,
     theme: str = "light",
     preset: str = "",
+    chart_style: str = "stacked",
+    chart_font: str = "grotesque",
     messages: Messages,
 ) -> ChartArtifacts:
     """Emit one chart's image, sidecar and companion table.
@@ -567,15 +571,24 @@ def render_chart(
     # five-series cap and the aggregate) runs BEFORE this, so a panel never
     # groups a series the cap already dropped — panelling is a further split
     # of what was already going to be drawn, not a second selection.
+    spec = style.chart_style_spec(chart_style)
     groups = _panel_groups_for(node, series_set)
+    if spec.panels == "single":
+        # One axis, whatever the magnitudes. Honest only where the series share a scale,
+        # which is why the styles that ask for it plot one metric — see `ChartStyleSpec`.
+        groups = (tuple(entry.key for entry in series_set),)
     panel_count = len(groups)
 
     # The document's own ink for everything that is not data. `preset` is the theme the
     # profile selected; an empty one means "no document", which is what a preview or a test
     # renders into, and keeps the app's light/dark tokens.
     furniture = _furniture_for(preset, theme)
+    # The face the rc params set, so the tick labels matplotlib draws without a call site
+    # of our own are in it too.
+    face = style.chart_font_face(chart_font, body_face=furniture.body_face)
+    furniture = replace(furniture, body_face=face)
 
-    with rc_context(style.frozen_rc_params(furniture.body_face)):
+    with rc_context(style.frozen_rc_params(face)):
         figure = MplFigure(
             figsize=style.chart_size_inches(panel_count), dpi=style.CHART_DPI
         )
@@ -602,20 +615,14 @@ def render_chart(
         )
 
         try:
-            for panel_index, (axes, panel_keys) in enumerate(zip(axes_list, groups, strict=True)):
-                panel_series = tuple(
-                    series for series in series_set if series.key in panel_keys
-                )
-                _draw(
-                    axes,
-                    node,
-                    panel_series,
-                    theme=theme,
-                    messages=messages,
-                    furniture=furniture,
-                    is_last_panel=(panel_index == panel_count - 1),
-                )
-
+            # Placed **before** the panels are drawn, not after. The end-label stacking
+            # measures a line of text by converting display pixels into data units through
+            # `axes.transData`, and that transform depends on how tall the axes box is. Run
+            # afterwards, this call shrank every box the labels had already been spaced
+            # against — reserving two lines of room and then delivering a little over one,
+            # so on a single-panel chart `Avg` printed through the value above it. Nothing
+            # here reads the drawn content, so there is nothing to wait for.
+            #
             # `right` leaves the gutter the direct end labels are drawn into. At the
             # previous 0.86 that gutter was 0.84in and a label like
             # "CPN-MCP - Percentage CPU (max)" was clipped mid-word by the figure edge,
@@ -623,7 +630,7 @@ def render_chart(
             #
             # Fixed rather than tight_layout(): `tight_layout` measures rendered text, so
             # its result depends on font metrics and would make the emitted bytes
-            # host-dependent. Set once, on the whole figure, after every panel is drawn.
+            # host-dependent. Set once, on the whole figure, before any panel is drawn.
             # `hspace` is a fixed axes-fraction gap between stacked panels — large enough
             # to separate one panel's x-axis tick labels from the panel below's title,
             # small enough that `panel_count` panels still read as one chart rather than
@@ -645,6 +652,21 @@ def render_chart(
                 bottom=_XLABEL_BAND_INCHES / height,
                 hspace=0.5,
             )
+
+            for panel_index, (axes, panel_keys) in enumerate(zip(axes_list, groups, strict=True)):
+                panel_series = tuple(
+                    series for series in series_set if series.key in panel_keys
+                )
+                _draw(
+                    axes,
+                    node,
+                    panel_series,
+                    theme=theme,
+                    messages=messages,
+                    furniture=furniture,
+                    is_last_panel=(panel_index == panel_count - 1),
+                    spec=spec,
+                )
 
             buffer = io.BytesIO()
             figure.savefig(
@@ -783,6 +805,73 @@ def short_series_label(series, series_set) -> str:
     return next(iter(statistics)).capitalize()
 
 
+def _band_colour(series_set, node, theme: str, ink) -> str:
+    """The band's tint — the first plotted series' own stroke, so the fill and the line
+    a reader follows are the same colour rather than two the palette chose separately."""
+    if not series_set:
+        return ink.value_label
+    siblings = tuple(entry.key for entry in series_set)
+    return _colour_for(series_set[0], siblings, node, theme)
+
+
+def _fill_band(axes, series_set, *, colour: str) -> None:
+    """Shade between the highest and the lowest series, point by point.
+
+    Only where both carry a value at that x: a band drawn across a gap would assert a
+    range for a day nothing was collected, which is the same lie as plotting a gap as
+    zero.
+    """
+    columns: dict[str, list[float]] = {}
+    for entry in series_set:
+        for point in entry.points:
+            columns.setdefault(point.x, []).append(float(point.y.value))
+
+    ordered = [x for x in (p.x for p in series_set[0].points) if len(columns.get(x, ())) >= 2]
+    if not ordered:
+        return
+
+    index_of = {point.x: i for i, point in enumerate(series_set[0].points)}
+    xs = [index_of[x] for x in ordered]
+    lows = [min(columns[x]) for x in ordered]
+    highs = [max(columns[x]) for x in ordered]
+    axes.fill_between(xs, lows, highs, color=colour, alpha=0.16, linewidth=0, zorder=0)
+
+
+def _fill_under(axes, values, *, colour: str, shape) -> None:
+    """What sits under one series' line, per :class:`chartstyle.ChartStyleSpec`.
+
+    `flat` is a plain `fill_between`, which stays vector through the SVG. `gradient` is
+    an `imshow` of a 256-step ramp **clipped to the curve's own path** — matplotlib has no
+    vector gradient fill, so this is a bitmap inside the SVG. That is the one place a
+    chart stops being vector, which is why the wizard says so on the card rather than
+    leaving it to be discovered in a PDF.
+
+    `band` fills nothing here: it needs both series at once and is drawn by the panel,
+    not per series.
+    """
+    if shape.fill == "flat":
+        axes.fill_between(range(len(values)), values, color=colour, alpha=0.12, linewidth=0)
+        return
+    if shape.fill != "gradient":
+        return
+
+    top = axes.get_ylim()[1]
+    ramp = LinearSegmentedColormap.from_list("fill", [(1, 1, 1, 0.0), colour])
+    image = axes.imshow(
+        np.linspace(0, 1, 256).reshape(-1, 1),
+        cmap=ramp,
+        aspect="auto",
+        origin="lower",
+        extent=(0.0, float(len(values) - 1), 0.0, float(top)),
+        alpha=0.24,
+        zorder=0,
+    )
+    clip = axes.fill_between(
+        range(len(values)), values, 0, facecolor="none", edgecolor="none", linewidth=0
+    )
+    image.set_clip_path(clip.get_paths()[0], transform=axes.transData)
+
+
 def _draw_end_labels(
     axes,
     entries: Sequence[tuple[float, float, str, str]],
@@ -791,6 +880,8 @@ def _draw_end_labels(
     align: str = "left",
     mono: bool = False,
     face: str = "",
+    floor_points: float = 0.0,
+    occupied_lines: float = 1.0,
 ) -> None:
     """Place the direct line-end labels, pushed apart where they would overlap.
 
@@ -807,6 +898,25 @@ def _draw_end_labels(
 
     Measured in **display** space and converted back, because "a line of text is tall" is a
     typographic quantity and the data axis may be percentages or bytes.
+
+    ## Nothing is drawn below the panel
+
+    A series that ends near zero anchors its label at the axis, and the value that follows
+    it sits `_VALUE_UNDER_LABEL_POINTS` lower still — off the panel, into the band the date
+    labels occupy. On the two-panel shape that never showed, because a near-zero series got
+    a panel scaled to itself; on a single-panel one an idle machine's `0.19%` printed
+    through `2026-08-29`. So `floor_points` lifts every anchor to at least that far above
+    the axis before the stacking runs — the lift is monotone, so flooring first cannot
+    reintroduce an overlap.
+
+    Both passes take the **same** floor, and that is the point: a series label and the value
+    under it are one pair, and flooring only the value would push it up into the label it
+    hangs from — which is what the columns shape showed when they were floored apart.
+
+    `occupied_lines` says how tall one entry really is, for the same reason. A series label
+    with its value beneath it occupies two lines, not one, so spacing the labels a single
+    line apart leaves the upper label's value sitting on the lower label — `Avg` printed
+    through `9.89%`. Both passes are told the pair height, so the two ladders keep step.
     """
     if not entries:
         return
@@ -814,14 +924,19 @@ def _draw_end_labels(
     figure = axes.get_figure()
     # A line of text at the label size, in data units: transform two display points that
     # differ by that many pixels and take the difference.
-    line_px = style.CHART_LABEL_SIZE * figure.dpi / 72.0 * 1.25
+    line_px = style.CHART_LABEL_SIZE * figure.dpi / 72.0 * 1.25 * occupied_lines
     inverse = axes.transData.inverted()
     origin = inverse.transform((0.0, 0.0))
     stepped = inverse.transform((0.0, line_px))
     minimum_gap = abs(stepped[1] - origin[1])
 
+    lifted = inverse.transform((0.0, floor_points * figure.dpi / 72.0))
+    floor = axes.get_ylim()[0] + abs(lifted[1] - origin[1])
+
     ordered = sorted(entries, key=lambda entry: entry[1])
-    heights = stack_without_overlap([entry[1] for entry in ordered], minimum_gap)
+    heights = stack_without_overlap(
+        [max(entry[1], floor) for entry in ordered], minimum_gap
+    )
 
     for (x, _value, text, colour), height in zip(ordered, heights, strict=True):
         axes.annotate(
@@ -875,6 +990,7 @@ def _draw(
     messages: Messages,
     furniture: style.ChartFurniture | None = None,
     is_last_panel: bool = True,
+    spec: style.ChartStyleSpec | None = None,
 ) -> None:
     """Draw one panel's plotted set.
 
@@ -891,6 +1007,9 @@ def _draw(
     # The document's ink and faces where the caller knew which document; the app's tokens
     # otherwise. Resolved first because every text element below is set with it.
     ink = furniture if furniture is not None else style.furniture_for_theme(theme)
+    # An absent spec is the shipped shape, so every existing caller and every test that
+    # renders without one draws exactly what it drew before.
+    shape = spec if spec is not None else style.chart_style_spec("stacked")
 
     # --- Axis titles (Req 17.1, 17.11) ----------------------------------------
     # Resolved from the message catalog. An absent id with a unit is acceptable;
@@ -1004,7 +1123,46 @@ def _draw(
         # Determine which points get direct labels (Req 17.4)
         labelled = label_indices(series.points)
 
-        if node.chart_type in ("line", "area"):
+        if shape.mark == "bar" and node.chart_type in ("line", "area"):
+            # The profile asked for columns; the node's own `chart_type` is the
+            # compiler's default for a time series and is not a second opinion about
+            # what a reader wants to see.
+            width = 0.8 / max(len(series_set), 1)
+            offset = _bar_offsets(len(series_set), slot)
+            axes.bar(
+                [index + offset for index in range(len(values))],
+                values,
+                width=width,
+                color=colour,
+                label=series.label,
+            )
+            # Req 22.10 applies to a column exactly as it does to a line: without this the
+            # chart carried no series label at all, and two dodged series a hundredfold
+            # apart in scale read as one — the taller series filling the panel while the
+            # shorter one drew a bar under a pixel high with nothing to name it. Collected
+            # into the same list the line branch uses, so the anti-overlap stacking below
+            # separates them and a flat series is at least labelled where it sits.
+            end_labels.append(
+                (
+                    len(values) - 1 + offset,
+                    values[-1],
+                    truncate_end_label(short_series_label(series, series_set)),
+                    colour,
+                )
+            )
+            if len(values) - 1 in labelled:
+                end_values.append(
+                    (
+                        len(values) - 1 + offset,
+                        values[-1],
+                        series.points[-1].y.formatted,
+                        ink.value_label,
+                    )
+                )
+            ticks = tick_label_positions(len(labels))
+            axes.set_xticks(ticks)
+            axes.set_xticklabels([labels[i] for i in ticks], rotation=0, ha="center")
+        elif node.chart_type in ("line", "area"):
             marker = style.marker_for_key(series.key, siblings)
             dashes = style.dash_for_key(series.key, siblings)
             # Markers every `stride` points rather than on all of them. At a month of
@@ -1023,6 +1181,7 @@ def _draw(
                 line.set_dashes(list(dashes))
             if node.chart_type == "area":
                 axes.fill_between(range(len(values)), values, color=colour, alpha=0.15)
+            _fill_under(axes, values, colour=colour, shape=shape)
             # Req 22.10 — a direct label at the line end, so the legend is a fallback.
             # Collected rather than drawn here: two series ending at nearly the same value
             # would otherwise print one label over the other, which is a legend's failure
@@ -1111,10 +1270,41 @@ def _draw(
     # arrangement `ReportB.dc.html` uses, `Max` over `18.30%`. Right-aligned inside the
     # axes, the value hung over the end of the line it named and the label began
     # immediately to its right, so the delivered chart read `9.89%` through
-    # `CPN-App — Percentage CPU (max)`. Stacking cannot collide: both sets are placed from
-    # the same line-end heights by the same rule, so a value sits exactly one line below
-    # the label it belongs to however the two series end.
-    _draw_end_labels(axes, end_labels, face=ink.body_face)
+    # `CPN-App — Percentage CPU (max)`.
+    #
+    # "Both de-overlapped, and separately" was once written here as a proof that the two
+    # ladders cannot collide — same heights, same rule, so a value always sits one line
+    # under its own label. It is not a proof, and the single-panel styles broke it: each
+    # ladder kept one line between its own entries, but a pair is two lines tall, so the
+    # upper pair's value landed on the lower pair's label. Both passes are now told the
+    # pair height and one shared floor, which is what actually makes them keep step.
+    if shape.fill == "band" and len(series_set) >= 2:
+        # The span between the highest and lowest series, shaded once. It needs both at
+        # the same time, so it belongs to the panel rather than to a series — and it is
+        # drawn after the lines so the lines' own colour is not tinted by it.
+        _fill_band(axes, series_set, colour=_band_colour(series_set, node, theme, ink))
+
+    if shape.furniture == "bare":
+        # A sparkline row: the shape and its last value, nothing else. The exact figures
+        # are in the companion table, which carries every plotted point regardless.
+        axes.grid(False)
+        axes.set_xticks([])
+        axes.set_yticks([])
+        for edge in ("left", "bottom"):
+            axes.spines[edge].set_visible(False)
+        axes.set_ylabel("")
+        axes.set_xlabel("")
+        axes.set_title("")
+
+    # One floor for both, so the pair travels together — see `_draw_end_labels`.
+    label_floor = _VALUE_UNDER_LABEL_POINTS + _AXIS_CLEARANCE_POINTS
+    _draw_end_labels(
+        axes,
+        end_labels,
+        face=ink.body_face,
+        floor_points=label_floor,
+        occupied_lines=_PAIR_LINES,
+    )
     _draw_end_labels(
         axes,
         end_values,
@@ -1122,6 +1312,8 @@ def _draw(
         align="left",
         mono=True,
         face=ink.figure_face,
+        floor_points=label_floor,
+        occupied_lines=_PAIR_LINES,
     )
 
     # --- Legend (Req 17.3) — the fallback, and only when it is one -------------
@@ -1178,6 +1370,15 @@ at render time makes the emitted PNG host-dependent.
 """
 
 _ELLIPSIS: Final[str] = "\u2026"
+
+_PAIR_LINES: Final[float] = 2.0
+"""Lines of text one series' end annotation occupies: its label, and its value beneath."""
+
+_AXIS_CLEARANCE_POINTS: Final[float] = 2.0
+"""How far above the axis the lowest end label may still be drawn, in points.
+
+Small on purpose: the floor exists to keep a near-zero series' value off the date labels,
+not to move the label away from the series it names. Two points is one hairline."""
 
 _VALUE_UNDER_LABEL_POINTS: Final[float] = 8.0
 """How far below its series label the final value sits, in points.
