@@ -268,6 +268,38 @@ presigned GET **server-side** (`@aws-sdk/s3-request-presigner`,
 signed-in user. Never store a presigned URL; never return one in a cacheable
 payload.
 
+The prefix check is an **exact match on the first path segment**, not a
+`startswith`: `alice-evil/...` is not `alice`'s. That single check is the whole
+authorization, on both halves — the app's `/api/artifact-url` and the runtime's
+`_load_front_matter_images` — so there is no second one to forget and none to add.
+
+A completed run leaves:
+
+| key | what it is |
+|---|---|
+| `<actor>/snapshots/<runId>/snapshot.json` | the immutable record; every figure traces here |
+| `<actor>/snapshots/<runId>/raw/*.json.gz` | what `replay` re-aggregates |
+| `<actor>/reports/<runId>/report.docx` | the deliverable |
+| `<actor>/reports/<runId>/report.pdf` | LibreOffice's conversion — the `pdf` gate reads this |
+| `<actor>/reports/<runId>/report-styled.pdf` | the styled reading copy — gated, non-blocking |
+| `<actor>/reports/<runId>/document.html` | the reading copy's markup |
+| `<actor>/reports/<runId>/ast.json` · `ledger.json` · `prose.json` · `historical.json` | the audit trail |
+| `<actor>/reports/<runId>/charts/*.sidecar.json` | one per chart |
+| `<actor>/reports/<runId>/verification-<runId>-<n>.json` | one per verification attempt |
+
+Two more prefixes are written by the **app**, not the runtime, and read by the runtime
+when it draws the front matter:
+
+| key | written when |
+|---|---|
+| `<actor>/logos/<uuid>.png` | a profile version is saved and its cover logo URL resolves |
+| `<actor>/signatures/<uuid>.png` | an approver uploads a signature |
+
+The runtime never fetches a URL a user supplied. It reads its own bucket, and the app
+does the fetching at save time — see `app/lib/templates/logo.ts`. A request from
+inside the VPC to an address chosen by the person whose report it is is the shape of
+every SSRF, and the render path makes no network call anywhere else.
+
 ## Failure modes the app must handle explicitly
 `error` events carry a `code`. These are not interchangeable, and flattening them
 into "something went wrong" removes the only signal the user can act on:
