@@ -530,7 +530,7 @@ CHART_DPI: Final[int] = 200
 """Fixed rather than inherited from `figure.dpi`, which a user-level matplotlibrc can
 change. It also fixes the pixel dimensions, which the byte comparison depends on."""
 
-CHART_SIZE_INCHES: Final[tuple[float, float]] = (6.0, 3.2)
+CHART_SIZE_INCHES: Final[tuple[float, float]] = (6.0, 1.5)
 """One size for every chart, so a document's charts share a shape and the emitted PNG
 has one pixel geometry. 6 inches sits inside an A4 text column at the theme's 2 cm
 margins with room for the direct labels."""

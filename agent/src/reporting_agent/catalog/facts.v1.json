@@ -470,6 +470,13 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(rule.properties.access)"
+        },
+        {
+          "key": "origin",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(rule.properties.origin)"
         }
       ]
     },

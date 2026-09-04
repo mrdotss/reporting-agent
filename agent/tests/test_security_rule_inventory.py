@@ -26,6 +26,8 @@ import asyncio
 from fakes.azure_ports import FakeInventoryPort
 from reporting_agent.azure.clients import (
     SECURITY_RULE_CHILD_RESOURCE_TYPE,
+    SECURITY_RULE_ORIGIN_DEFAULT,
+    SECURITY_RULE_ORIGIN_USER,
     SUBNET_CHILD_RESOURCE_TYPE,
     child_resources_query,
     security_rule_inventory_query,
@@ -42,13 +44,39 @@ SUBSCRIPTION = "3f2b0000-0000-0000-0000-000000000000"
 # --------------------------------------------------------------------------- #
 
 
-def test_security_rule_query_expands_securityRules_never_defaultSecurityRules() -> None:
-    """The whole implementation of "omit defaults at priority 65000+": never read the
-    array that holds them."""
+def test_security_rule_query_expands_both_arrays_and_labels_each_by_its_own() -> None:
+    """Both of an NSG's rule arrays, in two union legs, each labelling its own origin.
+
+    Reading only `securityRules` produced a report that could not answer what governs
+    outbound traffic: a group whose operator wrote no outbound rule — most of them —
+    printed an empty outbound section while `AllowVnetOutBound`, `AllowInternetOutBound`
+    and `DenyAllOutBound` sat unread in the array beside it.
+
+    `fact_origin` is still a **literal per leg** and never a priority test. The old form of
+    this test asserted `"65000" not in query` for exactly that reason, and that assertion
+    survives here: the leg knows which array it expanded, so nothing has to infer it from a
+    number that merely correlates.
+    """
     query = security_rule_inventory_query(subscription_id=SUBSCRIPTION)
-    assert "mv-expand rule = properties.securityRules" in query
-    assert "defaultSecurityRules" not in query
-    assert "65000" not in query, "no runtime priority filter — the exclusion is structural"
+
+    assert "mv-expand rule = coalesce(properties.securityRules, dynamic([]))" in query
+    assert (
+        "mv-expand rule = coalesce(properties.defaultSecurityRules, dynamic([]))" in query
+    )
+    assert "| union (" in query, "the two arrays are two legs, not one concatenation"
+
+    assert f"fact_origin = '{SECURITY_RULE_ORIGIN_USER}'" in query
+    assert f"fact_origin = '{SECURITY_RULE_ORIGIN_DEFAULT}'" in query
+    assert "65000" not in query, "no runtime priority filter — the origin is structural"
+
+
+def test_a_group_with_no_rules_in_one_array_still_appears() -> None:
+    """`mv-expand` over a null property drops the row entirely, so a group with no
+    operator-written rule would be missing from the section rather than present with its
+    defaults. Both legs coalesce to an empty array first."""
+    query = security_rule_inventory_query(subscription_id=SUBSCRIPTION)
+
+    assert query.count("dynamic([])") == 2
 
 
 def test_security_rule_query_uses_mv_expand_against_the_parent_nsg_type() -> None:
@@ -88,8 +116,14 @@ def test_child_resources_query_unions_both_child_queries_in_one_request() -> Non
     documented syntax for unioning a full parenthesized sub-query."""
     combined = child_resources_query(subscription_id=SUBSCRIPTION)
     assert "mv-expand subnet = properties.subnets" in combined
-    assert "mv-expand rule = properties.securityRules" in combined
-    assert "| union (" in combined
+    assert "mv-expand rule = coalesce(properties.securityRules, dynamic([]))" in combined
+    # And the rules query's own second leg rides the same request: three legs in one
+    # union, not a second HTTP call for the defaults.
+    assert (
+        "mv-expand rule = coalesce(properties.defaultSecurityRules, dynamic([]))"
+        in combined
+    )
+    assert combined.count("| union (") == 2
 
 
 # --------------------------------------------------------------------------- #
@@ -188,7 +222,13 @@ def test_security_rule_facts_are_declared_and_excluded_from_the_ordinary_project
 
     catalog = load_catalog()
     keys = {entry.key for entry in catalog.facts.for_resource_type(SECURITY_RULE_CHILD_RESOURCE_TYPE)}
-    assert keys == {"priority", "direction", "protocol", "source", "destination", "port", "action"}
+    assert keys == {
+        "priority", "direction", "protocol", "source", "destination", "port", "action",
+        # Which of the NSG's two rule arrays the row came from, written by the union leg
+        # that expanded it. It is what lets the document distinguish a rule an operator
+        # wrote from one Azure supplies on every group.
+        "origin",
+    }
 
     filtered = _non_child_projections(catalog)
     filtered_keys = {key for key, _ in filtered}

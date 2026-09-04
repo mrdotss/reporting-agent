@@ -118,6 +118,8 @@ __all__ = [
     "is_dns_resolution_failure",
     "pipeline_sender",
     "resource_counts_query",
+    "SECURITY_RULE_ORIGIN_DEFAULT",
+    "SECURITY_RULE_ORIGIN_USER",
     "security_rule_inventory_query",
     "subnet_inventory_query",
 ]
@@ -536,28 +538,43 @@ declared here, beside the only query that ever produces a row of this type, as a
 independent string literal a test checks against the catalogue entry rather than an
 import either side could drift from."""
 
+SECURITY_RULE_ORIGIN_USER: Final[str] = "User"
+SECURITY_RULE_ORIGIN_DEFAULT: Final[str] = "Default"
+"""Which of an NSG's two rule arrays a row came from.
+
+A literal per union leg rather than a priority test — see
+:func:`security_rule_inventory_query`. It reaches the document as the `origin` column, so
+a reader can tell a rule somebody wrote from one Azure supplies on every group."""
+
 
 def security_rule_inventory_query(*, subscription_id: str) -> str:
     """The Resource Graph query that turns each NSG's author-defined rules into their
     own rows (Req 15.4, 16.6, 16.9, 16.10). **Pure.**
 
-    **Expands `properties.securityRules` and never `properties.defaultSecurityRules`
-    — structurally, not by a runtime priority filter.** An NSG carries the two as
-    genuinely separate array properties (confirmed against the resource's own schema):
-    `securityRules` holds what an operator wrote, and `defaultSecurityRules` holds
-    Azure's own five rules that exist on every NSG unconditionally. Azure's schema
-    itself bounds a `securityRules` entry's `priority` to 100–4096 — the field is
-    declared `required`, ranged, on that array specifically — so a rule at priority
-    65000 or above **cannot appear in `securityRules` at all**; only
-    `defaultSecurityRules` uses that range. Task 6.3's own text asks to "omit Azure's
-    own defaults at priority 65000 and above," and the honest way to do that is to
-    never read the array that holds them, rather than read both arrays and then filter
-    by a number that happens to correlate with which array a rule came from. A runtime
-    `where priority < 65000` guard would be redundant against a schema-enforced bound
-    it did not derive from — and worse, it would silently start doing real work the
-    moment it stopped being redundant, which is exactly the kind of coincidence
-    `catalog.loader.is_child_type`'s own `child_of` correction (task 6.2) already
-    proved this codebase cannot afford to leave unexamined.
+    **Expands both arrays, in two union legs, each labelling its own origin.** An NSG
+    carries the two as genuinely separate array properties (confirmed against the
+    resource's own schema): `securityRules` holds what an operator wrote, and
+    `defaultSecurityRules` holds Azure's own rules that exist on every NSG
+    unconditionally.
+
+    Only the first was read, and the result was a report that could not answer what
+    governs outbound traffic. A network security group whose operator wrote no outbound
+    rule — which is most of them — printed an empty outbound section, while the rules
+    that actually govern its outbound traffic (`AllowVnetOutBound`,
+    `AllowInternetOutBound`, `DenyAllOutBound`) sat unread in the array beside it. The
+    posture a security section exists to report was the part it omitted.
+
+    `fact_origin` is a **literal per leg**, never inferred from the priority. Azure's
+    schema bounds a `securityRules` entry's priority to 100–4096 and only
+    `defaultSecurityRules` uses 65000 and above, so a priority test would agree with the
+    array today — and would be a number that happens to correlate with the thing it
+    claims to identify, which is the kind of coincidence
+    `catalog.loader.is_child_type`'s own `child_of` correction (task 6.2) already proved
+    this codebase cannot afford. The leg knows which array it expanded; it says so.
+
+    `coalesce(..., dynamic([]))` on each array because `mv-expand` over a null property
+    drops the NSG's row entirely, and an NSG with no operator-written rule would then be
+    missing from the section rather than present with its defaults.
 
     Same second-query shape task 6.1's `subnet_inventory_query` establishes, for the
     identical reason: a security rule is nested inside its NSG's own row, not its own
@@ -577,34 +594,42 @@ def security_rule_inventory_query(*, subscription_id: str) -> str:
     a populated plural array into one comma-separated string, matching this fact's
     `text` value kind — a list is not a shape `collect/factfold.py` folds.
     """
+    def leg(array: str, origin: str) -> str:
+        """One union leg: one rule array, expanded, labelled with where it came from."""
+        return "\n".join([
+            "Resources",
+            f"| where subscriptionId == {_kql_literal(subscription_id)}",
+            f"| where type =~ {_kql_literal('Microsoft.Network/networkSecurityGroups')}",
+            f"| mv-expand rule = coalesce(properties.{array}, dynamic([]))",
+            "| project id = tostring(rule.id),",
+            "          name = tostring(rule.name),",
+            f"          type = {_kql_literal(SECURITY_RULE_CHILD_RESOURCE_TYPE)},",
+            "          location = location,",
+            "          resourceGroup = resourceGroup,",
+            "          tags = tags,",
+            '          sku = "",',
+            # No trailing comma: every fact line below opens with its own `,`, the way
+            # `inventory_query`'s own projection loop does. Carrying one here produced
+            # `powerState = "", , fact_...` — which Resource Graph answers with a 400,
+            # and which no test could see because none of them read the query as a whole.
+            '          powerState = ""',
+            "          , fact_priority = tostring(rule.properties.priority)",
+            "          , fact_direction = tostring(rule.properties.direction)",
+            "          , fact_protocol = tostring(rule.properties.protocol)",
+            "          , fact_source = coalesce(tostring(rule.properties.sourceAddressPrefix), "
+            'strcat_array(rule.properties.sourceAddressPrefixes, ", "))',
+            "          , fact_destination = coalesce("
+            "tostring(rule.properties.destinationAddressPrefix), "
+            'strcat_array(rule.properties.destinationAddressPrefixes, ", "))',
+            "          , fact_port = coalesce(tostring(rule.properties.destinationPortRange), "
+            'strcat_array(rule.properties.destinationPortRanges, ", "))',
+            "          , fact_action = tostring(rule.properties.access)",
+            f"          , fact_origin = {_kql_literal(origin)}",
+        ])
+
     lines = [
-        "Resources",
-        f"| where subscriptionId == {_kql_literal(subscription_id)}",
-        f"| where type =~ {_kql_literal('Microsoft.Network/networkSecurityGroups')}",
-        "| mv-expand rule = properties.securityRules",
-        "| project id = tostring(rule.id),",
-        "          name = tostring(rule.name),",
-        f"          type = {_kql_literal(SECURITY_RULE_CHILD_RESOURCE_TYPE)},",
-        "          location = location,",
-        "          resourceGroup = resourceGroup,",
-        "          tags = tags,",
-        '          sku = "",',
-        # No trailing comma: every fact line below opens with its own `,`, the way
-        # `inventory_query`'s own projection loop does. Carrying one here produced
-        # `powerState = "", , fact_...` — which Resource Graph answers with a 400, and
-        # which no test could see because none of them read the query as a whole.
-        '          powerState = ""',
-        "          , fact_priority = tostring(rule.properties.priority)",
-        "          , fact_direction = tostring(rule.properties.direction)",
-        "          , fact_protocol = tostring(rule.properties.protocol)",
-        "          , fact_source = coalesce(tostring(rule.properties.sourceAddressPrefix), "
-        'strcat_array(rule.properties.sourceAddressPrefixes, ", "))',
-        "          , fact_destination = coalesce("
-        "tostring(rule.properties.destinationAddressPrefix), "
-        'strcat_array(rule.properties.destinationAddressPrefixes, ", "))',
-        "          , fact_port = coalesce(tostring(rule.properties.destinationPortRange), "
-        'strcat_array(rule.properties.destinationPortRanges, ", "))',
-        "          , fact_action = tostring(rule.properties.access)",
+        leg("securityRules", SECURITY_RULE_ORIGIN_USER),
+        f"| union ({leg('defaultSecurityRules', SECURITY_RULE_ORIGIN_DEFAULT)})",
     ]
     lines.append("| order by id asc")
     return "\n".join(lines)

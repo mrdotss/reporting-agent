@@ -412,9 +412,12 @@
                   {
                     "kind": "fact",
                     "fact_key": "action"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "origin"
                   }
                 ],
-                "omit_default_rules_above": 65000,
                 "filter_fact": "direction",
                 "filter_value": "Inbound",
                 "empty_message_id": "doc.section.nsg.no_rules"
@@ -462,16 +465,19 @@
                   {
                     "kind": "fact",
                     "fact_key": "action"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "origin"
                   }
                 ],
-                "omit_default_rules_above": 65000,
                 "filter_fact": "direction",
                 "filter_value": "Outbound",
                 "empty_message_id": "doc.section.nsg.no_rules"
               }
             }
           ],
-          "notes": "Azure default rules at priority 65000 and above are omitted; the section reports rules an operator wrote."
+          "notes": "Both of an NSG's rule arrays are reported, split by direction and labelled by origin: `User` for a rule an operator wrote, `Default` for one Azure supplies on every group. Outbound traffic on a group with no operator-written outbound rule is governed entirely by the defaults, so omitting them left the section unable to answer what it exists to answer."
         },
         {
           "key": "reservations",
