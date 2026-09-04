@@ -642,18 +642,19 @@ export const reportRuns = pgTable(
   ]
 )
 
-// --- brands ------------------------------------------------------------------
+// --- the design vocabulary ---------------------------------------------------
 
 /**
- * Requirement 2.1. A Brand owns the visual identity of the consultancy's
- * documents — theme preset, accent colour, density, page size, number format
- * and logo — so those values are chosen once rather than re-picked per customer.
+ * The four enums a document's design is chosen from.
  *
- * Owned by `user_id` because no account or organization entity exists and
- * inventing one is out of scope for this spec. A Brand edit applies to the NEXT
- * report, never retroactively: the publish path resolves the Brand into
- * `definition.design` at save time, making each version self-contained.
+ * They were declared for the `brands` table, which is gone: a Brand held one visual
+ * identity for a whole consultancy, and a profile turned out to be a per-customer
+ * engagement whose design is its own. The **types** stay. A profile's `design` object is
+ * validated against these same four vocabularies (`lib/templates/definition.ts`), and
+ * `DROP TYPE` of a committed enum is the harder half of the additive rule — the one place
+ * a later `ALTER TYPE … ADD VALUE` becomes impossible to undo.
  */
+
 export const themePreset = pgEnum("theme_preset", [
   "editorial",
   "corporate",
@@ -675,83 +676,6 @@ export type ThemePreset = (typeof themePreset.enumValues)[number]
 export type DensityEnum = (typeof density.enumValues)[number]
 export type TableStyleEnum = (typeof tableStyle.enumValues)[number]
 export type PageSizeEnum = (typeof pageSize.enumValues)[number]
-
-export const brands = pgTable(
-  "brands",
-  {
-    id: text("id").primaryKey(),
-
-    userId: text("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-
-    /** Human-readable label — "Acme Consulting Brand". */
-    name: text("name").notNull(),
-
-    themePreset: themePreset("theme_preset").notNull().default("editorial"),
-    accentColor: text("accent_color").notNull().default("#1f6f78"),
-
-    /**
-     * S3 object **key** under the owner's prefix. Never a presigned URL —
-     * presigned per request, never stored. Nullable: a brand with no logo is
-     * ordinary.
-     */
-    logoKey: text("logo_key"),
-
-    density: density("density").notNull().default("normal"),
-    tableStyle: tableStyle("table_style").notNull().default("hairline"),
-    pageSize: pageSize("page_size").notNull().default("A4"),
-
-    /** Same shape as `DesignSpec.number_format`. */
-    numberFormat: jsonb("number_format")
-      .$type<{ decimal_places: number; group_thousands: boolean }>()
-      .notNull()
-      .default({ decimal_places: 2, group_thousands: true }),
-
-    coverPage: boolean("cover_page").notNull().default(true),
-
-    /**
-     * Default approver names keyed by the four roles in APPROVER_ROLES:
-     * `{ author, reviewer, approver, recipient }`. Nullable — a brand with no
-     * defaults leaves all four for per-profile entry.
-     */
-    defaultApproverNames: jsonb("default_approver_names").$type<
-      Record<string, string>
-    >(),
-
-    /** FK into a future confidentiality_notices table. Nullable for now. */
-    confidentialityNoticeId: text("confidentiality_notice_id"),
-
-    /**
-     * The confidentiality notice itself, as prose.
-     *
-     * Requirement 12.7 makes the notice Brand-owned and not editable per profile, and the
-     * glossary entry for Brand lists "confidentiality-notice text" among what it carries.
-     * That is text, not an id: the notice names the consultancy that owns the document
-     * ("...is owned by PT. Helios Informatika Nusantara..."), so no message-catalogue
-     * entry could express it — a catalogue holds fixed copy shared by every tenant.
-     *
-     * `confidentialityNoticeId` above stays for the catalogue-sourced notice it was always
-     * meant to reference. Nullable, and null means the document control page prints no
-     * confidentiality section at all rather than an empty heading.
-     */
-    confidentialityNotice: text("confidentiality_notice"),
-
-    createdAt: instant("created_at").notNull().defaultNow(),
-
-    updatedAt: instant("updated_at")
-      .notNull()
-      .defaultNow()
-      .$onUpdate(() => new Date()),
-  },
-  (table) => [
-    index("brands_user_id_idx").on(table.userId),
-    check(
-      "brands_name_ck",
-      sql`length(${table.name}) >= 1 AND length(${table.name}) <= 120`
-    ),
-  ]
-)
 
 // --- report_templates --------------------------------------------------------
 
@@ -814,13 +738,6 @@ export const reportTemplates = pgTable(
      * deleted starter is never resurrected (Requirement 10.7).
      */
     seededStarterKey: text("seeded_starter_key"),
-
-    /**
-     * The Brand this template references for its design values. Nullable:
-     * templates created before Brands existed carry no reference, and their
-     * published versions already have `definition.design` resolved inline.
-     */
-    brandId: text("brand_id").references(() => brands.id),
 
     createdAt: instant("created_at").notNull().defaultNow(),
 
@@ -1203,5 +1120,3 @@ export type NewReportVerification = typeof reportVerifications.$inferInsert
 export type SubscriptionScan = typeof subscriptionScans.$inferSelect
 export type NewSubscriptionScan = typeof subscriptionScans.$inferInsert
 
-export type Brand = typeof brands.$inferSelect
-export type NewBrand = typeof brands.$inferInsert

@@ -5,7 +5,6 @@ import type {
   ReportTemplate,
   ReportTemplateVersion,
   ReportVerification,
-  Brand,
   RunErrorCode,
   RunStatus,
   ScanStatus,

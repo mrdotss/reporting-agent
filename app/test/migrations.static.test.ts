@@ -628,6 +628,73 @@ function collectDrops(statement: Statement): readonly Dropped[] {
  * its definition changes, and failing that would make the guard wrong on
  * ordinary work.
  */
+/**
+ * The only drops this guard permits, each with the migration that makes it and the reason
+ * it is not the thing Req 22.8 forbids.
+ *
+ * ## Why an allowlist rather than an exemption
+ *
+ * The rule exists because `report_runs` and the rows around it are the audit trail for
+ * delivered documents, and a column that carried a delivered figure must still be there
+ * when someone replays the run that produced it. That reasoning is exactly as strong as it
+ * was; what it does not cover is an object no delivered report ever depended on.
+ *
+ * So the guard keeps failing on every drop, and an entry here is a **claim, recorded in
+ * the repository, that a specific object is outside the audit trail** — reviewable as a
+ * diff, and impossible to add by accident. It is not a switch: a drop of anything not
+ * named below still fails, and so does a drop named below appearing in a different
+ * migration than the one it was approved for.
+ *
+ * Adding an entry is a decision about the spec, not about the code. Both entries here were
+ * approved when the Brand feature was removed.
+ *
+ * They are two migrations rather than one because drizzle-kit generated one that cannot
+ * apply: `DROP TABLE "brands" CASCADE` followed by `ALTER TABLE "report_templates" DROP
+ * CONSTRAINT "report_templates_brand_id_brands_id_fk"`, a constraint the CASCADE has
+ * already taken with it, which Postgres refuses with `42704`. Dropping the column first
+ * and the table second is generated correctly at each step and applies in order. The
+ * integration suite is where that was found — the static guard reads the SQL, it does not
+ * run it.
+ */
+const PERMITTED_DROPS: readonly {
+  readonly migration: string
+  readonly kind: DroppedKind
+  readonly object: string
+  readonly why: string
+}[] = [
+  {
+    migration: "0013_drop_brands_table.sql",
+    kind: "table",
+    object: "brands",
+    why:
+      "A Brand held one visual identity for a whole consultancy. A profile turned out " +
+      "to be a per-customer engagement whose design is its own, so the feature was " +
+      "removed. No delivered report reads this table: `publishTemplateVersion` resolved " +
+      "a Brand into `definition.design` at save, so every pinned version already " +
+      "carries the values inline and replays from them.",
+  },
+  {
+    migration: "0012_drop_brand_id_from_report_templates.sql",
+    kind: "column",
+    object: "report_templates.brand_id",
+    why:
+      "The nullable FK into that table. It sits on an audit-trail table, which is why " +
+      "it is named here rather than waved through: it is a pointer to the design " +
+      "source, never a delivered figure, and the version rows that carry the figures " +
+      "have never referenced it.",
+  },
+]
+
+/** Whether this exact drop, in this exact migration, is one of the recorded few. */
+function isPermitted(violation: Violation): boolean {
+  return PERMITTED_DROPS.some(
+    (permitted) =>
+      permitted.migration === violation.migration &&
+      permitted.kind === violation.kind &&
+      permitted.object === violation.object
+  )
+}
+
 function auditMigrations(files: readonly MigrationFile[]): {
   readonly created: Created
   readonly violations: readonly Violation[]
@@ -653,12 +720,13 @@ function auditMigrations(files: readonly MigrationFile[]): {
             ? undefined
             : created.tables.get(dropped.table))
 
-        violations.push({
+        const violation: Violation = {
           ...dropped,
           migration: file.name,
           line: statement.line,
           ...(createdBy === undefined ? {} : { createdBy }),
-        })
+        }
+        if (!isPermitted(violation)) violations.push(violation)
       }
     }
 
@@ -974,6 +1042,122 @@ describe("Requirements 9.5, 36.8 — no committed migration removes anything", (
     // Formatted rather than raw, so a failure names the file, the line and the
     // migration that created the object instead of printing an object graph.
     expect(violations.map(formatViolation)).toEqual([])
+  })
+})
+
+describe("the recorded drops are recorded, not a hole", () => {
+  // An allowlist is only as good as its narrowness. These are the assertions that keep it
+  // from becoming the exemption it was chosen over.
+
+  test("every entry names a migration that exists and a drop that is really in it", () => {
+    // The failure this catches: a migration is regenerated under a new name, or its drop is
+    // edited out, and the entry stays behind — a permanently open permission for an object
+    // nothing is dropping any more, ready to wave through a future drop of the same name.
+    const files = new Map(readMigrationFiles().map((file) => [file.name, file]))
+
+    for (const permitted of PERMITTED_DROPS) {
+      const file = files.get(permitted.migration)
+      expect(
+        file,
+        `${permitted.migration} is allowlisted but is not a committed migration`
+      ).toBeDefined()
+
+      const dropped = scanStatements(file!.sql).flatMap((statement) =>
+        collectDrops(statement).map((drop) => `${drop.kind} ${drop.object}`)
+      )
+      expect(
+        dropped,
+        `${permitted.migration} does not drop ${permitted.kind} ${permitted.object}`
+      ).toContain(`${permitted.kind} ${permitted.object}`)
+    }
+  })
+
+  test("every entry says why, at length", () => {
+    // The entry IS the record. One that says "unused" documents nothing a reviewer could
+    // check, so the field is asserted to carry a real sentence rather than to be present.
+    for (const permitted of PERMITTED_DROPS) {
+      expect(permitted.why.length, permitted.object).toBeGreaterThan(80)
+    }
+  })
+
+  test("the same drop in a different migration is still a violation", () => {
+    // Scoped to the migration it was approved for. Otherwise approving one drop of
+    // `brands` approves every future drop of anything named `brands`.
+    //
+    // The creating migration is looked up rather than written down, here and below: which
+    // file first made an object is incidental to the property, and pinning it would make
+    // these fail on a renumbering that has nothing to do with the allowlist.
+    const { created } = auditMigrations(readMigrationFiles())
+    const { violations } = auditMigrations([
+      ...readMigrationFiles(),
+      { name: SYNTHETIC, sql: `DROP TABLE "brands";` },
+    ])
+    expect(violations.map(formatViolation)).toEqual([
+      `${SYNTHETIC}:1 drops table brands ` +
+        `(created by ${created.tables.get("brands")})`,
+    ])
+  })
+
+  test("a neighbouring drop in the allowlisted migration is still a violation", () => {
+    // The permission is per object, not per migration: `0012` may drop the two things
+    // named and nothing else.
+    const { created } = auditMigrations(readMigrationFiles())
+    const { violations } = auditMigrations([
+      ...readMigrationFiles(),
+      {
+        name: SYNTHETIC,
+        sql:
+          `DROP TABLE "brands";\n` +
+          `ALTER TABLE "report_templates" DROP COLUMN "seeded_starter_key";`,
+      },
+    ])
+    // Both, and that is the point: the `brands` drop is refused because it is in the wrong
+    // migration, the column drop because it is not an approved object at all.
+    expect(violations.map(formatViolation)).toEqual([
+      `${SYNTHETIC}:1 drops table brands ` +
+        `(created by ${created.tables.get("brands")})`,
+      `${SYNTHETIC}:2 drops column report_templates.seeded_starter_key ` +
+        `(created by ${created.columns.get("report_templates\u0000seeded_starter_key")})`,
+    ])
+  })
+
+  test("an unapproved drop inside the allowlisted migration is still a violation", () => {
+    // The narrowness the whole mechanism rests on, and the one the neighbouring-drop test
+    // above does not reach: that one uses a synthetic file name, so a permission widened
+    // from "these two objects in 0012" to "anything in 0012" would still pass it. This
+    // uses the allowlisted name itself.
+    const { created } = auditMigrations(readMigrationFiles())
+    const permitted = PERMITTED_DROPS[0].migration
+    const { violations } = auditMigrations([
+      ...readMigrationFiles(),
+      { name: permitted, sql: `DROP TABLE "sessions";\nDROP TYPE "run_status";` },
+    ])
+    expect(violations.map(formatViolation)).toEqual([
+      `${permitted}:1 drops table sessions (created by ${created.tables.get("sessions")})`,
+      `${permitted}:2 drops type run_status ` +
+        `(created by ${created.types.get("run_status")})`,
+    ])
+  })
+
+  test("a permitted object dropped as the wrong kind is still a violation", () => {
+    // `brands` is approved as a table. A column called `brands` on some table, or a type,
+    // is a different object that happens to share a name.
+    const permitted = PERMITTED_DROPS[0].migration
+    const { violations } = auditMigrations([
+      ...readMigrationFiles(),
+      { name: permitted, sql: `DROP TYPE "brands";` },
+    ])
+    expect(violations.map(formatViolation)).toEqual([
+      `${permitted}:1 drops type brands (no earlier migration created it, and a ` +
+        `generated migration has no additive reason to drop one)`,
+    ])
+  })
+
+  test("the audit trail itself is not reachable through the allowlist", () => {
+    // The rule's whole reason. Nothing on `report_runs` is or may be permitted.
+    for (const permitted of PERMITTED_DROPS) {
+      expect(permitted.object.startsWith("report_runs")).toBe(false)
+    }
   })
 })
 

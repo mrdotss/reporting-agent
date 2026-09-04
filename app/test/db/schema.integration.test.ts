@@ -129,8 +129,11 @@ describe("the migration applies", () => {
       [db.schemaName]
     )
 
+    // `brands` is absent because 0012 drops it — the one table this spec's additive rule
+    // has an entry for in `PERMITTED_DROPS`. A scratch schema built from every committed
+    // migration is the only place that drop is actually executed, so this list is the
+    // check that it runs cleanly rather than erroring on a dependent object.
     expect(result.rows.map(({ tablename }) => tablename)).toEqual([
-      "brands",
       "connected_subscriptions",
       "login_attempts",
       "report_profile_authored_matches",
