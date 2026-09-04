@@ -62,10 +62,13 @@ function readCover(frontMatter: unknown): CoverFormValues {
     // saved before this control existed keeps the cover it was delivering.
     enabled: c.enabled === undefined ? true : c.enabled === true,
     logo: typeof c.logo === "string" ? c.logo : null,
+    background: typeof c.background === "string" ? c.background : null,
     contact_block: typeof c.contact_block === "string" ? c.contact_block : null,
     subtitle: typeof c.subtitle === "string" ? c.subtitle : null,
     // Read only. The save path writes it; the form shows whether it is there.
     logo_key: typeof c.logo_key === "string" ? c.logo_key : null,
+    background_key:
+      typeof c.background_key === "string" ? c.background_key : null,
   }
 }
 
@@ -154,9 +157,17 @@ function toWire(values: FrontMatterFormValues): Record<string, unknown> {
   // already says — and change the digest of a profile nobody edited.
   if (!values.cover.enabled) cover.enabled = false
   if (values.cover.logo) cover.logo = values.cover.logo
-  // `logo_key` is deliberately not carried through: the save path re-resolves it from
-  // `logo`, reusing the previous version's key when the URL has not changed. Writing the
-  // form's copy back would let a stale key outlive the URL it was fetched from.
+  // Carried through so the form keeps saying whether the last save could read the URL.
+  // Dropping it here made the warning appear the moment anything on the page was edited,
+  // because the draft the form re-reads had lost the key the stored version has.
+  //
+  // Safe to carry because the save path owns it either way: an unchanged URL reuses the
+  // **stored** version's key, a changed one refetches, and a refetch that fails strips
+  // the key rather than leaving one that came from a different address.
+  if (values.cover.logo_key) cover.logo_key = values.cover.logo_key
+  if (values.cover.background) cover.background = values.cover.background
+  if (values.cover.background_key)
+    cover.background_key = values.cover.background_key
   if (values.cover.contact_block)
     cover.contact_block = values.cover.contact_block
   if (values.cover.subtitle) cover.subtitle = values.cover.subtitle

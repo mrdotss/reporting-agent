@@ -1680,7 +1680,22 @@ _TOC_MAX_LEVEL: Final[int] = 4
 A table of contents asking for level 5 would collect headings the themes cannot style."""
 
 _COVER_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
-    {"logo", "logo_key", "contact_block", "subtitle"}
+    {
+        # Whether the cover is printed at all. Absent means printed, so a definition
+        # saved before the wizard had a toggle keeps the cover it was delivering, and
+        # only `false` is ever written.
+        "enabled",
+        "logo",
+        "logo_key",
+        # The full-bleed image the cover's text sits on, and the stored object its bytes
+        # were fetched into. A separate picture from the logo with a separate ceiling —
+        # a mark a few centimetres wide against a photograph covering an A4 page — and a
+        # cover may carry either, both or neither.
+        "background",
+        "background_key",
+        "contact_block",
+        "subtitle",
+    }
 )
 _DOCUMENT_CONTROL_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
     {
@@ -1796,7 +1811,12 @@ def _validate_cover(cover: object, path: Path, walk: _Walk) -> None:
         if key not in _COVER_ALLOWED_KEYS:
             walk.add((*path, key), f'Unrecognized cover field "{key}".')
 
+    if "enabled" in cover and not _is_boolean(cover.get("enabled")):
+        walk.add((*path, "enabled"), "cover.enabled must be a boolean.")
+
     _optional_bounded_string(cover, "logo", path, walk, LOGO_MAX_LENGTH)
+    _optional_bounded_string(cover, "background", path, walk, LOGO_MAX_LENGTH)
+    _optional_bounded_string(cover, "background_key", path, walk, LOGO_MAX_LENGTH)
     # The stored object the logo's bytes live at, written by the app when it resolves
     # `logo` once at version-save time. A key, never a URL and never the bytes — the same
     # separation `signature_key` draws, and for the same reason: the runtime reads its own

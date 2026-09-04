@@ -1246,3 +1246,123 @@ class TestTheRevisionHistoryPublishesADate:
         # And nothing invented from an absent or unusable instant.
         assert _published_date("") == ""
         assert _published_date("not-a-date") == ""
+
+
+class TestTheCoverBackground:
+    """The cover's full-bleed image — a different picture from the logo.
+
+    The logo is a mark a few centimetres wide; this covers the page. They were one field
+    for a while, which is why a 2.39 MB photograph was refused for exceeding a ceiling
+    written for a mark. Separate URLs, separate keys, separate ceilings, and a cover may
+    carry either, both or neither.
+    """
+
+    PNG = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+        "IQAAAABJRU5ErkJggg=="
+    )
+
+    def _sections(self, **cover) -> tuple:
+        return front_matter_sections(
+            front_matter=FrontMatterConfig(
+                cover=CoverConfig(enabled=True, **cover),
+                document_control=DocumentControlConfig(document_name="R"),
+            ),
+            run=_run(),
+            messages=_messages(),
+        )
+
+    def _backgrounds(self, sections) -> list:
+        from reporting_agent.render.front_matter import FrontMatterBackground
+
+        return [s for s in sections if isinstance(s, FrontMatterBackground)]
+
+    def test_the_bytes_reach_the_section(self) -> None:
+        sections = self._sections(
+            background="https://cdn.example/cover.png",
+            background_key="alice/logos/bg.png",
+            background_image=self.PNG,
+        )
+
+        assert [s.image for s in self._backgrounds(sections)] == [self.PNG]
+
+    def test_a_url_the_run_could_not_read_emits_nothing(self) -> None:
+        """Unlike the logo, there is no space to reserve: a picture that covers the page
+        either covers it or is absent."""
+        sections = self._sections(
+            background="https://cdn.example/cover.png", background_key="alice/logos/bg.png"
+        )
+
+        assert self._backgrounds(sections) == []
+
+    def test_a_cover_may_carry_a_background_and_no_logo(self) -> None:
+        from reporting_agent.render.front_matter import FrontMatterLogo
+
+        sections = self._sections(background_image=self.PNG)
+
+        assert len(self._backgrounds(sections)) == 1
+        assert [s for s in sections if isinstance(s, FrontMatterLogo)] == []
+
+    def test_a_cover_may_carry_a_logo_and_no_background(self) -> None:
+        from reporting_agent.render.front_matter import FrontMatterLogo
+
+        sections = self._sections(logo="https://cdn.example/logo.png", logo_image=self.PNG)
+
+        assert self._backgrounds(sections) == []
+        assert len([s for s in sections if isinstance(s, FrontMatterLogo)]) == 1
+
+    def test_the_docx_anchors_it_behind_the_page(self) -> None:
+        """`<wp:inline>` flows in the text and pushes everything below it down the page —
+        the opposite of a background. Word's model for behind-the-text is an anchor
+        positioned relative to the page, which python-docx does not expose."""
+        from reporting_agent.render.front_matter import (
+            FrontMatterBackground,
+            _emit_section,
+        )
+
+        document = load_theme("editorial")
+        _emit_section(document, FrontMatterBackground(image=self.PNG))
+        xml = document.element.xml
+
+        assert "wp:anchor" in xml
+        assert 'behindDoc="1"' in xml
+        # Both axes relative to the **page**, so it starts at the paper's corner rather
+        # than at the text block's.
+        assert xml.count('relativeFrom="page"') == 2
+        assert "wp:inline" not in xml, "an inline picture is not a background"
+
+    def test_the_docx_fills_the_whole_page(self) -> None:
+        """A background that stops at the margins is a picture with a white frame."""
+        from reporting_agent.render.front_matter import (
+            FrontMatterBackground,
+            _emit_section,
+        )
+
+        document = load_theme("editorial")
+        section = document.sections[0]
+        _emit_section(document, FrontMatterBackground(image=self.PNG))
+
+        xml = document.element.xml
+        width, height = int(section.page_width), int(section.page_height)
+
+        # The anchor's own extent, which is the box Word reserves on the page…
+        assert f'<wp:extent cx="{width}" cy="{height}"/>' in xml
+        # …and the picture's, which is what it is actually scaled to. Asserting only the
+        # first passes against a picture added at its natural size and stretched by
+        # nothing, which is a one-pixel PNG in the corner of an otherwise blank cover.
+        assert f'<a:ext cx="{width}" cy="{height}"/>' in xml
+
+    def test_the_reading_copy_paints_the_first_page_and_makes_no_request(self) -> None:
+        from reporting_agent.render.front_matter import FrontMatterBackground
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html([FrontMatterBackground(image=self.PNG)])
+
+        # `@page :first`, not a `<div>`: a box's background stops at the margins, and a
+        # browser with no paged media ignores this — which is why the in-app preview shows
+        # the cover without it and is not wrong to.
+        assert "@page :first" in markup
+        assert "background-size: cover" in markup
+        expected = base64.b64encode(self.PNG).decode("ascii")
+        assert f"data:image/png;base64,{expected}" in markup
+        assert "http://" not in markup and "https://" not in markup

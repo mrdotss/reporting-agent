@@ -30,7 +30,15 @@ import { APPROVER_ROLES } from "@/lib/templates/definition"
 
 function defaultValues(): FrontMatterFormValues {
   return {
-    cover: { enabled: true, logo: null, contact_block: null, subtitle: null, logo_key: null },
+    cover: {
+      enabled: true,
+      logo: null,
+      background: null,
+      contact_block: null,
+      subtitle: null,
+      logo_key: null,
+      background_key: null,
+    },
     document_control: {
       document_name: null,
       document_number_pattern: null,

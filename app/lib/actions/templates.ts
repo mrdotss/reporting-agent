@@ -271,6 +271,8 @@ export async function publishTemplateVersion(
 function coverOf(definition: unknown): {
   readonly logo?: string | null
   readonly logoKey?: string | null
+  readonly background?: string | null
+  readonly backgroundKey?: string | null
 } {
   if (definition === null || typeof definition !== "object") return {}
   const front = (definition as Record<string, unknown>)["front_matter"]
@@ -281,6 +283,12 @@ function coverOf(definition: unknown): {
   return {
     logo: typeof record["logo"] === "string" ? record["logo"] : null,
     logoKey: typeof record["logo_key"] === "string" ? record["logo_key"] : null,
+    background:
+      typeof record["background"] === "string" ? record["background"] : null,
+    backgroundKey:
+      typeof record["background_key"] === "string"
+        ? record["background_key"]
+        : null,
   }
 }
 

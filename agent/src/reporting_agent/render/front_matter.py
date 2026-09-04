@@ -51,7 +51,8 @@ from typing import Final
 
 from docx.document import Document as DocxDocument
 from docx.enum.text import WD_BREAK
-from docx.oxml.ns import qn
+from docx.oxml import parse_xml
+from docx.oxml.ns import nsdecls, qn
 from docx.shared import Pt
 
 from reporting_agent.compile.definition import (
@@ -64,6 +65,7 @@ __all__ = [
     "front_matter_sections",
     "ContentsEntry",
     "FrontMatterSection",
+    "FrontMatterBackground",
     "FrontMatterPairs",
     "FrontMatterPageBreak",
     "FrontMatterLogo",
@@ -217,6 +219,18 @@ class CoverConfig:
 
     logo_image: bytes | None = None
     """The bytes at :attr:`logo_key`, where this run could read them."""
+
+    background: str | None = None
+    background_key: str | None = None
+    """The full-bleed image the cover's text sits on, and the stored object its bytes were
+    fetched into.
+
+    A different picture from the logo with a different job — the logo is a mark a few
+    centimetres wide, this covers the page — so it carries its own URL, its own key and
+    its own byte ceiling. A cover may have either, both or neither."""
+
+    background_image: bytes | None = None
+    """The bytes at :attr:`background_key`, where this run could read them."""
     contact_block: str | None = None
     subtitle: str | None = None
 
@@ -389,6 +403,22 @@ class FrontMatterNote:
 
 
 @dataclass(frozen=True, slots=True)
+class FrontMatterBackground:
+    """The cover's full-bleed image, behind everything else on the page.
+
+    Emitted as its own section kind rather than as a field on the logo, because the two
+    are independent: a cover may carry either, both or neither, and a background with no
+    logo must still reach both emitters. `test_front_matter_sections.py` asserts every
+    declared kind is produced and that both emitters render it, which is what keeps a kind
+    added for one from going missing from the other.
+    """
+
+    image: bytes
+    """The bytes themselves. A background with none is not emitted at all — there is no
+    space to reserve for a picture that covers the page."""
+
+
+@dataclass(frozen=True, slots=True)
 class FrontMatterLogo:
     """Reserved space at the top of the cover, where a logo goes.
 
@@ -466,6 +496,7 @@ FrontMatterSection = (
     | FrontMatterGrid
     | FrontMatterNote
     | FrontMatterLogo
+    | FrontMatterBackground
     | FrontMatterContents
     | FrontMatterPageBreak
 )
@@ -626,6 +657,13 @@ def front_matter_sections(
 
     # --- cover (Req 13.4, 13.9) ----------------------------------------------
     if front_matter.cover.enabled:
+        # Behind everything, first, so both emitters meet it before the content it sits
+        # under — the docx anchors it to the first paragraph of the page, and the print
+        # stylesheet paints it as the first page's own background.
+        if front_matter.cover.background_image:
+            sections.append(
+                FrontMatterBackground(image=front_matter.cover.background_image)
+            )
         # The logo's space, above everything, as `ReportA.dc.html` opens its cover.
         if front_matter.cover.logo:
             sections.append(
@@ -881,6 +919,9 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
 
     elif isinstance(section, FrontMatterNote):
         document.add_paragraph(section.text, style=section.style)
+
+    elif isinstance(section, FrontMatterBackground):
+        _place_cover_background(document, section.image)
 
     elif isinstance(section, FrontMatterLogo):
         # The logo, or the space it will occupy. No border and no placeholder text: an
@@ -1190,6 +1231,60 @@ def _contents_entries(
             zip(heading_entries, numbers, strict=True), start=1
         )
     )
+
+
+
+def _place_cover_background(document: DocxDocument, image: bytes) -> None:
+    """Anchor `image` behind the cover, filling the page.
+
+    python-docx emits a picture as `<wp:inline>`, which flows in the text and pushes
+    everything below it down the page — the opposite of a background. Word's own model for
+    "behind the text" is `<wp:anchor behindDoc="1">` positioned relative to the **page**,
+    which python-docx does not expose, so the inline element it builds is rewritten into
+    an anchor here. The graphic itself, and the relationship to the image part, are
+    python-docx's; only the wrapper changes.
+
+    Sized to the section's full page rather than to its text width, because a background
+    that stops at the margins is a picture with a white frame. Anchored to a paragraph in
+    the body rather than to a header: a header picture repeats on every page of the
+    section, and this belongs to the cover alone.
+    """
+    section = document.sections[0]
+    width = section.page_width
+    height = section.page_height
+    if width is None or height is None:  # pragma: no cover - a theme always sets both
+        return
+
+    paragraph = document.add_paragraph()
+    paragraph.paragraph_format.space_after = Pt(0)
+    run = paragraph.add_run()
+    run.add_picture(io.BytesIO(image), width=width, height=height)
+
+    drawing = run._r.find(qn("w:drawing"))
+    inline = drawing[0]
+    graphic = inline.find(qn("a:graphic"))
+    doc_pr = inline.find(qn("wp:docPr"))
+
+    anchor = parse_xml(
+        f'''<wp:anchor {nsdecls("wp", "a", "r")}
+              behindDoc="1" distT="0" distB="0" distL="0" distR="0"
+              simplePos="0" locked="0" layoutInCell="1" allowOverlap="1"
+              relativeHeight="0">
+             <wp:simplePos x="0" y="0"/>
+             <wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>
+             <wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>
+             <wp:extent cx="{int(width)}" cy="{int(height)}"/>
+             <wp:effectExtent l="0" t="0" r="0" b="0"/>
+             <wp:wrapNone/>
+           </wp:anchor>'''
+    )
+    if doc_pr is not None:
+        anchor.append(doc_pr)
+    if graphic is not None:
+        anchor.append(graphic)
+
+    drawing.remove(inline)
+    drawing.append(anchor)
 
 
 def _confidentiality_notice(

@@ -37,6 +37,15 @@ import {
  * both end up as an image in the same document, drawn by the same renderer. */
 export const LOGO_MAX_BYTES = SIGNATURE_MAX_BYTES
 
+/**
+ * The ceiling for the cover's **background** image, which is a different picture with a
+ * different job: the logo is a mark a few centimetres wide, the background covers a whole
+ * A4 page and is a photograph. 2 MB is generous for the first and refuses the second — the
+ * cover image that started this was 2.39 MB, and refusing it was correct only because it
+ * was being submitted as a logo.
+ */
+export const COVER_BACKGROUND_MAX_BYTES = 5 * 1024 * 1024
+
 /** How long the fetch may take before the save proceeds without it.
  *
  * It was 5s, which a 10 KB PNG over a cold TLS connection reached — measured at exactly
@@ -63,7 +72,8 @@ export type LogoResolution =
  */
 export async function resolveLogo(
   url: string,
-  userId: string
+  userId: string,
+  maxBytes: number = LOGO_MAX_BYTES
 ): Promise<LogoResolution> {
   let parsed: URL
   try {
@@ -90,10 +100,10 @@ export async function resolveLogo(
     return { ok: false, reason: `the logo URL could not be read (${detail})` }
   }
 
-  if (bytes.byteLength > LOGO_MAX_BYTES) {
+  if (bytes.byteLength > maxBytes) {
     return {
       ok: false,
-      reason: `the logo is larger than the ${LOGO_MAX_BYTES}-byte ceiling`,
+      reason: `the image is larger than the ${maxBytes}-byte ceiling`,
     }
   }
 
@@ -119,47 +129,81 @@ export async function resolveLogo(
  * image five times, and a version whose logo is unchanged should keep showing
  * the identical bytes.
  */
+/**
+ * The two images a cover can carry, each resolved the same way and each with its own
+ * ceiling. They are separate pictures with separate jobs: the logo is the mark at the top,
+ * the background is the full-bleed image the mark sits on, and a cover may have either,
+ * both or neither.
+ */
+const COVER_IMAGES = [
+  { url: "logo", key: "logo_key", maxBytes: LOGO_MAX_BYTES },
+  {
+    url: "background",
+    key: "background_key",
+    maxBytes: COVER_BACKGROUND_MAX_BYTES,
+  },
+] as const
+
 export async function resolveLogoIntoDefinition(
   definition: Record<string, unknown>,
   userId: string,
-  previous: { readonly logo?: string | null; readonly logoKey?: string | null }
+  previous: {
+    readonly logo?: string | null
+    readonly logoKey?: string | null
+    readonly background?: string | null
+    readonly backgroundKey?: string | null
+  }
 ): Promise<Record<string, unknown>> {
   const front = definition["front_matter"]
   if (front === null || typeof front !== "object") return definition
   const frontMatter = front as Record<string, unknown>
   const cover = frontMatter["cover"]
   if (cover === null || typeof cover !== "object") return definition
-  const coverRecord = cover as Record<string, unknown>
 
-  const url = coverRecord["logo"]
-  if (typeof url !== "string" || url.trim() === "") return definition
+  let resolvedCover = cover as Record<string, unknown>
+  let changed = false
 
-  if (previous.logo === url && typeof previous.logoKey === "string") {
-    return withLogoKey(definition, frontMatter, coverRecord, previous.logoKey)
+  for (const image of COVER_IMAGES) {
+    const url = resolvedCover[image.url]
+    if (typeof url !== "string" || url.trim() === "") continue
+
+    const previousUrl =
+      image.url === "logo" ? previous.logo : previous.background
+    const previousKey =
+      image.url === "logo" ? previous.logoKey : previous.backgroundKey
+
+    // The same URL as the stored version's means the same bytes: five saves of one
+    // profile are not five fetches and five stored copies, and a version whose image did
+    // not change keeps showing the identical picture.
+    if (previousUrl === url && typeof previousKey === "string") {
+      resolvedCover = { ...resolvedCover, [image.key]: previousKey }
+      changed = true
+      continue
+    }
+
+    const resolved = await resolveLogo(url, userId, image.maxBytes)
+    const next = { ...resolvedCover }
+    if (resolved.ok) {
+      next[image.key] = resolved.key
+    } else {
+      console.warn(
+        `[templates] the cover ${image.url} was not stored, so the cover is drawn ` +
+          `without it: ${resolved.reason}`
+      )
+      // The key that was there goes, rather than surviving into a version whose URL it
+      // no longer came from. The wizard round-trips it so the form can say whether the
+      // last save could read the URL, and a failed refetch that left it in place would
+      // draw the *previous* image under the new address.
+      delete next[image.key]
+    }
+    resolvedCover = next
+    changed = true
   }
 
-  const resolved = await resolveLogo(url, userId)
-  if (!resolved.ok) {
-    console.warn(
-      `[templates] the cover logo was not stored, so the cover reserves its ` +
-        `space and draws nothing: ${resolved.reason}`
-    )
-    return definition
-  }
-  return withLogoKey(definition, frontMatter, coverRecord, resolved.key)
-}
-
-function withLogoKey(
-  definition: Record<string, unknown>,
-  frontMatter: Record<string, unknown>,
-  cover: Record<string, unknown>,
-  key: string
-): Record<string, unknown> {
+  if (!changed) return definition
   return {
     ...definition,
-    front_matter: {
-      ...frontMatter,
-      cover: { ...cover, logo_key: key },
-    },
+    front_matter: { ...frontMatter, cover: resolvedCover },
   }
 }
+

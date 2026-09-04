@@ -1041,7 +1041,14 @@ export const APPROVER_NAME_MAX_LENGTH = 120
 export const APPROVER_TITLE_MAX_LENGTH = 120
 
 const COVER_ALLOWED_KEYS = [
+  "enabled",
   "logo",
+  // The full-bleed image the cover's text sits on, and the stored object its bytes were
+  // fetched into. A separate picture from the logo with a separate ceiling — a mark a few
+  // centimetres wide against a photograph covering an A4 page — and a cover may carry
+  // either, both or neither.
+  "background",
+  "background_key",
   // The stored object the logo's bytes live at, written when a version is saved by
   // resolving `logo` once. A key, never a URL and never the bytes — the same separation
   // `signature_key` draws, so the runtime reads its own bucket and never issues a request
@@ -1206,8 +1213,16 @@ function validateCover(
     }
   }
 
+  // Absent means printed, so a definition saved before the toggle existed keeps the cover
+  // it was delivering. Only `false` is ever written.
+  if ("enabled" in cover && !isBoolean(cover.enabled)) {
+    addIssue(issues, [...path, "enabled"], "cover.enabled must be a boolean.")
+  }
+
   optionalBoundedString(cover, "logo", path, issues, LOGO_MAX_LENGTH)
   optionalBoundedString(cover, "logo_key", path, issues, LOGO_MAX_LENGTH)
+  optionalBoundedString(cover, "background", path, issues, LOGO_MAX_LENGTH)
+  optionalBoundedString(cover, "background_key", path, issues, LOGO_MAX_LENGTH)
   optionalBoundedString(
     cover,
     "contact_block",
