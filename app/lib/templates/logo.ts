@@ -37,8 +37,14 @@ import {
  * both end up as an image in the same document, drawn by the same renderer. */
 export const LOGO_MAX_BYTES = SIGNATURE_MAX_BYTES
 
-/** How long the fetch may take before the save proceeds without it. */
-export const LOGO_FETCH_TIMEOUT_MS = 5_000
+/** How long the fetch may take before the save proceeds without it.
+ *
+ * It was 5s, which a 10 KB PNG over a cold TLS connection reached — measured at exactly
+ * 5.00s from this network, so the budget, not the host, was what failed. A save is a
+ * user-initiated action that already does database work; 15s is a defensible ceiling for
+ * one image fetch that fails open, and it is still short enough that a hung host does not
+ * hold the save. */
+export const LOGO_FETCH_TIMEOUT_MS = 15_000
 
 /** Only these. A URL naming any other scheme is never requested — `file:` and
  * `gopher:` are not oversights to be caught downstream, and a redirect chain is

@@ -30,11 +30,12 @@ import { APPROVER_ROLES } from "@/lib/templates/definition"
 
 function defaultValues(): FrontMatterFormValues {
   return {
-    cover: { logo: null, contact_block: null, subtitle: null },
+    cover: { enabled: true, logo: null, contact_block: null, subtitle: null, logo_key: null },
     document_control: {
       document_name: null,
       document_number_pattern: null,
       confidentiality_notice_id: null,
+    confidentiality_notice: null,
       distribution: [],
       approvers: [],
     },

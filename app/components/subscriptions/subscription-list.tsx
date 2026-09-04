@@ -12,6 +12,7 @@ import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-ban
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { ProviderMark } from "@/components/subscriptions/provider-mark"
 import type { ConnectedSubscriptionView } from "@/lib/db/views"
 import {
   resolveSubscriptionState,
@@ -238,7 +239,18 @@ export function SubscriptionList({
               className="rounded-xl border border-border shadow-none ring-0"
             >
               <CardHeader>
-                <CardTitle>{view.displayName}</CardTitle>
+                {/*
+                  The source's mark beside its name. Every connection is Azure today —
+                  the picker marks AWS and on-premises visible and unclickable — so this
+                  is a constant rather than a column read. It is drawn per row anyway,
+                  because the row is where a mixed list would need it and a mark added
+                  later to a list that never had one is a layout change on every row.
+                  When a second provider lands, this reads the connection's own field.
+                */}
+                <div className="flex items-center gap-2.5">
+                  <ProviderMark kind="azure" />
+                  <CardTitle>{view.displayName}</CardTitle>
+                </div>
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant={badge.variant}>{badge.label}</Badge>
