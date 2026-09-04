@@ -84,14 +84,20 @@ not.
   at subscription scope**, client credentials stored encrypted. The wizard states
   which role and **why**, because customers push back on Reader. Preflight proves
   subscription-scope read before the connection is accepted.
-- **Report builder** — an in-app **drag/drop builder** over a palette of **typed,
-  professionally designed blocks** (KPI row, resource table, top-N table,
-  time-series chart, capacity vs usage, gaps and coverage, verification record,
-  methodology appendix, …), arranged as vertical flow plus 2–3 column rows, on one of
-  **four curated style presets**. Each block carries its own data scope, so a single
-  report can hold "Top 10 VMs by CPU" and "all Storage Accounts by used capacity"
-  side by side. Templates are **versioned and immutable once used**, and three
-  starter templates ship so the builder is never a blank page.
+- **Report profiles** — a per-customer engagement, not a reusable design: that
+  customer's name, their subscription, their sections, their document numbering.
+
+  At `schema_version` 3 a profile is composed from an **offerable section catalogue**
+  (`agent/src/reporting_agent/catalog/sections.v1.json`, 15 Azure sections) rather than
+  assembled block by block. A section declares what it needs and how it expands into
+  blocks drawn from 19 registered types; the wizard chooses sections, their scope and
+  their metrics, and shows an **estimate of what each will emit** before a run costs
+  anything. The block builder still exists for v1/v2 definitions and the two schemas
+  compile through the same pipeline.
+
+  Profiles are **versioned and immutable once used**, and a version carries its design
+  inline rather than pointing at a Brand — so editing a Brand changes the next report
+  and never one already delivered.
 
   **Why composing beats authoring.** Because the user assembles vetted blocks rather
   than writing a document, **every template produces a professional artifact *and*
@@ -106,8 +112,16 @@ not.
 
   So: **no `.docx` upload, no `docxtpl`, no user-facing template language.** A
   template is a versioned JSON definition compiled to a typed AST.
-- **Report run** — pick subscription + period + template → deterministic pipeline
-  → `.docx` + `.pdf` in S3 → download card. Watch the live activity timeline.
+- **Report run** — pick subscription + period + profile → deterministic pipeline
+  → three artifacts in S3 → download card. Watch the live activity timeline.
+
+  The three are one document, not three formats to choose between: `report.docx` is
+  the deliverable, `report.pdf` is LibreOffice's conversion of it and the one the
+  `pdf` gate proves, and `report-styled.pdf` is a **reading copy** rendered from the
+  same AST through HTML and a print stylesheet. The reading copy carries presentation
+  the `.docx` cannot express — numbered contents entries with measured page numbers —
+  and is gated but non-blocking: a reading copy that fails its checks is withheld while
+  the `.docx` and its PDF still deliver.
 - **Verification surface** — every report shows its verification result: figure
   count, coverage, fidelity tier per resource, and every recorded gap. Verification
   is a first-class UI object, not a log line.

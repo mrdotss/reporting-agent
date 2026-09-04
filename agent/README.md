@@ -1,11 +1,16 @@
 # `agent/` — the reporting runtime
 
-The deterministic collector that runs on **Bedrock AgentCore Runtime**. It owns every
-Azure call, the collector, the snapshot builder and the object-store writes. No module
-in this package calls a model, and no numeric it produces comes from one.
+The deterministic pipeline that runs on **Bedrock AgentCore Runtime**. It owns every
+Azure call, the snapshot builder, the compiler, both document renderers, the verifier
+and the object-store writes. No module in this package calls a model for a number, and
+no numeric it produces comes from one.
 
-`app/` orchestrates, authorizes and displays. `agent/` collects and proves. If a figure
-is being calculated in `app/`, the layering is wrong.
+`app/` orchestrates, authorizes and displays. `agent/` collects, renders and proves. If
+a figure is being calculated in `app/`, the layering is wrong.
+
+It reaches Postgres never — state travels back to the app as short HMAC-signed progress
+callbacks, and those are what the run's status actually is. See the
+[project README](../README.md) for the topology.
 
 ## Requirements
 
@@ -70,6 +75,154 @@ The hypothesis profile lives in `tests/conftest.py` and is loaded by default:
 `max_examples=100`, `deadline=None`, `print_blob=True`. `HealthCheck.filter_too_much`
 and `HealthCheck.data_too_large` are never suppressed — a property that filters away
 most of its generated input must fail rather than pass on what survived.
+
+## The five commands
+
+`main.py` is a command router, not an agent. A payload without a recognised `command`
+is a terminal `UNSUPPORTED_COMMAND`, never something to hand to a model.
+
+| command | what it does | model? |
+|---|---|---|
+| `generate_report` | collect → compile → render → verify, the whole run | prose only, twice |
+| `verify_report` | recompile a **stored** report and re-run every gate | no |
+| `preflight` | prove a credential and a scope before a run is enqueued | no |
+| `render_preview` | compile and render a profile against a scan, no delivery | no |
+| `list_inventory` | the estate a scope resolves to, for the wizard | no |
+
+`verify_report` is the one worth understanding. It reads the stored snapshot and the
+pinned definition, recompiles, and requires the figure ledger to come out
+**byte-identical** — `formatted` strings included. That is what makes a delivered
+report provable again a year later, and it is also the constraint that governs what
+may change in this codebase: any change to how a value becomes a string breaks
+re-verification for every report already delivered. See `compile/format.py`'s
+`NumberFormat.trim_trailing_zeros` for how a presentation change ships anyway — pinned
+into the version that used it, defaulting to the old behaviour for versions that
+predate it.
+
+## The pipeline, phase by phase
+
+### Collect — `collect/`
+
+One `SnapshotDocument`, immutable, content-addressed. Every value is a
+fixed-precision decimal string; the whole document is canonicalized RFC 8785 and
+hashed. Every response is archived to S3 in the same pass, which is the only reason
+`replay` can exist.
+
+Aggregation correctness is `azure-integration.md`'s territory and the constraints
+there are binding: `avg` is **count-weighted** and never the mean of interval
+averages; percentiles do not roll up and are estimated from a `FixedHistogram` with
+an estimator label attached; the base grain is `PT1H` because `P1D` buckets are
+UTC-aligned and the customer is not.
+
+A value that could not be collected is a **recorded gap**, never a zero. That
+distinction is the difference between "this machine was idle" and "we did not
+measure this machine", and a document that confuses them is the thing this product
+exists to prevent.
+
+### Compile — `compile/` and `catalog/`
+
+The snapshot plus the pinned definition become a typed document AST. Sections are not
+written in code: `catalog/sections.v1.json` declares 15 Azure sections, each expanding
+into blocks drawn from 19 registered types.
+
+```jsonc
+{
+  "key": "network_security_groups",
+  "needs_resource_types": ["Microsoft.Network/networkSecurityGroups"],
+  "expands_to": [
+    { "block": "heading", "per": "section", "config": { "level": 2 } },
+    { "block": "heading", "per": "resource", "config": { "level": 3 } },
+    { "block": "heading", "per": "resource",
+      "config": { "level": 4, "title_id": "doc.section.nsg.inbound",
+                  "repeats_per_resource": true } },
+    { "block": "resource_table", "per": "resource",
+      "config": { "_scope": "children",
+                  "filter_fact": "direction", "filter_value": "Inbound",
+                  "empty_message_id": "doc.section.nsg.no_rules",
+                  "columns": [ /* … */ ] } }
+  ]
+}
+```
+
+`per: "resource"` emits one block per resolved resource, **resource-major** so a
+group's heading is followed by its own tables rather than by every other group's.
+The config keys that steer a block:
+
+| key | what it does |
+|---|---|
+| `_resource_id` | written per run by the expander; the resource this block is *for* |
+| `_scope: "children"` | resolve that resource's **children** — a group's rules, a network's subnets — by id prefix |
+| `_types` | resolve a different resource type than the section's: 4.2 lists network interfaces, 4.3 lists disks |
+| `filter_fact` / `filter_value` | narrow to the resources whose named fact holds a value, case-insensitively |
+| `empty_message_id` | what an empty result *means*, when "no resources matched this scope" would be wrong |
+| `repeats_per_resource` | a fixed label under each resource, which the untitled-heading guard otherwise refuses |
+| `metrics_from: "order_by_metric"` | plot the ranking metric alone, leaving the rest to the summary table |
+
+The underscored keys are written per run from the live snapshot and never reach a
+stored definition; the rest are ordinary catalogue configuration and do.
+
+`catalog/facts.v1.json` declares what can be read off each resource type. Two rules
+there have bitten before and are worth stating:
+
+- **One fact key is one projection**, across every *first-class* type, because
+  `inventory_query` emits `fact_<key> = <projection>` into a single `project` clause
+  and naming a column twice fails the whole query. A child type is exempt — it is
+  projected by its own `mv-expand` query and shares no column — which is what lets a
+  network interface declare `subnet` alongside the subnet type's own.
+- **`_non_child_projections` excludes by owning type, not by key.** Excluding by key
+  dropped both projections the moment a first-class type declared a key a child type
+  already had, and the column went silently empty.
+
+### Render — `render/`
+
+Three artifacts from one AST:
+
+| artifact | emitter | gated |
+|---|---|---|
+| `report.docx` | `render/docx.py` — python-docx against a **styles-only** theme | every gate |
+| `report.pdf` | LibreOffice's conversion of the `.docx` | the `pdf` gate |
+| `report-styled.pdf` | `render/html.py` + `render/printcss.py` through WeasyPrint | gated, non-blocking |
+
+Two emitters over one AST instance, never two layouts. `render/front_matter.py` is the
+same idea for the cover, document control page and contents: one description, both
+emitters, so a section kind added for one cannot go missing from the other — a test
+asserts exactly that.
+
+The reading copy is where presentation the `.docx` cannot express lives: section
+numbering in the contents, anchors, and page numbers resolved by
+`target-counter(attr(href), page)` at pagination time. Those numbers deliberately do
+**not** reach the `.docx`, because `verify/allowlist.py` derives the document's numeric
+chrome from a null-context render, and a section that expands per resource emits no
+sub-headings there and several under real data — so `8.1`–`8.7` would exist in the
+delivered document and in no allowlist, and a correct report would be withheld for its
+own contents page.
+
+### Verify — `verify/`
+
+Twelve gates, listed in `REQUIRED_GATES`. A gate that set names and `verify` does not
+record fails the verification for being **incomplete** — a partially wired verifier
+cannot quietly pass.
+
+The one to understand first is `prose`. Every paragraph is tokenized and five masking
+stages run in order: ledger strings, identifiers, structured values, temporals, then
+the derived allowlist. Anything still carrying a digit is a blocking
+`unmatched_prose_token`. Two narrowings admit a value only where it was proven, never
+document-wide:
+
+- a **table of contents** page number, in the paragraph whose comparison produced it
+- a **text fact**, inside the table its anchor names
+
+That second one shipped broken. `ledger_strings_of` read only figures and derived
+counts, so a text fact whose value is a bare numeral — an NSG rule priority, a
+destination port — survived every stage and read as a number from nowhere. One
+delivered run recorded twenty-one blocking findings on values that were every one of
+them collected and anchored. Property 6 now carries a bare-numeral pool; the missing
+pool is why it shipped.
+
+### Narrate — `narrate/`
+
+Two single-shot Bedrock Converse calls. Prose only. The package is the only one
+permitted to reach Bedrock and a static test enforces it.
 
 ## Dependency locking
 
@@ -479,6 +632,29 @@ only) must be installed. `azure-monitor-query` >=2 exports neither `MetricsClien
 comment beside the pins in `pyproject.toml` for which class comes from which package, and
 run `pytest tests/test_dependency_pins.py` to confirm the split.
 
+**A section prints its no-data notice while the values are in the snapshot.** The block
+is asking the wrong resource type, or for a fact key nothing declares on the type it is
+asking. Neither is a runtime error — an undeclared key simply answers nothing — so the
+document says "no values recorded" and nothing says why. Check `catalog/facts.v1.json`
+for the type the block resolves to, and remember that the type it resolves to is the
+section's unless the block declares `_types` or `_scope`. Section 4's addressing table
+asked a virtual machine for `subnet` and `private_ip`, which live on the network
+interface; both tables were empty for months.
+
+**Every value is right and the run fails on `unmatched_prose_token`.** Look at the
+substrings the verification record names. If they are values that appear in a data
+table — ports, priorities, counts — they are text facts, and the question is whether
+they are anchored in the table the paragraph belongs to. A text fact is admitted by the
+masking pass only inside its own anchor's table, deliberately, so an invented `443`
+three sections away still fails; a *correct* one that is failing means the anchor is
+missing or the value is being printed somewhere it was not proven.
+
+**A change to the catalogue passes the agent suite and fails the web one.** Three
+declarations are mirrored into `app/`, and the guards live on the web side: the message
+catalogue by value, `EMITTED_CLASS_NAMES` positionally, and the emit-estimate corpus by
+recomputation. Run `pnpm vitest run` in `app/` before believing a catalogue change is
+done.
+
 ## Layout
 
 ```
@@ -491,23 +667,40 @@ agent/
   src/reporting_agent/
     main.py             the entrypoint and command router
     report_pipeline.py  collect -> compile -> render -> verify, in order
-    catalog/            the declarative metric catalog and its loader
+    catalog/            metrics.v1.json · facts.v1.json · sections.v1.json + the loader
+    messages/           catalog.v1.json — every string the document can print,
+                        mirrored into app/lib/messages/catalog.ts by value
     providers/          the provider protocol and the id -> factory registry
     azure/              the ONLY package that may import an Azure SDK
+                        clients.py holds every Resource Graph query as pure text
     collect/            accumulate · sketch · bucket · archive · snapshot · log
     compile/            definition + snapshot -> typed document AST
-    render/             python-docx against a styles-only theme, then PDF
-    verify/             the gates: anchors · masking · charts · replay · pdf · coverage
+      definition.py     the validator, mirrored by app/lib/templates/definition.ts
+      sections.py       a catalogue entry + a scope -> a BlockSpec sequence
+      blocks/           one compiler per block type; base.py holds the config keys
+      format.py         THE only place a value becomes a display string
+      figures.py        the ledger, which is also the render context
+    render/             three artifacts from one AST
+      docx.py           python-docx against a styles-only theme
+      html.py           the reading copy's markup; EMITTED_CLASS_NAMES lives here
+      printcss.py       the print stylesheet WeasyPrint paginates
+      front_matter.py   cover · document control · contents, described once
+      charts.py         matplotlib under frozen rc params, deterministic bytes
+    verify/             the twelve gates: anchors · masking · charts · replay ·
+                        pdf · coverage · facts · toc · historical · derived_counts
     compare/            two snapshots -> a delta, as a pure function
     narrate/            the only package that may reach Bedrock. Prose only.
     storage/            the ObjectStore protocol and its boto3 implementation
   themes/               editorial · corporate · technical · minimal — STYLES, no content
-  tests/
+  tests/                5044 tests, ~9 minutes; LANG=C.UTF-8 is required
     conftest.py         the hypothesis profile
-    test_lock_consistency.py  one version per package across both locks
-    fixtures/definitions/     the shared corpus — read by the web suite too
+    test_lock_consistency.py    one version per package across both locks
+    fixtures/definitions/       the shared corpus — read by the web suite too
+    fixtures/emit-estimate/     the shared emit-estimate corpus — likewise
     fakes/              the Azure ports and ObjectStore, faked
     property/           the hypothesis properties
+    test_run_end_to_end_v3.py   the real gate: the whole pipeline through real
+                        LibreOffice and the real verifier, all twelve gates passing
 ```
 
 `agent.py` and `tools/` do not exist on purpose. **There is no Strands agent and no
@@ -526,3 +719,28 @@ model calls in the whole runtime are two single-shot Bedrock Converse calls insi
 - **`narrate/` is the only package that may reach Bedrock.** Same enforcement.
 - The **figure ledger and the render context are the same object**, so they cannot
   disagree about what was rendered.
+- **`compile/format.py` is the only place a value becomes a display string.** A second
+  formatting path — a renderer appending its own unit, a chart library choosing its own
+  separator — produces a token the verifier matches against nothing, and the report is
+  withheld for a number that was correct.
+- **No English literal at a text-emitting site.** `compile/literals.py` scans for them
+  and for id constants used anywhere but as a `.text()` argument; both are failures. It
+  is why an f-string chart title once shipped English into an Indonesian report and
+  cannot again.
+
+### Running the suite
+
+```bash
+LANG=C.UTF-8 .venv/bin/pytest                 # all 5044
+LANG=C.UTF-8 .venv/bin/pytest tests/property  # the hypothesis properties
+```
+
+`LANG=C.UTF-8` is not optional: `test_run_end_to_end_v*.py` drive real LibreOffice,
+which refuses a locale it cannot resolve. Set `LO_PROFILE` to a writable directory if
+your `$HOME` is not one.
+
+WeasyPrint cannot run on a host without libpango, so the styled-PDF path is not
+exercised by a plain local run. The way to check it is to pull the deployed arm64
+image, enable qemu (`docker run --privileged --rm tonistiigi/binfmt --install arm64`),
+mount `src/reporting_agent` over `/app/reporting_agent`, and rasterise with
+`pypdfium2`.

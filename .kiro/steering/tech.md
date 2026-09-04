@@ -188,9 +188,9 @@ only in the git-ignored **`.env`**.
 
 ## What a green suite does not prove
 
-Fifteen defects reached production against a suite of ~4900 agent and ~3300 web
+Eighteen defects reached production against a suite of 5044 agent and 3336 web
 tests. Not one was in code the tests ignored — every one was in code they covered
-heavily. They survived because each test asserted **one half of a contract**. Nine
+heavily. They survived because each test asserted **one half of a contract**. Fourteen
 patterns, each of which has now cost a live run:
 
 **A round trip is not two halves.** `collect/archive.py` serialized a `Decimal` to
@@ -312,6 +312,36 @@ must be read twice, the second reader belongs in the module that owns the rules 
 calls the same helpers the first one does — and the guard is not "the second reader
 returns something", it is "the second reader and the real expansion agree", which is
 the only assertion the mutant fails.
+
+**A generator's pools are the only shapes the property tests.** Property 6 was written
+to prove a text fact's check catches what numeric masking cannot, and it generated
+three value shapes: digit-free words, identifier-like tokens, and dotted addresses. Each
+fails masking in its own documented way. **A bare numeral was not among them** — and a
+bare numeral is the one shape that survives every masking stage and looks exactly like a
+figure missing from the ledger. So a security-rules table full of ports and priorities
+returned twenty-one blocking findings on a delivered run, every value of which was
+collected, anchored and proven. → A property over "shapes of value" is only as strong as
+its list of shapes, and the shape most likely to be missing is the one nobody thought of
+as a shape. Enumerate them against the *failure modes*, not against the examples you
+happen to have.
+
+**A filter that excludes by the wrong key excludes more than it names.**
+`_non_child_projections` removed a child type's fact keys from the main inventory
+query's projection clause — correctly, since a child's expression names an identifier
+only its own `mv-expand` binds. It excluded **by key**. The moment a first-class type
+declared a key a child type already had, both projections went, the column was silently
+absent, and the table that needed it printed a no-data notice on data that had been
+collected. → When a rule is about *which module owns a thing*, key the exclusion on the
+owner, not on the thing's name. A name collision is not an ownership claim.
+
+**The design artifact is the specification, and re-reading it is cheaper than
+implementing against memory.** Twice in one session a rendering "defect" was about to be
+fixed in the direction *away* from the approved mock: the two stacked chart panels the
+artifact deliberately draws, and the section numbers the artifact prints in the contents
+and not in the body. Both were caught by opening `design/proposed/ReportA.dc.html`
+before writing code, and one had already been half-implemented. → Before changing how
+something looks, read the artifact for that thing. A remembered design is a design that
+has drifted.
 
 The through-line: **a test that cannot fail for the reason the code can break is not
 a test.** Mutation-check anything load-bearing — reintroduce the defect and watch it

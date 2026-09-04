@@ -16,14 +16,18 @@ proves. If a figure is being calculated in `app/`, the layering is wrong.
 agent/
   Dockerfile                      # arm64 (linux/arm64) — AgentCore requirement
   pyproject.toml                  # azure-monitor-query>=2 AND azure-monitor-querymetrics
-  README.md                       # build + deploy
+  README.md                       # setup, the pipeline, build + deploy, troubleshooting
   AGENTCORE_INTEGRATION.md        # the authoritative invoke contract (app reads this)
   themes/                         # STYLES-ONLY .docx, no content — the four presets:
                                   #   editorial.docx  corporate.docx
                                   #   technical.docx  minimal.docx
   src/reporting_agent/
-    main.py                       # BedrockAgentCoreApp entrypoint; prompt vs command routing
-    agent.py                      # Strands agent + tool registration + system prompt
+    main.py                       # BedrockAgentCoreApp entrypoint; the command router
+                                  # NOTE: there is no agent.py and no tools/. Every
+                                  # command is deterministic, so an unrecognised one is
+                                  # a terminal error rather than something to route to
+                                  # a model. Do not re-add them.
+    report_pipeline.py            # collect -> compile -> render -> verify, in order
     events.py                     # the SSE event vocabulary, one place
     progress.py                   # fire-and-forget phase-transition POSTs to the app
     azure/
@@ -41,31 +45,62 @@ agent/
       buckets.py                  # local-day bucketing from PT1H (Asia/Jakarta)
       snapshot.py                 # immutable snapshot build + JCS canonicalize + hash
       log.py                      # typed collection_log gaps
+    catalog/
+      metrics.v1.json             # what may be measured, and at what scale
+      facts.v1.json               # what may be read off each resource type
+      sections.v1.json            # the 15 offerable sections and how each expands
+      loader.py                   # loads all three, degrading per entry, never wholesale
+    messages/
+      catalog.v1.json             # every string the document can print, en + id
+                                  # mirrored into app/lib/messages/catalog.ts BY VALUE
     compile/
-      definition.py               # template definition model + validation
+      definition.py               # profile definition model + validation
+                                  # mirrored by app/lib/templates/definition.ts
+      sections.py                 # a catalogue entry + a scope -> a BlockSpec sequence
       ast.py                      # typed document AST; Figure is the only numeric leaf
       blocks/                     # one module per block type: config + snapshot -> AST
-      scope.py                    # template default + per-block override -> resources
-      figures.py                  # AST walk -> figure ledger
+                                  # base.py holds the block config keys and BlockContext
+      snapshot_view.py            # the read model every compiler sees
+      scope.py                    # profile default + per-block override -> resources
+      figures.py                  # AST walk -> figure ledger (and the render context)
       format.py                   # the ONLY place a figure becomes a display string
       estimators.py               # estimator labels ("p95 (estimated from hourly)")
-    render/
+      literals.py                 # refuses an English literal at a text-emitting site
+      messages.py                 # the resolved catalogue for one language
+    render/                       # THREE artifacts, TWO emitters, ONE AST instance
       docx.py                     # AST -> python-docx against themes/<preset>.docx
-      html.py                     # AST -> HTML preview (same AST, second emitter)
+      html.py                     # AST -> the reading copy's markup (second emitter)
+                                  #   EMITTED_CLASS_NAMES lives here; append only
+      printcss.py                 # the print stylesheet WeasyPrint paginates
+      printpdf.py                 # the styled reading copy: html + printcss -> PDF
+      front_matter.py             # cover · document control · contents, described once
+                                  #   so both emitters render every section kind
       pdf.py                      # DOCX -> PDF (LibreOffice; LANG=C.UTF-8, --norestore,
                                   #   profile pre-warmed at image build)
-      charts.py                   # static chart images for embedding
+      charts.py                   # static chart images; frozen rc params
+      chartstyle.py               # sizes, palettes, the per-preset ink
+      tablefit.py                 # column widths from content, not from a guess
+      toc.py                      # the two-pass contents; page numbers are measured
       anchors.py                  # w:tblCaption ids + Figure character-style wrapping
     verify/
       tokens.py                   # numeric-token extraction from the rendered document
-      verifier.py                 # soundness + completeness -> verification result
-      replay.py                   # re-aggregate archived raw -> assert identical snapshot hash
-      drift.py                    # PURE: choose the drift sample + compare; re-query via azure/
+      masking.py                  # the five ordered stages; survivors are blocking
+      allowlist.py                # the document's numeric chrome, from a null render
+      verifier.py                 # REQUIRED_GATES; an unevaluated gate is a failure
+      anchors.py                  # a figure equals the cell its anchor names
+      facts.py                    # a text fact equals its cell, character for character
+      charts.py · coverage.py · pdf.py · toc.py · historical.py · derived_counts.py
+      replay.py                   # re-aggregate archived raw -> assert identical hash
+                                  #   PURE: its import closure is walked by a test
+      drift.py                    # PURE: choose the drift sample + compare
     compare/
       delta.py                    # snapshot-to-snapshot deltas
-    tools/                        # @tool defs the model may call (prose + Q&A only)
-  tests/
+  tests/                          # 5044; LANG=C.UTF-8 required (real LibreOffice)
 ```
+
+**`tools/` is absent on purpose and must stay absent.** There is no tool registry and
+no model-callable surface. The only model calls in the runtime are two single-shot
+Bedrock Converse calls inside `narrate/`, and neither may return a number.
 
 ### `agent/` conventions
 - **The model gets no arithmetic.** Tools exposed to the model return
@@ -106,11 +141,44 @@ agent/
   section catalogue. A per-resource heading that falls back to the section's own
   `title_id` emits one string once per resource — three machines produced "Virtual
   Machine Utilization" three times and named none of them. `compile/sections.py`
-  refuses the combination outright (`_assert_resource_heading_untitled`), because a
-  heading wanting a fixed title is a `per: "section"` heading. A section carrying
-  per-resource headings must also carry its own level-2 heading above them, or the
-  section's title appears nowhere — not in the document, not in the table of
-  contents.
+  refuses the combination (`_assert_resource_heading_untitled`), because a heading
+  wanting a fixed title is a `per: "section"` heading. A section carrying per-resource
+  headings must also carry its own level-2 heading above them, or the section's title
+  appears nowhere — not in the document, not in the table of contents.
+
+  **Unless the repetition is the point, and the catalogue declares it.** A network
+  security group's rules are listed under an `Inbound` label and an `Outbound` one,
+  once per group, exactly as `ReportA.dc.html` lists them; there the same fixed string
+  per resource is the correct rendering. `repeats_per_resource: true` is how a section
+  says so, and it is the only way past the guard — so the defect the guard names stays
+  a failure and the deliberate case stays expressible without either looking like the
+  other. A heading declaring it resolves its own `title_id` and is **not** overwritten
+  with the resource's name.
+
+- **A block's scope is the section's unless the block narrows it, and the narrowings
+  are declared in the catalogue rather than inferred.** `compile/blocks/base.py` holds
+  the keys; `BlockContext.resources_for` is the only thing that reads them.
+
+  | key | narrows to |
+  |---|---|
+  | `_resource_id` | the one resource a `per: "resource"` expansion is for — written per run |
+  | `_scope: "children"` | that resource's children, by id prefix: a group's rules, a network's subnets |
+  | `_types` | a different resource type entirely — section 4's addressing table lists network interfaces, its disk table lists disks |
+  | `filter_fact` / `filter_value` | the resources whose named fact holds a value, case-insensitively |
+
+  The underscored keys are written per run from the live snapshot and never reach a
+  stored definition. The others are ordinary catalogue configuration and do.
+
+  A block that asks the wrong type for a fact gets **nothing**, not an error: an
+  undeclared key simply answers nothing, so the document prints its no-data notice and
+  nothing says why. Section 4.2 asked a virtual machine for `subnet` and `private_ip`,
+  which are properties of the network interface, and printed an empty table for months.
+
+- **An empty result states what it means.** "No resources matched this scope" is right
+  for a filter that found nothing and wrong for one whose emptiness is the finding — a
+  security group with no outbound rule is not a group the filter missed, it is a group
+  whose outbound traffic follows Azure's defaults. `empty_message_id` is how a table
+  says which.
 - **A table-of-contents entry is recognised by its leader run, not by proximity.**
   `render/toc.py` and `verify/toc.py` both classify a PDF page as part of the
   contents by finding a heading followed by three or more dot or ellipsis glyphs —
