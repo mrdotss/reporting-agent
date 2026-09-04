@@ -661,6 +661,7 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
     from reporting_agent.render.front_matter import (
         FrontMatterContents,
         FrontMatterGrid,
+        FrontMatterBackground,
         FrontMatterHeading,
         FrontMatterLogo,
         FrontMatterNote,
@@ -741,6 +742,25 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
                     f'<img alt="" src="data:{media};base64,{encoded}" '
                     f'style="height:100%;width:auto" /></div>'
                 )
+
+        elif isinstance(section, FrontMatterBackground):
+            # A `<style>` rather than an element, because the background belongs to the
+            # **page** and not to a box inside it: a `<div>` with a background stops at
+            # the margins, and the cover's image is full-bleed. `@page :first` is what
+            # WeasyPrint paginates against, and a browser with no paged media ignores it —
+            # which is why the in-app preview shows the cover without it and is not wrong
+            # to.
+            #
+            # A data URI for the reason every other image here is one: the process that
+            # rasterises this markup has no access to the artifact bucket and no business
+            # making a network request to draw a cover.
+            encoded = base64.b64encode(section.image).decode("ascii")
+            media = _image_media_type(section.image)
+            parts.append(
+                f"<style>@page :first {{ background-image: "
+                f"url('data:{media};base64,{encoded}'); "
+                f"background-size: cover; background-position: center; }}</style>"
+            )
 
         elif isinstance(section, FrontMatterContents):
             # The number, the heading, and a link to it. The link is what lets the print

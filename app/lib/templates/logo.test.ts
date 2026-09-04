@@ -243,6 +243,28 @@ describe("resolveLogoIntoDefinition", () => {
     expect(logoKeyOf(resolved)).toBe(s3.keys[0])
   })
 
+  test("a failed refetch strips the key the definition arrived with", async () => {
+    // The wizard round-trips `logo_key` so the form can say whether the last save could
+    // read the URL. A refetch that fails must therefore clear it: left in place, the
+    // version would carry a key fetched from a *different* address, and the cover would
+    // draw the previous logo under the new URL.
+    stubFetch(() => new Response("nope", { status: 404 }))
+    const definition = definitionWith("https://cdn.example/new.png")
+    const front = definition["front_matter"] as Record<string, unknown>
+    front["cover"] = {
+      ...(front["cover"] as Record<string, unknown>),
+      logo_key: "alice/logos/from-the-old-url.png",
+    }
+
+    const resolved = await resolveLogoIntoDefinition(definition, USER, {
+      logo: "https://cdn.example/old.png",
+      logoKey: "alice/logos/from-the-old-url.png",
+    })
+
+    expect(logoKeyOf(resolved)).toBeUndefined()
+    expect(s3.puts).toBe(0)
+  })
+
   test("a URL that cannot be resolved leaves the definition saveable and key-free", async () => {
     // Req 13.9's shape: losing a profile edit because an image host was down
     // would be a far worse trade than a cover that reserves its space and draws

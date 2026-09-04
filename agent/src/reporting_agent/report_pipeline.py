@@ -795,9 +795,10 @@ async def _load_front_matter_images(
                             keys.add(key)
         cover = front.get("cover")
         if isinstance(cover, Mapping):
-            key = cover.get("logo_key")
-            if isinstance(key, str) and key:
-                keys.add(key)
+            for field in ("logo_key", "background_key"):
+                key = cover.get(field)
+                if isinstance(key, str) and key:
+                    keys.add(key)
 
     images: dict[str, bytes] = {}
     for key in sorted(keys):
@@ -863,11 +864,17 @@ def _resolve_front_matter_config(
     cover = CoverConfig(enabled=cover_page_enabled)
     if isinstance(cover_raw, Mapping):
         logo_key = str(cover_raw["logo_key"]) if cover_raw.get("logo_key") else None
+        background_key = (
+            str(cover_raw["background_key"]) if cover_raw.get("background_key") else None
+        )
         cover = CoverConfig(
             enabled=bool(cover_raw.get("enabled", True)) and cover_page_enabled,
             logo=str(cover_raw["logo"]) if cover_raw.get("logo") else None,
             logo_key=logo_key,
             logo_image=(images or {}).get(logo_key or ""),
+            background=str(cover_raw["background"]) if cover_raw.get("background") else None,
+            background_key=background_key,
+            background_image=(images or {}).get(background_key or ""),
             contact_block=str(cover_raw["contact_block"]) if cover_raw.get("contact_block") else None,
             subtitle=str(cover_raw["subtitle"]) if cover_raw.get("subtitle") else None,
         )

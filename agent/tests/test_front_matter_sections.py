@@ -13,6 +13,7 @@ every section kind, so a kind added for one cannot silently go missing from the 
 
 from __future__ import annotations
 
+import base64
 import typing
 
 import pytest
@@ -41,6 +42,13 @@ from reporting_agent.render.themes import load_theme
 
 _MESSAGES = load_messages("en")
 
+_PNG = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+    "IQAAAABJRU5ErkJggg=="
+)
+"""A real 1x1 PNG: the docx emitter hands it to python-docx, which parses the header to
+size the shape and refuses a truncated file."""
+
 SECTION_KINDS: tuple[type, ...] = typing.get_args(FrontMatterSection)
 
 
@@ -63,6 +71,11 @@ FULL = FrontMatterConfig(
         # are exercised on it. Without one the kind is declared and nothing makes it,
         # which is exactly what the guard below refuses.
         logo="brand/helios.png",
+        # And a background, for the same reason. It is emitted only when its **bytes**
+        # are present — there is no space to reserve for a picture that covers the page —
+        # so the fixture supplies a real one rather than only a URL.
+        background="brand/cover.png",
+        background_image=_PNG,
     ),
     document_control=DocumentControlConfig(
         document_name="Monthly Infrastructure Report",
@@ -129,10 +142,13 @@ class TestBothEmittersCoverEveryKind:
 class TestTheDescriptionIsTheOrder:
     def test_cover_precedes_document_control_precedes_contents(self) -> None:
         kinds = [type(s).__name__ for s in _full_sections()]
-        # The logo's reserved block opens the cover, above the eyebrow, as
-        # `ReportA.dc.html` opens its own — so it is first wherever a logo is configured.
-        assert kinds[0] == "FrontMatterLogo"
-        assert kinds[1] == "FrontMatterHeading"
+        # The background is behind everything, so it is met first: the docx anchors it to
+        # the first paragraph of the page and the print stylesheet paints it as the first
+        # page's own background. Then the logo's reserved block opens the visible cover,
+        # above the eyebrow, as `ReportA.dc.html` opens its own.
+        assert kinds[0] == "FrontMatterBackground"
+        assert kinds[1] == "FrontMatterLogo"
+        assert kinds[2] == "FrontMatterHeading"
         assert kinds.index("FrontMatterContents") == len(kinds) - 2
 
     def test_disabling_the_cover_keeps_the_rest(self) -> None:

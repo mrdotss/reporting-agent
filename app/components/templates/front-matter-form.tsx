@@ -72,6 +72,16 @@ export type CoverFormValues = {
    */
   readonly enabled: boolean
   readonly logo: string | null
+
+  /**
+   * The full-bleed image the cover's text sits on.
+   *
+   * A different picture from the logo with a different job — the logo is a mark a few
+   * centimetres wide, this covers the page — so it has its own URL, its own stored key
+   * and its own byte ceiling. A cover may carry either, both or neither.
+   */
+  readonly background: string | null
+
   readonly contact_block: string | null
   readonly subtitle: string | null
 
@@ -84,6 +94,9 @@ export type CoverFormValues = {
    * which is indistinguishable from a cover that names no logo unless something says so.
    */
   readonly logo_key: string | null
+
+  /** The background's own stored key, read the same way and for the same reason. */
+  readonly background_key: string | null
 }
 
 export type DocumentControlFormValues = {
@@ -508,6 +521,40 @@ export function FrontMatterForm({
               delivered.
             </span>
           ) : null}
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs text-muted-foreground">
+            Background image URL
+          </span>
+          <input
+            type="text"
+            value={values.cover.background ?? ""}
+            maxLength={LOGO_MAX_LENGTH}
+            placeholder="https://…"
+            onChange={(e) =>
+              onChange({
+                ...values,
+                cover: {
+                  ...values.cover,
+                  background: e.target.value || null,
+                },
+              })
+            }
+            className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          />
+          {values.cover.background && !values.cover.background_key ? (
+            <span className="text-xs text-amber-700 dark:text-amber-500">
+              This URL was not readable at the last save, so the cover prints no
+              background. It must answer over HTTPS with a PNG or JPEG under
+              5&nbsp;MB.
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              Optional. Fills the whole cover page, behind the logo and the title.
+              PNG or JPEG under 5&nbsp;MB.
+            </span>
+          )}
         </label>
 
         <label className="flex flex-col gap-1">
