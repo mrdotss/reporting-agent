@@ -292,33 +292,14 @@ export function StepDesign({
         onDesignChange={set}
       />
 
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={design.cover_page}
-          onCheckedChange={(checked) => set({ cover_page: checked === true })}
-        />
-        Cover page
-      </label>
-
-      <Field>
-        <FieldLabel htmlFor={logoId}>Logo URL</FieldLabel>
-        <Input
-          id={logoId}
-          value={design.logo ?? ""}
-          onChange={(event) =>
-            // Empty means "no logo", stored as `null` rather than `""` so the
-            // definition has one representation for it and the digest cannot
-            // differ between two templates that both have no logo.
-            set({
-              logo:
-                event.target.value.trim() === "" ? null : event.target.value,
-            })
-          }
-        />
-        <FieldDescription>
-          Optional. Printed on the cover page when one is enabled.
-        </FieldDescription>
-      </Field>
+      {/*
+        The cover-page toggle and the logo URL used to sit here, on `design`, and both
+        were dead controls: `resolveDesignFromBrand` overwrites every `design` field
+        from the Brand at save, so unchecking the box changed nothing and a logo typed
+        here was discarded. The profile owns both under `front_matter.cover` — the
+        Document step is where they are — and two fields for one thing, one of which
+        silently loses, is worse than one field in the right place.
+      */}
     </div>
   )
 }

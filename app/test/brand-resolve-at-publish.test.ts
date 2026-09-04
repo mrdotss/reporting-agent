@@ -214,25 +214,34 @@ describe("resolveNoticeFromBrand", () => {
     expect(front["cover"]).toEqual({ enabled: true })
   })
 
-  test("a Brand with no notice removes the key rather than writing an empty one", () => {
+  test("neither side declaring one removes the key rather than writing an empty string", () => {
     // An empty string would give the renderer something truthy to print a heading over.
+    const resolved = resolveNoticeFromBrand(
+      V3,
+      brand({ confidentialityNotice: null })
+    )
+
+    expect(noticeOf(resolved)).toBeUndefined()
+  })
+
+  test("a whitespace-only profile notice falls back to the Brand's", () => {
     const carried = {
       ...V3,
       front_matter: {
         ...V3.front_matter,
         document_control: {
           ...V3.front_matter.document_control,
-          confidentiality_notice: "left over from a previous Brand",
+          confidentiality_notice: "   \n ",
         },
       },
     }
 
     const resolved = resolveNoticeFromBrand(
       carried,
-      brand({ confidentialityNotice: null })
+      brand({ confidentialityNotice: NOTICE })
     )
 
-    expect(noticeOf(resolved)).toBeUndefined()
+    expect(noticeOf(resolved)).toBe(NOTICE)
   })
 
   test("a whitespace-only Brand notice counts as none", () => {
@@ -244,9 +253,13 @@ describe("resolveNoticeFromBrand", () => {
     expect(noticeOf(resolved)).toBeUndefined()
   })
 
-  test("a profile that carries its own notice does not keep it", () => {
-    // Requirement 12.7's "not editable per profile", as a behaviour rather than a comment:
-    // whatever a definition arrives with, what is stored is the Brand's.
+  test("a profile that carries its own notice keeps it", () => {
+    // The move: Requirement 12.7 read the notice as Brand-owned and not editable per
+    // profile, on the reasoning that one consultancy issues one notice. A profile is a
+    // per-customer engagement and the wording is negotiated per engagement, so the wizard
+    // authors it and the Brand is only the fallback. A resolve that still overwrote would
+    // make the wizard's own field a control that visibly does nothing — which is exactly
+    // what the design step's cover-page checkbox was.
     const authored = {
       ...V3,
       front_matter: {
@@ -260,6 +273,16 @@ describe("resolveNoticeFromBrand", () => {
 
     const resolved = resolveNoticeFromBrand(
       authored,
+      brand({ confidentialityNotice: NOTICE })
+    )
+
+    expect(noticeOf(resolved)).toBe("Something the profile author typed.")
+  })
+
+  test("a Brand notice fills in for a profile that declares none", () => {
+    // Nothing typed on the Brand before the move is lost.
+    const resolved = resolveNoticeFromBrand(
+      V3,
       brand({ confidentialityNotice: NOTICE })
     )
 

@@ -79,6 +79,7 @@ __all__ = [
     "DOC_CONTROL_CONFIDENTIALITY",
     "DOC_CONTROL_DISTRIBUTION",
     "DOC_CONTROL_DOCUMENT_NAME",
+    "REVISION_ISSUE_DATE_LABEL",
     "REVISION_PAGES_CHANGED_LABEL",
     "REVISION_ISSUE_DATE_LABEL",
     "REVISION_VERSION_LABEL",
@@ -314,6 +315,17 @@ class RunFacts:
     revision_history: RevisionHistoryRow | None = None
     period_start_year: str = ""
     period_start_month: str = ""
+
+    issued_on: str = ""
+    """The date this report was published, already formatted for the document.
+
+    Read from the **snapshot's** `collected_at`, not from a clock. A clock would print a
+    different date every time the document was re-rendered, and `verify/allowlist.py`
+    derives the document's numeric chrome from a fresh null-context render — so a
+    re-verification would compare a stored document carrying one date against an
+    allowlist carrying another, and the original's digits would survive masking as
+    `unmatched_prose_token`. The snapshot is stored, replayed, and says exactly when the
+    data behind this document was collected."""
 
 
 # ---------------------------------------------------------------------------
@@ -736,20 +748,25 @@ def front_matter_sections(
         # a revision history with one row still has to look like a list somebody will add
         # a second row to.
         #
-        # `Issue Date` carries the author, and `Pages Changed` an em dash. Neither is
-        # invented: the row this front matter is handed declares a revision, an author and
-        # a note, and nothing in the run record knows which pages a re-run changed. An
-        # em dash is how the artifact itself fills that column for a first issue, and
-        # printing a date the run never recorded would be worse than printing nothing.
+        # `Published date` carries the run's own publication date and `Pages Changed` an
+        # em dash. Neither is invented: the date is the snapshot's `collected_at` — see
+        # `RunFacts.issued_on`, which explains why it is not a clock — and nothing in the
+        # run record knows which pages a re-run changed, so an em dash fills that column
+        # exactly as the artifact does for a first issue.
+        #
+        # The author is deliberately **not** a column here. It was, carried under the
+        # `Issue Date` header, which is a name in a column asking for a date; the person
+        # is named in the approvers table above, where the document already identifies who
+        # wrote it.
         sections.append(
             FrontMatterGrid(
                 headers=(
                     messages.text(REVISION_VERSION_LABEL),
-                    messages.text(REVISION_AUTHOR_LABEL),
+                    messages.text(REVISION_ISSUE_DATE_LABEL),
                     messages.text(REVISION_PAGES_CHANGED_LABEL),
                     messages.text(REVISION_NOTE_LABEL),
                 ),
-                rows=((row.revision, row.author or "", "\u2014", row.note or ""),),
+                rows=((row.revision, run.issued_on or "\u2014", "\u2014", row.note or ""),),
                 table_style=LAYOUT_TABLE_STYLE,
                 paragraph_style=DOCUMENT_CONTROL_STYLE,
             )

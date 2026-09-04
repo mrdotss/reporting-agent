@@ -361,9 +361,16 @@ export function resolveDesignFromBrand(
  * version carries the notice inline, so editing the Brand tomorrow does not change the
  * wording on a report somebody signed today.
  *
- * A Brand with no notice removes the key rather than writing an empty string, so the
- * document control page prints no confidentiality section at all. An empty heading over
- * nothing is worse than no heading.
+ * **The profile wins.** The notice began Brand-owned, on Requirement 12.7's reading that
+ * one consultancy issues one notice; a profile is a per-customer engagement and the
+ * wording is negotiated per engagement, so the wizard authors it now and this resolve is
+ * a **fallback**: it fills in the Brand's notice only for a profile that declares none.
+ * That is what keeps a notice already typed on the Brand working after the move, without
+ * making it override the one a profile author wrote.
+ *
+ * A profile and a Brand that both declare nothing leave the key absent rather than an
+ * empty string, so the document control page prints no confidentiality section at all.
+ * An empty heading over nothing is worse than no heading.
  */
 export function resolveNoticeFromBrand(
   definition: unknown,
@@ -381,7 +388,12 @@ export function resolveNoticeFromBrand(
     control !== null && typeof control === "object" ? control : {}
   ) as Record<string, unknown>
 
-  const notice = brand.confidentialityNotice
+  const authored = documentControl["confidentiality_notice"]
+  const notice =
+    typeof authored === "string" && authored.trim() !== ""
+      ? authored
+      : brand.confidentialityNotice
+
   const resolved = { ...documentControl }
   if (typeof notice === "string" && notice.trim() !== "") {
     resolved["confidentiality_notice"] = notice

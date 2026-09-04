@@ -335,7 +335,14 @@ async def run_generate_report(
         historical_selections=historical_selections or None,
         historical_source=historical_source,
         front_matter=_resolve_front_matter_config(definition, front_matter_images),
-        run_facts=_resolve_run_facts(payload, definition, run_id=plan.run_id),
+        run_facts=_resolve_run_facts(
+            payload,
+            definition,
+            run_id=plan.run_id,
+            # The snapshot's own instant, so the published date is a fact the run
+            # recorded rather than the clock the render happened to run under.
+            collected_at=str(sink.collection.document.get("collected_at") or ""),
+        ),
         section_catalogue=section_catalogue,
     ):
         yield event
@@ -938,6 +945,7 @@ def _resolve_run_facts(
     definition: Mapping[str, PlainData],
     *,
     run_id: str,
+    collected_at: str = "",
 ) -> object | None:
     """Build a `RunFacts` from the payload's per-run values.
 
@@ -1015,7 +1023,33 @@ def _resolve_run_facts(
         revision_history=revision_history,
         period_start_year=period_start_year,
         period_start_month=period_start_month,
+        issued_on=_published_date(collected_at),
     )
+
+
+def _published_date(collected_at: str) -> str:
+    """The snapshot's collection instant as a date the document control page prints.
+
+    `02 September 2026` — the shape the reference form uses, and the same
+    `%d %B %Y` `_resolve_run_facts` already formats `period_display` with.
+
+    From the **snapshot**, never a clock: `verify/allowlist.py` derives the document's
+    numeric chrome from a fresh null-context render, so a date that moved between the
+    delivered document and a later re-verification would leave the original's digits
+    surviving every masking stage as `unmatched_prose_token`. The snapshot is stored and
+    replayed, so both renders read the same instant.
+
+    An absent or unparseable value yields the empty string, and the caller prints an em
+    dash — the same thing the `Pages Changed` column does for a fact the run never
+    recorded. Both cases go through the same `except`: `fromisoformat("")` raises, so a
+    separate emptiness guard would be a branch no test could fail.
+    """
+    try:
+        return datetime.fromisoformat(collected_at.replace("Z", "+00:00")).strftime(
+            "%d %B %Y"
+        )
+    except (ValueError, TypeError):
+        return ""
 
 
 def _historical_verify_inputs(
@@ -1954,7 +1988,16 @@ async def run_verify_report(
                 definition, store=store, actor_id=actor_id
             ),
         ),
-        run_facts=_resolve_run_facts(payload, definition, run_id=run_id),
+        run_facts=_resolve_run_facts(
+            payload,
+            definition,
+            run_id=run_id,
+            # The stored snapshot, so a re-verification reads the same date the delivered
+            # document printed — see `_published_date`.
+            collected_at=str(snapshot.get("collected_at") or "")
+            if isinstance(snapshot, Mapping)
+            else "",
+        ),
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)
     yield _verification_event(result)

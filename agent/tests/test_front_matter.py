@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import dataclasses
 
 import pytest
 from docx.oxml.ns import qn
@@ -1165,3 +1166,83 @@ class TestConfidentialityNotice:
         })
 
         assert config.document_control.confidentiality_notice == self.NOTICE
+
+
+class TestTheRevisionHistoryPublishesADate:
+    """`Version | Published date | Pages Changed | Note`.
+
+    The second column was headed `Issue Date` and held the **author's name** — a person
+    in a column asking for a date, with a comment admitting it because "printing a date
+    the run never recorded would be worse than printing nothing". The run does record
+    one: the snapshot's `collected_at`. The author is named in the approvers table above,
+    where the document already identifies who wrote it.
+    """
+
+    def _grid(self, *, issued_on: str):
+        from reporting_agent.render.front_matter import FrontMatterGrid
+
+        run = dataclasses.replace(
+            _run(),
+            revision_history=RevisionHistoryRow(
+                revision="23", author="Mayer Reflino Sitorus", note=""
+            ),
+            issued_on=issued_on,
+        )
+        sections = front_matter_sections(
+            front_matter=FrontMatterConfig(
+                cover=CoverConfig(enabled=False),
+                document_control=DocumentControlConfig(document_name="R"),
+            ),
+            run=run,
+            messages=_messages(),
+        )
+        version_header = _messages().text("doc.front_matter.revision_version")
+        return next(
+            section
+            for section in sections
+            if isinstance(section, FrontMatterGrid)
+            and section.headers
+            and section.headers[0] == version_header
+        )
+
+    def test_the_second_column_is_the_published_date(self) -> None:
+        grid = self._grid(issued_on="02 September 2026")
+
+        assert grid.headers[1] == _messages().text(
+            "doc.front_matter.revision_issue_date"
+        )
+        assert grid.rows[0][1] == "02 September 2026"
+
+    def test_the_author_is_not_a_column_here(self) -> None:
+        """It is in the approvers table, and a name under a date header was the defect."""
+        grid = self._grid(issued_on="02 September 2026")
+
+        assert "Mayer Reflino Sitorus" not in grid.rows[0]
+        assert _messages().text("doc.front_matter.revision_author") not in grid.headers
+
+    def test_a_run_with_no_recorded_instant_prints_an_em_dash(self) -> None:
+        """The same thing `Pages Changed` does for a fact the run never recorded, rather
+        than a blank cell that reads as an oversight."""
+        grid = self._grid(issued_on="")
+
+        assert grid.rows[0][1] == "—"
+
+    def test_the_date_comes_from_the_snapshot_and_not_from_a_clock(self) -> None:
+        """The property that keeps a re-verification honest.
+
+        `verify/allowlist.py` derives the document's numeric chrome from a fresh
+        null-context render. A date read from a clock would differ between the delivered
+        document and that render, and the delivered one's digits would survive every
+        masking stage as `unmatched_prose_token` — failing a report nothing is wrong with.
+        """
+        from reporting_agent.report_pipeline import _published_date
+
+        assert _published_date("2026-09-02T11:22:33Z") == "02 September 2026"
+        assert _published_date("2026-09-02T11:22:33+00:00") == "02 September 2026"
+        # Twice, from the same input, with no clock in between.
+        assert _published_date("2026-09-02T00:00:00Z") == _published_date(
+            "2026-09-02T00:00:00Z"
+        )
+        # And nothing invented from an absent or unusable instant.
+        assert _published_date("") == ""
+        assert _published_date("not-a-date") == ""

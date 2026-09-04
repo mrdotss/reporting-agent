@@ -58,9 +58,14 @@ function readCover(frontMatter: unknown): CoverFormValues {
     : undefined
   const c = isPlainObject(cover) ? (cover as Record<string, unknown>) : {}
   return {
+    // Absent means printed. A cover is the default and always has been, so a profile
+    // saved before this control existed keeps the cover it was delivering.
+    enabled: c.enabled === undefined ? true : c.enabled === true,
     logo: typeof c.logo === "string" ? c.logo : null,
     contact_block: typeof c.contact_block === "string" ? c.contact_block : null,
     subtitle: typeof c.subtitle === "string" ? c.subtitle : null,
+    // Read only. The save path writes it; the form shows whether it is there.
+    logo_key: typeof c.logo_key === "string" ? c.logo_key : null,
   }
 }
 
@@ -113,6 +118,10 @@ function readDocumentControl(frontMatter: unknown): DocumentControlFormValues {
       typeof c.confidentiality_notice_id === "string"
         ? c.confidentiality_notice_id
         : null,
+    confidentiality_notice:
+      typeof c.confidentiality_notice === "string"
+        ? c.confidentiality_notice
+        : null,
     distribution: readDistribution(c.distribution),
     approvers: readApprovers(c.approvers),
   }
@@ -140,7 +149,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
  * consultant never set. */
 function toWire(values: FrontMatterFormValues): Record<string, unknown> {
   const cover: Record<string, unknown> = {}
+  // Written only when false: `true` is the default the validator and the renderer both
+  // assume, so writing it would put a key in every definition to say what its absence
+  // already says — and change the digest of a profile nobody edited.
+  if (!values.cover.enabled) cover.enabled = false
   if (values.cover.logo) cover.logo = values.cover.logo
+  // `logo_key` is deliberately not carried through: the save path re-resolves it from
+  // `logo`, reusing the previous version's key when the URL has not changed. Writing the
+  // form's copy back would let a stale key outlive the URL it was fetched from.
   if (values.cover.contact_block)
     cover.contact_block = values.cover.contact_block
   if (values.cover.subtitle) cover.subtitle = values.cover.subtitle
@@ -153,8 +169,15 @@ function toWire(values: FrontMatterFormValues): Record<string, unknown> {
     documentControl.document_number_pattern =
       values.document_control.document_number_pattern
   }
-  // confidentiality_notice_id is deliberately never written here (see module
-  // docstring) — a v3 profile does not carry it at all.
+  // `confidentiality_notice_id` is deliberately never written — a v3 profile carries
+  // no message-catalogue id for the notice. The notice itself is prose and the profile
+  // owns it, so it IS written, and an empty box means no notice rather than an empty
+  // one: the document control page then prints no confidentiality section at all,
+  // instead of a heading over nothing.
+  if (values.document_control.confidentiality_notice) {
+    documentControl.confidentiality_notice =
+      values.document_control.confidentiality_notice
+  }
   if (values.document_control.distribution.length > 0) {
     documentControl.distribution = values.document_control.distribution.map(
       (row) => ({

@@ -147,8 +147,8 @@ export const MESSAGE_CATALOG = {
     id: "Versi",
   },
   "doc.front_matter.revision_issue_date": {
-    en: "Issue Date",
-    id: "Tanggal Terbit",
+    en: "Published date",
+    id: "Tanggal penerbitan",
   },
   "doc.front_matter.revision_pages_changed": {
     en: "Pages Changed",

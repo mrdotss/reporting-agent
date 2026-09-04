@@ -16,6 +16,7 @@ import {
 
 import {
   APPROVER_ROLES,
+  CONFIDENTIALITY_NOTICE_MAX_LENGTH,
   CONTACT_BLOCK_MAX_LENGTH,
   DISTRIBUTION_NOTE_MAX_LENGTH,
   DISTRIBUTION_RECIPIENT_MAX_LENGTH,
@@ -62,9 +63,27 @@ export type DistributionRow = {
 }
 
 export type CoverFormValues = {
+  /**
+   * Whether the cover page is printed at all.
+   *
+   * This is the profile's own control. `design.cover_page` also gates it and is
+   * resolved from the Brand at save, so a toggle bound to *that* changed nothing —
+   * which is what the design step's now-removed checkbox did.
+   */
+  readonly enabled: boolean
   readonly logo: string | null
   readonly contact_block: string | null
   readonly subtitle: string | null
+
+  /**
+   * The stored object the logo's bytes were fetched into, read from the saved version
+   * and **never written by this form** — the save path resolves it.
+   *
+   * It is here so the wizard can say whether the last save could actually read the URL.
+   * A logo that fails to fetch leaves the cover reserving its space and drawing nothing,
+   * which is indistinguishable from a cover that names no logo unless something says so.
+   */
+  readonly logo_key: string | null
 }
 
 export type DocumentControlFormValues = {
@@ -79,6 +98,18 @@ export type DocumentControlFormValues = {
    * it unchanged; this form never writes to it.
    */
   readonly confidentiality_notice_id: string | null
+
+  /**
+   * The confidentiality notice, as prose, authored **on the profile**.
+   *
+   * It lived on the Brand first, on Requirement 12.7's reading that one consultancy
+   * issues one notice. In practice a profile is a per-customer engagement and the
+   * wording is negotiated per engagement, so the profile owns it and the wizard is
+   * where it is written. A Brand that still carries one supplies the value for a
+   * profile that declares none, so nothing typed there is lost.
+   */
+  readonly confidentiality_notice: string | null
+
   /** Ordered `{recipient, company, note}` rows — schema_version 3's own shape
    * (Requirement 12.6). There is no v1/v2 caller of this form left to support the
    * free-text string distribution used to be; see the module docstring. */
@@ -426,6 +457,21 @@ export function FrontMatterForm({
 
       {/* ---- Cover ---- */}
       <Section title="Cover" icon={ImageIcon}>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={values.cover.enabled}
+            onChange={(e) =>
+              onChange({
+                ...values,
+                cover: { ...values.cover, enabled: e.target.checked },
+              })
+            }
+            className="size-4 rounded border-input accent-primary"
+          />
+          Print a cover page
+        </label>
+
         <label className="flex flex-col gap-1">
           <span className="text-xs text-muted-foreground">Logo URL</span>
           <input
@@ -444,6 +490,24 @@ export function FrontMatterForm({
             }
             className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           />
+          {/*
+            Whether the last save could read it. A logo the app cannot fetch is not an
+            error — the save proceeds and the cover reserves its space — so without this
+            the only symptom is a blank cover and nothing saying why.
+          */}
+          {values.cover.logo && !values.cover.logo_key ? (
+            <span className="text-xs text-amber-700 dark:text-amber-500">
+              This URL was not readable at the last save, so the cover prints no logo.
+              It must answer over HTTPS with a PNG or JPEG under 2&nbsp;MB.
+            </span>
+          ) : null}
+          {values.cover.logo && values.cover.logo_key ? (
+            <span className="text-xs text-muted-foreground">
+              Fetched and stored. The report uses the copy taken at save time, so
+              changing the image at that URL does not change a report already
+              delivered.
+            </span>
+          ) : null}
         </label>
 
         <label className="flex flex-col gap-1">
@@ -558,6 +622,35 @@ export function FrontMatterForm({
               ))}
             </ul>
           </div>
+        </div>
+
+        {/* Confidentiality */}
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-muted-foreground">
+            Confidentiality notice
+          </span>
+          <textarea
+            value={values.document_control.confidentiality_notice ?? ""}
+            maxLength={CONFIDENTIALITY_NOTICE_MAX_LENGTH}
+            rows={4}
+            placeholder="The information in this document is confidential and is owned by …"
+            aria-label="Confidentiality notice"
+            onChange={(e) =>
+              onChange({
+                ...values,
+                document_control: {
+                  ...values.document_control,
+                  confidentiality_notice:
+                    e.target.value === "" ? null : e.target.value,
+                },
+              })
+            }
+            className="rounded-md border border-input bg-background px-2.5 py-2 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
+          />
+          <span className="text-xs text-muted-foreground">
+            Printed on the document control page under its own heading. Leave it
+            empty to print no notice at all.
+          </span>
         </div>
 
         {/* Distribution */}
