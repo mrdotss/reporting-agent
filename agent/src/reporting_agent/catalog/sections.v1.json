@@ -732,6 +732,14 @@
                 "chart_and_table",
                 "chart_only"
               ]
+            },
+            {
+              "block": "trend_narrative",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
             }
           ]
         },
