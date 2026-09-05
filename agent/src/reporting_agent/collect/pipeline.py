@@ -112,11 +112,13 @@ from reporting_agent.collect.accumulate import (
     MetricAccumulator,
 )
 from reporting_agent.collect.buckets import (
+    MAX_TREND_MONTHS,
     Window,
     choose_grain,
     day_buckets,
     resolve_timezone,
     resolve_window,
+    trend_months,
 )
 from reporting_agent.collect.log import (
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
@@ -128,6 +130,7 @@ from reporting_agent.collect.log import (
 from reporting_agent.collect.snapshot import (
     FactEntry,
     ResourceDayBucket,
+    ResourceMonthBucket,
     ResourceSnapshot,
     SkuCapacity,
     StatisticEntry,
@@ -1214,6 +1217,7 @@ async def run_collection(
     object_store: ObjectStore | None = None,
     catalog: LoadedCatalog | None = None,
     metric_selection: Mapping[str, Sequence[str]] | None = None,
+    seed_trend_months: int = 0,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> AsyncIterator[Event]:
     """Collect one run into an immutable snapshot, yielding its non-terminal events.
@@ -1234,6 +1238,12 @@ async def run_collection(
     built once at start (Req 14.12); nothing here reads an environment variable. `provider`,
     `object_store` and `catalog` are injectable so the whole pipeline runs against the fake
     Azure ports and an in-memory store, with no SDK, no credential and no subscription.
+
+    `seed_trend_months` is how many calendar months of history to measure for the
+    historical trend, `0` for none. It is a **seed**: `compile/historical.py` plots prior
+    verified runs where they exist, and these months are what a report with no such history
+    has to plot instead. Bounded by `MAX_TREND_MONTHS`, because each month is another pass
+    over the estate.
 
     `metric_selection` is Req 5.4's narrowing — per resource type, the platform metric names
     the pinned template version selected, already expanded from its derived statistics and
@@ -1257,6 +1267,7 @@ async def run_collection(
             store=store,
             catalog=loaded,
             metric_selection=metric_selection,
+            seed_trend_months=seed_trend_months,
             steps=steps,
             progress=progress,
             now=now,
@@ -1275,6 +1286,7 @@ async def run_collection(
             store=store,
             catalog=loaded,
             metric_selection=metric_selection,
+            seed_trend_months=seed_trend_months,
             steps=steps,
             progress=progress,
             now=now,
@@ -1301,6 +1313,7 @@ async def _drive(
     progress: ProgressReporter | None,
     now: Callable[[], datetime],
     sink: CollectionSink,
+    seed_trend_months: int = 0,
 ) -> AsyncIterator[Event]:
     """The orchestration itself, over an already-resolved plan and an already-built provider.
 
@@ -1407,6 +1420,21 @@ async def _drive(
     # and reading the wrong list is what defeated the mitigation.
     assert_some_statistic(plan, collected["statistics"], gaps)
 
+    # --- the historical trend's seed months, after the gates (Req 18.x) --------------
+    #
+    # After the three gates deliberately: a run about to fail for an empty scope or no
+    # reachable location should not first spend two more passes over the estate. And
+    # before the snapshot, because the months are part of the document it builds.
+    month_statistics, month_slots = await _collect_trend(
+        provider=active,
+        plan=plan,
+        resources=resources,
+        metrics_by_resource_type=metrics_by_resource_type,
+        period_statistics=collected["statistics"],
+        count=seed_trend_months,
+        now=now,
+    )
+
     # --- the snapshot (Req 34.x, 35.x) -----------------------------------------------
     await _report(progress, PHASE_COLLECTING, current=total, total=total, label="Snapshot")
 
@@ -1431,6 +1459,8 @@ async def _drive(
             tiers=tiers,
             guest_entries=guest_entries,
             facts_by_resource=facts_by_resource,
+            month_statistics=month_statistics,
+            month_slots=month_slots,
         ),
         gaps=gaps,
         catalog_version=loaded.catalog_version,
@@ -1539,6 +1569,106 @@ async def _collect_facts(
     )
 
 
+async def _collect_trend(
+    *,
+    provider: Provider,
+    plan: RunPlan,
+    resources: Sequence[ResourceRecord],
+    metrics_by_resource_type: Mapping[str, Sequence[str]],
+    period_statistics: Mapping[str, Mapping[str, Mapping[str, StatValue]]],
+    count: int,
+    now: Callable[[], datetime],
+) -> tuple[dict[str, dict[str, list[StatValue]]], dict[str, int]]:
+    """The historical trend's own passes: one calendar month at a time (Req 18.x).
+
+    Returns `({resource_id: {local_month: [values]}}, {local_month: slot_count})`.
+
+    ## Why a second pass rather than a coarser grain over one long window
+
+    `collect/buckets.py` refuses `P1D` because daily buckets are UTC-aligned, and a month
+    assembled from them inherits that defect at both edges. Worse, the trend's figure for
+    the report's **own** month would then disagree with the figure printed for the period a
+    few pages earlier, and no reader could see why. So each month is collected through
+    `resolve_window` at the same grain the period pass uses — one alignment, one arithmetic.
+
+    ## The report's own month is not collected twice
+
+    When a month's window **is** the run's window — a report covering exactly one calendar
+    month — the period pass has already measured it, and its values are reused. That is
+    both the cheaper path and the one that makes the trend's anchor point equal the period
+    figure by construction rather than by two computations agreeing.
+
+    ## A month that answers nothing records no gap
+
+    Deliberate, and the one judgement in this function. `partial` on the outcome means *the
+    report's own period has holes*, and `report_pipeline` raises on it; a machine created in
+    June legitimately answers nothing for May, and letting that flip a July report to
+    partial would report a hole in July that does not exist. The absence is not hidden: the
+    month keeps its bucket with an empty `statistics` array and its real `slot_count` — the
+    same treatment `_resource_snapshots` gives a day it measured nothing for — and
+    `compile_historical_trend` already states how many months it plotted against how many
+    were asked for.
+    """
+    if count <= 0 or not resources:
+        return {}, {}
+
+    months = trend_months(
+        plan.window,
+        plan.tz,
+        count=count,
+        today=now().astimezone(plan.tz).date(),
+    )
+
+    statistics: dict[str, dict[str, list[StatValue]]] = {}
+    slots: dict[str, int] = {}
+
+    def absorb(local_month: str, collected: Mapping[str, Mapping[str, Mapping[str, StatValue]]]) -> None:
+        for resource_id, metric_values in collected.items():
+            bucket = statistics.setdefault(resource_id, {}).setdefault(local_month, [])
+            for by_statistic in metric_values.values():
+                bucket.extend(by_statistic.values())
+
+    for month in months:
+        slots[month.local_month] = sum(
+            bucket.slot_count for bucket in day_buckets(month.window, plan.tz, plan.grain)
+        )
+
+        if month.window == plan.window:
+            absorb(month.local_month, period_statistics)
+            continue
+
+        try:
+            collected = await provider.collect(
+                CollectRequest(
+                    scope=plan.scope,
+                    resources=list(resources),
+                    metrics_by_resource_type={
+                        resource_type: list(names)
+                        for resource_type, names in metrics_by_resource_type.items()
+                    },
+                    grain=plan.grain,
+                    window=window_to_plain(month.window),
+                    timezone=plan.timezone_name,
+                    utc_offset=_utc_offset_text(plan),
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 - a trend month never fails the run
+            # The report's own period is already collected and its document is
+            # deliverable; a month of history that could not be read is a shorter trend,
+            # not a failed run. Logged rather than swallowed silently.
+            logger.warning(
+                "the trend pass for %s could not be collected (%s); that month will carry "
+                "no statistics and the trend will plot one point fewer.",
+                month.local_month,
+                type(exc).__name__,
+            )
+            continue
+
+        absorb(month.local_month, collected["statistics"])
+
+    return statistics, slots
+
+
 def _resource_snapshots(
     *,
     plan: RunPlan,
@@ -1549,6 +1679,8 @@ def _resource_snapshots(
     tiers: Mapping[str, str],
     guest_entries: Mapping[str, tuple[StatisticEntry, ...]],
     facts_by_resource: Mapping[str, tuple[FactEntry, ...]] = MappingProxyType({}),
+    month_statistics: Mapping[str, Mapping[str, Sequence[StatValue]]] = MappingProxyType({}),
+    month_slots: Mapping[str, int] = MappingProxyType({}),
 ) -> list[ResourceSnapshot]:
     """Every resource as the Snapshot_Builder takes it (Req 29.8, 31.1, 31.2, 35.3).
 
@@ -1572,6 +1704,11 @@ def _resource_snapshots(
     two derivations of one calendar — see `collect/dayfold.py`.
     """
     geometry = day_buckets(plan.window, plan.tz, plan.grain)
+    # The trend's calendar, produced here for every resource alike on exactly the terms the
+    # day geometry is: a month a resource measured nothing for keeps its bucket with an
+    # empty `statistics` array, because a month with no data is still a month of the trend
+    # and dropping it would make a gap in the data look like a gap in the calendar.
+    month_geometry = tuple(sorted(month_slots))
 
     built: list[ResourceSnapshot] = []
     for record in resources:
@@ -1595,6 +1732,18 @@ def _resource_snapshots(
             )
             for bucket in geometry
         )
+        per_month = month_statistics.get(resource_id, {})
+        months = tuple(
+            ResourceMonthBucket(
+                local_month=local_month,
+                slot_count=month_slots[local_month],
+                statistics=tuple(
+                    statistic_from_plain(value, fidelity_tier=tier)
+                    for value in per_month.get(local_month, ())
+                ),
+            )
+            for local_month in month_geometry
+        )
         built.append(
             ResourceSnapshot(
                 record={**record, "fidelity_tier": tier},
@@ -1603,6 +1752,7 @@ def _resource_snapshots(
                 ),
                 statistics=tuple(entries),
                 day_buckets=buckets,
+                month_buckets=months,
                 # Req 4.10, 4.12 — **every** resource carries a `facts` collection, and a
                 # resource whose statistics are absent still carries its configuration: a
                 # deallocated VM's size and OS are facts about it whatever it measured. The

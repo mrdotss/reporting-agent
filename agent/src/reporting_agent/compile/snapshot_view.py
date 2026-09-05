@@ -508,6 +508,7 @@ class CountKind(StrEnum):
     GAPS = "gaps"
     STATISTICS = "statistics"
     DAY_BUCKETS = "day_buckets"
+    MONTH_BUCKETS = "month_buckets"
 
 
 # --- the resolver protocol ----------------------------------------------------------
@@ -578,13 +579,17 @@ class SnapshotView:
     resources: tuple[ResourceView, ...]
     gaps: tuple[GapEntry, ...]
     day_names: tuple[str, ...]
+    month_names: tuple[str, ...]
     _by_pointer: Mapping[str, SnapshotValue]
     _window_stats: Mapping[tuple[str, str, str, str], SnapshotValue]
     _sample_counts: Mapping[tuple[str, str, str, str], SnapshotValue]
     _day_stats: Mapping[tuple[str, str, str, str, str], SnapshotValue]
+    _month_stats: Mapping[tuple[str, str, str, str, str], SnapshotValue]
+    _month_sources: Mapping[str, tuple[str, str]]
     _tier_counts: Mapping[str, int]
     _statistic_count: int
     _day_bucket_count: int
+    _month_bucket_count: int
     _facts_by_pointer: Mapping[str, FactTextValue] = field(default_factory=dict)
     """Every **fact** the snapshot carries, keyed by the JSON pointer of its `value`
     (Req 6.2).
@@ -690,6 +695,54 @@ class SnapshotView:
                 found.append((local_day, value))
         return tuple(found)
 
+    def month_stat(
+        self,
+        resource_id: str,
+        metric: str,
+        statistic: str,
+        local_month: str,
+        *,
+        instance: str | None = None,
+    ) -> SnapshotValue | None:
+        """One month-scoped value, or `None`. Same miss semantics as :meth:`stat`."""
+        return self._month_stats.get(
+            (resource_id, local_month, metric, statistic, instance or "")
+        )
+
+    def month_series(
+        self,
+        resource_id: str,
+        metric: str,
+        statistic: str,
+        *,
+        instance: str | None = None,
+    ) -> tuple[tuple[str, SnapshotValue], ...]:
+        """Every month this resource has a value for, in ascending calendar order.
+
+        The historical-trend counterpart of :meth:`day_series`, with the identical rule
+        about absent entries: a month with no value is **omitted** rather than zero-filled.
+        A trend is the one place a zero-filled gap does most damage — three months of
+        declining usage is a story, and two measured months beside a fabricated zero is
+        the same picture with nothing behind it.
+        """
+        found: list[tuple[str, SnapshotValue]] = []
+        for local_month in self.month_names:
+            value = self.month_stat(
+                resource_id, metric, statistic, local_month, instance=instance
+            )
+            if value is not None:
+                found.append((local_month, value))
+        return tuple(found)
+
+    def month_source(self, resource_id: str, local_month: str) -> tuple[str, str] | None:
+        """How this resource's month was obtained: `(source, source_run_id)`, or `None`.
+
+        `source` is `measured` or `carried`. The coverage appendix reports it, because a
+        figure this run inherited from an earlier one and a figure it observed itself are
+        different claims and a reader is entitled to tell them apart.
+        """
+        return self._month_sources.get(f"{resource_id}\u0000{local_month}")
+
     def sku_capacity(self, resource_id: str, capability: str) -> SnapshotValue | None:
         """A resource's SKU capacity as a value with its own pointer, or `None`.
 
@@ -741,6 +794,8 @@ class SnapshotView:
                 return self._statistic_count
             case CountKind.DAY_BUCKETS:
                 return self._day_bucket_count
+            case CountKind.MONTH_BUCKETS:
+                return self._month_bucket_count
 
     def tier_counts(self) -> Mapping[str, int]:
         """Resource counts per `fidelity_tier`, ordered by tier name.
@@ -858,9 +913,14 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     tier_counts: dict[str, int] = {}
     day_names: list[str] = []
     seen_days: set[str] = set()
+    month_stats: dict[tuple[str, str, str, str, str], SnapshotValue] = {}
+    month_sources: dict[str, tuple[str, str]] = {}
+    month_names: list[str] = []
+    seen_months: set[str] = set()
     resources: list[ResourceView] = []
     statistic_count = 0
     day_bucket_count = 0
+    month_bucket_count = 0
 
     for index, raw_resource in enumerate(resources_raw):
         at = pointer("resources", index)
@@ -994,6 +1054,58 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
                 ] = value
                 statistic_count += 1
 
+        # The historical trend, walked exactly as the day buckets above are. A month is
+        # addressable on the same terms — `resources[i].month_buckets[j].statistics[k].value`
+        # re-resolves against the stored document — because a trend figure is a figure, and
+        # Req 7.2 does not have a weaker tier for a number that happens to be about the past.
+        for bucket_position, raw_bucket in enumerate(
+            _list_at(raw_resource, "month_buckets", at)
+        ):
+            bucket_at = pointer("resources", index, "month_buckets", bucket_position)
+            if not isinstance(raw_bucket, dict):
+                raise CompileFailedError(f"{bucket_at} is not an object")
+            local_month = _require_str(raw_bucket, "local_month", bucket_at)
+            month_bucket_count += 1
+            if local_month not in seen_months:
+                seen_months.add(local_month)
+                month_names.append(local_month)
+
+            # Provenance travels with the month, not beside it: a carried figure presented
+            # as a measured one is the failure this key exists to make impossible.
+            month_sources[f"{resource.resource_id}\u0000{local_month}"] = (
+                _require_str(raw_bucket, "source", bucket_at),
+                str(raw_bucket.get("source_run_id") or ""),
+            )
+
+            for position, raw_stat in enumerate(
+                _list_at(raw_bucket, "statistics", bucket_at)
+            ):
+                value = _build_value(
+                    raw_stat,
+                    at=pointer(
+                        "resources",
+                        index,
+                        "month_buckets",
+                        bucket_position,
+                        "statistics",
+                        position,
+                        "value",
+                    ),
+                    resource_id=resource.resource_id,
+                    window=local_month,
+                )
+                _record(by_pointer, value)
+                month_stats[
+                    (
+                        value.resource_id,
+                        local_month,
+                        value.metric,
+                        value.statistic,
+                        value.instance or "",
+                    )
+                ] = value
+                statistic_count += 1
+
     gaps = tuple(
         _build_gap(raw_gap, position, pointer("gaps", position))
         for position, raw_gap in enumerate(gaps_raw)
@@ -1035,6 +1147,7 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         (("gaps",), len(gaps)),
         (("statistics",), statistic_count),
         (("day_buckets",), day_bucket_count),
+        (("month_buckets",), month_bucket_count),
         (("raw_archive", "objects"), _raw_archive_count(document)),
         (("resource_group",), len(group_counts)),
         (("location",), len(region_counts)),
@@ -1080,14 +1193,18 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         resources=tuple(resources),
         gaps=gaps,
         day_names=tuple(sorted(day_names)),
+        month_names=tuple(sorted(month_names)),
         _by_pointer=MappingProxyType(by_pointer),
         _facts_by_pointer=MappingProxyType(facts_by_pointer),
         _window_stats=MappingProxyType(window_stats),
         _sample_counts=MappingProxyType(sample_counts),
         _day_stats=MappingProxyType(day_stats),
+        _month_stats=MappingProxyType(month_stats),
+        _month_sources=MappingProxyType(month_sources),
         _tier_counts=MappingProxyType(dict(sorted(tier_counts.items()))),
         _statistic_count=statistic_count,
         _day_bucket_count=day_bucket_count,
+        _month_bucket_count=month_bucket_count,
     )
 
 

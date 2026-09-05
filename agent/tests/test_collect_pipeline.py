@@ -86,7 +86,9 @@ from reporting_agent.collect.pipeline import (
     assert_some_location_reachable,
     assert_some_statistic,
     distinct_resource_ids,
+    CollectionSink,
     resolve_run_plan,
+    run_collection,
     run_generate_report,
     statistic_from_plain,
 )
@@ -2431,3 +2433,158 @@ def test_the_reused_grain_is_the_snapshots_own() -> None:
     document = _stored_snapshot(plan, grain="PT15M")
     event = snapshot_ready_event(outcome_from_snapshot(document, plan=plan), plan=plan)
     assert event["grain"] == "PT15M"
+
+
+# --------------------------------------------------------------------------- #
+# The historical trend's seed months
+# --------------------------------------------------------------------------- #
+#
+# `compile/historical.py` plots prior verified runs. A first report has none, so the
+# trend it prints is empty — which is correct and useless. These months are what such a
+# report plots instead: the same estate, the same grain, one calendar month at a time.
+
+
+def collect_with_trend(
+    *, months: int, start: str, end: str, extra_batches: int
+) -> dict[str, Any]:
+    """Drive `run_collection` with a trend seed and return the snapshot document."""
+    harness = one_vm_harness(
+        # One scripted batch for the period pass, plus one per month that is not the
+        # period's own window. A month whose window IS the run's window consumes none —
+        # which is what this count asserts.
+        batches=[batch_response([WEB_01]) for _ in range(1 + extra_batches)],
+        payload_body=payload(start=start, end=end),
+    )
+    sink = CollectionSink()
+
+    async def go() -> None:
+        async for _ in run_collection(
+            payload=harness.payload,
+            context=harness.context,
+            steps=harness.steps,
+            artifact_bucket="rpt-artifacts-test",
+            sink=sink,
+            provider=harness.provider,
+            object_store=harness.store,
+            catalog=CATALOG,
+            seed_trend_months=months,
+        ):
+            pass
+
+    asyncio.run(asyncio.wait_for(go(), timeout=WATCHDOG_S))
+    return sink.require().document
+
+
+def test_no_trend_is_asked_for_and_none_is_collected() -> None:
+    """The default. A profile with no `historical_trend` block pays nothing for one, and
+    the key is still present and empty rather than absent — a snapshot's shape does not
+    depend on which sections a profile happened to declare."""
+    document = collect_with_trend(
+        months=0, start="2026-07-01", end="2026-07-01", extra_batches=0
+    )
+
+    for resource in document["resources"]:
+        assert resource["month_buckets"] == []
+
+
+def test_three_months_are_seeded_oldest_first_and_anchored_on_the_period() -> None:
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-31", extra_batches=2
+    )
+    resource = document["resources"][0]
+
+    assert [bucket["local_month"] for bucket in resource["month_buckets"]] == [
+        "2026-05",
+        "2026-06",
+        "2026-07",
+    ]
+
+
+def test_the_report_s_own_month_is_not_collected_a_second_time() -> None:
+    """A report covering exactly one calendar month has already measured its anchor. Two
+    scripted batches for three months is the assertion: a third request would exhaust the
+    queue and fail.
+
+    It is also what makes the trend's last point equal the period figure printed a few
+    pages earlier — by construction, rather than by two computations agreeing.
+    """
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-31", extra_batches=2
+    )
+    resource = document["resources"][0]
+    by_month = {b["local_month"]: b for b in resource["month_buckets"]}
+
+    anchor = {
+        (entry["metric"], entry["statistic"]): entry["value"]
+        for entry in by_month["2026-07"]["statistics"]
+    }
+    period = {
+        (entry["metric"], entry["statistic"]): entry["value"]
+        for entry in resource["statistics"]
+        # The window statistics carry guest metrics too; compare the platform ones.
+        if (entry["metric"], entry["statistic"]) in anchor
+    }
+
+    assert anchor and anchor == period
+
+
+def test_a_partial_period_does_not_reuse_the_period_pass() -> None:
+    """A report covering 1–15 July is not the July month, so the anchor is collected on
+    its own window — three requests for three months."""
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-15", extra_batches=3
+    )
+    resource = document["resources"][0]
+
+    assert len(resource["month_buckets"]) == 3
+
+
+def test_every_seeded_month_states_how_much_of_itself_was_covered() -> None:
+    """`slot_count` is the month's real hour count, never padded. "Measured over 240 of
+    744 hours" and "measured over 744" are different facts, and a trend that presented a
+    third of a month as a whole one would be the inference-as-observation this product
+    exists to remove."""
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-31", extra_batches=2
+    )
+    slots = {
+        bucket["local_month"]: bucket["slot_count"]
+        for bucket in document["resources"][0]["month_buckets"]
+    }
+
+    assert slots == {"2026-05": 31 * 24, "2026-06": 30 * 24, "2026-07": 31 * 24}
+
+
+def test_a_seeded_month_is_measured_rather_than_carried() -> None:
+    """`carried` is for a month copied from an earlier run's snapshot. Nothing this pass
+    produces may claim that provenance."""
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-31", extra_batches=2
+    )
+
+    for bucket in document["resources"][0]["month_buckets"]:
+        assert bucket["source"] == "measured"
+        assert bucket["source_run_id"] == ""
+
+
+def test_a_month_the_provider_could_not_answer_keeps_its_bucket_and_records_no_gap() -> None:
+    """The one judgement in `_collect_trend`. `partial` means *the report's own period has
+    holes* and `report_pipeline` raises on it; a machine created in June legitimately
+    answers nothing for May, and letting that flip a July report to partial would report a
+    hole in July that does not exist.
+
+    Driven by scripting one batch too few, so the second trend month raises inside the
+    provider. The month survives as a bucket with no statistics — visible as a month the
+    trend cannot plot, which `compile_historical_trend` already states.
+    """
+    document = collect_with_trend(
+        months=3, start="2026-07-01", end="2026-07-31", extra_batches=1
+    )
+    resource = document["resources"][0]
+    empty = [b for b in resource["month_buckets"] if not b["statistics"]]
+
+    assert len(resource["month_buckets"]) == 3
+    assert len(empty) == 1
+    assert document["gaps"] == [] or all(
+        gap.get("gap_type") != "trend_month_unavailable" for gap in document["gaps"]
+    )

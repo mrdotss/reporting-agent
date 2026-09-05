@@ -210,6 +210,31 @@ def compile_historical_trend(
             )
             points.append(ChartPoint(path=point_cursor.path, x=period_label, y=figure))
 
+    # --- the seed, when there is no prior-run history to plot ------------------------
+    #
+    # `select` plots one point per prior verified run, which is right and empty on a first
+    # report: a customer's first month has no earlier run to compare against, so the trend
+    # they most want is the one the product could not draw. `collect/pipeline.py` seeds
+    # calendar months into **this** run's own snapshot for exactly that case.
+    #
+    # A prior run wins where one exists, and the fallback is whole rather than per month:
+    # a prior-run point is labelled by its report period and a seeded point by its calendar
+    # month, so interleaving them would put two kinds of label on one axis and — where a
+    # period and a month overlap — plot the same hours twice.
+    seeded = False
+    if not points:
+        with compiling_against(context.view):
+            series_cursor = chart_cursor.child("series", 0)
+            for local_month, value in _seeded_months(context.view, metric, statistic):
+                point_cursor = series_cursor.child("points", len(points))
+                figure = point_cursor.child("y", 0).figure(
+                    value, catalog_scale=context.catalog_scale(value)
+                )
+                points.append(
+                    ChartPoint(path=point_cursor.path, x=local_month, y=figure)
+                )
+        seeded = bool(points)
+
     count_plotted = len(points)
     count_requested = lookback
 
@@ -219,7 +244,7 @@ def compile_historical_trend(
     nodes: list[object] = []
 
     if count_plotted == 0:
-        # Req 19.5 — zero prior runs: one statement, block still emitted
+        # Req 19.5 — zero prior runs and nothing seeded: one statement, block still emitted
         statement = messages.text("doc.historical.no_prior_runs")
         nodes.append(text_paragraph(cursor.child("nodes", 0), "Body Text", statement))
     else:
@@ -296,6 +321,28 @@ def _find_historical_value(
         if value is not None:
             return value
     return None
+
+
+def _seeded_months(
+    view: SnapshotView, metric: str, statistic: str
+) -> list[tuple[str, SnapshotValue]]:
+    """This run's own calendar months for one metric+statistic, oldest first.
+
+    The counterpart of :func:`_find_historical_value` on the seeded side, and it takes the
+    first resource that answers for the same reason: the block plots one point per period,
+    so it needs one value per month rather than one per resource.
+
+    **Every plotted month comes from the same resource.** Taking the first answering
+    resource per month independently would draw a line whose points belonged to different
+    machines — a "trend" assembled from three unrelated series, which is worse than no
+    trend at all. So a resource is chosen once, by being the first that answers for any
+    month, and only that resource's months are plotted.
+    """
+    for resource in view.resources:
+        series = view.month_series(resource.resource_id, metric, statistic)
+        if series:
+            return list(series)
+    return []
 
 
 def _exclusion_summary(selection: Selection, messages: Messages) -> str:

@@ -56,14 +56,18 @@ __all__ = [
     "BASE_GRAIN",
     "DEFAULT_TIMEZONE",
     "FALLBACK_GRAIN",
+    "MAX_TREND_MONTHS",
     "DayBucket",
+    "TrendMonth",
     "UnresolvableTimezoneError",
     "Window",
     "choose_grain",
     "day_buckets",
     "local_day",
+    "month_name",
     "resolve_timezone",
     "resolve_window",
+    "trend_months",
 ]
 
 # --- the only two grains this run ever requests (Req 25.1, 25.2, 25.5, 25.8) --------
@@ -340,3 +344,118 @@ def day_buckets(window: Window, tz: TzInfo, grain: str) -> list[DayBucket]:
         current += slot_duration
 
     return [DayBucket(local_day=day, slot_count=counts[day]) for day in sorted(counts)]
+
+
+# --- the historical trend's calendar (the months a run seeds) -----------------------
+
+MAX_TREND_MONTHS: Final[int] = 3
+"""How many calendar months a run will ever collect for the trend, whatever the
+profile's lookback asks for.
+
+A bound rather than a setting. Each month is its own `PT1H` pass over the estate, so
+the cost is linear in this number and a profile asking for a year would quietly turn an
+eight-minute run into an hour-long one. Three is what the trend section reads as — this
+month against the two before it — and a longer history is the Log Analytics question,
+not a question of running this loop more times."""
+
+
+def month_name(day: date) -> str:
+    """The calendar month `day` falls in, as `YYYY-MM`. **Pure.**
+
+    The snapshot's `local_month` spelling. `YYYY-MM` rather than a `date` because a month
+    is not a day and serializing one as `2026-07-01` invites exactly that reading; and it
+    sorts chronologically under a plain code-point comparison, which is what every array
+    order on the snapshot path is produced with.
+    """
+    return f"{day.year:04d}-{day.month:02d}"
+
+
+@dataclass(frozen=True, slots=True)
+class TrendMonth:
+    """One calendar month of the trend, and the window that covers it.
+
+    `window` is a full :class:`Window` from :func:`resolve_window`, so a month is
+    collected through **exactly** the machinery a report period is — same local-midnight
+    boundaries, same half-open UTC rule, same grain. That is what lets the trend's figure
+    for the report's own month equal the figure printed for the period a few pages
+    earlier, rather than differing by a timezone offset nobody can see.
+    """
+
+    local_month: str
+    window: Window
+
+
+def _first_of_month(day: date) -> date:
+    return day.replace(day=1)
+
+
+def _previous_month(first: date) -> date:
+    """The first of the month before `first`, which must itself be a first."""
+    return (first - timedelta(days=1)).replace(day=1)
+
+
+def _last_of_month(first: date) -> date:
+    """The last local day of the month `first` opens."""
+    if first.month == 12:
+        return first.replace(year=first.year + 1, month=1) - timedelta(days=1)
+    return first.replace(month=first.month + 1) - timedelta(days=1)
+
+
+def trend_months(
+    window: Window,
+    tz: TzInfo,
+    *,
+    count: int = MAX_TREND_MONTHS,
+    today: date | None = None,
+) -> list[TrendMonth]:
+    """The calendar months the trend covers, oldest first. **Pure.**
+
+    Anchored on the month the run's own window **ends** in, then walking backwards, so a
+    report for July compares July against June and May — not against the two months before
+    whenever the run happened to be enqueued. A re-run of July in December produces the
+    same three months as the original did, which is what makes a re-run a revision of one
+    document rather than a different one.
+
+    **The anchor month is clipped to `today` when it has not finished.** A run on the 12th
+    of a month asks for the 1st to the 12th, not to the 31st: a window extending into the
+    future is one Azure answers with empty intervals, and an average over "the month so
+    far" divided by a whole month's slots would report a machine at a third of its real
+    usage. `slot_count` on the bucket then states how much of the month was covered, so a
+    partial month is visible as partial rather than as a dip.
+
+    `today` defaults to the anchor month's own last day, which is the right reading for a
+    window that has already closed and leaves the function pure for every caller that has
+    no clock. A caller collecting the current month passes the run's own date.
+
+    `tz` is passed rather than read off `window`, and that is not a convenience: every
+    instant on a :class:`Window` is already **UTC**, so deriving the zone from one would
+    resolve each month against UTC midnight and reintroduce the exact defect this function
+    was written to avoid — the reason `collect/buckets.py` refuses `P1D` in the first place.
+
+    Raises `ValueError` for a non-positive `count`: zero months is `[]` expressed as a
+    request for nothing, and a caller wanting no trend does not call this.
+    """
+    if count <= 0:
+        raise ValueError(f"count must be positive, got {count!r}")
+
+    anchor = _first_of_month(window.local_end)
+    firsts = [anchor]
+    for _ in range(count - 1):
+        firsts.append(_previous_month(firsts[-1]))
+    firsts.reverse()
+
+    months: list[TrendMonth] = []
+    for first in firsts:
+        last = _last_of_month(first)
+        if today is not None and today < last:
+            # The month has not finished. Clipped rather than dropped: two thirds of a
+            # month is a real observation and the slot count says so, where omitting it
+            # would leave the trend silently one month shorter than it claims to be.
+            last = max(first, today)
+        months.append(
+            TrendMonth(
+                local_month=month_name(first),
+                window=resolve_window(first, last, tz),
+            )
+        )
+    return months

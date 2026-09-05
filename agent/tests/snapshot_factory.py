@@ -37,7 +37,10 @@ from reporting_agent.collect.snapshot import (
     ESTIMATOR_EXACT_INTERVAL_MAXIMUM,
     ESTIMATOR_EXACT_INTERVAL_MINIMUM,
     FactEntry,
+    MONTH_SOURCE_CARRIED,
+    MONTH_SOURCE_MEASURED,
     ResourceDayBucket,
+    ResourceMonthBucket,
     ResourceSnapshot,
     SkuCapacity,
     StatisticEntry,
@@ -230,8 +233,14 @@ def vm(
     memory_bytes: str | None = "8589934592",
     statistics: list[StatisticEntry] | None = None,
     facts: tuple[FactEntry, ...] = (),
+    month_cpu: dict[str, str] | None = None,
+    month_source: tuple[str, str] = (MONTH_SOURCE_MEASURED, ""),
 ) -> ResourceSnapshot:
-    """One resource with a small, realistic statistic set and two day buckets."""
+    """One resource with a small, realistic statistic set and two day buckets.
+
+    `month_cpu` defaults to **no** month buckets, so the default document keeps the shape
+    every existing compile-stage expectation was written against; a trend test opts in.
+    """
     if statistics is None:
         statistics = [
             exact(CPU, "avg", cpu_avg, fidelity_tier=fidelity_tier),
@@ -253,6 +262,17 @@ def vm(
         for local_day, value in sorted(per_day.items())
     )
 
+    months = tuple(
+        ResourceMonthBucket(
+            local_month=local_month,
+            slot_count=744,
+            source=month_source[0],
+            source_run_id=month_source[1],
+            statistics=(exact(CPU, "avg", value, fidelity_tier=fidelity_tier),),
+        )
+        for local_month, value in sorted((month_cpu or {}).items())
+    )
+
     return ResourceSnapshot(
         record=resource_record(
             resource_id=resource_id,
@@ -271,6 +291,7 @@ def vm(
         ),
         statistics=tuple(statistics),
         day_buckets=buckets,
+        month_buckets=months,
         facts=facts,
     )
 

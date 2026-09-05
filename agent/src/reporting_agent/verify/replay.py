@@ -86,7 +86,9 @@ from reporting_agent.collect.log import (
 from reporting_agent.collect.snapshot import (
     FactEntry,
     FactEntryError,
+    MONTH_SOURCE_MEASURED,
     ResourceDayBucket,
+    ResourceMonthBucket,
     ResourceSnapshot,
     SkuCapacity,
     StatisticEntry,
@@ -183,6 +185,25 @@ class ReplayResource:
     sku_capability_values: Mapping[str, Decimal | None] = field(default_factory=dict)
     excluded: bool = False
     guest_entries: tuple[StatisticEntry, ...] = ()
+    month_buckets: tuple[ResourceMonthBucket, ...] = ()
+    """The historical trend's months, carried over rather than recomputed.
+
+    Same standing as `guest_entries`, and for the same reason: a seeded month is measured
+    over a window that is **not** this run's, so no fold over the archive — whose objects
+    are this window's — can reproduce it. Recomputing it from the archive would require
+    the trend's own responses to be archived and partitioned by month, which is a larger
+    change to the archive's shape than the trend is worth today; dropping it would make
+    every run that seeds a trend report a mismatch on a snapshot perfectly reproducible in
+    the part replay can actually check.
+
+    **What that costs, stated plainly.** A month value edited in the stored snapshot is not
+    caught by the replay gate. It is still caught by every gate that reads the document
+    against the snapshot — the figure ledger, provenance, the fidelity pass — because a
+    trend figure carries a `snapshot_path` into `month_buckets` and must equal what it
+    addresses. The exposure is exactly the one enhanced-tier guest statistics already
+    carry, and it is bounded by the archive's own honesty: `raw_archive.complete` says
+    whether the run archived everything it folded.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -681,6 +702,7 @@ def _assemble(
                 # the statistics take, and the reason a fact folded from a *missing* object
                 # produces a differing digest rather than a differently ordered one.
                 facts=tuple(facts.get(resource.record["resource_id"], ())),
+                month_buckets=resource.month_buckets,
             )
         )
 
@@ -881,6 +903,7 @@ def _replay_resource(
         # the input the collector fed the predicate — there is nothing left to infer.
         excluded=is_excluded_from_averages(resource_record),
         guest_entries=_guest_entries(raw.get("statistics")),
+        month_buckets=_month_buckets(raw.get("month_buckets")),
     )
 
 
@@ -944,6 +967,44 @@ def _day_buckets(raw: object) -> tuple[ResourceDayBucket, ...]:
         ResourceDayBucket(
             local_day=date.fromisoformat(str(bucket.get("local_day"))),
             slot_count=int(bucket.get("slot_count") or 0),
+        )
+        for bucket in _as_mappings(raw)
+    )
+
+
+def _month_buckets(raw: object) -> tuple[ResourceMonthBucket, ...]:
+    """The trend's months, rebuilt whole — statistics included, unlike `_day_buckets`.
+
+    The difference is deliberate. A day bucket's statistics are **re-derived** by the day
+    fold, so reading them back would let a hand-edited day value survive its own check;
+    a month's cannot be re-derived at all (see `ReplayResource.month_buckets`), so reading
+    them back is the only way the recomputed document can equal the stored one.
+    """
+    return tuple(
+        ResourceMonthBucket(
+            local_month=str(bucket.get("local_month") or ""),
+            slot_count=int(bucket.get("slot_count") or 0),
+            source=str(bucket.get("source") or MONTH_SOURCE_MEASURED),
+            source_run_id=str(bucket.get("source_run_id") or ""),
+            statistics=tuple(
+                # `stored`, not `entry`: `entry` is one of the names
+                # `tests/test_boundaries.py` reserves for a raw **response** body, and
+                # this is a value already folded and written to the snapshot. The
+                # distinction is the whole point of that rule — a response leaf has one
+                # reader, `collect/numeric.py`, and a stored digit string is not one.
+                StatisticEntry(
+                    metric=str(stored.get("metric") or ""),
+                    statistic=str(stored.get("statistic") or ""),
+                    value=Decimal(str(stored.get("value") or "0")),
+                    unit=str(stored.get("unit") or ""),
+                    estimator=str(stored.get("estimator") or ""),
+                    fidelity_tier=str(stored.get("fidelity_tier") or ""),
+                    sample_count=int(stored.get("sample_count") or 0),
+                    scale=_scale_of(str(stored.get("value") or "0")),
+                    instance=str(stored.get("instance") or "") or None,
+                )
+                for stored in _as_mappings(bucket.get("statistics"))
+            ),
         )
         for bucket in _as_mappings(raw)
     )

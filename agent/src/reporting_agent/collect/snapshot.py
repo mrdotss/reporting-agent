@@ -191,6 +191,7 @@ __all__ = [
     "FloatInSnapshotError",
     "PercentileKeyError",
     "ResourceDayBucket",
+    "ResourceMonthBucket",
     "ResourceSnapshot",
     "SkuCapacity",
     "StatisticEntry",
@@ -219,7 +220,7 @@ logger = logging.getLogger(__name__)
 
 # --- what a reader needs to identify the producer (Req 35.8) -------------------------
 
-SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.2.0"
+SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.3.0"
 """The version of the snapshot *shape* — this module's output contract, distinct from
 the agent's own version and from the catalog's. A later reader tells which producer
 wrote a snapshot from `schema_version` plus `producer`, without consulting the run
@@ -243,7 +244,20 @@ a key that appeared only when a source answered would make the document's shape 
 whether the estate happened to have a backup configured, and two runs over one subscription
 would then differ in shape rather than in content. A minor bump again because nothing was
 removed or re-typed: a `1.1.0` reader meets an array where it expected no key, which is the
-same case it already handles for `day_buckets[].statistics`."""
+same case it already handles for `day_buckets[].statistics`.
+
+`1.3.0` adds `resources[].month_buckets` (the historical trend), on the same reasoning
+and with the same consequence — emitted always, including empty, so every digest changes
+at this bump.
+
+**Why a month bucket is in the snapshot at all, rather than the compiler reading the
+months out of earlier runs.** `verify/replay.py` recompiles a stored report from its own
+snapshot and demands a byte-identical figure ledger. A compiler that reached for other
+runs' snapshots would make that ledger depend on what else happens to be in the object
+store at replay time — a report that verified in March and failed in June because a
+neighbouring run was deleted. So a month a run did not measure itself is **copied into
+this snapshot at collection time**, carrying the run it came from, and the compiler stays
+pure over the one document it is given."""
 
 
 def _agent_version() -> str:
@@ -1422,6 +1436,86 @@ class ResourceDayBucket:
         }
 
 
+MONTH_SOURCE_MEASURED: Final[str] = "measured"
+"""This run queried the provider for this month itself."""
+
+MONTH_SOURCE_CARRIED: Final[str] = "carried"
+"""This month was copied from an earlier run's snapshot rather than re-queried.
+
+The earlier run is named in `source_run_id`, so the coverage appendix can say which
+figures this report measured and which it inherited — a distinction a reader is entitled
+to, and one that vanishes if a carried month is presented as a fresh observation."""
+
+MONTH_SOURCES: Final[tuple[str, ...]] = (MONTH_SOURCE_MEASURED, MONTH_SOURCE_CARRIED)
+
+_MONTH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+
+
+@dataclass(frozen=True, slots=True)
+class ResourceMonthBucket:
+    """One **local calendar month** for one resource, and that month's statistics.
+
+    The historical-trend counterpart of :class:`ResourceDayBucket`, and deliberately its
+    shape: a flat `statistics` array on the same terms, so a month's percentile is as
+    structurally incapable of being a bare `p95` key as a day's or a window's is.
+
+    ## `local_month`, not a UTC one
+
+    `collect/buckets.py` records why `P1D` is never requested: daily buckets are
+    UTC-aligned, so a UTC+07:00 customer's "day" would span 07:00 to 07:00 local. A month
+    assembled from those buckets inherits the same defect at both edges, and — worse — the
+    trend's figure for the report's own period would then disagree with the period figure
+    printed a few pages earlier, for a reason no reader could see.
+
+    So a month here is collected as its own window through `resolve_window(first, last,
+    tz)`, at the same `PT1H` grain the period pass uses, and `local_month` is that window's
+    month in the run's own timezone. One grain, one alignment, one arithmetic.
+
+    ## `slot_count` is not padded
+
+    A month still in progress, or one whose retention only partly covers it, keeps its real
+    slot count. "Measured over 240 of 744 hours" and "measured over 744" are different
+    facts, and a trend that presented a third of August as a whole August would be the
+    inference-as-observation this product exists to remove.
+    """
+
+    local_month: str
+    slot_count: int
+    source: str = MONTH_SOURCE_MEASURED
+    source_run_id: str = ""
+    statistics: tuple[StatisticEntry, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not _MONTH_PATTERN.match(self.local_month):
+            raise ValueError(
+                f"local_month must be a calendar month as YYYY-MM, got "
+                f"{self.local_month!r}"
+            )
+        if self.slot_count < 0:
+            raise ValueError(f"slot_count cannot be negative, got {self.slot_count!r}")
+        if self.source not in MONTH_SOURCES:
+            raise ValueError(
+                f"source must be one of {MONTH_SOURCES}, got {self.source!r}"
+            )
+        # A carried month that cannot name where it came from is a carried month presented
+        # as a measured one, which is the single thing this provenance exists to prevent.
+        if self.source == MONTH_SOURCE_CARRIED and not self.source_run_id:
+            raise ValueError("a carried month must name the run it was carried from")
+        if self.source == MONTH_SOURCE_MEASURED and self.source_run_id:
+            raise ValueError(
+                f"a measured month names no source run, got {self.source_run_id!r}"
+            )
+
+    def to_plain_data(self) -> dict[str, PlainData]:
+        return {
+            "local_month": self.local_month,
+            "slot_count": int(self.slot_count),
+            "source": self.source,
+            "source_run_id": self.source_run_id,
+            "statistics": _statistics_to_plain_data(self.statistics),
+        }
+
+
 def fact_from_plain(record: FactRecord) -> FactEntry:
     """One `FactRecord` back as the `FactEntry` the snapshot carries (Req 4.1-4.6).
 
@@ -1487,6 +1581,13 @@ class ResourceSnapshot:
     sku: SkuCapacity
     statistics: tuple[StatisticEntry, ...] = field(default_factory=tuple)
     day_buckets: tuple[ResourceDayBucket, ...] = field(default_factory=tuple)
+    month_buckets: tuple[ResourceMonthBucket, ...] = field(default_factory=tuple)
+    """This resource's historical trend, one entry per local calendar month.
+
+    Empty on a run whose profile asks for no trend, and empty for a resource the trend
+    pass could not read — never absent. Same reasoning as `facts`: a key that appeared
+    only when a section happened to want it would make the document's shape depend on the
+    profile rather than on the estate."""
     facts: tuple[FactEntry, ...] = field(default_factory=tuple)
     """This resource's collected facts (Req 4.1).
 
@@ -1526,6 +1627,16 @@ class ResourceSnapshot:
             "day_buckets": [
                 bucket.to_plain_data()
                 for bucket in sorted(self.day_buckets, key=lambda item: item.local_day)
+            ],
+            # Ordered by month, produced here rather than inherited from the order the
+            # per-month passes happened to complete in (Req 34.8) — the same reason the
+            # day buckets above are sorted. `local_month` is `YYYY-MM`, so a code-point
+            # sort is a chronological one.
+            "month_buckets": [
+                bucket.to_plain_data()
+                for bucket in sorted(
+                    self.month_buckets, key=lambda item: item.local_month
+                )
             ],
             # Req 4.6 — emitted **always**, including as an empty array, and inside the
             # canonical form the content hash is taken over. Omitting the key when a resource
