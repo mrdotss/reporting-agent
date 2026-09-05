@@ -207,8 +207,10 @@ def service_for(
     credential: InvocationCredential | None = None,
     workspace_id: str | None = None,
     row_counter: Any = None,
+    earliest_probe: Any = None,
     permissions_timeout_s: float = FAST_TIMEOUT_S,
     fidelity_timeout_s: float = FAST_TIMEOUT_S,
+    metrics_history_timeout_s: float = FAST_TIMEOUT_S,
 ) -> PreflightService:
     return PreflightService(
         subscription_id=SUBSCRIPTION,
@@ -216,8 +218,10 @@ def service_for(
         transport=transport if transport is not None else RecordingTransport(body=reader_response()),
         workspace_id=workspace_id,
         row_counter=row_counter,
+        earliest_probe=earliest_probe,
         permissions_timeout_s=permissions_timeout_s,
         fidelity_timeout_s=fidelity_timeout_s,
+        metrics_history_timeout_s=metrics_history_timeout_s,
     )
 
 
@@ -940,10 +944,12 @@ class FakePreflightService:
         *,
         verified: bool = True,
         tier: str = FIDELITY_ENHANCED,
+        history_since: str | None = None,
         error: BaseException | None = None,
     ) -> None:
         self.verified = verified
         self.tier = tier
+        self.history_since = history_since
         self.error = error
         self.calls: list[str] = []
         self.closed = 0
@@ -957,6 +963,10 @@ class FakePreflightService:
     async def probe_fidelity(self) -> str:
         self.calls.append("fidelity")
         return self.tier
+
+    async def probe_metrics_history(self) -> str | None:
+        self.calls.append("metrics_history")
+        return self.history_since
 
     async def aclose(self) -> None:
         self.closed += 1
@@ -1002,20 +1012,24 @@ def test_the_preflight_command_is_routed_deterministically(
 
     events = route_preflight(service, monkeypatch)
 
-    assert types_of(events) == ["tool", "tool", "tool", "tool", "done"]
+    # Three questions now: read at scope, the guest-counter tier, and how far back
+    # exported platform metrics reach. The third shapes the wizard's Lookback control, and
+    # it is asked here rather than at report time so the control cannot offer a depth the
+    # data does not support.
+    assert types_of(events) == ["tool"] * 6 + ["done"]
     assert [event["name"] for event in events if event["type"] == "tool"] == [
         TOOL_PREFLIGHT_PERMISSIONS,
         TOOL_PREFLIGHT_PERMISSIONS,
+        TOOL_PREFLIGHT_FIDELITY,
+        TOOL_PREFLIGHT_FIDELITY,
         TOOL_PREFLIGHT_FIDELITY,
         TOOL_PREFLIGHT_FIDELITY,
     ]
     assert [event["phase"] for event in events if event["type"] == "tool"] == [
         "start",
         "end",
-        "start",
-        "end",
-    ]
-    assert service.calls == ["permissions", "fidelity"]
+    ] * 3
+    assert service.calls == ["permissions", "fidelity", "metrics_history"]
     assert service.closed == 1
 
 
@@ -1025,8 +1039,8 @@ def test_a_passing_preflight_reports_its_outcome_on_the_terminal_event(
     """The result rides on `done`, inside the declared vocabulary.
 
     A preflight has no run row and no later callback, and the app consumes the short
-    stream inline, so `scope_verified` and `fidelity_tier` travel on the one event every
-    client already waits for rather than on an eleventh event type.
+    stream inline, so `scope_verified`, `fidelity_tier` and `metrics_history_since` travel
+    on the one event every client already waits for rather than on an eleventh event type.
     """
     events = route_preflight(FakePreflightService(), monkeypatch)
     done = one(events, "done")
@@ -1037,7 +1051,22 @@ def test_a_passing_preflight_reports_its_outcome_on_the_terminal_event(
         "status": STATUS_COMPLETED,
         "scope_verified": True,
         "fidelity_tier": FIDELITY_ENHANCED,
+        # `None` where nothing is exported, which is the common case and not a failure:
+        # the app reads it as "live metrics only" and bounds the Lookback control at the
+        # 93-day retention floor.
+        "metrics_history_since": None,
     }
+
+
+def test_a_workspace_with_exported_history_reports_its_earliest_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A date, not a month count. The workspace gains another day every day, so a stored
+    count silently understates the depth until somebody re-probes; the earliest record is
+    a fixed fact and depth is `now` minus it."""
+    service = FakePreflightService(history_since="2026-02-14T03:11:00Z")
+    done = one(route_preflight(service, monkeypatch), "done")
+    assert done["metrics_history_since"] == "2026-02-14T03:11:00Z"
 
 
 def test_a_baseline_probe_still_completes_the_preflight(
@@ -1197,3 +1226,102 @@ def test_the_step_tracker_is_the_only_source_of_the_preflights_tool_events(
     assert tool_events[1]["id"] == tool_events[0]["id"]
     assert tool_events[3]["id"] == tool_events[2]["id"]
     assert tool_events[2]["id"] != tool_events[0]["id"]
+
+
+# --------------------------------------------------------------------------- #
+# How far back the subscription can answer
+#
+# The question a Lookback control needs before it can offer a range. Asked here, at
+# connect time, so the control never offers a depth the data cannot support — and
+# answered as a **date**, because a month count goes stale the day after it is stored.
+# --------------------------------------------------------------------------- #
+
+
+def test_no_workspace_means_no_exported_history() -> None:
+    """The common case, and not a failure. A subscription with no diagnostic setting has
+    live metrics only, and `None` is what the control reads as the 93-day floor."""
+    service = service_for(workspace_id=None)
+    assert run(service.probe_metrics_history()) is None
+
+
+def test_a_blank_workspace_id_is_the_same_as_none() -> None:
+    """Absent, empty and whitespace-only are one thing: a wizard field left alone."""
+    for workspace in ("", "   "):
+        service = service_for(workspace_id=workspace)
+        assert run(service.probe_metrics_history()) is None
+
+
+def test_the_earliest_exported_record_is_returned_as_written() -> None:
+    """Returned as text, not parsed. It crosses a thread boundary from the SDK and goes
+    straight into a JSON event; converting here would be a conversion nobody reads and a
+    timezone this module would have to have an opinion about."""
+    service = service_for(
+        workspace_id="ws-1", earliest_probe=lambda _ws: "2026-02-14T03:11:00Z"
+    )
+    assert run(service.probe_metrics_history()) == "2026-02-14T03:11:00Z"
+
+
+def test_an_empty_workspace_reports_no_history() -> None:
+    """`AzureMetrics | summarize min(TimeGenerated)` over an empty table answers one row
+    holding null: the table exists and nothing has been routed into it."""
+    service = service_for(workspace_id="ws-1", earliest_probe=lambda _ws: None)
+    assert run(service.probe_metrics_history()) is None
+
+
+def test_a_blank_answer_reports_no_history() -> None:
+    service = service_for(workspace_id="ws-1", earliest_probe=lambda _ws: "   ")
+    assert run(service.probe_metrics_history()) is None
+
+
+def test_a_rejected_history_probe_reports_no_history_rather_than_raising() -> None:
+    """This question shapes a control. A control that cannot be shown is not a reason to
+    refuse a connection, so every unhappy path answers `None`."""
+
+    def rejected(_workspace: str) -> str | None:
+        raise RuntimeError("Forbidden")
+
+    service = service_for(workspace_id="ws-1", earliest_probe=rejected)
+    assert run(service.probe_metrics_history()) is None
+
+
+def test_a_slow_history_probe_reports_no_history() -> None:
+    """A workspace too large to answer `min(TimeGenerated)` inside the budget. Recorded as
+    unknown rather than retried: the control degrades to the retention floor, which is
+    what a subscription with no export offers anyway."""
+    import time
+
+    def slow(_workspace: str) -> str | None:
+        time.sleep(FAST_TIMEOUT_S * 8)
+        return "2020-01-01T00:00:00Z"
+
+    service = service_for(
+        workspace_id="ws-1",
+        earliest_probe=slow,
+        metrics_history_timeout_s=FAST_TIMEOUT_S,
+    )
+    assert run(service.probe_metrics_history()) is None
+
+
+def test_the_history_probe_reads_the_exported_metrics_table() -> None:
+    """`AzureMetrics`, not `Perf`. They are two different things reached by two different
+    mechanisms, and only the exported platform metrics lengthen a trend."""
+    from reporting_agent.azure.preflight import (
+        LOGICAL_DISK_FREE_SPACE_QUERY,
+        METRICS_HISTORY_QUERY,
+    )
+
+    assert "AzureMetrics" in METRICS_HISTORY_QUERY
+    assert "min(TimeGenerated)" in METRICS_HISTORY_QUERY
+    assert "Perf" not in METRICS_HISTORY_QUERY
+    assert "AzureMetrics" not in LOGICAL_DISK_FREE_SPACE_QUERY
+
+
+def test_the_history_probe_is_asked_of_the_workspace_it_was_given() -> None:
+    seen: list[str] = []
+
+    def probe(workspace: str) -> str | None:
+        seen.append(workspace)
+        return None
+
+    run(service_for(workspace_id="ws-42", earliest_probe=probe).probe_metrics_history())
+    assert seen == ["ws-42"]

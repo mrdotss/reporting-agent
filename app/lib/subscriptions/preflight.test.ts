@@ -199,7 +199,52 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
         },
         undefined
       )
-    ).toEqual({ scopeVerified: true, fidelityTier: "enhanced" })
+    ).toEqual({
+      scopeVerified: true,
+      fidelityTier: "enhanced",
+      // `null` where the runtime said nothing about exported history: a real answer —
+      // "live metrics only" — and the fail-closed direction the tier takes too.
+      metricsHistorySince: null,
+    })
+  })
+
+  test("an exported-history date rides on the same accepted shape", () => {
+    expect(
+      outcomeFromDone(
+        {
+          type: "done",
+          status: "completed",
+          scope_verified: true,
+          fidelity_tier: "baseline",
+          metrics_history_since: "2026-02-14T03:11:00Z",
+        },
+        undefined
+      )
+    ).toEqual({
+      scopeVerified: true,
+      fidelityTier: "baseline",
+      metricsHistorySince: "2026-02-14T03:11:00Z",
+    })
+  })
+
+  test("an explicit null history is read as none, not as missing", () => {
+    // The runtime states it as `null` for a subscription with no export, which the schema
+    // accepts as `nullable()` rather than only `optional()`.
+    expect(
+      outcomeFromDone(
+        {
+          type: "done",
+          status: "completed",
+          scope_verified: true,
+          metrics_history_since: null,
+        },
+        undefined
+      )
+    ).toEqual({
+      scopeVerified: true,
+      fidelityTier: "baseline",
+      metricsHistorySince: null,
+    })
   })
 
   test("Requirement 12.9 — an absent tier reads as baseline", () => {
@@ -208,7 +253,11 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
         { type: "done", status: "completed", scope_verified: true },
         undefined
       )
-    ).toEqual({ scopeVerified: true, fidelityTier: "baseline" })
+    ).toEqual({
+      scopeVerified: true,
+      fidelityTier: "baseline",
+      metricsHistorySince: null,
+    })
   })
 
   test.each([
@@ -371,6 +420,9 @@ describe("Requirement 12.12 — reading the answer off the stream", () => {
     await expect(runPreflight(SUBMISSION)).resolves.toEqual({
       scopeVerified: true,
       fidelityTier: "enhanced",
+      // `null` where the runtime said nothing about exported history, which is the
+      // common case and a real answer rather than a missing field.
+      metricsHistorySince: null,
     })
   })
 
@@ -414,6 +466,7 @@ describe("Requirement 12.12 — reading the answer off the stream", () => {
     await expect(runPreflight(SUBMISSION)).resolves.toEqual({
       scopeVerified: true,
       fidelityTier: "baseline",
+      metricsHistorySince: null,
     })
   })
 

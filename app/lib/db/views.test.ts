@@ -105,6 +105,7 @@ function connectedSubscriptionRow(
     clientSecretEnc: CLIENT_SECRET_ENC,
     scopeVerified: true,
     fidelityTier: "baseline",
+    metricsHistorySince: null,
     secretExpiresAt: new Date("2027-01-15T08:30:00.000Z"),
     status: "active",
     logAnalyticsWorkspaceId: WORKSPACE_ID,

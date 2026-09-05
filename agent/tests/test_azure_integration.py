@@ -639,7 +639,9 @@ def test_a_recorded_subscription_scope_reader_completes_the_preflight(
     routed = route_preflight(monkeypatch, fixture_name="permissions_subscription_reader")
     done = routed.one("done")
 
-    assert routed.types() == ["tool", "tool", "tool", "tool", "done"]
+    # Three questions: read at scope, the guest-counter tier, and how far back exported
+    # platform metrics reach — the last of which bounds the wizard's Lookback control.
+    assert routed.types() == ["tool"] * 6 + ["done"]
     assert done["status"] == STATUS_COMPLETED
     assert done["scope_verified"] is True
     assert done["fidelity_tier"] == FIDELITY_BASELINE, "no workspace id was supplied"
@@ -793,11 +795,13 @@ def test_a_recorded_workspace_answer_with_rows_records_enhanced(
     assert done["scope_verified"] is True
     assert done["fidelity_tier"] == FIDELITY_ENHANCED
     assert routed.probed == [WORKSPACE]
+    # Six: permissions, the guest-counter tier, and how far back exported platform
+    # metrics reach. The third shares the fidelity step name — both are workspace
+    # questions, and the label on the event is what tells them apart on screen.
     assert routed.tool_names() == [
         TOOL_PREFLIGHT_PERMISSIONS,
         TOOL_PREFLIGHT_PERMISSIONS,
-        TOOL_PREFLIGHT_FIDELITY,
-        TOOL_PREFLIGHT_FIDELITY,
+        *([TOOL_PREFLIGHT_FIDELITY] * 4),
     ]
 
 

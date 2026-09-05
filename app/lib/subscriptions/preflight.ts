@@ -115,6 +115,19 @@ export type PreflightOutcome =
       readonly scopeVerified: true
       /** Probed, never submitted (Requirements 12.8–12.10). */
       readonly fidelityTier: FidelityTier
+      /**
+       * The oldest exported platform metric the workspace holds, or `null`.
+       *
+       * A **date**, not a number of months: the workspace gains another day every day, so
+       * a stored count silently understates the depth until somebody re-probes, while the
+       * earliest record is a fixed fact and depth is `now` minus it. A subscription that
+       * enables export today therefore offers a deeper lookback three months from now
+       * with nobody doing anything.
+       *
+       * `null` where nothing is exported, which is the common case: the profile wizard
+       * reads it as "live metrics only" and bounds Lookback at Azure's 93-day retention.
+       */
+      readonly metricsHistorySince: string | null
     }
   | {
       readonly scopeVerified: false
@@ -240,6 +253,14 @@ const doneEventSchema = z.object({
   status: z.string().optional(),
   scope_verified: z.boolean().optional(),
   fidelity_tier: z.enum(["baseline", "enhanced"]).optional(),
+  /**
+   * The oldest exported platform metric the workspace holds, as the runtime wrote it.
+   *
+   * `nullable()` as well as `optional()`: the runtime states it explicitly as `null` for a
+   * subscription with no export, which is the common case and a real answer rather than a
+   * missing field.
+   */
+  metrics_history_since: z.string().nullable().optional(),
 })
 
 const errorEventSchema = z.object({
@@ -281,6 +302,12 @@ export function outcomeFromDone(
     return {
       scopeVerified: true,
       fidelityTier: done.fidelity_tier ?? "baseline",
+      // Absent reads as "none", the same fail-closed direction the tier takes: a runtime
+      // that did not say offers the floor rather than an unproven depth.
+      metricsHistorySince:
+        typeof done.metrics_history_since === "string"
+          ? done.metrics_history_since
+          : null,
     }
   }
 

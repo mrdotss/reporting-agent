@@ -351,6 +351,24 @@ export const connectedSubscriptions = pgTable(
      */
     logAnalyticsWorkspaceId: text("log_analytics_workspace_id"),
 
+    /**
+     * The oldest exported platform metric this subscription's workspace holds, as the
+     * preflight measured it. `NULL` where nothing is exported — the common case, and a
+     * real answer rather than a value not yet filled in.
+     *
+     * ## Why a date and not a number of months
+     *
+     * A count is wrong the day after it is written: the workspace gains another day every
+     * day, so a stored `7` understates the depth until somebody re-probes. The earliest
+     * record is a fixed fact, and depth is `now` minus it, computed wherever it is read.
+     * A subscription that enables export today therefore offers a deeper lookback three
+     * months from now with nobody doing anything and no second probe.
+     *
+     * The one thing that can invalidate it is retention being **shortened**, which the
+     * collection degrades over honestly rather than this column pre-empting.
+     */
+    metricsHistorySince: instant("metrics_history_since"),
+
     createdAt: instant("created_at").notNull().defaultNow(),
 
     /**

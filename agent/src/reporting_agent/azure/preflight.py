@@ -74,16 +74,20 @@ __all__ = [
     "FIDELITY_PROBE_HOURS",
     "FIDELITY_PROBE_TIMEOUT_S",
     "LOGICAL_DISK_FREE_SPACE_QUERY",
+    "METRICS_HISTORY_QUERY",
+    "METRICS_HISTORY_TIMEOUT_S",
     "PERMISSIONS_API_VERSION",
     "PERMISSIONS_TIMEOUT_S",
     "RESOURCE_READ_ACTION",
     "HttpxPermissionsTransport",
+    "EarliestProbe",
     "PermissionsTransport",
     "PreflightService",
     "RowCounter",
     "build_preflight_service",
     "derive_scope_verified",
     "entry_grants_read",
+    "logs_earliest_probe",
     "logs_row_counter",
     "matches_action",
     "permissions_entries",
@@ -144,6 +148,84 @@ So this counter answering at all is what distinguishes `enhanced` from `baseline
 `limit 1` because the question is *whether* rows exist, not how many: one row settles it,
 and a probe that scans a month of a busy workspace to count what it will not use is a
 cost with no answer attached."""
+
+# --- how far back the workspace can answer -------------------------------------------
+
+METRICS_HISTORY_QUERY: Final[str] = (
+    "AzureMetrics | summarize earliest = min(TimeGenerated) | project earliest"
+)
+"""The oldest exported platform metric this workspace holds.
+
+`AzureMetrics`, not `Perf`. They are two different things reached by two different
+mechanisms: `Perf` holds guest counters put there by the Azure Monitor Agent under a Data
+Collection Rule — which is what `LOGICAL_DISK_FREE_SPACE_QUERY` above probes for — while
+`AzureMetrics` holds *platform* metrics routed by a diagnostic setting. A subscription can
+have either, both or neither, and only the second one lengthens a trend.
+
+`min(TimeGenerated)` measures what is **there**, which is the only honest answer. A
+workspace can be configured and hold thirty days, because Log Analytics has its own
+retention independent of the diagnostic setting that fills it; and a diagnostic setting
+enabled last week produces a workspace that exists and answers for a week. Asking whether
+export is configured would answer a different question than the one a lookback control
+needs."""
+
+METRICS_HISTORY_TIMEOUT_S: Final[float] = FIDELITY_PROBE_TIMEOUT_S
+"""The same 15 seconds the fidelity probe gets, for the same reason: this question cannot
+fail a preflight, so making a consultant wait longer to be told "live metrics only" buys
+nothing. A workspace too large to answer in time records `None`, and the control then
+offers the retention floor — which is what a subscription with no export offers anyway."""
+
+
+class EarliestProbe(Protocol):
+    """Returns the oldest `TimeGenerated` a workspace holds, as text, or `None`.
+
+    Text rather than a `datetime` because it crosses a thread boundary from the Azure SDK
+    and is written into a JSON event immediately after: parsing it here would be a
+    conversion nobody reads, and a timezone this module would have to have an opinion
+    about.
+    """
+
+    def __call__(self, workspace_id: str) -> str | None: ...
+
+
+def logs_earliest_probe(credential: InvocationCredential) -> EarliestProbe:
+    """An :class:`EarliestProbe` over `LogsQueryClient`, beside :func:`logs_row_counter`.
+
+    **Synchronous**, because `LogsQueryClient` is; the caller runs it on a worker thread.
+    """
+
+    def earliest(workspace_id: str) -> str | None:
+        from azure.monitor.query import LogsQueryClient, LogsQueryStatus
+
+        client = LogsQueryClient(credential=credential.for_scope(LOGS_SCOPE))
+        try:
+            response = client.query_workspace(
+                workspace_id=workspace_id,
+                query=METRICS_HISTORY_QUERY,
+                # `None` is the whole retention, which is the point: a bounded timespan
+                # would answer "the oldest record inside the window I guessed", and the
+                # guess is the thing being measured.
+                timespan=None,
+            )
+        finally:
+            closer = getattr(client, "close", None)
+            if callable(closer):
+                closer()
+
+        status = getattr(response, "status", None)
+        if status == LogsQueryStatus.PARTIAL:
+            tables = getattr(response, "partial_data", None) or ()
+        else:
+            tables = getattr(response, "tables", None) or ()
+
+        for table in tables:
+            for row in getattr(table, "rows", ()) or ():
+                if row and row[0] is not None:
+                    return str(row[0])
+        return None
+
+    return earliest
+
 
 # --- pattern matching ----------------------------------------------------------------
 
@@ -392,8 +474,10 @@ class PreflightService:
     transport: PermissionsTransport
     workspace_id: str | None = None
     row_counter: RowCounter | None = None
+    earliest_probe: EarliestProbe | None = None
     permissions_timeout_s: float = PERMISSIONS_TIMEOUT_S
     fidelity_timeout_s: float = FIDELITY_PROBE_TIMEOUT_S
+    metrics_history_timeout_s: float = METRICS_HISTORY_TIMEOUT_S
     read_action: str = RESOURCE_READ_ACTION
     _closed: bool = field(default=False, repr=False)
 
@@ -560,6 +644,65 @@ class PreflightService:
             return FIDELITY_BASELINE
 
         return FIDELITY_ENHANCED
+
+    # --- question 3: how far back can this subscription answer? ----------------------
+
+    async def probe_metrics_history(self) -> str | None:
+        """The oldest exported platform metric this workspace holds, or `None`.
+
+        **Never raises**, on the same reasoning as :meth:`probe_fidelity`: this question
+        shapes a control, and a control that cannot be shown is not a reason to refuse a
+        connection. Every unhappy path — no workspace, a rejection, a timeout, an empty
+        table — answers `None`, which a caller reads as "live metrics only" and which is
+        the true answer for a subscription with no export configured.
+
+        ## Why the answer is a date and not a number of months
+
+        A count goes stale the day after it is stored: the workspace gains another day
+        every day, and a stored `7` silently understates the depth until somebody
+        re-probes. The earliest record is a fixed fact, and depth is `now` minus it,
+        computed wherever it is needed. A subscription that enables export today therefore
+        offers a deeper lookback three months from now with nobody doing anything.
+
+        The one thing that can invalidate it is retention being **shortened**, which the
+        collection degrades over honestly rather than this probe pre-empting.
+        """
+        workspace = (self.workspace_id or "").strip()
+        if not workspace:
+            return None
+
+        probe = self.earliest_probe
+        if probe is None:
+            probe = logs_earliest_probe(self.credential)
+
+        try:
+            earliest = await asyncio.wait_for(
+                asyncio.to_thread(probe, workspace),
+                timeout=self.metrics_history_timeout_s,
+            )
+        except TimeoutError:
+            # A workspace too large to answer `min(TimeGenerated)` in time. Recorded as
+            # unknown rather than retried: the control degrades to the retention floor,
+            # which is what a subscription with no export offers anyway.
+            logger.info(
+                "the metrics-history probe did not answer within %.0f seconds; "
+                "recording no exported history.",
+                self.metrics_history_timeout_s,
+            )
+            return None
+        except Exception as exc:
+            logger.info(
+                "the metrics-history probe failed or was rejected; recording no "
+                "exported history: %s",
+                scrub_exception(exc),
+            )
+            return None
+
+        if not isinstance(earliest, str) or not earliest.strip():
+            # An empty `AzureMetrics` answers one row holding null: the table exists and
+            # nothing has been routed into it, which is no exported history.
+            return None
+        return earliest.strip()
 
     # --- teardown -------------------------------------------------------------------
 
