@@ -10,6 +10,7 @@ import { groupScanTypes, type ScanGroup } from "@/lib/scans/grouping"
 import { readLatestScan } from "@/lib/scans/store"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
 import {
+  countsAreReported,
   mayContinue,
   readRegionCounts,
   readRegionProbes,
@@ -85,11 +86,22 @@ export default async function ScanPage({ params }: ScanPageProps) {
 
   // No scan yet: the page states that and offers to take one. Deliberately not an error —
   // a subscription connected a minute ago has nothing to show and nothing wrong with it.
+  //
+  // **`reported` is why the figures below are not lengths.** These empty defaults exist to
+  // keep the lists renderable; read as figures they say "0 types, 0 regions, 0 groups",
+  // which is a claim about the subscription that no completed scan supports. A consultant
+  // whose scan had just failed on a Resource Graph 400 read exactly that and took it for an
+  // empty estate. `resourceCount` was already honest because a scan that did not complete
+  // stores it as null; the other three were counting the placeholder.
+  //
+  // `status === "complete"` rather than `scan !== null`, because a **failed** scan is a
+  // stored row — with `resourceCount: null` and no counts — and it is the case that misled.
   const counts = scan === null ? {} : readTypeCounts(scan.typeCounts)
   const childCounts = scan === null ? {} : readTypeCounts(scan.childTypeCounts)
   const groups = scan === null ? [] : readStringList(scan.resourceGroups)
   const regions = scan === null ? [] : readStringList(scan.regions)
   const declaredTypes = [...Object.keys(counts), ...Object.keys(childCounts)]
+  const reported = countsAreReported(scan)
   const gate =
     scan === null
       ? ({ kind: "running" } as const)
@@ -126,14 +138,20 @@ export default async function ScanPage({ params }: ScanPageProps) {
       <section className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-border px-5 py-4">
         <Figure
           label={t("ui.scan.resources_label")}
-          value={scan?.resourceCount ?? null}
+          value={reported ? (scan?.resourceCount ?? null) : null}
         />
         <Figure
           label={t("ui.scan.types_label")}
-          value={Object.keys(counts).length}
+          value={reported ? Object.keys(counts).length : null}
         />
-        <Figure label={t("ui.scan.regions_label")} value={regions.length} />
-        <Figure label={t("ui.scan.groups_label")} value={groups.length} />
+        <Figure
+          label={t("ui.scan.regions_label")}
+          value={reported ? regions.length : null}
+        />
+        <Figure
+          label={t("ui.scan.groups_label")}
+          value={reported ? groups.length : null}
+        />
         <RescanButton subscriptionId={id} language={language} />
       </section>
 
@@ -188,6 +206,23 @@ export default async function ScanPage({ params }: ScanPageProps) {
             />
           )
         })()}
+
+      {gate.kind === "failed" && (
+        <div className="space-y-1 rounded-lg border border-border px-5 py-4 text-sm">
+          <p>{t("ui.scan.failed")}</p>
+          {gate.code !== null && (
+            <p className="font-mono text-xs text-muted-foreground">
+              {t("ui.scan.failed_code", { code: gate.code })}
+            </p>
+          )}
+        </div>
+      )}
+
+      {gate.kind === "running" && scan !== null && (
+        <p className="rounded-lg border border-border px-5 py-4 text-sm text-muted-foreground">
+          {t("ui.scan.running")}
+        </p>
+      )}
 
       {gate.kind === "empty" && (
         <p className="rounded-lg border border-border px-5 py-4 text-sm">

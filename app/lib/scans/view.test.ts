@@ -9,6 +9,7 @@
 import { describe, expect, test } from "vitest"
 
 import {
+  countsAreReported,
   mayContinue,
   readStringList,
   readRegionProbes,
@@ -71,6 +72,48 @@ describe("readStringList", () => {
       expect(readStringList(value)).toEqual([])
     }
   )
+})
+
+describe("countsAreReported — whether any figure is a statement", () => {
+  test("reports the counts of a completed scan", () => {
+    expect(countsAreReported({ status: "complete" })).toBe(true)
+  })
+
+  test("reports nothing when no scan has been taken", () => {
+    expect(countsAreReported(null)).toBe(false)
+  })
+
+  test("reports nothing for a failed scan", () => {
+    // The defect: a failed scan stores a row with no counts, and the page rendered those
+    // empty defaults as "0 types, 0 regions, 0 resource groups" — a claim about the
+    // subscription that no scan supports. A Resource Graph 400 produced exactly that, and
+    // it read as an empty estate.
+    expect(countsAreReported({ status: "failed" })).toBe(false)
+  })
+
+  test("reports nothing for a scan still in flight", () => {
+    for (const status of ["queued", "running", "pending", ""]) {
+      expect(countsAreReported({ status })).toBe(false)
+    }
+  })
+
+  test("agrees with the gate: only a scan the gate can call ready or empty reports", () => {
+    // The two answer different questions, so they may disagree — but not about whether the
+    // scan finished. A `running` or `failed` gate must never sit beside reported counts.
+    for (const scan of [
+      { status: "complete", resourceCount: 23, errorCode: null },
+      { status: "complete", resourceCount: 0, errorCode: null },
+      { status: "complete", resourceCount: null, errorCode: null },
+      { status: "failed", resourceCount: null, errorCode: "SCOPE_UNVERIFIED" },
+      { status: "running", resourceCount: null, errorCode: null },
+    ]) {
+      const gate = scanGate(scan)
+      if (gate.kind === "ready" || gate.kind === "empty") {
+        expect(countsAreReported(scan)).toBe(true)
+      }
+      if (gate.kind === "failed") expect(countsAreReported(scan)).toBe(false)
+    }
+  })
 })
 
 describe("scanGate — the authoring-time EMPTY_SCOPE gate", () => {

@@ -684,11 +684,20 @@ def distinct_dimensions_query(*, subscription_id: str) -> str:
     """The **one** Resource Graph query behind `distinct_dimensions` (Req 9.1, 9.5).
     **Pure.**
 
-    Projects the four dimensions **and nothing else**, which is what makes Req 9.5's
+    Projects the dimension columns **and nothing else**, which is what makes Req 9.5's
     exclusion structural: no `id`, no `subscriptionId`, no `tenantId`, no `clientId` appears
     in the `project` clause or in the `summarize` output, so there is no field for a later
     filter to have to remove. A response cannot disclose a resource identifier it was never
     asked for.
+
+    **The `project` clause is the column set every later stage gets.** `location` is listed
+    there because the `regions` dimension summarizes it; a dimension added to the
+    `summarize` without its source column added here names a column `project` has already
+    dropped, and Resource Graph answers the whole query with a 400. That is not a
+    hypothetical — it is what shipped when `regions` was added, and the scan reported an
+    empty subscription for every estate until it was fixed. `test_inventory_dimensions.py`
+    now walks the pipeline and resolves each stage's references against the columns
+    available at that point, so the next dimension cannot repeat it.
 
     Aggregated in the service rather than paged into this process. The alternative — page the
     whole inventory and reduce locally — reads every resource id in order to throw all of
@@ -707,7 +716,7 @@ def distinct_dimensions_query(*, subscription_id: str) -> str:
         [
             "Resources",
             f"| where subscriptionId == {_kql_literal(subscription_id)}",
-            "| project type, resourceGroup, tags",
+            "| project type, location, resourceGroup, tags",
             "| extend tagKeys = bag_keys(tags)",
             "| extend tagKeys = iff(coalesce(array_length(tagKeys), 0) > 0, "
             f"tagKeys, pack_array({sentinel}))",

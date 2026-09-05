@@ -133,6 +133,7 @@ __all__ = [
     "parse_reset_after",
     "read_counts",
     "read_dimension",
+    "service_error_text",
 ]
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,70 @@ class ResourceGraphQueryError(RuntimeError):
             f"and no dimension is reported"
         )
         self.status = status
+
+
+def _code_and_message(entry: Mapping[str, Any]) -> str:
+    """`code: message` for one ARM error or one of its details. **Pure.**
+
+    Resource Graph puts the offending identifier in `token` on a parser failure, and that
+    one word is what turns "the query is invalid" into a line to change.
+    """
+    code = str(entry.get("code") or "").strip()
+    message = str(entry.get("message") or "").strip()
+    token = str(entry.get("token") or "").strip()
+    text = f"{code}: {message}" if code and message else (code or message)
+    if token:
+        text = f"{text} (token {token!r})" if text else f"token {token!r}"
+    return text
+
+
+def service_error_text(body: object) -> str:
+    """Azure's own account of an unsuccessful response, as one bounded line for the log.
+
+    **Pure**, and deliberately separate from the exception. :class:`ResourceGraphQueryError`
+    names no cause because a consultant can act on neither a 400 nor a 503; the person who
+    *can* act on a 400 is whoever wrote the KQL, and what they need is the service's own
+    sentence — `ParserFailure ... 'location'` is the entire diagnosis.
+
+    Discarding it has now cost twice. A `| project` clause carrying `powerState = "", ,
+    fact_subnet = ...` was found by reading source, and so was a `summarize` naming
+    `location` after the `project` had already dropped it — which reported every
+    subscription as empty until someone read the query.
+
+    **The body is parsed JSON, not bytes.** `clients._body_of` parses it (keeping numbers
+    exact), so an ARM error arrives as a `Mapping`. The first version of this logging called
+    `.decode` on it, which means the one line written to explain a failed child query raised
+    `AttributeError` and took the run down instead — a diagnostic that fired only when it was
+    needed and destroyed the thing it was reporting on. Every shape a port can hand back is
+    handled here and none of them raise.
+
+    Scrubbed and bounded, like every other logged provider string: redaction is not skipped
+    because a body "cannot" hold a secret, and a long body is cut rather than echoing the
+    whole query into the log.
+    """
+    if body is None:
+        return ""
+    if isinstance(body, (bytes, bytearray)):
+        text = bytes(body).decode("utf-8", errors="replace")
+    elif isinstance(body, str):
+        text = body
+    elif isinstance(body, Mapping):
+        error = body.get("error")
+        if isinstance(error, Mapping):
+            parts = [_code_and_message(error)]
+            details = error.get("details")
+            if isinstance(details, Sequence) and not isinstance(details, (str, bytes)):
+                parts.extend(
+                    _code_and_message(detail)
+                    for detail in details
+                    if isinstance(detail, Mapping)
+                )
+            text = "; ".join(part for part in parts if part)
+        else:
+            text = str(dict(body))
+    else:
+        text = str(body)
+    return (scrub(text) or "")[:_ERROR_BODY_LOG_LIMIT]
 
 
 def _dimension_failure(status: int) -> Exception:
@@ -748,9 +813,11 @@ class InventoryCollector:
             if not response.ok:
                 logger.warning(
                     "Resource Graph query for subscription %r returned status %d; "
-                    "treating this page as carrying no rows and no further page.",
+                    "treating this page as carrying no rows and no further page. "
+                    "The service said: %s",
                     subscription_id,
                     response.status,
+                    service_error_text(response.body),
                 )
                 break
 
@@ -838,6 +905,13 @@ class InventoryCollector:
             subscription_id=subscription_id
         )
         if not response.ok:
+            logger.warning(
+                "the distinct-dimensions query for subscription %r returned status %d; "
+                "no dimension is reported. The service said: %s",
+                subscription_id,
+                response.status,
+                service_error_text(response.body),
+            )
             raise _dimension_failure(response.status)
 
         rows = _rows_from_body(response.body)
@@ -881,6 +955,13 @@ class InventoryCollector:
 
         response = await self._port.query_resource_counts(subscription_id=subscription_id)
         if not response.ok:
+            logger.warning(
+                "the resource-count query for subscription %r returned status %d; "
+                "no count is reported. The service said: %s",
+                subscription_id,
+                response.status,
+                service_error_text(response.body),
+            )
             raise _dimension_failure(response.status)
 
         return read_counts(_rows_from_body(response.body), child_types=child_types)
@@ -928,16 +1009,15 @@ class InventoryCollector:
             # instead every subnet and every security rule was quietly absent from the
             # report with a one-line warning that could not be acted on.
             #
-            # Scrubbed and bounded: a response body is provider text, so it goes through
-            # the same redaction every other logged provider string does, and a long body
-            # is cut rather than filling the log with an echo of the query.
-            detail = scrub(response.body.decode("utf-8", errors="replace")) or ""
+            # Scrubbed and bounded by `service_error_text`, which also handles the fact
+            # that the body is parsed JSON: this line used to call `.decode` on it and
+            # raised `AttributeError` on the one path it exists to report.
             logger.warning(
                 "the child-resource query for subscription %r returned status %d; "
                 "no child resource is recorded for this run. The service said: %s",
                 subscription_id,
                 response.status,
-                detail[:_ERROR_BODY_LOG_LIMIT],
+                service_error_text(response.body),
             )
             return DiscoverResult(resources=[], gaps=[])
 

@@ -160,6 +160,32 @@ export function scanGate(scan: {
   return { kind: "ready" }
 }
 
+/**
+ * Whether the scan's own counts may be shown as figures.
+ *
+ * The defect this exists for: the scan page rendered "Types", "Regions" and "Resource
+ * groups" as `Object.keys(counts).length` and two `array.length`s, over empty defaults that
+ * are there to keep the lists below renderable. A scan that failed — a Resource Graph 400,
+ * in the case that surfaced it — stores a row with no counts, so the page answered **0
+ * types, 0 regions, 0 resource groups** for a subscription it had learned nothing about, and
+ * a consultant read that as an empty estate. It is the same misreading Requirement 9.9 names
+ * and that `distinct_dimensions` raises rather than commit, undone one layer up in the
+ * presentation.
+ *
+ * `resourceCount` was already honest, because a scan that did not complete stores it as
+ * `null` and the figure renders an em dash. This gives the other three the same footing:
+ * "not answered" and "none" are different facts and must not share a glyph.
+ *
+ * Not folded into {@link scanGate}: that answers whether authoring may continue, and a
+ * `ready` scan and an `empty` one both have counts worth showing. This is the narrower
+ * question of whether any number here is a statement about the subscription.
+ */
+export function countsAreReported(
+  scan: { readonly status: string } | null
+): boolean {
+  return scan !== null && scan.status === "complete"
+}
+
 /** Whether the "Continue" control is offered at all. */
 export function mayContinue(gate: ScanGate): boolean {
   return gate.kind === "ready"

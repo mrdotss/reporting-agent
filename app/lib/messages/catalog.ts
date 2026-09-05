@@ -1138,6 +1138,18 @@ export const MESSAGE_CATALOG = {
     en: "The scan could not be started. Check your connection.",
     id: "Pemindaian tidak dapat dimulai. Periksa koneksi Anda.",
   },
+  "ui.scan.failed": {
+    en: "The last scan did not finish, so the figures above are not a statement about this subscription. Re-scan to try again.",
+    id: "Pemindaian terakhir tidak selesai, sehingga angka di atas bukan pernyataan tentang langganan ini. Pindai ulang untuk mencoba lagi.",
+  },
+  "ui.scan.failed_code": {
+    en: "Reported cause: {code}",
+    id: "Penyebab yang dilaporkan: {code}",
+  },
+  "ui.scan.running": {
+    en: "A scan is running. The figures above fill in when it finishes.",
+    id: "Pemindaian sedang berjalan. Angka di atas akan terisi setelah selesai.",
+  },
   "ui.scan.continue": {
     en: "Continue",
     id: "Lanjutkan",
