@@ -470,8 +470,8 @@ def test_the_snapshot_schema_version_declares_the_shape_bump() -> None:
     that something is broken."""
     from reporting_agent.collect.snapshot import SNAPSHOT_SCHEMA_VERSION
 
-    assert SNAPSHOT_SCHEMA_VERSION == "1.2.0"
-    assert snapshot(vm(resource_id=RESOURCE_ID))["schema_version"] == "1.2.0"
+    assert SNAPSHOT_SCHEMA_VERSION == "1.3.0"
+    assert snapshot(vm(resource_id=RESOURCE_ID))["schema_version"] == "1.3.0"
 
 
 # ---------------------------------------------------------------------------

@@ -116,8 +116,13 @@ const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
  * resource count. `azure_subscription` and `resource_groups` both expanded to a
  * `resource_table` before it, so a section meant to say "23 resources across 2 groups"
  * listed 23 resources instead: a resource table emits one row per resource, and no
- * resource answers a fact called `count`. */
-const EXPECTED_TYPE_COUNT = 20
+ * resource answers a fact called `count`.
+ *
+ * Grew to twenty-one with `trend_narrative`, which writes one paragraph per resource
+ * about how it moved across the months the `historical_trend` chart plotted. It mints no
+ * figure of its own and declares no metric: it narrates what the chart already put in the
+ * ledger, so the two cannot disagree about what they are about. */
+const EXPECTED_TYPE_COUNT = 21
 
 function read(absolutePath: string): string {
   expect(
@@ -331,14 +336,14 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 describe("Requirements 2.5, 2.6 — the block-type vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the twenty declared types", () => {
+  test("the TypeScript declaration is the twenty-one declared types", () => {
     const declared = declaredBlockTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_TYPE_COUNT)
   })
 
-  test("the Python declaration is the twenty declared types", () => {
+  test("the Python declaration is the twenty-one declared types", () => {
     const declared = declaredBlockTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])

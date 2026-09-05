@@ -74,6 +74,36 @@ describe("readStringList", () => {
   )
 })
 
+describe("a dimension as the agent actually reports it", () => {
+  test("reads the envelope the agent sends and the scan row stores", () => {
+    // The defect: the agent reports `{values, truncated}`, `lib/scans/execute.ts` stores
+    // that whole, and this schema accepted only the bare array — so every dimension fell
+    // through `.catch([])` and the screen said 0 regions for a 23-resource subscription.
+    expect(
+      readStringList({ values: ["southeastasia", "eastus"], truncated: false })
+    ).toEqual(["southeastasia", "eastus"])
+  })
+
+  test("still reads a bare array", () => {
+    expect(readStringList(["rg-prod"])).toEqual(["rg-prod"])
+  })
+
+  test("reads an envelope that clipped at the bound", () => {
+    expect(readStringList({ values: ["a"], truncated: true })).toEqual(["a"])
+  })
+
+  test("drops non-strings inside either shape", () => {
+    expect(readStringList({ values: ["a", 7, "", null] })).toEqual([])
+    expect(readStringList(["a", 7])).toEqual([])
+  })
+
+  test("is empty for a shape that is neither", () => {
+    for (const value of [null, undefined, 7, "eastus", {}, { values: "eastus" }]) {
+      expect(readStringList(value)).toEqual([])
+    }
+  })
+})
+
 describe("countsAreReported — whether any figure is a statement", () => {
   test("reports the counts of a completed scan", () => {
     expect(countsAreReported({ status: "complete" })).toBe(true)

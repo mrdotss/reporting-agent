@@ -381,6 +381,10 @@
       "en": "a prior run whose verification did not pass",
       "id": "proses sebelumnya yang verifikasinya tidak lulus"
     },
+    "doc.historical.no_narrative": {
+      "en": "The historical commentary could not be written for this report.",
+      "id": "Ulasan historis tidak dapat ditulis untuk laporan ini."
+    },
     "doc.historical.no_prior_runs": {
       "en": "No prior verified period is available for this trend.",
       "id": "Tidak ada periode terverifikasi sebelumnya yang tersedia untuk tren ini."

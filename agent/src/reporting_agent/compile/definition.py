@@ -123,6 +123,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "blank_rows_table",
     "metric_summary",
     "inventory_summary",
+    "trend_narrative",
 )
 # --- END BLOCK TYPES ---
 
@@ -240,6 +241,15 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "optional": [],
         "enums": {},
         "non_empty": ["text"],
+    },
+    "trend_narrative": {
+        # No metric or statistic of its own: it narrates whatever the trend chart above
+        # it plotted, read off the ledger. A second declaration here would be a second
+        # place for the chart and its commentary to disagree about what they are about.
+        "required": [],
+        "optional": ["caption"],
+        "enums": {},
+        "non_empty": [],
     },
     "historical_trend": {
         "required": ["metric", "statistic", "lookback"],

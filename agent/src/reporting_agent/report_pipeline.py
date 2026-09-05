@@ -98,6 +98,7 @@ from reporting_agent.catalog.loader import (
     load_catalog,
     load_section_catalogue,
 )
+from reporting_agent.collect.buckets import MAX_TREND_MONTHS
 from reporting_agent.collect.pipeline import (
     CollectionOutcome,
     CollectionSink,
@@ -233,6 +234,23 @@ async def run_generate_report(
     # read two different catalogs.
     catalog = collection_kwargs.pop("catalog", None) or load_catalog()
 
+    # Loaded once and threaded to every reader: the trend seed below, the key walker
+    # further down and the compile's own `section_catalogue` argument. Independent loads
+    # would be independent chances to disagree about what a section expands to.
+    section_catalogue = (
+        load_section_catalogue(loaded_catalog=catalog)
+        if definition.get("schema_version") == 3
+        else None
+    )
+
+    # How many calendar months of history this run measures for itself.
+    #
+    # `compile/historical.py` plots one point per prior **verified run**, which is right
+    # and empty on a first report — the trend a customer most wants is the one the product
+    # could not draw. These months are the seed for that case, and they cost a pass over
+    # the estate each, so a profile that declares no trend collects none.
+    seed_trend_months = _seed_trend_months(definition, catalogue=section_catalogue)
+
     # --- reuse, when the caller offered a snapshot ------------------------------------
     #
     # A re-run of one period asks Azure the same question again, and Azure is entitled to
@@ -272,6 +290,7 @@ async def run_generate_report(
     else:
         collection = CollectionSink()
         async for event in run_collection(
+            seed_trend_months=seed_trend_months,
             payload=payload,
             context=context,
             steps=steps,
@@ -296,14 +315,6 @@ async def run_generate_report(
     # input reasoning: verify_report cannot re-derive it because the verify payload carries
     # no candidate list).
     actor_id = plan.actor_id
-    # Loaded once and threaded to both readers: the key walker below and the compile's
-    # own `section_catalogue` argument. Two independent loads would be two chances for
-    # them to disagree about what a section expands to.
-    section_catalogue = (
-        load_section_catalogue(loaded_catalog=catalog)
-        if definition.get("schema_version") == 3
-        else None
-    )
     # Loaded before the document phases, because the front matter is described once and
     # both emitters draw from that description — a signature fetched later would be a
     # second description that the `.docx` and the reading copy could disagree about.
@@ -1795,6 +1806,36 @@ def _block_count(definition: Mapping[str, PlainData]) -> int:
         if isinstance(columns, Sequence):
             total += sum(len(column) for column in columns if isinstance(column, Sequence))
     return total
+
+
+def _seed_trend_months(
+    definition: Mapping[str, PlainData],
+    *,
+    catalogue: object | None = None,
+) -> int:
+    """How many calendar months this run should measure for the historical trend.
+
+    `0` when the definition declares no `historical_trend`, which is the normal case and
+    the one where the two extra passes over the estate would buy nothing.
+
+    Otherwise the largest `lookback` any trend block asks for, **bounded by**
+    `MAX_TREND_MONTHS`. The bound is not a preference: each month is another `PT1H` pass
+    over every resource, so an unbounded lookback would turn an eight-minute run into an
+    hour-long one for a chart with twelve points. A longer history is the Log Analytics
+    question — whether the subscription exports platform metrics at all — which
+    `azure/preflight.py`'s depth probe already answers at connect time, and not a question
+    of running this loop more times.
+
+    Reads the same keys `_historical_selection_keys` does, so the months a run seeds and
+    the blocks that would plot them cannot disagree about whether a trend was asked for.
+    A definition whose keys cannot be resolved raises there, and this deliberately does not
+    catch it: a trend that silently collected nothing is the defect that function's own
+    docstring records at length.
+    """
+    keys = _historical_selection_keys(definition, catalogue=catalogue)
+    if not keys:
+        return 0
+    return min(max(lookback for _, _, lookback in keys), MAX_TREND_MONTHS)
 
 
 def _historical_selection_keys(

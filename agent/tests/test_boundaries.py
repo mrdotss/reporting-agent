@@ -2432,6 +2432,20 @@ FACT_PATH_HANDLER_EXEMPTIONS: frozenset[tuple[str, str]] = frozenset(
         ("collect/pipeline.py", "_fold_guest_rows"),
         # The package's own version, read once at import. Not a response at all.
         ("collect/snapshot.py", "_agent_version"),
+        # The **historical trend's** passes, not the fact path. A trend month is measured
+        # over a window that is not this run's, so there is no fact and no period value in
+        # scope to record a gap against — and recording one would be actively wrong:
+        # `partial` on the outcome means *the report's own period has holes* and
+        # `report_pipeline` raises on it, so a machine created in June answering nothing
+        # for May would flip a July report to partial and report a hole in July that does
+        # not exist. The absence is not suppressed: the month keeps its bucket with an
+        # empty `statistics` array and its real `slot_count`, exactly as a day the run
+        # measured nothing for does, and `compile_historical_trend` states how many months
+        # it plotted against how many were asked for.
+        # `test_a_month_the_provider_could_not_answer_keeps_its_bucket_and_records_no_gap`
+        # asserts that, so this exemption rests on a behavioural assertion rather than on
+        # this comment.
+        ("collect/pipeline.py", "_collect_trend"),
     }
 )
 """The handlers on the declared modules that are exempt, each by enclosing function and each

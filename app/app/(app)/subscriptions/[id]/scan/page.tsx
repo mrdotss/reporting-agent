@@ -20,6 +20,7 @@ import {
   scanGate,
 } from "@/lib/scans/view"
 import { CollectionProblems } from "@/components/scan/collection-problems"
+import { NewTemplateButton } from "@/components/templates/new-template-button"
 import { RescanButton } from "@/components/scan/rescan-button"
 
 /**
@@ -235,11 +236,11 @@ export default async function ScanPage({ params }: ScanPageProps) {
       </p>
 
       {mayContinue(gate) && (
-        <Button
-          render={<Link href={`/report-profiles/new?scan=${scan?.id ?? ""}`} />}
-        >
-          {t("ui.scan.continue")}
-        </Button>
+        <NewTemplateButton
+          label={t("ui.scan.continue")}
+          icon={false}
+          className="flex flex-col items-start gap-1"
+        />
       )}
     </div>
   )

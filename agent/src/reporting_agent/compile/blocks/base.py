@@ -465,6 +465,18 @@ class BlockSpec:
 # --- prose (the model's only entry point) --------------------------------------------
 
 
+PROSE_KIND_EXECUTIVE_SUMMARY: Final[str] = "executive_summary"
+PROSE_KIND_TREND: Final[str] = "trend"
+
+PROSE_KINDS: Final[tuple[str, ...]] = (
+    PROSE_KIND_EXECUTIVE_SUMMARY,
+    PROSE_KIND_TREND,
+)
+"""The narrations that exist. `narrate/summary.py` maps each to an instruction, and an
+unrecognised kind falls back to the executive summary's rather than raising — a report
+with the wrong narration is a bad report; a report withheld over one is worse."""
+
+
 @dataclass(frozen=True, slots=True)
 class ProseRequest:
     """Everything the model is allowed to see (Req 19.1).
@@ -487,6 +499,15 @@ class ProseRequest:
     """`(label, formatted)` pairs from the ledger. The **formatted string**, never the
     value: the model reads what the document will say, so a figure it quotes is a figure
     that already exists."""
+
+    kind: str = PROSE_KIND_EXECUTIVE_SUMMARY
+    """Which narration this request is for, and so which instruction the model is given.
+
+    A field on the request rather than an argument to `narrate`, because the block that
+    builds the request is the only thing that knows what it is asking for, and a second
+    argument threaded through `ProseProvider` would let the two drift — a trend block's
+    figures arriving under the executive summary's instruction, which reads as a model
+    that ignored its prompt rather than as a pipeline that handed it the wrong one."""
 
 
 class ProseProvider(Protocol):

@@ -103,6 +103,118 @@ def test_every_indexed_pointer_addresses_exactly_one_value_equal_to_its_decimal_
         )
 
 
+# --------------------------------------------------------------------------- #
+# The historical trend is addressed on the same terms as a day
+# --------------------------------------------------------------------------- #
+
+
+def trend_document() -> dict:
+    """Two VMs carrying three calendar months each, one of them carried from an
+    earlier run."""
+    return sf.build(
+        resources=[
+            sf.vm(
+                resource_id=f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod"
+                f"/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+                name="prod-web-01",
+                month_cpu={"2026-05": "31.20", "2026-06": "27.65", "2026-07": "12.48"},
+            ),
+            sf.vm(
+                resource_id=f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod"
+                f"/providers/Microsoft.Compute/virtualMachines/prod-web-02",
+                name="prod-web-02",
+                month_cpu={"2026-06": "8.10"},
+                month_source=("carried", "run-earlier-0001"),
+            ),
+        ]
+    )
+
+
+def test_a_month_value_is_addressable_in_the_stored_document() -> None:
+    """A trend figure is a figure. Requirement 7.2 has no weaker tier for a number that
+    happens to be about the past, so a month's value re-resolves through the same pointer
+    machinery a window's and a day's do."""
+    document = trend_document()
+    view = build_snapshot_view(document)
+    resource_id = document["resources"][0]["resource_id"]
+
+    value = view.month_stat(resource_id, "Percentage CPU", "avg", "2026-06")
+
+    assert value is not None
+    assert "/month_buckets/" in value.pointer
+    assert resolve_raw(document, value.pointer) == "27.65"
+    assert view.resolve_all(value.pointer) == (value,)
+
+
+def test_a_month_series_is_ordered_and_omits_months_with_no_value() -> None:
+    """A trend is the one place a zero-filled gap does most damage: three months of
+    declining usage is a story, and two measured months beside a fabricated zero is the
+    same picture with nothing behind it."""
+    view = build_snapshot_view(trend_document())
+    first, second = (resource.resource_id for resource in view.resources[:2])
+
+    assert [month for month, _ in view.month_series(first, "Percentage CPU", "avg")] == [
+        "2026-05",
+        "2026-06",
+        "2026-07",
+    ]
+    # The second VM carries only June, and the other two months are absent rather than
+    # present as zero.
+    assert [month for month, _ in view.month_series(second, "Percentage CPU", "avg")] == [
+        "2026-06"
+    ]
+
+
+def test_a_month_and_a_day_of_the_same_metric_are_different_values() -> None:
+    """The indexes are separate, so a month cannot overwrite a day that shares a
+    resource, metric and statistic — the defect `sample_counts` was split out to avoid."""
+    document = trend_document()
+    view = build_snapshot_view(document)
+    resource_id = document["resources"][0]["resource_id"]
+
+    month = view.month_stat(resource_id, "Percentage CPU", "avg", "2026-07")
+    day = view.day_stat(resource_id, "Percentage CPU", "avg", sf.DAY_ONE)
+
+    assert month is not None and day is not None
+    assert month.pointer != day.pointer
+    assert "/month_buckets/" in month.pointer
+    assert "/day_buckets/" in day.pointer
+
+
+def test_a_carried_month_names_the_run_it_came_from() -> None:
+    """A figure this run inherited and a figure it observed itself are different claims,
+    and the coverage appendix reports which is which."""
+    document = trend_document()
+    view = build_snapshot_view(document)
+    measured, carried = (resource.resource_id for resource in view.resources[:2])
+
+    assert view.month_source(measured, "2026-07") == ("measured", "")
+    assert view.month_source(carried, "2026-06") == ("carried", "run-earlier-0001")
+    assert view.month_source(measured, "2026-12") is None
+
+
+def test_month_buckets_are_counted_as_their_own_cardinality() -> None:
+    view = build_snapshot_view(trend_document())
+    assert view.count(CountKind.MONTH_BUCKETS) == 4
+    # Month statistics count toward the statistic total, exactly as day statistics do.
+    assert view.count(CountKind.STATISTICS) > view.count(CountKind.MONTH_BUCKETS)
+
+
+def test_a_snapshot_written_before_the_trend_walks_as_no_months() -> None:
+    """A `1.2.0` document carries no `month_buckets` key at all. It must read as a
+    snapshot with no trend rather than fail to compile — the walk is the one place a
+    schema bump would otherwise become an outage for every stored run."""
+    document = trend_document()
+    for resource in document["resources"]:
+        del resource["month_buckets"]
+
+    view = build_snapshot_view(document)
+
+    assert view.count(CountKind.MONTH_BUCKETS) == 0
+    assert view.month_names == ()
+    assert view.month_series(view.resources[0].resource_id, "Percentage CPU", "avg") == ()
+
+
 def test_a_derived_cardinality_resolves_and_names_the_collection_it_counted(
     view: SnapshotView, document: dict
 ) -> None:

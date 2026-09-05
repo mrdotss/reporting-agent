@@ -18,6 +18,18 @@ import type { TemplateView } from "@/lib/db/views"
  * A default name rather than a prompt: the wizard's first step is *Identity*, and
  * asking for a name in a modal and then immediately asking for it again on step 1
  * is one question twice. The consultant renames it there.
+ *
+ * ## Why the scan screen's "Continue" is this same button
+ *
+ * It used to be a `<Link href="/report-profiles/new?scan=…">`, and that route has never
+ * existed — `report-profiles/` holds `page.tsx` and `[id]/`, and `[id]` has only an
+ * `edit` child, so the link matched nothing and every Continue from a finished scan
+ * landed on a 404. Creating a profile is a POST that returns the id the wizard opens on;
+ * there is no page to link to, which is why the button rather than the link is the fix.
+ *
+ * The scan id it carried is not needed either: `report-profiles/[id]/edit` calls
+ * `readLatestScan` for the profile's own subscription, so the wizard finds the scan
+ * itself rather than being handed one that might not be that profile's.
  */
 
 const DEFAULT_NAME = "Untitled template"
@@ -27,7 +39,15 @@ type CreateResponse = {
   readonly error?: { readonly message?: string }
 }
 
-export function NewTemplateButton() {
+export function NewTemplateButton({
+  label = "New template",
+  icon = true,
+  className,
+}: Readonly<{
+  label?: string
+  icon?: boolean
+  className?: string
+}> = {}) {
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -60,10 +80,10 @@ export function NewTemplateButton() {
   }, [creating, router])
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className={className ?? "flex flex-col items-end gap-1"}>
       <Button type="button" onClick={create} disabled={creating}>
-        <PlusIcon aria-hidden="true" />
-        {creating ? "Creating…" : "New template"}
+        {icon ? <PlusIcon aria-hidden="true" /> : null}
+        {creating ? "Creating…" : label}
       </Button>
 
       {error === null ? null : (

@@ -43,9 +43,19 @@ trade in a product whose value is the figures.
 from __future__ import annotations
 
 import logging
+from typing import Final
 
-from reporting_agent.compile.ast import Block, Column, FigureCell, Paragraph, Row, Table
+from reporting_agent.compile.ast import (
+    PRIOR_RUNS_POINTER_PREFIX,
+    Block,
+    Column,
+    FigureCell,
+    Paragraph,
+    Row,
+    Table,
+)
 from reporting_agent.compile.blocks.base import (
+    PROSE_KIND_TREND,
     BlockContext,
     BlockOutput,
     BlockSpec,
@@ -59,7 +69,12 @@ from reporting_agent.compile.blocks.base import (
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.snapshot_view import SnapshotValue
 
-__all__ = ["MAX_PROSE_PARAGRAPHS", "compile_executive_summary"]
+__all__ = [
+    "MAX_PROSE_PARAGRAPHS",
+    "MAX_TREND_NARRATIVE_RESOURCES",
+    "compile_executive_summary",
+    "compile_trend_narrative",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +141,113 @@ def compile_executive_summary(
             )
         # The table first, at ordinal 0, then the prose — see the module docstring.
         return (headline, *paragraphs)
+
+    return BlockOutput(
+        deferred=Deferred(block_id=block.id, finish=finish, prose_request=request)
+    )
+
+
+MAX_TREND_NARRATIVE_RESOURCES: Final[int] = 12
+"""How many resources the trend commentary describes.
+
+A bound on the **prompt**, where `MAX_PROSE_PARAGRAPHS` bounds the answer. One paragraph
+per resource over an estate of two hundred is a document nobody reads and a token bill
+nobody expected, and the resources beyond this bound are not hidden — the trend chart and
+the tables still carry every one of them. Ordered by the ledger, so which twelve is a
+property of the compile rather than of a set's iteration order.
+"""
+
+_TREND_FIGURE_MARKERS: Final[tuple[str, ...]] = ("/month_buckets/", PRIOR_RUNS_POINTER_PREFIX)
+"""What makes a ledger figure a trend figure: it addresses a seeded month in this run's
+snapshot, or a prior run's. Read off `snapshot_path` rather than tracked separately,
+because the path is what the verifier re-resolves and so is the one description of a
+figure that cannot drift from the document."""
+
+
+def compile_trend_narrative(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """One paragraph per resource about how it moved across the months (Req 19.x).
+
+    ## It mints no figure of its own
+
+    Every number it shows the model is already in the ledger, put there by the
+    `historical_trend` block that plotted it. That ordering is a real dependency and it is
+    the right one: a narrative block that re-read the snapshot would mint a second figure
+    at the same `snapshot_path` as the chart's, and the ledger would then hold one address
+    twice. So this block reads what the chart already established, and a definition that
+    places the narrative **before** its chart gets no prose rather than a wrong one — the
+    block still emits, which is what Req 19.5 asks of every narrative block.
+
+    ## What the model is shown
+
+    `(label, formatted)` pairs exactly as the executive summary sends them, with the label
+    carrying resource, metric and month so the model can group without being handed a
+    structure. Formatted strings only — a trend is the shape that most invites "up 12%
+    from May", and 12 is a number the compiler never placed.
+    """
+    view = context.view
+    names = {resource.resource_id: resource.name for resource in view.resources}
+
+    ordered: list[str] = []
+    figures: list[tuple[str, str]] = []
+    for figure in context.ledger.entries.values():
+        if not any(marker in figure.snapshot_path for marker in _TREND_FIGURE_MARKERS):
+            continue
+        resource_id = figure.resource_id or ""
+        if resource_id not in ordered:
+            if len(ordered) >= MAX_TREND_NARRATIVE_RESOURCES:
+                continue
+            ordered.append(resource_id)
+        figures.append(
+            (
+                " · ".join(
+                    part
+                    for part in (
+                        names.get(resource_id) or resource_id or "the estate",
+                        figure.metric or figure.statistic,
+                        figure.window or "",
+                    )
+                    if part
+                ),
+                figure.formatted,
+            )
+        )
+
+    request = (
+        ProseRequest(
+            block_id=block.id,
+            kind=PROSE_KIND_TREND,
+            report_title=context.report_title,
+            subscription_display_name=context.subscription_display_name,
+            window=view.window.descriptor,
+            grain=view.grain,
+            resource_count=len(ordered),
+            gap_counts={},
+            figures=tuple(figures),
+        )
+        if figures
+        else None
+    )
+
+    def finish(prose: str | None) -> tuple[Block, ...]:
+        paragraphs: list[Block] = []
+        for text in _paragraphs_of(prose):
+            paragraphs.append(
+                text_paragraph(cursor.child("nodes", len(paragraphs)), "Body Text", text)
+            )
+        if paragraphs:
+            return tuple(paragraphs)
+        # Emitted rather than vanished, on the same terms as the trend chart's own
+        # zero-point statement: a block that disappears is indistinguishable from one
+        # never configured.
+        return (
+            text_paragraph(
+                cursor.child("nodes", 0),
+                "Body Text",
+                context.messages.text("doc.historical.no_narrative"),
+            ),
+        )
 
     return BlockOutput(
         deferred=Deferred(block_id=block.id, finish=finish, prose_request=request)

@@ -41,12 +41,18 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
 
-from reporting_agent.compile.blocks.base import ProseRequest
+from reporting_agent.compile.blocks.base import (
+    PROSE_KIND_EXECUTIVE_SUMMARY,
+    PROSE_KIND_TREND,
+    ProseRequest,
+)
 
 __all__ = [
     "MAX_OUTPUT_TOKENS",
     "SYSTEM_PROMPT",
     "SYSTEM_PROMPT_ID",
+    "SYSTEM_PROMPT_TREND",
+    "SYSTEM_PROMPT_TREND_ID",
     "BedrockConverse",
     "ProseGenerator",
     "build_messages",
@@ -108,11 +114,81 @@ further. As with the English prompt, this is a request not enforcement — the m
 pass remains the mechanism that prevents fabricated numbers."""
 
 
-def _system_prompt_for(language: str) -> str:
-    """Return the appropriate narrator system prompt for the given language."""
-    if language == "id":
-        return SYSTEM_PROMPT_ID
-    return SYSTEM_PROMPT
+SYSTEM_PROMPT_TREND: Final[str] = (
+    "You write the historical-trend commentary of an infrastructure utilization "
+    "report.\n"
+    "\n"
+    "The figures below are grouped by resource, each one labelled with its resource, "
+    "its metric and the calendar month it was measured in. Write ONE short paragraph "
+    "per resource, in the order the resources appear, describing how that resource "
+    "moved across the months shown: rising, falling, flat, or too short a history to "
+    "say. Separate the paragraphs with a blank line and write nothing else — no "
+    "resource headings, no summary paragraph, no closing.\n"
+    "\n"
+    "A resource with one month has no trend; say that plainly rather than describing "
+    "a direction. Do not write any number that is not in the list of figures given to "
+    "you. Do not compute a difference, a percentage change, a rate or an average "
+    "across months — describe the movement in words. Do not speculate about causes "
+    "you cannot see in the data.\n"
+    "\n"
+    "Return prose only: no headings, no bullet lists, no markdown."
+)
+"""The trend instruction (Req 19.5's "request, not enforcement" applies unchanged).
+
+**One paragraph per resource, not per metric.** A paragraph for every resource-metric
+pair would be the same report written many times over, and the token cost grows with the
+product of two estate dimensions rather than with one.
+
+The "do not compute a difference" clause matters more here than in the summary: a trend
+is precisely the shape that invites "up 12% from May", and 12 is a number the compiler
+never placed. The masking pass would catch it and withhold the report, so the clause is
+there to keep the common case pleasant — as ever, not to make the guarantee hold."""
+
+SYSTEM_PROMPT_TREND_ID: Final[str] = (
+    "Anda menulis ulasan tren historis dari laporan utilisasi infrastruktur.\n"
+    "\n"
+    "Angka-angka di bawah ini dikelompokkan per sumber daya, masing-masing diberi label "
+    "sumber daya, metrik, dan bulan kalender saat diukur. Tulis SATU paragraf pendek "
+    "per sumber daya, sesuai urutan kemunculan sumber daya tersebut, yang menjelaskan "
+    "bagaimana sumber daya itu bergerak sepanjang bulan-bulan yang ditampilkan: naik, "
+    "turun, datar, atau riwayatnya terlalu pendek untuk disimpulkan. Pisahkan paragraf "
+    "dengan satu baris kosong dan jangan tulis apa pun selain itu — tanpa judul sumber "
+    "daya, tanpa paragraf ringkasan, tanpa penutup.\n"
+    "\n"
+    "Sumber daya dengan satu bulan tidak memiliki tren; sampaikan hal itu secara jelas "
+    "alih-alih menjelaskan sebuah arah. Jangan menulis angka apa pun yang tidak ada "
+    "dalam daftar angka yang diberikan kepada Anda. Jangan menghitung selisih, "
+    "perubahan persentase, laju, atau rata-rata antarbulan — jelaskan pergerakannya "
+    "dengan kata-kata. Jangan berspekulasi tentang penyebab yang tidak dapat Anda lihat "
+    "dalam data.\n"
+    "\n"
+    "Kembalikan prosa saja: tanpa heading, tanpa bullet list, tanpa markdown."
+)
+"""Indonesian variant of the trend instruction (Req 15.7), on the same terms as
+:data:`SYSTEM_PROMPT_ID`."""
+
+_PROMPTS: Final[dict[tuple[str, str], str]] = {
+    (PROSE_KIND_EXECUTIVE_SUMMARY, "en"): SYSTEM_PROMPT,
+    (PROSE_KIND_EXECUTIVE_SUMMARY, "id"): SYSTEM_PROMPT_ID,
+    (PROSE_KIND_TREND, "en"): SYSTEM_PROMPT_TREND,
+    (PROSE_KIND_TREND, "id"): SYSTEM_PROMPT_TREND_ID,
+}
+
+
+def _system_prompt_for(
+    language: str, kind: str = PROSE_KIND_EXECUTIVE_SUMMARY
+) -> str:
+    """The narrator instruction for one language and one narration.
+
+    Falls back rather than raising, in both dimensions: an unknown language reads as
+    English and an unknown kind as the executive summary. A report narrated under the
+    wrong instruction is a bad report; a report withheld because a kind was misspelled is
+    worse, and the masking pass constrains what the model may write either way.
+    """
+    resolved = language if language == "id" else "en"
+    return _PROMPTS.get(
+        (kind, resolved), _PROMPTS[(PROSE_KIND_EXECUTIVE_SUMMARY, resolved)]
+    )
 
 
 class BedrockConverse(Protocol):
@@ -179,7 +255,7 @@ def generate(
     try:
         response = client.converse(
             modelId=model_id,
-            system=[{"text": _system_prompt_for(language)}],
+            system=[{"text": _system_prompt_for(language, request.kind)}],
             messages=build_messages(request),
             inferenceConfig={"maxTokens": MAX_OUTPUT_TOKENS, "temperature": 0.2},
         )

@@ -818,6 +818,10 @@ export const MESSAGE_CATALOG = {
     en: "a prior run collected at a different fidelity tier",
     id: "proses sebelumnya yang dikumpulkan pada tingkat fidelitas berbeda",
   },
+  "doc.historical.no_narrative": {
+    en: "The historical commentary could not be written for this report.",
+    id: "Ulasan historis tidak dapat ditulis untuk laporan ini.",
+  },
   "doc.historical.no_prior_runs": {
     en: "No prior verified period is available for this trend.",
     id: "Tidak ada periode terverifikasi sebelumnya yang tersedia untuk tren ini.",
