@@ -69,6 +69,48 @@ describe("offerable (bound to the real catalogue)", () => {
     expect(offerable(alwaysEntry, {})).toBe(true)
   })
 
+  test("matches the spelling Azure Resource Graph actually answers with", () => {
+    // The defect: Resource Graph answers its `type` column lowercased and the section
+    // catalogue declares Azure's documented casing, so a case-sensitive comparison matched
+    // neither against the other. A subscription holding three virtual machines offered no
+    // metric-bearing section at all — each one disabled with "needs
+    // Microsoft.Compute/virtualMachines", naming as missing precisely the type the scan had
+    // just counted three of.
+    //
+    // Every test above used the catalogue's own casing, which is why it never showed.
+    expect(
+      offerable(vnetEntry, { "microsoft.network/virtualnetworks": 1 })
+    ).toBe(true)
+  })
+
+  test("matches whatever casing either side is written in", () => {
+    // An ARM type id is case-insensitive, so no spelling of it is the wrong one.
+    for (const spelling of [
+      "microsoft.network/virtualnetworks",
+      "Microsoft.Network/virtualNetworks",
+      "MICROSOFT.NETWORK/VIRTUALNETWORKS",
+      "microsoft.Network/VirtualNetworks",
+    ]) {
+      expect(offerable(vnetEntry, { [spelling]: 1 })).toBe(true)
+    }
+  })
+
+  test("a type the scan really does not hold is still not offerable", () => {
+    // Guard the guard: case-folding must not make everything match.
+    expect(
+      offerable(vnetEntry, { "microsoft.compute/virtualmachines": 3 })
+    ).toBe(false)
+  })
+
+  test("the missing type is named in the catalogue's spelling, not the scan's", () => {
+    // The consultant is being told which resource type the section needs, and
+    // `Microsoft.Network/virtualNetworks` is the spelling Azure's documentation uses.
+    // Only the comparison is case-folded.
+    expect(missingInputs(vnetEntry, {})).toEqual([
+      "Microsoft.Network/virtualNetworks",
+    ])
+  })
+
   test("reachability is not an input: no permission-probe parameter exists on the signature at all", () => {
     expect(offerable.length).toBe(2)
   })
