@@ -127,6 +127,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(properties.provisioningState)"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -167,6 +188,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(properties.virtualMachine.id)), extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(managedBy)))"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -199,6 +241,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(tostring(sku.name), tostring(properties.sku))"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -239,6 +302,27 @@
           "source": "recovery_services",
           "projectable": false,
           "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -273,6 +357,27 @@
           "projectable": true,
           "projection": "tostring(properties.vCores)",
           "unit": "count"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -314,6 +419,27 @@
           "projectable": true,
           "projection": "tostring(properties.backup.backupRetentionDays)",
           "unit": "days"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -346,6 +472,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(properties.virtualNetworkPeerings[0].properties.peeringState)"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -380,6 +527,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(properties.virtualNetworkPeerings[0].properties.peeringState)"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -412,11 +580,54 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(extract(@\"/networkInterfaces/([^/]+)\", 1, tostring(properties.ipConfiguration.id)), tostring(properties.ipConfiguration.id))"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
     "Microsoft.Network/networkSecurityGroups": {
-      "facts": []
+      "facts": [
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        }
+      ]
     },
     "Microsoft.Network/networkSecurityGroups/securityRules": {
       "child_of": "Microsoft.Network/networkSecurityGroups",
@@ -477,6 +688,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "tostring(rule.properties.origin)"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     },
@@ -516,6 +748,27 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "extract(@\"/networkSecurityGroups/([^/]+)$\", 1, tostring(properties.networkSecurityGroup.id))"
+        },
+        {
+          "key": "category",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "impact",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
+        },
+        {
+          "key": "recommendation",
+          "value_kind": "text",
+          "source": "advisor",
+          "projectable": false,
+          "absent_gap_type": "advisor_not_available"
         }
       ]
     }

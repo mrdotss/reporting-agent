@@ -221,7 +221,11 @@ def test_security_rule_facts_are_declared_and_excluded_from_the_ordinary_project
     from reporting_agent.azure.provider import _non_child_projections
 
     catalog = load_catalog()
-    keys = {entry.key for entry in catalog.facts.for_resource_type(SECURITY_RULE_CHILD_RESOURCE_TYPE)}
+    entries = catalog.facts.for_resource_type(SECURITY_RULE_CHILD_RESOURCE_TYPE)
+    # The rule's own projected facts. Advisor's three are declared on every type and are
+    # not projected, so they cannot collide with `security_rule_inventory_query`'s
+    # `mv-expand` — which is the collision this test exists for.
+    keys = {entry.key for entry in entries if entry.source != "advisor"}
     assert keys == {
         "priority", "direction", "protocol", "source", "destination", "port", "action",
         # Which of the NSG's two rule arrays the row came from, written by the union leg
