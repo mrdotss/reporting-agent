@@ -236,8 +236,8 @@ def test_toc_classes_are_subset_of_declaration() -> None:
     )
 
 
-def test_emitted_class_names_has_exactly_twenty_one_entries() -> None:
-    """The declaration carries exactly twenty-one names.
+def test_emitted_class_names_has_exactly_twenty_two_entries() -> None:
+    """The declaration carries exactly twenty-two names.
 
     Grew to eighteen with `rpt-fact`, which a text fact wears **alongside** `rpt-figure`.
     Grew to twenty-one with the contents entry's three: the link that gives the print
@@ -249,9 +249,12 @@ def test_emitted_class_names_has_exactly_twenty_one_entries() -> None:
     that exists for figures, and from the right-alignment that exists for numerals. An
     ARM resource id under `nowrap` is one unbreakable 130-character token, and it ran off
     the right edge of the Public IP table.
+    Grew to twenty-two with `rpt-h-number`, which prints on the heading the number the
+    contents already lists — the contents was naming sections `0.6.2` that stated no
+    number of their own anywhere on the page.
     """
-    assert len(EMITTED_CLASS_NAMES) == 21, (
-        f"Expected 21 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
+    assert len(EMITTED_CLASS_NAMES) == 22, (
+        f"Expected 22 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
     )
 
 

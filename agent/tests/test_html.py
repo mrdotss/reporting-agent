@@ -928,3 +928,152 @@ def test_a_table_with_no_note_keeps_its_bare_caption() -> None:
 
     assert "<caption>Cap</caption>" in outcome.html
     assert 'data-role="note"' not in outcome.html
+
+
+# --------------------------------------------------------------------------- #
+# The reading copy's page furniture
+#
+# Five changes the delivered document asked for, and the reason each is asserted here
+# rather than looked at once: every one of them is invisible in the emitted markup unless
+# something checks the exact declaration, and a stylesheet that silently stops applying is
+# the failure mode none of them would announce.
+# --------------------------------------------------------------------------- #
+
+
+class TestReadingCopyPageFurniture:
+    def _css(self) -> str:
+        from reporting_agent.render.printcss import stylesheet
+
+        return stylesheet("editorial", page_size="A4")
+
+    def test_a_section_starts_a_page(self) -> None:
+        """`Heading 1`, keyed on the style rather than on the `h2` it maps to: the tag is a
+        mapping `printcss.py` does not own, and a front-matter block could reach it."""
+        css = self._css()
+        assert '.rpt-block[data-style="Heading 1"]' in css
+        rule = css.split('.rpt-block[data-style="Heading 1"]', 1)[1].split("}", 1)[0]
+        assert "break-before: page" in rule
+
+    def test_the_first_section_does_not_open_on_a_blank_page(self) -> None:
+        css = self._css()
+        assert (
+            '.rpt-document > .rpt-block[data-style="Heading 1"]:first-child' in css
+        ), "the first section still forces a break, so the body opens on an empty page"
+
+    def test_a_chart_is_centred_in_its_column(self) -> None:
+        css = self._css()
+        chart = css.split(".rpt-chart {", 1)[1].split("}", 1)[0]
+        assert "text-align: center" in chart
+        assert "margin-inline: auto" in css
+
+    def test_a_cell_boundary_marker_cannot_take_a_line_of_its_own(self) -> None:
+        """U+200B costs no width but is still an inline box carrying the cell's own
+        `line-height`, and it has a break opportunity before it — so a cell whose text
+        filled its last line put the marker alone on the next one."""
+        css = self._css()
+        marker = css.split(".rpt-pairs td::after", 1)[1].split("}", 1)[0]
+        assert "​" in marker or "200b" in marker
+        assert "font-size: 0" in marker
+        assert "line-height: 0" in marker
+
+
+class TestNumberedHeadings:
+    def _document(self):
+        return compiled_document(
+            [
+                df.block("h1", "heading", {"text": "Virtual Machines", "level": 1}),
+                df.block("h2", "heading", {"text": "Inventory", "level": 2}),
+                df.block("h3", "heading", {"text": "Disks", "level": 2}),
+                df.block("h4", "heading", {"text": "Public IP Addresses", "level": 1}),
+            ]
+        ).document
+
+    def test_the_contents_numbers_start_at_one(self) -> None:
+        """`0.1` was what the delivered contents page showed. The catalogue declared every
+        section at level 2 and nothing at level 1, so the numbering opened a counter for
+        the level that was never there."""
+        from reporting_agent.render.html import document_heading_numbers
+
+        assert document_heading_numbers(self._document()) == ("1", "1.1", "1.2", "2")
+
+    def test_each_heading_prints_the_number_its_contents_entry_lists(self) -> None:
+        from reporting_agent.render.html import document_heading_numbers, emit_html
+
+        document = self._document()
+        markup = emit_html(document, messages=mf.EN).html
+        for number in document_heading_numbers(document):
+            assert f'class="rpt-h-number">{number}<' in markup, number
+
+    def test_the_running_head_takes_the_name_without_the_number(self) -> None:
+        """`string-set: … content()` reads the element's whole content, which now opens
+        with the number — every page of section 1 was headed `1Azure Subscription
+        Overview`. The heading carries its own text for the running head instead."""
+        from reporting_agent.render.html import emit_html
+
+        markup = emit_html(self._document(), messages=mf.EN).html
+        assert 'data-heading-text="Virtual Machines"' in markup
+        assert 'data-heading-text="Inventory"' in markup
+
+        from reporting_agent.render.printcss import stylesheet
+
+        assert "string-set: running-head attr(data-heading-text)" in stylesheet(
+            "editorial", page_size="A4"
+        )
+
+
+class TestSignedGridColumns:
+    def _grid(self, headers, rows, signature_column):
+        from reporting_agent.render.front_matter import FrontMatterGrid
+
+        return FrontMatterGrid(
+            headers=tuple(headers),
+            rows=tuple(tuple(row) for row in rows),
+            table_style="Table Hairline",
+            signature_column=signature_column,
+        )
+
+    def test_the_approvers_table_declares_its_columns(self) -> None:
+        """Four equal columns gave the company 154px where it needed about 176, so
+        `Helios Informatika Nusantara / Cloud Engineer` wrapped and every row grew to the
+        height of its tallest cell."""
+        from reporting_agent.render.html import (
+            _SIGNED_GRID_COLUMN_SHARES,
+            emit_front_matter_html,
+        )
+
+        markup = emit_front_matter_html(
+            [
+                self._grid(
+                    ("", "Company", "Name", "Signature"),
+                    [("Author", "Helios Informatika Nusantara / Cloud Engineer", "A", "")],
+                    signature_column=3,
+                )
+            ]
+        )
+        assert "<colgroup>" in markup
+        for share in _SIGNED_GRID_COLUMN_SHARES:
+            assert f"width:{share}%" in markup
+        assert sum(_SIGNED_GRID_COLUMN_SHARES) == 100
+
+    def test_the_company_column_is_the_widest(self) -> None:
+        from reporting_agent.render.html import _SIGNED_GRID_COLUMN_SHARES
+
+        role, company, name, signature = _SIGNED_GRID_COLUMN_SHARES
+        assert company == max(_SIGNED_GRID_COLUMN_SHARES)
+        assert company > name > role
+
+    def test_an_unsigned_grid_declares_nothing(self) -> None:
+        """The distribution table is three columns of ordinary prose and has no signature
+        box to work around, so it keeps sizing itself."""
+        from reporting_agent.render.html import emit_front_matter_html
+
+        markup = emit_front_matter_html(
+            [
+                self._grid(
+                    ("Recipient", "Company", "Note"),
+                    [("Ops", "Contoso", "cc finance")],
+                    signature_column=None,
+                )
+            ]
+        )
+        assert "<colgroup>" not in markup

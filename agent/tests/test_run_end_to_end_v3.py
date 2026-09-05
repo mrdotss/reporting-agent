@@ -247,12 +247,17 @@ class TestV3SectionWalkReachesAPassingVerification:
         # One image per panel (Req 17's own render contract) and one chart per machine;
         # this fixture's two metrics share a panel (see above), so it is one image each.
         # The fixture's own inventory, read from the delivered document rather than
-        # hardcoded: a per-machine heading is a Heading 3 under the section, so counting
+        # hardcoded: a per-machine heading is a Heading 2 under the section, so counting
         # those counts the machines the section actually rendered. Deriving it here is
         # what keeps this test honest if the fixture's estate ever changes size — a
         # literal 2 would pass on a one-machine estate that emitted a spurious chart.
+        #
+        # `Heading 2`, not 3. The section catalogue declared every section at level 2 and
+        # every per-resource heading at 3, which left the document with no level 1 at all
+        # and made the contents page number its sections `0.1`, `0.2`. Everything moved up
+        # one, so the section is `Heading 1` and the machine under it is `Heading 2`.
         machines = sum(
-            1 for p in document.paragraphs if p.style.name == "Heading 3"
+            1 for p in document.paragraphs if p.style.name == "Heading 2"
         )
         assert machines >= 2, (
             f"the fixture must render at least two machines for this to mean anything, "

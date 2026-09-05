@@ -18,7 +18,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -46,7 +46,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -78,14 +78,14 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
             {
               "block": "heading",
               "config": {
-                "level": 3
+                "level": 2
               },
               "per": "resource"
             },
@@ -160,14 +160,14 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
             {
               "block": "heading",
               "config": {
-                "level": 3,
+                "level": 2,
                 "title_id": "doc.section.virtual_machines.inventory"
               },
               "per": "section"
@@ -200,7 +200,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 3,
+                "level": 2,
                 "title_id": "doc.section.virtual_machines.network"
               },
               "per": "section"
@@ -244,7 +244,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 3,
+                "level": 2,
                 "title_id": "doc.section.virtual_machines.disks"
               },
               "per": "section"
@@ -306,7 +306,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -359,21 +359,21 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
             {
               "block": "heading",
               "config": {
-                "level": 3
+                "level": 2
               },
               "per": "resource"
             },
             {
               "block": "heading",
               "config": {
-                "level": 4,
+                "level": 3,
                 "title_id": "doc.section.nsg.inbound",
                 "repeats_per_resource": true
               },
@@ -426,7 +426,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 4,
+                "level": 3,
                 "title_id": "doc.section.nsg.outbound",
                 "repeats_per_resource": true
               },
@@ -498,7 +498,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -603,14 +603,14 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
             {
               "block": "heading",
               "config": {
-                "level": 3
+                "level": 2
               },
               "per": "resource"
             },
@@ -721,7 +721,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -774,7 +774,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -845,7 +845,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -886,7 +886,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -936,7 +936,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -972,7 +972,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },
@@ -1013,7 +1013,7 @@
             {
               "block": "heading",
               "config": {
-                "level": 2
+                "level": 1
               },
               "per": "section"
             },

@@ -258,7 +258,10 @@ class TestExpandSectionsBasic:
         ]
 
         section_heading = result[0]
-        assert section_heading.config["level"] == 2
+        # Level 1 — see the note on the `Heading 1` assertion below. The per-machine
+        # headings this section expands into sit at 2, which is what makes them `8.1`,
+        # `8.2` on the contents page rather than siblings of the section they belong to.
+        assert section_heading.config["level"] == 1
         assert section_heading.config["text"] == "Virtual Machine Utilization"
         assert section_heading.id.count("__") == 1, "a per:section block carries no ordinal"
 
@@ -280,7 +283,7 @@ class TestExpandSectionsBasic:
         assert [h.config["text"] for h in machine_headings] == [
             rid.rsplit("/", 1)[-1] for rid in vm_ids
         ]
-        assert all(h.config["level"] == 3 for h in machine_headings)
+        assert all(h.config["level"] == 2 for h in machine_headings)
 
         # The per-machine summary is transposed — one table per metric, a row per
         # statistic. Not the artifact's metric-major grid: that needs 132 characters of a
@@ -1017,7 +1020,11 @@ class TestCompileDocumentSchemaVersionBranch:
         compiled = compile_document(definition, view=view, catalogue=catalogue)
 
         heading = compiled.nodes_by_block["sec_sub__0"][0]
-        assert heading.style == "Heading 2"
+        # `Heading 1`, because a report section IS the document's top level. The catalogue
+        # declared every section at level 2 and every sub-section at 3, which left the
+        # outline with no level 1 at all — so `section_numbers` opened a counter for the
+        # absent level and the contents page listed `0.1`, `0.2`, `0.3.1`.
+        assert heading.style == "Heading 1"
         assert len(heading.inlines) == 1
         assert heading.inlines[0].text == "Azure Subscription Overview"
 

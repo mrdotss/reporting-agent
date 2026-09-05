@@ -395,6 +395,17 @@
     min-width: 0;
 }
 
+/* The section number the contents lists, printed on the heading itself. A fixed inline
+   box rather than a plain space, so a two-digit number does not shift its title left of a
+   one-digit one and the headings line up down the page. */
+.rpt-h-number {
+    display: inline-block;
+    min-width: 1.4em;
+    margin-right: 0.45em;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+}
+
 .rpt-chart-period {
     color: var(--muted-foreground);
     font-size: 0.875em;
