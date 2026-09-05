@@ -29,8 +29,28 @@ export const typeCountsSchema = z
   .record(z.string().min(1), z.number().int().nonnegative())
   .catch({})
 
-/** A list of distinct strings — resource groups, regions. Non-strings are dropped. */
-export const stringListSchema = z.array(z.string().min(1)).catch([])
+/**
+ * A list of distinct strings — resource groups, regions. Non-strings are dropped.
+ *
+ * **Two accepted shapes, and that is not indulgence.** The agent reports a dimension as
+ * `{values, truncated}` — the bound and the flag saying whether it clipped — and
+ * `lib/scans/execute.ts` stores that envelope whole. This schema accepted only the bare
+ * array, so every stored dimension failed the parse, fell through `.catch([])`, and the
+ * scan screen reported **0 regions and 0 resource groups** for a subscription holding 23
+ * resources. The `.catch` is what made it silent: a wrong shape and an empty subscription
+ * became one answer.
+ *
+ * Read leniently rather than fixed at the writer, because rows already in the database
+ * carry the envelope; a writer-only change would leave every existing scan reading zero.
+ * The per-dimension `truncated` flag is not lost — `scans.truncated` already records
+ * whether any dimension clipped.
+ */
+export const stringListSchema = z
+  .union([
+    z.array(z.string().min(1)),
+    z.object({ values: z.array(z.string().min(1)) }).transform((d) => d.values),
+  ])
+  .catch([])
 
 export function readTypeCounts(value: unknown): Readonly<Record<string, number>> {
   const parsed = typeCountsSchema.safeParse(value)
