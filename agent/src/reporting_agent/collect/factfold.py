@@ -165,6 +165,24 @@ def fold_fact_response(
             f"a typo must fail rather than silently fold the wrong reader"
         )
 
+    # Keyed on the **case-folded** resource id, and looked up the same way below.
+    #
+    # ARM resource ids are case-insensitive by Azure's own contract, and the services
+    # disagree about casing in practice: Advisor answers
+    # `/subscriptions/…/resourcegroups/fatechid/providers/microsoft.compute/virtualmachines/cpn-mcp`
+    # where Resource Graph holds `…/resourceGroups/FATechID/…/virtualMachines/CPN-MCP`.
+    # One inventory in this repo's own evidence carries two casings of one resource group.
+    #
+    # Folding on the exact string made every one of a subscription's 26 live Advisor
+    # recommendations miss its resource, and the delivered report printed "No values
+    # recorded for these resources in this period" over a section that had 26 of them.
+    # The run was not marked incomplete, because "advisor answered and named no
+    # 'category' for this resource" is a truthful sentence about a lookup that silently
+    # could not succeed.
+    #
+    # The fold key is normalised; nothing else is. The `FactRecord` still carries the
+    # **inventory's** own spelling of the id, which is what the document renders and what
+    # every anchor and every replay resolves against.
     observed: dict[tuple[str, str], PlainData] = {}
     unreadable = False
 
@@ -183,7 +201,7 @@ def fold_fact_response(
                     if isinstance(column, str) and column.startswith(_FACT_FIELD_PREFIX):
                         key = column[len(_FACT_FIELD_PREFIX) :]
                         if key:
-                            observed[(resource_id, key)] = value
+                            observed[(resource_id.casefold(), key)] = value
     else:
         items = _items(body)
         if items is None:
@@ -195,7 +213,7 @@ def fold_fact_response(
                     continue
                 for key, value in item.items():
                     if isinstance(key, str) and key not in _ITEM_ID_KEYS:
-                        observed[(resource_id, key)] = value
+                        observed[(resource_id.casefold(), key)] = value
 
     facts: list[FactRecord] = []
     gaps: list[GapRecord] = []
@@ -280,10 +298,12 @@ def _fold_one(
     if unreadable:
         return None, _unavailable(entry, resource_id, "the response could not be read")
 
-    if (resource_id, entry.key) not in observed:
+    # Case-folded, matching how `observed` was built — see its own note.
+    lookup = (resource_id.casefold(), entry.key)
+    if lookup not in observed:
         return None, _absent(entry, resource_id)
 
-    raw = observed[(resource_id, entry.key)]
+    raw = observed[lookup]
     text = _text(raw)
 
     # Req 5.5 — no `Fact` whose value is the empty string. An empty projected column is how

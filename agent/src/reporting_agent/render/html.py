@@ -545,7 +545,7 @@ class _Emitter:
             f' data-panels="{html.escape(json.dumps(node.panels), quote=True)}"'
             f' data-path="{html.escape(str(node.path), quote=True)}">'
             f"{drawing}"
-            f"<figcaption>{html.escape(node.title)}</figcaption>"
+            f"<figcaption>{html.escape(node.caption or node.title)}</figcaption>"
             f'{period_markup}{indication}<div class="{_CLS_SERIES_SET}">{"".join(series_markup)}</div>'
             f"</figure>"
         )

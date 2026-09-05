@@ -62,6 +62,10 @@ export const MESSAGE_CATALOG = {
     en: "over time",
     id: "sepanjang waktu",
   },
+  "doc.chart.title.for_resource": {
+    en: "{resource} — {title}",
+    id: "{resource} — {title}",
+  },
   "doc.chart.title.over_time": {
     en: "{metrics} over time",
     id: "{metrics} dari waktu ke waktu",
