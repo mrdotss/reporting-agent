@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 from collections.abc import AsyncIterator
 from typing import Any, Final
 
@@ -54,6 +55,7 @@ from reporting_agent.azure.inventory import (
     ResourceGraphQueryError,
     read_counts,
     read_dimension,
+    service_error_text,
 )
 from reporting_agent.azure.ports import InventoryPort, RawHttpResponse
 from reporting_agent.errors import AuthFailedError, ErrorCode, ThrottledError
@@ -145,6 +147,137 @@ def test_the_query_projects_the_four_dimensions_and_nothing_else() -> None:
     assert len(summarized) == 5
     for name in INVENTORY_DIMENSIONS:
         assert f"{name} = make_set_if(" in query
+
+
+# --------------------------------------------------------------------------- #
+# The projection is also the column set every later stage resolves against
+# --------------------------------------------------------------------------- #
+
+_IDENTIFIER: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_ASSIGNMENT: Final = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\s*=(?!=)")
+
+_KQL_WORDS: Final[frozenset[str]] = frozenset(
+    {
+        "array_length",
+        "bag_keys",
+        "coalesce",
+        "iff",
+        "isnotempty",
+        "make_set_if",
+        "pack_array",
+        "string",
+        "to",
+        "tostring",
+        "typeof",
+    }
+)
+"""Names in the query text that are KQL functions, type names or keywords — not columns.
+
+Enumerated rather than inferred, and that direction matters: an unrecognised name has to
+fail the walk below as an unresolved column, because the defect being guarded is exactly a
+name that reads like a column and is not one in scope at that point.
+"""
+
+
+def _stages(query: str) -> list[str]:
+    """The query's pipeline stages, each continuation line folded into the stage it belongs
+    to.
+
+    `summarize` spans five lines, indented rather than piped, so a per-line reading sees
+    four stages that reference columns and no stage that declares them — which is how the
+    defect below survived a file of assertions over this query's text.
+    """
+    stages: list[str] = []
+    for line in query.splitlines():
+        if line.startswith("|") or not stages:
+            stages.append(line.strip())
+        else:
+            stages[-1] += " " + line.strip()
+    return stages
+
+
+def _referenced(expression: str) -> set[str]:
+    """Every column an expression reads: its identifiers, less assignments and KQL words."""
+    return {
+        name
+        for name in _IDENTIFIER.findall(_ASSIGNMENT.sub("", expression))
+        if name not in _KQL_WORDS
+    }
+
+
+def _unresolved(query: str) -> list[tuple[str, set[str]]]:
+    """Each stage that names a column not in scope where it runs, with the names.
+
+    A plain re-reading of what Resource Graph does to the query: `project` **replaces** the
+    column set, `extend` and `mv-expand` each add one to it, and every other stage has to
+    resolve against whatever is there by then. Stages before the first `project` are skipped
+    — the full `Resources` schema is in scope there and this file does not model it.
+    """
+    available: set[str] | None = None
+    failures: list[tuple[str, set[str]]] = []
+    for stage in _stages(query):
+        if not stage.startswith("|"):
+            continue
+        verb, _, rest = stage[1:].strip().partition(" ")
+        if verb == "project":
+            available = {column.partition("=")[0].strip() for column in rest.split(",")}
+            continue
+        if available is None:
+            continue
+        if verb in {"extend", "mv-expand"}:
+            name, _, expression = rest.partition("=")
+            missing = _referenced(expression) - available
+            available.add(name.strip())
+        else:
+            missing = _referenced(rest) - available
+        if missing:
+            failures.append((stage, missing))
+    return failures
+
+
+def test_every_column_the_pipeline_names_survives_the_projection() -> None:
+    """The defect this exists for: `regions = make_set_if(location, ...)` was added to the
+    `summarize` and `location` was not added to the `project`, so the one stage that reads it
+    ran against a column set the projection had already dropped. Resource Graph answers the
+    **whole query** with a 400, `distinct_dimensions` raises rather than claiming an empty
+    subscription, and the scan screen reported 0 types, 0 regions and 0 groups for every
+    estate.
+
+    Every assertion in this file passed throughout, because each one reads the query looking
+    for text that is present. This one walks the pipeline instead and asks a question text
+    cannot answer: is each name in scope where it is used.
+    """
+    assert _unresolved(distinct_dimensions_query(subscription_id=SUBSCRIPTION)) == []
+
+
+def test_the_walk_catches_a_dimension_whose_source_column_is_not_projected() -> None:
+    """The guard above, shown failing on the query that shipped — otherwise it is a test
+    that passes because it checks nothing.
+    """
+    shipped = distinct_dimensions_query(subscription_id=SUBSCRIPTION).replace(
+        "| project type, location, resourceGroup, tags",
+        "| project type, resourceGroup, tags",
+    )
+    failures = _unresolved(shipped)
+
+    assert [missing for _, missing in failures] == [{"location"}]
+    assert failures[0][0].startswith("| summarize")
+
+
+def test_each_dimension_summarizes_a_column_the_projection_carries() -> None:
+    """The same invariant stated per dimension, so the failure names which one is unsourced
+    rather than only that some stage is."""
+    query = distinct_dimensions_query(subscription_id=SUBSCRIPTION)
+    projected = {
+        column.strip()
+        for column in query.split("| project", 1)[1].splitlines()[0].split(",")
+    }
+    sourced = dict(re.findall(r"(\w+) = make_set_if\((\w+),", query))
+
+    assert set(sourced) == set(INVENTORY_DIMENSIONS)
+    for dimension, column in sourced.items():
+        # Either straight off the projection, or a column an `extend`/`mv-expand` built.
+        assert column in projected | {"tagKey", "tagValue"}, dimension
 
 
 @pytest.mark.parametrize(
@@ -398,6 +531,125 @@ def test_a_residual_failure_is_not_an_agent_error_so_it_reports_as_a_runtime_def
         dimensions_from(aggregate(), status=500)
     assert caught.value.status == 500
     assert "500" in str(caught.value)
+
+
+# --------------------------------------------------------------------------- #
+# What the log says when a query fails — the diagnosis, not just the status
+# --------------------------------------------------------------------------- #
+
+
+def arm_error(
+    code: str = "BadRequest", message: str = "Query is invalid", **detail: str
+) -> dict[str, Any]:
+    """An ARM error envelope shaped the way Resource Graph actually sends one.
+
+    Parsed JSON, because `clients._body_of` parses every body before it reaches a port's
+    caller — which is the fact the first version of this logging got wrong.
+    """
+    body: dict[str, Any] = {"error": {"code": code, "message": message}}
+    if detail:
+        body["error"]["details"] = [dict(detail)]
+    return body
+
+
+def test_the_service_error_names_the_code_the_message_and_the_offending_token() -> None:
+    """`ParserFailure ... 'location'` is the whole diagnosis of the defect this file's
+    pipeline walk now prevents, and it was being thrown away."""
+    text = service_error_text(
+        arm_error(code="ParserFailure", message="Failed to resolve column", token="location")
+    )
+
+    assert "BadRequest" not in text
+    assert "ParserFailure" in text
+    assert "Failed to resolve column" in text
+    assert "'location'" in text
+
+
+def test_the_service_error_survives_every_body_shape_a_port_can_hand_back() -> None:
+    """None of these may raise. A diagnostic that fires only when something has already
+    failed is the last place an exception belongs — the previous version called `.decode`
+    on a parsed body and took the run down on the one path it existed to report."""
+    for body in (
+        None,
+        b"raw bytes",
+        "a string",
+        {"no": "error key"},
+        {"error": "not a mapping"},
+        {"error": {"code": "X", "details": "not a list"}},
+        {"error": {"code": "X", "details": [None, 7, {"code": "Y"}]}},
+        [1, 2, 3],
+        object(),
+    ):
+        assert isinstance(service_error_text(body), str)
+
+
+def test_the_service_error_is_bounded_so_a_long_body_cannot_fill_the_log() -> None:
+    assert len(service_error_text(arm_error(message="x" * 5000))) <= 600
+
+
+def test_the_service_error_is_scrubbed_like_every_other_logged_provider_string() -> None:
+    """Redaction is not skipped on the grounds that an error body "cannot" hold a secret."""
+    from reporting_agent.redaction import (
+        SECRET_PLACEHOLDER,
+        discard_secrets,
+        register_secrets,
+    )
+
+    # Longer than `MIN_SECRET_LENGTH`, or the registry declines to register it at all.
+    token = register_secrets(["s3cret-value-from-the-vault"])
+    try:
+        text = service_error_text(
+            arm_error(message="rejected s3cret-value-from-the-vault outright")
+        )
+    finally:
+        discard_secrets(token)
+
+    assert "s3cret-value-from-the-vault" not in text
+    assert SECRET_PLACEHOLDER in text
+
+
+def test_a_failed_dimensions_query_logs_what_the_service_said(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The status alone said a query failed and not why, which is why the `location` defect
+    took a source read rather than a log read to find."""
+    caplog.set_level("WARNING")
+    with pytest.raises(ResourceGraphQueryError):
+        run(
+            InventoryCollector(
+                FakeInventoryPort(
+                    [RawHttpResponse(status=400, headers={}, body=arm_error(token="location"))]
+                )
+            ).distinct_dimensions(subscription_id=SUBSCRIPTION)
+        )
+
+    assert "'location'" in caplog.text
+
+
+def test_a_failed_child_query_logs_and_returns_rather_than_raising(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The regression: this path's own warning called `.decode` on a body that is parsed
+    JSON, so a 400 from the child query raised `AttributeError` out of the logging line and
+    ended the whole run — instead of recording no child resource and carrying on. No test
+    drove a failing child query, so every suite stayed green.
+    """
+    caplog.set_level("WARNING")
+
+    class FailingChildPort:
+        async def query_child_resources(self, *, subscription_id: str) -> RawHttpResponse:
+            return RawHttpResponse(
+                status=400, headers={}, body=arm_error(code="ParserFailure", token="fact_subnet")
+            )
+
+    result = run(
+        InventoryCollector(FailingChildPort()).discover_child_resources(
+            subscription_id=SUBSCRIPTION, fidelity_tier="baseline"
+        )
+    )
+
+    assert list(result["resources"]) == []
+    assert "'fact_subnet'" in caplog.text
 
 
 def test_an_unsuccessful_response_reports_no_dimension_at_all() -> None:
