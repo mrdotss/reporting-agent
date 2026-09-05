@@ -966,15 +966,22 @@ class TestReadingCopyPageFurniture:
         assert "text-align: center" in chart
         assert "margin-inline: auto" in css
 
-    def test_a_cell_boundary_marker_cannot_take_a_line_of_its_own(self) -> None:
-        """U+200B costs no width but is still an inline box carrying the cell's own
-        `line-height`, and it has a break opportunity before it — so a cell whose text
-        filled its last line put the marker alone on the next one."""
+    def test_every_cell_still_ends_with_its_boundary_marker(self) -> None:
+        """The property `printcss.py --assert-build` proves against a real render, asserted
+        here as the declaration it depends on.
+
+        This briefly read `font-size: 0; line-height: 0` as well, on a guess that the
+        marker was taking a line of its own. It was not — the two-line approver cell
+        measured exactly two line-heights — and collapsing the box stopped the character
+        reaching the PDF's content stream, which is the one thing it is for.
+        """
         css = self._css()
         marker = css.split(".rpt-pairs td::after", 1)[1].split("}", 1)[0]
-        assert "​" in marker or "200b" in marker
-        assert "font-size: 0" in marker
-        assert "line-height: 0" in marker
+        assert "200b" in marker
+        assert "font-size: 0" not in marker, (
+            "a zero-sized marker is not emitted into the content stream, and the pdf gate "
+            "goes back to reading two adjacent cells as one number"
+        )
 
 
 class TestNumberedHeadings:

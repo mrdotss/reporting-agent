@@ -410,18 +410,15 @@ table.rpt-table th::after,
 .rpt-grid td::after,
 .rpt-grid th::after,
 .rpt-pairs th::after,
-.rpt-pairs td::after {{
-  content: "\\200b";
-  /* Zero-height as well as zero-width. U+200B costs no width, but it is still an inline
-     box with the cell's own `line-height`, and it carries a break opportunity before it —
-     so in a cell whose text fills the last line exactly, the marker wrapped alone onto a
-     line of its own and left an empty line above the border. The approvers table showed
-     it: `Helios Informatika Nusantara / Cloud Engineer` wrapped to two lines and then sat
-     over a third that held nothing. Collapsing the line box keeps the character in the
-     content stream, which is the whole reason it is here, and costs it its height. */
-  font-size: 0;
-  line-height: 0;
-}}
+.rpt-pairs td::after {{ content: "\\200b"; }}
+
+/* It was briefly `font-size: 0; line-height: 0` here, on a guess that the marker was
+   wrapping onto a line of its own and leaving an empty line above the approvers table's
+   border. The guess was wrong twice over. Measuring WeasyPrint's own boxes showed the
+   two-line cell was exactly two line-heights with no third; the space under it came from
+   four equal columns, and `_SIGNED_GRID_COLUMN_SHARES` is what fixed it. And collapsing
+   the box stopped the character reaching the content stream at all — `--assert-build`
+   below caught it, on the very property this rule exists for. */
 
 /* --- figures ---------------------------------------------------------------
    Tabular and right-aligned, so a column of numbers lines up on its digits and a
