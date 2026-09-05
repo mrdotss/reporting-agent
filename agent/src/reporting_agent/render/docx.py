@@ -429,6 +429,18 @@ class _Emitter:
         run.add_picture(io.BytesIO(artifacts.image_png), width=Inches(_CHART_WIDTH_INCHES))
         _set_picture_alt_text(picture_paragraph, artifacts.identity)
 
+        # The chart's own name, under the image.
+        #
+        # `render/charts.py` used to draw it into the picture with `suptitle`. A title
+        # inside a raster cannot be selected, cannot be read by a screen reader, and is set
+        # in matplotlib's type rather than the document's — and the reading copy printed it
+        # a second time as a `<figcaption>`, so the delivered chart carried the same
+        # sentence twice. It is a caption paragraph in both artifacts now.
+        chart_title = node.caption or node.title
+        if chart_title:
+            title_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
+            title_para.add_run(chart_title)
+
         # Req 17.12 — present the period_label identically to how the chart image renders it.
         if node.period_label:
             period_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))

@@ -608,21 +608,13 @@ def render_chart(
         # figure, set exactly once regardless of panel count, so a panelled
         # chart reads as one chart with panel_count panels rather than
         # panel_count separately titled charts stacked together.
-        title_text = node.title
-        if node.period_label:
-            title_text = f"{node.title}\n{node.period_label}"
-        # Left-aligned, in the document's accent and heading face — the way every other
-        # heading in the report is set. A centred banner in a face the document uses
-        # nowhere else is what made the chart read as a picture pasted into the page
-        # rather than as part of it.
-        figure.suptitle(
-            title_text,
-            fontfamily=furniture.heading_face,
-            fontsize=style.CHART_TITLE_SIZE,
-            color=furniture.accent or furniture.value_label,
-            x=_TITLE_LEFT,
-            ha="left",
-        )
+        # **No title drawn into the image.** It is emitted as a caption below the chart
+        # instead — by `render/docx.py` as a `Caption` paragraph and by `render/html.py` as
+        # the `<figcaption>` — so it appears exactly once, in the document's own type
+        # rather than in matplotlib's, and it can be selected and read by a screen reader.
+        #
+        # It was drawn here *as well*, so the delivered chart carried the same sentence
+        # twice: once inside the picture and once under it.
 
         try:
             # Placed **before** the panels are drawn, not after. The end-label stacking
@@ -1403,11 +1395,13 @@ def _draw(
         )
 
 
-_TITLE_BAND_INCHES: Final[float] = 0.45
-"""Space above the first panel, for the chart title and its breathing room.
+_TITLE_BAND_INCHES: Final[float] = 0.20
+"""Space above the first panel.
 
-One line of title type and its air. It was 0.8 against a 3.2in panel; against a 1.5in one
-that reserved half a panel's height for a single line."""
+It held the chart title and its air at 0.45in, and 0.8in before that. The title is no
+longer drawn into the image — it is a caption under it — so what is left is the room the
+first panel's own caption needs above the plot, and nothing more. Not zero: the panel
+caption is set above the axes and would otherwise be clipped by the figure edge."""
 
 _XLABEL_BAND_INCHES: Final[float] = 0.45
 """Space below the last panel, for the date labels and the axis title.

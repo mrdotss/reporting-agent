@@ -351,10 +351,17 @@ def test_the_image_and_its_table_carry_the_same_identity() -> None:
     assert outcome.table_identities == (identity,)
 
 
-def test_the_companion_table_follows_its_image_with_nothing_between_them() -> None:
+def test_the_companion_table_follows_its_image_with_only_its_own_captions_between() -> None:
     """Req 22.2's body-order clause. The verifier pairs by identity, but a reader relies on
-    the adjacency: the table explains the picture above it."""
-    _, outcome = render(
+    the adjacency: the table explains the picture above it.
+
+    What may sit between them is the **image's own** caption paragraphs — the chart's title
+    and, under Req 17.12, its period label. Both name the picture, so neither separates it
+    from its table in any sense a reader would notice; `period_label` has always been
+    emitted there. What must not appear is a block belonging to something else, which is
+    what this walks the gap to check.
+    """
+    compiled, outcome = render(
         [
             df.block("p", "rich_text", {"text": "Before."}),
             df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]}),
@@ -372,7 +379,17 @@ def test_the_companion_table_follows_its_image_with_nothing_between_them() -> No
         if list(child.iter(f"{W}drawing"))
     )
     table_index = children.index(f"{W}tbl")
-    assert table_index == drawing_index + 1, children
+    assert table_index > drawing_index, children
+
+    node = first_chart(compiled)
+    permitted = {node.caption or node.title, node.period_label} - {"", None}
+    for child in body[drawing_index + 1 : table_index]:
+        assert child.tag == f"{W}p", children
+        text = "".join(child.itertext()).strip()
+        assert text in permitted, (
+            f"{text!r} sits between a chart and its companion table and is neither the "
+            f"chart's title nor its period label"
+        )
 
 
 def test_the_identity_is_derived_from_the_ast_path_alone() -> None:

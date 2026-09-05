@@ -61,7 +61,11 @@
       "en": "Historical trend: {metric} ({statistic})",
       "id": "Tren historis: {metric} ({statistic})"
     },
-    "doc.chart.title.over_time": {
+    "doc.chart.title.for_resource": {
+    "en": "{resource} \u2014 {title}",
+    "id": "{resource} \u2014 {title}"
+  },
+  "doc.chart.title.over_time": {
       "en": "{metrics} over time",
       "id": "{metrics} dari waktu ke waktu"
     },

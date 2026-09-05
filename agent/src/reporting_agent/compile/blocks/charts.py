@@ -428,11 +428,26 @@ def compile_timeseries_chart(
     # it because its scan reads string literals and this was an f-string. An Indonesian
     # report carried an English chart title on every chart.
     metric_names = ", ".join(dict.fromkeys(ref.label for ref in refs))
+    title = caption or context.messages.text(
+        "doc.chart.title.over_time", metrics=metric_names
+    )
+    # A chart of one resource says which one.
+    #
+    # The section heading above it already does, but the title is what travels: it is the
+    # caption under the image, the alt text, and what a reader sees when the chart lands on
+    # a page of its own. Three per-machine charts titled `Percentage CPU (avg), Percentage
+    # CPU (max) over time` are three identical captions.
+    #
+    # Only where the chart resolves to exactly one resource. A fleet chart names its
+    # resources on its own series labels, and prefixing one of them would be wrong.
+    if len(matched) == 1:
+        title = context.messages.text(
+            "doc.chart.title.for_resource", resource=matched[0].name, title=title
+        )
     chart = Chart(
         path=chart_cursor.path,
         chart_type="line",
-        title=caption
-        or context.messages.text("doc.chart.title.over_time", metrics=metric_names),
+        title=title,
         unit=unit,
         # One series is one ordered quantity over time; two or more are peers.
         encoding=ENCODING_SEQUENTIAL if len(series) == 1 else ENCODING_CATEGORICAL,

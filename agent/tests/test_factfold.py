@@ -814,3 +814,94 @@ def test_both_fact_kinds_are_spelled_the_way_the_archive_spells_them() -> None:
     assert set(FACT_KINDS) < set(ARCHIVE_KINDS)
     assert ARCHIVE_KIND_METRICS not in FACT_KINDS
     assert FACT_KINDS == (FACT_KIND_INVENTORY, FACT_KIND_FACTS)
+
+
+# --------------------------------------------------------------------------- #
+# The fold key is case-insensitive, because ARM resource ids are
+#
+# The defect these hold: a subscription's 26 live Advisor recommendations all missed their
+# resources and the delivered report printed "No values recorded for these resources in
+# this period" over a section that had 26 of them. Advisor answers in lower case, Resource
+# Graph does not, and the fold keyed on the exact string.
+# --------------------------------------------------------------------------- #
+
+
+def test_an_item_naming_its_resource_in_another_casing_still_folds() -> None:
+    """The observed case, reduced. Both ids are the same ARM resource."""
+    facts, gaps = fold(
+        {"value": [{"resource_id": WEB_01.lower(), "last_backup_status": "Completed"}]},
+        kind=FACT_KIND_FACTS,
+        source="recovery_services",
+        declared=declaration(vm=(BACKUP,)),
+    )
+
+    assert gaps == ()
+    assert facts[0]["value"] == "Completed"
+    # And the fact carries the **inventory's** spelling, not the response's: that string is
+    # what the document renders and what every anchor and replay resolves against.
+    assert facts[0]["resource_id"] == WEB_01
+
+
+def test_the_real_advisor_casing_folds() -> None:
+    """Not a lowercased fixture: the exact pair of strings the August run carried, from
+    `raw/000004-facts-advisor.json.gz` and the inventory beside it."""
+    inventory_id = (
+        "/subscriptions/4e818b57-c747-4ce0-ac4f-bfc7912e95a4/resourceGroups/FATechID"
+        "/providers/Microsoft.Compute/virtualMachines/CPN-MCP"
+    )
+    advisor_id = (
+        "/subscriptions/4e818b57-c747-4ce0-ac4f-bfc7912e95a4/resourcegroups/fatechid"
+        "/providers/microsoft.compute/virtualmachines/cpn-mcp"
+    )
+    assert inventory_id != advisor_id, "the fixture must actually differ in case"
+
+    recommendation = entry(
+        key="recommendation",
+        source="advisor",
+        projectable=False,
+        projection=None,
+        absent_gap_type="advisor_not_available",
+    )
+    facts, gaps = fold(
+        {
+            "value": [
+                {
+                    "resource_id": advisor_id,
+                    "recommendation": "Enable Azure Backup on the virtual machine",
+                }
+            ]
+        },
+        kind=FACT_KIND_FACTS,
+        source="advisor",
+        resource_ids=(inventory_id,),
+        declared=declaration(vm=(recommendation,)),
+        resource_types={inventory_id: VM_TYPE},
+    )
+
+    assert gap_types(gaps) == [], "the recommendation missed its resource again"
+    assert facts[0]["resource_id"] == inventory_id
+
+
+def test_a_resource_the_response_never_names_is_still_absent() -> None:
+    """The fix must not turn every absence into a match. A resource the service said
+    nothing about is `absent` exactly as before."""
+    facts, gaps = fold(
+        {"value": [{"resource_id": WEB_02.lower(), "last_backup_status": "Completed"}]},
+        kind=FACT_KIND_FACTS,
+        source="recovery_services",
+        resource_ids=(WEB_01,),
+        declared=declaration(vm=(BACKUP,)),
+    )
+
+    assert facts == ()
+    assert len(gaps) == 1
+
+
+def test_an_inventory_row_folds_case_insensitively_too() -> None:
+    """The projected reader takes the same key, so the two cannot drift apart. Resource
+    Graph's own rows already match today; this holds the property rather than the luck."""
+    facts, gaps = fold(page(row(WEB_01.lower(), os_type="Linux")))
+
+    assert gaps == ()
+    assert facts[0]["value"] == "Linux"
+    assert facts[0]["resource_id"] == WEB_01

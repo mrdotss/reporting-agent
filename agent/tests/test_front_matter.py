@@ -163,7 +163,7 @@ class TestEmitCoverEnabled:
         # Document control heading appears (it's the resolved message id)
         assert "Document control" in texts
 
-    def test_document_number_on_cover_and_control(self) -> None:
+    def test_document_number_appears_once_on_the_document_control_page(self) -> None:
         """Document number appears identically on cover AND document control page."""
         doc = load_theme("editorial")
         config = FrontMatterConfig(
@@ -179,9 +179,12 @@ class TestEmitCoverEnabled:
 
         texts = _document_text(doc)
         expected_number = "RPT-tmpl-abc-202607-run-001"
-        # Once on the cover and once on the document control page — the same string
-        # both times, which is the whole of Req 13.8.
-        assert texts.count(expected_number) == 2
+        # Once, on the document control page. Req 13.8 asks that the number resolve to the
+        # same string wherever it appears — it does not ask that it appear twice, and the
+        # cover's copy sat in a bordered grid restating two facts the cover already said
+        # above it. `document_number()` is where the "same string" property actually lives
+        # and `test_document_number_is_stable_across_renders` is what holds it.
+        assert texts.count(expected_number) == 1
         # And the document control page labels it.
         assert "Document number" in texts
 

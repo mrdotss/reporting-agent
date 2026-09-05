@@ -127,6 +127,10 @@ def test_the_two_languages_are_actually_different_copy() -> None:
     exempt ids.
     """
     shared_by_design = {
+        # Two placeholders and an em dash. There is no English in it to translate, and
+        # inventing an Indonesian variant of `{resource} — {title}` would put a difference
+        # in the catalogue that no reader could see.
+        "doc.chart.title.for_resource",
         "doc.fidelity.baseline",
         "doc.fidelity.enhanced",
         # "SKU" is the initialism in Indonesian technical writing too, and the column

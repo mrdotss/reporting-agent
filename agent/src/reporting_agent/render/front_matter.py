@@ -693,20 +693,27 @@ def front_matter_sections(
         if front_matter.cover.subtitle:
             sections.append(FrontMatterHeading(front_matter.cover.subtitle, COVER_META_STYLE))
 
-        cover_rows: list[tuple[str, str]] = [
-            (messages.text(COVER_CUSTOMER_LABEL), run.customer_name),
-            (messages.text(COVER_PERIOD_LABEL), run.period_display),
-        ]
-        # Req 13.8 — the same string here and on the document control page.
-        if doc_number:
-            cover_rows.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+        # No customer / period / document-number table here any more.
+        #
+        # It restated, in a bordered grid a third of the way down the page, three facts the
+        # cover had already said above it — the customer is in the title, the period is set
+        # large under it — and the third, the document number, belongs to the document
+        # control page, which states it and is where a reader looks for it. Req 13.8 asks
+        # that the number resolve to the same string wherever it appears; it does not ask
+        # that it appear twice.
+        #
+        # `contact_block` goes with it. A prepared-by line is a document-control fact, and
+        # it is on that page already.
         if front_matter.cover.contact_block:
-            cover_rows.append(
-                (messages.text("doc.front_matter.prepared_by"), front_matter.cover.contact_block)
+            cover_rows = [
+                (
+                    messages.text("doc.front_matter.prepared_by"),
+                    front_matter.cover.contact_block,
+                )
+            ]
+            sections.append(
+                FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
             )
-        sections.append(
-            FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
-        )
         sections.append(FrontMatterPageBreak())
 
     # --- document control (Req 13.5, 13.6) -----------------------------------
