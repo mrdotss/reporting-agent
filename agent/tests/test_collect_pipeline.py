@@ -2276,3 +2276,158 @@ def test_a_single_statistic_still_passes_the_gate() -> None:
         {"/vm/a": {"Percentage CPU": {"avg": {"value": "12.00"}}}},
         [{"gap_type": "permission_denied", "resource_id": "/vm/b", "metric": None, "message": "403"}],
     )
+
+
+# --------------------------------------------------------------------------- #
+# Reusing a snapshot a previous run collected
+#
+# A re-run of one period asks Azure the same question again, and Azure may answer
+# differently — late samples, a resized machine, a resource deleted since. So reuse is a
+# choice the caller makes, and these hold the one way it could produce a *wrong* document
+# rather than a stale one: a snapshot that answers for a different period.
+# --------------------------------------------------------------------------- #
+
+
+def _stored_snapshot(plan, **overrides: Any) -> dict[str, Any]:
+    """A snapshot document shaped like one this pipeline writes."""
+    from reporting_agent.collect.snapshot import window_to_plain
+
+    document: dict[str, Any] = {
+        "snapshot_id": "b7c1" * 16,
+        "window": dict(window_to_plain(plan.window)),
+        "timezone": plan.timezone_name,
+        "grain": plan.grain,
+        "resources": [{"resource_id": "/vm/one"}, {"resource_id": "/vm/two"}],
+        "gaps": [{"gap_type": "deallocated", "resource_id": "/vm/two"}],
+        "raw_archive": {"complete": True, "object_count": 4},
+    }
+    document.update(overrides)
+    return document
+
+
+def test_a_reused_snapshot_becomes_an_outcome_read_from_the_document() -> None:
+    from reporting_agent.collect.pipeline import outcome_from_snapshot
+
+    plan = resolve_run_plan(payload(), context())
+    outcome = outcome_from_snapshot(_stored_snapshot(plan), plan=plan)
+
+    # Every field read from the document, never recomputed: the document is what the
+    # later phases resolve figures against, so a count derived another way could disagree
+    # with the list the compiler walks.
+    assert outcome.snapshot_id == "b7c1" * 16
+    assert outcome.resource_count == 2
+    assert outcome.gap_count == 1
+    assert outcome.partial is True
+    assert outcome.raw_archive_complete is True
+    assert outcome.document["snapshot_id"] == "b7c1" * 16
+
+
+def test_a_reused_snapshot_with_no_gaps_is_not_partial() -> None:
+    from reporting_agent.collect.pipeline import outcome_from_snapshot
+
+    plan = resolve_run_plan(payload(), context())
+    outcome = outcome_from_snapshot(_stored_snapshot(plan, gaps=[]), plan=plan)
+    assert outcome.gap_count == 0
+    assert outcome.partial is False
+
+
+def test_an_incomplete_archive_travels_with_the_reused_snapshot() -> None:
+    """Req 26.12 — replay depends on this marker. A verifier handed an archive with a hole
+    in it must be able to tell that from one that is whole, and reusing a snapshot must not
+    quietly upgrade the claim: the archive belongs to the collection, not to this run."""
+    from reporting_agent.collect.pipeline import outcome_from_snapshot
+
+    plan = resolve_run_plan(payload(), context())
+    holed = _stored_snapshot(plan, raw_archive={"complete": False, "object_count": 2})
+    assert outcome_from_snapshot(holed, plan=plan).raw_archive_complete is False
+
+    # And a document carrying no archive block at all claims nothing, which is not a
+    # claim of completeness.
+    without = _stored_snapshot(plan)
+    del without["raw_archive"]
+    assert outcome_from_snapshot(without, plan=plan).raw_archive_complete is False
+
+
+def test_a_snapshot_for_another_period_is_refused() -> None:
+    """The whole safety of reuse. A snapshot covering July, reused for an August run,
+    would produce a document titled August out of July's measurements — and every gate
+    would pass, because every figure would resolve against the snapshot it came from."""
+    from reporting_agent.collect.pipeline import (
+        SnapshotReuseRefused,
+        outcome_from_snapshot,
+    )
+
+    august = resolve_run_plan(payload(start="2026-08-01", end="2026-08-31"), context())
+    july = resolve_run_plan(payload(start="2026-07-01", end="2026-07-31"), context())
+
+    with pytest.raises(SnapshotReuseRefused) as raised:
+        outcome_from_snapshot(_stored_snapshot(july), plan=august)
+    assert "cannot be built for one period out of another" in str(raised.value)
+
+
+def test_a_snapshot_collected_in_another_timezone_is_refused() -> None:
+    """One UTC window is a different set of local days in another zone, and every
+    `day_bucket` in the snapshot is keyed by a local day."""
+    from reporting_agent.collect.pipeline import (
+        SnapshotReuseRefused,
+        outcome_from_snapshot,
+    )
+
+    plan = resolve_run_plan(payload(), context())
+    elsewhere = _stored_snapshot(plan, timezone="America/New_York")
+
+    with pytest.raises(SnapshotReuseRefused) as raised:
+        outcome_from_snapshot(elsewhere, plan=plan)
+    assert "do not describe the same days" in str(raised.value)
+
+
+def test_a_snapshot_with_no_window_at_all_is_refused() -> None:
+    """Absence is a mismatch, not a pass. A document with no window makes no claim about
+    what it covers, and reuse cannot be granted on the strength of no claim."""
+    from reporting_agent.collect.pipeline import (
+        SnapshotReuseRefused,
+        outcome_from_snapshot,
+    )
+
+    plan = resolve_run_plan(payload(), context())
+    document = _stored_snapshot(plan)
+    del document["window"]
+
+    with pytest.raises(SnapshotReuseRefused):
+        outcome_from_snapshot(document, plan=plan)
+
+
+def test_a_reusing_run_announces_the_same_snapshot_ready_a_collecting_one_would() -> None:
+    """Req 14.9 — exactly one per run, and the app's relay rebuilds its panel from it. A
+    run that reused a snapshot still produced one; it read it rather than wrote it."""
+    from reporting_agent.collect.snapshot import window_to_plain
+    from reporting_agent.collect.pipeline import (
+        SNAPSHOT_READY_EVENT_TYPE,
+        outcome_from_snapshot,
+        snapshot_ready_event,
+    )
+
+    plan = resolve_run_plan(payload(), context())
+    outcome = outcome_from_snapshot(_stored_snapshot(plan), plan=plan)
+    event = snapshot_ready_event(outcome, plan=plan)
+
+    assert event["type"] == SNAPSHOT_READY_EVENT_TYPE
+    assert set(event) == {"type", "snapshot_id", "resource_count", "window", "grain", "gaps"}
+    assert event["snapshot_id"] == outcome.snapshot_id
+    assert event["resource_count"] == 2
+    assert event["window"] == dict(window_to_plain(plan.window))
+    assert event["gaps"] == list(outcome.gaps)
+
+
+def test_the_reused_grain_is_the_snapshots_own() -> None:
+    """The grain describes how the stored data was collected, not how this run would have
+    collected it. A snapshot taken at PT15M stays PT15M however this run's zone resolves."""
+    from reporting_agent.collect.pipeline import (
+        outcome_from_snapshot,
+        snapshot_ready_event,
+    )
+
+    plan = resolve_run_plan(payload(), context())
+    document = _stored_snapshot(plan, grain="PT15M")
+    event = snapshot_ready_event(outcome_from_snapshot(document, plan=plan), plan=plan)
+    assert event["grain"] == "PT15M"

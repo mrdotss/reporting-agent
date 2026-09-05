@@ -576,6 +576,7 @@ function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
     createdAt: new Date("2026-08-01T03:00:00.000Z"),
     customerName: null,
     revisionHistoryRow: null,
+    reuseSnapshotRunId: null,
     ...overrides,
   }
 }

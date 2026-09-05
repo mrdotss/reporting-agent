@@ -249,6 +249,22 @@ export type InvokeCommand =
        * formatter this path should lean on.
        */
       period_display?: string
+      /**
+       * A **completed** run of this actor's whose snapshot this run reuses instead of
+       * collecting.
+       *
+       * Absent means collect. Present means the consultant chose to reuse: a re-run of one
+       * period asks Azure the same question again and Azure is entitled to a different
+       * answer — late samples, a resized machine, a resource deleted since — so a re-run to
+       * fix a cover page would otherwise return a document whose figures moved for reasons
+       * unrelated to the fix.
+       *
+       * The runtime refuses a snapshot whose window or timezone is not this run's, so a
+       * mismatched id fails the run rather than delivering an August report built from
+       * July's measurements. This app narrows the candidates to that period before offering
+       * them, and the refusal is the backstop rather than the plan.
+       */
+      snapshot_run_id?: string
       /** The revision-history row for the document-control page (Requirement 13.7). */
       revision_history_row?: {
         readonly revision: string

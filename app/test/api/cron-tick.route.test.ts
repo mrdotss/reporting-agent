@@ -109,6 +109,7 @@ function claimed(id: string): ClaimedRun {
     // present (as a value or `null`) so a claim that dropped them cannot compile.
     customerName: null,
     revisionHistoryRow: null,
+    reuseSnapshotRunId: null,
   }
 }
 

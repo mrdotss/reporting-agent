@@ -103,8 +103,10 @@ from reporting_agent.collect.pipeline import (
     CollectionSink,
     RunPlan,
     StepEvents,
+    outcome_from_snapshot,
     resolve_run_plan,
     run_collection,
+    snapshot_ready_event,
 )
 from reporting_agent.compile.blocks.base import HistoricalSelectionKey
 from reporting_agent.compile.historical import (
@@ -122,6 +124,7 @@ from reporting_agent.errors import (
 )
 from reporting_agent.events import (
     PROGRESS_UNIT_BLOCKS,
+    TOOL_COLLECT_METRICS,
     TOOL_COMPILE_FIGURES,
     TOOL_RENDER_DOCUMENT,
     TOOL_UPLOAD_ARTIFACT,
@@ -229,22 +232,60 @@ async def run_generate_report(
     # metric narrowing needs it and loading it twice for one run would be two chances to
     # read two different catalogs.
     catalog = collection_kwargs.pop("catalog", None) or load_catalog()
-    collection = CollectionSink()
-    async for event in run_collection(
-        payload=payload,
-        context=context,
-        steps=steps,
-        artifact_bucket=artifact_bucket,
-        aws_region=aws_region,
-        progress=progress,
-        now=now,
-        sink=collection,
-        catalog=catalog,
-        metric_selection=requested_metric_union(definition, catalog),
-        **collection_kwargs,
-    ):
-        yield event
-    sink.collection = collection.require()
+
+    # --- reuse, when the caller offered a snapshot ------------------------------------
+    #
+    # A re-run of one period asks Azure the same question again, and Azure is entitled to
+    # a different answer: late-arriving samples, a resized machine, a resource deleted
+    # since. So the second August is not guaranteed to equal the first, and a consultant
+    # re-running to fix a cover page gets a document whose numbers moved for reasons that
+    # have nothing to do with the fix.
+    #
+    # Reuse is therefore a **choice the caller makes**, never an optimisation taken here:
+    # the app asks which the consultant wants and passes a run id or does not. Given one,
+    # this run reads that snapshot and collects nothing; given none, it collects as before.
+    # `outcome_from_snapshot` refuses a snapshot whose window or timezone is not this
+    # run's, which is the one way reuse could produce a wrong document rather than a
+    # stale one.
+    reuse_run_id = str(payload.get("snapshot_run_id") or "")
+    if reuse_run_id:
+        step = steps.start(
+            TOOL_COLLECT_METRICS,
+            label="Collecting",
+            status="Reading the snapshot this run was asked to reuse",
+        )
+        yield step
+        # Resolved inside the branch, not hoisted above it. `run_collection` builds its own
+        # store when none was injected, so a store created before the branch would be a
+        # **second** one — and the replay pass would then read an archive the collection
+        # never wrote to, reporting a snapshot irreproducible from zero objects.
+        reuse_store = collection_kwargs.get("object_store") or _s3_store(
+            artifact_bucket, aws_region
+        )
+        document = await reuse_store.get_json(
+            _snapshot_key(plan.actor_id, reuse_run_id)
+        )
+        outcome = outcome_from_snapshot(document, plan=plan)
+        yield steps.end(str(step["step_id"]))
+        yield snapshot_ready_event(outcome, plan=plan)
+        sink.collection = outcome
+    else:
+        collection = CollectionSink()
+        async for event in run_collection(
+            payload=payload,
+            context=context,
+            steps=steps,
+            artifact_bucket=artifact_bucket,
+            aws_region=aws_region,
+            progress=progress,
+            now=now,
+            sink=collection,
+            catalog=catalog,
+            metric_selection=requested_metric_union(definition, catalog),
+            **collection_kwargs,
+        ):
+            yield event
+        sink.collection = collection.require()
 
     store = collection_kwargs.get("object_store") or _s3_store(artifact_bucket, aws_region)
 

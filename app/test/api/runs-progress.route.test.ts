@@ -116,6 +116,7 @@ function row(over: Partial<ReportRun> = {}): ReportRun {
     createdAt: new Date("2026-08-15T09:50:00Z"),
     customerName: null,
     revisionHistoryRow: null,
+    reuseSnapshotRunId: null,
     ...over,
   }
 }

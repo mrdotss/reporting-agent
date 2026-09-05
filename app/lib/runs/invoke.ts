@@ -505,6 +505,12 @@ export async function startRunInvocation(
                 ...(run.revisionHistoryRow === null
                   ? {}
                   : { revision_history_row: run.revisionHistoryRow }),
+                // Omitted rather than nulled when the consultant chose to collect, so the
+                // payload's shape says "no snapshot offered" rather than "one offered,
+                // and it is nothing".
+                ...(run.reuseSnapshotRunId === null
+                  ? {}
+                  : { snapshot_run_id: run.reuseSnapshotRunId }),
                 // Gated on the same condition as the two fields above, not sent
                 // unconditionally: a v1-pinned run has no front matter to receive a
                 // formatted period into, and sending it anyway would give a v1

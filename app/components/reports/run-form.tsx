@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useId, useState } from "react"
+import { useCallback, useEffect, useId, useState } from "react"
 import { useRouter } from "next/navigation"
 import { PlayIcon } from "@phosphor-icons/react"
 
@@ -86,6 +86,16 @@ const FRONT_MATTER_SCHEMA_VERSION = 2
 const DERIVED_REVISION_SCHEMA_VERSION = 3
 
 /** What the route answers with. Parsed defensively — it is a network response. */
+/** What `GET /api/runs/reusable` answers with. */
+type ReusableCandidate = {
+  readonly runId: string
+  readonly collectedAt: string
+  readonly periodStart: string
+  readonly periodEnd: string
+  readonly resourceCount: number | null
+  readonly gapCount: number | null
+}
+
 type CreateResponse = {
   readonly run?: RunView
   readonly error?: { readonly message?: string; readonly code?: string }
@@ -170,6 +180,7 @@ export function RunForm({
   const [revisionAuthor, setRevisionAuthor] = useState("")
 
   const subscriptionFieldId = useId()
+  const reuseFieldId = useId()
   const templateFieldId = useId()
   const revisionFieldId = useId()
   const revisionNoteFieldId = useId()
@@ -186,6 +197,53 @@ export function RunForm({
    * agree, since the zone decides local-day bucketing and therefore every daily figure.
    */
   const timezone = DEFAULT_TIMEZONE
+
+  /**
+   * The snapshot this submission could reuse, and whether the consultant chose to.
+   *
+   * `undefined` while the answer is unknown — before both selects have values, and while
+   * the request is in flight. `null` means asked and there is none. The distinction
+   * matters on screen: "no earlier collection of this period" is a statement, and
+   * showing it before the question was asked would be a wrong one.
+   */
+  const [reusable, setReusable] = useState<ReusableCandidate | null | undefined>(
+    undefined
+  )
+  const [reuse, setReuse] = useState(false)
+
+  useEffect(() => {
+    if (!connectedSubscriptionId || !templateId) {
+      setReusable(undefined)
+      return
+    }
+
+    // Aborted on change rather than left to resolve. Two selections in quick succession
+    // otherwise race, and the slower answer — about a profile no longer selected — wins.
+    const controller = new AbortController()
+    setReusable(undefined)
+
+    const query = new URLSearchParams({
+      connectedSubscriptionId,
+      templateId,
+      timezone,
+    })
+    fetch(`/api/runs/reusable?${query}`, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : { candidate: null }))
+      .then((body: { candidate: ReusableCandidate | null }) => {
+        setReusable(body.candidate)
+        // Never pre-ticked. Collecting is the safe default: it is what every run did
+        // before this existed, and reuse is a choice about which numbers the document
+        // carries rather than a preference about speed.
+        setReuse(false)
+      })
+      .catch(() => {
+        // An unreachable lookup is not a reason to block a run. No offer is shown and
+        // the submission collects, which is what it would have done anyway.
+        if (!controller.signal.aborted) setReusable(null)
+      })
+
+    return () => controller.abort()
+  }, [connectedSubscriptionId, templateId, timezone])
 
   const selectedTemplate = templates.find(
     (template) => template.id === templateId
@@ -243,6 +301,8 @@ export function RunForm({
                     author: trimmedRevisionAuthor,
                   }
                 : null,
+              reuseSnapshotRunId:
+                reuse && reusable ? reusable.runId : null,
             })
           ),
         })
@@ -273,6 +333,8 @@ export function RunForm({
     [
       connectedSubscriptionId,
       requiresFrontMatter,
+      reusable,
+      reuse,
       router,
       submitting,
       templateId,
@@ -475,6 +537,60 @@ export function RunForm({
             </p>
           )}
         </fieldset>
+      )}
+
+      {/*
+        The reuse offer, shown only when there is one to make.
+
+        Deliberately not a silent optimisation. Re-running one period asks Azure the same
+        question again and Azure may answer differently — late-arriving samples, a resized
+        machine, a resource deleted since — so a consultant re-running to fix a cover page
+        would otherwise get a document whose figures moved for reasons unrelated to the
+        fix. Which they want depends on why they are re-running, which only they know.
+      */}
+      {reusable === null || reusable === undefined ? null : (
+        <div
+          data-slot="run-form-reuse"
+          className="flex flex-col gap-1.5 rounded-lg border border-border px-3.5 py-3"
+        >
+          <label className="flex items-start gap-2.5 text-sm">
+            <input
+              id={reuseFieldId}
+              type="checkbox"
+              name="reuseSnapshot"
+              checked={reuse}
+              onChange={(event) => setReuse(event.target.checked)}
+              className="mt-0.5"
+            />
+            <span className="flex flex-col gap-0.5">
+              <span className="font-medium">
+                {messageText("ui.run_form.reuse_label", "en")}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {messageText("ui.run_form.reuse_detail", "en", {
+                  collected: new Date(reusable.collectedAt)
+                    .toISOString()
+                    .slice(0, 10),
+                  // `?? ""` because `messageText` answers `undefined` for an id the
+                  // catalogue does not declare, and an interpolation value must be a
+                  // string. A missing fragment degrades to nothing rather than printing
+                  // `undefined` into the sentence around it.
+                  resources:
+                    reusable.resourceCount === null
+                      ? ""
+                      : (messageText("ui.run_form.reuse_resources", "en", {
+                          count: String(reusable.resourceCount),
+                        }) ?? ""),
+                  gaps: reusable.gapCount
+                    ? (messageText("ui.run_form.reuse_gaps", "en", {
+                        count: String(reusable.gapCount),
+                      }) ?? "")
+                    : "",
+                })}
+              </span>
+            </span>
+          </label>
+        </div>
       )}
 
       <FieldDescription>
