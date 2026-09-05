@@ -6,6 +6,12 @@ import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "@phosphor-icons/react"
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 import { missingInputs } from "@/lib/profiles/offerability"
 import {
+  entryKey,
+  metricChoicesFor,
+  toggleMetric,
+  undeclaredItems,
+} from "@/lib/profiles/section-metrics"
+import {
   DEFAULT_PRESET_NAME,
   expandPresets,
   matchPresetName,
@@ -338,9 +344,10 @@ export function StepSections({
   /**
    * Replace one section's metrics with a preset's, or clear them.
    *
-   * `null` clears — the author choosing `Custom` with no per-metric tier yet built
-   * (Requirement 10.4/10.5) has no way to express a partial selection, so clearing
-   * is the only honest meaning available and the section then reads as Custom.
+   * `null` clears, and the section then reads as Custom with the per-metric grid open
+   * beneath it. Clearing is right on the way in: a consultant moving off `Standard`
+   * chose to pick their own, and starting them at Standard's expansion would make the
+   * two indistinguishable and leave the radio lying about which is active.
    */
   const setPreset = useCallback(
     (id: string, presetName: string | null) => {
@@ -364,6 +371,18 @@ export function StepSections({
       )
     },
     [sections, catalogueMap, updateSections, presetMetricsFor]
+  )
+
+  /** Replace one section's metrics with an explicit list — the Custom grid's writer. */
+  const setMetrics = useCallback(
+    (id: string, metrics: readonly MetricSelectionItem[]) => {
+      updateSections(
+        sections.map((candidate) =>
+          candidate.id === id ? { ...candidate, metrics: [...metrics] } : candidate
+        )
+      )
+    },
+    [sections, updateSections]
   )
 
   const removeSection = useCallback(
@@ -493,6 +512,13 @@ export function StepSections({
             onPresetChange={(presetName) =>
               setPreset(selectedSection.id, presetName)
             }
+            catalog={catalog}
+            metrics={
+              Array.isArray(selectedSection.metrics)
+                ? (selectedSection.metrics as readonly MetricSelectionItem[])
+                : []
+            }
+            onMetricsChange={(next) => setMetrics(selectedSection.id, next)}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -604,6 +630,112 @@ function AddSectionControl({
 // Inspector
 // ---------------------------------------------------------------------------
 
+/**
+ * The Custom tier's per-metric grid (Requirements 10.4, 10.5, 11.9).
+ *
+ * Grouped by the section's own resource types and nothing else — a section already
+ * declares what it is about, so offering the rest of the catalogue would offer metrics
+ * the collector will never request for it. Every item, its statistics and its percentile
+ * metadata come from the catalogue; nothing here names a metric.
+ */
+function SectionMetricGrid({
+  resourceTypes,
+  catalog,
+  selection,
+  onChange,
+}: {
+  resourceTypes: readonly string[]
+  catalog?: MetricCatalogSnapshot
+  selection: readonly MetricSelectionItem[]
+  onChange: (next: readonly MetricSelectionItem[]) => void
+}) {
+  // Requirement 11.8 — an unavailable catalogue states so, shows no options and retains
+  // the stored selection, rather than rendering an empty grid that reads as "this
+  // section has no metrics to choose from".
+  if (catalog === undefined) {
+    return (
+      <p className="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">
+        The metric catalogue could not be loaded. Any metrics already chosen are kept.
+      </p>
+    )
+  }
+
+  const groups = metricChoicesFor(resourceTypes, catalog, selection)
+  const undeclared = undeclaredItems(resourceTypes, catalog, selection)
+
+  if (groups.length === 0) {
+    return (
+      <p className="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground">
+        The catalogue declares no metrics for this section&rsquo;s resource types.
+      </p>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-border pt-2.5">
+      {groups.map((group) => (
+        <fieldset key={group.resourceType} className="flex flex-col gap-1.5">
+          <legend className="font-mono text-[11px] text-muted-foreground">
+            {group.resourceType.split("/").pop()}
+          </legend>
+          {group.choices.map((choice) => (
+            <label
+              key={entryKey(choice.entry, choice.statistic)}
+              className="flex items-start gap-2 text-xs"
+            >
+              <input
+                type="checkbox"
+                checked={choice.selected}
+                onChange={(event) =>
+                  onChange(
+                    toggleMetric(
+                      selection,
+                      choice.entry,
+                      choice.statistic,
+                      event.target.checked
+                    )
+                  )
+                }
+                className="mt-0.5"
+              />
+              <span className="flex flex-col">
+                <span>
+                  {choice.entry.name}{" "}
+                  <span className="text-muted-foreground">
+                    ({choice.statistic})
+                  </span>
+                </span>
+                {choice.estimated && (
+                  // Requirement 5.6 — said at the point of selection, not only in the
+                  // finished document. A p95 rolled up from hourly buckets runs well
+                  // below the true p95 of the minute samples, and that gap is what makes
+                  // an over-provisioned machine look right-sized.
+                  <span className="text-[11px] text-muted-foreground">
+                    Estimated from a bounded sketch
+                  </span>
+                )}
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ))}
+
+      {undeclared.length > 0 && (
+        // Requirement 11.9 — retained and named, never silently dropped: removing a
+        // stored selection would change what a saved profile collects with nobody
+        // deciding to.
+        <p className="rounded-md bg-muted/50 px-2.5 py-2 text-[11px] text-muted-foreground">
+          {undeclared.length}{" "}
+          {undeclared.length === 1 ? "metric is" : "metrics are"} stored on this
+          section but no longer declared by the catalogue. They are kept until you
+          remove them, and the profile cannot be published while they are here.
+        </p>
+      )}
+    </div>
+  )
+}
+
+
 function SectionInspector({
   section,
   entry,
@@ -613,6 +745,9 @@ function SectionInspector({
   presets,
   activePreset,
   onPresetChange,
+  catalog,
+  metrics,
+  onMetricsChange,
 }: {
   section: AuthoredSection
   entry: SectionCatalogueEntry
@@ -624,6 +759,10 @@ function SectionInspector({
   /** Which preset the current metrics match, or `null` for Custom. */
   activePreset: string | null
   onPresetChange: (presetName: string | null) => void
+  /** For the Custom grid. Absent where the step was rendered without one. */
+  catalog?: MetricCatalogSnapshot
+  metrics: readonly MetricSelectionItem[]
+  onMetricsChange: (next: readonly MetricSelectionItem[]) => void
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -715,12 +854,33 @@ function SectionInspector({
               <span className="flex flex-col">
                 <span>Custom</span>
                 <span className="text-muted-foreground">
-                  Clears the selection. Per-metric choice is not built yet, so a
-                  section left on Custom collects nothing.
+                  Choose the metrics yourself, from what the catalogue declares for
+                  this section&rsquo;s resource types.
                 </span>
               </span>
             </label>
           </div>
+
+          {/*
+            The per-metric grid, open only on Custom.
+
+            It used to say "Per-metric choice is not built yet, so a section left on
+            Custom collects nothing" — a third option that produced an empty selection
+            and a section that collected nothing, which is the same defect the preset
+            row was added to fix, one tier down.
+
+            Not the v2 `MetricPicker`: that reads and writes `definition.metrics[type]`,
+            which a v3 profile does not have. The rules moved to
+            `lib/profiles/section-metrics.ts` and this renders them against the section.
+          */}
+          {activePreset === null && (
+            <SectionMetricGrid
+              resourceTypes={entry.needs_resource_types}
+              catalog={catalog}
+              selection={metrics}
+              onChange={onMetricsChange}
+            />
+          )}
         </div>
       )}
 
