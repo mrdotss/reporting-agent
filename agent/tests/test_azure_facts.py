@@ -32,6 +32,7 @@ from reporting_agent.azure.facts import (
     REPLICATION_ABSENT_GAP_TYPE,
     RESERVATION_ABSENT_GAP_TYPE,
     SOURCE_CAPACITY,
+    SOURCE_ADVISOR,
     SOURCE_RECOVERY_SERVICES,
     FactCollector,
     narrowed_to_gap_type,
@@ -259,7 +260,11 @@ def test_a_sql_database_records_no_backup_fact_and_no_backup_gap() -> None:
     database = record("db-01", resource_type=SQL_DB_TYPE)
     facts, gaps = run(port, resources=[database])
 
-    assert [gap for gap in gaps if gap["resource_id"] == database["resource_id"]] == []
+    mine = [gap for gap in gaps if gap["resource_id"] == database["resource_id"]]
+    # Nothing from the **backup** source. Advisor recommends across every type the
+    # catalogue declares, so an Advisor listing that named this database nothing is an
+    # ordinary `advisor_not_available` and not what this test is about.
+    assert [gap for gap in mine if gap["source"] == SOURCE_RECOVERY_SERVICES] == []
     assert [fact for fact in facts if fact["resource_id"] == database["resource_id"]] == []
 
 
@@ -640,9 +645,15 @@ def test_a_collected_at_is_rfc3339_utc_with_whole_second_precision() -> None:
         assert len(fact["collected_at"]) == len("2026-07-31T18:04:00Z")
 
 
-def test_the_collector_records_no_fact_for_a_resource_type_declaring_none() -> None:
+def test_the_collector_records_no_gap_for_a_source_the_type_does_not_declare() -> None:
     """Req 5.9 — a gap states that a fact the type declares is absent, not that a fact the
-    type never had is absent. Without it every storage account collects `no_reservations`."""
+    type never had is absent. Without it every storage account collects `no_reservations`.
+
+    Written as "declares none" while a storage account declared no facts at all. It now
+    declares Advisor's three, because Advisor recommends across every type rather than a
+    fixed tuple — so the property is stated against the **sources the type does not
+    declare**, which is what it was always about.
+    """
     storage = record("store01", resource_type="Microsoft.Storage/storageAccounts")
     port = FakeFactsPort(
         backup_responses=[empty_fact_list()],
@@ -651,7 +662,9 @@ def test_the_collector_records_no_fact_for_a_resource_type_declaring_none() -> N
     )
     _, gaps = run(port, resources=[storage])
 
-    assert [gap for gap in gaps if gap["resource_id"] == storage["resource_id"]] == []
+    mine = [gap for gap in gaps if gap["resource_id"] == storage["resource_id"]]
+    assert [gap["source"] for gap in mine] == [SOURCE_ADVISOR] * 3
+    assert {gap["metric"] for gap in mine} == {"category", "impact", "recommendation"}
 
 
 @pytest.mark.parametrize("source", [SOURCE_RECOVERY_SERVICES, SOURCE_CAPACITY])

@@ -181,6 +181,7 @@ __all__ = [
     "SNAPSHOT_READY_EVENT_TYPE",
     "CollectionOutcome",
     "CollectionSink",
+    "SnapshotReuseRefused",
     "RunPlan",
     "StepEvents",
     "assert_scope_not_empty",
@@ -188,10 +189,12 @@ __all__ = [
     "assert_some_statistic",
     "distinct_resource_ids",
     "fact_from_plain",
+    "outcome_from_snapshot",
     "resolve_run_plan",
     "run_collection",
     "run_generate_report",
     "sku_from_plain",
+    "snapshot_ready_event",
     "statistic_from_plain",
 ]
 
@@ -1113,6 +1116,89 @@ async def run_generate_report(
             f"{'entry' if outcome.gap_count == 1 else 'entries'}: the report is complete "
             f"and the gaps are recorded on its snapshot rather than zero-filled."
         )
+
+
+class SnapshotReuseRefused(RuntimeError):
+    """A stored snapshot was offered for reuse and does not describe this run's period.
+
+    Its own class because the caller must not treat it as a collection failure to retry:
+    the snapshot is fine, it simply answers a different question, and the fix is to
+    collect rather than to try again.
+    """
+
+
+def outcome_from_snapshot(
+    document: Mapping[str, PlainData], *, plan: RunPlan
+) -> CollectionOutcome:
+    """A :class:`CollectionOutcome` over a snapshot this run did **not** collect.
+
+    Every field is read from the document rather than recomputed, because the document is
+    the thing the later phases resolve figures against: a `resource_count` derived any
+    other way could disagree with the list the compiler walks.
+
+    ## The window check is the whole safety of reuse
+
+    A snapshot names the window it covers. Reusing one whose window is not this run's
+    would produce a report titled August built on July's measurements — every gate would
+    pass, because every figure would resolve against the snapshot it came from, and the
+    document would be wrong in the one way this product exists to prevent. So the windows
+    must match exactly, and a mismatch refuses rather than degrades.
+
+    Compared on the **stored strings**, not on parsed instants. `window_to_plain` (in
+    `collect/snapshot.py`) is what
+    wrote them and what would write them again, so equality here is equality of the thing
+    a reader of the snapshot sees.
+    """
+    stored = document.get("window")
+    wanted = dict(window_to_plain(plan.window))
+    if not isinstance(stored, Mapping) or dict(stored) != wanted:
+        raise SnapshotReuseRefused(
+            f"the snapshot offered for reuse covers {stored!r}, and this run asks for "
+            f"{wanted!r}; a report cannot be built for one period out of another's "
+            f"measurements"
+        )
+
+    # The timezone travels with the window because the same UTC window is a different set
+    # of local days in another zone, and every `day_bucket` in the snapshot is keyed by a
+    # local day.
+    stored_tz = str(document.get("timezone") or "")
+    if stored_tz != plan.timezone_name:
+        raise SnapshotReuseRefused(
+            f"the snapshot offered for reuse was collected in {stored_tz!r} and this run "
+            f"asks for {plan.timezone_name!r}; its day buckets are keyed by local day, so "
+            f"the two do not describe the same days"
+        )
+
+    gaps = tuple(_as_list(document["gaps"]))
+    archive = document.get("raw_archive")
+    return CollectionOutcome(
+        document=document,
+        snapshot_id=str(document["snapshot_id"]),
+        resource_count=len(_as_list(document["resources"])),
+        gap_count=len(gaps),
+        gaps=gaps,
+        partial=bool(gaps),
+        raw_archive_complete=bool(
+            archive.get("complete") if isinstance(archive, Mapping) else False
+        ),
+    )
+
+
+def snapshot_ready_event(outcome: CollectionOutcome, *, plan: RunPlan) -> PlainData:
+    """The `snapshot_ready` a reusing run emits, identical in shape to a collecting one.
+
+    Req 14.9 asks for exactly one of these per run, and the app's relay reconstructs the
+    panel from it. A run that reused a snapshot still produced one — it is simply one it
+    read rather than one it wrote — so it says so in the same words.
+    """
+    return {
+        "type": SNAPSHOT_READY_EVENT_TYPE,
+        "snapshot_id": outcome.snapshot_id,
+        "resource_count": outcome.resource_count,
+        "window": dict(window_to_plain(plan.window)),
+        "grain": str(outcome.document.get("grain") or plan.grain),
+        "gaps": list(outcome.gaps),
+    }
 
 
 async def run_collection(

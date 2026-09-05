@@ -57,15 +57,15 @@
       "en": "Distribution of {metric}",
       "id": "Distribusi {metric}"
     },
+    "doc.chart.title.for_resource": {
+      "en": "{resource} \u2014 {title}",
+      "id": "{resource} \u2014 {title}"
+    },
     "doc.chart.title.historical": {
       "en": "Historical trend: {metric} ({statistic})",
       "id": "Tren historis: {metric} ({statistic})"
     },
-    "doc.chart.title.for_resource": {
-    "en": "{resource} \u2014 {title}",
-    "id": "{resource} \u2014 {title}"
-  },
-  "doc.chart.title.over_time": {
+    "doc.chart.title.over_time": {
       "en": "{metrics} over time",
       "id": "{metrics} dari waktu ke waktu"
     },
@@ -78,8 +78,8 @@
       "id": "{count} sumber daya yang disusun untuk bagian {section_id} tidak lagi cocok: {resource_ids}."
     },
     "doc.drift.unchanged": {
-      "en": "Section {section_id} matches exactly the resources authored for it — no drift.",
-      "id": "Bagian {section_id} cocok persis dengan sumber daya yang disusun untuknya — tidak ada penyimpangan."
+      "en": "Section {section_id} matches exactly the resources authored for it \u2014 no drift.",
+      "id": "Bagian {section_id} cocok persis dengan sumber daya yang disusun untuknya \u2014 tidak ada penyimpangan."
     },
     "doc.fidelity.baseline": {
       "en": "baseline",
@@ -446,16 +446,16 @@
       "id": "Tidak ada celah yang tercatat untuk pengumpulan ini"
     },
     "doc.notice.not_comparable": {
-      "en": "Not comparable — fidelity tiers differ between runs",
-      "id": "Tidak dapat dibandingkan — tingkat ketelitian berbeda antar proses"
+      "en": "Not comparable \u2014 fidelity tiers differ between runs",
+      "id": "Tidak dapat dibandingkan \u2014 tingkat ketelitian berbeda antar proses"
     },
     "doc.notice.omitted_rows": {
       "en": "Not every matched resource is listed above; this table is capped. Resources in the subscription:",
       "id": "Tidak semua sumber daya yang cocok tercantum di atas; tabel ini dibatasi. Sumber daya dalam langganan:"
     },
     "doc.preview.notice": {
-      "en": "Preview — rendered from a stored snapshot. Not a verified deliverable.",
-      "id": "Pratinjau — dirender dari snapshot tersimpan. Bukan dokumen terverifikasi yang dikirimkan."
+      "en": "Preview \u2014 rendered from a stored snapshot. Not a verified deliverable.",
+      "id": "Pratinjau \u2014 dirender dari snapshot tersimpan. Bukan dokumen terverifikasi yang dikirimkan."
     },
     "doc.provenance.archived_responses": {
       "en": "Archived raw responses",
@@ -746,8 +746,8 @@
       "id": "Unduh PDF"
     },
     "ui.download.preparing": {
-      "en": "Preparing…",
-      "id": "Menyiapkan…"
+      "en": "Preparing\u2026",
+      "id": "Menyiapkan\u2026"
     },
     "ui.failure.artifact_produced": {
       "en": "An artifact was produced before the failure.",
@@ -838,8 +838,8 @@
       "id": "Periksa angka"
     },
     "ui.inspect.hint": {
-      "en": "— trace any number back to the snapshot it came from",
-      "id": "— telusuri setiap angka kembali ke snapshot asalnya"
+      "en": "\u2014 trace any number back to the snapshot it came from",
+      "id": "\u2014 telusuri setiap angka kembali ke snapshot asalnya"
     },
     "ui.preview.approximation_notice": {
       "en": "This approximates {divergences}. The delivered result is the .pdf below. Hover or focus any figure to see where it came from.",
@@ -850,12 +850,12 @@
       "id": "Hasil yang dikirimkan adalah .pdf di bawah. Arahkan atau fokuskan angka mana pun untuk melihat asalnya."
     },
     "ui.preview.heading_approximation": {
-      "en": "Reading view — an approximation of the delivered page",
-      "id": "Tampilan baca — perkiraan halaman yang dikirimkan"
+      "en": "Reading view \u2014 an approximation of the delivered page",
+      "id": "Tampilan baca \u2014 perkiraan halaman yang dikirimkan"
     },
     "ui.preview.heading_extract": {
-      "en": "Reading view — a text extract",
-      "id": "Tampilan baca — ekstrak teks"
+      "en": "Reading view \u2014 a text extract",
+      "id": "Tampilan baca \u2014 ekstrak teks"
     },
     "ui.provenance.heading": {
       "en": "Provenance",
@@ -909,6 +909,22 @@
       "en": "Pins version {version}",
       "id": "Menggunakan versi {version}"
     },
+    "ui.run_form.reuse_detail": {
+      "en": "Collected {collected}{resources}{gaps}. The figures will match that report exactly. Leave this unticked to measure again \u2014 Azure can answer differently for a past period.",
+      "id": "Dikumpulkan {collected}{resources}{gaps}. Angkanya akan sama persis dengan laporan itu. Biarkan tidak dicentang untuk mengukur ulang \u2014 Azure dapat menjawab berbeda untuk periode yang sudah lewat."
+    },
+    "ui.run_form.reuse_gaps": {
+      "en": ", {count} gaps",
+      "id": ", {count} celah"
+    },
+    "ui.run_form.reuse_label": {
+      "en": "Reuse the measurements already collected for this period",
+      "id": "Gunakan kembali pengukuran yang sudah dikumpulkan untuk periode ini"
+    },
+    "ui.run_form.reuse_resources": {
+      "en": ", {count} resources",
+      "id": ", {count} sumber daya"
+    },
     "ui.run_form.revision_author_label": {
       "en": "Author",
       "id": "Penulis"
@@ -926,8 +942,8 @@
       "id": "Minta laporan"
     },
     "ui.run_form.submitting": {
-      "en": "Requesting…",
-      "id": "Meminta…"
+      "en": "Requesting\u2026",
+      "id": "Meminta\u2026"
     },
     "ui.run_form.subscription_label": {
       "en": "Connection",
@@ -990,8 +1006,8 @@
       "id": "Proses ini gagal."
     },
     "ui.run_progress.reconnecting": {
-      "en": "Reconnecting the live view. The run continues either way — its state is recorded, not streamed.",
-      "id": "Menghubungkan kembali tampilan langsung. Proses tetap berjalan — statusnya dicatat, bukan dialirkan."
+      "en": "Reconnecting the live view. The run continues either way \u2014 its state is recorded, not streamed.",
+      "id": "Menghubungkan kembali tampilan langsung. Proses tetap berjalan \u2014 statusnya dicatat, bukan dialirkan."
     },
     "ui.run_table.connection": {
       "en": "Connection",
@@ -1030,8 +1046,8 @@
       "id": "Cari proses berdasarkan profil laporan"
     },
     "ui.run_table.search_placeholder": {
-      "en": "Search by profile…",
-      "id": "Cari berdasarkan profil…"
+      "en": "Search by profile\u2026",
+      "id": "Cari berdasarkan profil\u2026"
     },
     "ui.run_table.status": {
       "en": "Status",
@@ -1118,8 +1134,8 @@
       "id": "Pemindaian tidak dapat dimulai. Periksa koneksi Anda."
     },
     "ui.scan.rescan_running": {
-      "en": "Scanning…",
-      "id": "Memindai…"
+      "en": "Scanning\u2026",
+      "id": "Memindai\u2026"
     },
     "ui.scan.resources_label": {
       "en": "Resources",
@@ -1210,8 +1226,8 @@
       "id": "{count} sumber daya terpilih tidak menjawab apa pun dan dicatat sebagai tidak dikueri ulang alih-alih sebagai menyetujui."
     },
     "ui.verification.drift_summary": {
-      "en": "{n} resources re-queried · method {method} · seed",
-      "id": "{n} sumber daya dikueri ulang · metode {method} · benih"
+      "en": "{n} resources re-queried \u00b7 method {method} \u00b7 seed",
+      "id": "{n} sumber daya dikueri ulang \u00b7 metode {method} \u00b7 benih"
     },
     "ui.verification.fail_aria": {
       "en": "Verification failed with {count} blocking {noun}. The report was not delivered.",
@@ -1226,8 +1242,8 @@
       "id": "temuan"
     },
     "ui.verification.fail_summary": {
-      "en": "{count} blocking {noun}. The report was not delivered — no document is offered for download, because no document could be proven against the snapshot.",
-      "id": "{count} temuan pemblokir {noun}. Laporan tidak dikirimkan — tidak ada dokumen yang ditawarkan untuk diunduh, karena tidak ada dokumen yang dapat dibuktikan terhadap snapshot."
+      "en": "{count} blocking {noun}. The report was not delivered \u2014 no document is offered for download, because no document could be proven against the snapshot.",
+      "id": "{count} temuan pemblokir {noun}. Laporan tidak dikirimkan \u2014 tidak ada dokumen yang ditawarkan untuk diunduh, karena tidak ada dokumen yang dapat dibuktikan terhadap snapshot."
     },
     "ui.verification.failed": {
       "en": "Not verified",
@@ -1254,8 +1270,8 @@
       "id": "Verifikasi berhasil. {count} angka terlacak ke snapshot."
     },
     "ui.verification.pass_summary": {
-      "en": "{count} figures · every figure traced to snapshot {digest} · verified",
-      "id": "{count} angka · setiap angka terlacak ke snapshot {digest} · terverifikasi"
+      "en": "{count} figures \u00b7 every figure traced to snapshot {digest} \u00b7 verified",
+      "id": "{count} angka \u00b7 setiap angka terlacak ke snapshot {digest} \u00b7 terverifikasi"
     },
     "ui.verification.passed": {
       "en": "Verified",
@@ -1270,16 +1286,16 @@
       "id": "Pemutaran ulang deterministik"
     },
     "ui.verification.replay_not_possible": {
-      "en": "Not possible for this run — the archived responses it would have re-folded are unavailable, so neither a match nor a mismatch is reported.",
-      "id": "Tidak memungkinkan untuk proses ini — respons terarsip yang akan dihimpun ulang tidak tersedia, sehingga tidak ada kecocokan maupun ketidakcocokan yang dilaporkan."
+      "en": "Not possible for this run \u2014 the archived responses it would have re-folded are unavailable, so neither a match nor a mismatch is reported.",
+      "id": "Tidak memungkinkan untuk proses ini \u2014 respons terarsip yang akan dihimpun ulang tidak tersedia, sehingga tidak ada kecocokan maupun ketidakcocokan yang dilaporkan."
     },
     "ui.verification.replay_recomputed_label": {
       "en": "recomputed",
       "id": "dihitung ulang"
     },
     "ui.verification.replay_stored_label": {
-      "en": "· stored",
-      "id": "· tersimpan"
+      "en": "\u00b7 stored",
+      "id": "\u00b7 tersimpan"
     },
     "ui.verification.unmatched": {
       "en": "Unmatched numerals",

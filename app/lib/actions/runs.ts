@@ -21,6 +21,7 @@ import {
   type PeriodRejectionCode,
   type PeriodSpec,
 } from "@/lib/templates/period"
+import { findReusableSnapshotRun } from "@/lib/runs/state"
 import { unionScope } from "@/lib/templates/scope-union"
 import { readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
@@ -399,6 +400,47 @@ export function resolveCustomerName(
   }
 }
 
+/**
+ * The completed run whose snapshot a submission of these fields could reuse, or `null`.
+ *
+ * Resolves the period **the way `enqueueRun` resolves it** — from the pinned definition
+ * at this instant, in this timezone — rather than taking one from the caller. The offer
+ * and the enqueue therefore agree by construction: a form that showed a candidate for one
+ * period and then submitted a run for another would be offering a reuse the runtime is
+ * about to refuse.
+ *
+ * Returns `null` for every reason a reuse cannot be offered — no version pinned yet, a
+ * period spec the resolver does not recognise, no prior run over that period — because
+ * each of those means the same thing to a caller: collect.
+ */
+export async function findReusableSnapshot(
+  userId: string,
+  input: {
+    readonly connectedSubscriptionId: string
+    readonly templateId: string
+    readonly timezone: string
+  },
+  now: Date = new Date()
+): Promise<ReportRun | null> {
+  const pinned = await readLatestVersion(userId, input.templateId)
+  if (pinned === undefined) return null
+
+  const definition = pinned.definition as TemplateDefinition
+  const period = resolvePeriod(definition.period as PeriodSpec, now, input.timezone)
+  if (!period.ok) return null
+
+  const scope = unionScope(definition)
+  const found = await findReusableSnapshotRun(userId, {
+    connectedSubscriptionId: input.connectedSubscriptionId,
+    periodStart: period.start,
+    periodEnd: period.end,
+    timezone: input.timezone,
+    scope,
+  })
+  return found ?? null
+}
+
+
 export async function enqueueRun(
   userId: string,
   input: RunCreateInput,
@@ -634,6 +676,10 @@ export async function enqueueRun(
         // from the submission at v2 — see the resolution above.
         customerName: resolvedCustomerName,
         revisionHistoryRow,
+        // The consultant's choice, recorded on the run rather than inferred later. See
+        // the column's own note: two August reports carrying identical numbers should be
+        // explainable from the row.
+        reuseSnapshotRunId: input.reuseSnapshotRunId ?? null,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick
         // recomputes the token from this run's id when it invokes.
         progressTokenHash: progressTokenHash(deriveProgressToken(runId)),

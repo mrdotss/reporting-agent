@@ -1,0 +1,1 @@
+ALTER TABLE "connected_subscriptions" ADD COLUMN "metrics_history_since" timestamp with time zone;

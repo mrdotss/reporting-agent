@@ -1,0 +1,1 @@
+ALTER TABLE "report_runs" ADD COLUMN "reuse_snapshot_run_id" text;

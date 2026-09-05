@@ -761,7 +761,7 @@ describe.skipIf(!db.enabled)(
 describe.skipIf(!db.enabled)(
   "Requirements 43.1, 43.4 — the recorded keys and the projection",
   () => {
-    test("the completed run records exactly two downloadable keys", async () => {
+    test("the completed run records one downloadable key per declared leaf", async () => {
       const runId = await enqueue()
       await walkToCompletion(runId)
 
@@ -771,11 +771,15 @@ describe.skipIf(!db.enabled)(
       const downloadable = [...recorded].filter((key) =>
         DOWNLOADABLE_LEAF_NAMES.some((leaf) => key.endsWith(`/${leaf}`))
       )
+      // Derived from `DOWNLOADABLE_LEAF_NAMES` rather than listed here. It said two —
+      // `report.docx` and `report.pdf` — and the styled reading copy became a third
+      // delivered artifact without this noticing, because these suites only run with
+      // TEST_DATABASE_URL set. A literal list is a second declaration of what a run
+      // delivers, and it is the one that goes stale.
       expect(downloadable.sort()).toEqual(
-        [
-          reportArtifactKey(userId, runId, "report.docx"),
-          reportArtifactKey(userId, runId, "report.pdf"),
-        ].sort()
+        DOWNLOADABLE_LEAF_NAMES.map((leaf) =>
+          reportArtifactKey(userId, runId, leaf)
+        ).sort()
       )
 
       // The key shape the agent writes and this app authorizes: actor, `reports`, run id.
@@ -873,7 +877,7 @@ describe.skipIf(!db.enabled)(
 // ---------------------------------------------------------------------------
 
 describe.skipIf(!db.enabled)("Requirement 40 — the download gate", () => {
-  test("exactly two controls, each minting a fresh short-lived URL at activation", async () => {
+  test("one control per downloadable leaf, each minting a fresh short-lived URL at activation", async () => {
     const runId = await enqueue()
     await walkToCompletion(runId)
 
@@ -881,11 +885,13 @@ describe.skipIf(!db.enabled)("Requirement 40 — the download gate", () => {
     const view = toRunView(run, await resolveRunExtras(run))
 
     // The set of controls the surface renders — `DownloadCard` filters the row's recorded
-    // keys by the two downloadable leaf names, so this is that filter over the real row.
+    // keys by the downloadable leaf names, so this is that filter over the real row.
     const controls = view.artifactKeys.filter((key) =>
       DOWNLOADABLE_LEAF_NAMES.some((leaf) => key.endsWith(`/${leaf}`))
     )
-    expect(controls).toHaveLength(2)
+    // Counted from the declaration, not written down. A literal `2` outlived the styled
+    // reading copy becoming a third delivered artifact.
+    expect(controls).toHaveLength(DOWNLOADABLE_LEAF_NAMES.length)
 
     // Requirement 40.1 — nothing was minted at surface render. The page read the row, the
     // extras and the verification, and made no storage call.
@@ -918,7 +924,9 @@ describe.skipIf(!db.enabled)("Requirement 40 — the download gate", () => {
     expect((first as { url: string }).url).not.toBe(
       (second as { url: string }).url
     )
-    expect(s3.presigns).toHaveLength(4)
+    // One per control from the loop above, plus the two activations just made. Derived
+    // for the same reason the control count is: a literal outlives a new artifact.
+    expect(s3.presigns).toHaveLength(DOWNLOADABLE_LEAF_NAMES.length + 2)
   })
 
   test("a run whose verification failed returns no URL and makes no storage call", async () => {

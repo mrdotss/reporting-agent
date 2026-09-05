@@ -43,6 +43,7 @@ vi.mock("@/lib/db", () => ({
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 
 import { EnqueueRejectedError, enqueueRun } from "@/lib/actions/runs"
+import { findReusableSnapshotRun } from "@/lib/runs/state"
 import * as schema from "@/lib/db/schema"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
@@ -518,3 +519,186 @@ describe.skipIf(!db.enabled)(
     })
   }
 )
+
+// ---------------------------------------------------------------------------
+// Reusing a snapshot a previous run collected
+//
+// A re-run of one period asks Azure the same question again, and Azure may answer
+// differently — late samples, a resized machine, a resource deleted since. Reuse is the
+// consultant's choice; these hold the shape of the offer they are choosing from.
+// ---------------------------------------------------------------------------
+
+describe.skipIf(!db.enabled)("findReusableSnapshotRun", () => {
+  const JULY = { periodStart: "2026-07-01", periodEnd: "2026-07-31" }
+  const SCOPE = {
+    resource_types: ["Microsoft.Compute/virtualMachines"],
+    resource_groups: [],
+    tag_filters: {},
+  }
+
+  async function seedRun(
+    overrides: Partial<{
+      status: string
+      periodStart: string
+      periodEnd: string
+      timezone: string
+      scope: unknown
+      userId: string
+      subscriptionId: string
+      createdAt: string
+    }> = {}
+  ): Promise<string> {
+    const id = randomUUID()
+    await db.query(
+      `INSERT INTO report_runs
+         (id, user_id, connected_subscription_id, period_start, period_end,
+          timezone, scope, status, dedupe_key, progress_token_hash,
+          phase_deadline, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, 'hash',
+               now() + interval '900 seconds', $10, now())`,
+      [
+        id,
+        overrides.userId ?? ownerId,
+        overrides.subscriptionId ?? subscriptionId,
+        overrides.periodStart ?? JULY.periodStart,
+        overrides.periodEnd ?? JULY.periodEnd,
+        overrides.timezone ?? JAKARTA,
+        JSON.stringify(overrides.scope ?? SCOPE),
+        overrides.status ?? "completed",
+        randomUUID(),
+        overrides.createdAt ?? "2026-08-01T00:00:00Z",
+      ]
+    )
+    return id
+  }
+
+  const criteria = {
+    connectedSubscriptionId: "",
+    periodStart: JULY.periodStart,
+    periodEnd: JULY.periodEnd,
+    timezone: JAKARTA,
+    scope: SCOPE,
+  }
+
+  function forThisSubscription() {
+    return { ...criteria, connectedSubscriptionId: subscriptionId }
+  }
+
+  test("a completed run over the same period and scope is offered", async () => {
+    const id = await seedRun()
+    const found = await findReusableSnapshotRun(ownerId, forThisSubscription())
+    expect(found?.id).toBe(id)
+  })
+
+  test("the newest is offered where a period was collected several times", async () => {
+    // The most recent is the one whose numbers the consultant most likely has in front
+    // of them.
+    await seedRun({ createdAt: "2026-08-01T00:00:00Z" })
+    const newer = await seedRun({ createdAt: "2026-08-20T00:00:00Z" })
+    const found = await findReusableSnapshotRun(ownerId, forThisSubscription())
+    expect(found?.id).toBe(newer)
+  })
+
+  test("a run that did not complete has no snapshot to offer", async () => {
+    // `failed` is seeded separately: `report_runs_error_code_ck` requires a failed row to
+    // carry a code, which is the database holding the same line this function does —
+    // a run that did not complete wrote no snapshot to offer.
+    for (const status of ["queued", "claimed", "collecting"]) {
+      await seedRun({ status })
+    }
+    await db.query(
+      `INSERT INTO report_runs
+         (id, user_id, connected_subscription_id, period_start, period_end,
+          timezone, scope, status, error_code, dedupe_key, progress_token_hash,
+          phase_deadline, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, 'failed', 'TIMEOUT', $8, 'hash',
+               now() + interval '900 seconds', now(), now())`,
+      [
+        randomUUID(),
+        ownerId,
+        subscriptionId,
+        JULY.periodStart,
+        JULY.periodEnd,
+        JAKARTA,
+        JSON.stringify(SCOPE),
+        randomUUID(),
+      ]
+    )
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("another period is not offered", async () => {
+    await seedRun({ periodStart: "2026-06-01", periodEnd: "2026-06-30" })
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("another timezone is not offered", async () => {
+    // One UTC window is a different set of local days in another zone, and every day
+    // bucket in the snapshot is keyed by a local day. The runtime refuses this too; the
+    // offer declines it first so nobody learns it from a failed run.
+    await seedRun({ timezone: "America/New_York" })
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("a narrower scope is not offered", async () => {
+    // The runtime cannot catch this: the resources the snapshot lacks would read as an
+    // estate that simply has none of that type. So the offer is where it must be caught.
+    await seedRun({ scope: { ...SCOPE, resource_types: [] } })
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("another user's run is never offered", async () => {
+    await seedRun({ userId: strangerId })
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("another subscription's run is not offered", async () => {
+    const other = `sub-${randomUUID()}`
+    await db.query(
+      `INSERT INTO connected_subscriptions
+         (id, user_id, display_name, subscription_id, tenant_id, client_id,
+          client_secret_enc, scope_verified, fidelity_tier, secret_expires_at, status)
+       VALUES ($1, $2, 'Other', '4f2b0000-0000-0000-0000-000000000000', 't', 'c',
+               'x', true, 'baseline', now() + interval '90 days', 'active')`,
+      [other, ownerId]
+    )
+    await seedRun({ subscriptionId: other })
+    expect(
+      await findReusableSnapshotRun(ownerId, forThisSubscription())
+    ).toBeUndefined()
+  })
+
+  test("the enqueue records the choice on the row", async () => {
+    const source = await seedRun()
+    const templateId = await insertTemplate(ownerId, [BASE])
+
+    const { run } = await enqueueRun(ownerId, {
+      connectedSubscriptionId: subscriptionId,
+      templateId,
+      timezone: JAKARTA,
+      reuseSnapshotRunId: source,
+    })
+
+    expect(run.reuseSnapshotRunId).toBe(source)
+  })
+
+  test("a run that did not ask to reuse records null", async () => {
+    const templateId = await insertTemplate(ownerId, [BASE])
+    const { run } = await enqueueRun(ownerId, {
+      connectedSubscriptionId: subscriptionId,
+      templateId,
+      timezone: JAKARTA,
+    })
+    expect(run.reuseSnapshotRunId).toBeNull()
+  })
+})

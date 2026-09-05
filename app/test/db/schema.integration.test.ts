@@ -292,7 +292,19 @@ describe("Requirement 36.6 — report_runs_error_code_ck constrains the pair", (
 })
 
 describe("Requirement 9.1 — nullability on connected_subscriptions", () => {
-  test("log_analytics_workspace_id is the only nullable column", async () => {
+  test("every nullable column on connected_subscriptions is a genuine absence", async () => {
+    // Requirement 9.1's property, and it was written as "log_analytics_workspace_id is
+    // the only nullable column" while that was the only one. The rule it stands for is
+    // that a `NULL` here means *there is no such thing*, never *not filled in yet* — a
+    // column of the second kind would let a half-written connection look like a complete
+    // one. Both of these are the first kind:
+    //
+    //   log_analytics_workspace_id — set on `enhanced`, absent on `baseline`
+    //   metrics_history_since      — the oldest exported metric, absent where a
+    //                                subscription exports none, which is the common case
+    //
+    // Listed rather than counted, so a third one is a decision somebody makes here with
+    // a reason attached rather than a number that quietly moves.
     const result = await db.query<{ column_name: string }>(
       `SELECT column_name
          FROM information_schema.columns
@@ -305,6 +317,7 @@ describe("Requirement 9.1 — nullability on connected_subscriptions", () => {
 
     expect(result.rows.map(({ column_name }) => column_name)).toEqual([
       "log_analytics_workspace_id",
+      "metrics_history_since",
     ])
   })
 

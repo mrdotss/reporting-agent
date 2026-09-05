@@ -127,7 +127,13 @@ function inAYear(): string {
   return new Date(Date.now() + 365 * DAY_MS).toISOString()
 }
 
-const VERIFIED: unknown = { scopeVerified: true, fidelityTier: "baseline" }
+// `metricsHistorySince` is part of an accepted outcome — the route reads it to store the
+// measured depth — so a fixture without it makes the route throw rather than insert.
+const VERIFIED: unknown = {
+  scopeVerified: true,
+  fidelityTier: "baseline",
+  metricsHistorySince: null,
+}
 
 const UNVERIFIED: unknown = {
   scopeVerified: false,

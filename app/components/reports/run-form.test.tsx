@@ -103,7 +103,7 @@ const V2 = template({
   schemaVersion: 2,
 })
 
-/** The captured request bodies, in order. */
+/** The captured **submission** bodies, in order. */
 let bodies: Record<string, unknown>[] = []
 
 beforeEach(() => {
@@ -111,7 +111,18 @@ beforeEach(() => {
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init?: RequestInit) => {
+    vi.fn(async (url: string, init?: RequestInit) => {
+      // The form asks `GET /api/runs/reusable` as soon as a subscription and a profile
+      // are both chosen, to learn whether this period was already collected. Answered
+      // here rather than recorded: it carries no body, and counting it among `bodies`
+      // made every assertion about what the form *submits* off by one.
+      if (String(url).startsWith("/api/runs/reusable")) {
+        return {
+          ok: true,
+          json: async () => ({ candidate: null }),
+        } as unknown as Response
+      }
+
       bodies.push(
         JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>
       )

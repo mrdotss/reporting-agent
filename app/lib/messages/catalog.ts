@@ -1178,6 +1178,22 @@ export const MESSAGE_CATALOG = {
     en: "Fill in the revision, note and author before requesting this report.",
     id: "Isi revisi, catatan, dan penulis sebelum meminta laporan ini.",
   },
+  "ui.run_form.reuse_label": {
+    en: "Reuse the measurements already collected for this period",
+    id: "Gunakan kembali pengukuran yang sudah dikumpulkan untuk periode ini",
+  },
+  "ui.run_form.reuse_detail": {
+    en: "Collected {collected}{resources}{gaps}. The figures will match that report exactly. Leave this unticked to measure again — Azure can answer differently for a past period.",
+    id: "Dikumpulkan {collected}{resources}{gaps}. Angkanya akan sama persis dengan laporan itu. Biarkan tidak dicentang untuk mengukur ulang — Azure dapat menjawab berbeda untuk periode yang sudah lewat.",
+  },
+  "ui.run_form.reuse_resources": {
+    en: ", {count} resources",
+    id: ", {count} sumber daya",
+  },
+  "ui.run_form.reuse_gaps": {
+    en: ", {count} gaps",
+    id: ", {count} celah",
+  },
   "ui.run_form.period_explanation": {
     en: 'The collection window comes from the report profile\'s own period rule and resolves when the run is enqueued, in {timezone}. A period is local: "July 2026" means July in that zone, not July in UTC.',
     id: 'Jendela pengumpulan berasal dari aturan periode profil laporan dan diselesaikan saat proses diantrekan, dalam {timezone}. Periode bersifat lokal: "Juli 2026" berarti Juli di zona tersebut, bukan Juli dalam UTC.',

@@ -262,6 +262,12 @@ export type ClaimedRun = {
    * never requires them there, so there is nothing to read back.
    */
   readonly customerName: string | null
+  /**
+   * A completed run whose snapshot this run reuses instead of collecting, or `null`.
+   * Carried on the claim for the same reason the front-matter values are: the invocation
+   * needs it and re-querying for it would be a second read of a row already in hand.
+   */
+  readonly reuseSnapshotRunId: string | null
   readonly revisionHistoryRow: {
     readonly revision: string
     readonly note: string
@@ -319,6 +325,7 @@ export async function claimQueuedRuns(
       note: string
       author: string
     } | null
+    reuse_snapshot_run_id: string | null
   }>(sql`
     UPDATE report_runs
        SET status = 'claimed',
@@ -334,7 +341,7 @@ export async function claimQueuedRuns(
         LIMIT ${CLAIM_LIMIT})
     RETURNING id, user_id, connected_subscription_id,
               period_start, period_end, timezone, scope, template_version_id,
-              customer_name, revision_history_row
+              customer_name, revision_history_row, reuse_snapshot_run_id
   `)
 
   return result.rows.map((row) => ({
@@ -348,6 +355,7 @@ export async function claimQueuedRuns(
     templateVersionId: row.template_version_id,
     customerName: row.customer_name,
     revisionHistoryRow: row.revision_history_row,
+    reuseSnapshotRunId: row.reuse_snapshot_run_id,
   }))
 }
 

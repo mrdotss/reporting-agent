@@ -100,6 +100,16 @@ export type ConnectedSubscriptionView = {
   /** ISO 8601, UTC — see {@link toConnectedSubscriptionView}. */
   secretExpiresAt: string
   fidelityTier: FidelityTier
+  /**
+   * The oldest exported platform metric this subscription's workspace holds, as ISO 8601
+   * in UTC, or `null` where nothing is exported.
+   *
+   * Browser-safe: it is a measurement of the customer's own telemetry depth, carrying no
+   * secret and naming no resource. The wizard reads it to say how far back a trend can
+   * reach, and serialized here for the reason `secretExpiresAt` is — a `Date` survives a
+   * server component's props and does not survive `JSON.stringify` on a route.
+   */
+  metricsHistorySince: string | null
   status: SubscriptionStatus
 }
 
@@ -125,6 +135,7 @@ export function toConnectedSubscriptionView(
     scopeVerified: row.scopeVerified,
     secretExpiresAt: row.secretExpiresAt.toISOString(),
     fidelityTier: row.fidelityTier,
+    metricsHistorySince: row.metricsHistorySince?.toISOString() ?? null,
     status: row.status,
   }
 }

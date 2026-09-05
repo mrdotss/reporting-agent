@@ -280,6 +280,11 @@ export type CreateConnectedSubscriptionInput = {
   readonly scopeVerified: boolean
   /** From the preflight's fidelity probe (Requirements 12.8–12.10). */
   readonly fidelityTier: FidelityTier
+  /**
+   * The oldest exported platform metric the workspace holds, or `null`. Measured by the
+   * preflight, never submitted — see the column's own note.
+   */
+  readonly metricsHistorySince?: Date | null
   /** Set on the `enhanced` tier, absent on `baseline`. */
   readonly logAnalyticsWorkspaceId?: string | null
 }
@@ -317,6 +322,7 @@ export async function createConnectedSubscription(
         scopeVerified: input.scopeVerified,
         status: statusFor(input.scopeVerified),
         fidelityTier: input.fidelityTier,
+        metricsHistorySince: input.metricsHistorySince ?? null,
         logAnalyticsWorkspaceId: input.logAnalyticsWorkspaceId ?? null,
       })
       .returning()

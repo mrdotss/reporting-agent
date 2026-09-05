@@ -277,15 +277,38 @@ describe.skipIf(!db.enabled)(
       expect(result.run.id).toBeTruthy()
     })
 
-    test("the defect's own shape still rejects — a v3 template with no front matter", async () => {
+    test("a v3 template carrying its own customer name enqueues with no front matter", async () => {
+      // This used to assert the opposite, and it was right when it was written: the form
+      // submitted a customer name and a revision row per run, and a v3 pin sending
+      // neither was the defect Requirement 13.14 refuses.
+      //
+      // Both of those moved onto the profile. `identity.customer_name` is authored once
+      // in the wizard, and the revision row is derived at enqueue rather than submitted
+      // (`DERIVED_REVISION_SCHEMA_VERSION`) — so at v3 there is nothing left for the form
+      // to send, and refusing a run for not sending it would refuse every v3 run.
+      //
+      // The gate is unchanged; what reaches it is. The refusal it still makes is the
+      // next test.
       const templateId = await insertTemplate(V3_DEFINITION)
 
-      // This is what the form used to send for a v2 template, and the analogous
-      // shape must keep failing for v3. The requirement is not relaxed by
-      // anything above: a cover and a revision row with nothing in them is not
-      // a document anyone can send a customer, so the enqueue's refusal is
-      // correct and stays. This rejection happens at step 4b, before the
-      // unrelated `unionScope` gap above would ever be reached.
+      const result = await enqueueRun(ownerId, submissionFor(templateId, null))
+      expect(result.run.id).toBeTruthy()
+      expect(result.run.customerName).toBe("Contoso Ltd")
+    })
+
+    test("a v3 template with no customer name anywhere is still refused", async () => {
+      // Requirement 13.14's live half. A blank customer is not a document anyone can
+      // send: it would pass the gate and print an empty name on the document control
+      // page, which is worse than the refusal.
+      const { identity, ...rest } = V3_DEFINITION as Record<string, unknown> & {
+        identity: Record<string, unknown>
+      }
+      const { customer_name: _dropped, ...identityWithout } = identity
+      const templateId = await insertTemplate({
+        ...rest,
+        identity: identityWithout,
+      })
+
       await expect(
         enqueueRun(ownerId, submissionFor(templateId, null))
       ).rejects.toThrow(EnqueueRejectedError)

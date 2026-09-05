@@ -874,13 +874,32 @@ async def handle_preflight(
         yield fidelity
         invocation.outcome["fidelity_tier"] = await service.probe_fidelity()
         yield steps.end(fidelity["id"])
+
+        # How far back this subscription can answer for a trend. Asked in the same
+        # preflight as the two above rather than at report time, because the answer
+        # bounds a control in the wizard and a control that has to wait for a run to
+        # learn its own range is a control that offers a lookback the data cannot support.
+        #
+        # `None` where nothing is exported, which is the common case and not a failure.
+        history = steps.start(
+            TOOL_PREFLIGHT_FIDELITY,
+            label="History",
+            status="Measuring how far back exported metrics reach",
+        )
+        yield history
+        invocation.outcome["metrics_history_since"] = (
+            await service.probe_metrics_history()
+        )
+        yield steps.end(history["id"])
     finally:
         await service.aclose()
 
     logger.info(
-        "preflight completed: scope_verified=%r fidelity_tier=%r",
+        "preflight completed: scope_verified=%r fidelity_tier=%r "
+        "metrics_history_since=%r",
         invocation.outcome["scope_verified"],
         invocation.outcome["fidelity_tier"],
+        invocation.outcome["metrics_history_since"],
     )
 
 

@@ -105,6 +105,7 @@ function connectedSubscriptionRow(
     clientSecretEnc: CLIENT_SECRET_ENC,
     scopeVerified: true,
     fidelityTier: "baseline",
+    metricsHistorySince: null,
     secretExpiresAt: new Date("2027-01-15T08:30:00.000Z"),
     status: "active",
     logAnalyticsWorkspaceId: WORKSPACE_ID,
@@ -125,6 +126,10 @@ const CONNECTED_SUBSCRIPTION_VIEW_KEYS = [
   "fidelityTier",
   "id",
   "maskedSubscriptionId",
+  // Reviewed and admitted: a measurement of how far back the customer's own exported
+  // metrics reach. No secret, and it names no resource — the wizard needs it to say what
+  // a trend can cover.
+  "metricsHistorySince",
   "scopeVerified",
   "secretExpiresAt",
   "status",
@@ -272,7 +277,7 @@ describe("maskSubscriptionId — Requirement 10.4", () => {
 // --- The projection ---------------------------------------------------------
 
 describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => {
-  test("carries the seven values the browser is allowed to see", () => {
+  test("carries the eight values the browser is allowed to see", () => {
     const view = toConnectedSubscriptionView(connectedSubscriptionRow())
 
     expect(view).toEqual({
@@ -282,8 +287,27 @@ describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => 
       scopeVerified: true,
       secretExpiresAt: "2027-01-15T08:30:00.000Z",
       fidelityTier: "baseline",
+      // How far back this subscription's exported metrics reach, so the profile wizard
+      // can say what a trend can cover. A measurement of the customer's own telemetry
+      // depth: no secret, and it names no resource.
+      metricsHistorySince: null,
       status: "active",
     })
+  })
+
+  test("serializes metricsHistorySince as an ISO 8601 instant, or null", () => {
+    const withHistory = toConnectedSubscriptionView(
+      connectedSubscriptionRow({
+        metricsHistorySince: new Date("2026-02-14T03:11:00.000Z"),
+      })
+    )
+    expect(withHistory.metricsHistorySince).toBe("2026-02-14T03:11:00.000Z")
+
+    // `null` is the common case — a subscription with no diagnostic setting exports
+    // nothing — and it is a real answer rather than a value not yet filled in.
+    expect(
+      toConnectedSubscriptionView(connectedSubscriptionRow()).metricsHistorySince
+    ).toBeNull()
   })
 
   test("serializes secretExpiresAt as an ISO 8601 instant in UTC", () => {
@@ -346,7 +370,7 @@ describe("Projection_Guard — Requirements 10.5, 10.6, 10.7, 10.8, 10.9", () =>
     expect(new Set(secrets).size).toBe(secrets.length)
   })
 
-  test("the projected key set is exactly the seven reviewed keys", () => {
+  test("the projected key set is exactly the reviewed keys", () => {
     // Requirement 10.6. Hard-coded above, so a newly added column cannot reach
     // the browser without an explicit change to this line.
     const view = toConnectedSubscriptionView(connectedSubscriptionRow())
@@ -576,6 +600,7 @@ function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
     createdAt: new Date("2026-08-01T03:00:00.000Z"),
     customerName: null,
     revisionHistoryRow: null,
+    reuseSnapshotRunId: null,
     ...overrides,
   }
 }

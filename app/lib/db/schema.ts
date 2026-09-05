@@ -351,6 +351,24 @@ export const connectedSubscriptions = pgTable(
      */
     logAnalyticsWorkspaceId: text("log_analytics_workspace_id"),
 
+    /**
+     * The oldest exported platform metric this subscription's workspace holds, as the
+     * preflight measured it. `NULL` where nothing is exported — the common case, and a
+     * real answer rather than a value not yet filled in.
+     *
+     * ## Why a date and not a number of months
+     *
+     * A count is wrong the day after it is written: the workspace gains another day every
+     * day, so a stored `7` understates the depth until somebody re-probes. The earliest
+     * record is a fixed fact, and depth is `now` minus it, computed wherever it is read.
+     * A subscription that enables export today therefore offers a deeper lookback three
+     * months from now with nobody doing anything and no second probe.
+     *
+     * The one thing that can invalidate it is retention being **shortened**, which the
+     * collection degrades over honestly rather than this column pre-empting.
+     */
+    metricsHistorySince: instant("metrics_history_since"),
+
     createdAt: instant("created_at").notNull().defaultNow(),
 
     /**
@@ -571,6 +589,29 @@ export const reportRuns = pgTable(
       note: string
       author: string
     }>(),
+
+    /**
+     * A completed run of this user's whose snapshot this run reuses instead of
+     * collecting. Null means collect — which is every run written before this column
+     * existed, and every run whose author chose to measure again.
+     *
+     * ## Why a run records this at all
+     *
+     * A re-run of one period asks Azure the same question again, and Azure is entitled
+     * to a different answer: late-arriving samples, a machine resized, a resource
+     * deleted since. So a consultant re-running August to fix a cover page would get a
+     * document whose figures moved for reasons unrelated to the fix. Reuse is the
+     * consultant's choice, and the choice is part of what the run *was* — a reader
+     * asking six months later why two August reports carry identical numbers should find
+     * the answer on the row rather than infer it.
+     *
+     * Not a foreign key to `report_runs.id`. The referenced run is the source of a
+     * stored **object**, and deleting the row would not delete the snapshot; a
+     * constraint here would refuse the delete and describe a dependency that is not the
+     * one that matters. The runtime refuses a snapshot whose window is not this run's,
+     * which is the check that keeps a wrong id from producing a wrong document.
+     */
+    reuseSnapshotRunId: text("reuse_snapshot_run_id"),
 
     createdAt: instant("created_at").notNull().defaultNow(),
   },

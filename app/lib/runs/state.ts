@@ -1,6 +1,6 @@
 import "server-only"
 
-import { and, count, desc, eq, ilike, inArray, or, type SQL } from "drizzle-orm"
+import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 
 import { getDb } from "@/lib/db"
 import {
@@ -400,6 +400,58 @@ export async function listOwnedRuns(
     .orderBy(desc(reportRuns.createdAt), desc(reportRuns.id))
     .limit(query.limit ?? RUN_LIST_LIMIT)
     .offset(query.offset ?? 0)
+}
+
+/**
+ * The most recent completed run whose snapshot answers for exactly this period and scope,
+ * or `undefined`.
+ *
+ * ## What "answers for exactly this period" means, and why it is this strict
+ *
+ * The runtime refuses a snapshot whose window or timezone is not the run's, so a loose
+ * match here would surface as a failed run rather than a wrong document. But a failed run
+ * is a bad way to learn that an offer was wrong, so the offer is made on the same fields
+ * the refusal checks — plus the scope, which the refusal cannot check: a snapshot
+ * collected for two resource types cannot answer a run that asks for five, and nothing
+ * downstream would notice, because the missing resources would look like an estate that
+ * simply has none of that type.
+ *
+ * Scope is compared as **stored JSON**. `enqueueRun` writes it from one normalisation, so
+ * two submissions of one intent produce one value; two that differ in any way a reader
+ * would notice produce two, and this declines to match them. That is the conservative
+ * direction: a missed reuse costs a collection, a wrong reuse costs a wrong report.
+ *
+ * Ordered newest first. Where a period was collected several times, the most recent is
+ * the one whose numbers the consultant most likely already has in front of them.
+ */
+export async function findReusableSnapshotRun(
+  userId: string,
+  criteria: {
+    readonly connectedSubscriptionId: string
+    readonly periodStart: string
+    readonly periodEnd: string
+    readonly timezone: string
+    readonly scope: unknown
+  }
+): Promise<ReportRun | undefined> {
+  const [row] = await getDb()
+    .select()
+    .from(reportRuns)
+    .where(
+      and(
+        eq(reportRuns.userId, userId),
+        eq(reportRuns.status, "completed"),
+        eq(reportRuns.connectedSubscriptionId, criteria.connectedSubscriptionId),
+        eq(reportRuns.periodStart, criteria.periodStart),
+        eq(reportRuns.periodEnd, criteria.periodEnd),
+        eq(reportRuns.timezone, criteria.timezone),
+        sql`${reportRuns.scope}::jsonb = ${JSON.stringify(criteria.scope)}::jsonb`
+      )
+    )
+    .orderBy(desc(reportRuns.createdAt), desc(reportRuns.id))
+    .limit(1)
+
+  return row
 }
 
 /**

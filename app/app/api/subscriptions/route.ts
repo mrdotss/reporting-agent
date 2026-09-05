@@ -134,6 +134,12 @@ export async function POST(request: Request): Promise<Response> {
       // them by the store, which is why none is passed.
       scopeVerified: outcome.scopeVerified,
       fidelityTier: outcome.fidelityTier,
+      // Measured at connect time, so the profile wizard can bound its Lookback control
+      // without a probe of its own. `null` where nothing is exported.
+      metricsHistorySince:
+        outcome.metricsHistorySince === null
+          ? null
+          : new Date(outcome.metricsHistorySince),
       logAnalyticsWorkspaceId: submitted.logAnalyticsWorkspaceId,
     })
 

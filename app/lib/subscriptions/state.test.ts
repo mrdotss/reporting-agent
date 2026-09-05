@@ -47,6 +47,7 @@ function view(
     scopeVerified: true,
     secretExpiresAt: new Date(NOW.getTime() + 365 * DAY_MS).toISOString(),
     fidelityTier: "baseline",
+    metricsHistorySince: null,
     status: "active",
     ...overrides,
   }

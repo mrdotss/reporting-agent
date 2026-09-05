@@ -169,6 +169,16 @@ export const runCreateInputSchema = z
      * Optional for the same reason as `customerName`.
      */
     revisionHistoryRow: revisionHistoryRowSchema.optional(),
+
+    /**
+     * A completed run of this user's whose snapshot to reuse instead of collecting.
+     *
+     * Optional, and absent means collect — which is what every caller sent before this
+     * existed. A UUID rather than a free string so a malformed id is refused here rather
+     * than at the storage read, where the failure would be a missing object and read as
+     * a collection problem.
+     */
+    reuseSnapshotRunId: z.string().uuid().optional(),
   })
   .strict()
 
@@ -218,11 +228,20 @@ export function buildRunCreateBody(fields: {
     readonly note: string
     readonly author: string
   } | null
+  /**
+   * A completed run whose snapshot to reuse, when the consultant chose to. Omitted from
+   * the body when absent rather than sent as `null`: the schema is `.strict()`, and a key
+   * present-and-empty would have to mean something the enqueue does not read.
+   */
+  readonly reuseSnapshotRunId?: string | null
 }): Record<string, unknown> {
   const base = {
     connectedSubscriptionId: fields.connectedSubscriptionId,
     templateId: fields.templateId,
     timezone: fields.timezone,
+    ...(fields.reuseSnapshotRunId
+      ? { reuseSnapshotRunId: fields.reuseSnapshotRunId }
+      : {}),
   }
 
   if (fields.frontMatter === null) return base
