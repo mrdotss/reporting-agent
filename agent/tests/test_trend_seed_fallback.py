@@ -218,3 +218,118 @@ def test_a_month_edited_in_the_snapshot_travels_into_the_recomputation() -> None
     carried = plan.resources[0].month_buckets[0]
 
     assert str(carried.statistics[0].value) == "99.99"
+
+
+# --------------------------------------------------------------------------- #
+# The commentary — one paragraph per resource
+# --------------------------------------------------------------------------- #
+
+
+def narrative_definition() -> dict[str, object]:
+    """The chart, then its commentary. That order is a real dependency: the narrative
+    reads what the chart put in the ledger, so it mints no second figure at an address
+    the chart already owns."""
+    return {
+        "schema_version": 2,
+        "provider": "azure",
+        "blocks": [
+            {
+                "id": "trend",
+                "type": "historical_trend",
+                "config": {"metric": CPU, "statistic": "avg", "lookback": 3},
+            },
+            {"id": "trend-prose", "type": "trend_narrative", "config": {}},
+        ],
+    }
+
+
+class Recorder:
+    """A `ProseProvider` that records the request and answers with fixed prose."""
+
+    def __init__(self, answer: str = "") -> None:
+        self.requests: list[object] = []
+        self.answer = answer
+
+    def narrate(self, request) -> str:
+        self.requests.append(request)
+        return self.answer
+
+
+def narrative_paragraphs(document) -> list:
+    """Only the commentary block's own paragraphs — the chart block emits its own
+    statement into the same document, and counting both would assert nothing."""
+    from reporting_agent.compile.ast import Paragraph
+
+    return [
+        block
+        for block in document.document.blocks
+        if isinstance(block, Paragraph) and block.path.startswith("trend-prose:")
+    ]
+
+
+def compile_narrative(months, answer: str = ""):
+    view = build_snapshot_view(snapshot(months=months))
+    recorder = Recorder(answer)
+    document = compile_document(narrative_definition(), view=view, prose=recorder)
+    return document, recorder
+
+
+def test_the_commentary_asks_under_the_trend_instruction_not_the_summary_s() -> None:
+    """A trend block's figures arriving under the executive summary's instruction reads
+    as a model that ignored its prompt rather than as a pipeline that handed it the wrong
+    one — which is why the kind travels on the request."""
+    from reporting_agent.compile.blocks.base import PROSE_KIND_TREND
+
+    _, recorder = compile_narrative(MONTHS)
+
+    assert len(recorder.requests) == 1
+    assert recorder.requests[0].kind == PROSE_KIND_TREND
+
+
+def test_the_model_sees_formatted_strings_labelled_by_resource_and_month() -> None:
+    """Req 19.1 unchanged: the string the document will print, never the value it was
+    formatted from. A trend is the shape that most invites "up 12% from May", and 12 is a
+    number the compiler never placed."""
+    _, recorder = compile_narrative(MONTHS)
+    figures = dict(recorder.requests[0].figures)
+
+    assert len(figures) == len(MONTHS)
+    for label in figures:
+        assert label.startswith("prod-web-01 · Percentage CPU")
+    assert set(figures.values()) == {
+        formatted for formatted in figures.values() if formatted
+    }
+    for month, value in MONTHS.items():
+        assert any(month in label and value in figures[label] for label in figures)
+
+
+def test_the_commentary_renders_one_paragraph_per_resource() -> None:
+    document, _ = compile_narrative(
+        MONTHS, answer="prod-web-01 drifted downward across the three months.\n\nA second."
+    )
+    assert len(narrative_paragraphs(document)) == 2
+
+
+def test_a_run_with_no_trend_figures_asks_the_model_nothing() -> None:
+    """No months and no prior runs is not a question worth a model call — and an empty
+    figure list would invite the model to invent the subject."""
+    _, recorder = compile_narrative(None)
+
+    assert recorder.requests == []
+
+
+def test_the_block_still_emits_when_there_is_nothing_to_narrate() -> None:
+    """Req 19.5's rule, applied here: a block that vanishes is indistinguishable from one
+    never configured."""
+    document, _ = compile_narrative(None)
+    assert len(narrative_paragraphs(document)) == 1
+
+
+def test_the_commentary_mints_no_figure_of_its_own() -> None:
+    """The whole reason it reads the ledger rather than the snapshot: a second figure at
+    an address the chart already owns would put one pointer in the ledger twice."""
+    with_prose, _ = compile_narrative(MONTHS, answer="One paragraph.")
+    view = build_snapshot_view(snapshot(months=MONTHS))
+    chart_only = compile_document(definition(), view=view)
+
+    assert with_prose.figure_count == chart_only.figure_count

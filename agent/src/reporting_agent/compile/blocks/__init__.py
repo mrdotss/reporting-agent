@@ -107,6 +107,7 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
     "heading": compile_heading,
     "rich_text": compile_rich_text,
     "historical_trend": charts.compile_historical_trend,
+    "trend_narrative": narrative.compile_trend_narrative,
     "blank_rows_table": compile_blank_rows_table,
 }
 """Every declared block type but `row`, which needs the child compiler and is dispatched

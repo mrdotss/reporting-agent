@@ -48,10 +48,11 @@ export const BLOCK_TYPES = [
   "blank_rows_table",
   "metric_summary",
   "inventory_summary",
+  "trend_narrative",
 ] as const
 // --- END BLOCK TYPES ---
 
-/** One of the nineteen declared block types (Requirement 6.1). */
+/** One of the twenty-one declared block types (Requirement 6.1). */
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 /**
@@ -283,6 +284,15 @@ export const BLOCK_CONFIG = {
   // metric and statistic must already be in the definition's metric selection.
   historical_trend: {
     required: ["metric", "statistic", "lookback"],
+    optional: ["caption"],
+    enums: {},
+  },
+  // One paragraph per resource about how it moved across the months the trend chart
+  // plotted. No metric or statistic of its own: it narrates whatever the chart above it
+  // established in the ledger, so there is no second declaration for the two to disagree
+  // about what they are about.
+  trend_narrative: {
+    required: [],
     optional: ["caption"],
     enums: {},
   },

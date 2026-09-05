@@ -194,6 +194,11 @@
     },
     {
       "config": {},
+      "id": "b-trend-narrative",
+      "type": "trend_narrative"
+    },
+    {
+      "config": {},
       "id": "b-methodology",
       "type": "appendix_methodology"
     }

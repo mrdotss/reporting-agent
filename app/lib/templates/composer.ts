@@ -142,6 +142,7 @@ export const BLOCK_TYPE_LABELS = {
   heading: "Heading",
   rich_text: "Rich text",
   historical_trend: "Historical trend",
+  trend_narrative: "Historical trend commentary",
   blank_rows_table: "Blank rows table",
   metric_summary: "Metric summary",
   inventory_summary: "Inventory summary",
