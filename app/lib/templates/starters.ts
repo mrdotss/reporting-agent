@@ -49,8 +49,7 @@
  * emits real figures or facts from the snapshot) and exactly one
  * `coverage_and_verification` — the section that states the snapshot those
  * figures came from. `executive_summary`/`kpi_row`-style narrative has no v3
- * section equivalent at all (see `lib/profiles/lift.ts`'s own note on the same
- * finding, from task 3.12) — a v3 starter demonstrates the data-to-record
+ * section equivalent at all — a v3 starter demonstrates the data-to-record
  * chain, not a narrative layer the catalogue does not yet offer.
  *
  * ## They are three genuinely different profiles

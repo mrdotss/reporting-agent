@@ -198,7 +198,7 @@ class TestDistributionBecomesRowsAtV3:
 
 
 class TestConfidentialityIsBrandInheritedAtV3:
-    """Req 12.7 — inherited from the Brand at v3, not an author-editable field."""
+    """Req 12.7 — at v3 the notice is prose on the profile, and the id is not a field."""
 
     def test_v3_rejects_confidentiality_notice_id(self) -> None:
         definition = _valid_v3_definition()
@@ -211,7 +211,12 @@ class TestConfidentialityIsBrandInheritedAtV3:
             "front_matter.document_control.confidentiality_notice_id"
             in _paths(issues)
         )
-        assert any("inherited from the Brand" in issue.message for issue in issues)
+        # The message has to say where the notice *does* go. It used to point at a Brand
+        # page, which no longer exists — an error naming a place the reader cannot open is
+        # worse than no explanation.
+        assert any(
+            "document_control.confidentiality_notice" in issue.message for issue in issues
+        )
 
     def test_v2_still_accepts_and_validates_confidentiality_notice_id(self) -> None:
         definition = _valid_v2_definition()

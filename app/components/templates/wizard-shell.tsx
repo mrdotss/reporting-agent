@@ -13,6 +13,7 @@ import {
   StepIdentity,
   type IdentitySaveResult,
 } from "@/components/templates/step-identity"
+import { StepAppearance } from "@/components/templates/step-appearance"
 import { StepDocument } from "@/components/templates/step-document"
 import { StepPeriod } from "@/components/templates/step-period"
 import { StepPreview } from "@/components/templates/step-preview"
@@ -800,8 +801,10 @@ function renderStep({
     case "period":
       return <StepPeriod definition={definition} onChange={setDefinition} />
     case "document":
+      return <StepDocument definition={definition} onChange={setDefinition} />
+    case "appearance":
       return (
-        <StepDocument
+        <StepAppearance
           definition={definition}
           onChange={setDefinition}
           thumbnails={thumbnails}

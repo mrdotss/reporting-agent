@@ -304,8 +304,8 @@ const DERIVED_REVISION_SCHEMA_VERSION = 3
  * missing, for one pinned `definition` and one submitted `input.customerName`
  * (Requirement 12.2, 12.8, 12.9, task 4.4).
  *
- * **Pure**, like {@link checkProviderImmutable} and {@link resolveDesignFromBrand}
- * and for the same reason: `enqueueRun` around it is only reachable against a
+ * **Pure**, like `checkProviderImmutable` and `pinNumberFormat` in
+ * `lib/actions/templates.ts`, and for the same reason: `enqueueRun` around it is only reachable against a
  * real Postgres (and, as of this task, also depends on `unionScope` accepting
  * a v3 `sections` definition, which it does not yet — see task 4.4's own note
  * in `tasks.md`), so a test driving the whole action would not exercise this

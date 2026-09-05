@@ -627,8 +627,35 @@ _DESIGN_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         "cover_page",
         "logo",
         "page_size",
+        # How every chart in the report is drawn, and the face its labels are set in.
+        # Both optional and both defaulting to what shipped before them, so a stored
+        # definition that names neither renders exactly as it always did.
+        "chart_style",
+        "chart_font",
     }
 )
+
+CHART_STYLES: Final[tuple[str, ...]] = (
+    "stacked",
+    "soft_area",
+    "flat_area",
+    "range_band",
+    "columns",
+    "sparkline",
+)
+"""The six chart shapes a profile may choose between (in the wizard's own order).
+
+`stacked` is the default **and the shipped behaviour**: a panel per magnitude group, which
+is the only arrangement that keeps a 0.19% average legible beside a 27% peak. The rest
+trade that for page space or for saying something the two-panel form does not — see
+`render/chartstyle.py::chart_style_spec`."""
+
+CHART_FONTS: Final[tuple[str, ...]] = ("document", "grotesque", "monospace")
+"""The three faces a chart's labels may be set in.
+
+Each resolves to a family the image already carries, so choosing one costs nothing at
+build time and a chart cannot ask for a face the renderer would silently substitute.
+`grotesque` is the default because it is what every chart drawn before this field used."""
 
 # Req 6.6 — `rich_text` carries static prose and no figure. Each of these is already
 # absent from `BLOCK_CONFIG["rich_text"]`, so the generic unrecognised-field check
@@ -1702,8 +1729,7 @@ _DOCUMENT_CONTROL_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         "document_name",
         "document_number_pattern",
         "confidentiality_notice_id",
-        # The notice as prose, resolved from the Brand when the version was saved — the
-        # same way `design` is resolved rather than referenced. Prose and not an id
+        # The notice as prose, authored on the profile itself. Prose and not an id
         # because the notice names the consultancy that owns the document, which no
         # message-catalogue entry can carry: a catalogue holds copy every tenant shares.
         "confidentiality_notice",
@@ -1850,18 +1876,22 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
         CONFIDENTIALITY_NOTICE_MAX_LENGTH,
     )
 
-    # Req 12.7 — at schema_version 3 the confidentiality notice is inherited from the Brand
-    # and is not an author-editable field on the profile at all: `publish_template_version`'s
-    # app-side equivalent resolves it at publish time, following the exact
-    # `resolveDesignFromBrand` pattern `definition.design` already uses, so the renderer never
-    # learns Brands exist. A v3 draft therefore never carries this key itself — it is rejected
-    # here, the same way an undeclared field would be, rather than silently accepted and then
-    # overwritten, which would make a wizard field that visibly does nothing.
+    # Req 12.7 — at schema_version 3 the notice is **prose the profile owns**, written in the
+    # wizard's Document step, and `confidentiality_notice_id` is not a v3 field at all.
+    #
+    # It was an id resolved from a Brand row when 12.7 was first read as "one consultancy
+    # issues one notice". In practice a profile is a per-customer engagement and the wording
+    # is negotiated per engagement, so the notice moved onto the profile and the Brand went
+    # away with it. An id cannot carry that anyway: a message catalogue holds copy every
+    # tenant shares, and this names the consultancy that owns the document.
+    #
+    # Rejected here rather than ignored, the same way an undeclared field is. Accepting a key
+    # nothing reads would make a stored value that silently prints nothing.
     if walk.version >= 3 and "confidentiality_notice_id" in control:
         walk.add(
             (*path, "confidentiality_notice_id"),
-            "document_control.confidentiality_notice_id is inherited from the Brand at "
-            "schema_version 3 and is not set on the profile; edit it on the Brand instead.",
+            "document_control.confidentiality_notice_id is not set on a schema_version 3 "
+            "profile; write the notice as prose in document_control.confidentiality_notice.",
         )
     elif walk.version < 3 and "confidentiality_notice_id" in control:
         notice = control["confidentiality_notice_id"]
@@ -2309,6 +2339,15 @@ def _validate_design(design: object, path: Path, walk: _Walk) -> None:
     for key in design:
         if key not in _DESIGN_ALLOWED_KEYS:
             walk.add((*path, key), f'Unrecognized design field "{key}".')
+
+    # Both optional: absent means the shape and the face that shipped before the field
+    # existed, so a stored definition is not made invalid by a key it predates.
+    for field, allowed in (("chart_style", CHART_STYLES), ("chart_font", CHART_FONTS)):
+        if field in design and design.get(field) not in allowed:
+            walk.add(
+                (*path, field),
+                f"{field} must be one of: {', '.join(allowed)}.",
+            )
 
     preset = design.get("preset")
     if not isinstance(preset, str) or preset not in DESIGN_PRESETS:

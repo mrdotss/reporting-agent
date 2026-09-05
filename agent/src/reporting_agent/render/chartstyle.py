@@ -24,8 +24,9 @@ lives here rather than only in the test suite.
 Everything here is pure and closed over constants: the same chart node produces the same
 bytes on any machine, which `tests/test_charts.py` asserts by byte equality over two
 renders. The `rcParams` block and the figure emission live in `render/charts.py`; this
-module is only the palette and the colour conversion, so a chart's *style* and a chart's
-*data* cannot be confused for one another.
+module is the palette, the colour conversion and the **style vocabulary** — the shapes and
+faces a profile may name, as data — so a chart's *style* and a chart's *data* cannot be
+confused for one another.
 
 ## The floats here are not a violation of the decimal rule
 
@@ -51,8 +52,15 @@ __all__ = [
     "CAT_OTHER",
     "CHART_DPI",
     "CHART_ENCODINGS",
+    "CHART_ENDPOINT_SIZE",
     "ChartFurniture",
     "CHART_FONT",
+    "CHART_FONT_CHOICES",
+    "CHART_FONT_FAMILIES",
+    "CHART_STYLES",
+    "ChartStyleSpec",
+    "chart_font_face",
+    "chart_style_spec",
     "CHART_GRID_WIDTH",
     "CHART_LABEL_SIZE",
     "CHART_MARKER_SIZE",
@@ -83,12 +91,12 @@ __all__ = [
     "color_for_key",
     "compare_by_code_point",
     "contrast_ratio",
-    "dash_for_key",
+    "dash_for_position",
     "frozen_rc_params",
     "grid_color",
     "hash_key",
     "hex_for_token",
-    "marker_for_key",
+    "marker_for_position",
     "oklch_to_hex",
     "palette_for",
     "parse_oklch",
@@ -328,16 +336,34 @@ def color_for_key(key: str, siblings: tuple[str, ...] | list[str] = ()) -> str:
     return assign_colors([key, *siblings])[key]
 
 
-def marker_for_key(key: str, siblings: tuple[str, ...] | list[str] = ()) -> str:
-    """The marker for a series, from the same slot as its colour."""
-    return MARKER_SHAPES[CATEGORICAL_TOKENS.index(color_for_key(key, siblings))]
+def marker_for_position(index: int) -> str:
+    """The marker for the series drawn `index`-th in this chart's plotted order."""
+    return MARKER_SHAPES[index % len(MARKER_SHAPES)]
 
 
-def dash_for_key(
-    key: str, siblings: tuple[str, ...] | list[str] = ()
-) -> tuple[float, ...] | None:
-    """The dash sequence for a series, from the same slot as its colour."""
-    return DASH_PATTERNS[CATEGORICAL_TOKENS.index(color_for_key(key, siblings))]
+def dash_for_position(index: int) -> tuple[float, ...] | None:
+    """The dash sequence for the series drawn `index`-th in this chart's plotted order.
+
+    ## Why position and not the colour's slot
+
+    Both were read off the series' **colour slot**, which is `hash(stable key) % 5`. Req
+    22.8 requires exactly that of the colour, and requires it so that one metric carries
+    one hue across every chart in a report. It says nothing about the dash, and the
+    coupling cost two things:
+
+    - `DASH_PATTERNS[0]` is `None` so that "a single-series chart is not gratuitously
+      dashed" — the claim its own docstring made. It was not true. Of seven realistic
+      single-series keys (`cpu`, `disk`, `net`, `Percentage CPU`, `vm-amor`, `CPN-App`),
+      six hashed to a non-zero slot and drew a lone dash-dot line.
+    - A two-series chart drew both lines dashed, so neither read as the one being
+      followed. The approved artboard strokes the headline metric solid.
+
+    Position fixes both by construction: the first series plotted is solid, the second
+    takes the first pattern, and no two series in one chart can share one — which is all
+    Req 22.10 asks for ("distinguish every line series … by dash pattern"). Colour is
+    untouched and still keyed, so the stability Req 22.8 does require is unaffected.
+    """
+    return DASH_PATTERNS[index % len(DASH_PATTERNS)]
 
 
 def palette_for(encoding: str) -> tuple[str, ...]:
@@ -620,19 +646,139 @@ and the image installs `fonts-dejavu-core` as well, for LibreOffice. A fallback 
 resolve to whatever the host has, which changes glyph widths, which changes where every
 label lands, which changes the bytes."""
 
-CHART_STROKE_WIDTH: Final[float] = 1.6
-CHART_MARKER_SIZE: Final[float] = 4.0
 
-MARKER_STRIDE_TARGET: Final[int] = 7
+# --- The chart styles a profile may choose ----------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class ChartStyleSpec:
+    """What one chart style asks the renderer to draw.
+
+    The six differ along four axes and nothing else, which is what keeps the drawing code
+    one path with four decisions rather than six drawing functions that drift apart.
+    """
+
+    fill: str
+    """`"none"`, `"gradient"`, `"flat"` or `"band"` — what sits under the line.
+
+    `"gradient"` is the only one that puts a **bitmap** in the SVG: matplotlib draws a
+    ramp as an image and clips it to the curve. Everything else stays vector, which the
+    wizard says out loud because the styled PDF is otherwise pure vector and someone
+    choosing on that basis has no other way to know."""
+
+    mark: str
+    """`"line"` or `"bar"`."""
+
+    panels: str
+    """`"magnitude"` splits by order of magnitude (the shipped behaviour); `"single"`
+    draws every series on one axis.
+
+    `"single"` is only honest where the series share a scale. A 0.19% average against a
+    27% peak collapses onto the baseline — which is why `stacked` is the default and why
+    the single-panel styles plot one metric."""
+
+    furniture: str
+    """`"full"` draws the axes, ticks and grid; `"bare"` draws none of it.
+
+    `"bare"` is the sparkline's: a row that shows a shape and its last value, where the
+    exact figures are read from the table beneath rather than off an axis."""
+
+
+_CHART_STYLE_SPECS: Final[Mapping[str, ChartStyleSpec]] = {
+    "stacked": ChartStyleSpec("none", "line", "magnitude", "full"),
+    "soft_area": ChartStyleSpec("gradient", "line", "single", "full"),
+    "flat_area": ChartStyleSpec("flat", "line", "single", "full"),
+    "range_band": ChartStyleSpec("band", "line", "single", "full"),
+    "columns": ChartStyleSpec("none", "bar", "single", "full"),
+    "sparkline": ChartStyleSpec("none", "line", "single", "bare"),
+}
+
+
+CHART_STYLES: Final[tuple[str, ...]] = tuple(_CHART_STYLE_SPECS)
+"""The shapes this renderer can actually draw.
+
+Derived from the spec table rather than restated, so a style cannot be declared here and
+left undrawn. `tests/test_charts.py` asserts it equals the validator's own `CHART_STYLES`
+in `compile/definition.py`: a name the wizard offers and this module has never heard of
+would be accepted on save and then silently drawn as `stacked`, which is a profile field
+that looks like it works.
+"""
+
+
+def chart_style_spec(name: str) -> ChartStyleSpec:
+    """The spec for `name`, or the shipped default.
+
+    An unknown name falls back to `stacked` rather than raising: the validator has already
+    refused an unrecognised value on the way in, so reaching here with one means a stored
+    definition predates a style being renamed, and a chart drawn the old way is a better
+    answer than a failed run.
+    """
+    return _CHART_STYLE_SPECS.get(name, _CHART_STYLE_SPECS["stacked"])
+
+
+CHART_FONT_FAMILIES: Final[Mapping[str, str]] = {
+    "grotesque": "DejaVu Sans",
+    "monospace": "DejaVu Sans Mono",
+}
+"""The two faces that name a family directly.
+
+`document` is absent on purpose — it resolves to whatever the **theme** uses, which is
+not knowable here. See :func:`chart_font_face`.
+
+Both are families the image already carries (`fonts-dejavu-core`), so choosing one costs
+nothing at build time and no chart can ask for a face matplotlib would silently
+substitute — which would make the emitted PNG depend on what happened to be installed."""
+
+
+CHART_FONT_CHOICES: Final[tuple[str, ...]] = ("document", *CHART_FONT_FAMILIES)
+"""The faces a profile may name, `document` included — which is why this is not just
+`CHART_FONT_FAMILIES`'s keys. Guarded against the validator's list the same way
+`CHART_STYLES` is."""
+
+
+def chart_font_face(choice: str, *, body_face: str) -> str:
+    """The family a chart's labels are set in.
+
+    `document` returns the theme's own body face, so the chart stops looking like a
+    different document; the other two name a family directly. An unknown choice falls back
+    to `grotesque`, which is what every chart drawn before this field used.
+    """
+    if choice == "document" and body_face:
+        return body_face
+    return CHART_FONT_FAMILIES.get(choice, CHART_FONT_FAMILIES["grotesque"])
+
+
+CHART_STROKE_WIDTH: Final[float] = 1.9
+"""The line's weight. 1.6 against a 1.5in panel drew a hairline that the markers on it
+then dominated; the artboard strokes at 1.8-2.1."""
+
+CHART_MARKER_SIZE: Final[float] = 2.6
+"""The marker's size.
+
+It was 4.0, which at 200dpi is a shape wider than the line is long between two points —
+the delivered chart read as a row of triangles joined by a dash rather than as a line.
+Req 22.10 requires the marker, not that it dominate: at 2.6 the shape is still resolvable
+in greyscale and under a photocopy, which is what the requirement is for, and the line is
+what a reader follows."""
+
+MARKER_STRIDE_TARGET: Final[int] = 4
 """About how many markers one series should carry, however many points it plots.
 
 Markers are the second channel Req 22.9's palette relies on — colour, dash and shape — so
 they are thinned rather than dropped: a reader who cannot separate the hues can still tell
 a triangle from a diamond, and the dash pattern remains on every segment either way.
 
-Thirty-one of them along a line is not that reader's aid, it is a texture. `design/proposed/
-PdfPage.dc.html` draws its lines with none at all; seven keeps the shape identifiable at a
-glance and lets the line be a line."""
+Thirty-one of them along a line is not that reader's aid, it is a texture. The approved
+artboard draws its lines with none at all; four keeps the shape identifiable at a glance
+and lets the line be a line."""
+
+CHART_ENDPOINT_SIZE: Final[float] = 3.4
+"""The dot on the last plotted point of an area shape, in points.
+
+Larger than a series marker on purpose — it is not one. A marker says which series this
+is; this says where the series ends, which on a month that stopped collecting on the 29th
+is the difference between a short line and a clipped one."""
+
 CHART_GRID_WIDTH: Final[float] = 0.6
 CHART_LABEL_SIZE: Final[float] = 7.0
 CHART_TITLE_SIZE: Final[float] = 9.0
@@ -671,6 +817,13 @@ _FROZEN_RC_PARAMS: Final[Mapping[str, object]] = {
     "axes.spines.right": False,
     "lines.linewidth": CHART_STROKE_WIDTH,
     "lines.markersize": CHART_MARKER_SIZE,
+    # Rounded, as the artboard strokes. A butt cap leaves every dash a hard-ended bar and
+    # every direction change a mitred corner, which is most of what makes a matplotlib
+    # line look plotted rather than drawn. Frozen here with the rest so it cannot vary.
+    "lines.solid_capstyle": "round",
+    "lines.solid_joinstyle": "round",
+    "lines.dash_capstyle": "round",
+    "lines.dash_joinstyle": "round",
     "figure.facecolor": "white",
     "axes.facecolor": "white",
     "savefig.facecolor": "white",

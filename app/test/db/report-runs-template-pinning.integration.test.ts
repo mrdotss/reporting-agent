@@ -460,8 +460,9 @@ describe("task 7.2 — delivered reports stay frozen through this spec's own mig
   test("a run and its verification pinned before this spec's own migrations still resolve unchanged", async () => {
     // The specific claim task 7.2 asks for, named explicitly rather than left
     // implicit in the "editing a template" scenario above: this spec's own
-    // migrations (0007-0010 -- brands, subscription_scans,
-    // report_profile_authored_matches) are additive-only (confirmed by
+    // migrations (0007-0012 -- brands added then dropped, subscription_scans,
+    // report_profile_authored_matches) touch nothing a delivered report reads
+    // (confirmed by
     // reading every one of them: 0010 adds a FOREIGN KEY FROM the new
     // report_profile_authored_matches table TO report_template_versions,
     // never an ALTER on report_template_versions or report_verifications

@@ -35,7 +35,7 @@
  * ## Colour is a redundant cue, not the mechanism
  *
  * Every series also carries a direct label, and a line additionally carries a marker
- * shape and a dash pattern ({@link markerForKey}, {@link dashForKey}). That is what
+ * shape and a dash pattern ({@link markerForPosition}, {@link dashForPosition}). That is what
  * makes the charts readable under colour-vision deficiency, in greyscale, and in a
  * photocopy. The palette's measured CVD margins are the backstop, not the guarantee.
  */
@@ -268,20 +268,33 @@ export function colorForKey(
   return token ?? CATEGORICAL_TOKENS[slotForKey(key)]
 }
 
-/** The marker shape for a series, from the same slot as its colour. */
-export function markerForKey(
-  key: string,
-  siblings: readonly string[] = []
-): MarkerShape {
-  return MARKER_SHAPES[CATEGORICAL_TOKENS.indexOf(colorForKey(key, siblings))]
+/** The marker shape for the series drawn `index`-th in this chart's plotted order. */
+export function markerForPosition(index: number): MarkerShape {
+  return MARKER_SHAPES[index % MARKER_SHAPES.length]
 }
 
-/** The dash pattern for a series, from the same slot as its colour. */
-export function dashForKey(
-  key: string,
-  siblings: readonly string[] = []
-): DashPattern {
-  return DASH_PATTERNS[CATEGORICAL_TOKENS.indexOf(colorForKey(key, siblings))]
+/**
+ * The dash pattern for the series drawn `index`-th in this chart's plotted order.
+ *
+ * ## Why position and not the colour's slot
+ *
+ * Both were read off the series' colour slot, which is `hash(stable key) % 5`. Req 22.8
+ * requires that of the **colour**, so one metric carries one hue across every chart in a
+ * report; it says nothing about the dash, and the coupling cost two things:
+ *
+ * - `DASH_PATTERNS[0]` is `"0"` so that a single-series chart is not gratuitously dashed
+ *   — the claim its own comment made. It was not true: of seven realistic single-series
+ *   keys, six hashed to a non-zero slot and drew a lone dash-dot line.
+ * - A two-series chart drew both lines dashed, so neither read as the one being followed.
+ *
+ * Position fixes both by construction, and no two series in one chart can share a
+ * pattern — which is all Req 22.10 asks for. Colour is untouched and still keyed.
+ *
+ * Mirrored in `agent/src/reporting_agent/render/chartstyle.py`, which draws the same
+ * series into the `.docx`: the two must not disagree about which line is dashed.
+ */
+export function dashForPosition(index: number): DashPattern {
+  return DASH_PATTERNS[index % DASH_PATTERNS.length]
 }
 
 // --- Palette selection ------------------------------------------------------

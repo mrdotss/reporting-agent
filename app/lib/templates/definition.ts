@@ -1061,10 +1061,9 @@ const DOCUMENT_CONTROL_ALLOWED_KEYS = [
   "document_name",
   "document_number_pattern",
   "confidentiality_notice_id",
-  // The notice as prose, resolved from the Brand when the version is saved — the same way
-  // `design` is resolved rather than referenced. Prose and not an id because the notice
-  // names the consultancy that owns the document, which no message-catalogue entry can
-  // carry: a catalogue holds copy every tenant shares.
+  // The notice as prose, authored on the profile itself. Prose and not an id because the
+  // notice names the consultancy that owns the document, which no message-catalogue entry
+  // can carry: a catalogue holds copy every tenant shares.
   "confidentiality_notice",
   "distribution",
   "approvers",
@@ -1271,19 +1270,23 @@ function validateDocumentControl(
     CONFIDENTIALITY_NOTICE_MAX_LENGTH
   )
 
-  // Requirement 12.7 — at schema_version 3 the confidentiality notice is inherited from the
-  // Brand and is not an author-editable field on the profile at all: `publishTemplateVersion`
-  // resolves it at publish time, following the exact `resolveDesignFromBrand` pattern
-  // `definition.design` already uses, so the renderer never learns Brands exist. A v3 draft
-  // therefore never carries this key itself — it is rejected here, the same way an
-  // undeclared field would be, rather than silently accepted and then overwritten, which
-  // would make a wizard field that visibly does nothing.
+  // Requirement 12.7 — at schema_version 3 the notice is **prose the profile owns**, written
+  // in the wizard's Document step, and `confidentiality_notice_id` is not a v3 field at all.
+  //
+  // It was an id resolved from a Brand row when 12.7 was first read as "one consultancy
+  // issues one notice". In practice a profile is a per-customer engagement and the wording is
+  // negotiated per engagement, so the notice moved onto the profile and the Brand went away
+  // with it. An id cannot carry that anyway: a message catalogue holds copy every tenant
+  // shares, and this names the consultancy that owns the document.
+  //
+  // Rejected here rather than ignored, the same way an undeclared field is. Accepting a key
+  // nothing reads would make a stored value that silently prints nothing.
   if (version >= 3 && "confidentiality_notice_id" in control) {
     addIssue(
       issues,
       [...path, "confidentiality_notice_id"],
-      "document_control.confidentiality_notice_id is inherited from the Brand at " +
-        "schema_version 3 and is not set on the profile; edit it on the Brand instead."
+      "document_control.confidentiality_notice_id is not set on a schema_version 3 " +
+        "profile; write the notice as prose in document_control.confidentiality_notice."
     )
   } else if (version < 3 && "confidentiality_notice_id" in control) {
     // A **string id**, resolved from the message catalog rather than carried as copy, so the
@@ -2608,7 +2611,46 @@ const DESIGN_ALLOWED_KEYS = new Set([
   "cover_page",
   "logo",
   "page_size",
+  // How every chart is drawn, and the face its labels are set in. Both optional and both
+  // defaulting to what shipped before them, so a stored definition that names neither
+  // renders exactly as it always did.
+  "chart_style",
+  "chart_font",
 ])
+
+/**
+ * The six chart shapes a profile chooses between, in the wizard's own order.
+ *
+ * `stacked` is the default **and the shipped behaviour**: a panel per magnitude group,
+ * the only arrangement that keeps a 0.19% average legible beside a 27% peak. The rest
+ * trade that for page space, or say something the two-panel form cannot.
+ *
+ * Mirrored from `compile/definition.py::CHART_STYLES`.
+ */
+export const CHART_STYLES = [
+  "stacked",
+  "soft_area",
+  "flat_area",
+  "range_band",
+  "columns",
+  "sparkline",
+] as const
+
+export type ChartStyle = (typeof CHART_STYLES)[number]
+
+/**
+ * The three faces a chart's labels may be set in.
+ *
+ * Each resolves to a family the runtime image already carries, so choosing one costs
+ * nothing at build time and a chart cannot ask for a face the renderer would silently
+ * substitute. `grotesque` is the default because it is what every chart drawn before
+ * this field used.
+ *
+ * Mirrored from `compile/definition.py::CHART_FONTS`.
+ */
+export const CHART_FONTS = ["document", "grotesque", "monospace"] as const
+
+export type ChartFont = (typeof CHART_FONTS)[number]
 
 function validateNumberFormat(
   value: unknown,
@@ -2784,6 +2826,24 @@ function validateDesign(
 
   if (!isBoolean(coverPage)) {
     addIssue(issues, [...path, "cover_page"], "cover_page must be a boolean.")
+  }
+
+  // Both optional: absent means the shape and the face that shipped before the field
+  // existed, so a stored definition is not made invalid by a key it predates.
+  for (const [field, allowed] of [
+    ["chart_style", CHART_STYLES],
+    ["chart_font", CHART_FONTS],
+  ] as const) {
+    if (
+      field in design &&
+      !(allowed as readonly string[]).includes(design[field] as string)
+    ) {
+      addIssue(
+        issues,
+        [...path, field],
+        `${field} must be one of: ${allowed.join(", ")}.`
+      )
+    }
   }
 
   if (logo !== undefined && logo !== null) {

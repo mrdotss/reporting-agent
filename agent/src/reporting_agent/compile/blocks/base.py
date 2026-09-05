@@ -334,6 +334,15 @@ class DesignSettings:
     logo: str | None = None
     page_size: str = "A4"
 
+    chart_style: str = "stacked"
+    chart_font: str = "grotesque"
+    """How every chart is drawn, and the face its labels are set in.
+
+    Both default to what shipped before the fields existed, so a stored definition that
+    names neither renders exactly as it always did — the same rule
+    `NumberFormat.trim_trailing_zeros` follows, and for the same reason: a delivered
+    report has to keep looking like the delivered report."""
+
     @property
     def table_style_name(self) -> str:
         return table_style_name(self.table_style)
@@ -354,6 +363,8 @@ class DesignSettings:
             cover_page=bool(raw.get("cover_page", True)),
             logo=logo if isinstance(logo, str) else None,
             page_size=str(raw.get("page_size", "A4")),
+            chart_style=str(raw.get("chart_style", "stacked")),
+            chart_font=str(raw.get("chart_font", "grotesque")),
         )
 
 

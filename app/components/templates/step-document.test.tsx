@@ -55,7 +55,6 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition(undefined)}
         onChange={() => {}}
-        thumbnails={THUMBNAILS}
       />
     )
 
@@ -73,7 +72,6 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
           toc: {},
         })}
         onChange={() => {}}
-        thumbnails={THUMBNAILS}
       />
     )
 
@@ -86,7 +84,6 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
-        thumbnails={THUMBNAILS}
       />
     )
 
@@ -109,7 +106,6 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
-        thumbnails={THUMBNAILS}
       />
     )
 
@@ -130,7 +126,6 @@ describe("StepDocument reads a v3 definition's front_matter, not metrics", () =>
       <StepDocument
         definition={v3Definition({ cover: {}, document_control: {}, toc: {} })}
         onChange={onChange}
-        thumbnails={THUMBNAILS}
       />
     )
 

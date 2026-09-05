@@ -115,7 +115,10 @@ that the change is not as additive as it was assumed to be.
 And every migration this spec adds is
 **additive**: `app/test/migrations.static.test.ts` fails the suite on any `DROP TABLE`,
 `DROP COLUMN` or `DROP TYPE` of an object an earlier migration created, which is precisely why
-the rename is a rename of the **noun**, not of the tables.
+the rename is a rename of the **noun**, not of the tables. Criterion 22.8's `PERMITTED_DROPS`
+does not change that: a rename is two objects where there was one, so it would need the old
+table's whole history declared outside the audit trail, which is exactly the claim nobody can
+make about `report_runs` or the version rows.
 
 ---
 
@@ -911,7 +914,18 @@ receives, because we have already shipped a defect where it was not.
    projections carry nothing a browser must not hold.
 8. THE Database_Migrations SHALL be additive only, and THE Migration_Guard
    (`app/test/migrations.static.test.ts`) SHALL keep failing the suite on any `DROP TABLE`,
-   `DROP COLUMN` or `DROP TYPE` of an object an earlier migration created.
+   `DROP COLUMN` or `DROP TYPE` of an object an earlier migration created, EXCEPT where the
+   guard's own `PERMITTED_DROPS` names that exact object, of that exact kind, in that exact
+   migration; and THE Migration_Guard SHALL fail the suite on an entry whose migration is
+   not committed or does not make the drop it claims, so an approval cannot outlive what it
+   approved.
+
+   The exception exists because the rule's reason is the audit trail — a column that carried
+   a delivered figure must still be there when someone replays the run that produced it —
+   and that reason says nothing about an object no delivered report ever depended on. An
+   entry is a claim, recorded in the repository and reviewable as a diff, that a specific
+   object is outside the audit trail. It is not a switch: everything unnamed still fails,
+   and the guard asserts that no entry names anything on `report_runs`.
 9. THE Environment_Example SHALL gain every new variable this spec introduces, in the same change
    that reads it.
 

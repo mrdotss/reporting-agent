@@ -7,6 +7,8 @@ import { describe, expect, test } from "vitest"
 
 import { BLOCK_CONFIG, BLOCK_TYPES } from "@/lib/templates/blocks"
 import {
+  CHART_FONTS,
+  CHART_STYLES,
   FRONT_MATTER_FORBIDDEN_BLOCK_TYPES,
   FRONT_MATTER_KEYS,
   IDENTITY_KEYS,
@@ -1790,5 +1792,77 @@ describe("Requirement 13.7 — the generate_report payload carries what the runt
         `defect Requirement 13.7 exists to close: a field the runtime requires, absent ` +
         `from the sender, invisible until a v2 run actually fails RENDER_FAILED.`
     ).toEqual([])
+  })
+})
+
+describe("the chart shape and face vocabularies, declared on both sides", () => {
+  /**
+   * A seventh mirror, and by this file's own note a seventh mirror is the point at which
+   * a generated schema beats another hand-written comparison. This is deliberately not
+   * that: `CHART_STYLES` and `CHART_FONTS` are flat string tuples with no structure at
+   * all, so the comparison is the *existing* mechanism applied to two more names — the
+   * same shape as the event vocabulary already guarded above — rather than a seventh
+   * bespoke extractor. If a chart field ever gains structure, that is the moment to
+   * generate both halves from one source.
+   *
+   * What drift costs here: the wizard offers a card the agent cannot draw, the profile
+   * saves cleanly, and every chart in every delivered report silently falls back to
+   * `stacked`. A profile field that looks like it works is worse than one that refuses.
+   *
+   * Order is compared, not just membership. The tuple order is the order the cards appear
+   * in the wizard's Appearance step and the order the agent's own documentation names
+   * them in, so a reordering on one side alone is a real inconsistency.
+   */
+  const readAgentChartVocabularies = (): {
+    styles: readonly string[]
+    fonts: readonly string[]
+    drawn: readonly string[]
+    faces: readonly string[]
+  } => {
+    const result = spawnSync(
+      AGENT_PYTHON,
+      [
+        "-c",
+        [
+          "import json",
+          "from reporting_agent.compile import definition as d",
+          "from reporting_agent.render import chartstyle as s",
+          "print(json.dumps({",
+          "  'styles': list(d.CHART_STYLES),",
+          "  'fonts': list(d.CHART_FONTS),",
+          "  'drawn': list(s.CHART_STYLES),",
+          "  'faces': list(s.CHART_FONT_CHOICES),",
+          "}))",
+        ].join("\n"),
+      ],
+      {
+        cwd: AGENT_ROOT,
+        encoding: "utf8",
+        env: { ...process.env, PYTHONPATH: path.join(AGENT_ROOT, "src") },
+      }
+    )
+    expect(
+      result.status,
+      `reading the agent's chart vocabularies exited ${result.status}.\nstderr:\n${result.stderr}`
+    ).toBe(0)
+    return JSON.parse(result.stdout)
+  }
+
+  const agent = readAgentChartVocabularies()
+
+  test("the styles a profile may name are the same list, in the same order", () => {
+    expect([...CHART_STYLES]).toEqual([...agent.styles])
+  })
+
+  test("the faces a profile may name are the same list, in the same order", () => {
+    expect([...CHART_FONTS]).toEqual([...agent.fonts])
+  })
+
+  test("every style the wizard offers is one the renderer can actually draw", () => {
+    // The agent's own suite asserts this too. Repeated here because the failure it
+    // catches is an app-side edit: adding a card to the wizard without the shape behind
+    // it is a change nobody would think to run the Python suite for.
+    expect([...CHART_STYLES].sort()).toEqual([...agent.drawn].sort())
+    expect([...CHART_FONTS].sort()).toEqual([...agent.faces].sort())
   })
 })

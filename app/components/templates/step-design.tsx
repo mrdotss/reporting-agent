@@ -294,11 +294,12 @@ export function StepDesign({
 
       {/*
         The cover-page toggle and the logo URL used to sit here, on `design`, and both
-        were dead controls: `resolveDesignFromBrand` overwrites every `design` field
-        from the Brand at save, so unchecking the box changed nothing and a logo typed
-        here was discarded. The profile owns both under `front_matter.cover` — the
-        Document step is where they are — and two fields for one thing, one of which
-        silently loses, is worse than one field in the right place.
+        were dead controls: the save path resolved every `design` field from a separate
+        Brand record and overwrote whatever these wrote, so unchecking the box changed
+        nothing and a logo typed here was discarded. The Brand is gone and the profile
+        owns both under `front_matter.cover` — the Document step is where they are — and
+        two fields for one thing, one of which silently loses, is worse than one field in
+        the right place.
       */}
     </div>
   )
