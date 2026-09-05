@@ -702,6 +702,44 @@ def test_every_line_series_carries_a_marker_and_a_dash_no_sibling_shares() -> No
     assert len(dashes) == len(node.series), dashes
 
 
+def test_the_slot_is_the_series_position_in_the_chart_not_in_its_panel(monkeypatch) -> None:
+    """Asserted on what `_draw` is actually handed, not on the helper it calls.
+
+    A panelled chart draws one panel at a time, and the slot was the series' index inside
+    the panel — so a two-panel chart restarted at zero and drew both of its series solid,
+    with one marker shape between them. That is two series distinguished by nothing but
+    which panel they sit on, and the helper-level test above passes right through it.
+    """
+    node, _ = two_magnitude_chart()
+    assert len(node.panels) == 2, "the fixture must actually be panelled"
+
+    # Recorded at the point the vocabulary is *read*, not where the mapping is passed:
+    # asserting on `slot_of` proves the caller built it, not that `_draw` used it, and the
+    # per-panel restart lives entirely inside `_draw`.
+    asked: list[int] = []
+    original_marker = S.marker_for_position
+    original_dash = S.dash_for_position
+
+    def marker_spy(index):
+        asked.append(index)
+        return original_marker(index)
+
+    def dash_spy(index):
+        asked.append(index)
+        return original_dash(index)
+
+    monkeypatch.setattr(C.style, "marker_for_position", marker_spy)
+    monkeypatch.setattr(C.style, "dash_for_position", dash_spy)
+    C.render_chart(node, table_style="Table Hairline", preset="editorial",
+                   messages=load_messages("en"))
+
+    assert asked, "no line series was drawn"
+    assert sorted(set(asked)) == list(range(len(node.series))), (
+        f"the two panels asked for slots {sorted(set(asked))}; a panelled chart that "
+        f"restarts at zero draws both of its series solid, with one marker between them"
+    )
+
+
 def test_a_single_series_chart_is_not_dashed() -> None:
     """It could be, and usually was. The pattern came from `hash(key) % 5`, so six of the
     seven keys a real report plots — `cpu`, `disk`, `net`, `Percentage CPU`, `vm-amor`,
@@ -1960,9 +1998,97 @@ class TestEndLabelPlacement:
             messages=load_messages("en"),
         )
         assert seen, "no panel was drawn"
+        # The right edge is the gutter this chart's own labels earned — `Max`/`Avg` are
+        # short, so it is the narrowest the clamp allows rather than the widest.
+        expected_right = C.axes_right_for(("Max", "Avg"))
+        assert expected_right == pytest.approx(C._AXES_RIGHT_MAX)
         for left, _bottom, width, _height in seen:
             assert left == pytest.approx(0.12)
-            assert left + width == pytest.approx(C._AXES_RIGHT)
+            assert left + width == pytest.approx(expected_right)
+
+
+class TestTheEndLabelGutter:
+    """How much of the width is held back for the labels at the line ends.
+
+    Fixed at 26% before — 1.56in reserved on every chart for a 30-character label, on a
+    chart whose labels are `Max` and `9.89%`. The delivered image put 23.5% of its width on
+    the right holding nothing against 7.1% on the left, so the drawing's own centre sat at
+    41.8% and every chart read as shoved left inside a box that was itself centred.
+    """
+
+    def test_short_labels_take_the_narrowest_gutter(self) -> None:
+        assert C.axes_right_for(("Max", "Avg")) == pytest.approx(C._AXES_RIGHT_MAX)
+
+    def test_a_long_label_keeps_the_room_it_always_had(self) -> None:
+        """A fleet chart's labels are resource names, and this is the case the fixed
+        gutter was sized for. It must not be narrowed.
+
+        Asserted in **inches**, not against `_AXES_RIGHT`: comparing the widest gutter to
+        the constant that defines it is a tautology that survives the constant moving, and
+        1.5in is the measured room `CPN-App — Percentage CPU (max)` actually needs.
+        """
+        gutter = (1.0 - C.axes_right_for(("CPN-App — Percentage CPU (max)",)))
+        assert gutter * S.CHART_WIDTH_INCHES >= 1.5
+
+    def test_the_gutter_is_monotone_in_the_label_it_holds(self) -> None:
+        widths = [C.axes_right_for(("x" * n,)) for n in range(1, 40)]
+        assert widths == sorted(widths, reverse=True), widths
+        assert min(widths) == pytest.approx(C._AXES_RIGHT)
+        assert max(widths) == pytest.approx(C._AXES_RIGHT_MAX)
+
+    def test_an_empty_label_set_does_not_reserve_a_gutter_for_nothing(self) -> None:
+        assert C.axes_right_for(()) == pytest.approx(C._AXES_RIGHT_MAX)
+
+    def test_the_budget_is_the_inverse_of_the_gutter(self) -> None:
+        """The property that keeps the two from drifting: a chart that narrowed its gutter
+        must not then elide to a width that no longer fits inside it."""
+        # The mid-length labels are the ones that matter. A short label's gutter is the
+        # narrowest allowed and a long one's is the widest, so both survive a budget read
+        # off the wrong constant; only a label between them gets a gutter sized to itself
+        # and can be elided to a width that no longer fits it.
+        for label in (
+            "Max",
+            "CPN-App",
+            "CPN-App — Percentage",
+            "CPN-App — Percentage CPU",
+            "CPN-MCP — Percentage CPU (a)",
+            "CPN-App — Percentage CPU (max)",
+            "x" * 60,
+        ):
+            right = C.axes_right_for((label,))
+            budget = C.gutter_budget_chars(right)
+            drawn = C.truncate_end_label(label, budget)
+            assert len(drawn) <= budget
+            # And the drawn label fits the inches the gutter actually left.
+            inches = len(drawn) * C._LABEL_CHAR_INCHES + C._GUTTER_AIR_INCHES
+            assert inches <= (1.0 - right) * S.CHART_WIDTH_INCHES + 1e-9, label
+
+    def test_the_budget_is_read_from_the_gutter_it_is_given(self) -> None:
+        """Asserted over the gutter directly, not through a label.
+
+        Going via `axes_right_for` cannot catch a budget read off the fixed constant: that
+        function sizes the gutter to fit its label exactly, so the label fits whatever
+        budget it is then given, and the two only differ past the clamp where they agree.
+        The relationship itself is the thing worth pinning — a later change to either
+        clamp is what would make the redundancy stop holding.
+        """
+        for right in (0.74, 0.78, 0.82, 0.86, 0.90):
+            inches = (1.0 - right) * S.CHART_WIDTH_INCHES - C._GUTTER_AIR_INCHES
+            assert C.gutter_budget_chars(right) == max(
+                2, int(inches / C._LABEL_CHAR_INCHES)
+            ), right
+
+        # And it is monotone: a wider gutter never holds fewer characters.
+        budgets = [C.gutter_budget_chars(right) for right in (0.90, 0.86, 0.82, 0.78, 0.74)]
+        assert budgets == sorted(budgets), budgets
+
+    def test_the_gutter_does_not_move_the_data_hash(self) -> None:
+        """It is layout. A chart whose labels changed length would otherwise re-hash."""
+        node, _ = synthetic_chart(series_count=2, points_per_series=8)
+        assert C.render_chart(
+            node, table_style="Table Hairline", preset="editorial",
+            messages=load_messages("en"),
+        ).data_hash == C.chart_data_hash(node, messages=load_messages("en"))
 
 
 def _png_height(data: bytes) -> int:

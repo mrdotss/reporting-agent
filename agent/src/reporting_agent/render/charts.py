@@ -47,7 +47,7 @@ import io
 import json
 from dataclasses import dataclass, replace
 from decimal import Decimal
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Final
 
 import matplotlib
@@ -588,6 +588,16 @@ def render_chart(
     face = style.chart_font_face(chart_font, body_face=furniture.body_face)
     furniture = replace(furniture, body_face=face)
 
+    # How much of the width the end-label gutter needs, from the labels themselves. The
+    # budget a label is truncated to has to come from the same number, or a chart could
+    # reserve a narrow gutter and then elide to a width that no longer fits it.
+    end_labels_text = tuple(
+        short_series_label(series, series_set) for series in series_set
+    )
+    axes_right = axes_right_for(end_labels_text)
+    label_budget = gutter_budget_chars(axes_right)
+    chart_slots = {series.key: index for index, series in enumerate(series_set)}
+
     with rc_context(style.frozen_rc_params(face)):
         figure = MplFigure(
             figsize=style.chart_size_inches(panel_count), dpi=style.CHART_DPI
@@ -647,7 +657,7 @@ def render_chart(
             height = figure.get_figheight()
             figure.subplots_adjust(
                 left=0.12,
-                right=_AXES_RIGHT,
+                right=axes_right,
                 top=1.0 - _TITLE_BAND_INCHES / height,
                 bottom=_XLABEL_BAND_INCHES / height,
                 hspace=0.5,
@@ -666,6 +676,8 @@ def render_chart(
                     furniture=furniture,
                     is_last_panel=(panel_index == panel_count - 1),
                     spec=spec,
+                    label_budget=label_budget,
+                    slot_of=chart_slots,
                 )
 
             buffer = io.BytesIO()
@@ -1013,6 +1025,8 @@ def _draw(
     furniture: style.ChartFurniture | None = None,
     is_last_panel: bool = True,
     spec: style.ChartStyleSpec | None = None,
+    label_budget: int | None = None,
+    slot_of: Mapping[str, int] | None = None,
 ) -> None:
     """Draw one panel's plotted set.
 
@@ -1032,6 +1046,15 @@ def _draw(
     # An absent spec is the shipped shape, so every existing caller and every test that
     # renders without one draws exactly what it drew before.
     shape = spec if spec is not None else style.chart_style_spec("stacked")
+    # Resolved here rather than as a default, because the constant is declared below this
+    # function and a default is evaluated at definition time. `None` means the standing
+    # budget, which is what every caller that predates the sized gutter wants.
+    budget = END_LABEL_MAX_CHARS if label_budget is None else label_budget
+    # A series' slot is its position in the **chart**, not in this panel. Panelling splits
+    # one plotted set across axes; it does not restart the vocabulary, and letting it do so
+    # gave a two-panel chart two solid lines and one marker shape — the two series
+    # distinguished by nothing but their panel, which is not what Req 22.10 asks for.
+    slots = {} if slot_of is None else slot_of
 
     # --- Axis titles (Req 17.1, 17.11) ----------------------------------------
     # Resolved from the message catalog. An absent id with a unit is acceptable;
@@ -1169,7 +1192,7 @@ def _draw(
                 (
                     len(values) - 1 + offset,
                     values[-1],
-                    truncate_end_label(short_series_label(series, series_set)),
+                    truncate_end_label(short_series_label(series, series_set), budget),
                     colour,
                 )
             )
@@ -1186,8 +1209,9 @@ def _draw(
             axes.set_xticks(ticks)
             axes.set_xticklabels([labels[i] for i in ticks], rotation=0, ha="center")
         elif node.chart_type in ("line", "area"):
-            marker = style.marker_for_position(slot)
-            dashes = style.dash_for_position(slot)
+            chart_slot = slots.get(series.key, slot)
+            marker = style.marker_for_position(chart_slot)
+            dashes = style.dash_for_position(chart_slot)
             # Markers every `stride` points rather than on all of them. At a month of
             # days the marks stop reading as a shape and start reading as a texture, which
             # is the opposite of what they are for.
@@ -1230,7 +1254,7 @@ def _draw(
                 (
                     len(values) - 1,
                     values[-1],
-                    truncate_end_label(short_series_label(series, series_set)),
+                    truncate_end_label(short_series_label(series, series_set), budget),
                     colour,
                 )
             )
@@ -1398,7 +1422,56 @@ _TITLE_LEFT: Final[float] = 0.12
 the title starts where the plot does rather than floating over the y-axis labels."""
 
 _AXES_RIGHT: Final[float] = 0.74
+"""The **widest** gutter, for a chart whose labels need all of it."""
+
+_AXES_RIGHT_MAX: Final[float] = 0.90
+"""The narrowest gutter. Even `Max` over `9.89%` needs room to the right of the panel,
+and a label that ended at the figure's edge would be cropped by whatever embeds it."""
+
+_LABEL_CHAR_INCHES: Final[float] = 3.5 / 72.0
+"""Width of one character of the 7pt label face, in inches — the same half-the-point-size
+estimate `END_LABEL_MAX_CHARS` is derived from, and counted rather than measured for the
+same reason: a font metric read at render time makes the emitted PNG host-dependent."""
+
+
+def axes_right_for(labels: Sequence[str]) -> float:
+    """Where the panels stop, leaving the rest of the width as the end-label gutter.
+
+    Fixed at `_AXES_RIGHT` before, which reserved 1.56in for a 30-character label on every
+    chart — including the ordinary one whose labels are `Max` and `9.89%`. The delivered
+    chart put 23.5% of its width on the right holding nothing and 7.1% on the left, so the
+    drawing's own centre sat at 41.8% of the image and every chart in the report read as
+    shoved left inside a box that was itself perfectly centred.
+
+    Sized from the characters the labels actually carry, which is **pure over the AST**:
+    the count comes from the strings the compiler produced, not from measuring rendered
+    text, so two hosts draw the same figure. Clamped at both ends — never wider than the
+    old fixed gutter, so a fleet chart's long labels keep the room they had, and never
+    narrower than `_AXES_RIGHT_MAX`, so a short label still clears the edge.
+    """
+    longest = max((len(label) for label in labels), default=0)
+    if longest <= 0:
+        return _AXES_RIGHT_MAX
+    needed = longest * _LABEL_CHAR_INCHES + _GUTTER_AIR_INCHES
+    return min(_AXES_RIGHT_MAX, max(_AXES_RIGHT, 1.0 - needed / style.CHART_WIDTH_INCHES))
+
+
+_GUTTER_AIR_INCHES: Final[float] = 0.14
+"""The offset the label is drawn at plus a little clearance, so the widest label in the
+gutter does not sit against the figure's right edge."""
+
 """Where the axes stop, leaving the rest of the figure width as the end-label gutter."""
+
+def gutter_budget_chars(axes_right: float) -> int:
+    """How many characters fit in the gutter `axes_right` leaves.
+
+    The inverse of :func:`axes_right_for`, and it must stay the inverse: a chart that
+    narrowed its gutter for short labels and then truncated to the old 30-character budget
+    would draw a label wider than the room it had just given away.
+    """
+    inches = (1.0 - axes_right) * style.CHART_WIDTH_INCHES - _GUTTER_AIR_INCHES
+    return max(2, int(inches / _LABEL_CHAR_INCHES))
+
 
 END_LABEL_MAX_CHARS: Final[int] = 30
 """How many characters of a series label fit in the right gutter.

@@ -128,6 +128,10 @@ h1, h2, h3, h4 {{
   margin: 1.6em 0 0.15em;
   string-set: running-head content();
 }}
+/* A numbered heading sets it from its own text instead — see the emitter's note. */
+[data-heading-text] {{
+  string-set: running-head attr(data-heading-text);
+}}
 h1 {{ font-size: {h1}pt; }}
 h2 {{ font-size: {h2}pt; }}
 h3 {{ font-size: {h3}pt; text-transform: {caps}; margin: 1.3em 0 0.5em; }}
@@ -140,6 +144,27 @@ h1::after, h2::after {{
   height: 1.6pt;
   background: var(--accent);
   margin: 6pt 0 10pt;
+}}
+
+/* A section starts a page. Keyed on the style rather than on `h2`, because the tag is a
+   mapping this stylesheet does not own and a front-matter block could reach it.
+
+   The cost is real and accepted: a two-line section leaves most of a page empty. That is
+   the shape of the document this is — a reader looking up "Network Security Groups" turns
+   to a page that starts with it rather than scanning for it a third of the way down one
+   that began with disks. `break-before` rather than the deprecated `page-break-before` so
+   it also applies inside the flowed reading copy. */
+.rpt-block[data-style="Heading 1"] {{ break-before: page; }}
+/* Except the first, which would otherwise open the body with a blank page. */
+.rpt-document > .rpt-block[data-style="Heading 1"]:first-child {{ break-before: auto; }}
+
+/* The number the contents lists, printed on the heading itself. A tab-sized gap rather
+   than a space so a two-digit number does not shift the title left of a one-digit one. */
+.rpt-h-number {{
+  display: inline-block;
+  min-width: 1.4em;
+  margin-right: 0.45em;
+  font-variant-numeric: tabular-nums;
 }}
 
 /* --- front matter --------------------------------------------------------- */
@@ -385,7 +410,18 @@ table.rpt-table th::after,
 .rpt-grid td::after,
 .rpt-grid th::after,
 .rpt-pairs th::after,
-.rpt-pairs td::after {{ content: "\\200b"; }}
+.rpt-pairs td::after {{
+  content: "\\200b";
+  /* Zero-height as well as zero-width. U+200B costs no width, but it is still an inline
+     box with the cell's own `line-height`, and it carries a break opportunity before it —
+     so in a cell whose text fills the last line exactly, the marker wrapped alone onto a
+     line of its own and left an empty line above the border. The approvers table showed
+     it: `Helios Informatika Nusantara / Cloud Engineer` wrapped to two lines and then sat
+     over a third that held nothing. Collapsing the line box keeps the character in the
+     content stream, which is the whole reason it is here, and costs it its height. */
+  font-size: 0;
+  line-height: 0;
+}}
 
 /* --- figures ---------------------------------------------------------------
    Tabular and right-aligned, so a column of numbers lines up on its digits and a
@@ -483,8 +519,19 @@ caption {{
 
 /* --- charts ---------------------------------------------------------------- */
 
-.rpt-chart {{ margin: 0.7em 0 1em; break-inside: avoid; }}
-.rpt-chart svg {{ width: 100%; height: auto; }}
+.rpt-chart {{ margin: 0.7em 0 1em; break-inside: avoid; text-align: center; }}
+/* Centred rather than flush left. A chart is a figure, not a paragraph, and the end-label
+   gutter `render/charts.py` reserves on the right already makes the drawn area sit left of
+   the image's own middle — flush left compounded the two. `margin-inline: auto` does the
+   work for an image narrower than the column; `text-align` catches the caption with it. */
+.rpt-chart svg,
+.rpt-chart img {{
+  display: block;
+  margin-inline: auto;
+  max-width: 100%;
+  height: auto;
+}}
+.rpt-chart svg {{ width: 100%; }}
 .rpt-chart figcaption {{
   font-family: var(--body-face);
   font-size: {small - 1}pt;

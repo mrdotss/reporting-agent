@@ -115,6 +115,7 @@ EMITTED_CLASS_NAMES: Final[tuple[str, ...]] = (
     "rpt-toc-link",
     "rpt-toc-number",
     "rpt-toc-text",
+    "rpt-h-number",
 )
 # --- END EMITTED_CLASS_NAMES ---
 """Every class name the HTML emitter may write into a ``class`` attribute.
@@ -142,6 +143,7 @@ _CLS_POINT: Final[str] = EMITTED_CLASS_NAMES[10]     # rpt-point
 _CLS_FIGURE: Final[str] = EMITTED_CLASS_NAMES[11]    # rpt-figure
 _CLS_COLUMN: Final[str] = EMITTED_CLASS_NAMES[12]    # rpt-column
 _CLS_LAYOUT_ROW: Final[str] = EMITTED_CLASS_NAMES[13]  # rpt-layout-row
+_CLS_HEADING_NUMBER: Final[str] = EMITTED_CLASS_NAMES[21]  # rpt-h-number
 _CLS_TOC_NAV: Final[str] = EMITTED_CLASS_NAMES[14]     # rpt-toc
 _CLS_TOC_LIST: Final[str] = EMITTED_CLASS_NAMES[15]    # rpt-toc-list
 _CLS_TOC_ENTRY: Final[str] = EMITTED_CLASS_NAMES[16]   # rpt-toc-entry
@@ -231,6 +233,19 @@ class _Emitter:
     heading_ordinal: int = 0
     """How many contents-listed headings have been written, so the next one takes the id
     its contents entry points at."""
+
+    heading_numbers: tuple[str, ...] = ()
+    """The section number for each contents-listed heading, in document order.
+
+    Precomputed rather than accumulated, because a number depends on the levels of the
+    headings **after** it as much as before it: `1.1` is only `1.1` while nothing has
+    closed the section it belongs to. Indexed by `heading_ordinal - 1`, which is the same
+    ordinal the contents entry and the anchor already agree on, so the number printed on
+    the page and the number printed in the contents cannot disagree.
+
+    Empty for a nested emitter (a layout row's cell), which holds no contents-listed
+    heading and would otherwise number one against the wrong outline.
+    """
 
     def write(self, markup: str) -> None:
         self.parts.append(markup)
@@ -372,6 +387,26 @@ class _Emitter:
             self.heading_ordinal += 1
             identifier = (
                 f' id="{html.escape(heading_anchor(self.heading_ordinal), quote=True)}"'
+            )
+            # The number the contents lists, printed on the heading itself. A contents page
+            # whose numbers appear nowhere else asks a reader to hold "0.6.2" in their head
+            # while they look for a heading that never states it.
+            number = (
+                self.heading_numbers[self.heading_ordinal - 1]
+                if self.heading_ordinal <= len(self.heading_numbers)
+                else ""
+            )
+            if number:
+                body = (
+                    f'<span class="{_CLS_HEADING_NUMBER}">{html.escape(number)}</span>'
+                    f"{body}"
+                )
+            # The running head takes its words from here rather than from the element's
+            # content, which now begins with the number: `string-set: … content()` put
+            # `1Azure Subscription Overview` at the top of every page of section 1.
+            identifier += (
+                f' data-heading-text="'
+                f'{html.escape(_heading_text_of(node), quote=True)}"'
             )
         self.write(
             f'<{tag} class="{_CLS_BLOCK}"{identifier} '
@@ -635,6 +670,16 @@ def _inline_svg(vector: str) -> str:
     return vector[start:] if start != -1 else ""
 
 
+_SIGNED_GRID_COLUMN_SHARES: Final[tuple[int, ...]] = (14, 39, 22, 25)
+"""Role, company, name, signature — as percentages of the approvers table.
+
+Measured against the widest string each column actually carries in a delivered document:
+`Quality Control`, `Helios Informatika Nusantara / Cloud Engineer`, `Mayer Reflino
+Sitorus`, and the 40mm ruled box `.rpt-signature` reserves. Equal quarters gave the
+company 154px where it needed about 176.
+"""
+
+
 def emit_front_matter_html(sections: Sequence[object]) -> str:
     """The front matter as HTML, from the same description `render/docx.py` renders.
 
@@ -695,6 +740,22 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
             headers = "".join(
                 f'<th scope="col">{html.escape(header)}</th>' for header in section.headers
             )
+            # A signed grid declares its columns; an unsigned one lets its content decide.
+            #
+            # The approvers table is four columns and, without this, four **equal** ones —
+            # so `Helios Informatika Nusantara / Cloud Engineer` wrapped to two lines while
+            # a quarter of the width sat empty under `Santo`, and every row grew to the
+            # height of its tallest cell. The four do not want equal shares: a role is one
+            # short word, a signature is a fixed ruled box, and the company carries a legal
+            # name and a job title. The signature column is what tells this grid from the
+            # distribution one, which is why it is the trigger.
+            colgroup = ""
+            if section.signature_column is not None and len(section.headers) == 4:
+                colgroup = "".join(
+                    f'<col style="width:{share}%" />'
+                    for share in _SIGNED_GRID_COLUMN_SHARES
+                )
+                colgroup = f"<colgroup>{colgroup}</colgroup>"
             body = []
             for row in section.rows:
                 cells = []
@@ -708,6 +769,7 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
             parts.append(
                 f'<table class="{_CLS_GRID}" data-style='
                 f'"{html.escape(section.table_style, quote=True)}">'
+                f"{colgroup}"
                 f"<thead><tr>{headers}</tr></thead>"
                 f"<tbody>{''.join(body)}</tbody></table>"
             )
@@ -830,6 +892,7 @@ def emit_html(
         messages=messages,
         chart_vectors=dict(chart_vectors or {}),
         chart_tables=dict(chart_tables or {}),
+        heading_numbers=document_heading_numbers(document),
     )
     for block in document.blocks:
         emitter.block(block)
@@ -928,6 +991,37 @@ def _image_media_type(image: bytes) -> str:
     return "image/jpeg" if image[:3] == b"\xff\xd8\xff" else "image/png"
 
 
+def document_headings(document: object) -> tuple[tuple[int, str], ...]:
+    """Every contents-listed heading in `document`, as `(level, text)`, in document order.
+
+    The single walk the contents page, the anchors and the printed numbers all read. It
+    was inlined in `emit_toc_html`, which was fine while the contents was the only thing
+    that knew the outline; a second reader that walked it again would be a second chance
+    to disagree about which paragraphs count as headings.
+    """
+    if not isinstance(document, Document):
+        return ()
+
+    headings: list[tuple[int, str]] = []
+    for block in document.blocks:
+        if isinstance(block, Paragraph) and block.style in _TOC_HEADING_STYLES:
+            text_parts: list[str] = []
+            for inline in block.inlines:
+                if isinstance(inline, Text):
+                    text_parts.append(inline.text)
+                elif isinstance(inline, Figure):
+                    text_parts.append(inline.formatted or "")
+            heading_text = "".join(text_parts).strip()
+            if heading_text:
+                headings.append((_HEADING_LEVEL_MAP.get(block.style, 1), heading_text))
+    return tuple(headings)
+
+
+def document_heading_numbers(document: object) -> tuple[str, ...]:
+    """`1`, `2`, `2.1`, … for each contents-listed heading, in document order."""
+    return section_numbers([level for level, _text in document_headings(document)])
+
+
 def emit_toc_html(document: object) -> str:
     """Emit the table of contents as a list of headings carrying **no page number**.
 
@@ -941,24 +1035,7 @@ def emit_toc_html(document: object) -> str:
     if ADOPTED_APPROACH == TOC_APPROACH_NONE:
         return ""
 
-    if not isinstance(document, Document):
-        return ""
-
-    headings: list[tuple[int, str]] = []
-    for block in document.blocks:
-        if isinstance(block, Paragraph) and block.style in _TOC_HEADING_STYLES:
-            # Extract the text from inlines.
-            text_parts: list[str] = []
-            for inline in block.inlines:
-                if isinstance(inline, Text):
-                    text_parts.append(inline.text)
-                elif isinstance(inline, Figure):
-                    text_parts.append(inline.formatted or "")
-            heading_text = "".join(text_parts).strip()
-            if heading_text:
-                level = _HEADING_LEVEL_MAP.get(block.style, 1)
-                headings.append((level, heading_text))
-
+    headings = document_headings(document)
     if not headings:
         return ""
 

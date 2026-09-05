@@ -42,6 +42,7 @@ export const EMITTED_CLASS_NAMES = [
   "rpt-toc-link",
   "rpt-toc-number",
   "rpt-toc-text",
+  "rpt-h-number",
 ] as const
 // --- END EMITTED_CLASS_NAMES ---
 
