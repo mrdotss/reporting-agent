@@ -107,6 +107,11 @@ export default async function EditTemplatePage({ params }: PageProps) {
       hasCompletedRun={snapshotRun !== null}
       scanTypeCounts={scanTypeCounts}
       collectedFactSources={COLLECTED_FACT_SOURCES}
+      // The preview subscription's, on the same reasoning as `scanTypeCounts` above: a
+      // profile is not tied to a connection, so this is the depth of the one the preview
+      // panel already defaults to. It tells the Lookback control what to say, not what to
+      // allow.
+      metricsHistorySince={previewSubscription?.metricsHistorySince ?? null}
     />
   )
 }

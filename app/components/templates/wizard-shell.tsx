@@ -134,6 +134,7 @@ export function WizardShell({
   previewSubscriptionId,
   hasCompletedRun,
   scanTypeCounts,
+  metricsHistorySince,
   collectedFactSources,
 }: Readonly<{
   template: TemplateView
@@ -169,6 +170,16 @@ export function WizardShell({
    * task.
    */
   scanTypeCounts?: Readonly<Record<string, number>>
+  /**
+   * How far back the preview subscription's exported metrics reach, ISO 8601, or `null`.
+   *
+   * The **preview** subscription's, and that is a real limitation worth stating: a profile
+   * is not tied to a connection — one is chosen when a report is run — so this is the
+   * depth of the connection the preview panel already defaults to, not a promise about
+   * whichever one the run uses. It informs the Lookback control rather than capping it,
+   * because a cap derived from connection A would be wrong for connection B.
+   */
+  metricsHistorySince?: string | null
   /**
    * Which fact sources `facts.v1.json` actually collects —
    * `lib/profiles/facts.ts`'s `COLLECTED_FACT_SOURCES`, resolved server-side and
@@ -444,6 +455,7 @@ export function WizardShell({
     saveIdentityStep,
     retryRename,
     scanTypeCounts,
+  metricsHistorySince,
     collectedFactSources,
     thumbnails,
   })
@@ -754,6 +766,7 @@ function renderStep({
   saveIdentityStep,
   retryRename,
   scanTypeCounts,
+  metricsHistorySince,
   collectedFactSources,
   thumbnails,
 }: Readonly<{
@@ -771,6 +784,16 @@ function renderStep({
   saveIdentityStep: () => void
   retryRename: () => void
   scanTypeCounts?: Readonly<Record<string, number>>
+  /**
+   * How far back the preview subscription's exported metrics reach, ISO 8601, or `null`.
+   *
+   * The **preview** subscription's, and that is a real limitation worth stating: a profile
+   * is not tied to a connection — one is chosen when a report is run — so this is the
+   * depth of the connection the preview panel already defaults to, not a promise about
+   * whichever one the run uses. It informs the Lookback control rather than capping it,
+   * because a cap derived from connection A would be wrong for connection B.
+   */
+  metricsHistorySince?: string | null
   collectedFactSources?: ReadonlySet<string>
   thumbnails: readonly ThemeThumbnail[]
 }>) {
@@ -796,6 +819,7 @@ function renderStep({
           catalog={catalog}
           scanTypeCounts={scanTypeCounts}
           collectedFactSources={collectedFactSources}
+          metricsHistorySince={metricsHistorySince}
         />
       )
     case "period":

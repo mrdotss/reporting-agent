@@ -260,6 +260,10 @@ describe("createConnectedSubscription", () => {
       "fidelityTier",
       "id",
       "maskedSubscriptionId",
+      // Reviewed and admitted: how far back this subscription's exported metrics reach.
+      // A measurement of the customer's own telemetry depth — no secret, and it names no
+      // resource — read by the profile wizard to say what a trend can cover.
+      "metricsHistorySince",
       "scopeVerified",
       "secretExpiresAt",
       "status",

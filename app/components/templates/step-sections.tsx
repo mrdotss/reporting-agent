@@ -129,6 +129,7 @@ export function StepSections({
   onChange,
   sectionCatalogue,
   catalog,
+  metricsHistorySince,
   scanTypeCounts,
   collectedFactSources,
 }: {
@@ -151,6 +152,12 @@ export function StepSections({
    * metrics, exactly as before this landed.
    */
   catalog?: MetricCatalogSnapshot
+  /**
+   * How far back the preview subscription's exported metrics reach, ISO 8601, or `null`.
+   * See `wizard-shell.tsx`'s own note: it informs the Lookback control, it does not cap
+   * it, because a profile is not tied to a connection.
+   */
+  metricsHistorySince?: string | null
   /**
    * The most recent scan's `type_counts`, for Req 16.1's "disabled with the missing input
    * named" surface (task 6.5). Omitted (or `undefined`) means "no scan to check against
@@ -519,6 +526,7 @@ export function StepSections({
                 : []
             }
             onMetricsChange={(next) => setMetrics(selectedSection.id, next)}
+            metricsHistorySince={metricsHistorySince}
           />
         ) : (
           <p className="text-sm text-muted-foreground">
@@ -736,6 +744,54 @@ function SectionMetricGrid({
 }
 
 
+/** How much history the preview subscription can answer for, against what was asked. */
+function AvailableHistory({
+  since,
+  requested,
+}: {
+  since?: string | null
+  requested: number | null
+}) {
+  if (since === undefined) return null
+
+  if (since === null) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        Available: about <span className="font-mono tabular-nums">3</span> months
+        &mdash; live Azure metrics only, which are kept for 93 days. Export metrics to a
+        Log Analytics workspace to build up more.
+      </p>
+    )
+  }
+
+  // Whole months elapsed since the oldest exported record. Computed at render rather than
+  // stored, which is the point of storing a date: the workspace gains another day every
+  // day, and a stored count would understate the depth until somebody re-probed.
+  const months = Math.max(
+    0,
+    Math.floor(
+      (Date.now() - new Date(since).getTime()) / (1000 * 60 * 60 * 24 * 30.44)
+    )
+  )
+  const short = requested !== null && requested > months
+
+  return (
+    <p
+      className={
+        short ? "text-xs text-amber-700 dark:text-amber-500" : "text-xs text-muted-foreground"
+      }
+    >
+      Available: <span className="font-mono tabular-nums">{months}</span>{" "}
+      {months === 1 ? "month" : "months"} &mdash; exported metrics since{" "}
+      {since.slice(0, 10)}.
+      {short
+        ? " A deeper lookback than this collects what exists and the trend reads short."
+        : ""}
+    </p>
+  )
+}
+
+
 function SectionInspector({
   section,
   entry,
@@ -748,6 +804,7 @@ function SectionInspector({
   catalog,
   metrics,
   onMetricsChange,
+  metricsHistorySince,
 }: {
   section: AuthoredSection
   entry: SectionCatalogueEntry
@@ -763,6 +820,8 @@ function SectionInspector({
   catalog?: MetricCatalogSnapshot
   metrics: readonly MetricSelectionItem[]
   onMetricsChange: (next: readonly MetricSelectionItem[]) => void
+  /** See the step's own prop note — informs the Lookback control, does not cap it. */
+  metricsHistorySince?: string | null
 }) {
   return (
     <div className="flex flex-col gap-3">
@@ -938,6 +997,23 @@ function SectionInspector({
             . Each month is collected as its own window, so a deeper trend is a
             longer run.
           </p>
+
+          {/*
+            What the data can actually support, measured at connect time.
+
+            Stated rather than enforced. A profile is not tied to a connection — one is
+            chosen when a report is run — so this is the depth of the subscription the
+            preview panel defaults to, and capping the control from it would be capping by
+            a connection this profile may never use. A run that asks for more than a
+            subscription holds collects what is there and says the trend is short, which
+            Requirement 19.6 already makes a non-error.
+          */}
+          <AvailableHistory
+            since={metricsHistorySince}
+            requested={
+              typeof section.lookback === "number" ? section.lookback : null
+            }
+          />
         </div>
       )}
 

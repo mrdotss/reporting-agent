@@ -104,6 +104,7 @@ const VIEW: ConnectedSubscriptionView = {
   scopeVerified: true,
   secretExpiresAt: "2027-07-15T09:30:00.000Z",
   fidelityTier: "baseline",
+  metricsHistorySince: null,
   status: "active",
 }
 
@@ -390,6 +391,10 @@ describe("Requirements 10.2, 12.5, 12.14 — POST /api/subscriptions", () => {
       "fidelityTier",
       "id",
       "maskedSubscriptionId",
+      // How far back this subscription's exported metrics reach — a measurement of the
+      // customer's own telemetry depth, carrying no secret and naming no resource. The
+      // profile wizard reads it to say what a trend can cover.
+      "metricsHistorySince",
       "scopeVerified",
       "secretExpiresAt",
       "status",
