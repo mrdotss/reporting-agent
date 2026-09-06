@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import Final, Protocol, TypedDict, runtime_checkable
 
 __all__ = [
+    "ADVISOR_CHILD_RESOURCE_TYPE",
     "GUEST_COUNTER_STATUSES",
     "GUEST_STATUS_EMPTY",
     "GUEST_STATUS_FAILED",
@@ -157,6 +158,19 @@ class ResourceRecord(TypedDict):
 
 
 # --- The averages-exclusion predicate, shared by the collector and the replay -------
+
+ADVISOR_CHILD_RESOURCE_TYPE: Final[str] = "Microsoft.Advisor/recommendations"
+"""Each Azure Advisor recommendation as its own synthetic resource.
+
+Declared here rather than in `azure/facts.py`, which is where it is produced, because
+`verify/replay.py` needs it too — Advisor is asked once at subscription scope, so a listing
+naming no recommendation is archived against the subscription id and the replay has to know
+what type that id folds under. A verifier reaching into the Azure boundary for a constant
+would put the wrong edge in the dependency graph for the sake of one string.
+
+The same reasoning `VIRTUAL_MACHINE_RESOURCE_TYPE` below is declared under: a provider-neutral
+module may name a provider's type where two layers have to agree on it.
+"""
 
 VIRTUAL_MACHINE_RESOURCE_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
 """The one resource type Req 20.13's absent-power-state check applies to. Matched
@@ -725,7 +739,28 @@ class FactRequest(TypedDict):
     subscription_id: str
 
 
-class FactResult(TypedDict):
+class _FactResultExtras(TypedDict, total=False):
+    """The one optional key a fact result may carry.
+
+    Optional so a provider with nothing to add to the inventory returns the two keys it
+    always had — the same shape `_DiscoverResultExtras` takes, and for the same reason.
+    """
+
+    resources: list[ResourceRecord]
+    """Synthetic resources this fact pass produced.
+
+    A fact pass that adds to the inventory is unusual, and it happens because some findings
+    are **rows**: an Azure Advisor recommendation is one row of the Recommendations section,
+    and a row is a resource in this model — the same reason a subnet and a security rule
+    are. A fact is one value per `(resource_id, key)`, so seven recommendations sharing a
+    resource id kept the last and discarded six.
+
+    `collect/pipeline.py` merges these into the snapshot **after** the metric pass, so they
+    are never metric targets: nothing asks Azure Monitor for the CPU of a recommendation.
+    """
+
+
+class FactResult(_FactResultExtras):
     """One fact pass's records and gaps, as plain data across the provider boundary."""
 
     facts: list[FactRecord]

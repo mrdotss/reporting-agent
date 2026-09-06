@@ -42,7 +42,13 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 13
+DECLARED_TYPE_COUNT = 14
+"""Thirteen until `Microsoft.Advisor/recommendations` joined them.
+
+A recommendation is its own row, and a row is a resource in this model — the same reason
+subnets and security rules are declared types. Advisor's three keys moved onto it and off
+the twelve reportable types they had been widened across, which is why the count grew by
+one rather than by more."""
 """7 metric-bearing types, plus four fact-only additions across tasks 6.1-6.3:
 `Microsoft.Network/virtualNetworks/subnets` (a child, declares `child_of`),
 `Microsoft.Network/virtualNetworks` (first-class, its parent),
@@ -151,6 +157,7 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
     assert children == {
         "Microsoft.Network/virtualNetworks/subnets",
         "Microsoft.Network/networkSecurityGroups/securityRules",
+        "Microsoft.Advisor/recommendations",
     }
     assert fact_only_first_class == {
         "Microsoft.Network/virtualNetworks",
@@ -1029,17 +1036,26 @@ def test_child_type_names_lists_every_child_type_and_nothing_else(tmp_path: Path
 
 
 def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
-    """Task 6.1 was that deliberate edit. Task 6.3 is the second: the shipped pair now
-    declares exactly two child types, `Microsoft.Network/virtualNetworks/subnets`
-    (task 6.1) and `Microsoft.Network/networkSecurityGroups/securityRules` (task 6.3).
+    """Task 6.1 was that deliberate edit, task 6.3 the second and Advisor the third: the
+    shipped pair now declares three child types, `Microsoft.Network/virtualNetworks/subnets`
+    (task 6.1), `Microsoft.Network/networkSecurityGroups/securityRules` (task 6.3) and
+    `Microsoft.Advisor/recommendations`.
+
+    That third one is a child of nothing in particular, which is the one way it differs: a
+    subnet belongs to a virtual network and to no other type, while a recommendation is
+    about a virtual machine, a disk, a virtual network or the subscription. `child_of` names
+    itself there, because what the field is read for is "does this type belong in the scan's
+    headline counts", and the answer is the same no as a subnet's.
+
     This test's job is to move forward with every task that deliberately grows this
     set, rather than staying pinned to whatever the set happened to be when a prior
-    task landed — a third child type appearing in a later task's catalogue edit still
+    task landed — a fourth child type appearing in a later task's catalogue edit still
     turns this assertion red until it is updated too.
     """
     assert child_type_names(load_catalog()) == (
         "Microsoft.Network/virtualNetworks/subnets",
         "Microsoft.Network/networkSecurityGroups/securityRules",
+        "Microsoft.Advisor/recommendations",
     )
 
 

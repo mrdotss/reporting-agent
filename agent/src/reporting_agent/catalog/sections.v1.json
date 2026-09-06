@@ -1001,6 +1001,9 @@
                     "kind": "fact",
                     "fact_key": "recommendation"
                   }
+                ],
+                "_types": [
+                  "Microsoft.Advisor/recommendations"
                 ]
               }
             }

@@ -1365,7 +1365,7 @@ async def _drive(
     # (`AGENTCORE_INTEGRATION.md` names six), and a pass that finishes in seconds would
     # render as a step that flickers — the honest presentation of something this short is
     # nothing at all.
-    facts_by_resource, fact_gaps = await _collect_facts(
+    facts_by_resource, fact_gaps, fact_resources = await _collect_facts(
         provider=active, plan=plan, resources=resources, discovered=discovered
     )
     gaps.extend(fact_gaps)
@@ -1452,7 +1452,16 @@ async def _drive(
         metrics_by_resource_type=metrics_by_resource_type,
         resources=_resource_snapshots(
             plan=plan,
-            resources=resources,
+            # The fact pass's own rows join the inventory **here** and nowhere earlier.
+            #
+            # An Advisor recommendation is a row of the Recommendations section, and a row
+            # is a resource in this model — but it is not a thing Azure Monitor has metrics
+            # for. Merging it before `active.collect` would put it in a metric batch;
+            # merging it before `_metric_not_selected_gaps` would record a gap saying nobody
+            # asked for its CPU, which is true and useless. Merging it before the trend pass
+            # would ask for three months of its history. So it joins last, where the only
+            # thing left to do with a resource is write it into the snapshot.
+            resources=[*resources, *fact_resources],
             statistics=collected["statistics"],
             day_statistics=collected.get("day_statistics") or {},
             capacities=collected.get("sku_capacities") or {},
@@ -1526,7 +1535,9 @@ async def _collect_facts(
     plan: RunPlan,
     resources: Sequence[ResourceRecord],
     discovered: DiscoverResult,
-) -> tuple[dict[str, tuple[FactEntry, ...]], list[GapRecord]]:
+) -> tuple[
+    dict[str, tuple[FactEntry, ...]], list[GapRecord], list[ResourceRecord]
+]:
     """The fact pass, or nothing at all (Req 4.7, 4.8, 4.12).
 
     A provider with no fact surface records **no fact and no gap and issues no request** —
@@ -1548,7 +1559,7 @@ async def _collect_facts(
             "the provider exposes no fact surface; every resource carries an empty facts "
             "collection and no fact request was issued."
         )
-        return {}, []
+        return {}, [], []
 
     result = await provider.collect_facts(
         FactRequest(
@@ -1566,6 +1577,11 @@ async def _collect_facts(
     return (
         {resource_id: tuple(entries) for resource_id, entries in by_resource.items()},
         list(result["gaps"]),
+        # Rows the fact pass produced that the inventory does not hold — one per Azure
+        # Advisor recommendation. Returned rather than merged here, because *when* they
+        # join the resource list decides whether anything asks Azure Monitor for their
+        # metrics; see the merge in `_drive`.
+        list(result.get("resources") or ()),
     )
 
 

@@ -55,7 +55,9 @@ neither has a branch that could produce a fact.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
+import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -72,6 +74,7 @@ from reporting_agent.collect.factfold import (
 from reporting_agent.collect.log import GAP_TYPE_FACT_UNAVAILABLE, record_gap
 from reporting_agent.collect.snapshot import rfc3339_utc
 from reporting_agent.providers.base import (
+    ADVISOR_CHILD_RESOURCE_TYPE,
     FactRecord,
     GapRecord,
     InventoryPage,
@@ -192,6 +195,129 @@ _RESERVATION_SCOPE_TYPE_PATH: Final[tuple[str, ...]] = (_PROPERTIES, "appliedSco
 _RESERVATION_SCOPES_PATH: Final[tuple[str, ...]] = (_PROPERTIES, "appliedScopes")
 _SHARED_SCOPE: Final[str] = "shared"
 
+_SUBSCRIPTION_RESOURCE_TYPE: Final[str] = "Microsoft.Resources/subscriptions"
+"""The type of a `/subscriptions/<guid>` id, which names no provider of its own."""
+
+_BASELINE_TIER: Final[str] = "baseline"
+"""What a synthetic row carries until `_resource_snapshots` stamps the resolved tier on it.
+
+The literal rather than an import: `FIDELITY_BASELINE` lives in `collect/pipeline.py`, and
+an Azure-boundary module reaching into the pipeline to name a default would invert the one
+dependency direction this package keeps."""
+
+_ADVISOR_ID_SUFFIX_CHARS: Final[int] = 16
+"""How much of the content digest the synthetic id carries.
+
+Sixteen hex characters is 64 bits. A collision would merge two distinct recommendations on
+one resource into one row; at the scale Advisor answers — tens per subscription — the odds
+are far below every other way this pipeline can lose a row, and a full digest would make
+every recommendation id 64 characters of noise in a document that prints resource ids."""
+
+# --- Advisor: one row per recommendation ---------------------------------------------
+#
+# Each Advisor recommendation as its own synthetic resource.
+#
+# The third child type, on exactly the terms `SUBNET_CHILD_RESOURCE_TYPE` and
+# `SECURITY_RULE_CHILD_RESOURCE_TYPE` already establish: a thing the document renders as a
+# **row** is a resource in this model, and a row is what a recommendation is.
+#
+# ## The defect this exists for
+#
+# A fact is one value per `(resource_id, key)`, so a resource with seven recommendations kept
+# the last one and discarded six — silently, with nothing recorded, because overwriting a
+# mapping key is not an event anything reports. Measured against one subscription's archived
+# Advisor listing: **26 recommendations across 8 resources, of which 18 (69%) never reached
+# the document.** The section printed eight rows and read as a complete answer.
+#
+# Making a recommendation a resource makes the fold's own key do the right thing, rather than
+# teaching the fact model to hold lists — which is the change that would have to reach every
+# fact source, every emitter and the verifier, in exchange for one section.
+
+ADVISOR_CHILD_PARENT_TYPE: Final[str] = "Microsoft.Advisor/recommendations"
+"""What `child_of` names for this type.
+
+Itself, deliberately, and it is the one place this child differs from the other two. A
+subnet is a child of `Microsoft.Network/virtualNetworks` and nothing else; an Advisor
+recommendation is about a virtual machine, a disk, a virtual network or the subscription —
+so there is no single parent type to name, and naming one would be false for every other
+kind. `child_of` is read by `is_child_type` to answer "does this type appear in the scan's
+headline counts", and the honest answer here is the same as a subnet's: no.
+"""
+
+_ADVISOR_TYPE_LABELS: Final[dict[str, str]] = {
+    "microsoft.compute/virtualmachines": "Virtual Machine",
+    "microsoft.compute/disks": "Managed Disk",
+    "microsoft.compute/virtualmachinescalesets": "Scale Set",
+    "microsoft.network/virtualnetworks": "Virtual Network",
+    "microsoft.network/networksecuritygroups": "Network Security Group",
+    "microsoft.network/publicipaddresses": "Public IP Address",
+    "microsoft.network/networkinterfaces": "Network Interface",
+    "microsoft.network/loadbalancers": "Load Balancer",
+    "microsoft.storage/storageaccounts": "Storage Account",
+    "microsoft.sql/servers": "SQL Server",
+    "microsoft.sql/servers/databases": "SQL Database",
+    "microsoft.sql/managedinstances": "SQL Managed Instance",
+    "microsoft.dbforpostgresql/flexibleservers": "PostgreSQL Server",
+    "microsoft.dbformysql/flexibleservers": "MySQL Server",
+    "microsoft.web/sites": "App Service",
+    "microsoft.web/serverfarms": "App Service Plan",
+    "microsoft.keyvault/vaults": "Key Vault",
+    "microsoft.containerservice/managedclusters": "Kubernetes Cluster",
+    "microsoft.recoveryservices/vaults": "Recovery Services Vault",
+    "microsoft.operationalinsights/workspaces": "Log Analytics Workspace",
+    "microsoft.cognitiveservices/accounts": "Cognitive Services Account",
+    "microsoft.resources/subscriptions": "Subscription",
+}
+"""ARM type to the words a consultant reads, keyed case-folded because an ARM type id is.
+
+Explicit for the types this product reports on, derived for the rest — see
+:func:`resource_type_label`. A wrong-but-plausible label is worse than a mechanical one, so
+nothing here is guessed: each entry is the name Azure's own portal gives that type."""
+
+
+def resource_type_label(resource_type: str) -> str:
+    """`Microsoft.Compute/virtualMachines` as `Virtual Machine`. **Pure.**
+
+    Falls back to the type's own last segment, split on camel case and title-cased, so an
+    unlisted type reads as `Flexible Servers` rather than as nothing. Mechanical rather than
+    absent: the point of the label is to tell a reader what kind of thing a row is about,
+    and a blank tells them less than an imperfect word does.
+
+    An empty or unrecognisable type yields `""`, and the caller renders the resource name
+    alone — never a parenthesis around nothing.
+    """
+    cleaned = resource_type.strip()
+    if not cleaned:
+        return ""
+    known = _ADVISOR_TYPE_LABELS.get(cleaned.casefold())
+    if known:
+        return known
+    segment = cleaned.rsplit("/", 1)[-1]
+    if not segment:
+        return ""
+    spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", segment)
+    return " ".join(word[:1].upper() + word[1:] for word in spaced.split())
+
+
+def advisor_row_name(parent_name: str, parent_type: str) -> str:
+    """What the Recommendations table's resource column reads: `cpn-mcp (Virtual Machine)`.
+
+    The resource column renders a resource's `name`, so the label goes **in the name** of
+    the synthetic row rather than into a fourth column — which is what was asked for, and
+    also the smaller change: a fourth column would have to be declared in the catalogue,
+    mirrored in the app's block schema and added to the section's own `expands_to`.
+
+    A recommendation names a resource that may not be in this run's inventory at all —
+    Advisor recommends on the subscription itself, and on resources a scope filter excluded
+    — so `parent_name` falls back to the id's last segment at the call site and this
+    function never invents one.
+    """
+    label = resource_type_label(parent_type)
+    if not parent_name:
+        return label
+    return f"{parent_name} ({label})" if label else parent_name
+
+
 _ADVISOR_RESOURCE_ID_PATHS: Final[tuple[tuple[str, ...], ...]] = (
     (_PROPERTIES, "resourceMetadata", "resourceId"),
 )
@@ -225,6 +351,14 @@ class FactsResult:
 
     facts: tuple[FactRecord, ...] = ()
     gaps: tuple[GapRecord, ...] = ()
+    resources: tuple[ResourceRecord, ...] = ()
+    """Synthetic resources this pass produced — today, one per Advisor recommendation.
+
+    A fact pass that adds to the inventory is unusual and worth naming. It happens because a
+    recommendation is a **row**, and a row is a resource in this model (the same reason a
+    subnet and a security rule are). `collect/pipeline.py` merges these into the snapshot's
+    resource list **after** the metric pass, so they are never metric targets: nothing asks
+    Azure Monitor for the CPU of a recommendation."""
 
 
 def narrowed_to_gap_type(
@@ -321,6 +455,117 @@ class FactArchiveContext:
     catalog_version: str
 
 
+def _advisor_rows(
+    normalized: PlainData,
+    *,
+    parents: Mapping[str, ResourceRecord],
+) -> tuple[PlainData, tuple[ResourceRecord, ...]]:
+    """Each normalized recommendation as its own resource. **Pure.**
+
+    Returns `(rewritten_items, synthetic_records)`, where every item's `resource_id` now
+    addresses the recommendation rather than the resource it is about — which is the whole
+    fix: `collect/factfold.py` keys on `(resource_id, key)`, so seven recommendations sharing
+    one resource id kept the last and discarded six.
+
+    ## The id is derived from the recommendation's own content
+
+    Not from its position in the list. Advisor is free to answer in a different order on the
+    next call, and an id derived from position would make two runs over an unchanged estate
+    produce different resource ids for the same finding — which every comparison between two
+    reports would then read as one recommendation disappearing and another appearing.
+    Content-derived, two identical recommendations on one resource collapse to one row, which
+    is correct: they are the same finding stated twice.
+
+    ## A recommendation about something the run never inventoried is still a row
+
+    Advisor recommends on the subscription itself, and on resources a scope filter excluded.
+    `parents` answers for the ones this run knows; the rest fall back to the id's own last
+    segment for a name and to the id's own provider path for a type, so the row still says
+    what it is about instead of being dropped for want of a lookup.
+    """
+    if normalized is None:
+        return None, ()
+
+    # `_normalized` answers in the shape it was given — an ARM list body, `{"value": [...]}`
+    # — so the items are read out with the same reader every other fold uses and written
+    # back in the same shape. Returning a bare list here would archive a body the fold and
+    # the replay read differently from the one every other source archives.
+    items = _items_of(normalized)
+    rewritten: list[PlainData] = []
+    records: list[ResourceRecord] = []
+    seen: set[str] = set()
+
+    for item in items:
+        parent_id = str(item.get("resource_id") or "")
+        if not parent_id:
+            continue
+
+        # Everything the fold will read, in a fixed order, so the digest depends on the
+        # recommendation and not on dict iteration.
+        payload = "\u0000".join(
+            f"{key}={item.get(key) or ''}" for key in sorted(_ADVISOR_VALUE_PATHS)
+        )
+        suffix = hashlib.sha256(
+            f"{parent_id.casefold()}\u0000{payload}".encode()
+        ).hexdigest()[:_ADVISOR_ID_SUFFIX_CHARS]
+        child_id = f"{parent_id}/providers/{ADVISOR_CHILD_RESOURCE_TYPE}/{suffix}"
+        if child_id in seen:
+            continue
+        seen.add(child_id)
+
+        parent = parents.get(parent_id.casefold())
+        parent_type = (
+            parent["resource_type"] if parent else _type_from_resource_id(parent_id)
+        )
+        parent_name = parent["name"] if parent else parent_id.rsplit("/", 1)[-1]
+
+        rewritten.append({**item, "resource_id": child_id})
+        records.append(
+            ResourceRecord(
+                resource_id=child_id,
+                name=advisor_row_name(parent_name, parent_type),
+                resource_type=ADVISOR_CHILD_RESOURCE_TYPE,
+                location=parent["location"] if parent else "",
+                resource_group=parent["resource_group"] if parent else "",
+                tags={},
+                sku_name="",
+                power_state_raw="",
+                # The same `"unknown"` a disk carries: a recommendation has no power state,
+                # and `azure/inventory.py` owns the constant — imported from there this
+                # module would depend on the inventory collector to synthesize a row.
+                power_state="unknown",
+                # The parent's, where this run knows the parent. Overwritten in any case by
+                # `_resource_snapshots`, which stamps the resolved tier onto every record —
+                # this is the honest value to carry until it does.
+                fidelity_tier=parent["fidelity_tier"] if parent else _BASELINE_TIER,
+            )
+        )
+
+    if isinstance(normalized, Mapping):
+        return {**normalized, "value": rewritten}, tuple(records)
+    return rewritten, tuple(records)
+
+
+def _type_from_resource_id(resource_id: str) -> str:
+    """`.../providers/Microsoft.Compute/virtualMachines/cpn-mcp` as its ARM type. **Pure.**
+
+    For a recommendation about a resource this run never inventoried, so there is no record
+    to read the type off. Returns `""` for an id with no `providers/` segment — a
+    subscription-scoped recommendation, whose row then reads as its name alone.
+    """
+    parts = resource_id.split("/")
+    for index in range(len(parts) - 1, 1, -1):
+        if parts[index - 1].casefold() == "providers":
+            return "/".join(parts[index : index + 2])
+    # `/subscriptions/<guid>` names no provider because the subscription **is** the
+    # resource. Advisor recommends at that scope — "enable Defender for Cloud" is about the
+    # subscription, not about anything in it — and without this the row read as a bare GUID
+    # with no word saying what it was.
+    if len(parts) == 3 and parts[1].casefold() == "subscriptions":
+        return _SUBSCRIPTION_RESOURCE_TYPE
+    return ""
+
+
 class FactCollector:
     """The fact pass over one run (Req 4.7, 4.8, 4.9, 5.1-5.5, 5.8-5.10).
 
@@ -399,18 +644,29 @@ class FactCollector:
         facts.extend(projected_facts)
         gaps.extend(projected_gaps)
 
-        for source_facts, source_gaps in await asyncio.gather(
+        backup, replication, reservations, advisor = await asyncio.gather(
             self._collect_backup(resources, types_by_id, subscription_id),
             self._collect_replication(resources, types_by_id),
             self._collect_reservations(resources, types_by_id),
             self._collect_advisor(resources, types_by_id, subscription_id),
-        ):
+        )
+        for source_facts, source_gaps in (backup, replication, reservations):
             facts.extend(source_facts)
             gaps.extend(source_gaps)
 
+        # Advisor alone also produces resources — one per recommendation. Unpacked
+        # separately rather than widening the other three to a shape they have no use for.
+        advisor_facts, advisor_gaps, advisor_resources = advisor
+        facts.extend(advisor_facts)
+        gaps.extend(advisor_gaps)
+
         bounded, bound_gaps = _within_bounds(facts)
         gaps.extend(bound_gaps)
-        return FactsResult(facts=tuple(bounded), gaps=tuple(gaps))
+        return FactsResult(
+            facts=tuple(bounded),
+            gaps=tuple(gaps),
+            resources=advisor_resources,
+        )
 
     # --- the projectable half, from pages already paged (Req 4.7) --------------------
 
@@ -646,7 +902,9 @@ class FactCollector:
         resources: Sequence[ResourceRecord],
         types_by_id: Mapping[str, str],
         subscription_id: str,
-    ) -> tuple[tuple[FactRecord, ...], tuple[GapRecord, ...]]:
+    ) -> tuple[
+        tuple[FactRecord, ...], tuple[GapRecord, ...], tuple[ResourceRecord, ...]
+    ]:
         """One subscription-scoped Advisor listing, matched to resources by
         `resourceMetadata.resourceId` (task 6.4, Req 16.7).
 
@@ -672,7 +930,7 @@ class FactCollector:
         covered = tuple(record["resource_id"] for record in resources)
         declared = narrowed_to_gap_type(self.declaration, ADVISOR_ABSENT_GAP_TYPE)
         if not covered or not declared.entries:
-            return (), ()
+            return (), (), ()
 
         async with self.semaphore:
             response = await self.port.list_recommendations(subscription_id=subscription_id)
@@ -688,29 +946,66 @@ class FactCollector:
         else:
             logger.info(
                 "the Advisor recommendation listing answered HTTP %d; every recommendation "
-                "fact is reported as unavailable rather than as absent.",
+                "key is reported as unavailable for the subscription rather than absent.",
                 response.status,
             )
+
+        # One resource per recommendation, so the fold's `(resource_id, key)` keeps every
+        # one of them. See `_advisor_rows`.
+        rows, synthetic = _advisor_rows(
+            normalized,
+            parents={
+                record["resource_id"].casefold(): record for record in resources
+            },
+        )
+
+        # The **rewritten** body is what is archived, so a replay folds the same ids this
+        # run folded — `verify/replay.py` drives its fold from the archived object's own
+        # `resource_ids`. Archiving the pre-rewrite body would make the archive and the
+        # snapshot disagree about what a recommendation is addressed by, and replay would
+        # rebuild the collapsed eight rows against a stored twenty-six.
+        #
+        # **What the fold is run over, when there are no rows.**
+        #
+        # The subscription itself. Both no-row outcomes have to stay tellable apart — a
+        # rejected listing is a role problem and an empty one is Azure having nothing to
+        # suggest — and the only thing that tells them apart is the gap type the fold
+        # produces, `fact_unavailable` against `advisor_not_available`. Running the fold
+        # over nothing would produce neither, and "we asked and were refused" would become
+        # indistinguishable from "we asked and it was quiet".
+        #
+        # It is the **subscription** and not the estate, which is the change: the three keys
+        # used to be declared on every reportable type, so one 403 over twenty machines
+        # recorded sixty entries all saying the same sentence. Advisor is asked once, of the
+        # subscription, so the absence is one fact about the subscription.
+        covered_by_fold = (
+            tuple(record["resource_id"] for record in synthetic)
+            if synthetic
+            else (subscription_id,)
+        )
+        types_for_fold = {
+            resource_id: ADVISOR_CHILD_RESOURCE_TYPE for resource_id in covered_by_fold
+        }
 
         gaps = await self._archive(
             source=SOURCE_ADVISOR,
             request_target=ADVISOR_REQUEST_TARGET,
             declared=declared,
-            resource_ids=covered,
+            resource_ids=covered_by_fold,
             received_at=received_at,
-            body=normalized,
+            body=rows,
         )
 
         facts, fold_gaps = fold_fact_response(
-            normalized,
+            rows,
             kind=FACT_KIND_FACTS,
             source=SOURCE_ADVISOR,
-            resource_ids=covered,
+            resource_ids=covered_by_fold,
             declaration=declared,
-            resource_types=types_by_id,
+            resource_types=types_for_fold,
             received_at=received_at,
         )
-        return facts, (*gaps, *fold_gaps)
+        return facts, (*gaps, *fold_gaps), synthetic
 
     async def _archive(
         self,

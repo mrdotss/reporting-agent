@@ -622,7 +622,11 @@ class AzureProvider:
             inventory_pages=request["inventory_pages"],
             subscription_id=request["subscription_id"],
         )
-        collected = FactResult(facts=list(result.facts), gaps=list(result.gaps))
+        collected = FactResult(
+            facts=list(result.facts),
+            gaps=list(result.gaps),
+            resources=list(result.resources),
+        )
         assert_plain_data(collected)
         return collected
 
