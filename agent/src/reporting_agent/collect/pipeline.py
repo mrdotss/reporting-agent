@@ -1736,6 +1736,13 @@ async def _collect_trend(
                     window=window_to_plain(month.window),
                     timezone=plan.timezone_name,
                     utc_offset=_utc_offset_text(plan),
+                    # **Not the run's archive.** A month's window is not this run's, and
+                    # `verify/replay.py` folds every archived metric object into the
+                    # period's accumulators without asking which window it came from — so
+                    # a June response in the archive is a June interval folded into
+                    # August. A month's figures are carried through replay rather than
+                    # recomputed, so the object would be one no replay folds anyway.
+                    archive=False,
                 )
             )
         except Exception as exc:  # noqa: BLE001 - a trend month never fails the run

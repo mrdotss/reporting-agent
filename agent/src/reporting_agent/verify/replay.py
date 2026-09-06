@@ -62,6 +62,7 @@ from reporting_agent.catalog.loader import (
     ResourceTypeFacts,
 )
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
+from reporting_agent.collect.accumulate import DerivedSourceRef
 from reporting_agent.collect.archive import (
     ARCHIVE_KIND_FACTS,
     ARCHIVE_KIND_INVENTORY,
@@ -994,6 +995,48 @@ def _day_buckets(raw: object) -> tuple[ResourceDayBucket, ...]:
     )
 
 
+def _refs_from_plain(raw: object) -> tuple[DerivedSourceRef, ...]:
+    """A derived value's `derived_from` array back as ordered refs.
+
+    Order preserved exactly as stored: Req 30.2 requires the list to be ordered identically
+    for every value of one derived statistic, and re-sorting here would substitute this
+    module's ordering for the catalog's — and change the digest.
+    """
+    if not isinstance(raw, Sequence) or isinstance(raw, (str, bytes)):
+        return ()
+    refs: list[DerivedSourceRef] = []
+    for item in raw:
+        if not isinstance(item, Mapping):
+            continue
+        refs.append(
+            DerivedSourceRef(
+                kind=str(item.get("kind") or ""),
+                name=str(item.get("name") or ""),
+                statistic=_stored_str(item, "statistic"),
+                value=_stored_str(item, "value"),
+                unit=_stored_str(item, "unit"),
+            )
+        )
+    return tuple(refs)
+
+
+def _stored_str(stored: Mapping[str, object], key: str) -> str | None:
+    """One optional string off a stored statistic, or `None` where it does not apply.
+
+    `None` and `""` are not the same here: `StatisticEntry.to_plain_data` **omits** a field
+    that is `None` and emits one that is empty, so reading `""` back where the snapshot had
+    nothing would add a key the stored document does not carry.
+    """
+    value = stored.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _stored_bool(stored: Mapping[str, object], key: str) -> bool | None:
+    """One optional boolean off a stored statistic, on the same terms."""
+    value = stored.get(key)
+    return value if isinstance(value, bool) else None
+
+
 def _month_buckets(raw: object) -> tuple[ResourceMonthBucket, ...]:
     """The trend's months, rebuilt whole — statistics included, unlike `_day_buckets`.
 
@@ -1001,6 +1044,19 @@ def _month_buckets(raw: object) -> tuple[ResourceMonthBucket, ...]:
     fold, so reading them back would let a hand-edited day value survive its own check;
     a month's cannot be re-derived at all (see `ReplayResource.month_buckets`), so reading
     them back is the only way the recomputed document can equal the stored one.
+
+    ## Every field, not the required ones
+
+    "Equal to the stored one" is the whole job, so a field dropped here is a
+    `replay_hash_mismatch` on a run that collected perfectly. The first version read only
+    the seven required fields and lost `estimated` and `label` off every percentile and
+    `formula`, `derived_from`, `note` and `observation` off every derived value — 180
+    differences across one snapshot's month buckets, on a document whose figures were all
+    correct.
+
+    `test_a_carried_month_round_trips_field_for_field` asserts the round trip rather than
+    the field list, so a field added to `StatisticEntry` later fails there instead of
+    silently going missing here.
     """
     return tuple(
         ResourceMonthBucket(
@@ -1023,7 +1079,21 @@ def _month_buckets(raw: object) -> tuple[ResourceMonthBucket, ...]:
                     fidelity_tier=str(stored.get("fidelity_tier") or ""),
                     sample_count=int(stored.get("sample_count") or 0),
                     scale=_scale_of(str(stored.get("value") or "0")),
-                    instance=str(stored.get("instance") or "") or None,
+                    # A percentile's two (Req 28.7) …
+                    estimated=_stored_bool(stored, "estimated"),
+                    label=_stored_str(stored, "label"),
+
+                    # … a derived value's four (Req 30.2, 30.3, 30.4, 30.9) …
+                    formula=_stored_str(stored, "formula"),
+                    derived_from=_refs_from_plain(stored.get("derived_from")),
+                    note=_stored_str(stored, "note"),
+                    observation=_stored_str(stored, "observation"),
+                    # … and the four an enhanced-tier or per-instance value carries.
+                    counter_scope=_stored_str(stored, "counter_scope"),
+                    interval=_stored_str(stored, "interval"),
+                    instance=_stored_str(stored, "instance"),
+                    counter=_stored_str(stored, "counter"),
+                    workspace_id=_stored_str(stored, "workspace_id"),
                 )
                 for stored in _as_mappings(bucket.get("statistics"))
             ),
