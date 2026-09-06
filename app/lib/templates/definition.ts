@@ -391,6 +391,24 @@ export const HISTORICAL_LOOKBACK_MIN = 2
 export const HISTORICAL_LOOKBACK_MAX = 24
 
 /**
+ * How many calendar months a single run will measure for the trend itself, whatever
+ * `lookback` asks for. Mirrors `MAX_TREND_MONTHS` in
+ * `agent/src/reporting_agent/collect/buckets.py`; `test/trend-months.static.test.ts`
+ * asserts the two agree.
+ *
+ * The trend plots **prior verified runs** where they exist. A first report has none, so
+ * the run seeds its own months — each one its own collection window at hourly grain, which
+ * is why this is a bound and not a setting: an unbounded lookback would turn an
+ * eight-minute run into an hour-long one for a chart with twelve points.
+ *
+ * It is quoted in the wizard, which is the reason it is declared here rather than left as
+ * a number the agent knows and the interface guesses at. The helper text said "a deeper
+ * trend is a longer run" while the collector capped at this value — true up to three
+ * months and a promise the product did not keep beyond them.
+ */
+export const MAX_SEEDED_TREND_MONTHS = 3
+
+/**
  * Section catalogue keys by provider, derived from `catalog/sections.v1.json` at
  * build time. Used by the validator to reject an unknown `type`. One file, both
  * halves — the Python half reads the same JSON in `catalog/loader.py`.

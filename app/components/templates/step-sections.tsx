@@ -20,6 +20,7 @@ import {
 import {
   HISTORICAL_LOOKBACK_MAX,
   HISTORICAL_LOOKBACK_MIN,
+  MAX_SEEDED_TREND_MONTHS,
   type MetricCatalogSnapshot,
   type MetricSelectionItem,
 } from "@/lib/templates/definition"
@@ -994,8 +995,13 @@ function SectionInspector({
             <span className="font-mono tabular-nums">
               {HISTORICAL_LOOKBACK_MAX}
             </span>
-            . Each month is collected as its own window, so a deeper trend is a
-            longer run.
+            . The trend plots your earlier reports for this profile; where there
+            are none, this run measures up to{" "}
+            <span className="font-mono tabular-nums">
+              {MAX_SEEDED_TREND_MONTHS}
+            </span>{" "}
+            months itself, each as its own collection window. Asking for more
+            than that without earlier reports reads short.
           </p>
 
           {/*
