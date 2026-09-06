@@ -996,15 +996,12 @@
                   {
                     "kind": "fact",
                     "fact_key": "impact"
-                  },
-                  {
-                    "kind": "fact",
-                    "fact_key": "recommendation"
                   }
                 ],
                 "_types": [
                   "Microsoft.Advisor/recommendations"
-                ]
+                ],
+                "_resource_header": "doc.table.finding"
               }
             }
           ]
