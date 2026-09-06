@@ -3,7 +3,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 
-import { MAX_SEEDED_TREND_MONTHS } from "@/lib/templates/definition"
+import { LIVE_METRICS_TREND_MONTHS } from "@/lib/templates/definition"
 
 /**
  * The seeded-trend bound is one number in two languages.
@@ -30,18 +30,23 @@ const BUCKETS = path.join(
   "buckets.py"
 )
 
-describe("MAX_SEEDED_TREND_MONTHS mirrors the agent's MAX_TREND_MONTHS", () => {
-  test("the agent declares it exactly once, as an integer literal", () => {
+describe("LIVE_METRICS_TREND_MONTHS mirrors the agent's retention constant", () => {
+  test("the agent declares the retention window exactly once, in days", () => {
     const source = readFileSync(BUCKETS, "utf8")
     const matches = [
-      ...source.matchAll(/^MAX_TREND_MONTHS:\s*Final\[int\]\s*=\s*(\d+)$/gm),
+      ...source.matchAll(
+        /^LIVE_METRICS_RETENTION_DAYS:\s*Final\[int\]\s*=\s*(\d+)$/gm
+      ),
     ]
 
     expect(matches).toHaveLength(1)
-    expect(Number(matches[0][1])).toBe(MAX_SEEDED_TREND_MONTHS)
+    // 93 days is a little over three months. The wizard says "about three months", which
+    // is the honest rounding — a control that promised 3.1 would be stating a precision
+    // Azure's own retention does not have.
+    expect(Math.floor(Number(matches[0][1]) / 31)).toBe(LIVE_METRICS_TREND_MONTHS)
   })
 
-  test("it is at least the minimum lookback, or no seeded trend could ever be plotted", () => {
-    expect(MAX_SEEDED_TREND_MONTHS).toBeGreaterThanOrEqual(2)
+  test("it is at least the minimum lookback, or no live trend could ever be plotted", () => {
+    expect(LIVE_METRICS_TREND_MONTHS).toBeGreaterThanOrEqual(2)
   })
 })

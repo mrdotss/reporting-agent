@@ -467,6 +467,34 @@ class FakeMetricsPort:
         assert isinstance(result, RawHttpResponse)
         return result
 
+    async def query_metrics_rollup(
+        self,
+        *,
+        workspace_id: str,
+        resource_ids: Sequence[str],
+        metric_names: Sequence[str],
+        start_time: str,
+        end_time: str,
+    ) -> RawHttpResponse:
+        """One month's exported platform metrics, scripted on the same logs queue.
+
+        The same sequence `query_logical_disk_free_space` reads from: both are Log
+        Analytics queries, and a test scripting one and receiving the other has mis-scripted
+        its scenario rather than found a defect.
+        """
+        result = self._logs.record_and_pop(
+            port_name="FakeMetricsPort",
+            method_name="query_metrics_rollup",
+            workspace_id=workspace_id,
+            resource_ids=list(resource_ids),
+            metric_names=list(metric_names),
+            start_time=start_time,
+            end_time=end_time,
+        )
+        if isinstance(result, Exception):
+            raise result
+        return result
+
     async def query_logical_disk_free_space(
         self, *, workspace_id: str, resource_id: str, start_time: str, end_time: str
     ) -> RawHttpResponse:

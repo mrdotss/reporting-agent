@@ -113,6 +113,7 @@ __all__ = [
     "build_inventory_port",
     "child_resources_query",
     "distinct_dimensions_query",
+    "metrics_rollup_query",
     "envelope_from_response",
     "inventory_query",
     "is_dns_resolution_failure",
@@ -732,6 +733,69 @@ def distinct_dimensions_query(*, subscription_id: str) -> str:
             f"make_set_if(tagValue, isnotempty(tagValue), {limit}),",
             f"            {DIMENSION_REGIONS} = "
             f"make_set_if(location, isnotempty(location), {limit})",
+        ]
+    )
+
+
+def metrics_rollup_query(
+    *, resource_ids: Sequence[str], metric_names: Sequence[str]
+) -> str:
+    """One month's rollup out of Log Analytics' `AzureMetrics` table. **Pure.**
+
+    The trend beyond Azure Monitor's 93-day retention. A platform metric older than that is
+    gone from the metrics API and present in a Log Analytics workspace **only** where a
+    diagnostic setting was exporting it at the time — `azure/preflight.py`'s depth probe is
+    what measures whether, and how far back, that is true for a subscription.
+
+    ## No `startofmonth`, and that is the point
+
+    The obvious query groups by `startofmonth(TimeGenerated)`, which is a **UTC** month. A
+    UTC+07:00 customer's month would then run from 17:00 on the last day of the previous
+    month, and the trend's figure for a month would disagree with the same month collected
+    live — the exact defect `collect/buckets.py` refuses `P1D` to avoid, reintroduced one
+    layer down. So the caller bounds each request to one month's own half-open window,
+    derived from local midnights by `resolve_window`, and this query aggregates over
+    whatever it is given.
+
+    ## The average is count-weighted, which is what makes it the live path's arithmetic
+
+    `sum(Average * Count) / sum(Count)`, not `avg(Average)`. The obvious spelling is the
+    mean of interval **means**, which equals the true mean only where every interval carries
+    the same sample count — not at the edges of a window, and not across an outage. The live
+    path weights by `count` (`collect/accumulate.py`), so the obvious spelling would make a
+    month read from the workspace and the same month read live two different numbers, with
+    nothing on either saying so.
+
+    Weighting it here also means these values carry the **same estimators** the live path
+    produces — `exact_count_weighted`, `exact_interval_minimum`, `exact_interval_maximum` —
+    rather than a second vocabulary a reader would have to learn to compare two months of
+    one trend. Minima and maxima roll up exactly at any grain, so those two need nothing
+    said about them.
+
+    `sum(Count)` travels with the value as its sample count, so a month resting on a
+    handful of exported intervals is visible as such.
+    """
+    ids = ", ".join(_kql_literal(value) for value in resource_ids)
+    names = ", ".join(_kql_literal(value) for value in metric_names)
+    return "\n".join(
+        [
+            "AzureMetrics",
+            f"| where ResourceId in~ ({ids})",
+            f"| where MetricName in~ ({names})",
+            "| summarize",
+            "    weighted_total = sum(Average * Count),",
+            "    maximum_value = max(Maximum),",
+            "    minimum_value = min(Minimum),",
+            "    sample_count = sum(Count)",
+            "  by ResourceId, MetricName, UnitName",
+            # Divided here rather than inside `summarize`, where the two sums are not yet
+            # in scope. A zero count yields null, which the reader drops — a month nothing
+            # was exported for is not a month measured at zero.
+            "| extend average_value = iff(sample_count > 0, "
+            "weighted_total / sample_count, real(null))",
+            "| project ResourceId, MetricName, UnitName, average_value, "
+            "maximum_value, minimum_value, sample_count",
+            "| order by ResourceId asc, MetricName asc",
         ]
     )
 
@@ -1403,6 +1467,35 @@ class AzureMetricsPort:
             "POST",
             f"{LOGS_ENDPOINT}/{LOGS_API_VERSION}/workspaces/{workspace_id}/query",
             json={"query": query, "timespan": f"{start_time}/{end_time}"},
+        )
+        return await _send(self._logs(), request)
+
+    async def query_metrics_rollup(
+        self,
+        *,
+        workspace_id: str,
+        resource_ids: Sequence[str],
+        metric_names: Sequence[str],
+        start_time: str,
+        end_time: str,
+    ) -> RawHttpResponse:
+        """One calendar month's exported platform metrics, out of Log Analytics.
+
+        Bounded by `timespan` to the month's own half-open window — the same interval form
+        `query_logical_disk_free_space` uses, and for the same reason: a trailing duration
+        measured from whenever the run executes would read the wrong month while looking
+        entirely plausible. See :func:`metrics_rollup_query` for why the grouping is left to
+        the window rather than done with `startofmonth`.
+        """
+        request = HttpRequest(
+            "POST",
+            f"{LOGS_ENDPOINT}/{LOGS_API_VERSION}/workspaces/{workspace_id}/query",
+            json={
+                "query": metrics_rollup_query(
+                    resource_ids=resource_ids, metric_names=metric_names
+                ),
+                "timespan": f"{start_time}/{end_time}",
+            },
         )
         return await _send(self._logs(), request)
 

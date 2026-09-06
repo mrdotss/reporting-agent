@@ -94,7 +94,7 @@ import logging
 from collections import Counter
 from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from datetime import tzinfo as TzInfo
 from decimal import Decimal, InvalidOperation
 from types import MappingProxyType
@@ -112,6 +112,7 @@ from reporting_agent.collect.accumulate import (
     MetricAccumulator,
 )
 from reporting_agent.collect.buckets import (
+    LIVE_METRICS_RETENTION_DAYS,
     MAX_TREND_MONTHS,
     Window,
     choose_grain,
@@ -129,6 +130,8 @@ from reporting_agent.collect.log import (
 )
 from reporting_agent.collect.snapshot import (
     FactEntry,
+    MONTH_SOURCE_EXPORTED,
+    MONTH_SOURCE_MEASURED,
     ResourceDayBucket,
     ResourceMonthBucket,
     ResourceSnapshot,
@@ -154,6 +157,8 @@ from reporting_agent.events import TOOL_COLLECT_INVENTORY, TOOL_COLLECT_METRICS
 from reporting_agent.progress import ProgressReporter
 from reporting_agent.providers import registry
 from reporting_agent.providers.base import (
+    MetricsHistoryProvider,
+    MetricsHistoryRequest,
     GUEST_STATUS_EMPTY,
     GUEST_STATUS_OK,
     CollectRequest,
@@ -1425,7 +1430,7 @@ async def _drive(
     # After the three gates deliberately: a run about to fail for an empty scope or no
     # reachable location should not first spend two more passes over the estate. And
     # before the snapshot, because the months are part of the document it builds.
-    month_statistics, month_slots = await _collect_trend(
+    month_statistics, month_slots, month_sources = await _collect_trend(
         provider=active,
         plan=plan,
         resources=resources,
@@ -1433,6 +1438,11 @@ async def _drive(
         period_statistics=collected["statistics"],
         count=seed_trend_months,
         now=now,
+        # The workspace the run was told about, and the catalogue's own decimal scales. A
+        # month read from the workspace has to render at the same scale as one read live,
+        # or two months of one trend read as measurements of different things.
+        workspace_id=plan.workspace_id or "",
+        scales=_catalog_scales(loaded),
     )
 
     # --- the snapshot (Req 34.x, 35.x) -----------------------------------------------
@@ -1470,6 +1480,7 @@ async def _drive(
             facts_by_resource=facts_by_resource,
             month_statistics=month_statistics,
             month_slots=month_slots,
+            month_sources=month_sources,
         ),
         gaps=gaps,
         catalog_version=loaded.catalog_version,
@@ -1585,6 +1596,22 @@ async def _collect_facts(
     )
 
 
+def _catalog_scales(catalog: LoadedCatalog) -> dict[str, int]:
+    """Every declared metric's decimal scale, by metric name. **Pure.**
+
+    Keyed by name rather than by `(resource_type, name)` because `AzureMetrics` answers a
+    metric name and nothing else: the same name declared at two scales on two types would
+    take the first, which is the honest limit of what the exported table can tell apart.
+    No catalogue this product ships does that, and a future one that did would be declaring
+    one metric as two different quantities.
+    """
+    scales: dict[str, int] = {}
+    for declared in catalog.resource_types:
+        for metric in declared.metrics:
+            scales.setdefault(metric.name, metric.scale)
+    return scales
+
+
 async def _collect_trend(
     *,
     provider: Provider,
@@ -1594,10 +1621,13 @@ async def _collect_trend(
     period_statistics: Mapping[str, Mapping[str, Mapping[str, StatValue]]],
     count: int,
     now: Callable[[], datetime],
-) -> tuple[dict[str, dict[str, list[StatValue]]], dict[str, int]]:
+    workspace_id: str = "",
+    scales: Mapping[str, int] = MappingProxyType({}),
+) -> tuple[dict[str, dict[str, list[StatValue]]], dict[str, int], dict[str, str]]:
     """The historical trend's own passes: one calendar month at a time (Req 18.x).
 
-    Returns `({resource_id: {local_month: [values]}}, {local_month: slot_count})`.
+    Returns `({resource_id: {local_month: [values]}}, {local_month: slot_count},
+    {local_month: source})`.
 
     ## Why a second pass rather than a coarser grain over one long window
 
@@ -1626,7 +1656,7 @@ async def _collect_trend(
     were asked for.
     """
     if count <= 0 or not resources:
-        return {}, {}
+        return {}, {}, {}
 
     months = trend_months(
         plan.window,
@@ -1637,6 +1667,14 @@ async def _collect_trend(
 
     statistics: dict[str, dict[str, list[StatValue]]] = {}
     slots: dict[str, int] = {}
+    sources: dict[str, str] = {}
+
+    # Where the metrics API stops answering. Azure Monitor keeps platform metrics for 93
+    # days; a month wholly older than that is in a Log Analytics workspace or nowhere.
+    horizon = now() - timedelta(days=LIVE_METRICS_RETENTION_DAYS)
+    history_provider = (
+        provider if isinstance(provider, MetricsHistoryProvider) else None
+    )
 
     def absorb(local_month: str, collected: Mapping[str, Mapping[str, Mapping[str, StatValue]]]) -> None:
         for resource_id, metric_values in collected.items():
@@ -1651,8 +1689,40 @@ async def _collect_trend(
 
         if month.window == plan.window:
             absorb(month.local_month, period_statistics)
+            sources[month.local_month] = MONTH_SOURCE_MEASURED
             continue
 
+        # **Beyond the live horizon, ask the workspace instead.**
+        #
+        # Bounded by the month's *end*: a month that ended before the horizon has nothing
+        # left in the metrics API, and asking anyway would spend a request to be told so.
+        # A month straddling the horizon is still asked live — the API answers the part it
+        # holds, and `slot_count` already says how much of a month a figure rests on.
+        if month.window.end_utc <= horizon:
+            if history_provider is None or not workspace_id:
+                # No workspace, or a provider with no history surface. The month keeps its
+                # bucket and no statistics, which is what a trend one point short looks
+                # like — and `azure/preflight.py`'s depth probe is what tells the wizard
+                # this would happen before anyone waits for a run.
+                sources[month.local_month] = MONTH_SOURCE_MEASURED
+                continue
+            history = await history_provider.collect_metrics_history(
+                MetricsHistoryRequest(
+                    resources=list(resources),
+                    metrics_by_resource_type={
+                        resource_type: list(names)
+                        for resource_type, names in metrics_by_resource_type.items()
+                    },
+                    window=window_to_plain(month.window),
+                    workspace_id=workspace_id,
+                    scales=dict(scales),
+                )
+            )
+            absorb(month.local_month, history["statistics"])
+            sources[month.local_month] = MONTH_SOURCE_EXPORTED
+            continue
+
+        sources[month.local_month] = MONTH_SOURCE_MEASURED
         try:
             collected = await provider.collect(
                 CollectRequest(
@@ -1682,7 +1752,7 @@ async def _collect_trend(
 
         absorb(month.local_month, collected["statistics"])
 
-    return statistics, slots
+    return statistics, slots, sources
 
 
 def _resource_snapshots(
@@ -1697,6 +1767,7 @@ def _resource_snapshots(
     facts_by_resource: Mapping[str, tuple[FactEntry, ...]] = MappingProxyType({}),
     month_statistics: Mapping[str, Mapping[str, Sequence[StatValue]]] = MappingProxyType({}),
     month_slots: Mapping[str, int] = MappingProxyType({}),
+    month_sources: Mapping[str, str] = MappingProxyType({}),
 ) -> list[ResourceSnapshot]:
     """Every resource as the Snapshot_Builder takes it (Req 29.8, 31.1, 31.2, 35.3).
 
@@ -1753,6 +1824,7 @@ def _resource_snapshots(
             ResourceMonthBucket(
                 local_month=local_month,
                 slot_count=month_slots[local_month],
+                source=month_sources.get(local_month, MONTH_SOURCE_MEASURED),
                 statistics=tuple(
                     statistic_from_plain(value, fidelity_tier=tier)
                     for value in per_month.get(local_month, ())

@@ -20,7 +20,7 @@ import {
 import {
   HISTORICAL_LOOKBACK_MAX,
   HISTORICAL_LOOKBACK_MIN,
-  MAX_SEEDED_TREND_MONTHS,
+  LIVE_METRICS_TREND_MONTHS,
   type MetricCatalogSnapshot,
   type MetricSelectionItem,
 } from "@/lib/templates/definition"
@@ -996,12 +996,14 @@ function SectionInspector({
               {HISTORICAL_LOOKBACK_MAX}
             </span>
             . The trend plots your earlier reports for this profile; where there
-            are none, this run measures up to{" "}
+            are none, the run measures the months itself. Azure keeps live
+            metrics for about{" "}
             <span className="font-mono tabular-nums">
-              {MAX_SEEDED_TREND_MONTHS}
+              {LIVE_METRICS_TREND_MONTHS}
             </span>{" "}
-            months itself, each as its own collection window. Asking for more
-            than that without earlier reports reads short.
+            months — going deeper than that reads from a Log Analytics
+            workspace, and months with neither source are shown as not
+            measured.
           </p>
 
           {/*

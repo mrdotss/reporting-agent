@@ -46,6 +46,9 @@ __all__ = [
     "GuestCounterRow",
     "GuestCounterSpec",
     "LocationRouting",
+    "MetricsHistoryProvider",
+    "MetricsHistoryRequest",
+    "MetricsHistoryResult",
     "PlainData",
     "Provider",
     "RawArchiveState",
@@ -703,6 +706,55 @@ class GuestCounterProvider(Protocol):
     ) -> GuestCounterResult:
         """Query each counter for each resource. Returns one outcome per pair and does
         not raise for a failed query (Req 31.7)."""
+        ...
+
+
+class MetricsHistoryRequest(TypedDict):
+    """What to read out of a Log Analytics workspace for one calendar month.
+
+    `window` is that month's own half-open window, derived from local midnights — never a
+    trailing duration. A UTC-aligned or now-relative month would put the trend's figure for
+    a month at odds with the same month collected live, for a reason no reader could see;
+    `collect/buckets.py` records the same argument for why `P1D` is never requested.
+    """
+
+    resources: list[ResourceRecord]
+    metrics_by_resource_type: dict[str, list[str]]
+    window: Window
+    workspace_id: str
+    scales: dict[str, int]
+
+
+class MetricsHistoryResult(TypedDict):
+    """One month's statistics from the workspace, keyed as `collect` keys its own.
+
+    Deliberately the same shape `CollectResult["statistics"]` takes, so a month read from
+    logs reaches the trend in exactly the shape a month read live does and nothing
+    downstream can tell which produced it — except the month bucket's `source`, which says
+    so on purpose.
+    """
+
+    statistics: dict[str, dict[str, dict[str, StatValue]]]
+    gaps: list[GapRecord]
+
+
+@runtime_checkable
+class MetricsHistoryProvider(Protocol):
+    """The optional fourth surface: platform metrics older than the metrics API keeps.
+
+    Azure Monitor holds platform metrics for 93 days. Beyond that they exist **only** where
+    a diagnostic setting was exporting them to a Log Analytics workspace at the time, which
+    is a thing about the customer's configuration rather than about this product — so it is
+    an optional surface on the same terms :class:`GuestCounterProvider` is. A pipeline asks
+    `isinstance(provider, MetricsHistoryProvider)` and, when the answer is no, the trend
+    covers what the live API can answer and says so.
+    """
+
+    async def collect_metrics_history(
+        self, request: MetricsHistoryRequest
+    ) -> MetricsHistoryResult:
+        """One month out of the workspace. Does not raise for a failed query: a month of
+        history that could not be read is a shorter trend, not a failed run."""
         ...
 
 

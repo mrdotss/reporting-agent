@@ -1446,7 +1446,20 @@ The earlier run is named in `source_run_id`, so the coverage appendix can say wh
 figures this report measured and which it inherited — a distinction a reader is entitled
 to, and one that vanishes if a carried month is presented as a fresh observation."""
 
-MONTH_SOURCES: Final[tuple[str, ...]] = (MONTH_SOURCE_MEASURED, MONTH_SOURCE_CARRIED)
+MONTH_SOURCE_EXPORTED: Final[str] = "exported"
+"""This month came from a Log Analytics workspace, not the metrics API.
+
+Azure Monitor keeps platform metrics for 93 days; a month older than that survives only
+where a diagnostic setting was exporting it at the time. The figures are the same
+computation — the rollup is count-weighted in KQL and carries the live path's own
+estimators — but a reader is entitled to know which months rest on the customer's export
+configuration, because those are the ones that vanish if it is turned off."""
+
+MONTH_SOURCES: Final[tuple[str, ...]] = (
+    MONTH_SOURCE_MEASURED,
+    MONTH_SOURCE_CARRIED,
+    MONTH_SOURCE_EXPORTED,
+)
 
 _MONTH_PATTERN: Final[re.Pattern[str]] = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 

@@ -1818,13 +1818,17 @@ def _seed_trend_months(
     `0` when the definition declares no `historical_trend`, which is the normal case and
     the one where the two extra passes over the estate would buy nothing.
 
-    Otherwise the largest `lookback` any trend block asks for, **bounded by**
-    `MAX_TREND_MONTHS`. The bound is not a preference: each month is another `PT1H` pass
-    over every resource, so an unbounded lookback would turn an eight-minute run into an
-    hour-long one for a chart with twelve points. A longer history is the Log Analytics
-    question — whether the subscription exports platform metrics at all — which
-    `azure/preflight.py`'s depth probe already answers at connect time, and not a question
-    of running this loop more times.
+    Otherwise the largest `lookback` any trend block asks for, bounded by
+    `MAX_TREND_MONTHS`.
+
+    That bound used to be three, because every month was another `PT1H` pass over every
+    resource and an unbounded lookback would have turned an eight-minute run into an
+    hour-long one. It is no longer what limits the work: only the months inside Azure
+    Monitor's 93-day retention cost a pass, and 93 days is a little over three months, so
+    that cost is bounded by the retention window itself. Everything older is one Kusto
+    query per month against a Log Analytics workspace — or, without one, no request at all
+    and a month that says it was not measured. `azure/preflight.py`'s depth probe is what
+    tells an author which of those they are in before they wait for a run.
 
     Reads the same keys `_historical_selection_keys` does, so the months a run seeds and
     the blocks that would plot them cannot disagree about whether a trend was asked for.

@@ -56,6 +56,7 @@ __all__ = [
     "BASE_GRAIN",
     "DEFAULT_TIMEZONE",
     "FALLBACK_GRAIN",
+    "LIVE_METRICS_RETENTION_DAYS",
     "MAX_TREND_MONTHS",
     "DayBucket",
     "TrendMonth",
@@ -348,15 +349,34 @@ def day_buckets(window: Window, tz: TzInfo, grain: str) -> list[DayBucket]:
 
 # --- the historical trend's calendar (the months a run seeds) -----------------------
 
-MAX_TREND_MONTHS: Final[int] = 3
-"""How many calendar months a run will ever collect for the trend, whatever the
-profile's lookback asks for.
+LIVE_METRICS_RETENTION_DAYS: Final[int] = 93
+"""How long Azure Monitor keeps a platform metric.
 
-A bound rather than a setting. Each month is its own `PT1H` pass over the estate, so
-the cost is linear in this number and a profile asking for a year would quietly turn an
-eight-minute run into an hour-long one. Three is what the trend section reads as — this
-month against the two before it — and a longer history is the Log Analytics question,
-not a question of running this loop more times."""
+Published by Microsoft and not measurable from here, which is why it is a declared constant
+rather than something probed: the metrics API answers an out-of-retention window with empty
+intervals rather than an error, so "no data" and "too old" are the same response.
+
+What **is** measurable is how far back a subscription's Log Analytics workspace goes, and
+`azure/preflight.py`'s depth probe measures exactly that at connect time. This constant
+decides which months are worth asking the metrics API for; that probe decides how many
+months are worth asking for at all."""
+
+MAX_TREND_MONTHS: Final[int] = 24
+"""The ceiling on how many calendar months a run will seed, whatever a lookback asks for.
+
+**Not the ceiling on how much work a run does**, which is the thing that used to need
+bounding and no longer does. Each month inside :data:`LIVE_METRICS_RETENTION_DAYS` is its
+own `PT1H` pass over the estate, and 93 days is a little over three months — so the number
+of expensive passes is bounded by Azure's retention rather than by a number chosen here.
+Every month older than that is one Kusto query against a Log Analytics workspace covering
+the whole estate at once, or, where there is no workspace, no request at all and a bucket
+that says the month was not measured.
+
+So this is the same value `HISTORICAL_LOOKBACK_MAX` allows an author to ask for, and it is
+declared separately because they answer different questions: that one is what a profile may
+request, this one is what a run will act on. A future lookback bound above this would seed
+fewer months than it printed, which is the disagreement this constant exists to make
+visible rather than silent."""
 
 
 def month_name(day: date) -> str:

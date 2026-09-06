@@ -31,6 +31,7 @@ looser double would be testing the protocol rather than the pipeline.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -2588,3 +2589,149 @@ def test_a_month_the_provider_could_not_answer_keeps_its_bucket_and_records_no_g
     assert document["gaps"] == [] or all(
         gap.get("gap_type") != "trend_month_unavailable" for gap in document["gaps"]
     )
+
+
+# --------------------------------------------------------------------------- #
+# The trend beyond Azure Monitor's 93 days
+# --------------------------------------------------------------------------- #
+#
+# A platform metric older than the retention window is gone from the metrics API and
+# present in a Log Analytics workspace only where a diagnostic setting was exporting it.
+# `azure/preflight.py`'s depth probe measures whether, and how far back, that is true.
+
+
+class HistoryProvider:
+    """A `Provider` plus the optional history surface, over a scripted rollup."""
+
+    def __init__(self, inner: Any, statistics: dict[str, Any] | None = None) -> None:
+        self._inner = inner
+        self._statistics = statistics or {}
+        self.windows: list[dict[str, str]] = []
+
+    async def discover(self, scope: Any) -> Any:
+        return await self._inner.discover(scope)
+
+    async def collect(self, request: Any) -> Any:
+        return await self._inner.collect(request)
+
+    def capabilities(self) -> Any:
+        return self._inner.capabilities()
+
+    async def collect_metrics_history(self, request: Any) -> Any:
+        self.windows.append(dict(request["window"]))
+        return {"statistics": self._statistics, "gaps": []}
+
+
+def collect_with_history(
+    *,
+    statistics: dict[str, Any] | None = None,
+    workspace: str | None = "ws-0001",
+    now: str = "2026-11-01T00:00:00+00:00",
+) -> tuple[dict[str, Any], HistoryProvider]:
+    """A July report generated in **November** — the case this path exists for.
+
+    93 days back from 2026-11-01 is 2026-07-31, so May and June both ended before the
+    metrics API's retention and only the workspace still holds them. Running the same
+    report in August would find all three months live, which is why the horizon is checked
+    against each month's own end rather than against the lookback.
+    """
+    harness = one_vm_harness(
+        batches=[batch_response([WEB_01])],
+        payload_body=payload(start="2026-07-01", end="2026-07-31"),
+        context_body=context(log_analytics_workspace_id=workspace),
+    )
+    provider = HistoryProvider(harness.provider, statistics)
+    sink = CollectionSink()
+    instant = datetime.fromisoformat(now)
+
+    async def go() -> None:
+        async for _ in run_collection(
+            payload=harness.payload,
+            context=harness.context,
+            steps=harness.steps,
+            artifact_bucket="rpt-artifacts-test",
+            sink=sink,
+            provider=provider,
+            object_store=harness.store,
+            catalog=CATALOG,
+            seed_trend_months=3,
+            now=lambda: instant,
+        ):
+            pass
+
+    asyncio.run(asyncio.wait_for(go(), timeout=WATCHDOG_S))
+    return sink.require().document, provider
+
+
+def test_a_month_past_the_live_horizon_is_read_from_the_workspace() -> None:
+    """Asking the metrics API for a month it no longer holds spends a request to be told
+    nothing — it answers an out-of-retention window with empty intervals, not an error."""
+    document, provider = collect_with_history()
+
+    assert [window["start"] for window in provider.windows] == ["2026-05-01", "2026-06-01"]
+
+
+def test_a_workspace_sourced_month_says_so_on_the_bucket() -> None:
+    """A reader is entitled to know which months rest on the customer's export
+    configuration, because those are the ones that vanish if it is turned off."""
+    document, _ = collect_with_history()
+    sources = {
+        bucket["local_month"]: bucket["source"]
+        for bucket in document["resources"][0]["month_buckets"]
+    }
+
+    assert sources == {
+        "2026-05": "exported",
+        "2026-06": "exported",
+        "2026-07": "measured",
+    }
+
+
+def test_the_report_s_own_month_is_never_read_from_the_workspace() -> None:
+    """It is inside the retention window by construction, and the period pass has already
+    measured it — so the trend's last point equals the period figure exactly."""
+    _, provider = collect_with_history()
+
+    assert "2026-07-01" not in [window["start"] for window in provider.windows]
+
+
+def test_a_subscription_with_no_workspace_asks_nothing_and_keeps_its_buckets() -> None:
+    """The month keeps its bucket and no statistics, which is what a trend one point short
+    looks like. The depth probe is what tells the wizard this before anyone waits."""
+    document, provider = collect_with_history(workspace=None)
+
+    assert provider.windows == []
+    buckets = document["resources"][0]["month_buckets"]
+    assert len(buckets) == 3
+    assert [b["statistics"] for b in buckets[:2]] == [[], []]
+
+
+def test_exported_values_reach_the_snapshot_as_ordinary_statistics() -> None:
+    """A month read from the workspace and a month read live are the same shape, so
+    nothing downstream can tell them apart — except the bucket's `source`."""
+    exported = {
+        WEB_01: {
+            "Percentage CPU": {
+                "avg": {
+                    "metric": "Percentage CPU",
+                    "statistic": "avg",
+                    "value": "31.20",
+                    "unit": "percent",
+                    "estimator": "exact_count_weighted",
+                    "sample_count": 744,
+                }
+            }
+        }
+    }
+    document, _ = collect_with_history(statistics=exported)
+    by_month = {
+        bucket["local_month"]: bucket
+        for bucket in document["resources"][0]["month_buckets"]
+    }
+
+    values = [
+        entry["value"]
+        for entry in by_month["2026-05"]["statistics"]
+        if entry["metric"] == "Percentage CPU" and entry["statistic"] == "avg"
+    ]
+    assert values == ["31.20"]
