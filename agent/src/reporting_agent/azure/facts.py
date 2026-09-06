@@ -198,13 +198,6 @@ _SHARED_SCOPE: Final[str] = "shared"
 _SUBSCRIPTION_RESOURCE_TYPE: Final[str] = "Microsoft.Resources/subscriptions"
 """The type of a `/subscriptions/<guid>` id, which names no provider of its own."""
 
-_BASELINE_TIER: Final[str] = "baseline"
-"""What a synthetic row carries until `_resource_snapshots` stamps the resolved tier on it.
-
-The literal rather than an import: `FIDELITY_BASELINE` lives in `collect/pipeline.py`, and
-an Azure-boundary module reaching into the pipeline to name a default would invert the one
-dependency direction this package keeps."""
-
 _ADVISOR_ID_SUFFIX_CHARS: Final[int] = 16
 """How much of the content digest the synthetic id carries.
 
@@ -476,12 +469,22 @@ def _advisor_rows(
     Content-derived, two identical recommendations on one resource collapse to one row, which
     is correct: they are the same finding stated twice.
 
-    ## A recommendation about something the run never inventoried is still a row
+    ## Only a recommendation about a resource this run inventoried becomes a row
 
-    Advisor recommends on the subscription itself, and on resources a scope filter excluded.
-    `parents` answers for the ones this run knows; the rest fall back to the id's own last
-    segment for a name and to the id's own provider path for a type, so the row still says
-    what it is about instead of being dropped for want of a lookup.
+    A row is a resource, and `compile/snapshot_view.py` requires every resource to carry a
+    non-empty `location` and `resource_group`. A recommendation names those nowhere — they
+    belong to the resource it is about — so a row for a resource this run does not hold
+    could only carry invented ones.
+
+    That is not hypothetical: Advisor recommends on the **subscription itself** ("enable
+    Defender for Cloud"), and a subscription has no region and no resource group. The first
+    version of this emitted the row with both empty, and every report against that
+    subscription failed to compile with `/resources/0/location is missing or is not a
+    non-empty string` — after collecting all 55 resources successfully.
+
+    Skipped rather than filled in, because the alternative is a fabricated region and a
+    fabricated resource group on a row a reader would take at face value. The caller counts
+    what was skipped and says so in the log, so nothing is dropped quietly.
     """
     if normalized is None:
         return None, ()
@@ -514,19 +517,20 @@ def _advisor_rows(
         seen.add(child_id)
 
         parent = parents.get(parent_id.casefold())
-        parent_type = (
-            parent["resource_type"] if parent else _type_from_resource_id(parent_id)
-        )
-        parent_name = parent["name"] if parent else parent_id.rsplit("/", 1)[-1]
+        # Both are required of every resource by the compiler, and a recommendation has
+        # neither of its own — see the note above.
+        if parent is None or not parent["location"] or not parent["resource_group"]:
+            seen.discard(child_id)
+            continue
 
         rewritten.append({**item, "resource_id": child_id})
         records.append(
             ResourceRecord(
                 resource_id=child_id,
-                name=advisor_row_name(parent_name, parent_type),
+                name=advisor_row_name(parent["name"], parent["resource_type"]),
                 resource_type=ADVISOR_CHILD_RESOURCE_TYPE,
-                location=parent["location"] if parent else "",
-                resource_group=parent["resource_group"] if parent else "",
+                location=parent["location"],
+                resource_group=parent["resource_group"],
                 tags={},
                 sku_name="",
                 power_state_raw="",
@@ -537,7 +541,7 @@ def _advisor_rows(
                 # The parent's, where this run knows the parent. Overwritten in any case by
                 # `_resource_snapshots`, which stamps the resolved tier onto every record —
                 # this is the honest value to carry until it does.
-                fidelity_tier=parent["fidelity_tier"] if parent else _BASELINE_TIER,
+                fidelity_tier=parent["fidelity_tier"],
             )
         )
 
@@ -958,6 +962,19 @@ class FactCollector:
                 record["resource_id"].casefold(): record for record in resources
             },
         )
+        skipped = len(_items_of(normalized)) - len(synthetic)
+        if skipped > 0:
+            # Not a gap: a gap says a fact this run asked for is absent, and these are
+            # findings about resources the run never asked about. Logged so the count is
+            # recoverable, because "Advisor returned 26 and the report shows 25" is a
+            # question someone will ask.
+            logger.info(
+                "%d Advisor recommendation(s) name a resource outside this run's "
+                "inventory — the subscription itself, or a resource the scope excluded — "
+                "and carry no location or resource group of their own, so no row was "
+                "emitted for them.",
+                skipped,
+            )
 
         # The **rewritten** body is what is archived, so a replay folds the same ids this
         # run folded — `verify/replay.py` drives its fold from the archived object's own
