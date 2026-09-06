@@ -41,6 +41,7 @@ from typing import Any, Final
 
 import pytest
 
+import snapshot_factory as sf
 from fakes.azure_ports import FakeFactsPort, empty_fact_list
 from fakes.object_store import InMemoryObjectStore
 from reporting_agent.azure.facts import (
@@ -233,11 +234,12 @@ def test_the_two_branches_are_told_apart_by_gap_type_alone() -> None:
     assert GAP_TYPE_FACT_UNAVAILABLE != ADVISOR_ABSENT_GAP_TYPE
 
 
-def test_a_recommendation_about_a_resource_outside_the_run_is_still_a_row() -> None:
-    """Advisor recommends on the subscription itself and on resources a scope filter
-    excluded. Dropping those for want of an inventory lookup would hide findings the
-    consultant asked Azure for; the row falls back to the id's own last segment and the
-    type its id names."""
+def test_a_recommendation_about_a_resource_outside_the_run_is_not_a_row() -> None:
+    """A row is a resource, and every resource must carry a non-empty `location` and
+    `resource_group` — which a recommendation has none of its own. For a resource this run
+    does not hold there is nothing to inherit them from, so the row would carry invented
+    ones.
+    """
     machine = vm("prod-web-01")
     other = vm("prod-web-02")
     facts, gaps, rows = collect(
@@ -249,9 +251,64 @@ def test_a_recommendation_about_a_resource_outside_the_run_is_still_a_row() -> N
         ),
     )
 
-    assert [row["name"] for row in rows] == ["prod-web-02 (Virtual Machine)"]
-    assert gaps == []
-    assert {fact["key"] for fact in facts} == set(ADVISOR_KEYS)
+    assert rows == []
+    assert facts == []
+    # Not a gap either: a gap says a fact this run asked for is absent, and this is a
+    # finding about a resource the run never asked about. The count is logged.
+    assert {gap["gap_type"] for gap in gaps} == {ADVISOR_ABSENT_GAP_TYPE}
+
+
+def test_a_subscription_scoped_recommendation_is_not_a_row() -> None:
+    """The defect this guard exists for, and it reached production.
+
+    Advisor recommends on the **subscription itself** — "enable Defender for Cloud" — and a
+    subscription has no region and no resource group. The row was emitted with both empty,
+    and every report against that subscription failed to compile with
+    `/resources/0/location is missing or is not a non-empty string`, after collecting all 55
+    resources successfully. The collection was fine; the document could not be built from
+    it.
+    """
+    machine = vm("prod-web-01")
+    _, _, rows = collect(
+        resources=[machine],
+        recommendations=RawHttpResponse(
+            status=200,
+            headers={},
+            body={
+                "value": [
+                    recommendation(resource_id=f"/subscriptions/{SUBSCRIPTION}"),
+                    recommendation(resource_id=machine["resource_id"]),
+                ]
+            },
+        ),
+    )
+
+    assert [row["name"] for row in rows] == ["prod-web-01 (Virtual Machine)"]
+
+
+def test_every_row_carries_a_location_and_a_resource_group() -> None:
+    """The property the guard above is one case of, asserted over every row: a row the
+    compiler refuses is a report that fails after the collection succeeded."""
+    machine = vm("prod-web-01")
+    _, _, rows = collect(
+        resources=[machine],
+        recommendations=RawHttpResponse(
+            status=200,
+            headers={},
+            body={
+                "value": [
+                    recommendation(resource_id=machine["resource_id"], solution=text)
+                    for text in ("Do A", "Do B", "Do C")
+                ]
+            },
+        ),
+    )
+
+    assert len(rows) == 3
+    for row in rows:
+        assert row["location"] == machine["location"]
+        assert row["resource_group"] == machine["resource_group"]
+        assert row["fidelity_tier"] == machine["fidelity_tier"]
 
 
 # --------------------------------------------------------------------------- #
@@ -441,3 +498,61 @@ def test_a_hundred_resources_cost_one_request_not_one_hundred() -> None:
 
     assert len(port.advisor_calls) == 1
     assert port.advisor_calls[0] == {"subscription_id": SUBSCRIPTION}
+
+
+# --------------------------------------------------------------------------- #
+# A row the compiler accepts
+# --------------------------------------------------------------------------- #
+
+
+def test_a_row_compiles_into_a_snapshot_view() -> None:
+    """The chain that broke, end to end.
+
+    The rows were unit-tested and the snapshot was unit-tested; nothing drove a
+    recommendation row into `build_snapshot_view`, which is where `location` and
+    `resource_group` are required — so a row carrying neither passed every test and failed
+    every report. This asserts the row is a resource the compiler will accept, which is the
+    only thing "a recommendation is a resource" has to mean.
+    """
+    from decimal import Decimal
+
+    from reporting_agent.collect.snapshot import (
+        ResourceSnapshot,
+        SkuCapacity,
+        build_snapshot,
+    )
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+    machine = vm("prod-web-01")
+    _, _, rows = collect(
+        resources=[machine],
+        recommendations=RawHttpResponse(
+            status=200,
+            headers={},
+            body={
+                "value": [
+                    # The production shape: a subscription-scoped recommendation beside a
+                    # resource-scoped one. The first has no region and no resource group.
+                    recommendation(resource_id=f"/subscriptions/{SUBSCRIPTION}"),
+                    recommendation(resource_id=machine["resource_id"]),
+                ]
+            },
+        ),
+    )
+    assert rows, "no row to compile"
+
+    document = sf.build(
+        resources=[
+            ResourceSnapshot(
+                record=row,
+                sku=SkuCapacity(name="", vcpus_available=None, memory_bytes=None),
+            )
+            for row in rows
+        ]
+    )
+    view = build_snapshot_view(document)
+
+    assert [resource.name for resource in view.resources] == [
+        "prod-web-01 (Virtual Machine)"
+    ]
+    assert view.resources[0].resource_type == "Microsoft.Advisor/recommendations"
