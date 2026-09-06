@@ -12,7 +12,9 @@ pins how the block chooses between the two sources.
 
 from __future__ import annotations
 
+import asyncio
 import os
+from datetime import UTC, date, datetime
 
 import pytest
 
@@ -333,3 +335,113 @@ def test_the_commentary_mints_no_figure_of_its_own() -> None:
     chart_only = compile_document(definition(), view=view)
 
     assert with_prose.figure_count == chart_only.figure_count
+
+
+# --------------------------------------------------------------------------- #
+# A seeded month must not disturb the period it sits beside
+# --------------------------------------------------------------------------- #
+
+
+def test_a_carried_month_round_trips_field_for_field() -> None:
+    """The defect: `_month_buckets` rebuilt each statistic from its **required** fields and
+    dropped the rest — `estimated` and `label` off every percentile, `formula`,
+    `derived_from`, `note` and `observation` off every derived value. 180 differences
+    across one snapshot's month buckets, and a `replay_hash_mismatch` on a run whose
+    figures were all correct.
+
+    Asserted as a **round trip** rather than as a field list, so a field added to
+    `StatisticEntry` later fails here instead of silently going missing there.
+    """
+    from reporting_agent.collect.snapshot import ResourceMonthBucket, ResourceSnapshot, SkuCapacity
+    from reporting_agent.verify.replay import _month_buckets
+
+    resource = sf.vm(
+        resource_id=f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod"
+        f"/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+        name="prod-web-01",
+    )
+    # Every optional field a statistic can carry: an exact one, a percentile (estimated,
+    # label) and a derived one (formula, derived_from, note, observation).
+    rich = ResourceMonthBucket(
+        local_month="2026-06",
+        slot_count=720,
+        statistics=(
+            sf.exact(CPU, "avg", "27.65"),
+            sf.percentile(CPU, "p95", "68.40"),
+            sf.derived("42.10"),
+        ),
+    )
+    document = sf.build(
+        resources=[
+            ResourceSnapshot(
+                record=resource.record,
+                sku=SkuCapacity(name="", vcpus_available=None, memory_bytes=None),
+                month_buckets=(rich,),
+            )
+        ]
+    )
+    stored = document["resources"][0]["month_buckets"]
+
+    carried = _month_buckets(stored)
+    assert [bucket.to_plain_data() for bucket in carried] == stored
+
+
+def test_a_month_pass_writes_nothing_to_the_run_s_archive() -> None:
+    """The defect this exists for, and it reached production.
+
+    A month is collected over a window that is **not** this run's, and
+    `verify/replay.py` re-aggregates every archived metric object into the period's
+    accumulators without asking which window it came from. A July report that seeded June
+    and July archived all three passes into its own prefix, and the replay folded them all
+    into August: 832 `interval_counts_missing` entries for July intervals against a
+    snapshot recording 43 gaps, and a `replay_hash_mismatch` on a correct collection. The
+    recorded `object_count` said 8 while 14 objects sat at the prefix, because the count is
+    read before the trend runs.
+
+    Asserted through the request the trend issues, which is where the decision is made.
+    """
+    from reporting_agent.collect.pipeline import _collect_trend
+    from reporting_agent.collect.buckets import resolve_timezone, resolve_window
+
+    seen: list[object] = []
+
+    class Recording:
+        async def collect(self, request):
+            seen.append(request.get("archive", True))
+            return {"statistics": {}, "gaps": []}
+
+    tz = resolve_timezone("Asia/Jakarta")
+    window = resolve_window(date(2026, 7, 1), date(2026, 7, 31), tz)
+
+    class Plan:
+        run_id = "r"
+        scope = {"subscription_id": "s", "resource_types": [], "resource_groups": [], "tag_filters": {}}
+        timezone_name = "Asia/Jakarta"
+        grain = "PT1H"
+
+    plan = Plan()
+    plan.window = window
+    plan.tz = tz
+
+    asyncio.run(
+        _collect_trend(
+            provider=Recording(),
+            plan=plan,
+            resources=[
+                dict(
+                    sf.resource_record(
+                        resource_id=f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups"
+                        f"/rg-prod/providers/Microsoft.Compute/virtualMachines/prod-web-01",
+                        name="prod-web-01",
+                    )
+                )
+            ],
+            metrics_by_resource_type={"Microsoft.Compute/virtualMachines": ["Percentage CPU"]},
+            period_statistics={},
+            count=3,
+            now=lambda: datetime(2026, 8, 1, tzinfo=UTC),
+        )
+    )
+
+    assert seen, "the trend issued no request at all"
+    assert all(archive is False for archive in seen), seen

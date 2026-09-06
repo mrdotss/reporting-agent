@@ -220,6 +220,26 @@ class ArchiveWriter:
     """
 
     store: ObjectStore
+    records: bool = True
+    """Whether a write actually lands an object, or is discarded.
+
+    `True` for the run's own archive. `False` for a pass whose responses **no replay
+    folds**, which today is the historical trend: it collects a calendar month at a time,
+    over windows that are not this run's, and `verify/replay.py` re-aggregates every
+    archived metric object into the period's accumulators without asking which window it
+    came from.
+
+    That is not a hypothetical. A July report seeded a trend over June and July, both
+    passes archived into the run's own prefix, and the replay folded all three months into
+    August's accumulators: 832 `interval_counts_missing` entries for July intervals against
+    a snapshot recording 43 gaps, and a `replay_hash_mismatch` on a collection that was
+    entirely correct. The recorded `object_count` was 8 while 14 objects sat at the prefix,
+    because the count is read before the trend runs.
+
+    A month's figures are carried through replay rather than recomputed — see
+    `verify/replay.py::ReplayResource.month_buckets` — so an object written for one is,
+    in `distinct_dimensions`'s own words, "an archive entry no replay folds anything from."
+    """
     _sequence: int = field(default=0, repr=False)
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     _incomplete: bool = field(default=False, repr=False)
@@ -286,6 +306,12 @@ class ArchiveWriter:
                 "resource_ids must be non-empty; a response naming no resource is "
                 "not one this method can archive"
             )
+
+        # A discarding writer consumes no sequence number and counts nothing, so the
+        # run's own `object_count` still equals what a replay finds at its prefix. See
+        # `records`.
+        if not self.records:
+            return ArchiveWriteResult(wrote=False, gaps=(), key="")
 
         sequence = self._next_sequence()
         key = archive_key(

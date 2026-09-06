@@ -331,7 +331,21 @@ class ScopeSpec(TypedDict):
     tag_filters: dict[str, str]
 
 
-class CollectRequest(TypedDict):
+class _CollectRequestExtras(TypedDict, total=False):
+    """The one optional key a collect request may carry."""
+
+    archive: bool
+    """Whether this pass's responses belong in the run's raw archive. Defaults to `True`.
+
+    `False` for the historical trend, which collects a calendar month at a time over
+    windows that are **not** this run's. `verify/replay.py` re-aggregates every archived
+    metric object into the period's accumulators without asking which window it came from,
+    so a trend response in the archive is a June interval folded into August — see
+    `collect/archive.py::ArchiveWriter.records` for what that cost.
+    """
+
+
+class CollectRequest(_CollectRequestExtras):
     """What `collect` needs: the scope, the inventory `discover` returned, the metric
     names per resource type, the grain, the half-open window and the run's timezone."""
 

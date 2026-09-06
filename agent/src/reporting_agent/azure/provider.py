@@ -64,6 +64,7 @@ import logging
 import math
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from dataclasses import replace as dc_replace
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Final, cast
@@ -683,10 +684,29 @@ class AzureProvider:
         # each group its own would be one more place for two of them to differ.
         day_fold = DayFold(tz=resolve_timezone(request["timezone"]))
 
+        # The collector this pass writes through. Identical to the run's own except for
+        # the archive, which the historical trend does not use: its windows are not this
+        # run's, and `verify/replay.py` folds every archived metric object into the
+        # period's accumulators without asking which window it came from.
+        #
+        # `replace` rather than a second `MetricsCollector`: the region resolver and the
+        # per-subscription semaphores are passed through by reference, so a trend pass
+        # still shares the run's concurrency budget and still learns from a location the
+        # period pass found unreachable.
+        metrics = self.metrics
+        if request.get("archive", True) is False:
+            metrics = dc_replace(
+                self.metrics,
+                archive_writer=ArchiveWriter(
+                    store=self.metrics.archive_writer.store, records=False
+                ),
+            )
+
         for key, group in self._groups(request["resources"]):
             resource_type, location = key
             group_gaps, group_statistics, group_days, group_capacities = (
                 await self._collect_group(
+                    metrics=metrics,
                     subscription_id=subscription_id,
                     resource_type=resource_type,
                     location=location,
@@ -703,8 +723,8 @@ class AzureProvider:
             day_statistics.update(group_days)
             capacities.update(group_capacities)
 
-        resolver = self.metrics.region_resolver
-        archive = self.metrics.archive_writer
+        resolver = metrics.region_resolver
+        archive = metrics.archive_writer
 
         collected = CollectResult(
             statistics=statistics,
@@ -753,6 +773,7 @@ class AzureProvider:
     async def _collect_group(
         self,
         *,
+        metrics: MetricsCollector,
         subscription_id: str,
         resource_type: str,
         location: str,
@@ -841,7 +862,7 @@ class AzureProvider:
                     gaps.append(gap)
 
         gaps.extend(
-            await self.metrics.collect_group(
+            await metrics.collect_group(
                 actor_id=self.actor_id,
                 run_id=self.run_id,
                 subscription_id=subscription_id,
