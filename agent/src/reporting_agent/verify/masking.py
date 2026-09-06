@@ -24,9 +24,9 @@ Matching an identifier as a whole — leftmost-longest, non-overlapping — remo
 before any later stage can see the digits inside it.
 
 **Stages 3 and 4 remove the other things that look numeric and are not**: GUIDs,
-Azure resource ids, IP addresses and CIDR suffixes; then calendar dates, timestamps
-and ISO 8601 durations, so the grain `PT1H` and the window bound `2026-07-01` are not
-read as measurements.
+Azure resource ids, IP addresses and CIDR suffixes; then calendar dates and months,
+timestamps and ISO 8601 durations, so the grain `PT1H`, the window bound `2026-07-01`
+and the trend's month label `2026-06` are not read as measurements.
 
 **Stage 5 is the derived static-text allowlist** — see `verify/allowlist.py`, which
 derives it afresh on every run rather than maintaining a list that would drift.
@@ -113,6 +113,17 @@ _TEMPORAL: Final[re.Pattern[str]] = re.compile(
         (
             r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?",
             r"\d{4}-\d{2}-\d{2}",
+            # A calendar month, `2026-06`. Listed **after** the full date so a date is
+            # never consumed seven characters at a time — Python alternates
+            # leftmost-first, not longest — and closed with a lookahead so `2026-061`
+            # leaves no stray `1` behind.
+            #
+            # The historical trend labels a seeded month this way, because a month is not
+            # a day and `2026-06-01` would say it was. Those labels are the companion
+            # table's column headers, so three months put three unmatched tokens in a
+            # document whose every figure was correct. A trend over prior runs never hit
+            # it: its points are labelled `2026-06-01 – 2026-06-30`, two full dates.
+            r"\d{4}-\d{2}(?!\d)",
             r"\d{2}:\d{2}(?::\d{2})?",
             # An ISO 8601 duration, requiring at least one component so a bare `P`
             # or a stray `PT` matches nothing.

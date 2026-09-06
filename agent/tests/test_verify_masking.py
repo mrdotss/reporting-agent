@@ -166,11 +166,48 @@ def test_a_cidr_suffix_does_not_survive_its_address() -> None:
         "PT1H30M",
         "14:35",
         "14:35:07",
+        # A calendar month — the historical trend's own label for a seeded month.
+        "2026-06",
+        "2026-12",
     ],
 )
 def test_a_temporal_value_is_masked(temporal: str) -> None:
     """Req 28.5 — the grain and the window bounds are not measurements."""
     assert _survivors(f"window {temporal} applied") == []
+
+
+def test_a_trend_s_month_labels_are_not_measurements() -> None:
+    """The defect this covers, and it reached production.
+
+    A seeded month is labelled `2026-06` — a month is not a day, and `2026-06-01` would
+    say it was — and those labels are the companion table's column headers. Stage 4 knew
+    `\d{4}-\d{2}-\d{2}` and not `\d{4}-\d{2}`, so three months put three
+    `unmatched_prose_token` findings in a document whose every figure was correct, and the
+    report was withheld.
+
+    A trend over prior runs never hit it: its points are labelled
+    `2026-06-01 – 2026-06-30`, which is two full dates.
+    """
+    assert _survivors("2026-05 2026-06 2026-07") == []
+    assert _survivors("2026-06-01 – 2026-06-30") == []
+
+
+def test_a_month_does_not_eat_the_head_of_a_date() -> None:
+    """Python alternates leftmost-**first**, not longest, so a month pattern placed before
+    the full date would consume `2026-06` out of `2026-06-15` and leave `-15` behind."""
+    assert _survivors("collected 2026-06-15 exactly") == []
+
+
+def test_a_month_pattern_masks_no_prefix_of_a_longer_token() -> None:
+    """`2026-061` is not a month, and it is not masked at all — a token carrying digits
+    that nothing explains is a survivor, which is the whole point of the pass.
+
+    What the closing lookahead prevents is masking its first seven characters and
+    reporting the leftover `1`: a finding pointing at one digit in the middle of a token,
+    which is the same misleading survivor stage 1's longest-first ordering exists to
+    avoid. So the assertion is on the survivor's **shape**, not on its absence.
+    """
+    assert _survivors("id 2026-061 here") == ["2026-061"]
 
 
 def test_a_bare_p_is_not_treated_as_a_duration() -> None:
