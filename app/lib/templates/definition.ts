@@ -391,6 +391,22 @@ export const HISTORICAL_LOOKBACK_MIN = 2
 export const HISTORICAL_LOOKBACK_MAX = 24
 
 /**
+ * How many months of history a run measures **from Azure Monitor** before it needs a Log
+ * Analytics workspace. Mirrors `LIVE_METRICS_RETENTION_DAYS` in
+ * `agent/src/reporting_agent/collect/buckets.py`, expressed in whole months;
+ * `test/trend-months.static.test.ts` asserts the two agree.
+ *
+ * Azure Monitor keeps a platform metric for 93 days — a little over three months. Beyond
+ * that a month exists only where a diagnostic setting was exporting it to a workspace at
+ * the time, which is what the depth measured at connect time reports and what
+ * {@link AvailableHistory} states beside this control.
+ *
+ * It is quoted in the wizard, which is why it is declared here rather than left as a number
+ * the agent knows and the interface guesses at.
+ */
+export const LIVE_METRICS_TREND_MONTHS = 3
+
+/**
  * Section catalogue keys by provider, derived from `catalog/sections.v1.json` at
  * build time. Used by the validator to reject an unknown `type`. One file, both
  * halves — the Python half reads the same JSON in `catalog/loader.py`.

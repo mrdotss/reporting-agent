@@ -428,6 +428,28 @@ class MetricsPort(Protocol):
         """
         ...
 
+    async def query_metrics_rollup(
+        self,
+        *,
+        workspace_id: str,
+        resource_ids: Sequence[str],
+        metric_names: Sequence[str],
+        start_time: str,
+        end_time: str,
+    ) -> RawHttpResponse:
+        """One calendar month's exported platform metrics, out of Log Analytics.
+
+        The historical trend beyond Azure Monitor's 93-day retention. A platform metric
+        older than that is gone from the metrics API and lives in a workspace **only**
+        where a diagnostic setting was exporting it at the time, which is what
+        `azure/preflight.py`'s depth probe measures at connect time.
+
+        Bounded by the month's own half-open window rather than by a trailing duration,
+        exactly as :meth:`query_logical_disk_free_space` is: a July figure collected in
+        December must be about July.
+        """
+        ...
+
     async def probe_region(self, *, location: str, subscription_id: str) -> ProbeResult:
         """One minimal request against `location`'s regional data-plane endpoint,
         reading **only** the status code (Req 5.1).

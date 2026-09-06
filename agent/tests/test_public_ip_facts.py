@@ -58,18 +58,17 @@ def test_public_ip_addresses_declares_the_four_section_5_facts() -> None:
     catalog = load_catalog()
     facts = catalog.facts.for_resource_type(PUBLIC_IP_TYPE)
     keys = {entry.key for entry in facts}
-    # Section 5's own columns, which is what this test is about. Advisor's three are
-    # declared on **every** type — it recommends across the estate rather than a fixed
-    # tuple — so they are excluded rather than listed here, and asserted separately.
-    projected = [entry for entry in facts if entry.source != "advisor"]
-    assert {entry.key for entry in projected} == {
+    # Section 5's own columns, and now all of them: Advisor's three used to be widened
+    # across every reportable type, and moved onto `Microsoft.Advisor/recommendations`
+    # when a recommendation became its own row. A public IP address declares none of them.
+    assert keys == {
         "address",
         "allocation_method",
         "sku",
         "association",
     }
-    assert {"category", "impact", "recommendation"} <= keys
-    for entry in projected:
+    assert not {"category", "impact", "recommendation"} & keys
+    for entry in facts:
         assert entry.projectable, entry.key
         assert entry.source == "resource_graph", entry.key
         assert entry.value_kind == "text", entry.key

@@ -36,17 +36,43 @@ export type SectionOfferabilityInput = {
  * names" (`lib/profiles/facts.ts`'s `COLLECTED_FACT_SOURCES`) — **not** the wider declared
  * vocabulary (`arm` is declared and used by nothing). Keying on the declared set would mark
  * a section `Ready` that renders empty the moment nothing backs it.
+ *
+ * ## Resource types are compared case-folded
+ *
+ * An ARM resource type id is **case-insensitive**, and the two sides of this comparison are
+ * two strings written at different times by different authors. Azure Resource Graph answers
+ * its `type` column lowercased — `microsoft.compute/virtualmachines` — while the section
+ * catalogue declares `Microsoft.Compute/virtualMachines`, which is the spelling Azure's own
+ * documentation uses. A case-sensitive `has` matches neither against the other.
+ *
+ * The defect that produced this: a subscription holding three virtual machines offered
+ * **no** metric-bearing section, every one of them disabled with "Not yet available: needs
+ * Microsoft.Compute/virtualMachines" — naming, as the missing input, precisely the type the
+ * scan had just counted three of. It stayed invisible while the scan itself was broken,
+ * because a scan with no types at all makes every section unavailable for the honest
+ * reason, and the two failures look identical from the wizard.
  */
 export function offerable(
   entry: SectionOfferabilityInput,
   scanTypeCounts: TypeCounts,
   collectedFactSources: ReadonlySet<string>
 ): boolean {
-  const collectedTypes = new Set(Object.keys(scanTypeCounts))
+  const collectedTypes = collectedTypeSet(scanTypeCounts)
   return (
-    entry.needs_resource_types.every((rt) => collectedTypes.has(rt)) &&
+    entry.needs_resource_types.every((rt) => collectedTypes.has(rt.toLowerCase())) &&
     entry.needs_fact_sources.every((source) => collectedFactSources.has(source))
   )
+}
+
+/**
+ * The scan's counted resource types, case-folded for comparison.
+ *
+ * A fact source is **not** folded alongside them: those are a closed vocabulary this
+ * codebase writes on both sides (`advisor`, `recovery_services`, …), so a case difference
+ * there would be a spelling mistake to fix rather than two valid spellings of one id.
+ */
+function collectedTypeSet(scanTypeCounts: TypeCounts): ReadonlySet<string> {
+  return new Set(Object.keys(scanTypeCounts).map((type) => type.toLowerCase()))
 }
 
 /**
@@ -61,9 +87,12 @@ export function missingInputs(
   scanTypeCounts: TypeCounts,
   collectedFactSources: ReadonlySet<string>
 ): readonly string[] {
-  const collectedTypes = new Set(Object.keys(scanTypeCounts))
+  const collectedTypes = collectedTypeSet(scanTypeCounts)
+  // Reported in the catalogue's own spelling, not the scan's: the consultant is being told
+  // which resource type the section needs, and `Microsoft.Compute/virtualMachines` is the
+  // spelling Azure's documentation uses. Only the comparison is case-folded.
   const missingTypes = entry.needs_resource_types.filter(
-    (rt) => !collectedTypes.has(rt)
+    (rt) => !collectedTypes.has(rt.toLowerCase())
   )
   const missingSources = entry.needs_fact_sources.filter(
     (source) => !collectedFactSources.has(source)

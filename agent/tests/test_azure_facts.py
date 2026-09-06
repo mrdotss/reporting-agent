@@ -649,10 +649,12 @@ def test_the_collector_records_no_gap_for_a_source_the_type_does_not_declare() -
     """Req 5.9 — a gap states that a fact the type declares is absent, not that a fact the
     type never had is absent. Without it every storage account collects `no_reservations`.
 
-    Written as "declares none" while a storage account declared no facts at all. It now
-    declares Advisor's three, because Advisor recommends across every type rather than a
-    fixed tuple — so the property is stated against the **sources the type does not
-    declare**, which is what it was always about.
+    Advisor's three keys are declared on `Microsoft.Advisor/recommendations` — a
+    recommendation is its own row — so a storage account declares none of them and having
+    no recommendation is not an absence to record. That is a change from when the three
+    were declared on every reportable type: a subscription where Advisor is quiet used to
+    collect three `advisor_not_available` entries per resource, which said only that Azure
+    had nothing to suggest.
     """
     storage = record("store01", resource_type="Microsoft.Storage/storageAccounts")
     port = FakeFactsPort(
@@ -663,8 +665,7 @@ def test_the_collector_records_no_gap_for_a_source_the_type_does_not_declare() -
     _, gaps = run(port, resources=[storage])
 
     mine = [gap for gap in gaps if gap["resource_id"] == storage["resource_id"]]
-    assert [gap["source"] for gap in mine] == [SOURCE_ADVISOR] * 3
-    assert {gap["metric"] for gap in mine} == {"category", "impact", "recommendation"}
+    assert mine == []
 
 
 @pytest.mark.parametrize("source", [SOURCE_RECOVERY_SERVICES, SOURCE_CAPACITY])
@@ -705,7 +706,7 @@ def test_a_provider_with_no_fact_surface_collects_nothing_and_issues_no_request(
         def capabilities(self) -> Any: ...  # pragma: no cover
 
     plan = _plan()
-    facts, gaps = asyncio.run(
+    facts, gaps, extra = asyncio.run(
         _collect_facts(
             provider=Bare(),  # type: ignore[arg-type]
             plan=plan,
@@ -751,7 +752,7 @@ def test_the_pipeline_turns_each_record_into_a_fact_entry_keyed_by_resource() ->
                 "gaps": [],
             }
 
-    facts, gaps = asyncio.run(
+    facts, gaps, extra = asyncio.run(
         _collect_facts(
             provider=WithFacts(),  # type: ignore[arg-type]
             plan=_plan(),

@@ -114,6 +114,9 @@ from reporting_agent.collect.snapshot import (
     SkuCapacity as SnapshotSkuCapacity,
 )
 from reporting_agent.collect.snapshot import (
+    ESTIMATOR_EXACT_COUNT_WEIGHTED,
+    ESTIMATOR_EXACT_INTERVAL_MAXIMUM,
+    ESTIMATOR_EXACT_INTERVAL_MINIMUM,
     StatisticEntry,
 )
 from reporting_agent.providers.base import (
@@ -125,6 +128,8 @@ from reporting_agent.providers.base import (
     CollectResult,
     DiscoverResult,
     FactRequest,
+    MetricsHistoryRequest,
+    MetricsHistoryResult,
     FactResult,
     GapRecord,
     GuestCounterOutcome,
@@ -622,7 +627,11 @@ class AzureProvider:
             inventory_pages=request["inventory_pages"],
             subscription_id=request["subscription_id"],
         )
-        collected = FactResult(facts=list(result.facts), gaps=list(result.gaps))
+        collected = FactResult(
+            facts=list(result.facts),
+            gaps=list(result.gaps),
+            resources=list(result.resources),
+        )
         assert_plain_data(collected)
         return collected
 
@@ -1065,6 +1074,87 @@ class AzureProvider:
 
     # --- the enhanced tier's guest-observed counters (Req 31.4, 31.6, 31.7) ---------
 
+    async def collect_metrics_history(
+        self, request: MetricsHistoryRequest
+    ) -> MetricsHistoryResult:
+        """One calendar month of exported platform metrics out of the workspace.
+
+        Satisfies `providers.base.MetricsHistoryProvider`, a separate protocol for the
+        reason `GuestCounterProvider` is: whether a subscription has any of this depends on
+        a diagnostic setting the customer configured, not on anything this product does.
+
+        **One query for the whole month**, not one per resource: `AzureMetrics` is a table,
+        so the resource ids and the metric names are both `in~` filters and the workspace
+        does the grouping. The live path's batching exists because the metrics API takes a
+        resource list per call; a Kusto query has no such limit worth planning around at
+        this scale.
+
+        **A failed query is an outcome, not an exception**, on the same terms
+        `collect_guest_counters` gives: a month of history that could not be read is a
+        shorter trend, and raising would cost the months after it and the run with them.
+        """
+        workspace_id = (request.get("workspace_id") or "").strip()
+        if not workspace_id:
+            return MetricsHistoryResult(statistics={}, gaps=[])
+
+        resources = request["resources"]
+        by_type = request["metrics_by_resource_type"]
+        folded = {name.casefold(): names for name, names in by_type.items()}
+
+        # Only the resources whose type this run asked for metrics on, and only the metric
+        # names it asked for — the same narrowing the live pass applies, so a month of
+        # history covers exactly what the report's own period does and no more.
+        resource_ids = [
+            record["resource_id"]
+            for record in resources
+            if folded.get(record["resource_type"].casefold())
+        ]
+        metric_names = sorted(
+            {name for names in folded.values() for name in names}
+        )
+        if not resource_ids or not metric_names:
+            return MetricsHistoryResult(statistics={}, gaps=[])
+
+        window = request["window"]
+        try:
+            # `self.logs`, the same port `collect_guest_counters` reads a workspace
+            # through — one Log Analytics surface for the two things this product asks a
+            # workspace for.
+            response = await self.logs.query_metrics_rollup(
+                workspace_id=workspace_id,
+                resource_ids=resource_ids,
+                metric_names=metric_names,
+                start_time=window["start_utc"],
+                end_time=window["end_utc"],
+            )
+        except Exception as exc:  # noqa: BLE001 - a month of history never fails the run
+            logger.warning(
+                "the metrics-history query for %s to %s failed (%s); that month carries "
+                "no statistics and the trend plots one point fewer.",
+                window["start_utc"],
+                window["end_utc"],
+                type(exc).__name__,
+            )
+            return MetricsHistoryResult(statistics={}, gaps=[])
+
+        if not response.ok:
+            logger.info(
+                "the metrics-history query for %s to %s answered HTTP %d; that month "
+                "carries no statistics.",
+                window["start_utc"],
+                window["end_utc"],
+                response.status,
+            )
+            return MetricsHistoryResult(statistics={}, gaps=[])
+
+        return MetricsHistoryResult(
+            statistics=_rekeyed_to_inventory(
+                rollup_statistics(response.body, scales=request["scales"]),
+                resources=resources,
+            ),
+            gaps=[],
+        )
+
     async def collect_guest_counters(
         self, request: GuestCounterRequest
     ) -> GuestCounterResult:
@@ -1245,6 +1335,189 @@ def _guest_outcome(
 _LOGS_TIME_COLUMN: Final[str] = "TimeGenerated"
 _LOGS_INSTANCE_COLUMN: Final[str] = "InstanceName"
 _LOGS_VALUE_COLUMN: Final[str] = "CounterValue"
+
+
+_ROLLUP_COLUMNS: Final[dict[str, tuple[str, str]]] = {
+    "avg": ("average_value", ESTIMATOR_EXACT_COUNT_WEIGHTED),
+    "max": ("maximum_value", ESTIMATOR_EXACT_INTERVAL_MAXIMUM),
+    "min": ("minimum_value", ESTIMATOR_EXACT_INTERVAL_MINIMUM),
+}
+"""Statistic to the column `metrics_rollup_query` projects for it, and the estimator it
+carries.
+
+The **same three estimators the live path produces**, because the query computes the same
+three things: the average is count-weighted in KQL rather than a mean of interval means, and
+minima and maxima roll up exactly at any grain. A second vocabulary here would make a reader
+learn two words for one computation in order to compare two months of one trend.
+
+A percentile is deliberately absent. `AzureMetrics` carries an interval's mean, extremes and
+count and no distribution, so a p95 over exported rows could only be estimated from interval
+means — a percentile of averages presented as a percentile of samples."""
+
+_ROLLUP_FALLBACK_SCALE: Final[int] = 2
+"""The decimal scale for a metric the catalogue does not declare.
+
+Only reachable for a metric nothing in the run asked for, since the request names the
+catalogue's own metric list — so this is a floor under a case that should not arise rather
+than a default anything depends on."""
+
+_ROLLUP_RESOURCE_COLUMN: Final[str] = "ResourceId"
+_ROLLUP_METRIC_COLUMN: Final[str] = "MetricName"
+_ROLLUP_UNIT_COLUMN: Final[str] = "UnitName"
+_ROLLUP_COUNT_COLUMN: Final[str] = "sample_count"
+
+
+def rollup_statistics(
+    body: object, *, scales: Mapping[str, int]
+) -> dict[str, dict[str, dict[str, StatValue]]]:
+    """A Log Analytics rollup answer as the statistics shape `collect` already returns.
+
+    `{resource_id: {metric: {statistic: StatValue}}}`, so a month read from the workspace
+    reaches `_collect_trend` in exactly the shape a month read from the metrics API does
+    and nothing downstream can tell which produced it — except `month_buckets[].source`,
+    which says so on purpose.
+
+    Read by **column name**, never by position, for the reason `_guest_rows` gives: the
+    projection's order is not something a figure should depend on.
+
+    A row whose value is not numeric is **dropped rather than zero-filled** — a row that
+    carries no reading is not a reading of zero.
+
+    `scales` is the catalogue's declared decimal scale per metric name, threaded in rather
+    than inferred from the exported digits. A month read from the workspace sits on the same
+    chart as a month read live, and a figure rendered to four places beside one rendered to
+    two reads as two different measurements of different things. A metric the catalogue does
+    not declare falls back to :data:`_ROLLUP_FALLBACK_SCALE`, which only happens for a
+    metric nothing in the run asked for.
+    """
+    if not isinstance(body, Mapping):
+        return {}
+    tables = body.get("tables")
+    if not isinstance(tables, Sequence) or isinstance(tables, (str, bytes)):
+        return {}
+
+    found: dict[str, dict[str, dict[str, StatValue]]] = {}
+    for table in tables:
+        if not isinstance(table, Mapping):
+            continue
+        columns = table.get("columns")
+        raw_rows = table.get("rows")
+        if not isinstance(columns, Sequence) or not isinstance(raw_rows, Sequence):
+            continue
+        index_of = {
+            column["name"]: position
+            for position, column in enumerate(columns)
+            if isinstance(column, Mapping) and isinstance(column.get("name"), str)
+        }
+        resource_at = index_of.get(_ROLLUP_RESOURCE_COLUMN)
+        metric_at = index_of.get(_ROLLUP_METRIC_COLUMN)
+        if resource_at is None or metric_at is None:
+            continue
+        unit_at = index_of.get(_ROLLUP_UNIT_COLUMN)
+        count_at = index_of.get(_ROLLUP_COUNT_COLUMN)
+
+        for raw_row in raw_rows:
+            if not isinstance(raw_row, Sequence) or isinstance(raw_row, (str, bytes)):
+                continue
+            if max(resource_at, metric_at) >= len(raw_row):
+                continue
+            resource_id = raw_row[resource_at]
+            metric = raw_row[metric_at]
+            if not isinstance(resource_id, str) or not isinstance(metric, str):
+                continue
+            unit = (
+                raw_row[unit_at]
+                if unit_at is not None and unit_at < len(raw_row)
+                else ""
+            )
+            samples = _rollup_count(raw_row, count_at)
+
+            for statistic, (column, estimator) in _ROLLUP_COLUMNS.items():
+                position = index_of.get(column)
+                if position is None or position >= len(raw_row):
+                    continue
+                value = _rollup_decimal(raw_row[position])
+                if value is None:
+                    continue
+                scale = scales.get(metric, _ROLLUP_FALLBACK_SCALE)
+                found.setdefault(resource_id, {}).setdefault(metric, {})[statistic] = (
+                    StatisticEntry(
+                        metric=metric,
+                        statistic=statistic,
+                        value=value,
+                        unit=unit if isinstance(unit, str) else "",
+                        estimator=estimator,
+                        fidelity_tier=FIDELITY_BASELINE,
+                        sample_count=samples,
+                        scale=scale,
+                    ).to_plain_data()
+                )
+    return found
+
+
+def _rekeyed_to_inventory(
+    statistics: Mapping[str, dict[str, dict[str, StatValue]]],
+    *,
+    resources: Sequence[ResourceRecord],
+) -> dict[str, dict[str, dict[str, StatValue]]]:
+    """The rollup's resource ids, matched back to the inventory's own spelling.
+
+    `AzureMetrics` writes `ResourceId` **lowercased**, and every id downstream — the
+    snapshot's resources, the figure pointers, the trend's own series — carries the casing
+    the inventory recorded. Keyed by the exported spelling, a month of history would join
+    to no resource at all and the trend would draw nothing while every request succeeded.
+
+    That is the third time this exact mismatch has cost something in this codebase: the
+    Advisor fold matched zero of 26 recommendations, and the section offerability gate
+    reported "needs Microsoft.Compute/virtualMachines" for a subscription holding three of
+    them. An ARM id is case-insensitive; anything comparing two of them has to be too.
+
+    A row naming a resource this run does not hold is **dropped**. Unlike an Advisor
+    recommendation — which is a finding worth printing about a resource outside the scope —
+    a metric belongs to a resource, and a series with no resource has nothing to be plotted
+    against.
+    """
+    by_folded = {record["resource_id"].casefold(): record["resource_id"] for record in resources}
+    rekeyed: dict[str, dict[str, dict[str, StatValue]]] = {}
+    for resource_id, metrics in statistics.items():
+        known = by_folded.get(resource_id.casefold())
+        if known is None:
+            continue
+        rekeyed[known] = metrics
+    return rekeyed
+
+
+def _rollup_decimal(raw: object) -> Decimal | None:
+    """One rollup cell as an exact decimal, or `None` where it is not a number.
+
+    Through `Decimal(str(...))` — the digit string the JSON decoder produced, never the
+    nearest binary fraction (Req 27.6, 34.2), the same route `_guest_rows` takes.
+    """
+    if isinstance(raw, bool) or raw is None:
+        return None
+    if isinstance(raw, Decimal):
+        return raw
+    if isinstance(raw, (int, float, str)):
+        try:
+            return Decimal(str(raw))
+        except (ArithmeticError, ValueError):
+            return None
+    return None
+
+
+def _rollup_count(raw_row: Sequence[object], position: int | None) -> int:
+    """`sum(Count)` as a non-negative integer, or `0` where the column is absent.
+
+    Zero rather than `None`: the sample count travels with the value so a reader can see
+    what a month's mean rests on, and a month whose exporter recorded no count is a month
+    whose figure rests on nothing it can name.
+    """
+    if position is None or position >= len(raw_row):
+        return 0
+    value = _rollup_decimal(raw_row[position])
+    if value is None or value < 0:
+        return 0
+    return int(value)
 
 
 def _guest_rows(body: object) -> list[GuestCounterRow]:

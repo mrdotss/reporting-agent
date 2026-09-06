@@ -51,7 +51,7 @@ def test_the_anchor_is_the_month_the_run_s_window_ends_in() -> None:
     """Not the month the run was enqueued in. A re-run of July in December produces the
     same three months the original did — which is what makes a re-run a revision of one
     document rather than a different document (Requirements line 1057)."""
-    months = trend_months(july(), JAKARTA)
+    months = trend_months(july(), JAKARTA, count=3)
 
     assert [month.local_month for month in months] == ["2026-05", "2026-06", "2026-07"]
 
@@ -65,7 +65,7 @@ def test_the_months_are_oldest_first() -> None:
 
 def test_the_walk_crosses_a_year_boundary() -> None:
     window = resolve_window(date(2026, 1, 1), date(2026, 1, 31), JAKARTA)
-    months = trend_months(window, JAKARTA)
+    months = trend_months(window, JAKARTA, count=3)
 
     assert [month.local_month for month in months] == ["2025-11", "2025-12", "2026-01"]
 
@@ -73,7 +73,7 @@ def test_the_walk_crosses_a_year_boundary() -> None:
 def test_the_walk_crosses_february_from_a_thirty_first() -> None:
     """A naive "subtract a month" that keeps the day-of-month lands on 31 February."""
     window = resolve_window(date(2026, 3, 31), date(2026, 3, 31), JAKARTA)
-    months = trend_months(window, JAKARTA)
+    months = trend_months(window, JAKARTA, count=3)
 
     assert [month.local_month for month in months] == ["2026-01", "2026-02", "2026-03"]
     february = months[1].window
@@ -85,12 +85,15 @@ def test_the_walk_crosses_february_from_a_thirty_first() -> None:
 
 def test_a_leap_february_gets_its_twenty_ninth_day() -> None:
     window = resolve_window(date(2028, 3, 1), date(2028, 3, 31), JAKARTA)
-    february = trend_months(window, JAKARTA)[1].window
+    february = trend_months(window, JAKARTA, count=3)[1].window
 
     assert february.local_end == date(2028, 2, 29)
 
 
 def test_the_count_is_the_declared_bound_and_is_configurable_downward() -> None:
+    """`MAX_TREND_MONTHS` is the ceiling on what a run will act on, not on what it can
+    afford: only months inside the metrics API's 93-day retention cost a pass over the
+    estate, and 93 days is a little over three of them."""
     assert len(trend_months(july(), JAKARTA)) == MAX_TREND_MONTHS
     assert len(trend_months(july(), JAKARTA, count=1)) == 1
     assert [m.local_month for m in trend_months(july(), JAKARTA, count=1)] == ["2026-07"]
@@ -211,7 +214,7 @@ def test_earlier_months_are_never_clipped_by_today() -> None:
     """`today` bounds the anchor, not the history — a run on the 3rd still compares
     against two whole prior months."""
     window = resolve_window(date(2026, 8, 1), date(2026, 8, 3), JAKARTA)
-    months = trend_months(window, JAKARTA, today=date(2026, 8, 3))
+    months = trend_months(window, JAKARTA, count=3, today=date(2026, 8, 3))
 
     assert months[0].window.local_end == date(2026, 6, 30)
     assert months[1].window.local_end == date(2026, 7, 31)

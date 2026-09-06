@@ -285,7 +285,15 @@ def test_each_fact_producing_response_lands_one_object_carrying_its_provenance()
         assert obj["schema_version"] == ARCHIVE_SCHEMA_VERSION
         assert obj["received_at"] == RECEIVED_AT
         assert obj["catalog_version"] == CATALOG.catalog_version
-        assert obj["resource_ids"] == [resource_id("prod-web-01")]
+        # Advisor is asked once, of the **subscription**, and each recommendation it
+        # returns is its own row — so an answer naming no recommendation covers the
+        # subscription rather than the estate. The other two are asked on behalf of the
+        # resources they are about.
+        assert obj["resource_ids"] == (
+            [SUBSCRIPTION]
+            if obj["source"] == SOURCE_ADVISOR
+            else [resource_id("prod-web-01")]
+        )
         assert obj["fact_keys"] == sorted(obj["fact_keys"])
         assert obj["request_target"] in {
             BACKUP_REQUEST_TARGET,

@@ -511,6 +511,17 @@ def _every_resource_graph_query() -> dict[str, str]:
             arguments["resource_types"] = ["Microsoft.Compute/virtualMachines"]
         if "fact_projections" in parameters:
             arguments["fact_projections"] = [("os_type", "tostring(properties.osType)")]
+        # `metrics_rollup_query` is Kusto over a Log Analytics table rather than over
+        # Resource Graph, so it takes neither of the two above. It is still built and
+        # checked here: the comma and empty-projection defects these guards exist for are
+        # properties of KQL, not of which service answers it.
+        if "resource_ids" in parameters:
+            arguments["resource_ids"] = [
+                "/subscriptions/3f2b0000-0000-0000-0000-000000000000/resourceGroups/"
+                "rg-prod/providers/Microsoft.Compute/virtualMachines/prod-web-01"
+            ]
+        if "metric_names" in parameters:
+            arguments["metric_names"] = ["Percentage CPU"]
         try:
             built[name] = builder(**arguments)
         except TypeError:  # pragma: no cover - a builder needing arguments not modelled

@@ -96,6 +96,7 @@ from reporting_agent.collect.snapshot import (
     fact_from_plain,
 )
 from reporting_agent.providers.base import (
+    ADVISOR_CHILD_RESOURCE_TYPE,
     GapRecord,
     PlainData,
     ResourceRecord,
@@ -246,12 +247,19 @@ class ReplayPlan:
     metric-only catalog produces."""
 
     resource_types: Mapping[str, str] = field(default_factory=dict)
-    """Resource id to resource type, from the **stored snapshot's inventory records**.
+    """Resource id to resource type, from the **stored snapshot's inventory records**, plus
+    the subscription id under `Microsoft.Advisor/recommendations`.
 
     Req 7.5's boundary, unchanged from the metric side: replay takes each resource's inventory
     record from the plan, because the archive holds responses and no archive of them could
     supply a resource's type. Deriving it from a fact response instead would be reading a fact
-    out of the snapshot and putting it back."""
+    out of the snapshot and putting it back.
+
+    The subscription entry is the one addition, and it is not an inventory record: Advisor is
+    asked once at subscription scope, so a listing that names no recommendation is archived
+    against the subscription id and folds under the recommendation type. Without it, replay
+    resolves no declared key for that object and reproduces none of the absences the
+    collection recorded — a reproducible snapshot reporting `replay_hash_mismatch`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -803,8 +811,22 @@ def plan_from_snapshot(
         objects_named=object_count if objects_named is None else objects_named,
         fact_declaration=catalog.facts,
         resource_types={
-            resource.record["resource_id"]: resource.resource_type
-            for resource in plan_resources
+            # The subscription itself, under the recommendation type.
+            #
+            # Advisor is asked once, of the subscription, and an answer naming no
+            # recommendation is archived against the subscription id — so the fold has to
+            # be able to say what type that id answers under, or it resolves no declared
+            # key and re-derives none of the `advisor_not_available` absences the
+            # collection recorded. Every other archived fact object names real resource
+            # ids, which the inventory below answers for.
+            #
+            # Listed first so a real resource of that id — which cannot exist, a
+            # subscription is not a resource in its own inventory — would still win.
+            str(document.get("subscription_id") or ""): ADVISOR_CHILD_RESOURCE_TYPE,
+            **{
+                resource.record["resource_id"]: resource.resource_type
+                for resource in plan_resources
+            },
         },
     )
 

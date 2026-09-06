@@ -24,6 +24,7 @@ from decimal import Decimal
 from typing import Final, Protocol, TypedDict, runtime_checkable
 
 __all__ = [
+    "ADVISOR_CHILD_RESOURCE_TYPE",
     "GUEST_COUNTER_STATUSES",
     "GUEST_STATUS_EMPTY",
     "GUEST_STATUS_FAILED",
@@ -45,6 +46,9 @@ __all__ = [
     "GuestCounterRow",
     "GuestCounterSpec",
     "LocationRouting",
+    "MetricsHistoryProvider",
+    "MetricsHistoryRequest",
+    "MetricsHistoryResult",
     "PlainData",
     "Provider",
     "RawArchiveState",
@@ -157,6 +161,19 @@ class ResourceRecord(TypedDict):
 
 
 # --- The averages-exclusion predicate, shared by the collector and the replay -------
+
+ADVISOR_CHILD_RESOURCE_TYPE: Final[str] = "Microsoft.Advisor/recommendations"
+"""Each Azure Advisor recommendation as its own synthetic resource.
+
+Declared here rather than in `azure/facts.py`, which is where it is produced, because
+`verify/replay.py` needs it too — Advisor is asked once at subscription scope, so a listing
+naming no recommendation is archived against the subscription id and the replay has to know
+what type that id folds under. A verifier reaching into the Azure boundary for a constant
+would put the wrong edge in the dependency graph for the sake of one string.
+
+The same reasoning `VIRTUAL_MACHINE_RESOURCE_TYPE` below is declared under: a provider-neutral
+module may name a provider's type where two layers have to agree on it.
+"""
 
 VIRTUAL_MACHINE_RESOURCE_TYPE: Final[str] = "Microsoft.Compute/virtualMachines"
 """The one resource type Req 20.13's absent-power-state check applies to. Matched
@@ -692,6 +709,55 @@ class GuestCounterProvider(Protocol):
         ...
 
 
+class MetricsHistoryRequest(TypedDict):
+    """What to read out of a Log Analytics workspace for one calendar month.
+
+    `window` is that month's own half-open window, derived from local midnights — never a
+    trailing duration. A UTC-aligned or now-relative month would put the trend's figure for
+    a month at odds with the same month collected live, for a reason no reader could see;
+    `collect/buckets.py` records the same argument for why `P1D` is never requested.
+    """
+
+    resources: list[ResourceRecord]
+    metrics_by_resource_type: dict[str, list[str]]
+    window: Window
+    workspace_id: str
+    scales: dict[str, int]
+
+
+class MetricsHistoryResult(TypedDict):
+    """One month's statistics from the workspace, keyed as `collect` keys its own.
+
+    Deliberately the same shape `CollectResult["statistics"]` takes, so a month read from
+    logs reaches the trend in exactly the shape a month read live does and nothing
+    downstream can tell which produced it — except the month bucket's `source`, which says
+    so on purpose.
+    """
+
+    statistics: dict[str, dict[str, dict[str, StatValue]]]
+    gaps: list[GapRecord]
+
+
+@runtime_checkable
+class MetricsHistoryProvider(Protocol):
+    """The optional fourth surface: platform metrics older than the metrics API keeps.
+
+    Azure Monitor holds platform metrics for 93 days. Beyond that they exist **only** where
+    a diagnostic setting was exporting them to a Log Analytics workspace at the time, which
+    is a thing about the customer's configuration rather than about this product — so it is
+    an optional surface on the same terms :class:`GuestCounterProvider` is. A pipeline asks
+    `isinstance(provider, MetricsHistoryProvider)` and, when the answer is no, the trend
+    covers what the live API can answer and says so.
+    """
+
+    async def collect_metrics_history(
+        self, request: MetricsHistoryRequest
+    ) -> MetricsHistoryResult:
+        """One month out of the workspace. Does not raise for a failed query: a month of
+        history that could not be read is a shorter trend, not a failed run."""
+        ...
+
+
 @runtime_checkable
 class FactCollectingProvider(Protocol):
     """The optional third surface: configuration facts beside the statistics (Req 4.7, 4.8).
@@ -725,7 +791,28 @@ class FactRequest(TypedDict):
     subscription_id: str
 
 
-class FactResult(TypedDict):
+class _FactResultExtras(TypedDict, total=False):
+    """The one optional key a fact result may carry.
+
+    Optional so a provider with nothing to add to the inventory returns the two keys it
+    always had — the same shape `_DiscoverResultExtras` takes, and for the same reason.
+    """
+
+    resources: list[ResourceRecord]
+    """Synthetic resources this fact pass produced.
+
+    A fact pass that adds to the inventory is unusual, and it happens because some findings
+    are **rows**: an Azure Advisor recommendation is one row of the Recommendations section,
+    and a row is a resource in this model — the same reason a subnet and a security rule
+    are. A fact is one value per `(resource_id, key)`, so seven recommendations sharing a
+    resource id kept the last and discarded six.
+
+    `collect/pipeline.py` merges these into the snapshot **after** the metric pass, so they
+    are never metric targets: nothing asks Azure Monitor for the CPU of a recommendation.
+    """
+
+
+class FactResult(_FactResultExtras):
     """One fact pass's records and gaps, as plain data across the provider boundary."""
 
     facts: list[FactRecord]
