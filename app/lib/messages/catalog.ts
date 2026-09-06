@@ -666,6 +666,10 @@ export const MESSAGE_CATALOG = {
     en: "Period",
     id: "Periode",
   },
+  "doc.table.finding": {
+    en: "Finding",
+    id: "Temuan",
+  },
   "doc.table.resource": {
     en: "Resource",
     id: "Sumber daya",

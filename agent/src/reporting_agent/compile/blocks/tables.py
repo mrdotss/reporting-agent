@@ -121,8 +121,29 @@ no unit and no snapshot statistic. `fidelity_tier` is on both this list and
 :data:`_TIER_COLUMN`'s implicit path, which is why naming it explicitly while `show_fidelity`
 is set is a validation error rather than two identical columns."""
 
-def _resource_column(messages: Messages) -> Column:
-    return Column(key="resource", header=messages.text("doc.table.resource"))
+RESOURCE_HEADER_CONFIG_KEY: Final[str] = "_resource_header"
+"""How one section names its own first column, when "Resource" is not what it holds.
+
+Underscored like `_scope` and `_types`: written by the section catalogue, never by a stored
+definition. Section 14's rows are Advisor **findings** — the key column carries the resource
+and the recommendation together, because `render/anchors.py` requires column 0 to be unique
+and one machine has seven recommendations — so a header reading "Resource" would name half
+of what is under it.
+
+The value is a message id, not a string, so the header is translated like every other."""
+
+
+def _resource_column(messages: Messages, header_id: str | None = None) -> Column:
+    return Column(
+        key="resource",
+        header=messages.text(header_id or "doc.table.resource"),
+    )
+
+
+def _resource_header_id(block: BlockSpec) -> str | None:
+    """The message id this block names for its first column, or `None` for the default."""
+    declared = block.config.get(RESOURCE_HEADER_CONFIG_KEY)
+    return declared if isinstance(declared, str) and declared else None
 
 
 def _tier_column(messages: Messages) -> Column:
@@ -631,7 +652,7 @@ def _resource_rows_table(
         rows.append(truncation)
 
     columns = (
-        _resource_column(context.messages),
+        _resource_column(context.messages, _resource_header_id(block)),
         *((_tier_column(context.messages),) if with_tier else ()),
         *(_attribute_column(a, context.messages) for a in attributes),
         *_metric_columns(refs),

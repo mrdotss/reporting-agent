@@ -283,7 +283,9 @@ def test_a_subscription_scoped_recommendation_is_not_a_row() -> None:
         ),
     )
 
-    assert [row["name"] for row in rows] == ["prod-web-01 (Virtual Machine)"]
+    assert [row["name"] for row in rows] == [
+        "prod-web-01 (Virtual Machine) — What to do about it."
+    ]
 
 
 def test_every_row_carries_a_location_and_a_resource_group() -> None:
@@ -394,10 +396,8 @@ def test_a_row_id_does_not_depend_on_the_order_advisor_answered_in() -> None:
     }
 
 
-def test_a_row_is_named_for_the_resource_it_is_about_and_that_resource_s_kind() -> None:
-    """What the Recommendations table's resource column prints. The label goes in the
-    row's **name** rather than a fourth column, which is both what was asked for and the
-    smaller change."""
+def test_a_row_is_named_for_the_resource_its_kind_and_its_finding() -> None:
+    """What the Recommendations table's key column prints."""
     machine = vm("prod-web-01")
     _, _, rows = collect(
         resources=[machine],
@@ -408,8 +408,76 @@ def test_a_row_is_named_for_the_resource_it_is_about_and_that_resource_s_kind() 
         ),
     )
 
-    assert [row["name"] for row in rows] == ["prod-web-01 (Virtual Machine)"]
+    assert [row["name"] for row in rows] == [
+        "prod-web-01 (Virtual Machine) — What to do about it."
+    ]
     assert rows[0]["resource_type"] == "Microsoft.Advisor/recommendations"
+
+
+def test_rows_for_one_resource_do_not_share_a_key() -> None:
+    """The second defect the one-row-per-recommendation change caused, and it also reached
+    production.
+
+    `render/anchors.py` requires the first column of every data table to be unique — the
+    verifier resolves a row by that text, and Req 21.5 fixes the key at column 0. With the
+    name carrying only the resource, one machine's seven recommendations produced seven rows
+    reading `CPN-App (Virtual Machine)`, and the render refused the document:
+    `repeated row keys in key column 0`.
+
+    Nothing else identifies the row. Not the category — one machine had four
+    `HighAvailability` findings — not the impact, and not the recommendation text alone,
+    which Advisor returned for three different machines. The resource **and** the finding
+    are what make a row one row.
+    """
+    machine = vm("prod-web-01")
+    solutions = [
+        "Use Availability zones for better resiliency",
+        "Convert Standard to Premium disk for higher uptime",
+        "Enable VM Insights for virtual machines",
+    ]
+    _, _, rows = collect(
+        resources=[machine],
+        recommendations=RawHttpResponse(
+            status=200,
+            headers={},
+            body={
+                "value": [
+                    recommendation(resource_id=machine["resource_id"], solution=text)
+                    for text in solutions
+                ]
+            },
+        ),
+    )
+
+    names = [row["name"] for row in rows]
+    assert len(names) == len(solutions)
+    assert len(set(names)) == len(names), names
+    for solution in solutions:
+        assert any(name.endswith(solution) for name in names)
+
+
+def test_one_recommendation_on_two_resources_does_not_collide_either() -> None:
+    """The other direction: Advisor returned `Enable VM Insights for virtual machines` for
+    three separate machines, so the finding alone is no more a key than the resource is."""
+    first = vm("prod-web-01")
+    second = vm("prod-web-02")
+    shared = "Enable VM Insights for virtual machines"
+    _, _, rows = collect(
+        resources=[first, second],
+        recommendations=RawHttpResponse(
+            status=200,
+            headers={},
+            body={
+                "value": [
+                    recommendation(resource_id=first["resource_id"], solution=shared),
+                    recommendation(resource_id=second["resource_id"], solution=shared),
+                ]
+            },
+        ),
+    )
+
+    names = [row["name"] for row in rows]
+    assert len(set(names)) == 2, names
 
 
 def test_a_row_is_addressed_under_the_resource_it_is_about() -> None:
@@ -553,6 +621,6 @@ def test_a_row_compiles_into_a_snapshot_view() -> None:
     view = build_snapshot_view(document)
 
     assert [resource.name for resource in view.resources] == [
-        "prod-web-01 (Virtual Machine)"
+        "prod-web-01 (Virtual Machine) — What to do about it."
     ]
     assert view.resources[0].resource_type == "Microsoft.Advisor/recommendations"

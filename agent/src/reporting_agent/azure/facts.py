@@ -292,23 +292,45 @@ def resource_type_label(resource_type: str) -> str:
     return " ".join(word[:1].upper() + word[1:] for word in spaced.split())
 
 
-def advisor_row_name(parent_name: str, parent_type: str) -> str:
-    """What the Recommendations table's resource column reads: `cpn-mcp (Virtual Machine)`.
+_ADVISOR_SOLUTION_KEY: Final[str] = "recommendation"
+"""Which normalized key carries Advisor's own `shortDescription.solution`.
 
-    The resource column renders a resource's `name`, so the label goes **in the name** of
-    the synthetic row rather than into a fourth column — which is what was asked for, and
-    also the smaller change: a fourth column would have to be declared in the catalogue,
-    mirrored in the app's block schema and added to the section's own `expands_to`.
+Named rather than spelled inline at the one call site, because it has to be the same string
+`_ADVISOR_VALUE_PATHS` projects — a row keyed on a field the fold does not produce would key
+every row on the empty string, and every row would then collide again."""
 
-    A recommendation names a resource that may not be in this run's inventory at all —
-    Advisor recommends on the subscription itself, and on resources a scope filter excluded
-    — so `parent_name` falls back to the id's last segment at the call site and this
-    function never invents one.
+ADVISOR_ROW_SEPARATOR: Final[str] = " — "
+"""Between the resource a recommendation is about and the recommendation itself."""
+
+
+def advisor_row_name(parent_name: str, parent_type: str, solution: str = "") -> str:
+    """One row's key text: `CPN-MCP (Virtual Machine) — Use Availability zones`.
+
+    ## Why the finding is in the name and not only in its own column
+
+    `render/anchors.py` requires the first column of every data table to be **unique**: the
+    verifier resolves a row by that text, and Req 21.5 fixes the key at column 0 so there is
+    no per-table configuration to get wrong. One row per recommendation makes the resource
+    name repeat — seven rows reading `CPN-App (Virtual Machine)` — and the render refused
+    the document with `repeated row keys in key column 0`.
+
+    Nothing else identifies the row. Not the category (one machine had four
+    `HighAvailability` findings), not the impact, and not the recommendation text on its own
+    (`Enable VM Insights` was returned for three different machines). The resource **and**
+    the finding together are what make a row one row, so that is what the key carries.
+
+    An invented suffix — a number, an ordinal — is the thing `row_keys_for` names as worse
+    than failing: it would put a string in the document that came from neither the snapshot
+    nor the template. Both halves of this come from Advisor's own answer.
+
+    `solution` is omitted only where a caller has none, which is no longer any caller here;
+    the two-argument form is kept because the label logic is the same either way.
     """
     label = resource_type_label(parent_type)
-    if not parent_name:
-        return label
-    return f"{parent_name} ({label})" if label else parent_name
+    subject = f"{parent_name} ({label})" if parent_name and label else (parent_name or label)
+    if not solution:
+        return subject
+    return f"{subject}{ADVISOR_ROW_SEPARATOR}{solution}" if subject else solution
 
 
 _ADVISOR_RESOURCE_ID_PATHS: Final[tuple[tuple[str, ...], ...]] = (
@@ -527,7 +549,11 @@ def _advisor_rows(
         records.append(
             ResourceRecord(
                 resource_id=child_id,
-                name=advisor_row_name(parent["name"], parent["resource_type"]),
+                name=advisor_row_name(
+                    parent["name"],
+                    parent["resource_type"],
+                    str(item.get(_ADVISOR_SOLUTION_KEY) or ""),
+                ),
                 resource_type=ADVISOR_CHILD_RESOURCE_TYPE,
                 location=parent["location"],
                 resource_group=parent["resource_group"],
