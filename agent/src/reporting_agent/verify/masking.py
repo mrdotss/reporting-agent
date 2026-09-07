@@ -124,6 +124,19 @@ _TEMPORAL: Final[re.Pattern[str]] = re.compile(
             # document whose every figure was correct. A trend over prior runs never hit
             # it: its points are labelled `2026-06-01 – 2026-06-30`, two full dates.
             r"\d{4}-\d{2}(?!\d)",
+            # A month and its year, `August 2026` / `Agustus 2026`. **Anchored to the
+            # month name**, and that anchoring is the whole of its safety: a bare
+            # `(?:19|20)\d{2}` would also swallow `2048` out of an invented memory
+            # figure, and this report's most common metric is measured in bytes. A
+            # four-digit number is only a date when something says it is a date.
+            #
+            # Both languages, because the narrator writes in whichever the report is
+            # pinned to. Case-insensitive for this alternative alone — a model writes
+            # `august` as readily as `August`, and neither is a measurement.
+            r"(?i:january|february|march|april|may|june|july|august|september|october"
+            r"|november|december"
+            r"|januari|februari|maret|mei|juni|juli|agustus|oktober|desember)"
+            r"\s+(?:19|20)\d{2}(?!\d)",
             r"\d{2}:\d{2}(?::\d{2})?",
             # An ISO 8601 duration, requiring at least one component so a bare `P`
             # or a stray `PT` matches nothing.
@@ -211,10 +224,45 @@ def _bounded(text: str, start: int, end: int) -> bool:
 
     `MASK_CHAR` is deliberately outside the class below, so an already-masked
     neighbour never blocks a later match.
+
+    ## A full stop is only part of a number when a digit follows it
+
+    `.` and `,` are in the token class because they are number syntax: `1,234.56` is one
+    token and `234` inside it is not an occurrence of anything. They are **also** sentence
+    punctuation, and treating those two cases alike made the gate reject every figure a
+    sentence ends on — `12.48%.` bounded by a `.` that no digit follows, so stage 1
+    declined to mask the `12.48%` it had been given and reported the whole token as an
+    unmatched numeral.
+
+    Nothing in a table hits this: a cell holds its figure alone. Only prose puts a figure
+    next to punctuation, and the only prose carrying figures is the narrator's — which had
+    never once run in production when this rule was written. The first report it wrote was
+    withheld, and two of its six findings were this.
+
+    So the separator characters count as part of the token only where they are doing
+    number work, which is where a digit sits on their far side.
     """
-    before = text[start - 1] if start > 0 else ""
-    after = text[end] if end < len(text) else ""
+    before = _boundary_char(text, start - 1, step=-1)
+    after = _boundary_char(text, end, step=1)
     return not _TOKEN_BODY.match(before) and not _TOKEN_BODY.match(after)
+
+
+def _boundary_char(text: str, index: int, *, step: int) -> str:
+    """The neighbouring character, with a non-numeric separator reported as absent.
+
+    `step` says which way the number runs: `-1` when looking left of the occurrence, `+1`
+    when looking right. A `.` or `,` keeps its token-body meaning only when the character
+    beyond it — further left, or further right — is a digit.
+    """
+    if index < 0 or index >= len(text):
+        return ""
+    character = text[index]
+    if character not in ".,":
+        return character
+    beyond = index + step
+    if 0 <= beyond < len(text) and text[beyond].isdigit():
+        return character
+    return ""
 
 
 def _mask_literals(buffer: list[str], literals: Sequence[str]) -> None:

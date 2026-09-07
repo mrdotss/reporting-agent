@@ -125,18 +125,76 @@ def test_the_system_prompt_is_not_treated_as_enforcement() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_a_numeral_the_model_invents_reaches_the_document_unaltered() -> None:
-    """Nothing strips, rounds or substitutes a numeral the model wrote.
+def test_prose_carrying_an_invented_numeral_is_refused_whole() -> None:
+    """**A revision of this file's own earlier policy, and the reason it changed.**
 
-    The tempting alternative — quietly scrubbing digits out of model prose — would make the
-    document pass verification while hiding that the model tried. The numeral must reach the
-    masking pass, which fails the verification and withholds the report.
+    This used to assert the opposite: that an invented numeral reached the document, so the
+    masking pass would fail verification and withhold the report. The reasoning was sound
+    and the alternative it rejected — quietly scrubbing digits out of model prose — is
+    still rejected here. A scrubbed paragraph passes verification while hiding that the
+    model tried, and that is strictly worse than either outcome.
+
+    What changed is that the policy met production. A report was withheld over `0.20%`,
+    `1.14%` and `0.62%`: three plausible near-misses of the `0.18%`, `1.11%` and `0.57%`
+    the model had been shown and rounded anyway. Every figure the compiler placed was
+    correct, every gate but the last one passed, and the customer got nothing.
+
+    Nothing numeric depends on the model, so a narrator that invents belongs in the same
+    category as a narrator that is unreachable: it costs a paragraph, not a report. So the
+    text is refused **whole** — not edited, not partially kept — and the refusal is logged.
+    Between scrubbing (silent, dishonest) and withholding (honest, disproportionate) there
+    is a third answer, and this is it.
     """
     invented = "CPU averaged 37.4% and grew 12% month over month."
 
     returned = generate(REQUEST, client=FakeModel(invented), model_id=MODEL)
 
-    assert returned == invented
+    assert returned == ""
+
+
+def test_a_refusal_is_all_or_nothing_and_never_an_edit() -> None:
+    """The invariant the old test was really protecting. A paragraph is kept exactly as
+    written or dropped entirely; no third string — digits removed, numbers rounded to the
+    real ones — may ever be returned, because that is the outcome that would hide a model
+    inventing figures behind a document that verifies."""
+    invented = "CPU averaged 37.4% here."
+
+    returned = generate(REQUEST, client=FakeModel(invented), model_id=MODEL)
+
+    assert returned in ("", invented)
+    assert returned == ""
+
+
+def test_prose_quoting_only_what_it_was_shown_is_kept() -> None:
+    """The other half, and the one that decides whether this check is usable at all: a
+    narrator that quotes correctly must not be refused. `REQUEST` shows `12.48%`, and the
+    trailing full stop is part of the sentence rather than part of the figure — the
+    survivor that started this was reported as `0.20%.`, punctuation included."""
+    faithful = "CPU averaged 12.48%."
+
+    returned = generate(REQUEST, client=FakeModel(faithful), model_id=MODEL)
+
+    assert returned == faithful
+
+
+def test_a_date_in_prose_is_not_an_invented_figure() -> None:
+    """`August 2026` cost two of the six blocking findings on the withheld run. A month
+    and its year is a date, and refusing a paragraph over one would drop most paragraphs
+    a narrator writes."""
+    dated = "Through August 2026 the machine stayed quiet."
+
+    returned = generate(REQUEST, client=FakeModel(dated), model_id=MODEL)
+
+    assert returned == dated
+
+
+def test_prose_with_no_numerals_at_all_is_kept() -> None:
+    """What the instruction now asks for, and the shape that cannot fail."""
+    wordy = "It ran at a low, steady level with brief peaks well above its average."
+
+    returned = generate(REQUEST, client=FakeModel(wordy), model_id=MODEL)
+
+    assert returned == wordy
 
 
 def test_multiple_content_blocks_are_concatenated_in_order() -> None:

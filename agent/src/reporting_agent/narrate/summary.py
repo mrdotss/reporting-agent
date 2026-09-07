@@ -37,6 +37,7 @@ the document pass verification while hiding the fact that the model tried.
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final, Protocol
@@ -127,10 +128,11 @@ SYSTEM_PROMPT_TREND: Final[str] = (
     "resource headings, no summary paragraph, no closing.\n"
     "\n"
     "A resource with one month has no trend; say that plainly rather than describing "
-    "a direction. Do not write any number that is not in the list of figures given to "
-    "you. Do not compute a difference, a percentage change, a rate or an average "
-    "across months — describe the movement in words. Do not speculate about causes "
-    "you cannot see in the data.\n"
+    "a direction. Write NO numbers at all — not even one quoted from the figures "
+    "given to you. They are there for you to judge scale and direction, and the chart "
+    "above your paragraph already plots every one of them. Describe the movement in "
+    "words: rising, falling, flat, or a history too short to say. Do not speculate "
+    "about causes you cannot see in the data.\n"
     "\n"
     "Return prose only: no headings, no bullet lists, no markdown."
 )
@@ -157,11 +159,12 @@ SYSTEM_PROMPT_TREND_ID: Final[str] = (
     "daya, tanpa paragraf ringkasan, tanpa penutup.\n"
     "\n"
     "Sumber daya dengan satu bulan tidak memiliki tren; sampaikan hal itu secara jelas "
-    "alih-alih menjelaskan sebuah arah. Jangan menulis angka apa pun yang tidak ada "
-    "dalam daftar angka yang diberikan kepada Anda. Jangan menghitung selisih, "
-    "perubahan persentase, laju, atau rata-rata antarbulan — jelaskan pergerakannya "
-    "dengan kata-kata. Jangan berspekulasi tentang penyebab yang tidak dapat Anda lihat "
-    "dalam data.\n"
+    "alih-alih menjelaskan sebuah arah. JANGAN menulis angka sama sekali — bahkan yang "
+    "dikutip dari daftar angka yang diberikan kepada Anda. Angka-angka itu ada agar "
+    "Anda dapat menilai skala dan arahnya, dan grafik di atas paragraf Anda sudah "
+    "memplot semuanya. Jelaskan pergerakannya dengan kata-kata: naik, turun, datar, "
+    "atau riwayatnya terlalu pendek untuk disimpulkan. Jangan berspekulasi tentang "
+    "penyebab yang tidak dapat Anda lihat dalam data.\n"
     "\n"
     "Kembalikan prosa saja: tanpa heading, tanpa bullet list, tanpa markdown."
 )
@@ -180,9 +183,12 @@ SYSTEM_PROMPT_RESOURCE: Final[str] = (
     "— no heading, no resource name on its own line, no recommendation list, no "
     "closing.\n"
     "\n"
-    "Do not write any number that is not in the list of figures given to you. Do not "
-    "compute a difference, a percentage, a ratio, a headroom or an average across the "
-    "figures — describe what you see in words. Do not recommend a resize, a SKU or a "
+    "Write NO numbers at all — no percentages, no byte counts, no dates, not even one "
+    "quoted from the figures below. They are there for you to judge scale and shape, "
+    "and the table and chart directly above your paragraph already state every one of "
+    "them, so a number you repeat is at best redundant and at worst slightly wrong. "
+    "Describe what you see in words: low or heavy, steady or spiky, close to its "
+    "average or far above it. Do not recommend a resize, a SKU or a "
     "cost action: you are not shown price, quota or workload, and a recommendation "
     "drawn from utilization alone would be a guess presented as advice. Do not "
     "speculate about causes you cannot see in the data.\n"
@@ -215,9 +221,12 @@ SYSTEM_PROMPT_RESOURCE_ID: Final[str] = (
     "— tanpa judul, tanpa nama sumber daya pada baris tersendiri, tanpa daftar "
     "rekomendasi, tanpa penutup.\n"
     "\n"
-    "Jangan menulis angka apa pun yang tidak ada dalam daftar angka yang diberikan "
-    "kepada Anda. Jangan menghitung selisih, persentase, rasio, sisa kapasitas, atau "
-    "rata-rata antarangka — jelaskan apa yang Anda lihat dengan kata-kata. Jangan "
+    "JANGAN menulis angka sama sekali — tanpa persentase, tanpa jumlah byte, tanpa "
+    "tanggal, bahkan yang dikutip dari angka di bawah ini. Angka-angka itu ada agar "
+    "Anda dapat menilai skala dan bentuknya, dan tabel serta grafik tepat di atas "
+    "paragraf Anda sudah menyatakan semuanya. Jelaskan apa yang Anda lihat dengan "
+    "kata-kata: ringan atau berat, stabil atau bergejolak, dekat dengan rata-ratanya "
+    "atau jauh di atasnya. Jangan "
     "merekomendasikan perubahan ukuran, SKU, atau tindakan biaya: Anda tidak diberi "
     "harga, kuota, atau beban kerja, dan rekomendasi yang ditarik dari pemanfaatan "
     "saja adalah tebakan yang disajikan sebagai saran. Jangan berspekulasi tentang "
@@ -304,6 +313,29 @@ def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
     return [{"role": "user", "content": [{"text": "\n".join(lines)}]}]
 
 
+def unprovable_figures_in(text: str, request: ProseRequest) -> tuple[str, ...]:
+    """Numeric tokens in `text` that are not among the figures `request` showed the model.
+
+    The model is handed the ledger's **formatted strings** and told to quote nothing else.
+    This is the check that it did, run through `verify/masking.py` — the same algebra the
+    delivery gate uses, imported rather than reimplemented, because two maskers that could
+    disagree would be worse than no second check at all.
+
+    Stricter than the gate on purpose. The gate also forgives the template's own literals
+    and a table's proven text facts, which a paragraph of commentary has no business
+    quoting; the only vocabulary a narrator is entitled to is the one it was given.
+    """
+    from reporting_agent.verify.masking import mask_paragraph
+
+    shown = [formatted for _label, formatted in request.figures]
+    masked = mask_paragraph(text, ledger_strings=shown, allowlist=[])
+    return tuple(
+        token
+        for token in re.findall(r"\S+", masked)
+        if any(character.isdigit() for character in token)
+    )
+
+
 def generate(
     request: ProseRequest, *, client: BedrockConverse, model_id: str, language: str = "en"
 ) -> str:
@@ -329,7 +361,34 @@ def generate(
         )
         return ""
 
-    return _text_of(response)
+    text = _text_of(response)
+    if not text:
+        return text
+
+    # **The narrator's output is refused here, not withheld from the customer later.**
+    #
+    # A model that writes a figure the compiler never placed is exactly what the delivery
+    # gate exists to catch, and it caught one: a report was withheld over `0.20%`,
+    # `1.14%` and `0.62%` — three plausible near-misses of the real `0.18%`, `1.11%` and
+    # `0.57%`, which the model had been shown and rounded anyway.
+    #
+    # Withholding was the correct verdict on that document and the wrong outcome for the
+    # run. Nothing numeric depends on the model (see this module's own docstring), so a
+    # narrator that invents belongs in the same category as a narrator that is
+    # unreachable: it costs a paragraph, not a report. Refusing the text here is what
+    # makes those two the same outcome, and it means no unprovable figure is ever written
+    # into a document in the first place — the gate stays a backstop rather than becoming
+    # the first line of defence.
+    unprovable = unprovable_figures_in(text, request)
+    if unprovable:
+        logger.warning(
+            "the narrator wrote %d figure(s) it was not shown (%s); this block renders "
+            "its compiler-placed figures with no prose and the run continues",
+            len(unprovable),
+            ", ".join(sorted(set(unprovable))[:5]),
+        )
+        return ""
+    return text
 
 
 def _text_of(response: Mapping[str, Any]) -> str:

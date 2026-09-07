@@ -177,7 +177,7 @@ def test_a_temporal_value_is_masked(temporal: str) -> None:
 
 
 def test_a_trend_s_month_labels_are_not_measurements() -> None:
-    """The defect this covers, and it reached production.
+    r"""The defect this covers, and it reached production.
 
     A seeded month is labelled `2026-06` — a month is not a day, and `2026-06-01` would
     say it was — and those labels are the companion table's column headers. Stage 4 knew
@@ -1022,3 +1022,70 @@ def test_a_value_the_ledger_does_not_hold_still_survives_in_that_table() -> None
     )
 
     assert [f["substring"] for f in findings] == ["444"]
+
+
+# --- a figure at the end of a sentence, and a month with its year ------------------------
+#
+# Both classes below withheld a real report. It carried six blocking findings and every
+# figure the compiler placed in it was correct: three were near-misses the narrator
+# invented (the gate was right), and three were these — a correctly quoted figure the
+# boundary rule refused to mask, and a date the temporal stage did not know.
+
+
+def test_a_quoted_figure_is_masked_through_the_full_stop_that_ends_its_sentence() -> None:
+    """`12.48%.` was reported as an unmatched numeral on a paragraph quoting `12.48%`
+    exactly. `.` is in the token-body class because it is number syntax, and a sentence's
+    last character was read as though it were."""
+    assert _survivors("CPU averaged 12.48%.", ("12.48%",)) == []
+    assert _survivors("It hit 12.48%, then fell.", ("12.48%",)) == []
+    assert _survivors("Peak 88.20%; average 12.48%.", ("12.48%", "88.20%")) == []
+
+
+def test_a_separator_between_two_digits_still_belongs_to_the_number() -> None:
+    """The other half of the rule, and the reason `.` and `,` are in the class at all: a
+    literal that lands **inside** a longer number is not an occurrence of it. Each of
+    these is a case this module's own docstring argues for."""
+    assert _survivors("of 1,234.56 bytes", ("234",)) == ["1,234.56"]
+    assert _survivors("it reached 112.48% today", ("12.48%",)) == ["112.48%"]
+    assert _survivors("the value 1.02units here", ("1.0",)) == ["1.02units"]
+
+
+def test_a_leading_separator_is_judged_by_what_is_beyond_it() -> None:
+    """Symmetry: the left neighbour is read the same way as the right, looking further
+    left for the digit that would make it number syntax."""
+    # `.5` after a digit is a decimal tail, so `5` is inside `1.5` and not an occurrence.
+    assert _survivors("about 1.5 times", ("5",)) == ["1.5"]
+    # After a word, the same `.` is sentence punctuation and `5` stands alone.
+    assert _survivors("done. 5 remain", ("5",)) == []
+
+
+def test_an_invented_figure_survives_its_own_punctuation() -> None:
+    """The mutation that matters. Loosening the boundary must not let a wrong number
+    through: `0.20%` against a ledger holding `0.18%` is still reported, full stop and
+    all — this is the exact finding that withheld the run."""
+    assert _survivors("CPU averaged 0.20%.", ("0.18%",)) == ["0.20%."]
+
+
+def test_a_month_and_its_year_are_a_date_in_both_languages() -> None:
+    """`2026,` and `2026.` were two of the six findings. A trend labels months `2026-08`
+    and is masked by the calendar-month rule; a narrator writes `August 2026`."""
+    assert _survivors("Through August 2026 it was quiet.") == []
+    assert _survivors("Sepanjang Agustus 2026 mesin ini tenang.") == []
+    assert _survivors("through august 2026 it idled.") == []
+
+
+def test_a_bare_four_digit_number_is_never_assumed_to_be_a_year() -> None:
+    """Why the rule is anchored to the month name rather than matching a bare year.
+
+    This report's most common metric is measured in bytes, and a narrator inventing
+    `2048 MB` would be masked away by a rule that called any four digits a year — the gate
+    silently missing the one thing it exists to catch."""
+    assert _survivors("it held 2048 MB free") == ["2048"]
+    assert _survivors("peaked at 2026 MB") == ["2026"]
+    assert _survivors("the count was 1999") == ["1999"]
+
+
+def test_the_month_rule_masks_the_year_and_not_a_number_after_it() -> None:
+    """The lookahead: `August 20261` is not a date, and masking seven of its characters
+    would leave a stray `1` reported as a survivor of nothing."""
+    assert _survivors("in August 20261 units") == ["20261"]
