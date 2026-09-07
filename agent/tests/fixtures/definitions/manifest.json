@@ -68,7 +68,7 @@
       "file": "accept-every-block-type.json",
       "mode": "run",
       "verdict": "accept",
-      "definition_sha256": "8a1636687585017b8675cc9e2728892306ea745848c8def9670b7da2ff218471",
+      "definition_sha256": "64ce66baecc9faae8f792dcd483b0c045176e8cad05964b5e4bcd5c29fe17ea1",
       "offenders": []
     },
     {

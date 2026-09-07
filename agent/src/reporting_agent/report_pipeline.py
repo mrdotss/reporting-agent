@@ -1181,7 +1181,9 @@ async def _document_phases(
     messages = load_messages(_language)
 
     design = DesignSettings.from_plain(definition.get("design"), language=_language)
-    view = build_snapshot_view(collected.document)
+    view = build_snapshot_view(
+        collected.document, child_resource_types=_child_resource_types()
+    )
     block_count = _block_count(definition)
 
     # --- compiling ------------------------------------------------------------------
@@ -1555,7 +1557,9 @@ async def _verify(
     # Req 27.10's "that block's resolved scope". Without this the anchored pass has no
     # expectation to compare a row count against, and `table_rows_absent` — one of the
     # sixteen blocking types — can never fire on a real run however empty a table is.
-    view = build_snapshot_view(collected.document)
+    view = build_snapshot_view(
+        collected.document, child_resource_types=_child_resource_types()
+    )
     scope_counts = table_scope_counts(
         definition,
         view=view,
@@ -1934,6 +1938,22 @@ async def _report(
     await reporter.report(phase, current=current, total=total, label=label)
 
 
+def _child_resource_types() -> tuple[str, ...]:
+    """The types the catalogue declares as sub-records rather than deployed resources.
+
+    A snapshot's `resources` list is not a list of deployed things: it also holds the
+    sub-records a section tables (subnets, security rules) and the findings a
+    recommendation table rows (`Microsoft.Advisor/recommendations`). Counting all three as
+    resources reported 80 for a subscription holding 23 and contradicted the scan page the
+    customer had just read — the app already counts by this same `child_of` declaration
+    (`app/lib/scans/view.ts`), so handing it to the view makes the two agree by
+    construction.
+    """
+    from reporting_agent.catalog.loader import child_type_names, load_catalog
+
+    return tuple(child_type_names(load_catalog()))
+
+
 def _prose_provider(model_id: str, region: str | None) -> Any | None:
     """The executive summary's model, or `None`.
 
@@ -2017,7 +2037,9 @@ async def run_verify_report(
     prose = await _optional_json(store, f"{prefix}prose.json")
     historical_raw = await _optional_json(store, f"{prefix}historical.json")
 
-    view = build_snapshot_view(snapshot)
+    view = build_snapshot_view(
+        snapshot, child_resource_types=_child_resource_types()
+    )
 
     # Replay historical selection: load _StoredSelection and build a HistoricalSource
     # from the selected prior snapshots, exactly as the generate path does.
@@ -2392,7 +2414,12 @@ async def run_render_preview(
         TOOL_RENDER_DOCUMENT, label="Preview", status="Rendering a draft page"
     )
     yield step
-    compiled = compile_document(definition, view=build_snapshot_view(snapshot))
+    compiled = compile_document(
+        definition,
+        view=build_snapshot_view(
+            snapshot, child_resource_types=_child_resource_types()
+        ),
+    )
 
     # The pinned language, resolved the same way the delivered path resolves it at line
     # ~590 — so a preview of an Indonesian template is Indonesian. This was MISSING until

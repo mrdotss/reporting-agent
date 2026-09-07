@@ -49,10 +49,11 @@ export const BLOCK_TYPES = [
   "metric_summary",
   "inventory_summary",
   "trend_narrative",
+  "resource_narrative",
 ] as const
 // --- END BLOCK TYPES ---
 
-/** One of the twenty-one declared block types (Requirement 6.1). */
+/** One of the twenty-two declared block types (Requirement 6.1). */
 export type BlockType = (typeof BLOCK_TYPES)[number]
 
 /**
@@ -292,6 +293,16 @@ export const BLOCK_CONFIG = {
   // established in the ledger, so there is no second declaration for the two to disagree
   // about what they are about.
   trend_narrative: {
+    required: [],
+    optional: ["caption"],
+    enums: {},
+  },
+  // One short paragraph about the single resource this block was expanded for, sitting
+  // under that resource's own heading. Distinct from `trend_narrative`: that one describes
+  // movement across months and appears once per report, this one describes behaviour
+  // inside the reported period and is expanded per resource. Declares nothing of its own
+  // for the same reason its sibling does not.
+  resource_narrative: {
     required: [],
     optional: ["caption"],
     enums: {},

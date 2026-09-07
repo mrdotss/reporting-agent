@@ -939,6 +939,11 @@ async def handle_generate_report(
         steps=steps,
         artifact_bucket=CONFIG.artifact_bucket,
         aws_region=CONFIG.aws_region,
+        # Req 19.1 — without this the pipeline's `prose_model_id` default of `""` wins,
+        # `prose_generator` returns `None` on its one silent path, and every deferred
+        # block renders its fallback. The configuration validates this at process start,
+        # so a run reaching here always has a model id to spend.
+        prose_model_id=CONFIG.prose_model_id,
         progress=invocation.progress,
     ):
         yield event

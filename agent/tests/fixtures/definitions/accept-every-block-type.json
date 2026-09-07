@@ -199,6 +199,11 @@
     },
     {
       "config": {},
+      "id": "b-resource-narrative",
+      "type": "resource_narrative"
+    },
+    {
+      "config": {},
       "id": "b-methodology",
       "type": "appendix_methodology"
     }

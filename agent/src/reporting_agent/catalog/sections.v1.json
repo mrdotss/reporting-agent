@@ -123,6 +123,9 @@
               "per": "resource",
               "config": {
                 "_scope": "children",
+                "_types": [
+                  "Microsoft.Network/virtualNetworks/subnets"
+                ],
                 "columns": [
                   {
                     "kind": "fact",
@@ -384,6 +387,9 @@
               "per": "resource",
               "config": {
                 "_scope": "children",
+                "_types": [
+                  "Microsoft.Network/networkSecurityGroups/securityRules"
+                ],
                 "columns": [
                   {
                     "kind": "fact",
@@ -437,6 +443,9 @@
               "per": "resource",
               "config": {
                 "_scope": "children",
+                "_types": [
+                  "Microsoft.Network/networkSecurityGroups/securityRules"
+                ],
                 "columns": [
                   {
                     "kind": "fact",
@@ -676,6 +685,10 @@
                 "chart_and_table",
                 "table_only"
               ]
+            },
+            {
+              "block": "resource_narrative",
+              "per": "resource"
             },
             {
               "block": "top_n_table",
