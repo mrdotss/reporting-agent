@@ -406,3 +406,127 @@ class TestV3ThroughALiftedV2Profile:
 
         docx = walk.store.get(reports_key(ACTOR_ID, RUN_ID, "report.docx"))
         assert docx is not None and docx.body.startswith(b"PK\x03\x04")
+
+
+class TestReVerificationOfAV3Run:
+    """`verify_report` over a stored v3 report — the command, not the delivered path.
+
+    A run's own verification never recompiles: it verifies the `CompiledDocument` it
+    already holds. `run_verify_report` is the separate command that reads a stored report
+    back and rebuilds its ledger from the pinned version and the stored snapshot, and it
+    is the only caller for which "can this definition be compiled from scratch" is a live
+    question.
+
+    It could not compile a v3 one. `compile_document` refuses a `schema_version` 3
+    definition with no section catalogue — a section expands into blocks and there is
+    nothing to expand it with — and this path passed none, so re-verification of every
+    profile the product creates failed before comparing anything.
+
+    Nothing caught it because every existing test of this command drives a v1/v2
+    definition, whose blocks are written out in the definition itself and need no
+    catalogue. The gap was in the coverage, not in anyone's reasoning, so the fix is a v3
+    run through the same command rather than a narrower assertion about the argument.
+    """
+
+    def _reverify(self, walk: V2Walk, definition: dict[str, Any]):
+        import asyncio
+
+        from reporting_agent.main import StepTracker
+        from reporting_agent.report_pipeline import run_verify_report
+
+        events: list[Event] = []
+
+        async def go() -> None:
+            async for event in run_verify_report(
+                payload={
+                    "definition": definition,
+                    "template_version_id": "tv_02ABCDEF123456789012345678",
+                    "attempt_id": f"{RUN_ID}-reverify-v3",
+                    # The same per-run values the delivered run was given. They are
+                    # deliberately **not** in the pinned definition — a customer name and
+                    # a reporting period belong to the run, not to the profile — so a
+                    # re-verification has to be handed them again or the front matter it
+                    # re-renders is a different document from the one it is checking.
+                    "customer_name": "Contoso Indonesia",
+                    "period": {"start": "2026-07-01", "end": "2026-07-01"},
+                    "revision_history_row": {
+                        "revision": "1.0",
+                        "note": "Initial report",
+                        "author": "R. Prakoso",
+                    },
+                },
+                context={"actor_id": ACTOR_ID, "run_id": RUN_ID},
+                steps=StepTracker(),
+                artifact_bucket="rpt-artifacts-test",
+                object_store=walk.store,
+            ):
+                events.append(event)
+
+        try:
+            asyncio.run(asyncio.wait_for(go(), timeout=600))
+        except Exception as exc:  # noqa: BLE001 - the failure is the assertion's subject
+            # Carry the cause into the message. `derive_allowlist` re-raises every render
+            # failure under one sentence, so without this a broken re-verification reports
+            # "the null-context render failed (RenderFailedError)" and nothing about why —
+            # which is how a missing `customer_name` looked while this was being written.
+            cause = exc.__cause__
+            while cause is not None:
+                exc = type(exc)(f"{exc} <- caused by {type(cause).__name__}: {cause}")
+                cause = cause.__cause__
+            return events, exc
+        return events, None
+
+    def test_a_stored_v3_report_can_be_re_verified_at_all(
+        self, walked_v3: tuple[V2Walk, list[Event]]
+    ) -> None:
+        """The regression. Before the catalogue reached this path it raised
+        `COMPILE_FAILED: a schema_version 3 definition requires the section catalogue`."""
+        walk, _ = walked_v3
+        _events, error = self._reverify(walk, v3_definition())
+        assert error is None, f"re-verification raised: {error!r}"
+
+    def test_the_recompiled_ledger_is_byte_identical_to_the_delivered_one(
+        self, walked_v3: tuple[V2Walk, list[Event]]
+    ) -> None:
+        """The claim the recompile exists to make, and now the only one it can make here.
+
+        A mismatch between the ledger rebuilt from the pinned version and the stored one
+        raises inside `run_verify_report` rather than reporting a status, so reaching the
+        end without an exception **is** the byte-identity assertion: the figures in the
+        delivered document still trace to the snapshot it names.
+        """
+        walk, _ = walked_v3
+        events, error = self._reverify(walk, v3_definition())
+        assert error is None, f"re-verification raised: {error!r}"
+        assert [e for e in events if e["type"] == "verification"], (
+            "the command produced no verification event"
+        )
+
+    @pytest.mark.xfail(
+        strict=True,
+        reason=(
+            "verify_report cannot yet reach a passing verdict on a document containing a "
+            "chart or an anchored data table, in ANY schema version. `VerifyInputs` is "
+            "built from the RECOMPILED ledger, and a companion table's anchor and a "
+            "chart's sidecar are populated during render (`render/charts.py`, "
+            "`render/docx.py`) — a recompile does not render, so the table pass reports "
+            "`table_anchor_unexpected` and the chart pass `chart_hash_mismatch` on a "
+            "correct report. Pre-existing and independent of the v3 catalogue fix above: "
+            "no re-verification fixture in this suite has ever contained a chart, which "
+            "is why it survived. Fixing it needs the stored `ledger.json` deserialized "
+            "back into a `FigureLedger` (no such reader exists) or the stored sidecars "
+            "loaded and the anchor layer taken from the stored ledger — a design "
+            "decision about what re-verification checks, not a missing argument."
+        ),
+    )
+    def test_re_verification_reaches_a_passing_verdict(
+        self, walked_v3: tuple[V2Walk, list[Event]]
+    ) -> None:
+        """Marked `strict`, so the day the gap is closed this test fails as unexpectedly
+        passing and has to be un-marked deliberately rather than drifting into a silent
+        pass nobody notices."""
+        walk, _ = walked_v3
+        events, error = self._reverify(walk, v3_definition())
+        assert error is None, f"re-verification raised: {error!r}"
+        verifications = [e for e in events if e["type"] == "verification"]
+        assert verifications[0]["status"] == "pass"

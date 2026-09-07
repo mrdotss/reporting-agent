@@ -2062,10 +2062,24 @@ async def run_verify_report(
                     pass
             hist_source = _HistoricalSourceFromStore(loaded_views)
 
+    # A v3 definition cannot be compiled without the section catalogue — `compile_document`
+    # refuses outright rather than guessing an expansion — and every profile this product
+    # creates is v3. Omitting it here made `verify_report` fail on every real report before
+    # it compared anything; the delivered path was never affected, because a run's own
+    # verification uses the `compiled` object it already has and recompiles nothing.
+    #
+    # Loaded on the same terms as the generate path: `None` below v3, so a v1/v2 definition
+    # keeps taking the branch that needs no catalogue at all.
+    verify_catalogue = (
+        load_section_catalogue()
+        if definition.get("schema_version") == 3
+        else None
+    )
     recompiled = compile_document(
         definition, view=view, prose=_StoredProse(prose), catalog_scales=None,
         historical=hist_source,
         historical_selections=hist_selections,
+        catalogue=verify_catalogue,
     )
 
     # Compare the compile-derivable layer only. The stored ledger includes render-populated
@@ -2087,6 +2101,7 @@ async def run_verify_report(
     result = await _verify_stored(
         attempt_id=attempt_id,
         run_id=run_id,
+        section_catalogue=verify_catalogue,
         definition=definition,
         template_version_id=pinned_version_id(payload, definition),
         snapshot=snapshot,
@@ -2243,6 +2258,7 @@ async def _verify_stored(
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     front_matter: object | None = None,
     run_facts: object | None = None,
+    section_catalogue: object | None = None,
 ) -> Mapping[str, Any]:
     from docx import Document as open_docx
 
@@ -2299,6 +2315,10 @@ async def _verify_stored(
             historical=_historical_verify_inputs(historical_selections),
             front_matter=front_matter,
             run_facts=run_facts,
+            # The allowlist is re-derived by compiling the pinned version against a null
+            # context (Req 28.7), which is a second v3 compile and needs the catalogue for
+            # the same reason the first one does.
+            section_catalogue=section_catalogue,
         )
     )
 
