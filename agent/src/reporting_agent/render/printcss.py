@@ -260,7 +260,19 @@ table.rpt-table th {{
   text-align: left;
   padding: 3.5pt 5pt;
   vertical-align: bottom;
-  overflow-wrap: normal;
+  /* `break-word`, not `normal`. Under `table-layout: fixed` a column is the width the
+     `<colgroup>` declared, and `normal` offers the engine no break opportunity inside a
+     word — so a header word longer than its column does not wrap, it **paints outside the
+     cell**, over the border and its neighbour. `IP configuration count` over a column
+     sized 9.4% by its values (`3`, and three blanks) is what that looks like.
+
+     `break-word` breaks a word only when it cannot fit on a line of its own, so every
+     header that already fits is set exactly as it was — this cannot reintroduce the
+     `ALLOC ATION METHO D` the `normal` was defending against, which came from `auto`
+     layout sizing a column from its content and is gone with the declared widths. `td`
+     below carries the same reasoning and the stronger `anywhere`, because a resource id
+     has no break opportunity anywhere in it. */
+  overflow-wrap: break-word;
   hyphens: none;
 }}
 .rpt-grid td,

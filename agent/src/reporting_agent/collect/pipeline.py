@@ -103,6 +103,7 @@ from typing import Any, Final, Protocol, runtime_checkable
 from reporting_agent.catalog.loader import (
     EnhancedCounterEntry,
     LoadedCatalog,
+    child_type_names,
     is_child_type,
     load_catalog,
 )
@@ -1135,6 +1136,28 @@ class SnapshotReuseRefused(RuntimeError):
     """
 
 
+def _estate_resource_count(document: Mapping[str, PlainData]) -> int:
+    """How many **deployed** resources the snapshot describes.
+
+    Not `len(document["resources"])`, which is the record count. That list also holds the
+    sub-records a section tables (subnets, security rules) and the findings a
+    recommendation table rows, so the record count for a subscription holding 23 deployed
+    resources was 80 — and this number is what the app's run list prints under
+    `ui.run_list.resources` and what the report's subscription overview states.
+
+    The catalogue's `child_of` declaration is the same line the scan page counts by
+    (`azure/inventory.py::read_counts`) and the same one the compiler's estate rollups use
+    (`compile/snapshot_view.py`), so all three agree by construction.
+    """
+    children = {name.casefold() for name in child_type_names(load_catalog())}
+    return sum(
+        1
+        for raw in _as_list(document["resources"])
+        if isinstance(raw, Mapping)
+        and str(raw.get("resource_type") or "").casefold() not in children
+    )
+
+
 def outcome_from_snapshot(
     document: Mapping[str, PlainData], *, plan: RunPlan
 ) -> CollectionOutcome:
@@ -1182,7 +1205,7 @@ def outcome_from_snapshot(
     return CollectionOutcome(
         document=document,
         snapshot_id=str(document["snapshot_id"]),
-        resource_count=len(_as_list(document["resources"])),
+        resource_count=_estate_resource_count(document),
         gap_count=len(gaps),
         gaps=gaps,
         partial=bool(gaps),
@@ -1505,7 +1528,7 @@ async def _drive(
 
     # --- exactly one snapshot_ready, before `done` (Req 14.9, 35.7) ------------------
     document_gaps = tuple(_as_list(document["gaps"]))
-    resource_count = len(_as_list(document["resources"]))
+    resource_count = _estate_resource_count(document)
     yield {
         "type": SNAPSHOT_READY_EVENT_TYPE,
         "snapshot_id": document["snapshot_id"],

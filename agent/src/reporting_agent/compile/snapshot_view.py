@@ -60,7 +60,7 @@ stage be exercised against a JSON file.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
@@ -891,7 +891,11 @@ class SnapshotView:
 # --- the walk -----------------------------------------------------------------------
 
 
-def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
+def build_snapshot_view(
+    document: Mapping[str, object],
+    *,
+    child_resource_types: Collection[str] = (),
+) -> SnapshotView:
     """Index one snapshot document in a single walk (Req 15.5, 16.4).
 
     Every value's `pointer` is computed from the position the walk is standing at, so
@@ -904,6 +908,10 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     resources_raw = _require_list(document, "resources")
     gaps_raw = _require_list(document, "gaps")
     window = _build_window(document)
+
+    # Folded once, here, because two separate counts below need it: the fidelity-tier
+    # tally built during the resource walk and the estate rollups built after it.
+    children = {name.casefold() for name in child_resource_types}
 
     by_pointer: dict[str, SnapshotValue] = {}
     facts_by_pointer: dict[str, FactTextValue] = {}
@@ -929,7 +937,15 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
 
         resource = _build_resource(raw_resource, index, at)
         resources.append(resource)
-        tier_counts[resource.fidelity_tier] = tier_counts.get(resource.fidelity_tier, 0) + 1
+        # The coverage record labels these rows "Resources at fidelity tier <tier>", so
+        # they count what the headline counts. Counting every row here would have the
+        # verification appendix reporting 80 baseline-tier resources on a page whose
+        # subscription overview reports 23 — one document contradicting itself about the
+        # size of the estate it describes.
+        if resource.resource_type.casefold() not in children:
+            tier_counts[resource.fidelity_tier] = (
+                tier_counts.get(resource.fidelity_tier, 0) + 1
+            )
 
         for value in _sku_values(resource, raw_resource, at, window.descriptor):
             _record(by_pointer, value)
@@ -1133,17 +1149,41 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
     group_counts: dict[str, int] = {}
     region_counts: dict[str, int] = {}
     type_counts: dict[str, int] = {}
-    for resource in resources:
+    # `resources` holds three kinds of row and only one of them is a deployed thing: a
+    # first-class resource, a **sub-record** of one (a subnet, a security rule), and a
+    # **finding** about one (`Microsoft.Advisor/recommendations`, one row per
+    # recommendation since a finding became its own table row). All three are legitimately
+    # in the snapshot — the subnet table and the recommendation table are built from them —
+    # and all three used to be counted as resources, so a subscription holding 23 deployed
+    # resources reported 80 and disagreed with the scan the customer had just read.
+    #
+    # The catalogue already draws this line, with `child_of`, and the app's scan page
+    # already counts by it. Sub-records and findings are excluded here on the same
+    # declaration, so the two halves agree by construction rather than by coincidence.
+    first_class = tuple(
+        resource for resource in resources
+        if resource.resource_type.casefold() not in children
+    )
+    for resource in first_class:
         for bucket, key in (
             (group_counts, resource.resource_group),
             (region_counts, resource.location),
-            (type_counts, resource.resource_type),
         ):
             if key:
                 bucket[key] = bucket.get(key, 0) + 1
+    # Counted over **every** row, deliberately, and not over `first_class`. A per-type
+    # count names its own type, so "3 subnets" is unambiguous in a way "resource group
+    # FATechID holds 79 resources" is not — and filtering here would delete the
+    # cardinality a subnet or recommendation section resolves its own count from, turning
+    # a misleading total into a missing figure.
+    for resource in resources:
+        if resource.resource_type:
+            type_counts[resource.resource_type] = (
+                type_counts.get(resource.resource_type, 0) + 1
+            )
 
     cardinalities: list[tuple[tuple[str, ...], int]] = [
-        (("resources",), len(resources)),
+        (("resources",), len(first_class)),
         (("gaps",), len(gaps)),
         (("statistics",), statistic_count),
         (("day_buckets",), day_bucket_count),
@@ -1151,7 +1191,10 @@ def build_snapshot_view(document: Mapping[str, object]) -> SnapshotView:
         (("raw_archive", "objects"), _raw_archive_count(document)),
         (("resource_group",), len(group_counts)),
         (("location",), len(region_counts)),
-        (("resource_type",), len(type_counts)),
+        (
+            ("resource_type",),
+            len({resource.resource_type for resource in first_class if resource.resource_type}),
+        ),
         *(
             (("fidelity_tier", tier), tier_count)
             for tier, tier_count in sorted(tier_counts.items())

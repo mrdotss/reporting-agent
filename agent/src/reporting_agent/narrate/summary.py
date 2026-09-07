@@ -43,6 +43,7 @@ from typing import Any, Final, Protocol
 
 from reporting_agent.compile.blocks.base import (
     PROSE_KIND_EXECUTIVE_SUMMARY,
+    PROSE_KIND_RESOURCE,
     PROSE_KIND_TREND,
     ProseRequest,
 )
@@ -167,11 +168,72 @@ SYSTEM_PROMPT_TREND_ID: Final[str] = (
 """Indonesian variant of the trend instruction (Req 15.7), on the same terms as
 :data:`SYSTEM_PROMPT_ID`."""
 
+SYSTEM_PROMPT_RESOURCE: Final[str] = (
+    "You write the short review that sits under one resource in an infrastructure "
+    "utilization report.\n"
+    "\n"
+    "Every figure below belongs to the SAME resource and covers the SAME reporting "
+    "period, each labelled with its resource, its metric and its window. Write ONE "
+    "short paragraph — three sentences at most — saying what this resource did over the "
+    "period: how heavily it was used, whether its peaks are far from its averages, and "
+    "whether anything in the figures deserves a reader's attention. Write nothing else "
+    "— no heading, no resource name on its own line, no recommendation list, no "
+    "closing.\n"
+    "\n"
+    "Do not write any number that is not in the list of figures given to you. Do not "
+    "compute a difference, a percentage, a ratio, a headroom or an average across the "
+    "figures — describe what you see in words. Do not recommend a resize, a SKU or a "
+    "cost action: you are not shown price, quota or workload, and a recommendation "
+    "drawn from utilization alone would be a guess presented as advice. Do not "
+    "speculate about causes you cannot see in the data.\n"
+    "\n"
+    "Return prose only: no headings, no bullet lists, no markdown."
+)
+"""The per-resource instruction.
+
+**Three sentences at most, and no advice.** This narration is expanded once per resource,
+so its length is multiplied by the estate — and unlike the executive summary it sits
+directly beneath the table and chart that already state the figures, so a paragraph that
+restates them adds a page and nothing else.
+
+The refusal to recommend is not modesty. Advisor's own recommendations are collected,
+verified and tabled in their own section of this report; a paragraph inventing a second,
+unverifiable set from utilization alone would put two kinds of advice in one document and
+only one of them would trace to anything.
+"""
+
+SYSTEM_PROMPT_RESOURCE_ID: Final[str] = (
+    "Anda menulis ulasan singkat yang ditempatkan di bawah satu sumber daya dalam "
+    "laporan pemanfaatan infrastruktur.\n"
+    "\n"
+    "Semua angka di bawah ini milik sumber daya yang SAMA dan mencakup periode "
+    "pelaporan yang SAMA, masing-masing diberi label sumber daya, metrik, dan "
+    "jendelanya. Tulis SATU paragraf pendek — maksimal tiga kalimat — yang menjelaskan "
+    "apa yang dilakukan sumber daya ini sepanjang periode tersebut: seberapa berat "
+    "penggunaannya, apakah puncaknya jauh dari rata-ratanya, dan apakah ada hal dalam "
+    "angka-angka itu yang perlu diperhatikan pembaca. Jangan tulis apa pun selain itu "
+    "— tanpa judul, tanpa nama sumber daya pada baris tersendiri, tanpa daftar "
+    "rekomendasi, tanpa penutup.\n"
+    "\n"
+    "Jangan menulis angka apa pun yang tidak ada dalam daftar angka yang diberikan "
+    "kepada Anda. Jangan menghitung selisih, persentase, rasio, sisa kapasitas, atau "
+    "rata-rata antarangka — jelaskan apa yang Anda lihat dengan kata-kata. Jangan "
+    "merekomendasikan perubahan ukuran, SKU, atau tindakan biaya: Anda tidak diberi "
+    "harga, kuota, atau beban kerja, dan rekomendasi yang ditarik dari pemanfaatan "
+    "saja adalah tebakan yang disajikan sebagai saran. Jangan berspekulasi tentang "
+    "penyebab yang tidak dapat Anda lihat dalam data.\n"
+    "\n"
+    "Kembalikan prosa saja: tanpa heading, tanpa bullet list, tanpa markdown."
+)
+"""Indonesian variant of the per-resource instruction (Req 15.7)."""
+
 _PROMPTS: Final[dict[tuple[str, str], str]] = {
     (PROSE_KIND_EXECUTIVE_SUMMARY, "en"): SYSTEM_PROMPT,
     (PROSE_KIND_EXECUTIVE_SUMMARY, "id"): SYSTEM_PROMPT_ID,
     (PROSE_KIND_TREND, "en"): SYSTEM_PROMPT_TREND,
     (PROSE_KIND_TREND, "id"): SYSTEM_PROMPT_TREND_ID,
+    (PROSE_KIND_RESOURCE, "en"): SYSTEM_PROMPT_RESOURCE,
+    (PROSE_KIND_RESOURCE, "id"): SYSTEM_PROMPT_RESOURCE_ID,
 }
 
 
@@ -303,6 +365,17 @@ def prose_generator(model_id: str, *, region: str | None = None, language: str =
     call sites" a directory listing rather than a search of the whole tree.
     """
     if not model_id:
+        # Loud, because this is a misconfiguration rather than a choice. `config.py`
+        # *requires* `RPT_PROSE_MODEL_ID`, so an empty id here means the configured value
+        # did not reach this call — which is what happened between the trend narrative
+        # shipping and this guard: `main.py` omitted `prose_model_id`, the pipeline's `""`
+        # default won, and every report rendered its no-narrative fallback with nothing in
+        # any log to say why.
+        logger.warning(
+            "no prose model id reached the generator, so this run writes no narrative; "
+            "the configuration requires one, so this is a wiring fault rather than a "
+            "deployment without a model"
+        )
         return None
     try:
         import boto3

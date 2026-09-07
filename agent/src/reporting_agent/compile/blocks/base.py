@@ -467,10 +467,12 @@ class BlockSpec:
 
 PROSE_KIND_EXECUTIVE_SUMMARY: Final[str] = "executive_summary"
 PROSE_KIND_TREND: Final[str] = "trend"
+PROSE_KIND_RESOURCE: Final[str] = "resource"
 
 PROSE_KINDS: Final[tuple[str, ...]] = (
     PROSE_KIND_EXECUTIVE_SUMMARY,
     PROSE_KIND_TREND,
+    PROSE_KIND_RESOURCE,
 )
 """The narrations that exist. `narrate/summary.py` maps each to an instruction, and an
 unrecognised kind falls back to the executive summary's rather than raising — a report
@@ -747,14 +749,40 @@ class BlockContext:
             # is a child by counting segments, and this asks a different question of a
             # different string: which parent does this particular resource belong to.
             # `is_child_type` still decides child-ness, from the `child_of` declaration.
+            #
+            # Containment alone is not enough, and a delivered report is what proved it.
+            # An Advisor finding is recorded as a child of the resource it is about, so
+            # its id nests under that resource exactly as a subnet's does:
+            # `.../virtualNetworks/mr-vnet/providers/Microsoft.Advisor/recommendations/…`
+            # begins with the VNet's id. Section 3's subnet table listed one, under a
+            # `Resource` column sized to hold its 68-character title — which left the
+            # `IP configuration count` header a column too narrow to sit inside.
+            #
+            # So the table's declared types narrow the containment. `_types` already means
+            # "the types this table is about" everywhere else; it simply never reached
+            # here, because this branch resolves ids directly and never consults
+            # `scope_for`. Every children-scoped table in the catalogue declares it, and
+            # `tests/test_section_catalogue.py` holds that so the next one cannot forget.
             prefix = f"{wanted}/"
             folded = prefix.casefold()
+            declared = block.config.get(RESOURCE_TYPES_CONFIG_KEY)
+            wanted_types = (
+                {str(entry).casefold() for entry in declared}
+                if isinstance(declared, Sequence)
+                and not isinstance(declared, str)
+                and declared
+                else None
+            )
             return self._narrow_by_fact(
                 block,
                 tuple(
                     r
                     for r in source.resources
                     if r.resource_id.casefold().startswith(folded)
+                    and (
+                        wanted_types is None
+                        or r.resource_type.casefold() in wanted_types
+                    )
                 ),
                 source,
             )

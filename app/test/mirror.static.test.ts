@@ -121,8 +121,14 @@ const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
  * Grew to twenty-one with `trend_narrative`, which writes one paragraph per resource
  * about how it moved across the months the `historical_trend` chart plotted. It mints no
  * figure of its own and declares no metric: it narrates what the chart already put in the
- * ledger, so the two cannot disagree about what they are about. */
-const EXPECTED_TYPE_COUNT = 21
+ * ledger, so the two cannot disagree about what they are about.
+ *
+ * Grew to twenty-two with `resource_narrative`, the short review under one resource's own
+ * heading. It is a second narrative block rather than a mode of the first because the two
+ * answer different questions in different places: `trend_narrative` says how an estate
+ * moved across months and appears once, `resource_narrative` says what one machine did
+ * inside the reported period and is expanded per resource. */
+const EXPECTED_TYPE_COUNT = 22
 
 function read(absolutePath: string): string {
   expect(

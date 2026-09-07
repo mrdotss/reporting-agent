@@ -108,6 +108,7 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
     "rich_text": compile_rich_text,
     "historical_trend": charts.compile_historical_trend,
     "trend_narrative": narrative.compile_trend_narrative,
+    "resource_narrative": narrative.compile_resource_narrative,
     "blank_rows_table": compile_blank_rows_table,
 }
 """Every declared block type but `row`, which needs the child compiler and is dispatched
@@ -427,7 +428,19 @@ def _phase_two(
     """
     answers: dict[str, str | None] = {}
     for deferred in deferrals:
-        if deferred.prose_request is None or context.prose is None:
+        if deferred.prose_request is None:
+            answers[deferred.block_id] = None
+            continue
+        if context.prose is None:
+            # A block that asked and found no provider is worth one line. The two silent
+            # skips used to be one condition, so a misconfigured runtime and a block with
+            # nothing to say were indistinguishable in the logs — and the delivered report
+            # showed only the fallback sentence.
+            logger.warning(
+                "block %s asked for prose and no provider is configured; it renders its "
+                "figures without prose",
+                deferred.block_id,
+            )
             answers[deferred.block_id] = None
             continue
         try:

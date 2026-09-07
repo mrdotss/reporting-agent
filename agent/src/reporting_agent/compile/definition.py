@@ -124,6 +124,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "metric_summary",
     "inventory_summary",
     "trend_narrative",
+    "resource_narrative",
 )
 # --- END BLOCK TYPES ---
 
@@ -241,6 +242,16 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "optional": [],
         "enums": {},
         "non_empty": ["text"],
+    },
+    "resource_narrative": {
+        # Nothing of its own, on the same terms as `trend_narrative`: it narrates the
+        # figures the blocks above it already minted for the resource it was expanded
+        # for, so a metric declared here would be a second place for a chart and its
+        # commentary to disagree about what they are about.
+        "required": [],
+        "optional": ["caption"],
+        "enums": {},
+        "non_empty": [],
     },
     "trend_narrative": {
         # No metric or statistic of its own: it narrates whatever the trend chart above

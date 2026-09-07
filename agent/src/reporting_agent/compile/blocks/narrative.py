@@ -55,6 +55,7 @@ from reporting_agent.compile.ast import (
     Table,
 )
 from reporting_agent.compile.blocks.base import (
+    PROSE_KIND_RESOURCE,
     PROSE_KIND_TREND,
     BlockContext,
     BlockOutput,
@@ -67,12 +68,16 @@ from reporting_agent.compile.blocks.base import (
     text_paragraph,
 )
 from reporting_agent.compile.figures import BlockCursor
+from reporting_agent.compile.scope import resolve
 from reporting_agent.compile.snapshot_view import SnapshotValue
 
 __all__ = [
     "MAX_PROSE_PARAGRAPHS",
+    "MAX_NARRATED_RESOURCES",
+    "MAX_RESOURCE_NARRATIVE_FIGURES",
     "MAX_TREND_NARRATIVE_RESOURCES",
     "compile_executive_summary",
+    "compile_resource_narrative",
     "compile_trend_narrative",
 ]
 
@@ -247,6 +252,140 @@ def compile_trend_narrative(
                 "Body Text",
                 context.messages.text("doc.historical.no_narrative"),
             ),
+        )
+
+    return BlockOutput(
+        deferred=Deferred(block_id=block.id, finish=finish, prose_request=request)
+    )
+
+
+MAX_NARRATED_RESOURCES: Final[int] = 12
+"""How many of a section's resources get a paragraph of their own.
+
+The bound that matters for cost. `MAX_RESOURCE_NARRATIVE_FIGURES` bounds one request and
+`MAX_PROSE_PARAGRAPHS` bounds one answer, but this block is expanded **per resource**, so
+without a bound here the number of model calls in a report is the size of the estate — and
+"one paragraph per resource" was asked for precisely to keep the token cost down, not to
+multiply it by the fleet.
+
+Twelve, the same as :data:`MAX_TREND_NARRATIVE_RESOURCES`, and for the same reason: past a
+dozen paragraphs nobody is reading them anyway. Which twelve is the section's own resolved
+order — the order the report already prints them in, so the narrated ones are the first
+twelve a reader meets rather than an arbitrary set. The rest keep their heading, table and
+chart; only the paragraph is spent.
+"""
+
+MAX_RESOURCE_NARRATIVE_FIGURES: Final[int] = 24
+"""How many of one resource's figures the model is shown.
+
+A bound on the **prompt**, like :data:`MAX_TREND_NARRATIVE_RESOURCES` and for the same
+reason, but the shape of the risk is different here. A trend narrative is one block per
+report; this one is expanded **per resource**, so an estate of fifty machines is fifty
+requests and every figure in each of them is paid for fifty times. The `everything` preset
+resolves nine metrics across four statistics, and a month of day buckets can put hundreds
+of figures in the ledger for one machine — none of which a paragraph could use.
+
+Twenty-four is the section's own aggregate figures (metric x statistic, across the presets
+the catalogue ships) with room to spare, and the figures beyond it are not hidden: the
+table and the chart immediately above the paragraph carry every one of them.
+"""
+
+
+def compile_resource_narrative(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """One short paragraph about the one resource this block was expanded for (Req 19.x).
+
+    ## Why this is a separate block from `trend_narrative`
+
+    They narrate different things and sit in different places. `trend_narrative` describes
+    how an estate moved **across months** and appears once, under the trend chart. This
+    describes what one machine did **inside the reported period** and appears under that
+    machine's own heading, which is where a reader who has just looked at its chart is
+    standing. Folding the two into one block would mean one instruction for two questions,
+    and the answer to "did it grow" is not the answer to "was it busy".
+
+    ## It mints no figure, and reads only its own resource's
+
+    Like the trend narrative, every number it shows the model was already minted by a block
+    above it — the facts table, the chart, the statistics table — so this places nothing
+    and cannot put a second figure at an address the ledger already holds.
+
+    The filter is the resource id. A `per: "resource"` expansion emits one of these per
+    resolved resource and the ledger is shared, so an unfiltered read would hand machine
+    three's paragraph the figures of machines one through three: each request would be
+    bigger than the last and each paragraph would describe the wrong estate. `resources_for`
+    narrows to the single resource the expander wrote, which is the same narrowing every
+    other `per: "resource"` compiler in this package applies.
+
+    ## An absent narrator leaves no trace here, deliberately
+
+    `trend_narrative` emits `doc.historical.no_narrative` when it has no prose, because it
+    is one block and a block that vanishes is indistinguishable from one never configured.
+    This block is expanded per resource: the same reasoning would print the same apology
+    under every machine in the report, which reads as a broken document rather than an
+    honest one. The section's heading, table and chart are all still there, so the absence
+    is visible without a sentence spent on it under each of fifty headings.
+    """
+    view = context.view
+    resources = context.resources_for(block, view)
+    if not resources:
+        return BlockOutput()
+    resource = resources[0]
+
+    # Past the bound this block still emits — it simply asks for nothing. Position is read
+    # from the section's own resolved scope rather than from the block's id, which carries
+    # an ordinal the expander wrote: an id is a naming convention and this is a decision
+    # about what to spend, so it reads the same list the section ordered its headings by.
+    in_scope = resolve(context.scope_for(block), view)
+    ordinals = {item.resource_id: index for index, item in enumerate(in_scope)}
+    if ordinals.get(resource.resource_id, 0) >= MAX_NARRATED_RESOURCES:
+        return BlockOutput()
+
+    # The label names the figure's **own** resource, looked up rather than assumed to be
+    # this block's. Naming `resource` here instead would be shorter and would make the
+    # label incapable of contradicting the filter above it — every figure would read as
+    # this machine's whether or not it was one, which is precisely the failure the filter
+    # exists to prevent and precisely what a label should be able to reveal.
+    names = {item.resource_id: item.name for item in view.resources}
+
+    figures: list[tuple[str, str]] = []
+    for figure in context.ledger.entries.values():
+        if figure.resource_id != resource.resource_id:
+            continue
+        if len(figures) >= MAX_RESOURCE_NARRATIVE_FIGURES:
+            break
+        label = " · ".join(
+            part
+            for part in (
+                names.get(figure.resource_id) or figure.resource_id,
+                figure.metric or figure.statistic,
+                figure.window or "",
+            )
+            if part
+        )
+        figures.append((label, figure.formatted))
+
+    request = (
+        ProseRequest(
+            block_id=block.id,
+            kind=PROSE_KIND_RESOURCE,
+            report_title=context.report_title,
+            subscription_display_name=context.subscription_display_name,
+            window=view.window.descriptor,
+            grain=view.grain,
+            resource_count=1,
+            gap_counts={},
+            figures=tuple(figures),
+        )
+        if figures
+        else None
+    )
+
+    def finish(prose: str | None) -> tuple[Block, ...]:
+        return tuple(
+            text_paragraph(cursor.child("nodes", ordinal), "Body Text", text)
+            for ordinal, text in enumerate(_paragraphs_of(prose))
         )
 
     return BlockOutput(

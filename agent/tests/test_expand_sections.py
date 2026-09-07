@@ -241,7 +241,9 @@ class TestExpandSectionsBasic:
 
         result = expand_sections(definition, catalogue=catalogue, view=view, messages=_make_messages())
 
-        # The section's own title, then four blocks per machine, then the fleet table.
+        # The section's own title, then five blocks per machine, then the fleet table.
+        # `resource_narrative` closes each machine's group: it reads the figures the three
+        # blocks above it minted for that machine, so it has to follow them.
         assert [spec.type for spec in result] == [
             "heading",
             *(
@@ -252,6 +254,7 @@ class TestExpandSectionsBasic:
                     "resource_table",
                     "timeseries_chart",
                     "metric_summary",
+                    "resource_narrative",
                 )
             ),
             "top_n_table",
@@ -270,10 +273,12 @@ class TestExpandSectionsBasic:
             "a per:resource block carries its resource ordinal in its id"
         )
 
-        # The narrowing, asserted per block rather than per machine: every one of the four
+        # The narrowing, asserted per block rather than per machine: every one of the five
         # blocks a machine gets must carry that machine's id, or it renders the fleet.
+        # `resource_narrative` is included deliberately — an unnarrowed one would hand
+        # machine three's paragraph the figures of machines one through three.
         for ordinal, resource_id in enumerate(vm_ids):
-            for spec in per_machine[ordinal * 4 : ordinal * 4 + 4]:
+            for spec in per_machine[ordinal * 5 : ordinal * 5 + 5]:
                 assert spec.config[RESOURCE_ID_CONFIG_KEY] == resource_id, (
                     f"{spec.type} for machine {ordinal} resolves the whole section scope"
                 )

@@ -388,3 +388,62 @@ class TestCrossHalfAgreement:
                     f"preset {preset_name!r} references metric {metric_name!r} "
                     f"not in VM catalogue"
                 )
+
+
+class TestChildrenScopedTablesDeclareTheirTypes:
+    """A `_scope: "children"` table resolves by **id containment**, so its declared types
+    are the only thing standing between it and every other record filed under its parent.
+
+    Containment alone was enough until a finding became a record. `Microsoft.Advisor/
+    recommendations` is stored as a child of the resource it is about, so its id nests
+    under that resource exactly as a subnet's does — and section 3's subnet table
+    published an Advisor recommendation as a subnet, in a column then sized to hold its
+    68-character title.
+
+    The mechanism was already there and simply unused on this path: `_types` narrows every
+    other table. This holds every children-scoped table to declaring it, because the next
+    one added without it reintroduces the same leak silently and the symptom appears three
+    layers away, in a table's column widths.
+    """
+
+    def test_every_children_scoped_block_declares_its_resource_types(self) -> None:
+        from reporting_agent.catalog.loader import load_section_catalogue
+
+        catalogue = load_section_catalogue()
+        offenders: list[str] = []
+        children_scoped = 0
+        for entry in catalogue.entries:
+            for ordinal, block in enumerate(entry.expands_to):
+                config = dict(block.config or {})
+                if config.get("_scope") != "children":
+                    continue
+                children_scoped += 1
+                declared = config.get("_types")
+                if not isinstance(declared, (list, tuple)) or not declared:
+                    offenders.append(f"{entry.key}[{ordinal}] {block.block}")
+        assert children_scoped, "the catalogue declares no children-scoped table at all"
+        assert offenders == [], (
+            "a children-scoped table with no `_types` lists every record filed under its "
+            "parent, findings included"
+        )
+
+    def test_a_declared_child_type_is_a_real_child_of_that_section_s_type(self) -> None:
+        """The declaration has to name a type the catalogue agrees is a child, or the
+        table is narrowed to something that can never appear in it and silently empties."""
+        from reporting_agent.catalog.loader import (
+            child_type_names,
+            load_catalog,
+            load_section_catalogue,
+        )
+
+        declared_children = {name.casefold() for name in child_type_names(load_catalog())}
+        for entry in load_section_catalogue().entries:
+            for ordinal, block in enumerate(entry.expands_to):
+                config = dict(block.config or {})
+                if config.get("_scope") != "children":
+                    continue
+                for name in config.get("_types") or []:
+                    assert str(name).casefold() in declared_children, (
+                        f"{entry.key}[{ordinal}] narrows to {name!r}, which the fact "
+                        f"catalogue does not declare as a child type"
+                    )
