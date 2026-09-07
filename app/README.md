@@ -130,7 +130,7 @@ fails on both sides or neither.
 ## Tests
 
 ```bash
-pnpm vitest run     # 3336
+pnpm vitest run     # 3343
 pnpm typecheck
 pnpm lint
 pnpm build          # the check that matters most — see below

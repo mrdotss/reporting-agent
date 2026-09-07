@@ -692,7 +692,7 @@ agent/
     narrate/            the only package that may reach Bedrock. Prose only.
     storage/            the ObjectStore protocol and its boto3 implementation
   themes/               editorial · corporate · technical · minimal — STYLES, no content
-  tests/                5044 tests, ~9 minutes; LANG=C.UTF-8 is required
+  tests/                5242 tests in 148 files, ~9 minutes; LANG=C.UTF-8 required
     conftest.py         the hypothesis profile
     test_lock_consistency.py    one version per package across both locks
     fixtures/definitions/       the shared corpus — read by the web suite too
@@ -706,8 +706,11 @@ agent/
 `agent.py` and `tools/` do not exist on purpose. **There is no Strands agent and no
 tool registry.** Every command is deterministic, so a payload without a recognised
 `command` is a terminal error rather than something to route to a model. The only
-model calls in the whole runtime are two single-shot Bedrock Converse calls inside
-`narrate/`, and neither of them may return a number.
+model calls in the whole runtime are the single-shot Bedrock Converse calls inside
+`narrate/` — one trend commentary and one review per machine, capped at twelve — and
+none of them may return a number. An answer quoting a figure the request did not show
+it is refused whole before it reaches the document, so an inventing narrator costs a
+paragraph rather than the report.
 
 ### Module boundaries that are enforced, not conventions
 
@@ -731,7 +734,7 @@ model calls in the whole runtime are two single-shot Bedrock Converse calls insi
 ### Running the suite
 
 ```bash
-LANG=C.UTF-8 .venv/bin/pytest                 # all 5044
+LANG=C.UTF-8 .venv/bin/pytest                 # all 5242
 LANG=C.UTF-8 .venv/bin/pytest tests/property  # the hypothesis properties
 ```
 
