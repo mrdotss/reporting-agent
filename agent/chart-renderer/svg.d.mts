@@ -26,6 +26,7 @@ export type ReportChartSpec = {
     color: string;
     dashed: boolean;
     values: (string | null)[];
+    pointLabels?: (string | null)[];
   }[];
   bands?: { lower: number; upper: number }[];
 };

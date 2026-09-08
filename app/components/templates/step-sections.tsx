@@ -987,7 +987,7 @@ function SectionInspector({
             className="h-8 w-24 rounded-md border border-input bg-background px-2.5 font-mono text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           />
           <p className="text-xs text-muted-foreground">
-            How many months of history the trend covers, from{" "}
+            Requested history depth, from{" "}
             <span className="font-mono tabular-nums">
               {HISTORICAL_LOOKBACK_MIN}
             </span>{" "}
@@ -1002,8 +1002,11 @@ function SectionInspector({
               {LIVE_METRICS_TREND_MONTHS}
             </span>{" "}
             months — going deeper than that reads from a Log Analytics
-            workspace, and months with neither source are shown as not
-            measured.
+            workspace, and months with neither source are shown as not measured.
+            Completed, verified prior report periods are used when available.
+            Overlapping periods and incomplete runs are excluded, so the chart
+            may contain fewer points. With no eligible prior reports, available
+            collected calendar months are used.
           </p>
 
           {/*

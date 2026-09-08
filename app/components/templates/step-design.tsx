@@ -7,6 +7,14 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectContent,
+  SelectItem,
+} from "@/components/ui/select"
+import {
+  DESIGN_PRESETS,
   DENSITY_VALUES,
   LANGUAGES,
   MAX_DECIMAL_PLACES,
@@ -24,12 +32,8 @@ import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 /**
  * Step 6 — design (Requirements 7.1, 7.2, 11.1).
  *
- * ## The grid above, the tuning below
- *
- * Requirement 13.5 puts the design tuning controls **below** the preset grid, and
- * the order is the order of the decision: a consultant picks the theme by looking
- * at four pages, then adjusts what the theme left tunable. Reversing it would ask
- * them to set an accent colour before seeing what it will sit on.
+ * Theme and accent controls may render above the chart previews, while table
+ * and page controls stay together below them.
  *
  * ## Every value is one of a closed set, read from the schema
  *
@@ -146,7 +150,9 @@ export function StepDesign({
   definition,
   onChange,
   thumbnails,
+  controls = "all",
 }: Readonly<{
+  controls?: "all" | "theme" | "details"
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
   /**
@@ -158,7 +164,6 @@ export function StepDesign({
 }>) {
   const accentId = useId()
   const decimalsId = useId()
-  const logoId = useId()
 
   const design = definition.design
 
@@ -168,131 +173,209 @@ export function StepDesign({
 
   return (
     <div className="flex flex-col gap-5">
-      <StylePresetPicker
-        selected={design.preset}
-        thumbnails={thumbnails}
-        onSelect={(preset: DesignPreset) => set({ preset })}
-      />
+      {controls !== "details" && (
+        <>
+          <Field>
+            <FieldLabel>Document theme</FieldLabel>
+            <Select
+              value={design.preset}
+              onValueChange={(value) => {
+                if (value) set({ preset: value as DesignPreset })
+              }}
+            >
+              <SelectTrigger aria-label="Document theme" className="w-full">
+                <SelectValue className="capitalize" />
+              </SelectTrigger>
+              <SelectContent>
+                {DESIGN_PRESETS.map((preset) => (
+                  <SelectItem
+                    key={preset}
+                    value={preset}
+                    className="capitalize"
+                  >
+                    {preset}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>
+            <div className="flex items-center gap-3">
+              <Input
+                type="color"
+                aria-label="Pick accent colour"
+                className="h-10 w-14 cursor-pointer p-1"
+                value={
+                  /^#[0-9a-f]{6}$/i.test(design.accent_color)
+                    ? design.accent_color
+                    : "#1f6f78"
+                }
+                onChange={(event) => set({ accent_color: event.target.value })}
+              />
+              <Input
+                id={accentId}
+                value={design.accent_color}
+                onChange={(event) => set({ accent_color: event.target.value })}
+                placeholder="#1f6f78"
+              />
+            </div>
+            <div className="flex gap-2" aria-label="Accent swatches">
+              {["#1f6f78", "#183b63", "#6d4c91", "#a34d24", "#30343b"].map(
+                (color) => (
+                  <button
+                    key={color}
+                    type="button"
+                    aria-label={`Use accent ${color}`}
+                    aria-pressed={design.accent_color === color}
+                    onClick={() => set({ accent_color: color })}
+                    className="size-8 rounded-full border-2 border-background ring-1 ring-border focus-visible:ring-2 focus-visible:ring-ring"
+                    style={{ backgroundColor: color }}
+                  />
+                )
+              )}
+            </div>
+            <FieldDescription>
+              Changes chart previews immediately and applies to headings, rules
+              and single-metric report charts. Resource comparisons retain
+              distinct colors.
+            </FieldDescription>
+          </Field>
+          <details>
+            <summary className="cursor-pointer text-sm font-medium">
+              Compare theme previews
+            </summary>
+            <div className="mt-3">
+              <StylePresetPicker
+                selected={design.preset}
+                thumbnails={thumbnails}
+                onSelect={(preset: DesignPreset) => set({ preset })}
+              />
+            </div>
+          </details>
+        </>
+      )}
+      {controls !== "theme" && (
+        <>
+          <fieldset className="flex flex-col gap-2">
+            <legend className="mb-2 text-sm font-medium">Density</legend>
 
-      <Field>
-        <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>
-        <Input
-          id={accentId}
-          value={design.accent_color}
-          onChange={(event) => set({ accent_color: event.target.value })}
-          placeholder="#1f6f78"
-        />
-        <FieldDescription>
-          Six-digit hex. Used for headings, rules and chart emphasis.
-        </FieldDescription>
-      </Field>
+            {DENSITY_VALUES.map((density) => (
+              <label
+                key={density}
+                className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
+              >
+                <input
+                  type="radio"
+                  name="design-density"
+                  value={density}
+                  checked={design.density === density}
+                  onChange={() => set({ density })}
+                  className="mt-1"
+                />
+                <span className="flex flex-col gap-0.5">
+                  <span className="capitalize">{density}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {DENSITY_SUMMARY[density]}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
 
-      <fieldset className="flex flex-col gap-2">
-        <legend className="mb-2 text-sm font-medium">Density</legend>
+          <fieldset className="flex flex-wrap gap-3">
+            <legend className="mb-2 w-full text-sm font-medium">
+              Table style
+            </legend>
 
-        {DENSITY_VALUES.map((density) => (
-          <label
-            key={density}
-            className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
-          >
-            <input
-              type="radio"
-              name="design-density"
-              value={density}
-              checked={design.density === density}
-              onChange={() => set({ density })}
-              className="mt-1"
+            {TABLE_STYLE_VALUES.map((style) => (
+              <label key={style} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="radio"
+                  name="design-table-style"
+                  value={style}
+                  checked={design.table_style === style}
+                  onChange={() => set({ table_style: style })}
+                />
+                <span>
+                  <span className="capitalize">{style}</span>
+                  <span className="block text-xs text-muted-foreground">
+                    {style === "bordered"
+                      ? "Full grid with vertical and horizontal borders"
+                      : style === "banded"
+                        ? "Alternating row shading with horizontal rules"
+                        : "Fine horizontal rules, no vertical borders"}
+                  </span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+
+          <fieldset className="flex flex-wrap gap-3">
+            <legend className="mb-2 w-full text-sm font-medium">
+              Page size
+            </legend>
+
+            {PAGE_SIZE_VALUES.map((size) => (
+              <label key={size} className="flex items-center gap-1.5 text-sm">
+                <input
+                  type="radio"
+                  name="design-page-size"
+                  value={size}
+                  checked={design.page_size === size}
+                  onChange={() => set({ page_size: size })}
+                />
+                <span>{size}</span>
+              </label>
+            ))}
+          </fieldset>
+
+          <Field>
+            <FieldLabel htmlFor={decimalsId}>Decimal places</FieldLabel>
+            <Input
+              id={decimalsId}
+              type="number"
+              min={MIN_DECIMAL_PLACES}
+              max={MAX_DECIMAL_PLACES}
+              value={design.number_format.decimal_places}
+              onChange={(event) =>
+                set({
+                  number_format: {
+                    ...design.number_format,
+                    decimal_places: Number(event.target.value),
+                  },
+                })
+              }
             />
-            <span className="flex flex-col gap-0.5">
-              <span className="capitalize">{density}</span>
-              <span className="text-xs text-muted-foreground">
-                {DENSITY_SUMMARY[density]}
-              </span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
+            <FieldDescription>
+              {MIN_DECIMAL_PLACES} to {MAX_DECIMAL_PLACES}. Applied when a
+              figure is formatted for the document, and recorded in the ledger
+              with it — the verifier compares the string that was printed.
+            </FieldDescription>
+          </Field>
 
-      <fieldset className="flex flex-wrap gap-3">
-        <legend className="mb-2 w-full text-sm font-medium">Table style</legend>
-
-        {TABLE_STYLE_VALUES.map((style) => (
-          <label key={style} className="flex items-center gap-1.5 text-sm">
-            <input
-              type="radio"
-              name="design-table-style"
-              value={style}
-              checked={design.table_style === style}
-              onChange={() => set({ table_style: style })}
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox
+              checked={design.number_format.group_thousands}
+              onCheckedChange={(checked) =>
+                set({
+                  number_format: {
+                    ...design.number_format,
+                    group_thousands: checked === true,
+                  },
+                })
+              }
             />
-            <span className="capitalize">{style}</span>
+            Group thousands
           </label>
-        ))}
-      </fieldset>
 
-      <fieldset className="flex flex-wrap gap-3">
-        <legend className="mb-2 w-full text-sm font-medium">Page size</legend>
+          <SeparatorControls
+            definition={definition}
+            design={design}
+            onDesignChange={set}
+          />
 
-        {PAGE_SIZE_VALUES.map((size) => (
-          <label key={size} className="flex items-center gap-1.5 text-sm">
-            <input
-              type="radio"
-              name="design-page-size"
-              value={size}
-              checked={design.page_size === size}
-              onChange={() => set({ page_size: size })}
-            />
-            <span>{size}</span>
-          </label>
-        ))}
-      </fieldset>
-
-      <Field>
-        <FieldLabel htmlFor={decimalsId}>Decimal places</FieldLabel>
-        <Input
-          id={decimalsId}
-          type="number"
-          min={MIN_DECIMAL_PLACES}
-          max={MAX_DECIMAL_PLACES}
-          value={design.number_format.decimal_places}
-          onChange={(event) =>
-            set({
-              number_format: {
-                ...design.number_format,
-                decimal_places: Number(event.target.value),
-              },
-            })
-          }
-        />
-        <FieldDescription>
-          {MIN_DECIMAL_PLACES} to {MAX_DECIMAL_PLACES}. Applied when a figure is
-          formatted for the document, and recorded in the ledger with it — the
-          verifier compares the string that was printed.
-        </FieldDescription>
-      </Field>
-
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox
-          checked={design.number_format.group_thousands}
-          onCheckedChange={(checked) =>
-            set({
-              number_format: {
-                ...design.number_format,
-                group_thousands: checked === true,
-              },
-            })
-          }
-        />
-        Group thousands
-      </label>
-
-      <SeparatorControls
-        definition={definition}
-        design={design}
-        onDesignChange={set}
-      />
-
-      {/*
+          {/*
         The cover-page toggle and the logo URL used to sit here, on `design`, and both
         were dead controls: the save path resolved every `design` field from a separate
         Brand record and overwrote whatever these wrote, so unchecking the box changed
@@ -301,6 +384,8 @@ export function StepDesign({
         two fields for one thing, one of which silently loses, is worse than one field in
         the right place.
       */}
+        </>
+      )}
     </div>
   )
 }
@@ -334,13 +419,14 @@ function SeparatorControls({
   // The sample figures, formatted with the resolved separators.
   const samples = useMemo(
     () =>
-      SAMPLE_VALUES.map(({ value, suffix }) =>
-        formatSampleFigure(value, {
-          decimalPlaces: design.number_format.decimal_places,
-          groupThousands: design.number_format.group_thousands,
-          decimalSeparator: resolved.decimal_separator,
-          groupingSeparator: resolved.grouping_separator,
-        }) + suffix
+      SAMPLE_VALUES.map(
+        ({ value, suffix }) =>
+          formatSampleFigure(value, {
+            decimalPlaces: design.number_format.decimal_places,
+            groupThousands: design.number_format.group_thousands,
+            decimalSeparator: resolved.decimal_separator,
+            groupingSeparator: resolved.grouping_separator,
+          }) + suffix
       ),
     [
       design.number_format.decimal_places,
@@ -369,12 +455,11 @@ function SeparatorControls({
                 onDesignChange({
                   number_format: {
                     ...design.number_format,
-                    decimal_separator:
-                      event.target.value || undefined,
+                    decimal_separator: event.target.value || undefined,
                   },
                 })
               }
-              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               <option value="">
                 Default ({separatorLabel(languageDefault.decimal_separator)})
@@ -401,12 +486,11 @@ function SeparatorControls({
                 onDesignChange({
                   number_format: {
                     ...design.number_format,
-                    grouping_separator:
-                      event.target.value || undefined,
+                    grouping_separator: event.target.value || undefined,
                   },
                 })
               }
-              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               <option value="">
                 Default ({separatorLabel(languageDefault.grouping_separator)})
@@ -429,7 +513,7 @@ function SeparatorControls({
         className="rounded-lg border border-border bg-muted/40 px-4 py-3"
         aria-label="Sample figures in the declared number format"
       >
-        <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
           Preview
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-sm tabular-nums">

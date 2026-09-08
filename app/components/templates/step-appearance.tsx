@@ -199,6 +199,12 @@ export function StepAppearance({
 
   return (
     <div className="flex flex-col gap-8">
+      <StepDesign
+        definition={definition}
+        onChange={onChange}
+        thumbnails={thumbnails}
+        controls="theme"
+      />
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
           <h2 className="font-heading text-base font-medium tracking-tight">
@@ -328,12 +334,10 @@ export function StepAppearance({
       <section className="flex flex-col gap-5 border-t border-border pt-8">
         <div className="flex flex-col gap-1">
           <h2 className="font-heading text-base font-medium tracking-tight">
-            Document theme
+            Tables and page layout
           </h2>
           <p className="text-sm text-muted-foreground">
-            The theme the document is rendered against, and what the theme
-            leaves tunable. The accent also colors single-metric charts;
-            resource comparisons keep distinct series colors.
+            Choose table borders, spacing and page size for the exported report.
           </p>
         </div>
 
@@ -341,6 +345,7 @@ export function StepAppearance({
           definition={definition}
           onChange={onChange}
           thumbnails={thumbnails}
+          controls="details"
         />
       </section>
     </div>

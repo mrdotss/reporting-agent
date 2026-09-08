@@ -933,6 +933,8 @@ def _apply_appearance(document, design):
     import re
 
     from reporting_agent.render.themes import THEME_SPECS
+    document.styles["Heading 1"].paragraph_format.page_break_before = True
+    document.styles["Heading 1"].paragraph_format.keep_with_next = True
     spec = THEME_SPECS[design.preset]
     if re.fullmatch(r"#[0-9a-fA-F]{6}", design.accent_color):
         for element in document.styles.element.iter():

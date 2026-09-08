@@ -12,6 +12,7 @@ from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.messages import load_messages
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render import charts, docx, echarts, printpdf
+from reporting_agent.render.printcss import stylesheet
 
 M = load_messages("en")
 
@@ -83,10 +84,7 @@ def test_saved_settings_reach_word_and_pdf(compiled):
     )
     assert "--accent: #76558b" in page
     assert "padding: 7pt 5pt" in page
-    assert (
-        "break-before: page"
-        not in page.split('.rpt-block[data-style="Heading 1"]')[1].split("}")[0]
-    )
+    assert "break-before: page" in page.split('.rpt-block[data-style="Heading 1"]')[1].split("}")[0]
 
 
 def test_bad_renderer_is_a_failure_not_a_fallback(compiled, monkeypatch):
@@ -130,3 +128,20 @@ def test_single_resource_metric_uses_accent_for_both_statistics():
     )
     assert "#76558b" in result.image_svg
     assert "zoomed axis" in result.image_svg
+
+
+def test_top_level_chapters_start_separate_pdf_pages():
+    import io
+
+    from pypdf import PdfReader
+    from weasyprint import HTML
+
+    body = '<main class="rpt-document"><h2 class="rpt-block" data-style="Heading 1">Chapter Alpha</h2><p>First content.</p><h2 class="rpt-block" data-style="Heading 1">Chapter Beta</h2><p>Second content.</p></main>'
+    pdf = HTML(
+        string="<style>" + stylesheet("editorial", table_style="bordered") + "</style>" + body
+    ).write_pdf()
+    pages = PdfReader(io.BytesIO(pdf)).pages
+    assert len(pages) == 2
+    assert "First content." in pages[0].extract_text()
+    assert "Second content." in pages[1].extract_text()
+    assert "Second content." not in pages[0].extract_text()
