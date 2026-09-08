@@ -965,7 +965,7 @@ _EVERYTHING = [
 def test_two_emissions_of_one_ast_are_byte_identical() -> None:
     compiled, first = render(_EVERYTHING)
     second = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(), messages=_MESSAGES
+        compiled.document, ledger=compiled.ledger, design=DesignSettings.from_plain(DEFAULT_DESIGN), messages=_MESSAGES
     )
     assert first.docx_bytes == second.docx_bytes
 
@@ -975,6 +975,7 @@ def test_the_timestamps_are_a_fixed_sentinel_rather_than_the_clock() -> None:
     _, outcome = render(_EVERYTHING)
     with zipfile.ZipFile(io.BytesIO(outcome.docx_bytes)) as archive:
         core = archive.read("docProps/core.xml").decode("utf-8")
+        assert all(member.date_time == (1980, 1, 1, 0, 0, 0) for member in archive.infolist())
     assert core.count(D.FIXED_TIMESTAMP) >= 2
     assert not re.search(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T", core.replace(D.FIXED_TIMESTAMP, ""))
 
@@ -994,7 +995,7 @@ def test_every_part_except_the_volatile_one_is_byte_identical_across_renders() -
     """The stronger form: not just equal digests, equal parts, with the exclusion named."""
     compiled, first = render(_EVERYTHING)
     second = D.render_document(
-        compiled.document, ledger=compiled.ledger, design=DesignSettings(), messages=_MESSAGES
+        compiled.document, ledger=compiled.ledger, design=DesignSettings.from_plain(DEFAULT_DESIGN), messages=_MESSAGES
     )
 
     def parts(payload: bytes) -> dict[str, bytes]:
