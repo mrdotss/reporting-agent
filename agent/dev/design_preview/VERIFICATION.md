@@ -1,0 +1,75 @@
+# Verification — 2026-09-07
+
+- App API/component tests: **15 passed**. Covers development gating, authentication,
+  invalid input, stage-specific errors, resetting presets, stale previews, duplicate
+  clicks, settings changed during rendering, and retaining the previous PDF on failure.
+- Python prototype and existing PDF regression tests: **59 passed, 1 skipped**.
+  The skipped case checks behavior when WeasyPrint is unavailable; it was available
+  in the verification environment.
+- New app files: ESLint and Prettier checks passed. `git diff --check` passed.
+- Whole-app TypeScript check reports an error in the unchanged
+  `app/test/property-hygiene.static.test.ts:1325`: `string | undefined` is passed to
+  a set accepting `string`. No prototype TypeScript errors were reported.
+
+## Actual PDF output
+
+| Sample | Pages | Result |
+| --- | --- | --- |
+| Corporate | 2 | All displayed figures located; A4; SVG charts |
+| Editorial | 2 | All displayed figures located; A4; SVG charts |
+| Technical | 2 | All displayed figures located; A4; SVG charts |
+| Minimal | 2 | All displayed figures located; A4; grayscale SVG charts |
+| Long resource names | 3 | Content continues without truncation |
+| Missing daily samples | 2 | Null gaps preserved |
+| Empty scope | 2 | Explicit availability notices; no invented zero figures |
+| Zero daily readings | 2 | Valid bounded axes |
+| Overflowing commentary | 3 | Every repeated paragraph retained |
+| Tuned Letter / relaxed / bordered / mono / columns | 3 | Adjustments reach the actual PDF |
+
+The default themes share the same existing chart-data hash and compiler-formatted
+figures. The exported P95 includes its complete estimation qualifier and passes the
+existing bounded figure-location helper. Chart SVGs contain vector paths, no bitmap
+images, and no NaN coordinates. This does not claim full production verification for
+prototype artifacts.
+
+All eight default-theme pages were visually inspected after correcting axis pairing
+and P95 card overflow. Screenshots and generated PDFs are in
+`artifacts/design-preview/` (ignored). Extra pages in stress/tuned variants are
+intentional flow behavior; only the default A4 sample is constrained to two pages.
+
+## Browser walkthrough
+
+Used agent-browser with a disposable local Postgres database, applying the existing
+schema and creating a local-only test session. Verified the sign-in redirect,
+authenticated rendering through the real API/Python/ECharts/WeasyPrint chain, PDF
+embedding, changed-settings state, customized Letter/columns rendering, and a real
+PDF download. The downloaded bytes were checked for two pages and the full P95 text.
+No browser errors were reported. At 390px viewport width the document scroll width
+was also 390px. The desktop preview was visually inspected with its native PDF viewer.
+
+No cloud calls, deployment, production profile writes, or production runtime-image
+changes were used. Pango and browser dependencies were unpacked under `/tmp` because
+system package installation required a sudo password.
+
+## Existing report Appearance integration — 2026-09-08
+
+- All six saved chart designs now use the shared ECharts SVG engine, including the
+  existing profile selector cards. The same SVG is rasterized for Word with resvg.
+- All 24 theme/style combinations rendered through the actual Word and styled-PDF
+  pipeline. Displayed ledger figures passed the existing bounded location check.
+  Samples are under `artifacts/design-preview/production/`.
+- Inspected all theme/style layout sheets and the final Editorial / Flat tint /
+  Monospace PDF. Corrected crowded axis headings and wrapping of the full P95
+  estimation qualifier. Low-utilization axes explicitly identify their zoom.
+- App selector and prototype regression tests: 37 passed. Browser checked the
+  authenticated existing Appearance step, Flat tint and Monospace selection;
+  no browser errors. New app changes pass ESLint. The unchanged whole-app
+  TypeScript error at `test/property-hygiene.static.test.ts:1325` remains.
+- Six SVG/native-PNG tests passed locally and on ARM64 with the packaged Node and
+  resvg dependencies. The ARM64 image passed the existing image build gates.
+  Final drawing sources were mounted read-only for its chart smoke tests; the
+  built local image predates the final source corrections. Rebuild before deployment.
+- Final Python report regression suite: **132 passed, 1 skipped**.
+- Fixed ZIP member timestamps after the existing Word byte-equality test exposed
+  clock-dependent archive metadata. No verification assertion was removed.
+- No deployment, production collection, or saved-profile schema migration was run.

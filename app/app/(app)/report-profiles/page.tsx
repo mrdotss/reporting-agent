@@ -6,6 +6,7 @@ import { NewTemplateButton } from "@/components/templates/new-template-button"
 import { ProfileTable } from "@/components/templates/profile-table"
 import { Card, CardContent } from "@/components/ui/card"
 import { requireSession } from "@/lib/auth/guard"
+import { designPreviewEnabled } from "@/lib/design-preview/enabled"
 import { toTemplateView } from "@/lib/db/views"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 
@@ -52,7 +53,10 @@ export default async function TemplatesPage() {
   // ordering has to be kept consistent with the store's own.
   const templates = await Promise.all(
     rows.map(async (row) =>
-      toTemplateView(row, (await readLatestVersionForView(user.id, row.id)) ?? null)
+      toTemplateView(
+        row,
+        (await readLatestVersionForView(user.id, row.id)) ?? null
+      )
     )
   )
 
@@ -67,12 +71,22 @@ export default async function TemplatesPage() {
           <p className="max-w-prose text-sm text-muted-foreground">
             A report profile is <em>rules</em> — resource types, tag filters, a
             period that resolves fresh at every run — so one profile works for
-            every subscription you have connected, and next month&rsquo;s
-            report needs no edit.
+            every subscription you have connected, and next month&rsquo;s report
+            needs no edit.
           </p>
         </div>
 
-        <NewTemplateButton />
+        <div className="flex items-center gap-4">
+          {designPreviewEnabled() ? (
+            <Link
+              href="/report-profiles/design-preview"
+              className="text-sm underline underline-offset-4"
+            >
+              Open design lab
+            </Link>
+          ) : null}
+          <NewTemplateButton />
+        </div>
       </div>
 
       {templates.length === 0 ? (
@@ -85,8 +99,8 @@ export default async function TemplatesPage() {
 
             <p className="text-sm text-muted-foreground">
               You have no report profiles. Three starters are normally created
-              with your account; if none is here, author one and the wizard
-              will walk you through the steps.
+              with your account; if none is here, author one and the wizard will
+              walk you through the steps.
             </p>
           </CardContent>
         </Card>

@@ -20,3 +20,6 @@ agent/.env.bak.*
 
 # kiro-cli editor state, not project config
 .kiro/settings/
+
+# Generated PDF design-lab review artifacts
+/artifacts/design-preview/

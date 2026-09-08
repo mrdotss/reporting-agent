@@ -39,3 +39,5 @@ requirements-dev.lock
 # tests/test_image_build.py asserts the two patterns are present and in this order.
 tests/**
 !tests/fixtures/metric_definitions/**
+chart-renderer/node_modules/
+dev/

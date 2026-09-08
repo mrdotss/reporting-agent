@@ -25,6 +25,7 @@ running section title, neither of which any emitter can know.
 
 from __future__ import annotations
 
+import re
 from typing import Final
 
 __all__ = ["PAGE_SIZES", "stylesheet"]
@@ -38,7 +39,7 @@ the initial page size rather than failing, so an unrecognised one must not reach
 """
 
 
-def stylesheet(preset: str, *, page_size: str = "A4") -> str:
+def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", density: str = "normal", table_style: str | None = None) -> str:
     """The print stylesheet for one theme.
 
     Raises nothing for an unknown preset — falls back to `editorial`, the definition
@@ -53,12 +54,14 @@ def stylesheet(preset: str, *, page_size: str = "A4") -> str:
     size = PAGE_SIZES.get(page_size, "A4")
     h1, h2, h3, h4 = spec.heading_pt
     caps = "uppercase" if spec.heading_all_caps else "none"
-    band = f"#{palette.band}" if spec.banded_rows else "transparent"
+    band = f"#{palette.band}" if table_style == "banded" or (table_style is None and spec.banded_rows) else "transparent"
 
+    accent = accent_color if re.fullmatch(r"#[0-9a-fA-F]{6}", accent_color) else f"#{palette.accent}"
+    leading, padding = {"compact": (1.25, 3), "normal": (1.4, 5), "relaxed": (1.55, 7)}.get(density, (1.4, 5))
     small = spec.small_pt
-    return f"""
+    css = f"""
 :root {{
-  --accent: #{palette.accent};
+  --accent: {accent};
   --ink: #{palette.ink};
   --muted: #{palette.muted};
   --rule: #{palette.rule};
@@ -109,7 +112,7 @@ body {{
   margin: 0;
   font-family: var(--body-face);
   font-size: {spec.body_pt}pt;
-  line-height: 1.65;
+  line-height: {leading};
   color: var(--ink);
 }}
 
@@ -149,12 +152,9 @@ h1::after, h2::after {{
 /* A section starts a page. Keyed on the style rather than on `h2`, because the tag is a
    mapping this stylesheet does not own and a front-matter block could reach it.
 
-   The cost is real and accepted: a two-line section leaves most of a page empty. That is
-   the shape of the document this is — a reader looking up "Network Security Groups" turns
-   to a page that starts with it rather than scanning for it a third of the way down one
-   that began with disks. `break-before` rather than the deprecated `page-break-before` so
-   it also applies inside the flowed reading copy. */
-.rpt-block[data-style="Heading 1"] {{ break-before: page; }}
+   Small sections flow together. Explicit PageBreak nodes still control deliberate
+   section starts; headings stay with their following content. */
+.rpt-block[data-style="Heading 1"] {{ break-before: auto; break-after: avoid; }}
 /* Except the first, which would otherwise open the body with a blank page. */
 .rpt-document > .rpt-block[data-style="Heading 1"]:first-child {{ break-before: auto; }}
 
@@ -553,6 +553,15 @@ caption {{
 
 hr.rpt-break {{ border: 0; margin: 0; break-after: page; }}
 """
+    css += f"\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td {{ padding: {padding}pt 5pt; }}"
+    if table_style in ("hairline", "banded"):
+        css += "\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td { border: 0; border-bottom: 0.5pt solid var(--rule); }"
+        css += "\n.rpt-grid tbody tr, table.rpt-table tbody tr { background: transparent; }"
+        if table_style == "banded":
+            css += "\n.rpt-grid tbody tr:nth-child(even), table.rpt-table tbody tr:nth-child(even) { background: var(--band); }"
+    css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
+    return css
+
 
 # ---------------------------------------------------------------------------
 # Build-time guard

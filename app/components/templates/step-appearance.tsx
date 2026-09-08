@@ -1,6 +1,12 @@
 "use client"
 
-import { useId } from "react"
+import { useMemo } from "react"
+import Image from "next/image"
+import { init } from "echarts"
+import {
+  renderSVG,
+  type ReportChartSpec,
+} from "../../../agent/chart-renderer/svg.mjs"
 
 import { StepDesign } from "@/components/templates/step-design"
 import {
@@ -14,7 +20,6 @@ import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 import {
   CHART_FONT_STACKS,
   CHART_STYLE_NOTES,
-  chartPreviewPaths,
 } from "@/lib/profiles/chart-styles"
 
 /**
@@ -31,7 +36,7 @@ import {
  * ## The previews are drawn here, and the real ones are not
  *
  * Every card below is inline SVG over one real series. The delivered chart is drawn by
- * matplotlib on the runtime, from the figure ledger, and these previews never touch a
+ * the same ECharts SVG engine on the runtime, from the figure ledger, and these previews never touch a
  * figure — they are a picture of a *shape*, so a consultant can choose one. That is
  * also why they carry a fixed sample rather than the profile's own data: a profile has
  * no data until a run collects some.
@@ -43,9 +48,9 @@ import {
  * average — is what makes the case for the stacked default, and a smooth invented curve
  * would have shown six shapes that all looked equally reasonable. */
 const SAMPLE_MAX = [
-  18.9, 10.6, 11.1, 5.2, 11.0, 9.7, 21.6, 8.4, 10.3, 10.2, 27.3, 11.8, 9.5, 10.3,
-  10.2, 9.4, 10.2, 11.1, 13.4, 13.3, 13.9, 14.6, 7.4, 10.2, 12.8, 13.9, 14.0,
-  24.5, 10.7, 8.9, 9.9,
+  18.9, 10.6, 11.1, 5.2, 11.0, 9.7, 21.6, 8.4, 10.3, 10.2, 27.3, 11.8, 9.5,
+  10.3, 10.2, 9.4, 10.2, 11.1, 13.4, 13.3, 13.9, 14.6, 7.4, 10.2, 12.8, 13.9,
+  14.0, 24.5, 10.7, 8.9, 9.9,
 ]
 const SAMPLE_AVG = [
   0.19, 0.17, 0.17, 0.17, 0.18, 0.18, 0.2, 0.17, 0.16, 0.17, 0.18, 0.18, 0.19,
@@ -71,8 +76,10 @@ const FONT_LABELS: Readonly<Record<ChartFont, string>> = {
 const FONT_HINTS: Readonly<Record<ChartFont, string>> = {
   document:
     "The face the theme already uses, so the chart stops looking like a different document.",
-  grotesque: "A neutral sans with tight numerals. What every chart used before this choice existed.",
-  monospace: "Tabular figures — every digit the same width, so values line up down a gutter.",
+  grotesque:
+    "A neutral sans with tight numerals. What every chart used before this choice existed.",
+  monospace:
+    "Tabular figures — every digit the same width, so values line up down a gutter.",
 }
 
 function readDesign(definition: TemplateDefinition): Record<string, unknown> {
@@ -109,93 +116,54 @@ function ChartPreview({
   accent,
   fontStack,
 }: Readonly<{ style: ChartStyle; accent: string; fontStack: string }>) {
-  const gradientId = useId()
-  const paths = chartPreviewPaths(style, SAMPLE_MAX, SAMPLE_AVG)
-
+  const svg = useMemo(() => {
+    const rows =
+      style === "stacked" || style === "sparkline" || style === "range_band"
+        ? [
+            { label: "Max", values: SAMPLE_MAX },
+            { label: "Avg", values: SAMPLE_AVG },
+          ]
+        : [{ label: "Max", values: SAMPLE_MAX }]
+    const split = style === "stacked" || style === "sparkline"
+    const spec: ReportChartSpec = {
+      style,
+      type: "line",
+      width: 300,
+      height: 110,
+      font: fontStack.split(",")[0].replaceAll('"', ""),
+      ink: "#25313b",
+      muted: "#64717d",
+      rule: "#e1e6ea",
+      emptyLabel: "",
+      categories: SAMPLE_MAX.map((_, index) => String(index + 1)),
+      panels: (split ? rows : rows.slice(0, 1)).map((row) => ({
+        label: row.label,
+        unit: "percent",
+        min: 0,
+        max: Math.max(...row.values) * 1.15,
+      })),
+      series: rows.map((row, index) => ({
+        key: row.label,
+        label: row.label,
+        last: `${row.values.at(-1)}%`,
+        panel: split ? index : 0,
+        color: accent,
+        dashed: index === 1,
+        values: row.values.map(String),
+      })),
+      bands: style === "range_band" ? [{ lower: 1, upper: 0 }] : [],
+    }
+    return renderSVG(spec, true, init).replace(/zr\d+/g, "report-preview")
+  }, [style, accent, fontStack])
   return (
-    <svg
-      viewBox="0 0 236 78"
-      width="100%"
-      height={78}
-      role="img"
-      aria-label={`${STYLE_LABELS[style]} preview`}
-      style={{ display: "block", fontFamily: fontStack }}
-    >
-      {style === "soft_area" ? (
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={accent} stopOpacity="0.34" />
-            <stop offset="100%" stopColor={accent} stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      ) : null}
-
-      <g stroke="currentColor" strokeWidth={1} className="text-border">
-        {paths.rules.map((y) => (
-          <line key={y} x1="0" y1={y} x2="236" y2={y} />
-        ))}
-      </g>
-
-      {paths.fill ? (
-        <polygon
-          points={paths.fill}
-          fill={style === "soft_area" ? `url(#${gradientId})` : accent}
-          opacity={style === "soft_area" ? 1 : style === "range_band" ? 0.16 : 0.12}
-        />
-      ) : null}
-
-      {paths.bars
-        ? paths.bars.map((bar, index) => (
-            <rect
-              key={index}
-              x={bar.x}
-              y={bar.y}
-              width={bar.width}
-              height={bar.height}
-              rx={1.2}
-              fill={accent}
-              opacity={0.85}
-            />
-          ))
-        : null}
-
-      {paths.lines.map((line, index) => (
-        <polyline
-          key={index}
-          points={line.points}
-          fill="none"
-          stroke={accent}
-          strokeWidth={line.width}
-          strokeDasharray={line.dashed ? "3 2.5" : undefined}
-          strokeLinejoin="round"
-          strokeLinecap={line.rounded ? "round" : undefined}
-          opacity={line.opacity}
-        />
-      ))}
-
-      {paths.dot ? (
-        <circle
-          cx={paths.dot.x}
-          cy={paths.dot.y}
-          r={2.6}
-          fill={accent}
-          stroke="var(--card)"
-          strokeWidth={1}
-        />
-      ) : null}
-
-      {paths.labels.map((label) => (
-        <text
-          key={label.text + label.y}
-          x={label.x}
-          y={label.y}
-          fontSize={label.size}
-          fill={label.muted ? "var(--muted-foreground)" : "var(--foreground)"}
-        >
-          {label.text}
-        </text>
-      ))}
-    </svg>
+    <Image
+      unoptimized
+      alt={`${STYLE_LABELS[style]} preview`}
+      width={300}
+      height={110}
+      className="block w-full"
+      src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`}
+    />
   )
 }
 
@@ -213,7 +181,14 @@ export function StepAppearance({
   const style = currentStyle(definition)
   const font = currentFont(definition)
   const accent = accentOf(definition)
-  const fontStack = CHART_FONT_STACKS[font]
+  const fontStack =
+    font === "document"
+      ? definition.design.preset === "editorial"
+        ? '"Liberation Serif", serif'
+        : definition.design.preset === "technical"
+          ? '"DejaVu Sans", sans-serif'
+          : '"Liberation Sans", sans-serif'
+      : CHART_FONT_STACKS[font]
 
   const setDesign = (patch: Record<string, unknown>) => {
     onChange({
@@ -230,8 +205,8 @@ export function StepAppearance({
             Chart design
           </h2>
           <p className="text-sm text-muted-foreground">
-            Applies to every chart in the report. Each preview plots the same real
-            series, so the shapes are comparable rather than flattering.
+            Applies to every chart in the report. Each preview plots the same
+            real series, so the shapes are comparable rather than flattering.
           </p>
         </div>
 
@@ -285,7 +260,7 @@ export function StepAppearance({
 
                   <div className="mt-0.5 flex flex-wrap gap-1">
                     <OutputChip raster={note.raster} />
-                    <Chip>{note.height} of page</Chip>
+                    <Chip>Fits report content</Chip>
                   </div>
                 </div>
               </button>
@@ -300,8 +275,8 @@ export function StepAppearance({
             Chart font
           </h2>
           <p className="text-sm text-muted-foreground">
-            The face a chart&rsquo;s labels and figures are set in. The previews above
-            change with it.
+            The face a chart&rsquo;s labels and figures are set in. The previews
+            above change with it.
           </p>
         </div>
 
@@ -344,9 +319,9 @@ export function StepAppearance({
 
         <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
           <InfoIcon />
-          Each face is one the runtime already carries, so a chart renders the same on
-          every run. A face the runtime does not have cannot be offered here — the chart
-          is drawn on the server, not in your browser.
+          Each face is one the runtime already carries, so a chart renders the
+          same on every run. A face the runtime does not have cannot be offered
+          here — the chart is drawn on the server, not in your browser.
         </p>
       </section>
 
@@ -356,8 +331,9 @@ export function StepAppearance({
             Document theme
           </h2>
           <p className="text-sm text-muted-foreground">
-            The theme the document is rendered against, and what the theme leaves
-            tunable. The accent below is also every chart&rsquo;s stroke.
+            The theme the document is rendered against, and what the theme
+            leaves tunable. The accent also colors single-metric charts;
+            resource comparisons keep distinct series colors.
           </p>
         </div>
 

@@ -51,12 +51,12 @@ describe("the six style cards", () => {
     }
   })
 
-  it("says exactly one style carries a bitmap, because exactly one does", () => {
+  it("marks every ECharts style as vector, including the gradient", () => {
     // The notes icon the step shows is a claim about the emitted SVG: the gradient fill is
     // an image ramp clipped to the curve, and every other shape is pure vector. A wrong
     // flag here is a print-quality promise the renderer does not keep.
     const raster = CHART_STYLES.filter((style) => CHART_STYLE_NOTES[style].raster)
-    expect(raster).toEqual(["soft_area"])
+    expect(raster).toEqual([])
   })
 
   it("draws something for every style", () => {

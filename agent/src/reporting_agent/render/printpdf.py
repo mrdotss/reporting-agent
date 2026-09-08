@@ -101,7 +101,7 @@ def print_document_html(
     return _DOCUMENT.format(
         language=language,
         title=title,
-        css=stylesheet(design.preset, page_size=design.page_size),
+        css=stylesheet(design.preset, page_size=design.page_size, accent_color=design.accent_color, density=design.density, table_style=design.table_style),
         front_matter=front_matter_html,
         body=body_html,
     )

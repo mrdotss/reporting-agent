@@ -26,7 +26,8 @@ Two emissions of one AST against one theme produce identical bytes once
 locale, the hostname, the environment or a directory listing. `python-docx` writes `created`
 and `modified` into the core properties from `datetime.now()` unless told otherwise, so
 :data:`FIXED_TIMESTAMP` is set explicitly and the byte-equality test excludes that part by
-name rather than hoping it does not matter.
+name rather than hoping it does not matter. ZIP member timestamps are also fixed,
+so render duration cannot change the archive bytes.
 
 ## One write, at the end
 
@@ -39,6 +40,7 @@ truncated `.docx` behind that looks like a report.
 from __future__ import annotations
 
 import io
+import zipfile
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
@@ -88,8 +90,8 @@ from reporting_agent.render.anchors import (
 from reporting_agent.render.charts import (
     CHART_ALT_TEXT_PREFIX,
     SIDECAR_SUFFIX,
-    render_chart,
 )
+from reporting_agent.render.echarts import render_chart
 from reporting_agent.render.tablefit import allocate, column_demands, header_demands
 from reporting_agent.render.themes import (
     FIGURE_CHARACTER_STYLE,
@@ -421,6 +423,7 @@ class _Emitter:
             # before the fields existed, so a version naming neither draws as it did.
             chart_style=self.design.chart_style,
             chart_font=self.design.chart_font,
+            accent_color=self.design.accent_color,
             messages=self.messages,
         )
 
@@ -761,6 +764,7 @@ def render_document(
 
     document = load_theme(design.preset)
     _apply_page_size(document, design)
+    _apply_appearance(document, design)
 
     declared = frozenset(style.name for style in document.styles if style.name)
     emitter = _Emitter(
@@ -815,7 +819,7 @@ def render_document(
     document.save(buffer)
 
     return RenderOutcome(
-        docx_bytes=buffer.getvalue(),
+        docx_bytes=_stable_package(buffer.getvalue()),
         table_identities=emitter.recorder.identities(),
         advisories=tuple(emitter.advisories),
         figures_emitted=emitter.figures_emitted,
@@ -825,6 +829,16 @@ def render_document(
         chart_tables=dict(emitter.chart_tables),
         chart_vectors=dict(emitter.chart_vectors),
     )
+
+
+def _stable_package(payload: bytes) -> bytes:
+    """Fix ZIP member clocks as well as the document's core-property timestamps."""
+    output = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(payload)) as source, zipfile.ZipFile(output, "w") as target:
+        for member in source.infolist():
+            member.date_time = (1980, 1, 1, 0, 0, 0)
+            target.writestr(member, source.read(member.filename))
+    return output.getvalue()
 
 
 def _apply_page_size(document: DocxDocument, design: DesignSettings) -> None:
@@ -912,3 +926,22 @@ def assert_theme_declares(preset: str, names: Sequence[str]) -> None:
             f"theme {preset}.docx is missing {len(absent)} style(s) the compiled document "
             f"references: {', '.join(absent)}"
         )
+
+
+def _apply_appearance(document, design):
+    """Resolve profile overrides into this document's styles, never the theme file."""
+    import re
+
+    from reporting_agent.render.themes import THEME_SPECS
+    spec = THEME_SPECS[design.preset]
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", design.accent_color):
+        for element in document.styles.element.iter():
+            for attribute in ("val", "color", "fill"):
+                key = qn(f"w:{attribute}")
+                value = element.get(key)
+                if value and value.upper() == spec.palette.accent.upper():
+                    element.set(key, design.accent_color[1:].upper())
+    factor = {"compact": 0.85, "normal": 1.0, "relaxed": 1.15}.get(design.density, 1.0)
+    for style in document.styles:
+        if style.type == 1:
+            style.paragraph_format.line_spacing = spec.line_spacing * factor

@@ -8,7 +8,8 @@ import type { ChartFont, ChartStyle } from "@/lib/templates/definition"
  * series and returns coordinates, and a test can assert the shape of what it returns
  * rather than scraping an SVG string out of a DOM.
  *
- * **These previews are not the delivered chart.** The real one is drawn by matplotlib on
+ * The legacy path helper below remains for compatibility tests. Active cards use the
+ * same ECharts renderer as the report. The real chart is rendered on
  * the runtime, from the figure ledger. This module draws a picture of a *shape* so a
  * consultant can choose one, and it never touches a figure.
  */
@@ -31,8 +32,8 @@ export const CHART_STYLE_NOTES: Readonly<Record<ChartStyle, ChartStyleNote>> = {
   },
   soft_area: {
     blurb:
-      "One metric under a gradient, with rounded joins. The only style whose fill is a bitmap inside the SVG.",
-    raster: true,
+      "A soft vector gradient beneath each line. Separate panels preserve different scales.",
+    raster: false,
     height: "2.1 in",
   },
   flat_area: {
@@ -76,7 +77,6 @@ export const CHART_FONT_STACKS: Readonly<Record<ChartFont, string>> = {
 }
 
 const WIDTH = 236
-const HEIGHT = 78
 
 export type PreviewLine = {
   readonly points: string
@@ -108,7 +108,12 @@ export type PreviewPaths = {
 
 function polyline(
   values: readonly number[],
-  { top, height, offsetY = 0, width = WIDTH }: {
+  {
+    top,
+    height,
+    offsetY = 0,
+    width = WIDTH,
+  }: {
     top: number
     height: number
     offsetY?: number
@@ -182,7 +187,12 @@ export function chartPreviewPaths(
       rules: [],
       lines: [
         {
-          points: polyline(max, { top: peak, height: 18, offsetY: 12, width: 150 }),
+          points: polyline(max, {
+            top: peak,
+            height: 18,
+            offsetY: 12,
+            width: 150,
+          }),
           width: 1.5,
         },
         {

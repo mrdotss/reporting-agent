@@ -17,6 +17,12 @@
 # operating-system processes, and a minor-version difference is a difference in
 # Decimal and JSON behaviour (Req 17.9; see .python-version and requires-python).
 ARG PYTHON_VERSION=3.12
+FROM --platform=linux/arm64 node:24.19.0-bookworm-slim AS chart_engine
+WORKDIR /chart-renderer
+COPY chart-renderer/package.json chart-renderer/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY chart-renderer/*.mjs ./
+
 FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:${PYTHON_VERSION}-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PORT=8080
@@ -32,6 +38,8 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PORT=8080
 ENV LANG=C.UTF-8 LO_PROFILE=/opt/libreoffice-profile
 
 WORKDIR /app
+COPY --from=chart_engine /usr/local/bin/node /usr/local/bin/node
+COPY --from=chart_engine /chart-renderer ./chart-renderer
 
 # --- LibreOffice and the theme fonts (Req 23.2) -------------------------------
 #
@@ -252,7 +260,7 @@ RUN set -eu; \
 #
 # It also asserts the two things the styled PDF depends on and that were measured rather
 # than assumed: that a <script> does NOT run — so no chart library can be reached this way,
-# and the charts must keep coming from matplotlib — and that inline SVG DOES render, which
+# and the charts must be rendered before PDF layout — and that inline SVG DOES render, which
 # is how they get there.
 RUN python -c "\
 import weasyprint, re; \
@@ -269,6 +277,9 @@ print('weasyprint ok: renders, runs no javascript, embeds svg')"
 # an --assert-build entry point, so `.dockerignore` needs no re-inclusion, and the
 # reasoning lives beside the stylesheet it defends rather than inside a shell string.
 RUN python -m reporting_agent.render.printcss --assert-build
+
+# Verify the packaged ECharts engine and native SVG rasterizer, with installed fonts.
+RUN node --test chart-renderer/test.mjs
 
 EXPOSE 8080
 
