@@ -91,6 +91,9 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
                     "panel": len(panels) - 1,
                     "color": color,
                     "dashed": statistic == "avg",
+                    "pointLabels": [
+                        points[c].formatted if c in points else None for c in categories
+                    ],
                     "values": [str(points[c].value) if c in points else None for c in categories],
                 }
             )

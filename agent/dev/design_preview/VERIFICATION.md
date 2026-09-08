@@ -73,3 +73,23 @@ system package installation required a sudo password.
 - Fixed ZIP member timestamps after the existing Word byte-equality test exposed
   clock-dependent archive metadata. No verification assertion was removed.
 - No deployment, production collection, or saved-profile schema migration was run.
+
+## Appearance refinements — 2026-09-08
+
+- Added a shadcn theme dropdown, color picker and accent swatches above the chart
+  cards. Browser confirmed that all six SVG previews change after a swatch click.
+- Clarified table border choices; Bordered produces vertical and horizontal cell
+  rules, including document-control grids.
+- Restored top-level chapter page starts in Word and styled PDF. A rendered
+  two-chapter PDF test confirms separate pages.
+- Centered plot margins; sparse series now have visible markers and exact supplied
+  labels, without duplicating the final label. Seven chart tests passed.
+- Historical selection unchanged: three requested prior periods may yield fewer
+  eligible periods after verification, completion and overlap checks. Added this
+  explanation beside the history-depth control.
+- Report/history regression suite: 157 passed, 1 skipped; additional chapter
+  pagination test passed (16 renderer tests including that new test).
+- Existing Sections-screen lint findings (Date.now during render and unused
+  _dropped) and the existing property-hygiene TypeScript error remain. Browser
+  console also reports an existing ProfileTable Button/link semantics warning.
+- These follow-up changes are not committed or deployed.

@@ -68,3 +68,20 @@ for (const style of [
       assert.equal(options.series.filter((s) => s.type === "custom").length, 1);
     if (style === "soft_area") assert(svg.includes("linearGradient"));
   });
+
+test("one historical observation is visible and carries its supplied exact label", () => {
+  const spec = {
+    ...base,
+    style: "stacked",
+    categories: ["Jul-26"],
+    series: [{ ...base.series[0], values: ["79.88"], pointLabels: ["79.88%"] }],
+  };
+  const options = chartOptions(spec);
+  assert.equal(options.series[0].showSymbol, true);
+  assert.equal(options.series[0].endLabel.show, false);
+  assert.equal(options.series[0].label.formatter({ dataIndex: 0 }), "79.88%");
+  assert.equal(options.grid[0].left, options.grid[0].right);
+  const svg = renderSVG(spec, false, init);
+  assert(svg.includes("79.88%"));
+  assert(svg.includes("circle") || svg.includes("path"));
+});

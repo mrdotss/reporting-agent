@@ -152,9 +152,8 @@ h1::after, h2::after {{
 /* A section starts a page. Keyed on the style rather than on `h2`, because the tag is a
    mapping this stylesheet does not own and a front-matter block could reach it.
 
-   Small sections flow together. Explicit PageBreak nodes still control deliberate
-   section starts; headings stay with their following content. */
-.rpt-block[data-style="Heading 1"] {{ break-before: auto; break-after: avoid; }}
+   Each top-level chapter starts a fresh page; subheadings stay with their content. */
+.rpt-block[data-style="Heading 1"] {{ break-before: page; break-after: avoid; }}
 /* Except the first, which would otherwise open the body with a blank page. */
 .rpt-document > .rpt-block[data-style="Heading 1"]:first-child {{ break-before: auto; }}
 
@@ -554,6 +553,8 @@ caption {{
 hr.rpt-break {{ border: 0; margin: 0; break-after: page; }}
 """
     css += f"\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td {{ padding: {padding}pt 5pt; }}"
+    if table_style == "bordered":
+        css += "\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td { border: 0.5pt solid var(--rule); }"
     if table_style in ("hairline", "banded"):
         css += "\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td { border: 0; border-bottom: 0.5pt solid var(--rule); }"
         css += "\n.rpt-grid tbody tr, table.rpt-table tbody tr { background: transparent; }"

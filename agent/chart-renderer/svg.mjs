@@ -5,8 +5,8 @@ export function chartOptions(spec, compact = false) {
   const bare = spec.style === "sparkline";
   const panelHeight = spec.height / spec.panels.length;
   const grid = spec.panels.map((p, i) => ({
-    left: bare ? 8 : compact ? 12 : 65,
-    right: bare ? (compact ? 55 : 155) : compact ? 12 : 150,
+    left: compact ? 12 : 150,
+    right: compact ? (bare ? 55 : 12) : 150,
     top: i * panelHeight + (compact ? 9 : 36),
     height: panelHeight - (compact ? 18 : bare ? 50 : 79),
   }));
@@ -70,7 +70,17 @@ export function chartOptions(spec, compact = false) {
       data: s.values,
       connectNulls: false,
       smooth: false,
-      showSymbol: false,
+      showSymbol: !compact && s.values.filter((v) => v != null).length <= 6,
+      symbolSize: 7,
+      label: {
+        show:
+          !compact && !bare && s.values.filter((v) => v != null).length <= 6,
+        position: "top",
+        formatter: (params) => s.pointLabels?.[params.dataIndex] ?? "",
+        fontFamily: spec.font,
+        color: spec.ink,
+        fontSize: 11,
+      },
       animation: false,
       barMaxWidth: 22,
       lineStyle: {
@@ -104,7 +114,11 @@ export function chartOptions(spec, compact = false) {
       ...(!bars && (!compact || bare)
         ? {
             endLabel: {
-              show: true,
+              show:
+                compact ||
+                bare ||
+                !s.pointLabels ||
+                s.values.filter((v) => v != null).length > 6,
               formatter: () => s.label + "\n" + s.last,
               fontSize: compact ? 8 : 10,
               fontFamily: spec.font,
