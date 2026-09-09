@@ -740,7 +740,7 @@
             },
             {
               "block": "historical_trend",
-              "per": "section",
+              "per": "resource",
               "when_presentation": [
                 "chart_and_table",
                 "chart_only"

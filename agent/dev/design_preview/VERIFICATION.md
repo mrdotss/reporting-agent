@@ -93,3 +93,33 @@ system package installation required a sudo password.
   _dropped) and the existing property-hygiene TypeScript error remain. Browser
   console also reports an existing ProfileTable Button/link semantics warning.
 - These follow-up changes are not committed or deployed.
+
+## Live themes and selected metrics — 2026-09-09
+
+- Replaced static theme images with compact, keyboard-selectable live specimens.
+  Accent, density and table choices update the specimens immediately. Browser
+  verification found four live cards, no static preview images, correct accent
+  updates and no horizontal overflow at an 800px viewport.
+- VM charts preserve all selected metrics, separating CPU and memory by metric
+  and respecting the chart series limit. Unavailable memory has a named notice.
+- Historical charts now expand per VM and selected statistic. Standard selection
+  renders both CPU Average and Maximum. Measured calendar months take precedence
+  over prior-report fallback; this supersedes the prior-first behavior described
+  above. Unmeasured internal months remain gaps, not invented observations.
+- Compiler/history/catalog/messages suite: 215 passed. Selected-metric coverage
+  subsequently expanded to three passing tests, including missing memory and a
+  missing middle month. Renderer suite: 109 passed, 1 skipped. Node chart tests:
+  7 passed. App appearance tests: 15 passed. Changed appearance components pass
+  ESLint; the existing whole-app property-hygiene TypeScript error remains.
+- The actual Word/PDF fixture produces five pages and eight charts: CPU and memory
+  for two VMs, plus Average and Maximum history for each VM over three measured
+  months. All displayed ledger figures passed the existing PDF location check.
+  Visual inspection covered page layout and chart labels. Sparse endpoint labels
+  align inward to avoid clipping. No Azure collection or model prose generation
+  was used for this fixture.
+- Reproduce with `PYTHONPATH=agent/src:agent/tests agent/.venv/bin/python
+  agent/dev/design_preview/selection_samples.py` from the repository root, with
+  the normal renderer system libraries installed. Outputs are ignored artifacts
+  under `artifacts/design-preview/production/selected-metrics.{pdf,docx}`.
+- These changes require a runtime rebuild and report regeneration to affect hosted
+  output. No deployment or profile-schema migration was performed.

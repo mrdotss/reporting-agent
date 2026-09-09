@@ -218,10 +218,9 @@ def _thread_metric_config(
       declaration, never inferred from the section's own selection order — the wizard's
       metric chips are a set, not a ranked list, and ranking by "whichever was clicked
       first" would make the ranking depend on an interaction artifact.
-    * `historical_trend` needs exactly one `config.metric` + `config.statistic` (the
-      catalogue entry's own `trend_metric`, for the identical "not an interaction
-      artifact" reason) plus `config.lookback`, which is NOT a catalogue default — see
-      the section's own docstring reference below.
+    * `historical_trend` takes one metric/statistic per chart. `_historical_configs`
+      expands the selected set; the catalogue default supports older empty selections.
+      The lookback always comes from the profile.
 
     Does nothing for any other block type, and does nothing when the entry declares
     neither `order_by` nor `trend_metric` (the metric-bearing sections this doesn't
@@ -235,25 +234,8 @@ def _thread_metric_config(
             and not isinstance(section_metrics, str)
         ):
             selected = list(section_metrics)
-            # `metrics_from: "order_by_metric"` narrows a block to the one metric the
-            # catalogue entry ranks by, keeping every statistic the section selected for
-            # it. `ReportB.dc.html` charts Percentage CPU alone — maximum over average —
-            # and reports memory, disk and network in the statistics table beneath it. A
-            # chart plotting every selected metric stacks a panel per magnitude, so a
-            # section selecting four metrics spent most of a page per machine on panels
-            # nobody asked to see full-size.
-            if config.pop("metrics_from", None) == "order_by_metric" and entry.order_by:
-                wanted = entry.order_by[0].casefold()
-                narrowed = [
-                    metric
-                    for metric in selected
-                    if isinstance(metric, Mapping)
-                    and str(metric.get("metric", "")).casefold() == wanted
-                ]
-                # Only where the section actually selected it. A profile that dropped the
-                # ranking metric keeps the chart it chose rather than losing it entirely.
-                if narrowed:
-                    selected = narrowed
+            # Every selected metric belongs in the report, not only the ranking metric.
+            config.pop("metrics_from", None)
             config["metrics"] = selected
     elif expansion.block == "resource_table":
         # A metric-bearing section's per-resource resource_table needs the same
@@ -301,6 +283,21 @@ def _thread_metric_config(
             and not isinstance(lookback, bool)
         ):
             config["lookback"] = lookback
+
+
+def _historical_configs(expansion, entry, section):
+    """One chart configuration per selected metric/statistic; shared with collection."""
+    base = dict(expansion.config)
+    _thread_metric_config(expansion, entry, section, base)
+    selected = section.get("metrics")
+    if not isinstance(selected, Sequence) or isinstance(selected, str) or not selected:
+        return [base]
+    pairs = sorted({(str(ref["metric"]), str(ref["statistic"])) for ref in selected
+                    if isinstance(ref, Mapping) and ref.get("metric") and ref.get("statistic")})
+    # Retain the old default block's id where it is still selected.
+    default = (base.get("metric"), base.get("statistic"))
+    pairs.sort(key=lambda pair: (pair != default, pair))
+    return [{**base, "metric": metric, "statistic": statistic} for metric, statistic in pairs]
 
 
 def _expand_one_section(
@@ -367,12 +364,15 @@ def _expand_one_section(
             if expansion.block == "heading":
                 _resolve_heading_text(expansion, entry, config, messages)
             _thread_metric_config(expansion, entry, section, config)
-            result.append(BlockSpec(
-                id=f"{section_id}__{index}",
-                type=expansion.block,
-                config=config,
-                scope_override=scope_override,
-            ))
+            configs = _historical_configs(expansion, entry, section) if expansion.block == "historical_trend" else [config]
+            for metric_index, metric_config in enumerate(configs):
+                suffix = "" if metric_index == 0 else f"__metric_{metric_index}"
+                result.append(BlockSpec(
+                    id=f"{section_id}__{index}{suffix}",
+                    type=expansion.block,
+                    config=metric_config,
+                    scope_override=scope_override,
+                ))
             position += 1
             continue
 
@@ -387,7 +387,7 @@ def _expand_one_section(
             run.append(emitted[position])
             position += 1
 
-        run_configs: list[tuple[int, SectionExpansionBlock, dict[str, object]]] = []
+        run_configs: list[tuple[int | str, SectionExpansionBlock, dict[str, object]]] = []
         for run_index, run_expansion in run:
             run_config: dict[str, object] = dict(run_expansion.config)
             if run_expansion.block == "heading":
@@ -399,7 +399,24 @@ def _expand_one_section(
                 if run_config.pop("repeats_per_resource", None) is True:
                     _resolve_heading_text(run_expansion, entry, run_config, messages)
             _thread_metric_config(run_expansion, entry, section, run_config)
-            run_configs.append((run_index, run_expansion, run_config))
+            if run_expansion.block == "historical_trend":
+                for metric_index, metric_config in enumerate(_historical_configs(run_expansion, entry, section)):
+                    chart_id = run_index if metric_index == 0 else f"{run_index}__metric_{metric_index}"
+                    run_configs.append((chart_id, run_expansion, metric_config))
+            elif run_expansion.block == "timeseries_chart":
+                # Keep unlike metrics in separate figures and preserve every selection
+                # without exceeding the chart compiler's per-chart series bound.
+                from reporting_agent.compile.blocks.charts import MAX_CHART_SERIES
+                grouped = {}
+                for ref in run_config.get("metrics", []):
+                    grouped.setdefault(ref.get("metric"), []).append(ref)
+                chunks = [refs[start:start + MAX_CHART_SERIES] for refs in grouped.values()
+                          for start in range(0, len(refs), MAX_CHART_SERIES)]
+                for chart_index, refs in enumerate(chunks or [[]]):
+                    chart_id = run_index if chart_index == 0 else f"{run_index}__metric_{chart_index}"
+                    run_configs.append((chart_id, run_expansion, {**run_config, "metrics": refs}))
+            else:
+                run_configs.append((run_index, run_expansion, run_config))
 
         # Resolve to get the deterministic resource order
         if scope_override is not None:
@@ -592,18 +609,10 @@ def historical_trend_keys(
                 continue
             if not _should_emit(expansion, presentation):
                 continue
-            config: dict[str, object] = dict(expansion.config)
-            _thread_metric_config(expansion, entry, section, config)
-            metric = config.get("metric")
-            statistic = config.get("statistic")
-            lookback = config.get("lookback")
-            if (
-                isinstance(metric, str)
-                and isinstance(statistic, str)
-                and isinstance(lookback, int)
-                and not isinstance(lookback, bool)
-            ):
-                keys.add((metric, statistic, lookback))
+            for config in _historical_configs(expansion, entry, section):
+                metric, statistic, lookback = config.get("metric"), config.get("statistic"), config.get("lookback")
+                if isinstance(metric, str) and isinstance(statistic, str) and isinstance(lookback, int) and not isinstance(lookback, bool):
+                    keys.add((metric, statistic, lookback))
     return keys
 
 

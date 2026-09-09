@@ -1647,43 +1647,32 @@ class TestCatalogueHeadingShape:
             )
 
 
-def test_no_section_expands_a_resource_blind_block_per_resource() -> None:
-    """A `per: "resource"` expansion must be a block that reads its own resource.
+def test_historical_charts_are_scoped_to_each_vm_and_selected_statistic() -> None:
+    import snapshot_factory as sf
+    from reporting_agent.compile.blocks import compile_document
+    from reporting_agent.compile.ast import Chart
 
-    `historical_vm_utilization` declared `historical_trend` per resource, and that block
-    plots one metric across prior **periods** — it has no resource dimension and never
-    consults `_resource_id`. Three machines therefore produced three byte-identical trend
-    blocks, each saying `0 of 3 prior periods plotted`, one after another.
-
-    `BlockContext.resources_for` did not catch it the way it caught the NSG tables: that
-    narrowing works by filtering a block's resolved scope, and a block which never resolves
-    a scope has nothing to narrow.
-
-    So the rule is declared here instead. A block type belongs in this set only if its
-    compiler is genuinely blind to which resource it was expanded for.
-    """
-    import json
-    from pathlib import Path
-
-    resource_blind = {"historical_trend"}
-
-    catalogue = json.loads(
-        (
-            Path(__file__).resolve().parent.parent
-            / "src/reporting_agent/catalog/sections.v1.json"
-        ).read_text()
-    )
-    offenders = []
-    for provider, block in catalogue["providers"].items():
-        for section in block["sections"]:
-            for expansion in section.get("expands_to", ()):
-                if expansion.get("per") == "resource" and expansion["block"] in resource_blind:
-                    offenders.append(f"{provider}/{section['key']}/{expansion['block']}")
-
-    assert offenders == [], (
-        f"these expansions repeat a block that ignores its resource, once per resource: "
-        f"{offenders}"
-    )
+    resources = [sf.vm(resource_id=f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-{i}",name=f"vm-{i}",month_cpu={"2026-05":str(i+1),"2026-06":str(i+2),"2026-07":str(i+3)}) for i in range(2)]
+    snapshot = sf.build(resources=resources)
+    for resource in snapshot["resources"]:
+        for month in resource["month_buckets"]:
+            avg = month["statistics"][0]
+            month["statistics"].append({**avg, "statistic":"max", "value":str(Decimal(avg["value"])*10)})
+    definition = _make_v3_definition(sections=[{
+        "id":"history", "type":"historical_vm_utilization", "position":1,
+        "selection":{"resource_types":[VM_TYPE],"resource_groups":[],"tag_filters":[],"top_n":None,"sort":None},
+        "metrics":[{"metric":CPU,"statistic":"avg"},{"metric":CPU,"statistic":"max"}],
+        "lookback":3,"presentation":"chart_and_table"}])
+    compiled = compile_document(definition,view=build_snapshot_view(snapshot),catalogue=load_section_catalogue())
+    charts = [node for node in compiled.document.blocks if isinstance(node, Chart)]
+    assert len(charts) == 4
+    observed = set()
+    for chart in charts:
+        points = chart.series[0].points
+        assert [p.x for p in points] == ["2026-05","2026-06","2026-07"]
+        assert len({p.y.resource_id for p in points}) == 1
+        observed.add((points[0].y.resource_id, points[0].y.statistic))
+    assert len(observed) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -1733,8 +1722,8 @@ class TestHistoricalTrendKeys:
             self._definition(), catalogue=load_section_catalogue()
         )
 
-        assert keys == {(CPU, "max", 3)}, (
-            "the shipped historical section declares trend_metric Percentage CPU/max "
+        assert keys == {(CPU, "max", 3), (CPU, "avg", 3)}, (
+            "the historical section requests both CPU average and maximum "
             "and a lookback of 3; an empty set here is the defect that emptied every trend"
         )
 
@@ -2001,11 +1990,8 @@ class TestADirectionLabelRepeatsUnderEachResource:
         assert all("nsg-0" in str(name) for name in named), named
 
 
-class TestTheChartPlotsTheRankingMetricAlone:
-    """`ReportB.dc.html` charts Percentage CPU alone — maximum over average — and reports
-    memory, disk and network in the statistics table beneath it. A chart plotting every
-    selected metric stacks a panel per magnitude, so a section selecting four metrics
-    spent most of a page per machine on panels nobody asked to see full-size."""
+class TestChartsPreserveSelectedMetrics:
+    """Selected CPU and memory metrics each receive a chart."""
 
     def _configs(self, metrics: list[dict]) -> dict[str, list]:
         catalogue = _make_catalogue()
@@ -2023,11 +2009,8 @@ class TestTheChartPlotsTheRankingMetricAlone:
         blocks = expand_sections(
             definition, catalogue=catalogue, view=view, messages=_make_messages()
         )
-        return {
-            spec.type: list(dict(spec.config).get("metrics") or [])
-            for spec in blocks
-            if spec.type in ("timeseries_chart", "metric_summary")
-        }
+        return {kind: [ref for spec in blocks if spec.type == kind for ref in dict(spec.config).get("metrics", [])]
+                for kind in ("timeseries_chart", "metric_summary")}
 
     SELECTED = [
         {"metric": "Percentage CPU", "statistic": "avg"},
@@ -2035,14 +2018,8 @@ class TestTheChartPlotsTheRankingMetricAlone:
         {"metric": "Available Memory Bytes", "statistic": "avg"},
     ]
 
-    def test_the_chart_keeps_only_the_ranking_metric(self) -> None:
-        configs = self._configs(self.SELECTED)
-
-        assert [m["metric"] for m in configs["timeseries_chart"]] == [
-            "Percentage CPU",
-            "Percentage CPU",
-        ]
-        assert {m["statistic"] for m in configs["timeseries_chart"]} == {"avg", "max"}
+    def test_the_charts_keep_every_selected_metric(self) -> None:
+        assert self._configs(self.SELECTED)["timeseries_chart"] == self.SELECTED
 
     def test_the_summary_table_still_reports_every_selected_metric(self) -> None:
         """The narrowing is the chart's alone — nothing is dropped from the report."""

@@ -129,13 +129,8 @@ def test_a_month_carrying_no_statistic_is_not_plotted_as_zero() -> None:
     assert [point.x for point in points_of(charts[0])] == ["2026-06", "2026-07"]
 
 
-def test_the_seed_is_ignored_where_a_prior_run_was_selected() -> None:
-    """A prior verified run is the better evidence — it was verified — so it wins. The
-    fallback is whole rather than per month: a prior-run point is labelled by its report
-    period and a seeded point by its calendar month, so interleaving them would put two
-    kinds of label on one axis and, where a period and a month overlap, plot the same
-    hours twice.
-    """
+def test_requested_calendar_months_take_precedence_over_one_prior_run() -> None:
+    """One earlier report must not hide the requested measured calendar months."""
     from reporting_agent.compile.historical import PriorRunCandidate, Selection
 
     prior = build_snapshot_view(snapshot(months=None))
@@ -164,10 +159,8 @@ def test_the_seed_is_ignored_where_a_prior_run_was_selected() -> None:
             (CPU, "avg", 3): Selection(selected=(candidate,), exclusions=())
         },
     )
-    # The prior run's own period label, not a calendar month.
-    assert [point.x for point in points_of(charts_in(document)[0])] == [
-        "2026-06-01 – 2026-06-30"
-    ]
+    assert [point.x for point in points_of(charts_in(document)[0])] == list(MONTHS)
+    assert all(not point.y.snapshot_path.startswith("/prior_runs/") for point in points_of(charts_in(document)[0]))
 
 
 # --------------------------------------------------------------------------- #

@@ -2,7 +2,7 @@
 
 import { useMemo, useId } from "react"
 
-import { StylePresetPicker } from "@/components/templates/style-preset-picker"
+import { LiveThemePreview } from "@/components/templates/live-theme-preview"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -149,7 +149,6 @@ export function formatSampleFigure(
 export function StepDesign({
   definition,
   onChange,
-  thumbnails,
   controls = "all",
 }: Readonly<{
   controls?: "all" | "theme" | "details"
@@ -174,86 +173,97 @@ export function StepDesign({
   return (
     <div className="flex flex-col gap-5">
       {controls !== "details" && (
-        <>
-          <Field>
-            <FieldLabel>Document theme</FieldLabel>
-            <Select
-              value={design.preset}
-              onValueChange={(value) => {
-                if (value) set({ preset: value as DesignPreset })
-              }}
-            >
-              <SelectTrigger aria-label="Document theme" className="w-full">
-                <SelectValue className="capitalize" />
-              </SelectTrigger>
-              <SelectContent>
-                {DESIGN_PRESETS.map((preset) => (
-                  <SelectItem
-                    key={preset}
-                    value={preset}
-                    className="capitalize"
-                  >
-                    {preset}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>
-            <div className="flex items-center gap-3">
-              <Input
-                type="color"
-                aria-label="Pick accent colour"
-                className="h-10 w-14 cursor-pointer p-1"
-                value={
-                  /^#[0-9a-f]{6}$/i.test(design.accent_color)
-                    ? design.accent_color
-                    : "#1f6f78"
-                }
-                onChange={(event) => set({ accent_color: event.target.value })}
-              />
-              <Input
-                id={accentId}
-                value={design.accent_color}
-                onChange={(event) => set({ accent_color: event.target.value })}
-                placeholder="#1f6f78"
-              />
-            </div>
-            <div className="flex gap-2" aria-label="Accent swatches">
-              {["#1f6f78", "#183b63", "#6d4c91", "#a34d24", "#30343b"].map(
-                (color) => (
-                  <button
-                    key={color}
-                    type="button"
-                    aria-label={`Use accent ${color}`}
-                    aria-pressed={design.accent_color === color}
-                    onClick={() => set({ accent_color: color })}
-                    className="size-8 rounded-full border-2 border-background ring-1 ring-border focus-visible:ring-2 focus-visible:ring-ring"
-                    style={{ backgroundColor: color }}
-                  />
-                )
-              )}
-            </div>
-            <FieldDescription>
-              Changes chart previews immediately and applies to headings, rules
-              and single-metric report charts. Resource comparisons retain
-              distinct colors.
-            </FieldDescription>
-          </Field>
+        <section className="rounded-xl border border-border p-4">
+          <div className="grid items-start gap-5 lg:grid-cols-[minmax(180px,240px)_minmax(0,1fr)]">
+            <Field>
+              <FieldLabel>Document theme</FieldLabel>
+              <Select
+                value={design.preset}
+                onValueChange={(value) => {
+                  if (value) set({ preset: value as DesignPreset })
+                }}
+              >
+                <SelectTrigger
+                  aria-label="Document theme"
+                  className="w-full rounded-lg border-border bg-background"
+                >
+                  <SelectValue className="capitalize" />
+                </SelectTrigger>
+                <SelectContent
+                  align="start"
+                  alignItemWithTrigger={false}
+                  className="rounded-lg"
+                >
+                  {DESIGN_PRESETS.map((preset) => (
+                    <SelectItem
+                      key={preset}
+                      value={preset}
+                      className="capitalize"
+                    >
+                      {preset}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>
+              <div className="flex items-center gap-3">
+                <Input
+                  type="color"
+                  aria-label="Pick accent colour"
+                  className="h-9 w-10 shrink-0 cursor-pointer rounded-md p-1"
+                  value={
+                    /^#[0-9a-f]{6}$/i.test(design.accent_color)
+                      ? design.accent_color
+                      : "#1f6f78"
+                  }
+                  onChange={(event) =>
+                    set({ accent_color: event.target.value })
+                  }
+                />
+                <Input
+                  id={accentId}
+                  className="max-w-36 rounded-md font-mono text-xs"
+                  value={design.accent_color}
+                  onChange={(event) =>
+                    set({ accent_color: event.target.value })
+                  }
+                  placeholder="#1f6f78"
+                />
+              </div>
+              <div className="flex gap-2" aria-label="Accent swatches">
+                {["#1f6f78", "#183b63", "#6d4c91", "#a34d24", "#30343b"].map(
+                  (color) => (
+                    <button
+                      key={color}
+                      type="button"
+                      aria-label={`Use accent ${color}`}
+                      aria-pressed={design.accent_color === color}
+                      onClick={() => set({ accent_color: color })}
+                      className="size-6 rounded-full border-2 border-background ring-1 ring-border focus-visible:ring-2 focus-visible:ring-ring"
+                      style={{ backgroundColor: color }}
+                    />
+                  )
+                )}
+              </div>
+              <FieldDescription>
+                Accent updates the previews and exported report.
+              </FieldDescription>
+            </Field>
+          </div>
           <details>
-            <summary className="cursor-pointer text-sm font-medium">
+            <summary className="mt-4 cursor-pointer text-xs font-medium">
               Compare theme previews
             </summary>
             <div className="mt-3">
-              <StylePresetPicker
-                selected={design.preset}
-                thumbnails={thumbnails}
-                onSelect={(preset: DesignPreset) => set({ preset })}
+              <LiveThemePreview
+                design={design}
+                onSelect={(preset) => set({ preset })}
               />
             </div>
           </details>
-        </>
+        </section>
       )}
       {controls !== "theme" && (
         <>
