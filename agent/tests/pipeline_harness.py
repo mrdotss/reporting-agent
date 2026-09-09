@@ -342,7 +342,13 @@ class Pipeline:
 
     def __init__(self, **overrides: Any) -> None:
         self.prose: Any | None = overrides.pop("prose", None)
-        self.store = InMemoryObjectStore()
+        # A second run over the **same** store is what snapshot reuse is: run one collects
+        # under its own id, run two reads that snapshot and collects nothing. Both need to
+        # be expressible here or the reuse branch cannot be driven at all, which is how it
+        # reached production untested.
+        self.store = overrides.pop("store", None) or InMemoryObjectStore()
+        self.run_id: str = overrides.pop("run_id", RUN_ID)
+        self.payload_extras: dict[str, Any] = dict(overrides.pop("payload_extras", {}))
         self.steps = StepTracker()
         self.outcome = ReportOutcome()
         self.catalog = load_catalog(DEFAULT_CATALOG_PATH)
@@ -392,7 +398,7 @@ class Pipeline:
             facts_port=facts_port_answering_nothing(),
             object_store=self.store,
             actor_id=ACTOR_ID,
-            run_id=RUN_ID,
+            run_id=self.run_id,
             fidelity_tier=FIDELITY_BASELINE,
             catalog=self.catalog,
         )
@@ -432,12 +438,13 @@ class Pipeline:
                 "author": "Report Author",
             }
 
+        body.update(self.payload_extras)
         return body
 
     def context(self) -> dict[str, Any]:
         return {
             "actor_id": ACTOR_ID,
-            "run_id": RUN_ID,
+            "run_id": self.run_id,
             "subscription_id": SUBSCRIPTION,
             "timezone": "Asia/Jakarta",
             "fidelity_tier": FIDELITY_BASELINE,
