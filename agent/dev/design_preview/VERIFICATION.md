@@ -136,3 +136,25 @@ system package installation required a sudo password.
   selected-metrics.pdf: five pages, eight charts, all displayed figures verified.
   Visually inspected historical heading/chart grouping. Narrative isolation and
   ordering used a deterministic test provider; no live model or Azure calls.
+
+## GiB display and customer summary tables — 2026-09-09
+
+- Newly published v3 profile versions pin `number_format.bytes_as_gib`. Archived
+  definitions without this key retain byte formatting. Values scale by 2^30 only
+  for display; raw ledger values, units, provenance and chart-data hashes stay
+  unchanged. Display uses at least two decimals, preserving tiny nonzero values.
+- VM summary tables omit sample counts; source snapshots retain observation counts.
+  Metric names appear in repeating headers, and memory headers identify GiB.
+- Resource/trend narration distinguishes available memory from memory used and
+  must not infer utilization or headroom without total memory or used percentage.
+  Fixed an existing executive-summary request tuple mismatch exposed by tests.
+- Compiler/block/format checks: 182 passed. Renderer/narrative/definition checks:
+  435 passed, 1 skipped. Chart/replay/verifier checks: 70 passed. App pinning and
+  number-format checks: 11 passed. Changed app files pass ESLint.
+- Regenerated and visually inspected the five-page selected-metrics PDF; eight
+  charts and all displayed figures verified. No live model or Azure calls.
+- To apply after deployment, publish a new profile version and regenerate the
+  report. No profile migration or deployment was performed.
+- App mirror/pinning checks: 324 passed after synchronizing the two historical
+  monthly-message entries missing from the app catalog. Tiny nonzero GiB formatting
+  is covered; final formatter suite: 109 passed.

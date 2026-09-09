@@ -32,6 +32,10 @@ exactly, which is what lets `Figure.value` (provenance, at the collector's scale
 `Figure.formatted` (presentation, at the display scale) both be checked against the same
 snapshot position.
 
+For versions explicitly pinning `bytes_as_gib`, byte figures are displayed in GiB.
+The raw ledger value and unit remain unchanged; the converted display is rounded to
+at least two decimal places, with extra places for tiny nonzero quantities.
+
 ## Rounding: half away from zero, one mode for everything
 
 `ROUND_HALF_UP` in `decimal`'s vocabulary. One mode for every value, every unit and
@@ -83,6 +87,7 @@ __all__ = [
     "MIN_DECIMAL_PLACES",
     "UNIT_PRESENTATION",
     "NumberFormat",
+    "bytes_to_gib",
     "display_scale",
     "format_figure",
     "format_text_fact",
@@ -158,6 +163,9 @@ class NumberFormat:
     decimal_separator: str = "."
     grouping_separator: str = ","
 
+    bytes_as_gib: bool = False
+    """Pinned display conversion; absent preserves archived byte formatting."""
+
     trim_trailing_zeros: bool = False
     """Whether a fraction that is all zeros is dropped, and a trailing zero inside one
     removed: `23.00` reads as `23`, `23.10` as `23.1`, `23.15` unchanged.
@@ -189,6 +197,8 @@ class NumberFormat:
                 f"number_format.group_thousands must be a boolean, got "
                 f"{self.group_thousands!r}"
             )
+        if not isinstance(self.bytes_as_gib, bool):
+            raise CompileFailedError("number_format.bytes_as_gib must be a boolean")
         if not isinstance(self.trim_trailing_zeros, bool):
             raise CompileFailedError(
                 f"number_format.trim_trailing_zeros must be a boolean, got "
@@ -313,6 +323,7 @@ def number_format_from_definition(
         # Absent means False, never True: an old definition has to render the way it
         # rendered when it was delivered.
         trim_trailing_zeros=bool(raw_number_format.get("trim_trailing_zeros", False)),
+        bytes_as_gib=bool(raw_number_format.get("bytes_as_gib", False)),
     )
 
 
@@ -511,6 +522,13 @@ def format_text_fact(value: str, *, at: str) -> str:
     return value
 
 
+def bytes_to_gib(value: Decimal) -> Decimal:
+    """Exact binary-unit scaling, independent of the caller's decimal context."""
+    with localcontext() as context:
+        context.prec = max(50, len(value.as_tuple().digits) + 40)
+        return value / Decimal(1073741824)
+
+
 def format_figure(
     value: object,
     *,
@@ -539,7 +557,12 @@ def format_figure(
 
     scale = display_scale(number_format, catalog_scale, at=at)
     suffix = unit_suffix(unit, at=at)
-    quantized = _quantize(_as_decimal(value, at=at), scale, at=at)
+    display_value = _as_decimal(value, at=at)
+    if unit == "bytes" and number_format.bytes_as_gib:
+        display_value = bytes_to_gib(display_value)
+        scale = max(scale, 2, 1 - display_value.adjusted() if display_value else 2)
+        suffix = " GiB"
+    quantized = _quantize(display_value, scale, at=at)
     rendered = f"{_render_digits(quantized, scale, number_format)}{suffix}"
 
     if estimator_label is not None:

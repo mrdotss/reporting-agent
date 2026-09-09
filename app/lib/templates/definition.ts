@@ -289,6 +289,7 @@ export const NUMBER_FORMAT_KEYS = {
     // way it always did — which is what lets the runtime re-verify a report delivered
     // before the key existed. See `compile/format.py::NumberFormat.trim_trailing_zeros`.
     "trim_trailing_zeros",
+    "bytes_as_gib",
   ],
 } as const
 
@@ -2757,6 +2758,10 @@ function validateNumberFormat(
       "trim_trailing_zeros must be a boolean."
     )
   }
+  if (allowedKeys.includes("bytes_as_gib") && "bytes_as_gib" in value && !isBoolean(value["bytes_as_gib"])) {
+    addIssue(issues, [...path, "bytes_as_gib"], "bytes_as_gib must be a boolean.")
+  }
+
 }
 
 function validateDesign(

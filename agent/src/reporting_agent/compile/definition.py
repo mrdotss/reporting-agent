@@ -436,6 +436,7 @@ NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
         # report delivered before the key existed. See
         # `compile/format.py::NumberFormat.trim_trailing_zeros`.
         "trim_trailing_zeros",
+        "bytes_as_gib",
     ),
 }
 
@@ -2350,6 +2351,10 @@ def _validate_number_format(value: object, path: Path, walk: _Walk) -> None:
                 (*path, "trim_trailing_zeros"),
                 "trim_trailing_zeros must be a boolean.",
             )
+
+    if "bytes_as_gib" in allowed and "bytes_as_gib" in value:
+        if not _is_boolean(value.get("bytes_as_gib")):
+            walk.add((*path, "bytes_as_gib"), "bytes_as_gib must be a boolean.")
 
 
 def _validate_design(design: object, path: Path, walk: _Walk) -> None:

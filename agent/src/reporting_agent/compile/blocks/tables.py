@@ -313,8 +313,22 @@ def _figure_cell(
     return FigureCell(path=cursor.path, figure=figure)
 
 
-def _metric_columns(refs: Sequence[MetricRef]) -> tuple[Column, ...]:
-    return tuple(Column(key=ref.key, header=ref.label) for ref in refs)
+def _metric_columns(
+    refs: Sequence[MetricRef], context: BlockContext, resources: Sequence[ResourceView]
+) -> tuple[Column, ...]:
+    columns = []
+    for ref in refs:
+        byte_metric = any(
+            value is not None and value.unit == "bytes"
+            for resource in resources
+            for value in [context.view.stat(resource.resource_id, ref.name, ref.statistic)]
+        )
+        header = (
+            f"{ref.name.removesuffix(' Bytes')} ({ref.statistic}, GiB)"
+            if context.design.number_format.bytes_as_gib and byte_metric else ref.label
+        )
+        columns.append(Column(key=ref.key, header=header))
+    return tuple(columns)
 
 
 def _fact_columns(
@@ -655,7 +669,7 @@ def _resource_rows_table(
         _resource_column(context.messages, _resource_header_id(block)),
         *((_tier_column(context.messages),) if with_tier else ()),
         *(_attribute_column(a, context.messages) for a in attributes),
-        *_metric_columns(refs),
+        *_metric_columns(refs, context, shown),
         *_fact_columns(answered, with_observed_at=with_observed_at),
     )
     table = Table(
@@ -904,7 +918,8 @@ def compile_metric_summary(
                 continue
             nodes.append(
                 _statistic_major_table(
-                    context, table_cursor, name, matched[0], style, caption
+                    context, table_cursor, name, matched[0], style, caption,
+                    show_samples=block.config.get("show_samples", True) is not False
                 )
             )
             cursor.anchor_table(table_cursor.path)
@@ -1187,32 +1202,13 @@ def _statistic_major_table(
     resource: ResourceView,
     style: str,
     caption: str | None,
+    *,
+    show_samples: bool = True,
 ) -> Table:
-    """One machine's one metric, a row per statistic: `Statistic | Value | Samples`.
+    """One metric per table, explicitly named in the repeating value header.
 
-    ## Why not one row per metric, which is what the artifact draws
-
-    The artifact's per-machine table is metric-major — `Metric | Average | Maximum |
-    Minimum | Samples`, one row per metric — and that shape was built first. Against the
-    real estate it needs **132 characters of a 70-character page**: three byte-valued
-    columns at 22 characters each (`3,489,660,928.00 bytes`) beside a P95 whose estimator
-    label is inside the formatted string (`0.25% (p95, est. from hourly averages)`, 38).
-    `tablefit.allocate` water-fills that to 10.4 characters a column, every value wraps,
-    and a wrapped figure has no contiguous occurrence in the extracted PDF text — six
-    `pdf_figure_missing` findings, and a report withheld.
-
-    The artifact's shape fits because the artifact writes `6.88 GB`, not
-    `3,489,660,928.00 bytes`. Scaling bytes is the real fix and it is not available
-    here: `format_figure` is the one place a figure becomes a string, `verify_report`
-    requires a recompiled ledger to be byte-identical to the stored one, and changing
-    the string would fail re-verification for every report already delivered. See
-    `compile/format.py::display_scale`, where the same constraint blocks a count from
-    reading `23` instead of `23.00`.
-
-    So this transposes the other way. One table per metric keeps the wide values apart:
-    a byte metric's table is `Statistic(10) + Value(22) + Samples(9)`, and the CPU table
-    carries the 38-character P95 alone. Both fit, every figure stays on one line, and
-    the reader still gets one machine's numbers under that machine's heading.
+    Customer-facing VM sections omit observation counts; the source snapshot retains
+    them. Direct block definitions retain the legacy Samples column by default.
     """
     messages = context.messages
     present = tuple(
@@ -1220,7 +1216,7 @@ def _statistic_major_table(
         for statistic in SUMMARY_STATISTICS
         if context.view.stat(resource.resource_id, metric, statistic) is not None
     )
-    with_samples = any(
+    with_samples = show_samples and any(
         context.view.sample_count_of(resource.resource_id, metric, statistic) is not None
         for statistic in present
     )
@@ -1255,7 +1251,12 @@ def _statistic_major_table(
 
     columns = (
         Column(key="statistic", header=messages.text("doc.table.statistic")),
-        Column(key="value", header=messages.text("doc.table.value")),
+        Column(key="value", header=(
+            metric.removesuffix(" Bytes") + " (GiB)"
+            if context.design.number_format.bytes_as_gib
+            and any(context.view.stat(resource.resource_id, metric, stat).unit == "bytes" for stat in present)
+            else metric
+        )),
         *(
             (Column(key="samples", header=messages.text("doc.summary.samples")),)
             if with_samples

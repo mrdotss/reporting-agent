@@ -19,6 +19,7 @@ from test_selected_metric_output import selected_fixture
 
 def main():
     definition, snapshot = selected_fixture()
+    definition["design"]["number_format"] = {"bytes_as_gib": True}
     design = DesignSettings.from_plain(definition["design"])
     messages = load_messages("en")
     compiled = compile_document(
