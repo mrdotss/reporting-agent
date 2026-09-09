@@ -67,7 +67,26 @@ export function chartOptions(spec, compact = false) {
       type: bars ? "bar" : "line",
       xAxisIndex: s.panel,
       yAxisIndex: s.panel,
-      data: s.values,
+      data:
+        !compact &&
+        s.pointLabels &&
+        s.values.filter((v) => v != null).length <= 6
+          ? s.values.map((value, index) =>
+              value == null
+                ? null
+                : {
+                    value,
+                    label: {
+                      align:
+                        index === 0
+                          ? "left"
+                          : index === s.values.length - 1
+                            ? "right"
+                            : "center",
+                    },
+                  },
+            )
+          : s.values,
       connectNulls: false,
       smooth: false,
       showSymbol: !compact && s.values.filter((v) => v != null).length <= 6,

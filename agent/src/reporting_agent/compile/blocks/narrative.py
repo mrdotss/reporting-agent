@@ -131,7 +131,8 @@ def compile_executive_summary(
         resource_count=len(context.resources_for(block, view)),
         gap_counts={gap_type: len(entries) for gap_type, entries in view.gaps_by_type()},
         figures=tuple(
-            (figure.metric or figure.statistic, figure.formatted)
+            (figure.metric,
+                        figure.statistic, figure.formatted)
             for figure in context.ledger.entries.values()
         ),
     )

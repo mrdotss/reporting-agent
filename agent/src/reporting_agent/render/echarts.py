@@ -37,6 +37,9 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
             categories = [
                 (first + timedelta(days=i)).isoformat() for i in range((last - first).days + 1)
             ]
+    if categories and all(re.fullmatch(r"\d{4}-\d{2}", c) for c in categories):
+        month_indexes = [int(c[:4]) * 12 + int(c[5:]) - 1 for c in categories]
+        categories = [f"{index // 12:04d}-{index % 12 + 1:02d}" for index in range(min(month_indexes), max(month_indexes) + 1)]
     groups = legacy._panel_groups_for(node, selected)
     if chart_style == "sparkline":
         groups = tuple((s.key,) for s in selected) or ((),)

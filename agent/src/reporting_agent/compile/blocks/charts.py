@@ -165,7 +165,12 @@ def compile_historical_trend(
         (metric, statistic, lookback)
     ) or Selection(selected=(), exclusions=())
 
-    selected = selection.selected
+    # Calendar months match the profile's requested monthly lookback. Prior report
+    # windows are a fallback when this snapshot contains no measured monthly series.
+    resource_id = block.config.get("_resource_id")
+    requested_months = set(context.view.month_names[-lookback:])
+    monthly_values = [(month, value) for month, value in _seeded_months(context.view, metric, statistic, resource_id=resource_id) if month in requested_months]
+    selected = () if monthly_values else selection.selected
 
     # Build prior snapshot views for the HistoricalResolver
     prior_views: dict[str, SnapshotView] = {}
@@ -192,7 +197,7 @@ def compile_historical_trend(
                 continue
 
             # Find the value in the prior run's snapshot
-            value = _find_historical_value(prior_view, metric, statistic)
+            value = _find_historical_value(prior_view, metric, statistic, resource_id=resource_id)
             if value is None:
                 continue
 
@@ -217,15 +222,13 @@ def compile_historical_trend(
     # they most want is the one the product could not draw. `collect/pipeline.py` seeds
     # calendar months into **this** run's own snapshot for exactly that case.
     #
-    # A prior run wins where one exists, and the fallback is whole rather than per month:
-    # a prior-run point is labelled by its report period and a seeded point by its calendar
-    # month, so interleaving them would put two kinds of label on one axis and — where a
-    # period and a month overlap — plot the same hours twice.
+    # Use one source consistently: measured calendar months first, verified report
+    # periods otherwise. Never combine overlapping windows or invent missing values.
     seeded = False
     if not points:
         with compiling_against(context.view):
             series_cursor = chart_cursor.child("series", 0)
-            for local_month, value in _seeded_months(context.view, metric, statistic):
+            for local_month, value in monthly_values:
                 point_cursor = series_cursor.child("points", len(points))
                 figure = point_cursor.child("y", 0).figure(
                     value, catalog_scale=context.catalog_scale(value)
@@ -270,6 +273,9 @@ def compile_historical_trend(
             caption=caption,
             panels=panel_groups(historical_series),
         )
+        resource = next((r for r in context.view.resources if r.resource_id == resource_id), None)
+        if resource is not None:
+            chart = dc_replace(chart, title=context.messages.text("doc.chart.title.for_resource", resource=resource.name, title=chart.title))
         cursor.anchor_chart(chart_cursor.path)
         nodes.append(chart)
 
@@ -284,15 +290,15 @@ def compile_historical_trend(
     lookback_cursor.derived_count("historical_lookback", count_requested)
 
     trend_statement = messages.text(
-        "doc.historical.trend_statement",
+        "doc.historical.monthly_statement" if seeded else "doc.historical.trend_statement",
         count=str(count_plotted),
         requested=str(count_requested),
-        exclusions=exclusion_summary,
+        **({} if seeded else {"exclusions": exclusion_summary}),
     )
     nodes.append(text_paragraph(statement_cursor, "Body Text", trend_statement))
 
     # Req 19.7 — the verification-note statement
-    verification_note = messages.text("doc.historical.verification_note")
+    verification_note = messages.text("doc.historical.monthly_verification_note" if seeded else "doc.historical.verification_note")
     nodes.append(text_paragraph(cursor.child("nodes", len(nodes)), "Body Text", verification_note))
 
     # Req 19.10 — assert emitted counts match (these are trivially true by construction
@@ -307,16 +313,16 @@ def compile_historical_trend(
 
 
 def _find_historical_value(
-    view: SnapshotView, metric: str, statistic: str
+    view: SnapshotView, metric: str, statistic: str, *, resource_id: str | None = None
 ) -> SnapshotValue | None:
-    """Find the first value matching (metric, statistic) in the snapshot view.
+    """Find this resource's matching statistic in a verified prior snapshot.
 
-    For a trend chart we take the **aggregate** value — the first resource's matching
-    statistic. In a real implementation this would be the overall aggregate across
-    all resources, but the block plots one point per run so we take whatever the
-    snapshot exposes for this (metric, statistic) pair.
+    Legacy unscoped blocks retain their first-matching-resource behavior. Expanded
+    profile sections always supply a resource id, so months cannot switch machines.
     """
     for resource in view.resources:
+        if resource_id is not None and resource.resource_id != resource_id:
+            continue
         value = view.stat(resource.resource_id, metric, statistic)
         if value is not None:
             return value
@@ -324,7 +330,7 @@ def _find_historical_value(
 
 
 def _seeded_months(
-    view: SnapshotView, metric: str, statistic: str
+    view: SnapshotView, metric: str, statistic: str, *, resource_id: str | None = None
 ) -> list[tuple[str, SnapshotValue]]:
     """This run's own calendar months for one metric+statistic, oldest first.
 
@@ -339,6 +345,8 @@ def _seeded_months(
     month, and only that resource's months are plotted.
     """
     for resource in view.resources:
+        if resource_id is not None and resource.resource_id != resource_id:
+            continue
         series = view.month_series(resource.resource_id, metric, statistic)
         if series:
             return list(series)
@@ -460,7 +468,7 @@ def compile_timeseries_chart(
         # document that blames the filter is making a claim the snapshot contradicts.
         return BlockOutput(
             nodes=(
-                no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),
+                no_data_table(chart_cursor, context.design.table_style_name, caption or context.messages.text("doc.chart.title.over_time", metrics=", ".join(ref.label for ref in refs)), messages=context.messages),
             )
         )
 

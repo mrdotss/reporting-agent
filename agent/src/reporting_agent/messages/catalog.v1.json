@@ -393,6 +393,14 @@
       "en": "Historical trend: {count} of {requested} prior periods plotted. {exclusions}",
       "id": "Tren historis: {count} dari {requested} periode sebelumnya diplot. {exclusions}"
     },
+    "doc.historical.monthly_statement": {
+      "en": "Historical trend: {count} of {requested} requested calendar months measured. Months without measurements are not plotted.",
+      "id": "Tren historis: {count} dari {requested} bulan kalender yang diminta telah diukur. Bulan tanpa pengukuran tidak diplot."
+    },
+    "doc.historical.monthly_verification_note": {
+      "en": "Monthly values come from this report's collected snapshot and are checked against its figure ledger.",
+      "id": "Nilai bulanan berasal dari snapshot yang dikumpulkan untuk laporan ini dan diperiksa terhadap buku besar angkanya."
+    },
     "doc.historical.verification_note": {
       "en": "Each historical point was verified against its own run's verification record. The replay of this run re-verified this run's snapshot alone.",
       "id": "Setiap titik historis telah diverifikasi terhadap catatan verifikasi prosesnya sendiri. Pemutaran ulang proses ini hanya memverifikasi ulang snapshot proses ini."

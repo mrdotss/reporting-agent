@@ -20,7 +20,6 @@ import {
 import {
   HISTORICAL_LOOKBACK_MAX,
   HISTORICAL_LOOKBACK_MIN,
-  LIVE_METRICS_TREND_MONTHS,
   type MetricCatalogSnapshot,
   type MetricSelectionItem,
 } from "@/lib/templates/definition"
@@ -987,26 +986,9 @@ function SectionInspector({
             className="h-8 w-24 rounded-md border border-input bg-background px-2.5 font-mono text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           />
           <p className="text-xs text-muted-foreground">
-            Requested history depth, from{" "}
-            <span className="font-mono tabular-nums">
-              {HISTORICAL_LOOKBACK_MIN}
-            </span>{" "}
-            to{" "}
-            <span className="font-mono tabular-nums">
-              {HISTORICAL_LOOKBACK_MAX}
-            </span>
-            . The trend plots your earlier reports for this profile; where there
-            are none, the run measures the months itself. Azure keeps live
-            metrics for about{" "}
-            <span className="font-mono tabular-nums">
-              {LIVE_METRICS_TREND_MONTHS}
-            </span>{" "}
-            months — going deeper than that reads from a Log Analytics
-            workspace, and months with neither source are shown as not measured.
-            Completed, verified prior report periods are used when available.
-            Overlapping periods and incomplete runs are excluded, so the chart
-            may contain fewer points. With no eligible prior reports, available
-            collected calendar months are used.
+            Each selected metric is shown per VM over the requested calendar months.
+            Missing measurements remain gaps. Verified prior reports are used when
+            no collected monthly series is available.
           </p>
 
           {/*
