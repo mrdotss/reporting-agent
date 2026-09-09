@@ -569,6 +569,10 @@
       "en": "Resource Groups",
       "id": "Grup Sumber Daya"
     },
+    "doc.section.postgresql_flexible_inventory": {
+      "en": "PostgreSQL Flexible Servers",
+      "id": "Server Fleksibel PostgreSQL"
+    },
     "doc.section.virtual_machines": {
       "en": "Virtual Machines",
       "id": "Mesin Virtual"

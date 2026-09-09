@@ -664,6 +664,8 @@ export type RowBlock = {
 export type TemplateBlock = LeafBlock | RowBlock
 
 export type NumberFormat = {
+  readonly bytes_as_gib?: boolean
+  readonly trim_trailing_zeros?: boolean
   readonly decimal_places: number
   readonly group_thousands: boolean
   /**

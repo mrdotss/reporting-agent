@@ -55,13 +55,13 @@ class TestShippedCatalogue:
     def test_loads_successfully(self, sections: LoadedSectionCatalogue):
         assert sections.catalogue_version == "1.0.0"
 
-    def test_fifteen_entries(self, sections: LoadedSectionCatalogue):
-        assert len(sections.entries) == 15
+    def test_sixteen_entries(self, sections: LoadedSectionCatalogue):
+        assert len(sections.entries) == 16
 
     def test_canonical_numbers_unique(self, sections: LoadedSectionCatalogue):
         numbers = sections.numbers
         assert len(numbers) == len(set(numbers))
-        assert numbers == tuple(range(1, 16))
+        assert numbers == tuple(range(1, 17))
 
     def test_keys_unique(self, sections: LoadedSectionCatalogue):
         keys = sections.keys
@@ -349,7 +349,7 @@ class TestCrossHalfAgreement:
         """The raw JSON file parses to what both halves read."""
         assert raw_sections["catalogue_version"] == "1.0.0"
         sections = raw_sections["providers"]["azure"]["sections"]
-        assert len(sections) == 15
+        assert len(sections) == 16
 
     def test_entry_set_agreement(self, sections: LoadedSectionCatalogue, raw_sections: dict):
         """Keys from the loader match keys in the raw JSON."""

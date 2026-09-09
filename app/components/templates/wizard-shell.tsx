@@ -1,5 +1,6 @@
 "use client"
 
+import { currentDisplayFormat } from "@/lib/templates/current-format"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -193,7 +194,7 @@ export function WizardShell({
   const [definition, setDefinition] = useState<TemplateDefinition>(() =>
     initialDefinition === null
       ? EMPTY_DRAFT_V3(template.name)
-      : (initialDefinition as TemplateDefinition)
+      : (currentDisplayFormat(initialDefinition) as TemplateDefinition)
   )
 
   // Requirement 11.8 — the lowest-numbered failing step, or step 7 when every

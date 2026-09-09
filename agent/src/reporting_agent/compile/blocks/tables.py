@@ -384,7 +384,7 @@ def _fact_header(key: str) -> str:
     tables. Initialisms keep their case wherever they fall, so `os_type` is "OS type" and
     `disk_size_gb` is "Disk size GB".
     """
-    words = [word for word in key.split("_") if word]
+    words = [word for word in key.removeprefix("pg_").split("_") if word]
     if not words:
         return key
     return " ".join(
@@ -399,6 +399,9 @@ _FACT_INITIALISMS: Final[Mapping[str, str]] = {
     "nic": "NIC",
     "nsg": "NSG",
     "gb": "GB",
+    "gib": "GiB",
+    "fqdn": "FQDN",
+    "iops": "IOPS",
     "id": "ID",
     "sku": "SKU",
     "cpu": "CPU",

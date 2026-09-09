@@ -293,6 +293,91 @@
           "projectable": true,
           "projection": "tostring(properties.backup.backupRetentionDays)",
           "unit": "days"
+        },
+        {
+          "key": "pg_state",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.state)"
+        },
+        {
+          "key": "pg_fqdn",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.fullyQualifiedDomainName)"
+        },
+        {
+          "key": "pg_high_availability",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.highAvailability.mode)"
+        },
+        {
+          "key": "pg_public_access",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.network.publicNetworkAccess)"
+        },
+        {
+          "key": "pg_subnet",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.network.delegatedSubnetResourceId)"
+        },
+        {
+          "key": "pg_private_dns",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.network.privateDnsZoneArmResourceId)"
+        },
+        {
+          "key": "pg_storage_autogrow",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.storage.autoGrow)"
+        },
+        {
+          "key": "pg_storage_tier",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.storage.tier)"
+        },
+        {
+          "key": "pg_geo_backup",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.backup.geoRedundantBackup)"
+        },
+        {
+          "key": "pg_firewall_rules",
+          "value_kind": "text",
+          "source": "arm",
+          "projectable": false
+        },
+        {
+          "key": "pg_storage_size_gib",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.storage.storageSizeGB)",
+          "unit": "count"
+        },
+        {
+          "key": "pg_storage_iops",
+          "value_kind": "numeric",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "tostring(properties.storage.iops)",
+          "unit": "count"
         }
       ]
     },
