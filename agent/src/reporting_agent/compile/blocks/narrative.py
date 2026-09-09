@@ -195,12 +195,15 @@ def compile_trend_narrative(
     view = context.view
     names = {resource.resource_id: resource.name for resource in view.resources}
 
+    scoped_resource_id = block.config.get("_resource_id")
     ordered: list[str] = []
     figures: list[tuple[str, str]] = []
     for figure in context.ledger.entries.values():
         if not any(marker in figure.snapshot_path for marker in _TREND_FIGURE_MARKERS):
             continue
         resource_id = figure.resource_id or ""
+        if scoped_resource_id is not None and resource_id != scoped_resource_id:
+            continue
         if resource_id not in ordered:
             if len(ordered) >= MAX_TREND_NARRATIVE_RESOURCES:
                 continue
@@ -211,7 +214,8 @@ def compile_trend_narrative(
                     part
                     for part in (
                         names.get(resource_id) or resource_id or "the estate",
-                        figure.metric or figure.statistic,
+                        figure.metric,
+                        figure.statistic,
                         figure.window or "",
                     )
                     if part
@@ -300,7 +304,7 @@ def compile_resource_narrative(
     ## Why this is a separate block from `trend_narrative`
 
     They narrate different things and sit in different places. `trend_narrative` describes
-    how an estate moved **across months** and appears once, under the trend chart. This
+    how one resource moved **across months** and appears under its historical charts. This
     describes what one machine did **inside the reported period** and appears under that
     machine's own heading, which is where a reader who has just looked at its chart is
     standing. Folding the two into one block would mean one instruction for two questions,
