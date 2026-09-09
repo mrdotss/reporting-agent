@@ -593,3 +593,36 @@ def test_the_catalog_floor_still_decides_what_precision_is_claimed() -> None:
 def test_a_non_boolean_is_refused_rather_than_coerced() -> None:
     with pytest.raises(CompileFailedError):
         NumberFormat(trim_trailing_zeros="yes")  # type: ignore[arg-type]
+
+
+def test_gib_conversion_is_pinned_and_keeps_locale():
+    assert (
+        format_figure(
+            "3221225472",
+            unit="bytes",
+            catalog_scale=0,
+            number_format=NumberFormat(bytes_as_gib=True),
+            path="memory",
+        )
+        == "3.00 GiB"
+    )
+    assert (
+        format_figure(
+            "2958363065",
+            unit="bytes",
+            catalog_scale=0,
+            number_format=NumberFormat(
+                bytes_as_gib=True, decimal_separator=",", grouping_separator="."
+            ),
+            path="memory",
+        )
+        == "2,76 GiB"
+    )
+    assert "bytes" in format_figure("3221225472", unit="bytes", catalog_scale=0, path="memory")
+
+
+def test_small_nonzero_byte_value_does_not_display_as_zero_gib():
+    rendered = format_figure("1", unit="bytes", catalog_scale=0,
+                             number_format=NumberFormat(bytes_as_gib=True), path=PATH)
+    assert rendered.endswith(" GiB")
+    assert Decimal(rendered.removesuffix(" GiB")) > 0

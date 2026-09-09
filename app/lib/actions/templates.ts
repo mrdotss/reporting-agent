@@ -288,7 +288,7 @@ function coverOf(definition: unknown): {
 // --- What a saved version pins about itself ----------------------------------
 
 /**
- * The definition with `number_format.trim_trailing_zeros` pinned on for v3.
+ * Pin v3 display defaults: trimmed zeros and byte values displayed in GiB.
  *
  * `23.00` for a count of twenty-three resources reads as though something was measured to
  * two decimals; the estate has twenty-three. So a fraction that is all zeros is dropped
@@ -332,7 +332,7 @@ export function pinNumberFormat(definition: unknown): unknown {
     ...def,
     design: {
       ...designRecord,
-      number_format: { ...formatRecord, trim_trailing_zeros: true },
+      number_format: { ...formatRecord, trim_trailing_zeros: true, bytes_as_gib: true },
     },
   }
 }

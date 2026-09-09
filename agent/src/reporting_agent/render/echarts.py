@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 
+from reporting_agent.compile.format import bytes_to_gib
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import charts as legacy
 from reporting_agent.render import chartstyle
@@ -57,6 +58,11 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         members = [s for s in selected if s.key in group]
         values = [Decimal(str(p.y.value)) for s in members for p in s.points]
         unit = next((p.y.unit for s in members for p in s.points), node.unit)
+        # Raw figure values and hashes stay in bytes; only drawing coordinates scale.
+        gib = unit == "bytes" and all(" GiB" in p.y.formatted for s in members for p in s.points)
+        values = [bytes_to_gib(value) if gib else value for value in values]
+        if gib:
+            unit = "GiB"
         lower = min([Decimal(0), *values])
         upper = max([Decimal(0), *values])
         upper = (
@@ -97,7 +103,7 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
                     "pointLabels": [
                         points[c].formatted if c in points else None for c in categories
                     ],
-                    "values": [str(points[c].value) if c in points else None for c in categories],
+                    "values": [(str(bytes_to_gib(Decimal(str(points[c].value)))) if gib else str(points[c].value)) if c in points else None for c in categories],
                 }
             )
     bands = []

@@ -677,7 +677,8 @@
               "block": "metric_summary",
               "per": "resource",
               "config": {
-                "orientation": "statistic_major"
+                "orientation": "statistic_major",
+                "show_samples": false
               },
               "when_presentation": [
                 "chart_and_table",

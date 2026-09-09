@@ -223,3 +223,52 @@ def test_additional_selected_disk_metric_gets_its_own_chart():
     ]
     assert len(charts) == 6
     assert sum(any(p.y.metric == metric for s in c.series for p in s.points) for c in charts) == 2
+
+
+def test_gib_display_preserves_source_values_and_chart_hashes():
+    from reporting_agent.compile.ast import Table
+    from reporting_agent.compile.messages import load_messages
+    from reporting_agent.render.echarts import chart_spec
+
+    definition, snapshot = selected_fixture()
+    view = build_snapshot_view(snapshot)
+    before = compile_document(definition, view=view, catalogue=load_section_catalogue())
+    definition["design"]["number_format"] = {"bytes_as_gib": True}
+    after = compile_document(definition, view=view, catalogue=load_section_catalogue())
+    old_charts = [n for n in before.document.blocks if isinstance(n, Chart)]
+    charts = [n for n in after.document.blocks if isinstance(n, Chart)]
+    for old, new in zip(old_charts, charts, strict=True):
+        from reporting_agent.render.charts import chart_data_hash
+
+        assert chart_data_hash(old, messages=load_messages("en")) == chart_data_hash(
+            new, messages=load_messages("en")
+        )
+    memory = next(c for c in charts if c.series[0].points[0].y.metric == sf.AVAILABLE_MEMORY)
+    point = memory.series[0].points[0].y
+    assert point.unit == "bytes"
+    assert point.formatted.endswith(" GiB")
+    spec = chart_spec(
+        memory,
+        preset="technical",
+        chart_style="stacked",
+        chart_font="document",
+        accent_color="#6d4c91",
+        theme="light",
+        messages=load_messages("en"),
+    )
+    assert all(panel["unit"] == "GiB" for panel in spec["panels"])
+    from decimal import Decimal
+
+    assert {Decimal(v) for s in spec["series"] for v in s["values"]} == {Decimal(4), Decimal(2)}
+    tables = [
+        n
+        for n in after.document.blocks
+        if isinstance(n, Table)
+        and n.caption == sf.AVAILABLE_MEMORY
+        and n.columns[0].key == "statistic"
+    ]
+    assert len(tables) == 2
+    for table in tables:
+        assert [c.key for c in table.columns] == ["statistic", "value"]
+        assert table.columns[1].header == "Available Memory (GiB)"
+    assert before.ledger.entries[point.path].value == point.value
