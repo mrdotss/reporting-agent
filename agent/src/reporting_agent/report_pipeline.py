@@ -284,7 +284,7 @@ async def run_generate_report(
             _snapshot_key(plan.actor_id, reuse_run_id)
         )
         outcome = outcome_from_snapshot(document, plan=plan)
-        yield steps.end(str(step["step_id"]))
+        yield steps.end(step["id"])
         yield snapshot_ready_event(outcome, plan=plan)
         sink.collection = outcome
     else:
@@ -1537,7 +1537,16 @@ async def _verify(
     from reporting_agent.verify.replay import plan_from_snapshot
     from reporting_agent.verify.verifier import VerifyInputs, verify
 
-    archived = await _fetch_archive(store, actor_id=plan.actor_id, run_id=plan.run_id)
+    # Keyed on the run the **snapshot** names, not on this one. They are the same id for
+    # a run that collected, and deliberately different for one that reused an earlier
+    # snapshot: the archive replay re-aggregates was written by whoever collected it, and
+    # lives under that run's prefix. Reading this run's prefix instead found zero objects
+    # and reported a correct snapshot as irreproducible — the first reuse run ever
+    # attempted failed `replay_hash_mismatch` over an archive nobody had written.
+    archive_run_id = str(collected.document.get("run_id") or plan.run_id)
+    archived = await _fetch_archive(
+        store, actor_id=plan.actor_id, run_id=archive_run_id
+    )
     replay_plan = None
     try:
         replay_plan = plan_from_snapshot(
