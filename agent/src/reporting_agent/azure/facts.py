@@ -674,13 +674,14 @@ class FactCollector:
         facts.extend(projected_facts)
         gaps.extend(projected_gaps)
 
-        backup, replication, reservations, advisor = await asyncio.gather(
+        backup, replication, reservations, advisor, postgresql = await asyncio.gather(
             self._collect_backup(resources, types_by_id, subscription_id),
             self._collect_replication(resources, types_by_id),
             self._collect_reservations(resources, types_by_id),
             self._collect_advisor(resources, types_by_id, subscription_id),
+            self._collect_postgresql_firewalls(resources, types_by_id),
         )
-        for source_facts, source_gaps in (backup, replication, reservations):
+        for source_facts, source_gaps in (backup, replication, reservations, postgresql):
             facts.extend(source_facts)
             gaps.extend(source_gaps)
 
@@ -697,6 +698,38 @@ class FactCollector:
             gaps=tuple(gaps),
             resources=advisor_resources,
         )
+
+    async def _collect_postgresql_firewalls(
+        self, resources: Sequence[ResourceRecord], types_by_id: Mapping[str, str]
+    ) -> tuple[tuple[FactRecord, ...], tuple[GapRecord, ...]]:
+        declared = FactDeclaration(resource_types=tuple(
+            ResourceTypeFacts(resource_type=item.resource_type,
+                              facts=tuple(f for f in item.facts if f.key == "pg_firewall_rules"))
+            for item in self.declaration.resource_types
+        ))
+        if not declared.entries:
+            return (), ()
+        facts: list[FactRecord] = []
+        gaps: list[GapRecord] = []
+        for resource in resources:
+            if resource["resource_type"].casefold() != "microsoft.dbforpostgresql/flexibleservers":
+                continue
+            server_id = resource["resource_id"]
+            async with self.semaphore:
+                response = await self.port.list_postgresql_firewall_rules(server_id=server_id)
+            received_at = self._now()
+            body = postgresql_firewall_facts(response.body if response.ok else None, server_id)
+            gaps.extend(await self._archive(
+                source="arm", request_target=f"{server_id}/firewallRules",
+                declared=declared, resource_ids=[server_id], received_at=received_at, body=body,
+            ))
+            folded, missing = fold_fact_response(
+                body, kind=FACT_KIND_FACTS, source="arm", resource_ids=[server_id],
+                declaration=declared, resource_types=types_by_id, received_at=received_at,
+            )
+            facts.extend(folded)
+            gaps.extend(missing)
+        return tuple(facts), tuple(gaps)
 
     # --- the projectable half, from pages already paged (Req 4.7) --------------------
 
@@ -1338,3 +1371,23 @@ assert "Microsoft.Sql/servers/databases" not in BACKUP_COVERED_RESOURCE_TYPES, (
 
 
 
+
+
+def postgresql_firewall_facts(body: PlainData, server_id: str) -> PlainData:
+    """Normalize a successful complete list; failed/malformed lists remain unavailable."""
+    if not isinstance(body, Mapping) or not isinstance(body.get("value"), list):
+        return None
+    rules = []
+    for item in body["value"]:
+        if not isinstance(item, Mapping):
+            return None
+        name = item.get("name")
+        props = item.get("properties")
+        if not isinstance(name, str) or not isinstance(props, Mapping):
+            return None
+        start, end = props.get("startIpAddress"), props.get("endIpAddress")
+        if not isinstance(start, str) or not isinstance(end, str):
+            return None
+        rules.append(f"{name}: {start} – {end}")
+    return {"value": [{"resource_id": server_id, "pg_firewall_rules":
+                       "; ".join(sorted(rules)) if rules else "No firewall rules configured"}]}

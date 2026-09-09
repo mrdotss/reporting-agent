@@ -202,7 +202,10 @@ def test_projectable_and_non_projectable_carry_exactly_one_of_the_two_fields() -
             assert entry.absent_gap_type is None, entry.key
         else:
             assert entry.projection is None, entry.key
-            assert entry.absent_gap_type in DECLARED_ABSENT_GAP_TYPES, entry.key
+            if entry.source == "arm":
+                assert entry.absent_gap_type is None, entry.key
+            else:
+                assert entry.absent_gap_type in DECLARED_ABSENT_GAP_TYPES, entry.key
 
 
 def test_fact_unavailable_is_a_real_gap_type_that_no_fact_may_declare() -> None:
@@ -281,21 +284,12 @@ def test_a_gibibyte_size_declares_count_rather_than_manufacturing_bytes() -> Non
         )
 
 
-def test_arm_is_declared_as_a_source_and_deliberately_not_yet_used() -> None:
-    """Req 4.2 declares four sources; the shipped file needs three of them.
-
-    The hole is the mechanism, the same way `azure/definitions.py`'s `UNMAPPED_UNITS` is:
-    `arm` is the per-resource control-plane read, and every fact the seven types need today
-    is either projectable through Resource Graph or answered by Recovery Services or the
-    capacity API. Declaring `arm` without using it keeps the vocabulary Req 4.2 fixed rather
-    than one narrowed to today's needs — and asserting the absence means the day a fact
-    starts using it, this test fails and the claim gets re-read instead of silently
-    outliving its reason.
-    """
+def test_arm_is_collected_for_postgresql_firewall_rules() -> None:
+    """PostgreSQL firewall reads now exercise the declared ARM source."""
     used = {entry.source for entry in load_catalog().facts.entries}
 
     assert used <= DECLARED_FACT_SOURCES
-    assert used == DECLARED_FACT_SOURCES - {"arm"}
+    assert used == DECLARED_FACT_SOURCES
 
 
 def test_collected_sources_is_declared_minus_arm_and_matches_the_used_set() -> None:
@@ -310,9 +304,9 @@ def test_collected_sources_is_declared_minus_arm_and_matches_the_used_set() -> N
     passing for an unrelated reason."""
     facts = load_catalog().facts
 
-    assert facts.collected_sources == DECLARED_FACT_SOURCES - {"arm"}
+    assert facts.collected_sources == DECLARED_FACT_SOURCES
     assert facts.collected_sources == {entry.source for entry in facts.entries}
-    assert "arm" not in facts.collected_sources
+    assert "arm" in facts.collected_sources
     assert "advisor" in facts.collected_sources
 
 

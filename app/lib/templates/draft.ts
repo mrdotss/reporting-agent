@@ -97,7 +97,7 @@ export function EMPTY_DRAFT_V3(name: string): TemplateDefinition {
       accent_color: "#1f6f78",
       density: "normal",
       table_style: "hairline",
-      number_format: { decimal_places: 2, group_thousands: true },
+      number_format: { decimal_places: 2, group_thousands: true, bytes_as_gib: true, trim_trailing_zeros: true },
       cover_page: true,
       logo: null,
       page_size: "A4",

@@ -23,7 +23,7 @@ import {
  */
 
 describe("COLLECTED_FACT_SOURCES", () => {
-  test("carries advisor, recovery_services and capacity, and never arm", () => {
+  test("includes arm for PostgreSQL firewall collection", () => {
     // The agent-side pytest `test_collected_sources_is_declared_minus_arm_and_matches_the
     // _used_set` asserts the identical claim against `catalog/loader.py`'s
     // `FactDeclaration.collected_sources` — both derive from the same `facts.v1.json`, so
@@ -32,7 +32,7 @@ describe("COLLECTED_FACT_SOURCES", () => {
     expect(COLLECTED_FACT_SOURCES.has("recovery_services")).toBe(true)
     expect(COLLECTED_FACT_SOURCES.has("capacity")).toBe(true)
     expect(COLLECTED_FACT_SOURCES.has("resource_graph")).toBe(true)
-    expect(COLLECTED_FACT_SOURCES.has("arm")).toBe(false)
+    expect(COLLECTED_FACT_SOURCES.has("arm")).toBe(true)
   })
 })
 
@@ -168,4 +168,11 @@ describe("the pure ./offerability module, called directly with an explicit set",
       pureOfferable(vnetEntry, scan, COLLECTED_FACT_SOURCES)
     )
   })
+})
+
+test("PostgreSQL inventory is offerable for a discovered flexible server", () => {
+  const entry = AZURE_SECTIONS.find((s) => s.key === "postgresql_flexible_inventory")!
+  expect(entry.group).toBe("inventory")
+  expect(offerable(entry, { "microsoft.dbforpostgresql/flexibleservers": 1 })).toBe(true)
+  expect(offerable(entry, {})).toBe(false)
 })

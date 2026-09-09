@@ -62,9 +62,8 @@ export const FACT_ENTRIES: readonly RawFactEntry[] = Object.values(
  * Which fact sources at least one real entry in `facts.v1.json` actually names (task 6.5).
  *
  * **Not the declared vocabulary.** `catalog/loader.py`'s `DECLARED_FACT_SOURCES` fixes the
- * legal spelling a `source` field may use — five values today, including `arm`, which zero
- * entries use, deliberately (`test_arm_is_declared_as_a_source_and_deliberately_not_yet_used`
- * asserts exactly that absence). "Declared" answers *is this a legal source name*;
+ * legal spelling a `source` field may use. ARM is now collected for PostgreSQL
+ * firewall rules. "Declared" answers *is this a legal source name*;
  * "collected" answers *would a run against this catalogue actually go and fetch this
  * source*. Section offerability must key on the latter — keying on the former marks a
  * section `Ready` that would render with an empty resource_table the moment nothing in the

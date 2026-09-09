@@ -739,7 +739,9 @@
             },
             {
               "block": "heading",
-              "config": { "level": 2 },
+              "config": {
+                "level": 2
+              },
               "per": "resource"
             },
             {
@@ -1049,6 +1051,190 @@
             {
               "block": "verification_record",
               "per": "section"
+            }
+          ]
+        },
+        {
+          "key": "postgresql_flexible_inventory",
+          "number": 16,
+          "title_id": "doc.section.postgresql_flexible_inventory",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "Microsoft.DBforPostgreSQL/flexibleServers"
+          ],
+          "needs_fact_sources": [
+            "resource_graph",
+            "arm"
+          ],
+          "metric_bearing": true,
+          "optional": true,
+          "presets": {
+            "standard_utilization": [
+              {
+                "metric": "cpu_percent",
+                "statistic": "avg"
+              },
+              {
+                "metric": "cpu_percent",
+                "statistic": "max"
+              },
+              {
+                "metric": "memory_percent",
+                "statistic": "avg"
+              },
+              {
+                "metric": "memory_percent",
+                "statistic": "max"
+              },
+              {
+                "metric": "storage_used",
+                "statistic": "avg"
+              },
+              {
+                "metric": "storage_used",
+                "statistic": "max"
+              },
+              {
+                "metric": "storage_percent",
+                "statistic": "avg"
+              },
+              {
+                "metric": "storage_percent",
+                "statistic": "max"
+              }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            {
+              "block": "heading",
+              "per": "section",
+              "config": {
+                "level": 1
+              }
+            },
+            {
+              "block": "heading",
+              "per": "resource",
+              "config": {
+                "level": 2
+              }
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_group"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_state"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "version"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "tier"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "sku_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_storage_size_gib"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_storage_tier"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_storage_autogrow"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_high_availability"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "backup_retention_days"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_geo_backup"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_storage_iops"
+                  }
+                ]
+              }
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_fqdn"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_public_access"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_subnet"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_private_dns"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "pg_firewall_rules"
+                  }
+                ]
+              }
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            },
+            {
+              "block": "metric_summary",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ],
+              "config": {
+                "orientation": "statistic_major",
+                "show_samples": false
+              }
+            },
+            {
+              "block": "resource_narrative",
+              "per": "resource"
             }
           ]
         }

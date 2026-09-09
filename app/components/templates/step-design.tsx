@@ -340,6 +340,7 @@ export function StepDesign({
             ))}
           </fieldset>
 
+          <p className="text-sm text-muted-foreground">Memory and storage values use GiB in new report versions. Save a version on the Preview step to apply these settings to generated reports.</p>
           <Field>
             <FieldLabel htmlFor={decimalsId}>Decimal places</FieldLabel>
             <Input

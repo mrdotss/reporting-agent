@@ -1134,7 +1134,8 @@ class ArmFactsPort:
     **Two to six requests for a subscription of any size.** One backup list, one replication
     list per Recovery Services vault the run's inventory holds, and one reservation-order list
     plus one reservation list per order. Nothing here scales with the resource count, which is
-    Req 4.8's actual requirement rather than a performance note.
+    Req 4.8's original list behavior. PostgreSQL firewall rules additionally require one
+    paged list per inventoried server; truncated lists are reported unavailable.
     """
 
     sender: RequestSender
@@ -1231,6 +1232,15 @@ class ArmFactsPort:
             status=orders.status, headers=orders.headers, body={"value": entries}
         )
 
+    async def list_postgresql_firewall_rules(self, *, server_id: str) -> RawHttpResponse:
+        return await self._paged_list(
+            HttpRequest(
+                "GET", f"{ARM_ENDPOINT}{server_id}/firewallRules",
+                params={"api-version": "2024-08-01"},
+            ),
+            what=f"PostgreSQL firewall rules for {server_id}", require_complete=True,
+        )
+
     async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
         """Every cached Advisor recommendation for the subscription, one subscription-scoped
         list (task 6.4, Req 16.7).
@@ -1251,7 +1261,7 @@ class ArmFactsPort:
             what=f"recommendations for {subscription_id}",
         )
 
-    async def _paged_list(self, request: HttpRequest, *, what: str) -> RawHttpResponse:
+    async def _paged_list(self, request: HttpRequest, *, what: str, require_complete: bool = False) -> RawHttpResponse:
         """One ARM list, `nextLink` followed to the end, concatenated into one envelope.
 
         The same shape :class:`ArmSkuPort` uses and for the same reason: the port's contract
@@ -1268,12 +1278,16 @@ class ArmFactsPort:
         current = response
         while True:
             body = current.body if isinstance(current.body, Mapping) else {}
+            if require_complete and not isinstance(body.get("value"), list):
+                return RawHttpResponse(status=502, headers={}, body=None)
             entries.extend(_value_entries(body))
             next_link = body.get("nextLink")
             pages += 1
             if not isinstance(next_link, str) or not next_link.strip():
                 break
             if pages >= self.max_pages:
+                if require_complete:
+                    return RawHttpResponse(status=502, headers={}, body=None)
                 logger.warning(
                     "the %s listing still carried a nextLink after %d pages; %d item(s) "
                     "are used and the rest are ignored for this run.",

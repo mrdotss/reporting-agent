@@ -1195,7 +1195,9 @@ def _validate_one_fact(
                     f"a non-projectable fact must not declare a `projection`, got "
                     f"{projection!r}"
                 )
-            if absent_gap_type not in DECLARED_ABSENT_GAP_TYPES:
+            # ARM read-only facts need not assert a configuration state when absent.
+            # The fold already records an unspecified absence as fact_unavailable.
+            if absent_gap_type not in DECLARED_ABSENT_GAP_TYPES and not (source == "arm" and absent_gap_type is None):
                 reasons.append(
                     f"a non-projectable fact must declare an `absent_gap_type` drawn "
                     f"from {sorted(DECLARED_ABSENT_GAP_TYPES)}, got "

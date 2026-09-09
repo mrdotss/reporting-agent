@@ -3,6 +3,7 @@
 Run from the repository root with PYTHONPATH=agent/src:agent/tests.
 """
 
+import argparse
 from pathlib import Path
 
 from reporting_agent.catalog.loader import load_section_catalogue
@@ -18,7 +19,15 @@ from test_selected_metric_output import selected_fixture
 
 
 def main():
-    definition, snapshot = selected_fixture()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--postgresql", action="store_true")
+    args = parser.parse_args()
+    if args.postgresql:
+        from test_postgresql_inventory import postgresql_fixture
+        definition, snapshot = postgresql_fixture()
+    else:
+        definition, snapshot = selected_fixture()
+    filename = "postgresql-inventory" if args.postgresql else "selected-metrics"
     definition["design"]["number_format"] = {"bytes_as_gib": True}
     design = DesignSettings.from_plain(definition["design"])
     messages = load_messages("en")
@@ -35,13 +44,13 @@ def main():
         chart_tables=word.chart_tables,
         design=design,
         messages=messages,
-        title="Sample selected CPU, memory and historical metrics",
+        title="Sample PostgreSQL inventory" if args.postgresql else "Sample selected metrics",
     )
     root = Path(__file__).resolve().parents[3] / "artifacts/design-preview/production"
     root.mkdir(parents=True, exist_ok=True)
-    path = root / "selected-metrics.pdf"
+    path = root / f"{filename}.pdf"
     path.write_bytes(pdf.pdf_bytes)
-    (root / "selected-metrics.docx").write_bytes(word.docx_bytes)
+    (root / f"{filename}.docx").write_bytes(word.docx_bytes)
     text, pages = read_pdf_text(path)
     missing = [
         figure.formatted

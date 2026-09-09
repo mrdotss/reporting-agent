@@ -292,7 +292,8 @@ class FactsPort(Protocol):
     requirement expressed as a signature: Req 4.8 forbids a per-resource request for a fact,
     and a port whose methods accepted one would make the forbidden shape the easy one to
     write. A subscription of five resources and a subscription of five thousand cost the same
-    two-to-six requests through this port.
+    two-to-six requests through the original list methods. PostgreSQL firewall rules
+    are a server-scoped collection in ARM and explicitly take an inventoried server id.
 
     Which resources each answer *covers* is the caller's statement, not the port's, because
     it follows from the filter the request carries — `azure/facts.py` owns that filter and
@@ -331,6 +332,10 @@ class FactsPort(Protocol):
         tenant-level provider — which is also why Reader at subscription scope does not grant
         it and a rejection is the ordinary outcome rather than an exceptional one.
         """
+        ...
+
+    async def list_postgresql_firewall_rules(self, *, server_id: str) -> RawHttpResponse:
+        """List firewall rules for an inventoried PostgreSQL Flexible Server."""
         ...
 
     async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:

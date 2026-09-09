@@ -1,5 +1,6 @@
 import "server-only"
 
+import { currentDisplayFormat } from "@/lib/templates/current-format"
 import { resolveLogoIntoDefinition } from "@/lib/templates/logo"
 
 import {
@@ -313,26 +314,5 @@ function coverOf(definition: unknown): {
  * the seam the guard needs.
  */
 export function pinNumberFormat(definition: unknown): unknown {
-  if (typeof definition !== "object" || definition === null) return definition
-
-  const def = definition as Record<string, unknown>
-  if (def["schema_version"] !== 3) return definition
-
-  const design = def["design"]
-  if (design === null || typeof design !== "object") return definition
-  const designRecord = design as Record<string, unknown>
-
-  const format = designRecord["number_format"]
-  const formatRecord =
-    format !== null && typeof format === "object"
-      ? (format as Record<string, unknown>)
-      : {}
-
-  return {
-    ...def,
-    design: {
-      ...designRecord,
-      number_format: { ...formatRecord, trim_trailing_zeros: true, bytes_as_gib: true },
-    },
-  }
+  return currentDisplayFormat(definition)
 }

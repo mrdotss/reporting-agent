@@ -209,11 +209,13 @@ class FakeFactsPort:
         replication_responses: Sequence[RawHttpResponse] = (),
         reservation_responses: Sequence[RawHttpResponse] = (),
         advisor_responses: Sequence[RawHttpResponse] = (),
+        postgresql_responses: Sequence[RawHttpResponse] = (),
     ) -> None:
         self._backup = _ScriptedCalls(responses=list(backup_responses))
         self._replication = _ScriptedCalls(responses=list(replication_responses))
         self._reservations = _ScriptedCalls(responses=list(reservation_responses))
         self._advisor = _ScriptedCalls(responses=list(advisor_responses))
+        self._postgresql = _ScriptedCalls(responses=list(postgresql_responses))
 
     @property
     def backup_calls(self) -> list[dict[str, Any]]:
@@ -257,6 +259,11 @@ class FakeFactsPort:
                 port_name="FakeFactsPort", method_name="list_reservations"
             )
         )
+
+    async def list_postgresql_firewall_rules(self, *, server_id: str) -> RawHttpResponse:
+        return _one(self._postgresql.record_and_pop(
+            port_name="FakeFactsPort", method_name="list_postgresql_firewall_rules", server_id=server_id,
+        ))
 
     async def list_recommendations(self, *, subscription_id: str) -> RawHttpResponse:
         return _one(

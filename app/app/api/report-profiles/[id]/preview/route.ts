@@ -1,3 +1,4 @@
+import { currentDisplayFormat } from "@/lib/templates/current-format"
 import { after } from "next/server"
 
 import {
@@ -194,7 +195,7 @@ export async function POST(
         command: COMMAND_RENDER_PREVIEW,
         preview_id: previewId,
         snapshot_run_id: snapshotRun.runId,
-        definition: parsed.data.definition,
+        definition: currentDisplayFormat(parsed.data.definition),
       },
     })
 
