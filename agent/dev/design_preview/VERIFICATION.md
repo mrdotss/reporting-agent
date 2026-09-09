@@ -123,3 +123,16 @@ system package installation required a sudo password.
   under `artifacts/design-preview/production/selected-metrics.{pdf,docx}`.
 - These changes require a runtime rebuild and report regeneration to affect hosted
   output. No deployment or profile-schema migration was performed.
+
+## Historical summaries per VM — 2026-09-09
+
+- Historical sections group each VM heading, selected-statistic charts and scoped
+  narrative together. Prose requests distinguish statistic labels and contain only
+  that VM's historical figures. Legacy unscoped narrative blocks remain supported.
+- Removed the obsolete CPU-ranking marker from the VM chart catalogue. Regression
+  coverage confirms CPU, memory and an additional selected disk metric each render
+  separate charts when daily measurements are present.
+- Targeted compilation, catalogue and narrative suite: 114 passed. Regenerated
+  selected-metrics.pdf: five pages, eight charts, all displayed figures verified.
+  Visually inspected historical heading/chart grouping. Narrative isolation and
+  ordering used a deterministic test provider; no live model or Azure calls.

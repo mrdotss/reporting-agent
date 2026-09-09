@@ -171,3 +171,55 @@ def test_missing_internal_month_is_a_gap_in_each_selected_statistic():
         )
         assert spec["categories"] == ["2026-05", "2026-06", "2026-07"]
         assert spec["series"][0]["values"][1] is None
+
+
+def test_history_summary_is_scoped_to_each_vm_and_follows_its_charts():
+    from reporting_agent.compile.ast import Paragraph
+    from reporting_agent.compile.blocks.base import PROSE_KIND_TREND
+    from test_trend_seed_fallback import Recorder
+
+    definition, snapshot = selected_fixture()
+    recorder = Recorder("Recorded trend commentary.")
+    result = compile_document(
+        definition,
+        view=build_snapshot_view(snapshot),
+        catalogue=load_section_catalogue(),
+        prose=recorder,
+    )
+    requests = [r for r in recorder.requests if r.kind == PROSE_KIND_TREND]
+    assert len(requests) == 2
+    for index, request in enumerate(requests):
+        assert request.resource_count == 1
+        assert len(request.figures) == 6
+        assert all(label.startswith(f"sample-{index} ·") for label, _ in request.figures)
+        assert {label.split(" · ")[2] for label, _ in request.figures} == {"avg", "max"}
+    history = [n for n in result.document.blocks if str(n.path).startswith("history")]
+    summaries = [
+        i
+        for i, n in enumerate(history)
+        if isinstance(n, Paragraph)
+        and any(getattr(run, "text", "") == "Recorded trend commentary." for run in n.inlines)
+    ]
+    assert len(summaries) == 2
+    assert sum(isinstance(n, Chart) for n in history[: summaries[0]]) == 2
+    assert sum(isinstance(n, Chart) for n in history[summaries[0] + 1 : summaries[1]]) == 2
+
+
+def test_additional_selected_disk_metric_gets_its_own_chart():
+    definition, snapshot = selected_fixture()
+    metric = "Disk Read Bytes"
+    definition["sections"][0]["metrics"].append({"metric": metric, "statistic": "avg"})
+    for resource in snapshot["resources"]:
+        for day in resource["day_buckets"]:
+            memory = next(s for s in day["statistics"] if s["metric"] == sf.AVAILABLE_MEMORY)
+            day["statistics"].append({**memory, "metric": metric, "statistic": "avg"})
+    result = compile_document(
+        definition, view=build_snapshot_view(snapshot), catalogue=load_section_catalogue()
+    )
+    charts = [
+        n
+        for n in result.document.blocks
+        if isinstance(n, Chart) and str(n.path).startswith("utilization")
+    ]
+    assert len(charts) == 6
+    assert sum(any(p.y.metric == metric for s in c.series for p in s.points) for c in charts) == 2

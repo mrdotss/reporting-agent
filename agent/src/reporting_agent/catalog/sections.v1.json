@@ -671,9 +671,7 @@
                 "chart_and_table",
                 "chart_only"
               ],
-              "config": {
-                "metrics_from": "order_by_metric"
-              }
+              "config": {}
             },
             {
               "block": "metric_summary",
@@ -739,6 +737,11 @@
               "per": "section"
             },
             {
+              "block": "heading",
+              "config": { "level": 2 },
+              "per": "resource"
+            },
+            {
               "block": "historical_trend",
               "per": "resource",
               "when_presentation": [
@@ -748,7 +751,7 @@
             },
             {
               "block": "trend_narrative",
-              "per": "section",
+              "per": "resource",
               "when_presentation": [
                 "chart_and_table",
                 "chart_only"
