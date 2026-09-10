@@ -42,7 +42,7 @@ vi.mock("@/lib/aws/s3", () => ({
   },
 }))
 
-const { loadRunGaps } = await import("@/lib/runs/gaps")
+const { loadRunGaps, loadRunProvenance } = await import("@/lib/runs/gaps")
 
 const RESOURCE_ID = "/subscriptions/x/virtualMachines/prod-web-01"
 const INTERVAL_START = "2026-07-01T03:00:00Z"
@@ -163,5 +163,83 @@ describe("intervalStart", () => {
     // presentational decision; losing one of them here would make that decision
     // wrong at the source.
     expect(gaps.map((gap) => gap.intervalStart)).toEqual(starts)
+  })
+})
+
+
+describe("loadRunProvenance — the fidelity tally counts the estate", () => {
+  /**
+   * The provenance panel prints this beside `RESOURCES`, which the agent reports as the
+   * count of **deployed** resources. Tallying every row of `snapshot.resources` put
+   * "23 resources" and "80 baseline fidelity" in one panel about one subscription: the
+   * other 57 rows were subnets, security rules and Advisor findings.
+   *
+   * The catalogue draws that line with `child_of` and this app loads the same
+   * `facts.v1.json`, so both halves answer from one file rather than from two lists that
+   * can drift.
+   */
+  const VM = "Microsoft.Compute/virtualMachines"
+  const SUBNET = "Microsoft.Network/virtualNetworks/subnets"
+  const ADVISOR = "Microsoft.Advisor/recommendations"
+
+  function withResources(resources: readonly unknown[]): unknown {
+    return { gaps: [], resources }
+  }
+
+  test("a sub-record and a finding are not resources", async () => {
+    s3.body = withResources([
+      { fidelity_tier: "baseline", resource_type: VM },
+      { fidelity_tier: "baseline", resource_type: VM },
+      { fidelity_tier: "baseline", resource_type: SUBNET },
+      { fidelity_tier: "baseline", resource_type: ADVISOR },
+      { fidelity_tier: "baseline", resource_type: ADVISOR },
+    ])
+
+    const provenance = await loadRunProvenance(RUN)
+
+    expect(provenance?.fidelityTiers).toEqual({ baseline: 2 })
+  })
+
+  test("the comparison is case-insensitive", async () => {
+    // ARM type ids are case-insensitive, and Resource Graph lower-cases what the
+    // catalogue declares in camel case. Three defects in this product have come from
+    // comparing them with `===`.
+    s3.body = withResources([
+      { fidelity_tier: "baseline", resource_type: VM },
+      { fidelity_tier: "baseline", resource_type: SUBNET.toLowerCase() },
+      { fidelity_tier: "baseline", resource_type: ADVISOR.toUpperCase() },
+    ])
+
+    const provenance = await loadRunProvenance(RUN)
+
+    expect(provenance?.fidelityTiers).toEqual({ baseline: 1 })
+  })
+
+  test("tiers are still counted separately", async () => {
+    // The filter must narrow which rows count, never collapse the tiers apart from
+    // each other — the panel renders one badge per tier.
+    s3.body = withResources([
+      { fidelity_tier: "baseline", resource_type: VM },
+      { fidelity_tier: "enhanced", resource_type: VM },
+      { fidelity_tier: "enhanced", resource_type: SUBNET },
+    ])
+
+    const provenance = await loadRunProvenance(RUN)
+
+    expect(provenance?.fidelityTiers).toEqual({ baseline: 1, enhanced: 1 })
+  })
+
+  test("a row with no type is counted rather than discarded", async () => {
+    // An older agent, or a schema that stops emitting the field: the filter must fail
+    // open. Dropping such a row would trade a count that is too high for one that is
+    // too low, and the panel would be wrong in the direction nobody notices.
+    s3.body = withResources([
+      { fidelity_tier: "baseline" },
+      { fidelity_tier: "baseline", resource_type: VM },
+    ])
+
+    const provenance = await loadRunProvenance(RUN)
+
+    expect(provenance?.fidelityTiers).toEqual({ baseline: 2 })
   })
 })

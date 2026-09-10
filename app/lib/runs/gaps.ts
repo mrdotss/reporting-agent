@@ -5,6 +5,7 @@ import { z } from "zod"
 import { getSnapshotJson } from "@/lib/aws/s3"
 import type { ReportRun } from "@/lib/db/schema"
 import { snapshotArtifactKey } from "@/lib/db/views"
+import { CHILD_RESOURCE_TYPES } from "@/lib/profiles/facts"
 import { isTerminalStatus } from "@/lib/runs/state"
 
 /**
@@ -136,7 +137,14 @@ const snapshotDocumentSchema = z.object({
   resources: z
     .array(
       z
-        .object({ fidelity_tier: z.string().optional().catch(undefined) })
+        .object({
+          fidelity_tier: z.string().optional().catch(undefined),
+          // Needed to tell a deployed resource from a sub-record or a finding. Parsed
+          // rather than read off the raw object, because this schema strips what it does
+          // not name — the filter below would have read `undefined` for every row and
+          // silently counted all of them, which is the bug it exists to fix.
+          resource_type: z.string().optional().catch(undefined),
+        })
         .nullable()
         .catch(null)
     )
@@ -274,10 +282,21 @@ export async function loadRunProvenance(
   const snapshot = await readSnapshot(run)
   if (snapshot === null) return null
 
+  // Counted over deployed resources only, on the catalogue's own `child_of` declaration.
+  //
+  // The panel this feeds prints the count beside `RESOURCES`, which the agent reports as
+  // the estate — so tallying every row of `snapshot.resources` had one panel saying "23
+  // resources" and "80 baseline fidelity" about one subscription. The other 57 rows are
+  // sub-records the report tables (subnets, security rules) and Advisor findings, and
+  // neither is a thing anybody deployed.
   const fidelityTiers: Record<string, number> = {}
   for (const resource of snapshot.resources ?? []) {
     const tier = resource?.fidelity_tier
     if (tier === undefined) continue
+    const type = resource?.resource_type
+    if (typeof type === "string" && CHILD_RESOURCE_TYPES.has(type.toLowerCase())) {
+      continue
+    }
     fidelityTiers[tier] = (fidelityTiers[tier] ?? 0) + 1
   }
 
