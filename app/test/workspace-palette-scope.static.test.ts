@@ -112,3 +112,46 @@ describe("the document preview outlives the step that rendered it", () => {
     expect(() => read("components/templates/live-theme-preview.tsx")).toThrow()
   })
 })
+
+/**
+ * The composed page reaches the canvas.
+ *
+ * The agent has always written it — `render/html.py` over the same compiled AST the
+ * `.docx` comes from, stored as `previews/<id>/preview.html`. Nothing read it. The route
+ * returned a presigned `.pdf` and nothing else, and the canvas that exists to show the
+ * page was handed a literal `null`, so "Render a real preview below and the composed page
+ * appears here" was the only state it could reach — permanently, for every user.
+ *
+ * Nothing failed. A component wired to a constant renders exactly as designed.
+ */
+describe("the preview route surfaces the page the agent already wrote", () => {
+  test("the route reads it and returns it", () => {
+    const route = read("app/api/report-profiles/[id]/preview/route.ts")
+    expect(route).toMatch(/getPreviewHtml\(/)
+    expect(route).toMatch(/previewHtmlKey\(snapshotRun\.actorId, previewId\)/)
+    expect(route).toMatch(/^\s*html,$/m)
+  })
+
+  test("the read is guarded by the same ownership check as the presign", () => {
+    // Reading is not weaker than minting a URL: a key outside the signed-in actor's own
+    // `previews/` prefix is refused before the object is touched.
+    const s3 = read("lib/aws/s3.ts")
+    const reader = s3.slice(s3.indexOf("export async function getPreviewHtml"))
+    expect(reader.slice(0, 600)).toMatch(
+      /previewBelongsToActor\(actorId, key\)/
+    )
+    expect(reader.slice(0, 600)).toMatch(/ArtifactAccessError/)
+  })
+
+  test("no canvas is fed a hardcoded null any more", () => {
+    // The shape of the original defect: a prop satisfied by a constant. Both call sites
+    // pass what the render produced.
+    for (const file of [
+      "components/templates/real-preview-panel.tsx",
+      "components/templates/step-preview.tsx",
+      "components/templates/wizard-shell.tsx",
+    ]) {
+      expect(read(file), file).not.toMatch(/previewHtml=\{null\}|html=\{null\}/)
+    }
+  })
+})

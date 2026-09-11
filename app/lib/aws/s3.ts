@@ -37,6 +37,14 @@ import { requireEnv } from "@/lib/env"
  */
 export const MAX_PRESIGN_SECONDS = 300
 
+/**
+ * The largest emitted page inlined into a preview response.
+ *
+ * A page past this is not one anybody reads on a canvas, and it would travel inside a
+ * JSON body. The `.pdf` is unaffected.
+ */
+const MAX_PREVIEW_HTML_BYTES = 4_000_000
+
 /** The second segment of every artifact key. */
 export const ARTIFACT_SEGMENT_SNAPSHOTS = "snapshots"
 
@@ -341,6 +349,53 @@ export async function presignPreview(
   return { url, expiresIn: MAX_PRESIGN_SECONDS }
 }
 
+/**
+ * The emitted page of one preview, as text, or `null`.
+ *
+ * The agent already writes it — `render/html.py` over the same compiled AST the `.docx`
+ * came from, stored beside the `.pdf` as `preview.html`. Nothing read it, so the canvas
+ * that exists to show it was handed a literal `null` and could only ever say it was
+ * waiting.
+ *
+ * Read here rather than presigned for the browser to fetch: the canvas renders the text,
+ * not a document, and a cross-origin `fetch` of a presigned URL would need bucket CORS
+ * that this app does not control. The guard is `presignPreview`'s, for the same reason —
+ * a key outside the signed-in actor's own `previews/` prefix is refused before any read.
+ *
+ * `null` on anything unexpected, and deliberately: the `.pdf` is the product and the
+ * canvas is a convenience, so a preview whose page could not be read still offers the
+ * document rather than failing whole.
+ */
+export async function getPreviewHtml(
+  actorId: string,
+  key: string
+): Promise<string | null> {
+  if (!previewBelongsToActor(actorId, key)) {
+    throw new ArtifactAccessError(
+      "The requested preview key does not belong to the signed-in user, so no " +
+        "preview page was read. Resolve this as not found."
+    )
+  }
+
+  try {
+    const response = await getS3Client().send(
+      new GetObjectCommand({
+        Bucket: requireEnv("RPT_ARTIFACT_BUCKET"),
+        Key: key,
+      })
+    )
+
+    // A page larger than this is not a page anybody is reading on a canvas, and it
+    // travels in a JSON body. The `.pdf` still does its job.
+    const length = response.ContentLength ?? 0
+    if (length > MAX_PREVIEW_HTML_BYTES) return null
+
+    return (await response.Body?.transformToString()) ?? null
+  } catch {
+    return null
+  }
+}
+
 /** Delete one object. Used only by the superseded-preview cleanup. */
 export async function deleteObject(key: string): Promise<void> {
   await getS3Client().send(
@@ -366,7 +421,10 @@ export const ARTIFACT_SEGMENT_SIGNATURES = "signatures"
  * version — a version is immutable, so the object its `signature_key`
  * addresses must not change under it either.
  */
-export function signatureKey(userId: string, extension: "png" | "jpeg"): string {
+export function signatureKey(
+  userId: string,
+  extension: "png" | "jpeg"
+): string {
   const ext = extension === "jpeg" ? "jpg" : "png"
   return `${userId}/${ARTIFACT_SEGMENT_SIGNATURES}/${randomUUID()}.${ext}`
 }

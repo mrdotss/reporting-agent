@@ -17,6 +17,7 @@ import { requireSessionForApi } from "@/lib/auth/guard"
 import { COMMAND_RENDER_PREVIEW, invokeAgentRuntime } from "@/lib/aws/agentcore"
 import {
   deleteObject,
+  getPreviewHtml,
   presignPreview,
   previewHtmlKey,
   previewKey,
@@ -81,6 +82,14 @@ type PreviewStage = "compilation" | "docx" | "pdf"
 
 type PreviewResponseBody = {
   readonly url: string
+  /**
+   * The emitted page, or `null` when it could not be read.
+   *
+   * `render/html.py` over the same compiled AST the `.docx` came from, so the canvas
+   * shows the composition rather than an approximation of it. Nullable on purpose: a
+   * preview whose page is unreadable still has a `.pdf` to offer.
+   */
+  readonly html: string | null
   readonly expiresIn: number
   /** So the panel can present what Requirement 14.10 requires alongside the `.pdf`. */
   readonly snapshotId: string
@@ -160,8 +169,15 @@ export async function POST(
     // else's template id resolves as not found, indistinguishably from an id
     // that exists for nobody (Requirement 1.5).
     const profile = await getTemplate(user.id, params.data.id)
-    const source = await getConnectedSubscription(user.id, parsed.data.connectedSubscriptionId)
-    if (profile.workspaceId !== source.workspaceId || profile.projectId !== source.projectId) return notFound()
+    const source = await getConnectedSubscription(
+      user.id,
+      parsed.data.connectedSubscriptionId
+    )
+    if (
+      profile.workspaceId !== source.workspaceId ||
+      profile.projectId !== source.projectId
+    )
+      return notFound()
   } catch (thrown) {
     if (thrown instanceof TemplateNotFoundError) return notFound()
     throw thrown
@@ -227,6 +243,15 @@ export async function POST(
 
     const presigned = await presignPreview(snapshotRun.actorId, pdfKey)
 
+    // The emitter's own page, for the canvas beside the download. Read rather than
+    // presigned — the canvas renders the text, and a cross-origin fetch of a presigned
+    // URL would need bucket CORS this app does not control. `null` on anything
+    // unexpected: the `.pdf` is the product, the page is a convenience.
+    const html = await getPreviewHtml(
+      snapshotRun.actorId,
+      previewHtmlKey(snapshotRun.actorId, previewId)
+    )
+
     // Requirement 13.5's cleanup, after the response. The two objects of *this*
     // preview are kept — they are what the panel is about to fetch — and the
     // caller names the one it is superseding, so the app deletes only an object
@@ -243,6 +268,7 @@ export async function POST(
 
     return json(200, {
       url: presigned.url,
+      html,
       expiresIn: presigned.expiresIn,
       snapshotId: snapshotRun.snapshotId,
       periodStart: snapshotRun.periodStart,
