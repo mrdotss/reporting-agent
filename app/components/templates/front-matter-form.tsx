@@ -459,7 +459,12 @@ export function FrontMatterForm({
       data-slot="front-matter-form"
       role="region"
       aria-label="Front matter configuration"
-      className="flex flex-col gap-4 rounded-xl border border-border bg-sidebar/50 px-4 py-4"
+      // `bg-muted`, never `bg-sidebar`. The navigation rail is a fixed dark surface in
+      // BOTH themes, so `--sidebar` is a dark navy even in the light theme — a content
+      // card borrowing it rendered this whole panel as a grey slab on a light page, with
+      // every `text-muted-foreground` label on it at roughly 2:1. Content surfaces take
+      // content tokens; `app/test/surface-tokens.static.test.ts` now holds that line.
+      className="flex flex-col gap-4 rounded-xl border border-border bg-muted/40 px-4 py-4"
     >
       <div className="flex items-center gap-2">
         <FileText aria-hidden className="size-4 text-primary" />

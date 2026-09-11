@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useRef, useState } from "react"
-import { FilePdfIcon } from "@phosphor-icons/react"
+import { CaretRightIcon, FilePdfIcon } from "@phosphor-icons/react"
 
 import { PaperPreview } from "@/components/templates/paper-preview"
 import { Button } from "@/components/ui/button"
@@ -35,6 +35,19 @@ import { PREVIEW_BUDGET_MS } from "@/lib/templates/input"
  *   and font metrics — because the figures are last month's, and a consultant
  *   showing this to a customer needs to know it is a layout proof and not a
  *   report.
+ *
+ * ## It is no longer the first thing in the rail
+ *
+ * `DocumentPreview` is, because this one cannot draw anything until a run exists and a
+ * consultant presses a button — so for a new profile the rail opened on an empty dashed
+ * box reading "Render a preview and the composed page appears here", which is a panel
+ * that describes itself instead of showing something. The design sample fills that space
+ * from step 2 onward and needs no data.
+ *
+ * This stays, unchanged in what it claims, because it is the only surface permitted to
+ * say "this is what you will receive" (Requirement 14.6) and the only one that runs the
+ * real path. It is now opened deliberately rather than sat in front of, which is the
+ * right weight for a twenty-second server render against a real snapshot.
  *
  * ## One activation at a time
  *
@@ -175,41 +188,36 @@ export function RealPreviewPanel({
   }, [definition, disabledReason, selectedSubscriptionId, templateId])
 
   return (
-    <div className="flex flex-col gap-3">
-      {/*
-        The composed page, above the control that produces it.
-        `render/html.py` emitted it from the same AST the `.docx` came from, so this is
-        the composition rather than an approximation of it — which is why it sits here
-        rather than behind the download.
-      */}
-      <PaperPreview
-        html={phase.kind === "ready" ? phase.result.html : null}
-        emptyReason={
-          phase.kind === "running"
-            ? "Rendering the page…"
-            : phase.kind === "ready"
-              ? "This preview produced a .pdf but no readable page. The document is below."
-              : "Render a preview and the composed page appears here."
-        }
-      />
+    <details
+      data-slot="real-preview-panel"
+      // Closed by default, and it stays closed across a re-render because `details`
+      // holds its own open state in the DOM. Open is a decision: the render costs a
+      // server round trip through LibreOffice, so it should follow an intent rather
+      // than sit in the rail inviting a click.
+      className="group rounded-xl border border-border px-4 py-3 [&[open]]:py-4"
+    >
+      <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-medium tracking-tight">
+        <CaretRightIcon
+          aria-hidden="true"
+          className="size-3.5 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+        />
+        <span className="font-heading">Render the real document</span>
+        {phase.kind === "ready" ? (
+          <span className="ml-auto text-xs font-normal text-muted-foreground">
+            rendered
+          </span>
+        ) : null}
+      </summary>
 
-      <section
-        data-slot="real-preview-panel"
-        className="flex flex-col gap-3 rounded-xl border border-border px-4 py-4"
-      >
-        <div className="flex flex-col gap-1">
-          <h3 className="font-heading text-sm font-medium tracking-tight">
-            Render a real preview
-          </h3>
-
-          <p className="max-w-prose text-sm text-muted-foreground">
-            Runs the true rendering path —{" "}
-            <code className="font-mono">python-docx</code> to LibreOffice to{" "}
-            <code className="font-mono">.pdf</code> — against the most recent
-            completed run&rsquo;s snapshot. This is the only place that shows
-            you what the delivered document actually looks like.
-          </p>
-        </div>
+      <div className="mt-3 flex flex-col gap-3">
+        <p className="max-w-prose text-sm text-muted-foreground">
+          Runs the true rendering path —{" "}
+          <code className="font-mono">python-docx</code> to LibreOffice to{" "}
+          <code className="font-mono">.pdf</code> — against the most recent
+          completed run&rsquo;s snapshot. This is the only place that shows you
+          what the delivered document actually looks like; the sample above shows
+          the theme, not the data.
+        </p>
 
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -305,6 +313,16 @@ export function RealPreviewPanel({
             control**: a preview is not a report, and the key it lives under is
             one the report download predicate cannot parse.
           */}
+            {/*
+              The composed page. `render/html.py` emitted it from the same AST the
+              `.docx` came from, so this is the composition rather than an approximation
+              of it. Rendered only once there is one — the empty state it used to carry
+              is what the design sample replaced.
+            */}
+            {phase.result.html === null ? null : (
+              <PaperPreview html={phase.result.html} />
+            )}
+
             <iframe
               data-slot="real-preview-pdf"
               src={phase.result.url}
@@ -313,7 +331,7 @@ export function RealPreviewPanel({
             />
           </div>
         ) : null}
-      </section>
-    </div>
+      </div>
+    </details>
   )
 }

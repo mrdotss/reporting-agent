@@ -1,5 +1,5 @@
-import { render, screen, within } from "@testing-library/react"
-import { describe, expect, test } from "vitest"
+import { cleanup, render, screen, within } from "@testing-library/react"
+import { afterEach, describe, expect, test } from "vitest"
 
 import { RunPhases } from "./run-phases"
 import { runStatus } from "@/lib/db/schema"
@@ -13,6 +13,10 @@ import { RUN_PHASE_ORDER, runPhases } from "@/lib/runs/presentation"
  * was starting from one that was stuck, because there was no path for it to be somewhere
  * along.
  */
+// Vitest runs with `globals: false`, so RTL registers no automatic teardown — without
+// this, one test's tree is still mounted while the next queries `screen`.
+afterEach(cleanup)
+
 describe("the run phase path", () => {
   test("it is the status enum's own order, minus the one that is not a phase", () => {
     // Not a second list. A parallel array would be a second answer to "what happens
@@ -23,7 +27,9 @@ describe("the run phase path", () => {
   })
 
   test("every phase is behind, current, or ahead — and exactly one is current", () => {
-    for (const status of RUN_PHASE_ORDER) {
+    // `completed` is excluded because it is not a phase a run passes through — see the
+    // test below. Every other entry is somewhere a run genuinely sits for a while.
+    for (const status of RUN_PHASE_ORDER.filter((s) => s !== "completed")) {
       const standings = runPhases(status).map((phase) => phase.standing)
       expect(standings.filter((s) => s === "current")).toHaveLength(1)
       // Behind then current then ahead, never interleaved.
@@ -36,6 +42,20 @@ describe("the run phase path", () => {
         true
       )
     }
+  })
+
+  test("a finished run has nothing in progress", () => {
+    // `completed` is the last entry in the path AND the run's terminal status, so the
+    // positional rule marked it `current`: a spinner and the words "In progress" beside
+    // "Completed", on a run that had finished twenty minutes earlier. A reader takes
+    // that as stuck, and it was the one status where being wrong costs the most —
+    // every successful run ends here and stays here.
+    const phases = runPhases("completed")
+    expect(phases.every((phase) => phase.standing === "done")).toBe(true)
+
+    const { container } = render(<RunPhases status="completed" />)
+    expect(container.textContent ?? "").not.toContain("In progress")
+    expect(container.querySelector(".animate-spin")).toBeNull()
   })
 
   test("a failed run claims no phase rather than claiming the first", () => {
