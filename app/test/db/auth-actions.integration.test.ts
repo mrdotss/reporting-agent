@@ -123,6 +123,7 @@ vi.mock("next/navigation", async () => {
 
 vi.mock("@/lib/db", () => ({
   getDb: () => currentDb(),
+  getPool: () => db.pool(),
 }))
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"

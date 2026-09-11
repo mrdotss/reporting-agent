@@ -136,6 +136,7 @@ describe("the migration applies", () => {
     expect(result.rows.map(({ tablename }) => tablename)).toEqual([
       "connected_subscriptions",
       "login_attempts",
+      "projects",
       "report_profile_authored_matches",
       "report_runs",
       "report_template_versions",
@@ -144,6 +145,10 @@ describe("the migration applies", () => {
       "sessions",
       "subscription_scans",
       "users",
+      "workspace_audit",
+      "workspace_invitations",
+      "workspace_members",
+      "workspaces",
     ])
   })
 })
@@ -382,7 +387,8 @@ describe("the declared constraints and indexes exist", () => {
     const names = result.rows.map(({ conname }) => conname)
 
     expect(names).toEqual([
-      "connected_subscriptions_user_id_subscription_id_uq",
+      "connected_subscriptions_workspace_subscription_uq",
+      "projects_id_workspace_uq",
       "report_profile_authored_matches_version_section_uq",
       "report_runs_dedupe_key_unique",
       "report_template_versions_template_id_version_uq",
@@ -390,6 +396,9 @@ describe("the declared constraints and indexes exist", () => {
       "report_verifications_run_id_attempt_id_uq",
       "sessions_session_token_hash_unique",
       "users_email_normalized_unique",
+      "workspace_invitations_token_hash_unique",
+      "workspace_members_workspace_user_uq",
+      "workspaces_imported_for_user_id_unique",
     ])
   })
 

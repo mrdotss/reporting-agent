@@ -1,4 +1,5 @@
 import "server-only"
+import { accessWhere } from "@/lib/workspaces/access"
 
 import { randomUUID } from "node:crypto"
 
@@ -27,6 +28,7 @@ import { connectedSubscriptions, reportRuns } from "@/lib/db/schema"
  */
 
 export type SnapshotRun = {
+  readonly actorId: string
   readonly runId: string
   readonly snapshotId: string
   readonly periodStart: string
@@ -46,6 +48,7 @@ export async function mostRecentSnapshotRun(
 ): Promise<SnapshotRun | null> {
   const [row] = await getDb()
     .select({
+      actorId: reportRuns.userId,
       runId: reportRuns.id,
       snapshotId: reportRuns.snapshotId,
       periodStart: reportRuns.periodStart,
@@ -59,7 +62,7 @@ export async function mostRecentSnapshotRun(
     )
     .where(
       and(
-        eq(reportRuns.userId, userId),
+        accessWhere(reportRuns, userId),
         eq(reportRuns.connectedSubscriptionId, connectedSubscriptionId),
         eq(reportRuns.status, "completed"),
         // The subscription's own state, checked here rather than by the caller:
@@ -85,6 +88,7 @@ export async function mostRecentSnapshotRun(
   if (row === undefined || row.snapshotId === null) return null
 
   return {
+    actorId: row.actorId,
     runId: row.runId,
     snapshotId: row.snapshotId,
     periodStart: row.periodStart,

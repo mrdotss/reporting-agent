@@ -223,6 +223,18 @@ describe("expandPreset against the real catalogues", () => {
     expect(dropped.sort()).toStrictEqual([
       "app_service_and_storage/standard_utilization: 5 -> 0",
       "database_utilization/standard_utilization: 3 -> 1",
+      // `postgresql_flexible_inventory` arrived with the same fault, recorded on the
+      // same terms. Its preset asks for `avg` on `cpu_percent`, `memory_percent`,
+      // `storage_used` and `storage_percent`; the Metric_Catalog declares all four as
+      // `['Maximum','Minimum']`, so the four `avg` items cannot be honoured and the four
+      // `max` ones survive.
+      //
+      // Not fixed here, and deliberately: declaring `Average` would be a claim about what
+      // Azure offers, and `catalog.evidence --assert-build` requires a real observed
+      // fixture for every such claim. Dropping the `avg` items instead is a decision about
+      // what "standard utilization" should mean for a database, which belongs to whoever
+      // owns the section rather than to this test.
+      "postgresql_flexible_inventory/standard_utilization: 8 -> 4",
     ])
   })
 

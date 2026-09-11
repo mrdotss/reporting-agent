@@ -1,4 +1,5 @@
 import "server-only"
+import { accessWhere } from "@/lib/workspaces/access"
 
 import { randomUUID } from "node:crypto"
 
@@ -64,7 +65,7 @@ export async function readSubscriptionForScan(
     .where(
       and(
         eq(connectedSubscriptions.id, subscriptionId),
-        eq(connectedSubscriptions.userId, userId)
+        accessWhere(connectedSubscriptions, userId, "connect")
       )
     )
     .limit(1)
@@ -90,6 +91,8 @@ export async function createScan(
   connectedSubscriptionId: string
 ): Promise<ScanView> {
   const db = getDb()
+  const [source] = await db.select().from(connectedSubscriptions).where(and(eq(connectedSubscriptions.id,connectedSubscriptionId),accessWhere(connectedSubscriptions,userId,"connect"))).limit(1)
+  if (!source) throw new ScanSubscriptionNotFoundError()
   const id = randomUUID()
   const now = new Date()
 
@@ -99,6 +102,8 @@ export async function createScan(
       id,
       userId,
       connectedSubscriptionId,
+      workspaceId: source.workspaceId,
+      projectId: source.projectId,
       status: "queued",
       createdAt: now,
       updatedAt: now,
@@ -125,7 +130,7 @@ export async function readLatestScan(
     .from(subscriptionScans)
     .where(
       and(
-        eq(subscriptionScans.userId, userId),
+        accessWhere(subscriptionScans, userId),
         eq(subscriptionScans.connectedSubscriptionId, connectedSubscriptionId)
       )
     )

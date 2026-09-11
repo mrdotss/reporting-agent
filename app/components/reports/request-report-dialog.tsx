@@ -1,4 +1,7 @@
 "use client"
+import Link from "next/link"
+import { useWorkspace } from "@/components/workspaces/workspace-shell"
+import { can } from "@/lib/workspaces/policy"
 
 import { useState } from "react"
 import { PlayIcon } from "@phosphor-icons/react/ssr"
@@ -38,6 +41,8 @@ export function RequestReportDialog({
   nowIso: string
 }>) {
   const [open, setOpen] = useState(false)
+  const workspace=useWorkspace()
+  if (workspace) return <Button nativeButton={false} disabled={!workspace.projectId || workspace.archived || !can(workspace.role,"edit")} render={<Link href="/reports/new"/>}><PlayIcon/>{messageText("ui.run_table.request", "en")}</Button>
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

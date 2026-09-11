@@ -1,3 +1,5 @@
+import { notFound } from "@/lib/api/response"
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 import {
   conflict,
   internalError,
@@ -123,6 +125,8 @@ export async function POST(request: Request): Promise<Response> {
 
     const subscription = await createConnectedSubscription({
       userId: user.id,
+      workspaceId: submitted.workspaceId,
+      projectId: submitted.projectId,
       displayName: submitted.displayName,
       subscriptionId: submitted.subscriptionId,
       tenantId: submitted.tenantId,
@@ -145,6 +149,7 @@ export async function POST(request: Request): Promise<Response> {
 
     return json(201, { subscription } satisfies CreateResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     if (thrown instanceof SubscriptionAlreadyConnectedError) {
       // Requirement 9.10 — stated, with no second row written. The message is the
       // error's own and names no id.
@@ -190,6 +195,7 @@ export async function GET(request: Request): Promise<Response> {
 
     return json(200, { subscriptions } satisfies ListResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     console.error(
       `[api/subscriptions] GET failed: ` +
         `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`

@@ -1,3 +1,4 @@
+import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { PlusIcon } from "@phosphor-icons/react/ssr"
@@ -40,21 +41,20 @@ export const metadata: Metadata = {
 
 export default async function SubscriptionsPage() {
   const user = await requireSession()
+  const projectScope = await selectedFilter(user.id)
 
-  const subscriptions = await listConnectedSubscriptions(user.id)
+  const subscriptions = await listConnectedSubscriptions(user.id, projectScope)
 
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="font-heading text-xl font-medium tracking-tight">
-            Subscriptions
+            Connections
           </h1>
 
           <p className="text-sm text-muted-foreground">
-            Read-only connections to your customers&apos; Azure subscriptions. A
-            client secret has a maximum lifetime of 24 months, so each one is
-            watched and warned about before it lapses.
+            Manage customer access, discover resources, and keep connections ready for reporting.
           </p>
         </div>
 

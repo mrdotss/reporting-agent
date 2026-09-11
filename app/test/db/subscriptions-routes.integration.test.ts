@@ -69,6 +69,7 @@ const { session, preflight } = vi.hoisted(() => ({
 
 vi.mock("@/lib/db", () => ({
   getDb: () => currentDb(),
+  getPool: () => db.pool(),
 }))
 
 vi.mock("@/lib/auth/guard", () => ({
@@ -475,7 +476,7 @@ describe("Requirement 9.8 — another user's subscription id is not found on rea
     expect(await rowById(theirs)).toStrictEqual(before)
   })
 
-  test("rotate — the write's own predicate refuses a row that changed hands mid-request", async () => {
+  test("rotate — the write's own predicate refuses membership revoked mid-request", async () => {
     // The claim the read above cannot make. `rotateClientSecret` carries
     // `AND user_id = $n` inside the `UPDATE` itself, so there is no ordering in which
     // the ownership check passes and the write lands anyway. Forcing that ordering
@@ -491,12 +492,16 @@ describe("Requirement 9.8 — another user's subscription id is not found on rea
 
     preflight.beforeReturn = async () => {
       await db.query(
-        `UPDATE connected_subscriptions SET user_id = $1 WHERE id = $2`,
-        [intruder.id, mine]
+        `DELETE FROM workspace_members WHERE user_id=$1 AND workspace_id=(SELECT workspace_id FROM connected_subscriptions WHERE id=$2)`,
+        [owner.id, mine]
       )
     }
 
     const response = await rotate(mine)
+    await db.query(
+      `INSERT INTO workspace_members(id,workspace_id,user_id,role) VALUES($1,$2,$3,'owner')`,
+      [`imported-member-${owner.id}`, `imported-${owner.id}`, owner.id]
+    )
 
     expect(response.status).toBe(404)
     expect(preflight.calls).toHaveLength(1)
@@ -505,7 +510,7 @@ describe("Requirement 9.8 — another user's subscription id is not found on rea
     // rotated ciphertext and the rotated expiry are both absent, so the `UPDATE`
     // matched nothing rather than writing and then being reported as a 404.
     const after = await rowById(mine)
-    expect(after).toStrictEqual({ ...before, user_id: intruder.id })
+    expect(after).toStrictEqual(before)
     expect(after?.client_secret_enc).toBe(before?.client_secret_enc)
   })
 

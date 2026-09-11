@@ -1,3 +1,5 @@
+import { WorkspaceOverview } from "@/components/workspaces/overview"
+import { workspaceUiEnabled } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import {
@@ -148,6 +150,7 @@ function SubscriptionHealth({
 
 export default async function DashboardPage() {
   const user = await requireSession()
+  if (workspaceUiEnabled()) return <WorkspaceOverview userId={user.id}/>
 
   const [runs, subscriptions] = await Promise.all([
     listOwnedRuns(user.id),

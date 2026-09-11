@@ -1,4 +1,5 @@
 import "server-only"
+import { accessWhere } from "@/lib/workspaces/access"
 
 import { and, count, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm"
 
@@ -280,7 +281,7 @@ export async function readOwnedRun(
   const [row] = await getDb()
     .select()
     .from(reportRuns)
-    .where(and(eq(reportRuns.id, runId), eq(reportRuns.userId, userId)))
+    .where(and(eq(reportRuns.id, runId), accessWhere(reportRuns, userId)))
     .limit(1)
 
   if (row === undefined) throw new RunNotFoundError()
@@ -302,7 +303,7 @@ export async function findOwnedRun(
   const [row] = await getDb()
     .select()
     .from(reportRuns)
-    .where(and(eq(reportRuns.id, runId), eq(reportRuns.userId, userId)))
+    .where(and(eq(reportRuns.id, runId), accessWhere(reportRuns, userId)))
     .limit(1)
 
   return row
@@ -330,6 +331,8 @@ export const RUN_PAGE_SIZE = 25
  * page three.
  */
 export type RunListQuery = {
+  readonly workspaceId?: string
+  readonly projectId?: string
   /** Statuses to include. Empty or absent means every status. */
   readonly statuses?: readonly RunStatus[]
   /** A case-insensitive substring of the report profile's name. */
@@ -346,7 +349,7 @@ export type RunListQuery = {
  * hand-written pair of these.
  */
 function runListWhere(userId: string, query: RunListQuery): SQL | undefined {
-  const clauses: SQL[] = [eq(reportRuns.userId, userId)]
+  const clauses: SQL[] = [accessWhere(reportRuns, userId, "read", query)]
 
   if (query.statuses !== undefined && query.statuses.length > 0) {
     clauses.push(inArray(reportRuns.status, [...query.statuses]))
@@ -369,7 +372,7 @@ function runListWhere(userId: string, query: RunListQuery): SQL | undefined {
           )
           .where(
             and(
-              eq(reportTemplates.userId, userId),
+              accessWhere(reportTemplates, userId),
               ilike(reportTemplates.name, `%${needle}%`)
             )
           )
@@ -439,7 +442,7 @@ export async function findReusableSnapshotRun(
     .from(reportRuns)
     .where(
       and(
-        eq(reportRuns.userId, userId),
+        accessWhere(reportRuns, userId),
         eq(reportRuns.status, "completed"),
         eq(reportRuns.connectedSubscriptionId, criteria.connectedSubscriptionId),
         eq(reportRuns.periodStart, criteria.periodStart),
@@ -505,7 +508,7 @@ export async function countRunsForProfilePeriod(
     .from(reportRuns)
     .where(
       and(
-        eq(reportRuns.userId, userId),
+        accessWhere(reportRuns, userId),
         eq(reportRuns.periodStart, profile.periodStart),
         eq(reportRuns.periodEnd, profile.periodEnd),
         inArray(
@@ -574,7 +577,7 @@ export async function updateOwnedRun(
   const [row] = await getDb()
     .update(reportRuns)
     .set({ ...values, updatedAt: now })
-    .where(and(eq(reportRuns.id, runId), eq(reportRuns.userId, userId)))
+    .where(and(eq(reportRuns.id, runId), accessWhere(reportRuns, userId, "edit")))
     .returning()
 
   if (row === undefined) throw new RunNotFoundError()

@@ -1282,6 +1282,18 @@ export const MESSAGE_CATALOG = {
     en: "Next",
     id: "Berikutnya",
   },
+  "ui.request_summary.heading": {
+    en: "Request summary",
+    id: "Ringkasan permintaan",
+  },
+  "ui.request_summary.subheading": {
+    en: "Review before generating.",
+    id: "Tinjau sebelum membuat laporan.",
+  },
+  "ui.request_summary.period_hint": {
+    en: "The period is resolved from the saved profile when submitted. Progress appears on the report page.",
+    id: "Periode ditentukan dari profil tersimpan saat dikirim. Kemajuannya tampil di halaman laporan.",
+  },
   "ui.run_table.request": {
     en: "Request a report",
     id: "Minta laporan",

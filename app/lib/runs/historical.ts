@@ -102,7 +102,7 @@ export async function fetchHistoricalCandidates(
              ORDER BY rv.created_at DESC, rv.id DESC
              LIMIT 1
       ) v ON TRUE
-     WHERE r.user_id = ${userId}
+     WHERE exists (select 1 from report_runs anchor where anchor.id=${excludeRunId} and anchor.user_id=${userId} and anchor.project_id=r.project_id and anchor.workspace_id=r.workspace_id)
        AND tv.template_id = ${templateId}
        AND r.connected_subscription_id = ${subscriptionId}
        AND r.id <> ${excludeRunId}

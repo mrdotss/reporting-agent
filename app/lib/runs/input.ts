@@ -1,3 +1,4 @@
+import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
 
 /**
@@ -126,6 +127,7 @@ export const RUN_ID_PARAM_MESSAGE =
  */
 export const runCreateInputSchema = z
   .object({
+    ...scopeInput,
     connectedSubscriptionId: z
       .string({ error: "Choose a connected subscription to report on." })
       .trim()

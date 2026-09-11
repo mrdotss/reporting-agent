@@ -96,6 +96,8 @@ const RUN_ID = "run-1"
 
 function row(over: Partial<ReportRun> = {}): ReportRun {
   return {
+    workspaceId: null,
+    projectId: null,
     id: RUN_ID,
     userId: USER.id,
     connectedSubscriptionId: "sub-1",

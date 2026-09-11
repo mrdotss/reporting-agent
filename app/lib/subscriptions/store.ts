@@ -1,8 +1,10 @@
 import "server-only"
+import { creationScope } from "@/lib/workspaces/context"
+import { accessWhere, type ProjectScope } from "@/lib/workspaces/access"
 
 import { randomUUID } from "node:crypto"
 
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
 
 import { decryptSecret, encryptSecret } from "@/lib/crypto"
@@ -22,7 +24,8 @@ import {
  * Every read and write of `connected_subscriptions` (Requirements 9.2, 9.3, 9.7,
  * 9.8, 9.9, 9.10, 13.7, 13.9).
  *
- * `import "server-only"` is the first line and stays there. It is not decoration
+ * `import "server-only"
+import { creationScope } from "@/lib/workspaces/context"` is the first line and stays there. It is not decoration
  * here: this module opens a connection, encrypts and **decrypts** the Azure
  * client secret, and is the one place in `app/` that can hand a caller a
  * plaintext customer credential. A client component importing it should be a
@@ -134,7 +137,7 @@ const UNIQUE_VIOLATION = "23505"
  * a false statement about a different failure.
  */
 const SUBSCRIPTION_PAIR_CONSTRAINT =
-  "connected_subscriptions_user_id_subscription_id_uq"
+  "connected_subscriptions_workspace_subscription_uq"
 
 /**
  * The two fields read off a node-postgres error. Neither carries a value from the
@@ -264,6 +267,8 @@ function statusFor(scopeVerified: boolean): SubscriptionStatus {
  * holding Reader on a single resource group.
  */
 export type CreateConnectedSubscriptionInput = {
+  readonly workspaceId?: string
+  readonly projectId?: string
   readonly userId: string
   readonly displayName: string
   /** The customer's Azure subscription GUID, unmasked. */
@@ -304,6 +309,7 @@ export type CreateConnectedSubscriptionInput = {
 export async function createConnectedSubscription(
   input: CreateConnectedSubscriptionInput
 ): Promise<ConnectedSubscriptionView> {
+  const scope = await creationScope(input.userId, input, "connect")
   const id = randomUUID()
 
   try {
@@ -312,6 +318,7 @@ export async function createConnectedSubscription(
       .values({
         id,
         userId: input.userId,
+        ...scope,
         displayName: input.displayName,
         subscriptionId: input.subscriptionId,
         tenantId: input.tenantId,
@@ -368,7 +375,7 @@ async function readOwnedRow(
     .where(
       and(
         eq(connectedSubscriptions.id, id),
-        eq(connectedSubscriptions.userId, userId)
+        accessWhere(connectedSubscriptions, userId)
       )
     )
     .limit(1)
@@ -385,12 +392,12 @@ async function readOwnedRow(
  * not swap places between renders.
  */
 export async function listConnectedSubscriptions(
-  userId: string
+  userId: string, scope?: Partial<ProjectScope>
 ): Promise<ConnectedSubscriptionView[]> {
   const rows = await getDb()
     .select()
     .from(connectedSubscriptions)
-    .where(eq(connectedSubscriptions.userId, userId))
+    .where(accessWhere(connectedSubscriptions, userId, "read", scope))
     .orderBy(
       asc(connectedSubscriptions.createdAt),
       asc(connectedSubscriptions.id)
@@ -532,9 +539,13 @@ export type ResolvedAzureCredentials = {
  */
 export async function resolveSubscriptionCredentials(
   userId: string,
-  id: string
+  id: string,
+  runId?: string
 ): Promise<ResolvedAzureCredentials> {
-  const row = await readOwnedRow(userId, id)
+  const [row] = await getDb().select().from(connectedSubscriptions).where(and(
+    eq(connectedSubscriptions.id, id),
+    runId ? sql`exists (select 1 from report_runs r where r.id=${runId} and r.connected_subscription_id=${id} and r.user_id=${userId} and r.workspace_id=${connectedSubscriptions.workspaceId} and r.project_id=${connectedSubscriptions.projectId})` : accessWhere(connectedSubscriptions,userId),
+  )).limit(1)
   if (row === undefined) throw new SubscriptionNotFoundError()
 
   let clientSecret: string
@@ -674,7 +685,7 @@ export async function rotateClientSecret(
       .where(
         and(
           eq(connectedSubscriptions.id, id),
-          eq(connectedSubscriptions.userId, userId)
+          accessWhere(connectedSubscriptions, userId, "connect")
         )
       )
       .returning()
@@ -725,7 +736,7 @@ export async function disableConnectedSubscription(
       .where(
         and(
           eq(connectedSubscriptions.id, id),
-          eq(connectedSubscriptions.userId, userId)
+          accessWhere(connectedSubscriptions, userId)
         )
       )
       .returning()
@@ -736,5 +747,14 @@ export async function disableConnectedSubscription(
   const [row] = rows
   if (row === undefined) throw new SubscriptionNotFoundError()
 
+  return toConnectedSubscriptionView(row)
+}
+
+/** Trusted worker path. A claimed run is the authorization, never the current UI workspace. */
+export async function getSubscriptionForRun(userId: string, runId: string, id: string): Promise<ConnectedSubscriptionView> {
+  const [row] = await getDb().select().from(connectedSubscriptions).where(and(eq(connectedSubscriptions.id,id),
+    sql`exists (select 1 from report_runs r where r.id=${runId} and r.user_id=${userId} and r.connected_subscription_id=${id} and r.workspace_id=${connectedSubscriptions.workspaceId} and r.project_id=${connectedSubscriptions.projectId})`
+  )).limit(1)
+  if (!row) throw new SubscriptionNotFoundError()
   return toConnectedSubscriptionView(row)
 }

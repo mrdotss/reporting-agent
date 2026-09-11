@@ -1,3 +1,5 @@
+import { WorkspaceShell } from "@/components/workspaces/workspace-shell"
+import { selectedContext, workspaceUiEnabled } from "@/lib/workspaces/context"
 import { AppSidebar } from "@/components/app-shell/sidebar"
 import { UserMenu } from "@/components/app-shell/user-menu"
 import { requireSession } from "@/lib/auth/guard"
@@ -43,6 +45,11 @@ export default async function AppLayout({
   children: React.ReactNode
 }>) {
   const user = await requireSession()
+
+  if (workspaceUiEnabled()) {
+    const context = await selectedContext(user.id)
+    return <WorkspaceShell {...context} userMenu={<UserMenu email={user.email} />}>{children}</WorkspaceShell>
+  }
 
   return (
     <div className="flex min-h-svh flex-col bg-background md:flex-row">

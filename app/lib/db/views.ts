@@ -93,6 +93,8 @@ export {
  * silently disagreeing with it.
  */
 export type ConnectedSubscriptionView = {
+  workspaceId?: string | null
+  projectId?: string | null
   id: string
   displayName: string
   maskedSubscriptionId: string
@@ -129,6 +131,8 @@ export function toConnectedSubscriptionView(
   row: ConnectedSubscription
 ): ConnectedSubscriptionView {
   return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
     id: row.id,
     displayName: row.displayName,
     maskedSubscriptionId: maskSubscriptionId(row.subscriptionId),
@@ -272,6 +276,8 @@ export function reportArtifactKey(
  * silently disagreeing with it.
  */
 export type RunView = {
+  workspaceId?: string | null
+  projectId?: string | null
   id: string
   connectedSubscriptionId: string
   status: RunStatus
@@ -423,6 +429,8 @@ export const NO_RUN_VIEW_EXTRAS: RunViewExtras = Object.freeze({
  */
 export function toRunView(row: ReportRun, extras: RunViewExtras): RunView {
   return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
     id: row.id,
     connectedSubscriptionId: row.connectedSubscriptionId,
     status: row.status,
@@ -493,6 +501,9 @@ export function toRunView(row: ReportRun, extras: RunViewExtras): RunView {
  * exists to keep the *shape* closed and reviewed, not to keep a value out.
  */
 export type TemplateView = {
+  workspaceId?: string | null
+  projectId?: string | null
+  draftRevision?: number
   id: string
   name: string
   description: string
@@ -590,6 +601,9 @@ export function toTemplateView(
   currentVersion: TemplateViewCurrentVersion | null
 ): TemplateView {
   return {
+    workspaceId: row.workspaceId,
+    projectId: row.projectId,
+    draftRevision: row.draftRevision,
     id: row.id,
     name: row.name,
     description: row.description,

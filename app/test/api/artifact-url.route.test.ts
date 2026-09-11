@@ -107,6 +107,8 @@ const OWN_KEY = `${USER.id}/snapshots/${RUN_ID}/snapshot.json`
 
 function row(over: Partial<ReportRun> = {}): ReportRun {
   return {
+    workspaceId: null,
+    projectId: null,
     id: RUN_ID,
     userId: USER.id,
     connectedSubscriptionId: "sub-1",
@@ -213,9 +215,8 @@ describe("Requirement 37.12 — a foreign key prefix mints nothing", () => {
 
     expect(response.status).toBe(404)
     expect(s3.presigns).toBe(0)
-    // Not even a database read: the pure check runs first, so a probe for another user's
-    // key costs nothing.
-    expect(runs.reads).toEqual([])
+    // Resolve membership before matching the persisted actor's artifact prefix.
+    expect(runs.reads).toEqual([RUN_ID])
   })
 
   test("`other/alice/…` is refused for `alice`", async () => {

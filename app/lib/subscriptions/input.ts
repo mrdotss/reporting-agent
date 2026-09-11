@@ -1,3 +1,4 @@
+import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
 
 import { isSubscriptionId } from "@/lib/subscriptions/azure-artifacts"
@@ -249,6 +250,7 @@ const logAnalyticsWorkspaceIdSchema = z
  * of, and so `.strict()` is applied at each use rather than inherited.
  */
 const submittedCredentialShape = {
+  ...scopeInput,
   displayName: displayNameSchema,
   subscriptionId: azureGuidSchema,
   tenantId: azureGuidSchema,

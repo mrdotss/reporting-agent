@@ -95,7 +95,7 @@ export async function GET(request: Request): Promise<Response> {
 
   // Check 1 — the key's own shape and its actor prefix. Pure, and before anything
   // else, so a malformed or foreign key never reaches a database read either.
-  if (!keyBelongsToActor(user.id, key)) return notFound()
+
 
   const parsed = parseArtifactKey(key)
   // Unreachable: `keyBelongsToActor` returned true, which required a successful parse.
@@ -107,7 +107,7 @@ export async function GET(request: Request): Promise<Response> {
     // Check 2 — the run itself, scoped by `user_id`. The key's actor prefix being
     // right does not make the run mine.
     const run = await findOwnedRun(user.id, parsed.runId)
-    if (run === undefined) return notFound()
+    if (run === undefined || !keyBelongsToActor(run.userId, key)) return notFound()
 
     // A run that produced no artifact has nothing to presign, and minting a URL for an
     // object that does not exist would hand the browser a link to a 404 it cannot
@@ -131,7 +131,7 @@ export async function GET(request: Request): Promise<Response> {
       return notFound()
     }
 
-    const { url, expiresIn } = await presignArtifact(user.id, key)
+    const { url, expiresIn } = await presignArtifact(run.userId, key)
 
     // Built directly rather than through `lib/api/response.ts#json`, for one reason:
     // this is the single response body in the app that carries a credential, and

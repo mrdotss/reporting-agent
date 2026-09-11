@@ -86,6 +86,8 @@ let previousKey: string | undefined
 
 function row(over: Partial<ReportRun> = {}): ReportRun {
   return {
+    workspaceId: null,
+    projectId: null,
     id: RUN_ID,
     userId: "user-1",
     connectedSubscriptionId: "sub-1",

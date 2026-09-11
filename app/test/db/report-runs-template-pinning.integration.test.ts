@@ -50,6 +50,7 @@ const db = withScratchSchema(import.meta.url)
 
 vi.mock("@/lib/db", () => ({
   getDb: () => currentDb(),
+  getPool: () => db.pool(),
 }))
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
@@ -57,7 +58,7 @@ import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 import * as schema from "@/lib/db/schema"
 import {
   createTemplate,
-  insertVersion,
+  insertVersion as insertVersionAtRevision,
   readLatestVersion,
   readVersion,
   type InsertVersionInput,
@@ -67,6 +68,16 @@ import {
   type InsertVerificationInput,
 } from "@/lib/verifications/store"
 import type { VerificationResult } from "@/lib/verifications/result"
+
+// Test callers read a revision before publishing, just like the profile editor.
+async function insertVersion(userId: string, templateId: string, input: InsertVersionInput) {
+  const result = await db.query<{ draft_revision: number }>(
+    "select draft_revision from report_templates where id=$1", [templateId]
+  )
+  return insertVersionAtRevision(userId, templateId, {
+    ...input, expectedRevision: result.rows[0]?.draft_revision,
+  })
+}
 
 // --- Wiring ------------------------------------------------------------
 

@@ -105,3 +105,21 @@ def test_a_run_that_names_no_snapshot_still_collects() -> None:
     _events, error = pipe.run()
     assert _ok(error), f"the fresh run failed: {error!r}"
     assert [k for k in pipe.store.keys() if "/snapshots/run-fresh/" in k]
+
+
+def test_teammate_reuse_preserves_snapshot_and_archive_verification() -> None:
+    first = Pipeline(run_id="shared-source", actor_id="original-collector")
+    _, error = first.run()
+    assert _ok(error), repr(error)
+    second = Pipeline(
+        run_id="shared-reuse", actor_id="requesting-teammate", store=first.store,
+        payload_extras={
+            "snapshot_run_id": "shared-source",
+            "snapshot_source_actors": {"shared-source": "original-collector"},
+        },
+    )
+    events, error = second.run()
+    assert _ok(error), repr(error)
+    verification = next(event for event in events if event["type"] == "verification")
+    assert verification["status"] == "pass", verification.get("findings")
+    assert second.outcome.collection.snapshot_id == first.outcome.collection.snapshot_id

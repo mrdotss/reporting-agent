@@ -1,4 +1,6 @@
 import "server-only"
+import { creationScope } from "@/lib/workspaces/context"
+import { accessWhere, DraftConflictError, type ProjectScope } from "@/lib/workspaces/access"
 
 import { randomUUID } from "node:crypto"
 
@@ -20,7 +22,8 @@ import { MIN_SCHEMA_VERSION } from "@/lib/templates/definition"
  * Every read and write of `report_templates` and `report_template_versions`
  * (Requirements 1.4, 1.5, 1.6, 1.7, 1.9, 9.2, 9.3, 9.5, 9.11, 9.12, 10.7, 11.4).
  *
- * `import "server-only"` is the first line and stays there: this module opens
+ * `import "server-only"
+import { creationScope } from "@/lib/workspaces/context"` is the first line and stays there: this module opens
  * a connection, and a client component importing it should be a build error
  * rather than a review comment.
  *
@@ -283,12 +286,13 @@ function redactedWriteError(operation: string, thrown: unknown): Error {
  */
 async function readOwnedTemplate(
   userId: string,
-  id: string
+  id: string,
+  permission: "read" | "edit" = "read"
 ): Promise<ReportTemplate | undefined> {
   const [row] = await getDb()
     .select()
     .from(reportTemplates)
-    .where(and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId)))
+    .where(and(eq(reportTemplates.id, id), accessWhere(reportTemplates, userId, permission)))
     .limit(1)
 
   return row
@@ -298,6 +302,8 @@ async function readOwnedTemplate(
 
 /** What creating a template needs. Both fields the Template_Validator bounds. */
 export type CreateTemplateInput = {
+  readonly workspaceId?: string
+  readonly projectId?: string
   readonly name: string
   readonly description?: string
 }
@@ -315,7 +321,9 @@ export async function createTemplate(
   userId: string,
   input: CreateTemplateInput
 ): Promise<ReportTemplate> {
+  const scope = await creationScope(userId, input, "edit")
   const values: NewReportTemplate = {
+    ...scope,
     id: randomUUID(),
     userId,
     name: input.name,
@@ -352,11 +360,11 @@ export async function createTemplate(
  * created them in, and the id breaks a tie so two rows written in the same
  * transaction do not swap places between renders.
  */
-export async function listTemplates(userId: string): Promise<ReportTemplate[]> {
+export async function listTemplates(userId: string, scope?: Partial<ProjectScope>): Promise<ReportTemplate[]> {
   return await getDb()
     .select()
     .from(reportTemplates)
-    .where(eq(reportTemplates.userId, userId))
+    .where(accessWhere(reportTemplates, userId, "read", scope))
     .orderBy(asc(reportTemplates.createdAt), asc(reportTemplates.id))
 }
 
@@ -405,7 +413,7 @@ export async function saveDraft(
       .update(reportTemplates)
       .set({ draftDefinition })
       .where(
-        and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId))
+        and(eq(reportTemplates.id, id), accessWhere(reportTemplates, userId, "edit"))
       )
       .returning()
   } catch (thrown) {
@@ -445,7 +453,7 @@ export async function renameTemplate(
       .update(reportTemplates)
       .set({ name })
       .where(
-        and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId))
+        and(eq(reportTemplates.id, id), accessWhere(reportTemplates, userId, "edit"))
       )
       .returning()
   } catch (thrown) {
@@ -493,11 +501,13 @@ export async function deleteTemplate(
   userId: string,
   id: string
 ): Promise<void> {
-  const template = await readOwnedTemplate(userId, id)
+  const template = await readOwnedTemplate(userId, id, "edit")
   if (template === undefined) throw new TemplateNotFoundError()
 
   try {
     await getDb().transaction(async (tx) => {
+      const [allowed] = await tx.select({id:reportTemplates.id}).from(reportTemplates).where(and(eq(reportTemplates.id,id),accessWhere(reportTemplates,userId,"edit"))).for("update")
+      if (!allowed) throw new TemplateNotFoundError()
       await tx
         .update(reportTemplates)
         .set({ currentVersionId: null })
@@ -514,7 +524,7 @@ export async function deleteTemplate(
       await tx
         .delete(reportTemplates)
         .where(
-          and(eq(reportTemplates.id, id), eq(reportTemplates.userId, userId))
+          and(eq(reportTemplates.id, id), accessWhere(reportTemplates, userId, "edit"))
         )
     })
   } catch (thrown) {
@@ -529,6 +539,7 @@ export async function deleteTemplate(
 /** What inserting a version needs. Both fields already validated by the caller. */
 export type InsertVersionInput = {
   /** The validated definition this version pins. */
+  readonly expectedRevision?: number
   readonly definition: unknown
   /**
    * RFC 8785 (JCS) canonicalization of `definition`, SHA-256 hex
@@ -580,6 +591,7 @@ async function readHighestVersionRow(
  * attempt's stale `version` getting confused for one another.
  */
 async function attemptInsertVersion(
+  userId: string,
   templateId: string,
   input: InsertVersionInput
 ): Promise<
@@ -588,6 +600,9 @@ async function attemptInsertVersion(
 > {
   try {
     return await getDb().transaction(async (tx) => {
+      const [template] = await tx.select().from(reportTemplates).where(and(eq(reportTemplates.id,templateId),accessWhere(reportTemplates,userId,"edit"))).for("update")
+      if (!template) throw new TemplateNotFoundError()
+      if (template.workspaceId && input.expectedRevision !== template.draftRevision) throw new DraftConflictError()
       const [highest] = await tx
         .select()
         .from(reportTemplateVersions)
@@ -624,12 +639,13 @@ async function attemptInsertVersion(
 
       await tx
         .update(reportTemplates)
-        .set({ currentVersionId: inserted.id })
+        .set({ currentVersionId: inserted.id, draftRevision: sql`${reportTemplates.draftRevision}+1` })
         .where(eq(reportTemplates.id, templateId))
 
       return { conflict: false, row: inserted }
     })
   } catch (thrown) {
+    if (thrown instanceof DraftConflictError || thrown instanceof TemplateNotFoundError) throw thrown
     if (isVersionSequenceConflict(thrown)) {
       return { conflict: true }
     }
@@ -668,11 +684,11 @@ export async function insertVersion(
   templateId: string,
   input: InsertVersionInput
 ): Promise<ReportTemplateVersion> {
-  const template = await readOwnedTemplate(userId, templateId)
+  const template = await readOwnedTemplate(userId, templateId, "edit")
   if (template === undefined) throw new TemplateNotFoundError()
 
   for (let attempt = 0; attempt <= MAX_VERSION_INSERT_RETRIES; attempt += 1) {
-    const result = await attemptInsertVersion(templateId, input)
+    const result = await attemptInsertVersion(userId, templateId, input)
     if (!result.conflict) return result.row
   }
 
@@ -825,5 +841,22 @@ export async function readVersionById(
     .where(eq(reportTemplateVersions.id, templateVersionId))
     .limit(1)
 
+  return row
+}
+
+/** One atomic draft/name update, guarded by the revision read by the editor. */
+export async function patchTemplate(userId: string, id: string, input: {name?: string; draftDefinition?: unknown; expectedRevision?: number}): Promise<ReportTemplate> {
+  const [row] = await getDb().update(reportTemplates).set({
+    ...(input.name !== undefined ? {name:input.name} : {}),
+    ...("draftDefinition" in input ? {draftDefinition:input.draftDefinition} : {}),
+    draftRevision: sql`${reportTemplates.draftRevision}+1`,
+  }).where(and(eq(reportTemplates.id,id),accessWhere(reportTemplates,userId,"edit"),
+    input.expectedRevision === undefined ? sql`${reportTemplates.workspaceId} is null` : eq(reportTemplates.draftRevision,input.expectedRevision),
+  )).returning()
+  if (!row) {
+    const current=await readOwnedTemplate(userId,id)
+    if (!current) throw new TemplateNotFoundError()
+    throw new DraftConflictError()
+  }
   return row
 }

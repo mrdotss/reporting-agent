@@ -499,7 +499,7 @@ export function StepSections({
       </div>
 
       {/* Right: inspector */}
-      <div className="w-64 shrink-0 rounded-xl border border-border p-3">
+      <div className="min-w-0 flex-1 rounded-xl border border-border bg-card p-5">
         {selectedSection && selectedEntry ? (
           <SectionInspector
             section={selectedSection}

@@ -348,6 +348,7 @@ class Pipeline:
         # reached production untested.
         self.store = overrides.pop("store", None) or InMemoryObjectStore()
         self.run_id: str = overrides.pop("run_id", RUN_ID)
+        self.actor_id: str = overrides.pop("actor_id", ACTOR_ID)
         self.payload_extras: dict[str, Any] = dict(overrides.pop("payload_extras", {}))
         self.steps = StepTracker()
         self.outcome = ReportOutcome()
@@ -397,7 +398,7 @@ class Pipeline:
             metrics_port=self.provider_metrics,
             facts_port=facts_port_answering_nothing(),
             object_store=self.store,
-            actor_id=ACTOR_ID,
+            actor_id=self.actor_id,
             run_id=self.run_id,
             fidelity_tier=FIDELITY_BASELINE,
             catalog=self.catalog,
@@ -443,7 +444,7 @@ class Pipeline:
 
     def context(self) -> dict[str, Any]:
         return {
-            "actor_id": ACTOR_ID,
+            "actor_id": self.actor_id,
             "run_id": self.run_id,
             "subscription_id": SUBSCRIPTION,
             "timezone": "Asia/Jakarta",

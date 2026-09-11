@@ -78,7 +78,7 @@ const WORKSPACE_ID = "fixture-workspace-44444444-4444-4444-4444-444444444444"
  * through `maskedSubscriptionId`. `REALISTIC_SUBSCRIPTION_ID` below covers the
  * GUID case separately.
  */
-const SUBSCRIPTION_ID = "ghjqwzghjqwzghjqwzghjqwzghjqwzgh6789"
+const SUBSCRIPTION_ID = "ghЖqЩzghЖqЩzghЖqЩzghЖqЩzghЖqЩzgh6789"
 
 /** A real Azure subscription GUID: 36 characters, 32 of them masked. */
 const REALISTIC_SUBSCRIPTION_ID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
@@ -96,6 +96,8 @@ function connectedSubscriptionRow(
   overrides: Partial<ConnectedSubscription> = {}
 ): ConnectedSubscription {
   return {
+    workspaceId: null,
+    projectId: null,
     id: "sub-0001",
     userId: "user-0001",
     displayName: "Test Customer Subscription",
@@ -130,9 +132,11 @@ const CONNECTED_SUBSCRIPTION_VIEW_KEYS = [
   // metrics reach. No secret, and it names no resource — the wizard needs it to say what
   // a trend can cover.
   "metricsHistorySince",
+  "projectId",
   "scopeVerified",
   "secretExpiresAt",
   "status",
+  "workspaceId",
 ]
 
 /**
@@ -281,6 +285,8 @@ describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => 
     const view = toConnectedSubscriptionView(connectedSubscriptionRow())
 
     expect(view).toEqual({
+      workspaceId: null,
+      projectId: null,
       id: "sub-0001",
       displayName: "Test Customer Subscription",
       maskedSubscriptionId: `${"*".repeat(32)}6789`,
@@ -570,6 +576,8 @@ const RUN_VIEW_EXTRAS_UNRESOLVED: RunViewExtras = {
  */
 function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
   return {
+    workspaceId: null,
+    projectId: null,
     id: RUN_ID,
     userId: RUN_USER_ID,
     connectedSubscriptionId: "sub-0001",
@@ -635,6 +643,7 @@ const RUN_VIEW_KEYS = [
   "id",
   "periodEnd",
   "periodStart",
+  "projectId",
   "resourceCount",
   "revisionHistoryRow",
   "snapshotId",
@@ -644,6 +653,7 @@ const RUN_VIEW_KEYS = [
   "timezone",
   "updatedAt",
   "verificationStatus",
+  "workspaceId",
 ]
 
 /**
@@ -734,6 +744,8 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
     const view = toRunView(reportRunRow(), RUN_VIEW_EXTRAS_UNRESOLVED)
 
     expect(view).toEqual({
+      workspaceId: null,
+      projectId: null,
       id: RUN_ID,
       connectedSubscriptionId: "sub-0001",
       status: "collecting",
@@ -760,6 +772,8 @@ describe("toRunView — Requirements 37.5, 37.6, 43.4", () => {
     const view = toRunView(completedReportRunRow(), RUN_VIEW_EXTRAS_PASS)
 
     expect(view).toEqual({
+      workspaceId: null,
+      projectId: null,
       id: RUN_ID,
       connectedSubscriptionId: "sub-0001",
       status: "completed",
@@ -1274,6 +1288,9 @@ function reportTemplateRow(
   overrides: Partial<ReportTemplate> = {}
 ): ReportTemplate {
   return {
+    workspaceId: null,
+    projectId: null,
+    draftRevision: 0,
     id: TEMPLATE_ID,
     userId: TEMPLATE_USER_ID,
     name: "Monthly utilization",
@@ -1312,11 +1329,14 @@ const TEMPLATE_VIEW_KEYS = [
   "currentVersion",
   "currentVersionSha256",
   "description",
+  "draftRevision",
   "hasDraft",
   "id",
   "name",
+  "projectId",
   "schemaVersion",
   "updatedAt",
+  "workspaceId",
 ]
 
 /** Omitted under both spellings, matching the convention above. */
@@ -1342,6 +1362,9 @@ describe("toTemplateView — Requirement 43.9", () => {
     const view = toTemplateView(reportTemplateRow(), TEMPLATE_CURRENT_VERSION)
 
     expect(view).toEqual({
+      workspaceId: null,
+      projectId: null,
+      draftRevision: 0,
       id: TEMPLATE_ID,
       name: "Monthly utilization",
       description: "CPU, memory, disk and network for every VM in scope.",

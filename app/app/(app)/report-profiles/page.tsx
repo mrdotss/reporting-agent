@@ -1,3 +1,4 @@
+import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { PlusIcon, StackIcon } from "@phosphor-icons/react/ssr"
@@ -45,8 +46,9 @@ export const metadata: Metadata = {
 
 export default async function TemplatesPage() {
   const user = await requireSession()
+  const projectScope = await selectedFilter(user.id)
 
-  const rows = await listTemplates(user.id)
+  const rows = await listTemplates(user.id, projectScope)
 
   // One resolve per template. A user holds three starters plus what they author
   // — single digits, not a page — and the alternative is a `DISTINCT ON` whose
@@ -69,10 +71,7 @@ export default async function TemplatesPage() {
           </h1>
 
           <p className="max-w-prose text-sm text-muted-foreground">
-            A report profile is <em>rules</em> — resource types, tag filters, a
-            period that resolves fresh at every run — so one profile works for
-            every subscription you have connected, and next month&rsquo;s report
-            needs no edit.
+            Reuse your customer’s resources, metrics, and document style. Save a new version when you’re ready to use your changes.
           </p>
         </div>
 
