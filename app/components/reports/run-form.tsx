@@ -412,7 +412,19 @@ export function RunForm({
               messageText("ui.run_form.subscription_label", "en") ?? undefined
             }
           >
-            <SelectValue />
+            {/*
+              A function child, because the default renders the item's *value* — and the
+              value here is a uuid. The trigger read `1e43c9d7-b90c-…` where the
+              connection's name belongs, which is the one string on this control nobody
+              can act on. It cannot derive a label from the option's markup either: the
+              option is two lines, and there is no single text node to lift.
+            */}
+            <SelectValue>
+              {(value) =>
+                subscriptions.find((entry) => entry.id === value)?.displayName ??
+                ""
+              }
+            </SelectValue>
           </SelectTrigger>
 
           <SelectContent>
@@ -423,6 +435,8 @@ export function RunForm({
                 <SelectItem
                   key={subscription.id}
                   value={subscription.id}
+                  // Typeahead matches on this. Absent, it matches on the uuid.
+                  label={subscription.displayName}
                   disabled={reason !== null}
                 >
                   <span className="flex flex-col gap-0.5">
@@ -464,7 +478,11 @@ export function RunForm({
               messageText("ui.run_form.template_label", "en") ?? undefined
             }
           >
-            <SelectValue />
+            <SelectValue>
+              {(value) =>
+                templates.find((entry) => entry.id === value)?.name ?? ""
+              }
+            </SelectValue>
           </SelectTrigger>
 
           <SelectContent>
@@ -472,6 +490,7 @@ export function RunForm({
               <SelectItem
                 key={template.id}
                 value={template.id}
+                label={template.name}
                 disabled={template.currentVersion === null}
               >
                 <span className="flex flex-col gap-0.5">

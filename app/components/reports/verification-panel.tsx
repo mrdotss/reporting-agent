@@ -2,6 +2,7 @@
 
 import { SealCheckIcon, SealWarningIcon, SealIcon } from "@phosphor-icons/react"
 
+import { Card, CardContent } from "@/components/ui/card"
 import { CopyDigest } from "@/components/reports/copy-digest"
 import { FindingList } from "@/components/reports/finding-list"
 import type { VerificationView } from "@/lib/db/views"
@@ -69,12 +70,15 @@ export function VerificationPanel({
     (verification.status !== "pass" && verification.status !== "fail")
   ) {
     return (
-      <section
+      <Card
         data-slot="verification-panel"
         data-status={verification?.status ?? "absent"}
         aria-labelledby="verification-heading"
-        className="flex flex-col gap-2 rounded-xl border border-border px-4 py-4"
+        // A div with `aria-labelledby` is not a landmark; the role is what keeps this
+      // announced as the labelled region Requirement 39 asks for.
+      role="region"
       >
+        <CardContent className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
           <SealIcon
             aria-hidden="true"
@@ -91,7 +95,8 @@ export function VerificationPanel({
         <p className="max-w-prose text-sm text-muted-foreground">
           {messageText("ui.verification.absent_description", language ?? "en")}
         </p>
-      </section>
+        </CardContent>
+      </Card>
     )
   }
 
@@ -99,15 +104,19 @@ export function VerificationPanel({
   const blockingCount = verification.blockingFindings.length
 
   return (
-    <section
+    // A `Card`, so it sits level with the snapshot card beside it. The failure case
+    // keeps its own border colour: a report that could not be proved is the one thing on
+    // this page allowed to use `--destructive`.
+    <Card
       data-slot="verification-panel"
       data-status={verification.status}
       aria-labelledby="verification-heading"
-      className={[
-        "flex flex-col gap-4 rounded-xl border px-4 py-4",
-        passed ? "border-border" : "border-destructive/40",
-      ].join(" ")}
+      className={passed ? undefined : "ring-destructive/40"}
+      // A div with `aria-labelledby` is not a landmark; the role is what keeps this
+      // announced as the labelled region Requirement 39 asks for.
+      role="region"
     >
+      <CardContent className="flex flex-col gap-4">
       {/*
         Requirement 39.7 — the resolved status through a `polite` region, with
         the blocking count in the same announcement on a fail. One region, one
@@ -299,6 +308,7 @@ export function VerificationPanel({
           emptyText={messageText("ui.finding.empty_advisory", language ?? "en") ?? ""}
         />
       </div>
-    </section>
+      </CardContent>
+    </Card>
   )
 }

@@ -193,28 +193,38 @@ export default async function RunPage({ params }: RunPageProps) {
           />
         </div>
 
-        <aside className="flex w-full shrink-0 flex-col gap-6 lg:w-80">
+        {/*
+          The rail holds the request and nothing else. It used to hold the verification
+          and the snapshot too, and both are *grids* — three digests across, two evidence
+          panels side by side, a four-cell provenance table. At 20rem each of those
+          collapsed to one column of two-word lines, so the panel proving the report was
+          verified was the least legible thing on the page. They are below now, at full
+          width, where their own layout has room to be the layout it was written as.
+        */}
+        <aside className="w-full shrink-0 lg:w-80">
           <RequestDetails
             run={view}
             subscriptionName={subscriptionName}
             subscriptionMaskedId={subscriptionMaskedId}
           />
+        </aside>
+      </div>
 
+      {terminal ? (
+        <div className="grid items-start gap-6 lg:grid-cols-2">
           {/*
             Requirement 39 — the audit certificate. Rendered for every terminal run,
             including one with no verification: 39.8 has the panel state that the report
             is not verified rather than the page omitting the section, because an absent
             section is indistinguishable from one that failed to load.
           */}
-          {terminal ? (
-            <VerificationPanel
-              verification={
-                verification.latest === undefined
-                  ? null
-                  : toVerificationView(verification.latest)
-              }
-            />
-          ) : null}
+          <VerificationPanel
+            verification={
+              verification.latest === undefined
+                ? null
+                : toVerificationView(verification.latest)
+            }
+          />
 
           {run.status === "completed" ? (
             <Card data-slot="snapshot-card">
@@ -225,10 +235,10 @@ export default async function RunPage({ params }: RunPageProps) {
               </CardHeader>
 
               <CardContent className="flex flex-col gap-4">
-                <p className="text-sm leading-relaxed text-muted-foreground">
-                  Immutable and content-addressed: the id <em>is</em> the hash
-                  of its bytes, so a figure quoted from this report traces to
-                  exactly the data it came from.
+                <p className="max-w-prose text-sm leading-relaxed text-muted-foreground">
+                  Immutable and content-addressed: the id <em>is</em> the hash of
+                  its bytes, so a figure quoted from this report traces to exactly
+                  the data it came from.
                 </p>
 
                 <SnapshotProvenance run={view} provenance={provenance} />
@@ -240,7 +250,7 @@ export default async function RunPage({ params }: RunPageProps) {
                   second makes a profile look like it stores a date range.
                 */}
                 {pinned === null ? null : (
-                  <dl className="flex flex-col gap-3 border-t border-border pt-4">
+                  <dl className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-0.5">
                       <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
                         Version rendered from
@@ -253,11 +263,11 @@ export default async function RunPage({ params }: RunPageProps) {
                       </dd>
                     </div>
 
-                    <div className="flex flex-col gap-0.5">
+                    <div className="flex min-w-0 flex-col gap-0.5">
                       <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
                         Definition digest
                       </dt>
-                      <dd className="font-mono text-xs break-all text-muted-foreground">
+                      <dd className="truncate font-mono text-xs text-muted-foreground">
                         {pinned.definitionSha256.slice(0, 24)}
                       </dd>
                     </div>
@@ -273,7 +283,7 @@ export default async function RunPage({ params }: RunPageProps) {
                 {documentHtml === null ? null : (
                   <Link
                     href={`/reports/${runId}/figures`}
-                    className="flex items-center gap-1.5 rounded-lg text-sm font-medium text-primary outline-none transition-colors hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+                    className="flex w-fit items-center gap-1.5 rounded-lg text-sm font-medium text-primary outline-none transition-colors hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
                   >
                     Trace every figure
                     <ArrowUpRightIcon aria-hidden="true" className="size-4" />
@@ -282,8 +292,9 @@ export default async function RunPage({ params }: RunPageProps) {
               </CardContent>
             </Card>
           ) : null}
-        </aside>
-      </div>
+        </div>
+      ) : null}
+
     </div>
   )
 }

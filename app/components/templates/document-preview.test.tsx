@@ -74,7 +74,7 @@ describe("the design sample", () => {
       <DocumentPreview definition={draft()} sectionCatalogue={CATALOGUE} />
     )
 
-    expect(screen.getByText(/A4 · sample figures/)).toBeTruthy()
+    expect(screen.getByText(/Illustrative · A4/)).toBeTruthy()
     expect(screen.getByText(/Sample figures · Corporate/)).toBeTruthy()
     expect(container.textContent).toContain("Nothing here is collected data")
 
@@ -111,6 +111,44 @@ describe("the design sample", () => {
       <DocumentPreview definition={draft()} sectionCatalogue={CATALOGUE} />
     )
     expect(container.textContent ?? "").not.toMatch(/\bmore sections?\b/)
+  })
+
+  test("the footer can never be printed over", () => {
+    // The defect this replaced: the contents list grew past the page and rendered
+    // straight across "Sample figures · Corporate" and the page number — the two lines
+    // that tell a reader this is not their report. A flex child that cannot shrink
+    // below its content does not clip, it overlaps.
+    //
+    // So the flowing half of the page is its own region — it takes what is left, may be
+    // smaller than its content, and hides the rest — and the footer is its sibling
+    // rather than another item in the same overflowing column.
+    const { container } = render(
+      <DocumentPreview
+        definition={draft({
+          sections: Array.from({ length: 14 }, (_, index) => ({
+            id: `sec_${index}`,
+            type: "vm_inventory",
+          })),
+        })}
+        sectionCatalogue={CATALOGUE}
+      />
+    )
+
+    const page = container.querySelector(
+      '[data-slot="document-preview-page"] > div'
+    ) as HTMLElement
+    const children = [...page.children] as HTMLElement[]
+    const flowing = children.at(-2)!
+    const footer = children.at(-1)!
+
+    expect(flowing.style.overflow).toBe("hidden")
+    expect(flowing.style.minHeight).toBe("0px")
+    expect(flowing.style.flex).toContain("1 1")
+
+    // The footer is outside it, and does not participate in the overflow.
+    expect(footer.contains(flowing)).toBe(false)
+    expect(footer.textContent).toContain("Sample figures")
+    expect(footer.style.flex).toContain("0 0")
   })
 
   test("it never claims to be the delivered document", () => {

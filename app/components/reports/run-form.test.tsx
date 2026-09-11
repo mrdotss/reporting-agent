@@ -322,6 +322,39 @@ function chooseProfile(name: string) {
   fireEvent.keyDown(option, { key: "Enter" })
 }
 
+describe("RunForm — the controls name things, not identify them", () => {
+  test("each trigger shows the name it stands for, never the id", () => {
+    // The registry's Select renders the item's *value* by default, and both values here
+    // are uuids — so the two controls a consultant chooses with read
+    // `1e43c9d7-b90c-4c49-…`, which is the one string on the page nobody can act on.
+    // The option markup is two lines, so there is no single text node to lift either;
+    // the trigger has to be told how to resolve a value to a label.
+    renderForm([V1, V2])
+
+    const connection = screen.getByLabelText("Connection")
+    const profile = screen.getByLabelText("Report profile")
+
+    expect(connection.textContent).toContain("Contoso production")
+    expect(profile.textContent).toContain(V1.name)
+
+    for (const trigger of [connection, profile]) {
+      expect(trigger.textContent ?? "").not.toMatch(
+        /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i
+      )
+      expect(trigger.textContent ?? "").not.toContain("tmpl-")
+      expect(trigger.textContent ?? "").not.toContain("sub-")
+    }
+  })
+
+  test("the chosen name follows the selection", () => {
+    renderForm([V1, V2])
+    chooseProfile(V2.name)
+    expect(screen.getByLabelText("Report profile").textContent).toContain(
+      V2.name
+    )
+  })
+})
+
 describe("RunForm — changing the selected template", () => {
   test("v1 to v2 reveals the inputs, and back hides them", () => {
     renderForm([V1, V2])
