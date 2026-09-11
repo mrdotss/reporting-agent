@@ -21,6 +21,14 @@ import {
   CHART_FONT_STACKS,
   CHART_STYLE_NOTES,
 } from "@/lib/profiles/chart-styles"
+// The sample and the faces live beside the document preview's, because the two surfaces
+// sit next to each other on this step and a chart card drawn from a different series or
+// in a different face than the page beside it is a comparison of nothing.
+import {
+  PRESET_FACES,
+  SAMPLE_AVG,
+  SAMPLE_MAX,
+} from "@/lib/profiles/preview-sample"
 
 /**
  * Step 5 — Appearance: how every chart is drawn, and the theme it is drawn against.
@@ -42,21 +50,6 @@ import {
  * no data until a run collects some.
  */
 
-/** The sample the previews plot: a real machine's August CPU, 31 daily points.
- *
- * Real rather than synthetic on purpose. The spread — a 27.31% peak against a 0.19%
- * average — is what makes the case for the stacked default, and a smooth invented curve
- * would have shown six shapes that all looked equally reasonable. */
-const SAMPLE_MAX = [
-  18.9, 10.6, 11.1, 5.2, 11.0, 9.7, 21.6, 8.4, 10.3, 10.2, 27.3, 11.8, 9.5,
-  10.3, 10.2, 9.4, 10.2, 11.1, 13.4, 13.3, 13.9, 14.6, 7.4, 10.2, 12.8, 13.9,
-  14.0, 24.5, 10.7, 8.9, 9.9,
-]
-const SAMPLE_AVG = [
-  0.19, 0.17, 0.17, 0.17, 0.18, 0.18, 0.2, 0.17, 0.16, 0.17, 0.18, 0.18, 0.19,
-  0.19, 0.19, 0.18, 0.17, 0.17, 0.17, 0.18, 0.18, 0.17, 0.16, 0.17, 0.17, 0.17,
-  0.18, 0.22, 0.18, 0.18, 0.19,
-]
 
 const STYLE_LABELS: Readonly<Record<ChartStyle, string>> = {
   stacked: "Stacked panels",
@@ -183,11 +176,7 @@ export function StepAppearance({
   const accent = accentOf(definition)
   const fontStack =
     font === "document"
-      ? definition.design.preset === "editorial"
-        ? '"Liberation Serif", serif'
-        : definition.design.preset === "technical"
-          ? '"DejaVu Sans", sans-serif'
-          : '"Liberation Sans", sans-serif'
+      ? PRESET_FACES[definition.design.preset]
       : CHART_FONT_STACKS[font]
 
   const setDesign = (patch: Record<string, unknown>) => {

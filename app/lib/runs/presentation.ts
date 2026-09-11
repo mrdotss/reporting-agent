@@ -411,10 +411,18 @@ export function runPhases(
   // `failed`. Treating it as "before the first phase" would claim it never started, so
   // the path is shown with nothing current and the notice carries the detail.
   const index = RUN_PHASE_ORDER.indexOf(status)
+
+  // `completed` is where a run STOPS, not a phase it is passing through. It is also the
+  // last entry in the path, so the positional rule below would mark it `current` — a
+  // spinner beside "Completed" and the words "In progress" on a run that has finished,
+  // which reads as a run that is stuck. Every phase of a finished run is behind it.
+  const finished = status === "completed"
+
   return RUN_PHASE_ORDER.map((phase, position) => ({
     status: phase,
-    standing:
-      index === -1
+    standing: finished
+      ? "done"
+      : index === -1
         ? "pending"
         : position < index
           ? "done"

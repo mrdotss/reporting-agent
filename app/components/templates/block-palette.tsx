@@ -206,7 +206,7 @@ export function BlockPalette({
       // tabbing through every control in the one before (Requirement 12.1).
       role="region"
       aria-label="Block palette"
-      className="flex flex-col gap-4 rounded-xl bg-sidebar px-3 py-3"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-muted/40 px-3 py-3"
     >
       {PALETTE_GROUPS.map((group) => (
         <section key={group.name} className="flex flex-col gap-2">

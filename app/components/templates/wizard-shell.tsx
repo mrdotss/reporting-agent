@@ -17,6 +17,7 @@ import {
 import { StepAppearance } from "@/components/templates/step-appearance"
 import { StepDocument } from "@/components/templates/step-document"
 import { StepPeriod } from "@/components/templates/step-period"
+import { DocumentPreview } from "@/components/templates/document-preview"
 import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import { StepPreview } from "@/components/templates/step-preview"
 import {
@@ -622,8 +623,19 @@ export function WizardShell({
       {showsPreview ? (
         <aside
           aria-label="Document preview"
-          className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[26rem]"
+          className="flex w-full shrink-0 flex-col gap-4 lg:sticky lg:top-6 lg:w-[26rem]"
         >
+          {/*
+            The sample first, because it always has something to show — the theme, the
+            page proportion, the table rules and the consultant's own section list, over
+            declared sample figures. The real render is beneath it, closed, because it
+            needs a completed run and twenty seconds of server time.
+          */}
+          <DocumentPreview
+            definition={definition}
+            sectionCatalogue={sectionCatalogue}
+          />
+
           <RealPreviewPanel
             templateId={template.id}
             definition={definition}
