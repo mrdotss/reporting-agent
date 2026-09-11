@@ -2,8 +2,6 @@
 
 import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react"
 
-import { PaperPreview } from "@/components/templates/paper-preview"
-import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import {
   designPreset,
@@ -20,9 +18,14 @@ import {
  *
  * The **completion summary** first, because a consultant arriving here wants one
  * question answered: can I save this? Then the **paper canvas** with its
- * permanent label, then the **real preview**.
+ * permanent label.
  *
- * The order is deliberate. The canvas approximates and says so; the real preview
+ * **The document preview moved out of this step.** It is mounted by `wizard-shell` in a
+ * column that persists from Sections onward, because a real preview costs a `python-docx`
+ * render, a LibreOffice conversion and an upload — and mounting it inside a step threw
+ * that away on every step change. What remains here is the completion summary.
+ *
+ * The order was deliberate. The canvas approximated and said so; the real preview
  * is the only surface permitted to state that its output is what the consultant
  * will receive (Requirement 14.6). Putting the approximation first and the truth
  * second means a consultant who stops reading half way has seen the caveat.
@@ -43,26 +46,9 @@ import {
 export function StepPreview({
   definition,
   problems,
-  templateId,
-  previewHtml,
-  selectedSubscriptionId,
-  hasCompletedRun,
 }: Readonly<{
   definition: TemplateDefinition
   problems: readonly CompletionProblem[]
-  templateId: string
-  /**
-   * The `Html_Emitter`'s output for the last real preview of this template, or
-   * `null`.
-   *
-   * Emitted by the agent (Requirement 14.1) rather than composed here, so no
-   * third layout definition exists. `null` until a real preview has been
-   * rendered at least once — the canvas then says what it is waiting for rather
-   * than inventing a page.
-   */
-  previewHtml: string | null
-  selectedSubscriptionId: string | null
-  hasCompletedRun: boolean
 }>) {
   const sections = sectionCount(definition)
   const resourceTypes = scopedResourceTypeCount(definition)
@@ -168,22 +154,6 @@ export function StepPreview({
           <dd className="capitalize">{preset ?? "—"}</dd>
         </div>
       </dl>
-
-      <PaperPreview
-        html={previewHtml}
-        emptyReason={
-          sections === 0
-            ? "Nothing to preview yet. Add at least one section on step 2."
-            : "Render a real preview below and the composed page appears here."
-        }
-      />
-
-      <RealPreviewPanel
-        templateId={templateId}
-        definition={definition}
-        selectedSubscriptionId={selectedSubscriptionId}
-        hasCompletedRun={hasCompletedRun}
-      />
     </div>
   )
 }

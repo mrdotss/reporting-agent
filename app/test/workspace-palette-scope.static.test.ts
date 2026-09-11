@@ -3,7 +3,10 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 
-const projectRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), "..")
+const projectRoot = path.join(
+  path.dirname(fileURLToPath(import.meta.url)),
+  ".."
+)
 const read = (rel: string) => readFileSync(path.join(projectRoot, rel), "utf8")
 
 /**
@@ -32,8 +35,10 @@ describe("the workspace palette covers what it has to cover", () => {
   test("no component re-opens the scope further down", () => {
     // A second, inner scope is not additive — it is a smaller scope that looks like the
     // fix while leaving portalled content outside it.
-    const inner = ["components/workspaces/workspace-shell.tsx", "app/invitations/accept/page.tsx"]
-      .filter((file) => /className="[^"]*workspace-design/.test(read(file)))
+    const inner = [
+      "components/workspaces/workspace-shell.tsx",
+      "app/invitations/accept/page.tsx",
+    ].filter((file) => /className="[^"]*workspace-design/.test(read(file)))
     expect(inner).toEqual([])
   })
 
@@ -47,9 +52,10 @@ describe("the workspace palette covers what it has to cover", () => {
       "--sidebar-accent-foreground",
       "--sidebar-border",
     ]) {
-      expect(scope, `${token} is undeclared, so the rail's contents fall back`).toContain(
-        `${token}:`
-      )
+      expect(
+        scope,
+        `${token} is undeclared, so the rail's contents fall back`
+      ).toContain(`${token}:`)
     }
   })
 
@@ -61,5 +67,48 @@ describe("the workspace palette covers what it has to cover", () => {
     expect(shell).not.toMatch(/text-slate-\d|text-emerald-\d/)
     expect(shell).toMatch(/bg-sidebar\b/)
     expect(shell).toMatch(/text-sidebar-foreground/)
+  })
+})
+
+/**
+ * The document preview persists across steps.
+ *
+ * It used to be mounted inside the Review step, which meant it unmounted on every step
+ * change. A real preview is a `python-docx` render, a LibreOffice conversion and an
+ * upload — measured in seconds, not milliseconds — so a preview thrown away on
+ * navigation was only ever useful on the step that paid for it, and the consultant chose
+ * sections and appearance without ever seeing the page they affect.
+ *
+ * Mounting it in the shell is what makes it survive. That is a structural property, not a
+ * visual one: a rendering test of any single step passes either way.
+ */
+describe("the document preview outlives the step that rendered it", () => {
+  test("the wizard mounts it, not a step", () => {
+    const shell = read("components/templates/wizard-shell.tsx")
+    expect(shell).toMatch(/<RealPreviewPanel/)
+    expect(read("components/templates/step-preview.tsx")).not.toMatch(
+      /<RealPreviewPanel/
+    )
+  })
+
+  test("it is mounted outside the step switch, so navigating keeps it alive", () => {
+    // `renderStep` is the switch. Anything mounted inside it is remounted per step.
+    const shell = read("components/templates/wizard-shell.tsx")
+    const switchStart = shell.indexOf("function renderStep(")
+    expect(switchStart).toBeGreaterThan(-1)
+    expect(shell.slice(switchStart)).not.toMatch(/<RealPreviewPanel/)
+  })
+
+  test("Identity is the one step without it", () => {
+    // A name and a customer describe no page yet, so there is nothing to show.
+    expect(read("components/templates/wizard-shell.tsx")).toMatch(
+      /showsPreview = step\.id !== "identity"/
+    )
+  })
+
+  test("the retired live specimens are gone, not merely unmounted", () => {
+    const design = read("components/templates/step-design.tsx")
+    expect(design).not.toMatch(/LiveThemePreview/)
+    expect(() => read("components/templates/live-theme-preview.tsx")).toThrow()
   })
 })
