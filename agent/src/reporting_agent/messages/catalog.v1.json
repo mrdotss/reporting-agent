@@ -1069,6 +1069,58 @@
       "en": "The period is resolved from the saved profile when submitted. Progress appears on the report page.",
       "id": "Periode ditentukan dari profil tersimpan saat dikirim. Kemajuannya tampil di halaman laporan."
     },
+    "ui.run_phases.label": {
+      "en": "Run phases",
+      "id": "Fase proses"
+    },
+    "ui.run_phases.complete": {
+      "en": "Complete",
+      "id": "Selesai"
+    },
+    "ui.run_phases.in_progress": {
+      "en": "In progress",
+      "id": "Sedang berjalan"
+    },
+    "ui.run_phases.pending": {
+      "en": "Pending",
+      "id": "Menunggu"
+    },
+    "ui.request_details.heading": {
+      "en": "Request details",
+      "id": "Rincian permintaan"
+    },
+    "ui.request_details.connection": {
+      "en": "Connection",
+      "id": "Koneksi"
+    },
+    "ui.request_details.profile": {
+      "en": "Profile",
+      "id": "Profil"
+    },
+    "ui.request_details.period": {
+      "en": "Period",
+      "id": "Periode"
+    },
+    "ui.request_details.timezone": {
+      "en": "Timezone",
+      "id": "Zona waktu"
+    },
+    "ui.request_details.output": {
+      "en": "Output",
+      "id": "Keluaran"
+    },
+    "ui.request_details.output_value": {
+      "en": "DOCX and PDF",
+      "id": "DOCX dan PDF"
+    },
+    "ui.request_details.not_pinned": {
+      "en": "Not pinned",
+      "id": "Tidak disematkan"
+    },
+    "ui.request_details.version": {
+      "en": "version",
+      "id": "versi"
+    },
     "ui.run_table.request": {
       "en": "Request a report",
       "id": "Minta laporan"

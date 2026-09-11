@@ -430,4 +430,30 @@
 .workspace-design #app-content>div{max-width:100%}
 @media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-.workspace-design .workspace-selector[data-slot="select-trigger"] { background: #1e3946; border-color: #41606d; color: #fff; }
+/* The navigation rail is a **fixed dark surface in both themes** — that is the design,
+   not an oversight. So it gets the sidebar token set rather than hardcoded hexes, and it
+   gets the same values twice.
+
+   Declaring them matters: `components/app-shell/user-menu.tsx` renders inside this rail
+   and colours itself with `text-sidebar-foreground`. Left undeclared, that resolved to
+   the light theme's near-black on navy — the signed-in address and "Sign out" were
+   legible only as a shape. Anything else dropped into the rail inherits correctly now
+   instead of having to know it is on a dark ground. */
+.workspace-design,
+.dark .workspace-design {
+  --sidebar: #122a36;
+  --sidebar-foreground: #ccd9de;
+  --sidebar-primary: #b6f2dc;
+  --sidebar-primary-foreground: #0d2029;
+  --sidebar-accent: #254650;
+  --sidebar-accent-foreground: #b6f2dc;
+  --sidebar-border: #2c4a56;
+  --sidebar-ring: #5ac8b6;
+}
+
+/* The workspace switcher sits on the rail, so it reads from the rail's tokens. */
+.workspace-design .workspace-selector[data-slot="select-trigger"] {
+  background: color-mix(in oklab, var(--sidebar) 82%, white);
+  border-color: var(--sidebar-border);
+  color: var(--sidebar-foreground);
+}

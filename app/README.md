@@ -270,6 +270,23 @@ The order inside it matters and is not interchangeable:
    `AFTER INSERT` trigger on `users` so a new sign-up gets a workspace before the
    starter seeding runs.
 
+**Turning it on.** The flag lives in `app/.env` on the app host, beside
+`RPT_APP_BASE_URL`. It is deliberately **not** in `.env.example`: that file declares the
+*required* set exactly, and `boundaries.static.test.ts` asserts the two match — an
+optional flag listed there would read as one more thing a deployment must set. It is read
+server-side at call time, so changing it takes a restart and not a rebuild:
+
+```bash
+# on the app host, after pulling the merge
+pnpm install && pnpm db:migrate && pnpm build
+echo 'REPORT_WORKSPACE_UI=1' >> .env
+sudo systemctl restart reporting-agent
+```
+
+`pnpm db:migrate` first, always: the shell reads workspaces and projects on every
+authenticated render, so enabling it against an unmigrated database is a 500 on the
+dashboard rather than a degraded page.
+
 **The UI is separate from the authorization.** `REPORT_WORKSPACE_UI=1` switches on the
 redesigned shell, the projects and team screens and the new request page. Scoped
 authorization is **always** active — `lib/workspaces/context.ts` says so in one line,

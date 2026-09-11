@@ -2,7 +2,6 @@
 
 import { useMemo, useId } from "react"
 
-import { LiveThemePreview } from "@/components/templates/live-theme-preview"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
@@ -248,21 +247,10 @@ export function StepDesign({
                 )}
               </div>
               <FieldDescription>
-                Accent updates the previews and exported report.
+                Accent updates the document preview and the exported report.
               </FieldDescription>
             </Field>
           </div>
-          <details>
-            <summary className="mt-4 cursor-pointer text-xs font-medium">
-              Compare theme previews
-            </summary>
-            <div className="mt-3">
-              <LiveThemePreview
-                design={design}
-                onSelect={(preset) => set({ preset })}
-              />
-            </div>
-          </details>
         </section>
       )}
       {controls !== "theme" && (
@@ -340,7 +328,11 @@ export function StepDesign({
             ))}
           </fieldset>
 
-          <p className="text-sm text-muted-foreground">Memory and storage values use GiB in new report versions. Save a version on the Preview step to apply these settings to generated reports.</p>
+          <p className="text-sm text-muted-foreground">
+            Memory and storage values use GiB in new report versions. Save a
+            version on the Preview step to apply these settings to generated
+            reports.
+          </p>
           <Field>
             <FieldLabel htmlFor={decimalsId}>Decimal places</FieldLabel>
             <Input

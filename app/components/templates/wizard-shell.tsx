@@ -17,6 +17,7 @@ import {
 import { StepAppearance } from "@/components/templates/step-appearance"
 import { StepDocument } from "@/components/templates/step-document"
 import { StepPeriod } from "@/components/templates/step-period"
+import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import { StepPreview } from "@/components/templates/step-preview"
 import {
   StepSections,
@@ -203,7 +204,9 @@ export function WizardShell({
   // it as the consultant types would drag them backwards the moment an edit
   // briefly invalidated an earlier step.
   const [step, setStep] = useState<WizardStep>(() =>
-    initialDefinition === null ? WIZARD_STEPS[0]! : openingStep(initialDefinition)
+    initialDefinition === null
+      ? WIZARD_STEPS[0]!
+      : openingStep(initialDefinition)
   )
 
   const [highestReached, setHighestReached] = useState(step.number)
@@ -250,7 +253,10 @@ export function WizardShell({
       const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draftDefinition: latest.current, expectedRevision: draftRevision.current }),
+        body: JSON.stringify({
+          draftDefinition: latest.current,
+          expectedRevision: draftRevision.current,
+        }),
       })
 
       if (!response.ok) {
@@ -267,7 +273,8 @@ export function WizardShell({
       }
 
       const saved = await response.json()
-      draftRevision.current = saved.template?.draftRevision ?? draftRevision.current
+      draftRevision.current =
+        saved.template?.draftRevision ?? draftRevision.current
       setSave({ kind: "saved", at: Date.now() })
       return true
     } catch {
@@ -293,11 +300,15 @@ export function WizardShell({
         const response = await fetch(`/api/report-profiles/${template.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: trimmed, expectedRevision: draftRevision.current }),
+          body: JSON.stringify({
+            name: trimmed,
+            expectedRevision: draftRevision.current,
+          }),
         })
         if (!response.ok) return false
         const saved = await response.json()
-        draftRevision.current = saved.template?.draftRevision ?? draftRevision.current
+        draftRevision.current =
+          saved.template?.draftRevision ?? draftRevision.current
         setStoredName(trimmed)
         return true
       } catch {
@@ -407,7 +418,10 @@ export function WizardShell({
       const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: latest.current, expectedRevision: draftRevision.current }),
+        body: JSON.stringify({
+          definition: latest.current,
+          expectedRevision: draftRevision.current,
+        }),
       })
 
       const body = (await response.json()) as PublishResponse
@@ -429,7 +443,8 @@ export function WizardShell({
         return
       }
 
-      if (body.draftRevision !== undefined) draftRevision.current = body.draftRevision
+      if (body.draftRevision !== undefined)
+        draftRevision.current = body.draftRevision
       setPublish({
         kind: "published",
         version: body.version.version,
@@ -463,130 +478,160 @@ export function WizardShell({
     saveIdentityStep,
     retryRename,
     scanTypeCounts,
-  metricsHistorySince,
+    metricsHistorySince,
     collectedFactSources,
     thumbnails,
   })
 
-  return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
-      <header className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-medium tracking-tight">
-          {template.name}
-        </h1>
+  // The preview is mounted **here**, outside `renderStep`, from Sections onward.
+  //
+  // Outside deliberately: rendering it inside the step switch unmounts it on every step
+  // change, and a real preview costs a python-docx render, a LibreOffice conversion and a
+  // PDF upload. Unmounting would throw that away each time the consultant moved a step,
+  // so it would only ever be useful on the step that rendered it — which is what it was.
+  //
+  // From Sections onward rather than from Identity, because Identity is a name and a
+  // customer: there is nothing yet whose shape a page could show.
+  const showsPreview = step.id !== "identity"
 
-        {/*
+  return (
+    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 lg:max-w-7xl lg:flex-row lg:items-start lg:gap-8">
+      <div className="flex min-w-0 flex-1 flex-col gap-6">
+        <header className="flex flex-col gap-1">
+          <h1 className="font-heading text-xl font-medium tracking-tight">
+            {template.name}
+          </h1>
+
+          {/*
           Requirement 11.1 — the current step's position and the total of five,
           on **every** step. In the header rather than inside a step body, so
           there is one place it is rendered and no step can omit it.
         */}
-        <p
-          data-slot="wizard-position"
-          className="text-sm text-muted-foreground"
+          <p
+            data-slot="wizard-position"
+            className="text-sm text-muted-foreground"
+          >
+            Step <span className="font-mono tabular-nums">{step.number}</span>{" "}
+            of{" "}
+            <span className="font-mono tabular-nums">{WIZARD_STEP_COUNT}</span>{" "}
+            · {step.title}
+          </p>
+        </header>
+
+        <StepRail
+          current={step}
+          highestReached={highestReached}
+          issues={issues}
+          onSelect={(target) => void goTo(target)}
+        />
+
+        <section
+          aria-labelledby="wizard-step-title"
+          className="flex flex-col gap-4 rounded-xl border border-border px-4 py-4"
         >
-          Step <span className="font-mono tabular-nums">{step.number}</span> of{" "}
-          <span className="font-mono tabular-nums">{WIZARD_STEP_COUNT}</span> ·{" "}
-          {step.title}
-        </p>
-      </header>
-
-      <StepRail
-        current={step}
-        highestReached={highestReached}
-        issues={issues}
-        onSelect={(target) => void goTo(target)}
-      />
-
-      <section
-        aria-labelledby="wizard-step-title"
-        className="flex flex-col gap-4 rounded-xl border border-border px-4 py-4"
-      >
-        <div className="flex flex-col gap-1">
-          <h2
-            id="wizard-step-title"
-            className="font-heading text-sm font-medium tracking-tight"
-          >
-            {step.title}
-          </h2>
-          <p className="text-sm text-muted-foreground">{step.summary}</p>
-        </div>
-
-        {stepBody}
-
-        {issues[step.id].length === 0 ? null : (
-          <div
-            data-slot="wizard-step-issues"
-            // Requirement 11.3 — each failing field path, on this step.
-            className="flex flex-col gap-1 rounded-lg border border-destructive/40 px-3 py-2"
-          >
-            {issues[step.id].map((issue, index) => (
-              <p
-                key={`${issue.path.join(".")}-${index}`}
-                className="text-sm text-destructive"
-              >
-                <span className="font-mono">
-                  {issue.path.join(".") || "definition"}
-                </span>{" "}
-                — {issue.message}
-              </p>
-            ))}
+          <div className="flex flex-col gap-1">
+            <h2
+              id="wizard-step-title"
+              className="font-heading text-sm font-medium tracking-tight"
+            >
+              {step.title}
+            </h2>
+            <p className="text-sm text-muted-foreground">{step.summary}</p>
           </div>
-        )}
-      </section>
 
-      <SaveNotice state={save} />
+          {stepBody}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Button
-          type="button"
-          variant="outline"
-          disabled={step.number === 1}
-          onClick={() => void goTo(stepBefore(step))}
-        >
-          <ArrowLeftIcon aria-hidden="true" />
-          Back
-        </Button>
+          {issues[step.id].length === 0 ? null : (
+            <div
+              data-slot="wizard-step-issues"
+              // Requirement 11.3 — each failing field path, on this step.
+              className="flex flex-col gap-1 rounded-lg border border-destructive/40 px-3 py-2"
+            >
+              {issues[step.id].map((issue, index) => (
+                <p
+                  key={`${issue.path.join(".")}-${index}`}
+                  className="text-sm text-destructive"
+                >
+                  <span className="font-mono">
+                    {issue.path.join(".") || "definition"}
+                  </span>{" "}
+                  — {issue.message}
+                </p>
+              ))}
+            </div>
+          )}
+        </section>
 
-        <div className="flex items-center gap-2">
+        <SaveNotice state={save} />
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Button
             type="button"
             variant="outline"
-            onClick={() =>
-              void (step.id === "identity"
-                ? saveIdentityStep()
-                : persistDraft())
-            }
-            disabled={save.kind === "saving" || identitySave.kind === "saving"}
+            disabled={step.number === 1}
+            onClick={() => void goTo(stepBefore(step))}
           >
-            <FloppyDiskIcon aria-hidden="true" />
-            {save.kind === "saving" || identitySave.kind === "saving"
-              ? "Saving…"
-              : "Save draft"}
+            <ArrowLeftIcon aria-hidden="true" />
+            Back
           </Button>
 
-          {step.number === WIZARD_STEP_COUNT ? (
+          <div className="flex items-center gap-2">
             <Button
               type="button"
-              onClick={() => void complete()}
-              disabled={publish.kind === "publishing"}
+              variant="outline"
+              onClick={() =>
+                void (step.id === "identity"
+                  ? saveIdentityStep()
+                  : persistDraft())
+              }
+              disabled={
+                save.kind === "saving" || identitySave.kind === "saving"
+              }
             >
-              <CheckCircleIcon aria-hidden="true" />
-              {publish.kind === "publishing" ? "Saving…" : "Save version"}
+              <FloppyDiskIcon aria-hidden="true" />
+              {save.kind === "saving" || identitySave.kind === "saving"
+                ? "Saving…"
+                : "Save draft"}
             </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={advance}
-              disabled={!canAdvance(step, issues)}
-            >
-              Next
-              <ArrowRightIcon aria-hidden="true" />
-            </Button>
-          )}
+
+            {step.number === WIZARD_STEP_COUNT ? (
+              <Button
+                type="button"
+                onClick={() => void complete()}
+                disabled={publish.kind === "publishing"}
+              >
+                <CheckCircleIcon aria-hidden="true" />
+                {publish.kind === "publishing" ? "Saving…" : "Save version"}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={advance}
+                disabled={!canAdvance(step, issues)}
+              >
+                Next
+                <ArrowRightIcon aria-hidden="true" />
+              </Button>
+            )}
+          </div>
         </div>
+
+        <PublishNotice state={publish} />
       </div>
 
-      <PublishNotice state={publish} />
+      {showsPreview ? (
+        <aside
+          aria-label="Document preview"
+          className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[26rem]"
+        >
+          <RealPreviewPanel
+            templateId={template.id}
+            definition={definition}
+            selectedSubscriptionId={previewSubscriptionId}
+            hasCompletedRun={hasCompletedRun}
+          />
+        </aside>
+      ) : null}
     </div>
   )
 }
@@ -843,19 +888,6 @@ function renderStep({
         />
       )
     case "preview":
-      return (
-        <StepPreview
-          definition={definition}
-          problems={problems}
-          templateId={templateId}
-          // Requirement 14.1 — the canvas shows the `Html_Emitter`'s output, and
-          // that output exists only once a real preview has produced it. `null`
-          // until then, and the canvas says what it is waiting for rather than
-          // rendering a page this component composed.
-          previewHtml={null}
-          selectedSubscriptionId={previewSubscriptionId}
-          hasCompletedRun={hasCompletedRun}
-        />
-      )
+      return <StepPreview definition={definition} problems={problems} />
   }
 }
