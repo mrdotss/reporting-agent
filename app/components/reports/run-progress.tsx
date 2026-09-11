@@ -3,6 +3,7 @@
 import { ActivityTimeline } from "@/components/reports/activity-timeline"
 import { GapList } from "@/components/reports/gap-list"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
+import { RunPhases } from "@/components/reports/run-phases"
 import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import type { RunView } from "@/lib/db/views"
 import type { RunGap } from "@/lib/runs/gaps"
@@ -99,6 +100,13 @@ export function RunProgress({
       {run.status === "failed" ? (
         <RunFailureNotice run={run} subscriptionLabel={subscriptionLabel} />
       ) : null}
+
+      {/*
+        The path first, then what the agent has reported inside it. The timeline alone
+        left a reader a minute into a twelve-minute run with one line and no way to tell
+        a run that is starting from one that is stuck.
+      */}
+      <RunPhases status={run.status} />
 
       <ActivityTimeline steps={steps} />
 

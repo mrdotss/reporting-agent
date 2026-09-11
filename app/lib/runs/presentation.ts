@@ -1,3 +1,4 @@
+import { runStatus } from "@/lib/db/schema"
 import type { RunErrorCode, RunStatus } from "@/lib/db/schema"
 import type { RunView } from "@/lib/db/views"
 
@@ -371,4 +372,54 @@ export function periodLine(
       : `${run.periodStart} to ${run.periodEnd}`
 
   return `${range} · ${run.timezone}`
+}
+
+/**
+ * The phases a run passes through, in order, ending at the one it is in.
+ *
+ * Derived from `runStatus`'s own declared order rather than written out again: a second
+ * list would be a second answer to "what happens next", and the one that drifts is
+ * always the one nobody is looking at.
+ *
+ * `failed` is not a phase. It is where a run stops, and the failure notice says why —
+ * putting it in the path would draw it as a step every run is heading towards.
+ *
+ * **No percentage is derived from this.** A run spends most of its twelve minutes in
+ * `collecting`, so "2 of 6 phases" would read as 33% of the time and be wrong for most
+ * of it. What the count is honest about is *position*: which phases are behind, which is
+ * current, and what is still to come. Per-phase counts — resources fetched, of how many —
+ * arrive from the agent and are shown by `ActivityTimeline` where they are real.
+ */
+export const RUN_PHASE_ORDER: readonly RunStatus[] = Object.freeze(
+  runStatus.enumValues.filter((value): value is RunStatus => value !== "failed")
+)
+
+/** Where one phase stands relative to the run's current status. */
+export type PhaseStanding = "done" | "current" | "pending"
+
+/**
+ * Each phase and where it stands.
+ *
+ * A failed run marks every phase it had not reached as `pending` and leaves the one it
+ * stopped in as `current`: the reader can see how far it got, which is the first thing
+ * worth knowing about a failure.
+ */
+export function runPhases(
+  status: RunStatus
+): readonly { readonly status: RunStatus; readonly standing: PhaseStanding }[] {
+  // A failed run stopped somewhere, but the row no longer says where — `status` is
+  // `failed`. Treating it as "before the first phase" would claim it never started, so
+  // the path is shown with nothing current and the notice carries the detail.
+  const index = RUN_PHASE_ORDER.indexOf(status)
+  return RUN_PHASE_ORDER.map((phase, position) => ({
+    status: phase,
+    standing:
+      index === -1
+        ? "pending"
+        : position < index
+          ? "done"
+          : position === index
+            ? "current"
+            : "pending",
+  }))
 }

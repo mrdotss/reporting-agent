@@ -5,6 +5,7 @@ import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { DownloadCard } from "@/components/reports/download-card"
 import { InspectFigures } from "@/components/reports/inspect-figures"
+import { RequestDetails } from "@/components/reports/request-details"
 import { RunProgress } from "@/components/reports/run-progress"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { VerificationPanel } from "@/components/reports/verification-panel"
@@ -121,7 +122,7 @@ export default async function RunPage({ params }: RunPageProps) {
       : resolveSubscriptionState(subscription, new Date())
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8 lg:max-w-6xl">
       <div className="flex flex-col gap-2">
         <Link
           href="/reports"
@@ -151,11 +152,22 @@ export default async function RunPage({ params }: RunPageProps) {
         <SecretExpiryBanner state={subscriptionState} />
       ) : null}
 
-      <RunProgress
-        initialRun={view}
-        initialGaps={gaps}
-        subscriptionLabel={subscriptionLabel}
-      />
+      {/* The live view and what was asked for, side by side on a wide screen — a figure
+          that looks wrong is checked against the request, and putting the request a
+          scroll away made that two screens instead of one. */}
+      <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:gap-8">
+        <div className="min-w-0 flex-1">
+          <RunProgress
+            initialRun={view}
+            initialGaps={gaps}
+            subscriptionLabel={subscriptionLabel}
+          />
+        </div>
+
+        <aside className="w-full shrink-0 lg:w-80">
+          <RequestDetails run={view} subscriptionLabel={subscriptionLabel} />
+        </aside>
+      </div>
 
       {run.status === "completed" ? (
         <section className="flex flex-col gap-3">
@@ -182,7 +194,9 @@ export default async function RunPage({ params }: RunPageProps) {
           {pinned === null ? null : (
             <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-3">
               <div className="flex flex-col">
-                <dt className="text-xs text-muted-foreground">Report profile</dt>
+                <dt className="text-xs text-muted-foreground">
+                  Report profile
+                </dt>
                 <dd>{pinned.templateName}</dd>
               </div>
               <div className="flex flex-col">
