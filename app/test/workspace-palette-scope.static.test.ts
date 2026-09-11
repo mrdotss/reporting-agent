@@ -85,9 +85,9 @@ describe("the workspace palette covers what it has to cover", () => {
 describe("the document preview outlives the step that rendered it", () => {
   test("the wizard mounts it, not a step", () => {
     const shell = read("components/templates/wizard-shell.tsx")
-    expect(shell).toMatch(/<RealPreviewPanel/)
+    expect(shell).toMatch(/<DocumentPreview/)
     expect(read("components/templates/step-preview.tsx")).not.toMatch(
-      /<RealPreviewPanel/
+      /<DocumentPreview/
     )
   })
 
@@ -96,7 +96,7 @@ describe("the document preview outlives the step that rendered it", () => {
     const shell = read("components/templates/wizard-shell.tsx")
     const switchStart = shell.indexOf("function renderStep(")
     expect(switchStart).toBeGreaterThan(-1)
-    expect(shell.slice(switchStart)).not.toMatch(/<RealPreviewPanel/)
+    expect(shell.slice(switchStart)).not.toMatch(/<DocumentPreview/)
   })
 
   test("Identity is the one step without it", () => {
@@ -106,52 +106,23 @@ describe("the document preview outlives the step that rendered it", () => {
     )
   })
 
-  test("the retired live specimens are gone, not merely unmounted", () => {
+  test("the retired specimens are gone, not merely unmounted", () => {
+    // Three preview surfaces have been retired from this wizard. Each was removed
+    // rather than left unmounted, because an unreferenced canvas is one an edit
+    // re-enables by accident.
     const design = read("components/templates/step-design.tsx")
     expect(design).not.toMatch(/LiveThemePreview/)
-    expect(() => read("components/templates/live-theme-preview.tsx")).toThrow()
-  })
-})
 
-/**
- * The composed page reaches the canvas.
- *
- * The agent has always written it — `render/html.py` over the same compiled AST the
- * `.docx` comes from, stored as `previews/<id>/preview.html`. Nothing read it. The route
- * returned a presigned `.pdf` and nothing else, and the canvas that exists to show the
- * page was handed a literal `null`, so "Render a real preview below and the composed page
- * appears here" was the only state it could reach — permanently, for every user.
- *
- * Nothing failed. A component wired to a constant renders exactly as designed.
- */
-describe("the preview route surfaces the page the agent already wrote", () => {
-  test("the route reads it and returns it", () => {
-    const route = read("app/api/report-profiles/[id]/preview/route.ts")
-    expect(route).toMatch(/getPreviewHtml\(/)
-    expect(route).toMatch(/previewHtmlKey\(snapshotRun\.actorId, previewId\)/)
-    expect(route).toMatch(/^\s*html,$/m)
-  })
-
-  test("the read is guarded by the same ownership check as the presign", () => {
-    // Reading is not weaker than minting a URL: a key outside the signed-in actor's own
-    // `previews/` prefix is refused before the object is touched.
-    const s3 = read("lib/aws/s3.ts")
-    const reader = s3.slice(s3.indexOf("export async function getPreviewHtml"))
-    expect(reader.slice(0, 600)).toMatch(
-      /previewBelongsToActor\(actorId, key\)/
-    )
-    expect(reader.slice(0, 600)).toMatch(/ArtifactAccessError/)
-  })
-
-  test("no canvas is fed a hardcoded null any more", () => {
-    // The shape of the original defect: a prop satisfied by a constant. Both call sites
-    // pass what the render produced.
-    for (const file of [
+    for (const gone of [
+      "components/templates/live-theme-preview.tsx",
       "components/templates/real-preview-panel.tsx",
-      "components/templates/step-preview.tsx",
-      "components/templates/wizard-shell.tsx",
+      "components/templates/paper-preview.tsx",
     ]) {
-      expect(read(file), file).not.toMatch(/previewHtml=\{null\}|html=\{null\}/)
+      expect(() => read(gone), gone).toThrow()
     }
+
+    expect(read("components/templates/wizard-shell.tsx")).not.toMatch(
+      /RealPreviewPanel/
+    )
   })
 })

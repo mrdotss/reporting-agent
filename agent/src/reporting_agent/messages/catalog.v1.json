@@ -1025,6 +1025,10 @@
       "en": "This run failed.",
       "id": "Proses ini gagal."
     },
+    "ui.run_progress.path": {
+      "en": "Every phase of this run",
+      "id": "Setiap tahap proses ini"
+    },
     "ui.run_progress.reconnecting": {
       "en": "Reconnecting the live view. The run continues either way \u2014 its state is recorded, not streamed.",
       "id": "Menghubungkan kembali tampilan langsung. Proses tetap berjalan \u2014 statusnya dicatat, bukan dialirkan."

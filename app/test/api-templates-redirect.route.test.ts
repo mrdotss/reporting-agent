@@ -7,7 +7,6 @@ import {
   POST as postById,
 } from "@/app/api/templates/[id]/route"
 import { GET as getCatalog } from "@/app/api/templates/catalog/route"
-import { POST as postPreview } from "@/app/api/templates/[id]/preview/route"
 import { GET as getList, POST as postList } from "@/app/api/templates/route"
 
 /**
@@ -52,17 +51,6 @@ describe("the former /api/templates routes redirect to /api/report-profiles", ()
     }
   })
 
-  test("POST /api/templates/[id]/preview -> /api/report-profiles/[id]/preview, 308", async () => {
-    const response = await postPreview(
-      new Request("http://localhost/api/templates/tpl-001/preview", {
-        method: "POST",
-      })
-    )
-    expect(response.status).toBe(308)
-    expect(response.headers.get("location")).toBe(
-      "http://localhost/api/report-profiles/tpl-001/preview"
-    )
-  })
 
   test("GET /api/templates/catalog -> /api/report-profiles/catalog, 308", async () => {
     const response = await getCatalog(

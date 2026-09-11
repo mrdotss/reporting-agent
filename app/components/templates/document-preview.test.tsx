@@ -75,11 +75,42 @@ describe("the design sample", () => {
     )
 
     expect(screen.getByText(/A4 · sample figures/)).toBeTruthy()
-    expect(screen.getByText(/Sample figures · corporate/)).toBeTruthy()
+    expect(screen.getByText(/Sample figures · Corporate/)).toBeTruthy()
     expect(container.textContent).toContain("Nothing here is collected data")
 
     // Nothing offers to dismiss either.
     expect(container.querySelectorAll("button")).toHaveLength(0)
+  })
+
+  test("a long profile is counted past the page edge, never clipped", () => {
+    // The page is a fixed proportion, so the contents list cannot simply grow. A
+    // fourteen-section profile used to run its last entry through the bottom edge and
+    // render it sliced in half. A page holds what fits and says how much it did not.
+    const many = Array.from({ length: 14 }, (_, index) => ({
+      id: `sec_${index}`,
+      type: "vm_inventory",
+    }))
+    const { container } = render(
+      <DocumentPreview
+        definition={draft({ sections: many })}
+        sectionCatalogue={CATALOGUE}
+      />
+    )
+
+    const entries = container.querySelectorAll(
+      '[data-slot="document-preview-page"] ol li'
+    )
+    expect(entries.length).toBeLessThan(many.length)
+    expect(container.textContent).toContain(
+      `and ${many.length - entries.length} more sections`
+    )
+  })
+
+  test("a profile that fits says nothing about overflow", () => {
+    const { container } = render(
+      <DocumentPreview definition={draft()} sectionCatalogue={CATALOGUE} />
+    )
+    expect(container.textContent ?? "").not.toMatch(/\bmore sections?\b/)
   })
 
   test("it never claims to be the delivered document", () => {

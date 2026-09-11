@@ -147,6 +147,27 @@ const PERIOD_LABELS: Readonly<Record<PeriodKind, string>> = {
 
 // --- Theme -> page -----------------------------------------------------------
 
+/** How each preset is named in prose. The key is not a label. */
+const PRESET_LABELS: Readonly<Record<DesignPreset, string>> = {
+  editorial: "Editorial",
+  corporate: "Corporate",
+  technical: "Technical",
+  minimal: "Minimal",
+}
+
+/**
+ * How many contents entries fit on the page at each density.
+ *
+ * The page is a fixed proportion, so the list cannot simply grow: a fourteen-section
+ * profile clipped its own last entry through the bottom edge. Compact fits more lines
+ * in the same height; relaxed fits fewer. Anything past the cap is counted, not dropped.
+ */
+const CONTENTS_CAP: Readonly<Record<Density, number>> = {
+  compact: 6,
+  normal: 5,
+  relaxed: 4,
+}
+
 /** The ink each preset sets body text in. Headings take the accent. */
 const PRESET_INK: Readonly<Record<DesignPreset, string>> = {
   editorial: "#1c1a17",
@@ -251,6 +272,9 @@ export function DocumentPreview({
       return messageText(entry.title_id as MessageId, language) ?? entry.key
     })
   }, [definition, language, sectionCatalogue])
+
+  const shown = titles.slice(0, CONTENTS_CAP[density])
+  const overflowCount = titles.length - shown.length
 
   const chartFace =
     chartFont === "document" ? face : CHART_FONT_STACKS[chartFont]
@@ -466,7 +490,7 @@ export function DocumentPreview({
 
           {/* The consultant's own structure — the one part of this page that is theirs. */}
           {titles.length === 0 ? null : (
-            <div style={{ margin: `${3 * scale}cqw 0 0` }}>
+            <div style={{ margin: `${3 * scale}cqw 0 0`, minHeight: 0 }}>
               <p
                 style={{
                   margin: 0,
@@ -487,7 +511,7 @@ export function DocumentPreview({
                   lineHeight: 1.75,
                 }}
               >
-                {titles.map((sectionTitle, index) => (
+                {shown.map((sectionTitle, index) => (
                   <li
                     key={`${sectionTitle}-${index}`}
                     style={{ display: "flex", gap: "1.6cqw" }}
@@ -513,6 +537,22 @@ export function DocumentPreview({
                   </li>
                 ))}
               </ol>
+
+              {/* A page holds what fits and the rest runs on. Saying so is truer than
+                  silently clipping the last entry mid-word, which is what a fixed page
+                  proportion does to a long profile. */}
+              {overflowCount === 0 ? null : (
+                <p
+                  style={{
+                    margin: `${0.9 * scale}cqw 0 0`,
+                    fontSize: "2.4cqw",
+                    color: muted,
+                  }}
+                >
+                  and {overflowCount} more{" "}
+                  {overflowCount === 1 ? "section" : "sections"}
+                </p>
+              )}
             </div>
           )}
 
@@ -529,16 +569,16 @@ export function DocumentPreview({
           >
             {/* Said again at the foot of the page, so a screenshot of the bottom half
                 carries the disclaimer too. */}
-            <span>Sample figures · {preset}</span>
+            <span>Sample figures · {PRESET_LABELS[preset]}</span>
             <span style={{ fontVariantNumeric: "tabular-nums" }}>01</span>
           </div>
         </div>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        Your theme, page size, table rules and section list — over{" "}
-        <strong>sample figures</strong>. Nothing here is collected data. Render the
-        real <code className="font-mono">.pdf</code> below to see the document itself.
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Your theme, page size, table rules and section list, over{" "}
+        <strong className="font-medium text-foreground">sample figures</strong>.
+        Nothing here is collected data.
       </p>
     </section>
   )

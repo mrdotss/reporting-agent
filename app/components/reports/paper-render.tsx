@@ -6,7 +6,6 @@ import { InfoIcon } from "@phosphor-icons/react"
 import { FigureProvenance } from "@/components/reports/figure-provenance"
 import { messageText } from "@/lib/messages/catalog"
 import { PAPER_CLAIM } from "@/lib/reports/paper-claim"
-import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
 
 /**
  * The report as a paper-like rendering, with provenance on every figure
@@ -38,7 +37,7 @@ import { PREVIEW_DIVERGENCES } from "@/components/templates/paper-preview"
  *
  * Requirement 38.5 points at 14.2 and 14.3: the permanent preview label, outside
  * a tooltip and outside a first-run hint, and no page number or count. The
- * divergence list is imported from `paper-preview.tsx` rather than restated, so
+ * divergence list is declared once, just below, rather than restated, so
  * the two surfaces cannot name different three things.
  *
  * What this surface must **not** say is that the HTML is what the consultant
@@ -444,6 +443,22 @@ function parseCellContents(cell: Element, figures: readonly FigureData[]): CellC
 
   return contents
 }
+
+/**
+ * The three divergences, named.
+ *
+ * All three in visible text, without hover or expansion, and named specifically rather
+ * than as "some differences": these three are exactly what Word decides for itself and
+ * a browser cannot predict.
+ *
+ * It used to live in `paper-preview.tsx`, which was the wizard's real-render canvas.
+ * That surface is gone; this one inherited the list.
+ */
+export const PREVIEW_DIVERGENCES = [
+  "pagination",
+  "table column widths",
+  "font metrics",
+] as const
 
 export function PaperRender({
   html,

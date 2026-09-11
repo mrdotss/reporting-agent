@@ -4,6 +4,14 @@ import { useCallback, useState } from "react"
 import { DownloadSimpleIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { messageText } from "@/lib/messages/catalog"
 import { DOWNLOADABLE_LEAF_NAMES } from "@/lib/runs/artifacts"
 
@@ -111,21 +119,24 @@ export function DownloadCard({
   if (downloadable.length === 0) return null
 
   return (
-    <section
+    <Card
       data-slot="download-card"
-      className="flex flex-col gap-3 rounded-xl border border-border px-4 py-4"
+      // The delivered artifact is the point of the whole run, so this card carries the
+      // one tinted ground on the page. Everything else stays neutral: a second tinted
+      // surface would make the accent mean "panel" rather than "this is ready".
+      className="border-primary/25 bg-primary/4"
     >
-      <div className="flex flex-col gap-0.5">
-        <h2 className="font-heading text-sm font-medium tracking-tight">
+      <CardHeader className="pb-0">
+        <CardTitle className="font-heading text-sm font-medium tracking-tight">
           {messageText("ui.download.heading", "en")}
-        </h2>
+        </CardTitle>
 
-        <p className="max-w-prose text-sm text-muted-foreground">
+        <CardDescription className="max-w-prose">
           {messageText("ui.download.description", "en")}
-        </p>
-      </div>
+        </CardDescription>
+      </CardHeader>
 
-      <div className="flex flex-wrap gap-2">
+      <CardContent className="flex flex-wrap gap-2">
         {downloadable.map((key) => {
           const leaf = DOWNLOADABLE_LEAF_NAMES.find((name) =>
             key.endsWith(`/${name}`)
@@ -148,22 +159,24 @@ export function DownloadCard({
             </Button>
           )
         })}
-      </div>
+      </CardContent>
 
       {failed === null ? null : (
-        <p
-          data-slot="download-error"
-          aria-live="polite"
-          className="max-w-prose text-sm text-muted-foreground"
-        >
-          {/*
-            Mist neutrals, not `--destructive` (Requirement 39.6). An artifact
-            that could not be fetched is not a document that could not be proven,
-            and the token means only the second.
-          */}
-          {failed}
-        </p>
+        <CardFooter>
+          <p
+            data-slot="download-error"
+            aria-live="polite"
+            className="max-w-prose text-sm text-muted-foreground"
+          >
+            {/*
+              Mist neutrals, not `--destructive` (Requirement 39.6). An artifact that
+              could not be fetched is not a document that could not be proven, and the
+              token means only the second.
+            */}
+            {failed}
+          </p>
+        </CardFooter>
       )}
-    </section>
+    </Card>
   )
 }

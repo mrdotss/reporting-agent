@@ -962,6 +962,10 @@ export const MESSAGE_CATALOG = {
     en: "This usually takes 8 to 12 minutes.",
     id: "Proses ini biasanya membutuhkan 8 hingga 12 menit.",
   },
+  "ui.run_progress.path": {
+    en: "Every phase of this run",
+    id: "Setiap tahap proses ini",
+  },
   "ui.run_progress.reconnecting": {
     en: "Reconnecting the live view. The run continues either way — its state is recorded, not streamed.",
     id: "Menghubungkan kembali tampilan langsung. Proses tetap berjalan — statusnya dicatat, bukan dialirkan.",
