@@ -1,3 +1,4 @@
+import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
 
 /**
@@ -97,6 +98,7 @@ const templateDescriptionSchema = z
  */
 export const templateCreateInputSchema = z
   .object({
+    ...scopeInput,
     name: templateNameSchema,
     description: templateDescriptionSchema.optional(),
     definition: z.unknown().optional(),
@@ -120,6 +122,7 @@ export type TemplateCreateInput = z.output<typeof templateCreateInputSchema>
  */
 export const templatePatchInputSchema = z
   .object({
+    expectedRevision: z.number().int().nonnegative().optional(),
     name: templateNameSchema.optional(),
     draftDefinition: z.unknown().optional(),
   })
@@ -143,7 +146,7 @@ export type TemplatePatchInput = z.output<typeof templatePatchInputSchema>
  * "what I am looking at" and "what gets versioned" the same object.
  */
 export const templatePublishInputSchema = z
-  .object({ definition: z.unknown() })
+  .object({ definition: z.unknown(), expectedRevision: z.number().int().nonnegative().optional() })
   .strict()
 
 export type TemplatePublishInput = z.output<typeof templatePublishInputSchema>

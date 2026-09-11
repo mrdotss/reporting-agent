@@ -411,3 +411,23 @@
     font-size: 0.875em;
     margin-block: 0.25em 0;
 }
+/* Reporting workspace: app tokens are deliberately separate from PDF appearance. */
+.workspace-design {
+  --background: #f5f7f7; --foreground: #172c37; --card: #fff; --card-foreground: #172c37;
+  --primary: #177c78; --primary-foreground: #fff; --muted: #edf2f1;
+  --muted-foreground: #61747e; --border: #dfe7e8; --input: #d8e2e3; --ring: #42a59b;
+}
+.dark .workspace-design {
+  --background: #101c24; --foreground: #e8eff0; --card: #182a34; --card-foreground: #e8eff0;
+  --primary: #5ac8b6; --primary-foreground: #102d29; --muted: #223640;
+  --muted-foreground: #a8bbc3; --border: #314650; --input: #37505a; --ring: #5ac8b6;
+}
+.workspace-design :is([data-slot="button"],[data-slot="input"],[data-slot="select-trigger"],[data-slot="textarea"]){border-radius:8px}
+.workspace-design :is([data-slot="input"],[data-slot="select-trigger"]){border:1px solid var(--input);background:var(--card)}
+.workspace-design [data-slot="card"]{border-radius:12px;box-shadow:none;border:1px solid var(--border);background:var(--card)}
+.workspace-design h1{font-size:clamp(1.5rem,2.1vw,1.875rem);line-height:1.2;letter-spacing:-.045em;font-weight:600}
+.workspace-design h2{letter-spacing:-.02em}
+.workspace-design #app-content>div{max-width:100%}
+@media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+.workspace-design .workspace-selector[data-slot="select-trigger"] { background: #1e3946; border-color: #41606d; color: #fff; }

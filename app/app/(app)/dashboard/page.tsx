@@ -1,3 +1,5 @@
+import { WorkspaceOverview } from "@/components/workspaces/overview"
+import { workspaceUiEnabled } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import {
@@ -9,7 +11,7 @@ import {
 import { RunList } from "@/components/reports/run-list"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { requireSession } from "@/lib/auth/guard"
 import { resolveRunExtrasBatch } from "@/lib/runs/detail"
@@ -148,6 +150,7 @@ function SubscriptionHealth({
 
 export default async function DashboardPage() {
   const user = await requireSession()
+  if (workspaceUiEnabled()) return <WorkspaceOverview userId={user.id} />
 
   const [runs, subscriptions] = await Promise.all([
     listOwnedRuns(user.id),
@@ -219,9 +222,13 @@ export default async function DashboardPage() {
           </div>
 
           <div className="flex justify-start">
-            <Button variant="outline" render={<Link href="/subscriptions" />}>
+            <Link
+              data-slot="button"
+              href="/subscriptions"
+              className={buttonVariants({ variant: "outline" })}
+            >
               Rotate a secret
-            </Button>
+            </Link>
           </div>
         </section>
       )}
@@ -288,10 +295,14 @@ export default async function DashboardPage() {
               verified.
             </p>
 
-            <Button render={<Link href="/subscriptions/new" />}>
+            <Link
+              data-slot="button"
+              href="/subscriptions/new"
+              className={buttonVariants()}
+            >
               <PlusIcon aria-hidden="true" />
               Connect a subscription
-            </Button>
+            </Link>
           </div>
         ) : (
           <ul

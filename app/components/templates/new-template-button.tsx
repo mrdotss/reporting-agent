@@ -1,4 +1,6 @@
 "use client"
+import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-shell"
+import { can } from "@/lib/workspaces/policy"
 
 import { useCallback, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -32,7 +34,7 @@ import type { TemplateView } from "@/lib/db/views"
  * itself rather than being handed one that might not be that profile's.
  */
 
-const DEFAULT_NAME = "Untitled template"
+const DEFAULT_NAME = "Untitled report profile"
 
 type CreateResponse = {
   readonly template?: TemplateView
@@ -40,7 +42,7 @@ type CreateResponse = {
 }
 
 export function NewTemplateButton({
-  label = "New template",
+  label = "New profile",
   icon = true,
   className,
 }: Readonly<{
@@ -48,6 +50,8 @@ export function NewTemplateButton({
   icon?: boolean
   className?: string
 }> = {}) {
+  const workspace = useWorkspace()
+  const scope = useCreationScope()
   const router = useRouter()
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -61,7 +65,7 @@ export function NewTemplateButton({
       const response = await fetch("/api/report-profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: DEFAULT_NAME }),
+        body: JSON.stringify({ name: DEFAULT_NAME, ...scope }),
       })
 
       const body = (await response.json()) as CreateResponse
@@ -77,11 +81,11 @@ export function NewTemplateButton({
     } finally {
       setCreating(false)
     }
-  }, [creating, router])
+  }, [creating, router, scope])
 
   return (
     <div className={className ?? "flex flex-col items-end gap-1"}>
-      <Button type="button" onClick={create} disabled={creating}>
+      <Button type="button" onClick={create} disabled={creating || (!!workspace && (!workspace.projectId || workspace.archived || !can(workspace.role,"edit")))}>
         {icon ? <PlusIcon aria-hidden="true" /> : null}
         {creating ? "Creating…" : label}
       </Button>

@@ -1,3 +1,4 @@
+import { getConnectedSubscription } from "@/lib/subscriptions/store"
 import { currentDisplayFormat } from "@/lib/templates/current-format"
 import { after } from "next/server"
 
@@ -158,7 +159,9 @@ export async function POST(
     // Ownership of the template, first and scoped — a preview against somebody
     // else's template id resolves as not found, indistinguishably from an id
     // that exists for nobody (Requirement 1.5).
-    await getTemplate(user.id, params.data.id)
+    const profile = await getTemplate(user.id, params.data.id)
+    const source = await getConnectedSubscription(user.id, parsed.data.connectedSubscriptionId)
+    if (profile.workspaceId !== source.workspaceId || profile.projectId !== source.projectId) return notFound()
   } catch (thrown) {
     if (thrown instanceof TemplateNotFoundError) return notFound()
     throw thrown
@@ -182,13 +185,13 @@ export async function POST(
   }
 
   const previewId = newPreviewId()
-  const pdfKey = previewKey(user.id, previewId)
+  const pdfKey = previewKey(snapshotRun.actorId, previewId)
 
   try {
     const stream = await invokeAgentRuntime({
       sessionId: newSessionId(),
       context: {
-        actor_id: user.id,
+        actor_id: snapshotRun.actorId,
         run_id: previewId,
       },
       command: {
@@ -222,7 +225,7 @@ export async function POST(
       )
     }
 
-    const presigned = await presignPreview(user.id, pdfKey)
+    const presigned = await presignPreview(snapshotRun.actorId, pdfKey)
 
     // Requirement 13.5's cleanup, after the response. The two objects of *this*
     // preview are kept — they are what the panel is about to fetch — and the

@@ -190,7 +190,8 @@ export function checkProviderImmutable(
 export async function publishTemplateVersion(
   userId: string,
   templateId: string,
-  definition: unknown
+  definition: unknown,
+  expectedRevision?: number
 ): Promise<ReportTemplateVersion> {
   const shapeIssues = collectDefinitionIssues(definition, { mode: "run" })
   if (shapeIssues.length > 0) throw new TemplateInvalidError(shapeIssues)
@@ -253,6 +254,7 @@ export async function publishTemplateVersion(
   )
 
   return await store.insertVersion(userId, templateId, {
+    expectedRevision,
     definition: resolvedDefinition,
     definitionSha256: definitionSha256(
       resolvedDefinition as Parameters<typeof definitionSha256>[0]

@@ -1,3 +1,4 @@
+import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
 import { RequestReportDialog } from "@/components/reports/request-report-dialog"
@@ -73,6 +74,7 @@ export default async function ReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }>) {
   const user = await requireSession()
+  const projectScope = await selectedFilter(user.id)
 
   // The filters live in the URL so the server can read them — this page's list
   // pages and filters in SQL, and a filter held in client state could only ever
@@ -85,6 +87,7 @@ export default async function ReportsPage({
   const page = readPage(typeof params.page === "string" ? params.page : undefined)
 
   const query: RunListQuery = {
+    ...projectScope,
     statuses: STATUS_GROUPS[group],
     search,
     limit: RUN_PAGE_SIZE,
@@ -99,7 +102,7 @@ export default async function ReportsPage({
   // much *that* chip would show rather than how much the current view holds.
   const [runs, total, counts, subscriptions, templateRows] = await Promise.all([
     listOwnedRuns(user.id, query),
-    countOwnedRuns(user.id, { statuses: STATUS_GROUPS[group], search }),
+    countOwnedRuns(user.id, { ...projectScope, statuses: STATUS_GROUPS[group], search }),
     (async () => {
       const entries = await Promise.all(
         (Object.keys(STATUS_GROUPS) as GroupKey[]).map(
@@ -107,6 +110,7 @@ export default async function ReportsPage({
             [
               key,
               await countOwnedRuns(user.id, {
+                ...projectScope,
                 statuses: STATUS_GROUPS[key],
                 search,
               }),
@@ -115,8 +119,8 @@ export default async function ReportsPage({
       )
       return Object.fromEntries(entries) as Record<GroupKey, number>
     })(),
-    listConnectedSubscriptions(user.id),
-    listTemplates(user.id),
+    listConnectedSubscriptions(user.id, projectScope),
+    listTemplates(user.id, projectScope),
   ])
 
   // The **highest existing** version per template, which is what the enqueue
@@ -148,10 +152,7 @@ export default async function ReportsPage({
         </h1>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          A run collects CPU, memory, disk and network for every resource a
-          template scopes, over the period that template&rsquo;s own rule
-          resolves to, then writes one immutable snapshot. Every figure in the
-          report traces back to a row in that snapshot.
+          Every request, its progress, and the finished customer document.
         </p>
       </div>
 

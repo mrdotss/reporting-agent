@@ -1,0 +1,113 @@
+"use client"
+import { useEffect, useState } from "react"
+import { Button } from "@/components/ui/button"
+import { useWorkspace } from "@/components/workspaces/workspace-shell"
+import { messageText } from "@/lib/messages/catalog"
+type Summary = {
+  connection: string
+  version: number
+  periodStart: string
+  periodEnd: string
+  timezone: string
+  theme: string
+  sections: number | null
+}
+export function RequestSummary({
+  connectionId,
+  templateId,
+  timezone,
+  disabled,
+  submitting,
+}: {
+  connectionId: string
+  templateId: string
+  timezone: string
+  disabled: boolean
+  submitting: boolean
+}) {
+  const workspace = useWorkspace()
+  const [summary, setSummary] = useState<Summary | null>(null),
+    [error, setError] = useState("")
+  useEffect(() => {
+    const controller = new AbortController()
+    if (!connectionId || !templateId) return
+    const q = new URLSearchParams({
+      connectedSubscriptionId: connectionId,
+      templateId,
+      timezone,
+    })
+    fetch(`/api/runs/summary?${q}`, { signal: controller.signal })
+      .then(async (r) => {
+        const b = await r.json()
+        if (!r.ok)
+          throw new Error(
+            b.error?.message ?? "The request summary is unavailable."
+          )
+        if (!controller.signal.aborted) setSummary(b)
+      })
+      .catch((e) => {
+        if (!controller.signal.aborted) setError(e.message)
+      })
+    return () => controller.abort()
+  }, [connectionId, templateId, timezone])
+  return (
+    <aside className="h-fit space-y-5 rounded-xl border bg-card p-6 lg:sticky lg:top-24">
+      <div>
+        <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+          {messageText("ui.request_summary.heading", "en")}
+        </p>
+        <h2 className="mt-3 text-xl font-semibold">
+          {workspace?.projectName ?? "Your report"}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {messageText("ui.request_summary.subheading", "en")}
+        </p>
+      </div>
+      {error ? (
+        <p role="alert" className="text-sm text-destructive">
+          {error}
+        </p>
+      ) : !summary ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          {connectionId && templateId
+            ? "Resolving profile settings…"
+            : "Select a connection and saved profile."}
+        </p>
+      ) : (
+        <dl className="text-sm">
+          {[
+            ["Connection", summary.connection],
+            ["Profile version", String(summary.version)],
+            ["Period", `${summary.periodStart} – ${summary.periodEnd}`],
+            ["Timezone", summary.timezone],
+            ["Theme", summary.theme],
+            [
+              "Sections",
+              summary.sections === null
+                ? "Profile-defined"
+                : String(summary.sections),
+            ],
+            ["Output", "PDF and Word"],
+          ].map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-6 border-t py-3">
+              <dt className="text-muted-foreground">{k}</dt>
+              <dd className="max-w-[65%] text-right font-medium break-words">
+                {v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <Button
+        className="w-full"
+        type="submit"
+        disabled={disabled || !summary || !!error}
+      >
+        {submitting ? "Submitting…" : "Generate report →"}
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        {messageText("ui.request_summary.period_hint", "en")}
+      </p>
+    </aside>
+  )
+}

@@ -538,6 +538,8 @@ describe("the row state type is a projection of report_runs", () => {
     // `ReportRun`, so a column added to the table cannot silently become relay state
     // and a column renamed breaks the build here rather than at runtime.
     const row: ReportRun = {
+    workspaceId: null,
+    projectId: null,
       id: "run-1",
       userId: "user-1",
       connectedSubscriptionId: "sub-1",

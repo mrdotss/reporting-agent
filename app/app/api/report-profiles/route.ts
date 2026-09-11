@@ -1,3 +1,5 @@
+import { notFound } from "@/lib/api/response"
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 import {
   createTemplate,
   publishTemplateVersion,
@@ -98,6 +100,8 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const template = await createTemplate(user.id, {
+      workspaceId: parsed.data.workspaceId,
+      projectId: parsed.data.projectId,
       name: parsed.data.name,
       ...(parsed.data.description === undefined
         ? {}
@@ -113,13 +117,15 @@ export async function POST(request: Request): Promise<Response> {
     const version = await publishTemplateVersion(
       user.id,
       template.id,
-      parsed.data.definition
+      parsed.data.definition,
+      template.draftRevision
     )
 
     return json(201, {
-      template: toTemplateView(template, templateViewCurrentVersion(version)),
+      template: toTemplateView({ ...template, draftRevision: template.draftRevision + 1 }, templateViewCurrentVersion(version)),
     } satisfies CreateResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     if (thrown instanceof TemplateInvalidError)
       return definitionRejected(thrown)
 
@@ -169,6 +175,7 @@ export async function GET(request: Request): Promise<Response> {
 
     return json(200, { templates } satisfies ListResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     console.error(
       `[api/templates] GET failed: ` +
         `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`

@@ -37,13 +37,23 @@ type RawFactEntry = {
   readonly value_kind: string
   readonly source: string
   readonly projectable: boolean
+}
+
+type RawResourceType = {
+  readonly facts: readonly RawFactEntry[]
+  /**
+   * The parent this type is a sub-record of, or absent for a first-class resource.
+   *
+   * On the **resource type**, not on a fact — it was declared on `RawFactEntry` here,
+   * where the field never exists, so every read of it was `undefined` and the one thing
+   * it is for could not be done. `catalog/loader.py`'s `is_child_type` reads it from the
+   * type, and this is the same file.
+   */
   readonly child_of?: string
 }
 
 type RawFactsFile = {
-  readonly resource_types: Readonly<
-    Record<string, { readonly facts: readonly RawFactEntry[] }>
-  >
+  readonly resource_types: Readonly<Record<string, RawResourceType>>
 }
 
 const FACTS_FILE: RawFactsFile = rawFacts as unknown as RawFactsFile
@@ -57,6 +67,25 @@ const FACTS_FILE: RawFactsFile = rawFacts as unknown as RawFactsFile
 export const FACT_ENTRIES: readonly RawFactEntry[] = Object.values(
   FACTS_FILE.resource_types
 ).flatMap((declared) => declared.facts)
+
+/**
+ * The types the catalogue declares as sub-records rather than deployed resources —
+ * case-folded, because ARM type ids are case-insensitive and Resource Graph lower-cases
+ * what the catalogue declares in camel case.
+ *
+ * A snapshot's `resources` list holds three kinds of row: a deployed resource, a
+ * sub-record of one (a subnet, a security rule), and a finding about one
+ * (`Microsoft.Advisor/recommendations`). Only the first is a resource, and counting all
+ * three put "23 resources" and "80 baseline fidelity" in the same provenance panel.
+ *
+ * Mirrors `catalog/loader.py`'s `child_type_names` off the same file, so the two halves
+ * cannot answer differently for one catalogue.
+ */
+export const CHILD_RESOURCE_TYPES: ReadonlySet<string> = new Set(
+  Object.entries(FACTS_FILE.resource_types)
+    .filter(([, declared]) => typeof declared.child_of === "string")
+    .map(([name]) => name.toLowerCase())
+)
 
 /**
  * Which fact sources at least one real entry in `facts.v1.json` actually names (task 6.5).

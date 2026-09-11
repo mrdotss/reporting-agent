@@ -245,3 +245,62 @@ SSE deployments than application timeouts do.
 
 Run `pnpm db:migrate` **before** restarting the app, and both before deploying a
 runtime that depends on either. See the project README's deploy order.
+
+### Rolling out workspaces (migrations 0016 and 0017)
+
+Workspaces, projects and team roles arrive as two additive migrations. `0016` creates
+the tables and adds nullable scope columns; `0017` backfills, validates, then enforces.
+Both run under `pnpm db:migrate` in order.
+
+**What 0017 does, and why it is safe to run before the UI is on.** Every existing user
+gets one owned workspace and one `Imported` project, and every connection, profile, run
+and scan is pointed at them. Row ids, template versions, run relationships, encrypted
+credentials and artifact key prefixes are all preserved — a `<actorId>/` path does not
+move, so historical downloads and snapshot reuse keep working.
+
+The order inside it matters and is not interchangeable:
+
+1. Backfill workspaces, members, projects, then the four scoped tables.
+2. **Validate before enforcing** — it raises rather than reinterpreting if any run's
+   project disagrees with its connection's or its template's. A failed check aborts the
+   transaction and leaves the database as it was.
+3. Swap `connected_subscriptions`' uniqueness from per-user to per-workspace, add the
+   composite `(project_id, workspace_id)` foreign keys, then set the columns `NOT NULL`.
+4. Install `BEFORE INSERT` triggers giving old writers the imported scope, and an
+   `AFTER INSERT` trigger on `users` so a new sign-up gets a workspace before the
+   starter seeding runs.
+
+**The UI is separate from the authorization.** `REPORT_WORKSPACE_UI=1` switches on the
+redesigned shell, the projects and team screens and the new request page. Scoped
+authorization is **always** active — `lib/workspaces/context.ts` says so in one line,
+and the composite foreign keys enforce parentage even for writes that bypass the app.
+So the flag is a presentation rollout, not a security one.
+
+**Verifying the backfill.** After migrating, no row in the four scoped tables should
+carry a null scope, and every user should own exactly one workspace:
+
+```sql
+select 'connections' t, count(*) from connected_subscriptions where workspace_id is null
+union all select 'profiles', count(*) from report_templates where workspace_id is null
+union all select 'runs', count(*) from report_runs where workspace_id is null
+union all select 'scans', count(*) from subscription_scans where workspace_id is null;
+
+select count(*) from users u
+ where (select count(*) from workspace_members m
+         where m.user_id = u.id and m.role = 'owner') <> 1;
+```
+
+Both should return zeros. `NOT NULL` already guarantees the first after a successful
+`0017`; it is worth running anyway on a database that was migrated in stages.
+
+**Rolling back.** Before anyone is invited, `0016`/`0017` can be reverted by dropping
+the triggers, the scope columns and the five tables, and restoring the per-user
+uniqueness constraint. **Once a second member exists in any workspace, that is no longer
+true**: rows created by a teammate have no user to fall back to, so a rollback must keep
+the scope-aware backend and only turn `REPORT_WORKSPACE_UI` off. Check before reverting:
+
+```sql
+select workspace_id, count(*) from workspace_members group by workspace_id having count(*) > 1;
+```
+
+Any row here means roll forward, not back.

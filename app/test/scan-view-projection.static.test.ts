@@ -11,6 +11,8 @@ import { toScanView } from "@/lib/db/views"
  */
 
 const FAKE_SCAN: SubscriptionScan = {
+    workspaceId: null,
+    projectId: null,
   id: "scan-001",
   userId: "user-secret-id",
   connectedSubscriptionId: "sub-001",

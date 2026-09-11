@@ -1,4 +1,7 @@
 "use client"
+import { RequestSummary } from "@/components/reports/request-summary"
+import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-shell"
+import { can } from "@/lib/workspaces/policy"
 
 import { useCallback, useEffect, useId, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -141,6 +144,8 @@ export function RunForm({
    */
   nowIso: string
 }>) {
+  const workspace = useWorkspace()
+  const projectScope = useCreationScope()
   const router = useRouter()
 
   const now = new Date(nowIso)
@@ -290,7 +295,7 @@ export function RunForm({
           // `enqueueRun` — see that function's note. Building it inline is what let
           // the form and the enqueue disagree about v2 in the first place.
           body: JSON.stringify(
-            buildRunCreateBody({
+            {...projectScope, ...buildRunCreateBody({
               connectedSubscriptionId,
               templateId,
               timezone,
@@ -303,7 +308,7 @@ export function RunForm({
                 : null,
               reuseSnapshotRunId:
                 reuse && reusable ? reusable.runId : null,
-            })
+            })}
           ),
         })
 
@@ -357,6 +362,7 @@ export function RunForm({
   }
 
   const canSubmit =
+    (!workspace || (!!workspace.projectId && !workspace.archived && can(workspace.role,"edit"))) &&
     !submitting &&
     connectedSubscriptionId !== "" &&
     templateId !== "" &&
@@ -371,8 +377,9 @@ export function RunForm({
     <form
       data-slot="run-form"
       onSubmit={submit}
-      className="flex flex-col gap-4 rounded-xl border border-border px-4 py-4"
+      className={workspace ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)]" : "flex flex-col gap-4 rounded-xl border border-border px-4 py-4"}
     >
+      <div className={workspace ? "flex flex-col gap-5 rounded-xl border bg-card p-6" : "contents"}>
       <Field>
         <FieldLabel htmlFor={subscriptionFieldId}>{messageText("ui.run_form.subscription_label", "en")}</FieldLabel>
 
@@ -615,7 +622,7 @@ export function RunForm({
         </p>
       )}
 
-      <div className="flex justify-start">
+      <div className={workspace ? "hidden" : "flex justify-start"}>
         <Button type="submit" disabled={!canSubmit}>
           <PlayIcon aria-hidden="true" />
           {submitting ? messageText("ui.run_form.submitting", "en") : messageText("ui.run_form.submit", "en")}
@@ -625,6 +632,8 @@ export function RunForm({
       <p className="text-xs text-muted-foreground">
         {messageText("ui.run_form.duration_hint", "en")}
       </p>
+      </div>
+      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting}/>}
     </form>
   )
 }

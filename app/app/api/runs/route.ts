@@ -1,3 +1,4 @@
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 import { EnqueueRejectedError, enqueueRun } from "@/lib/actions/runs"
 import {
   badRequest,
@@ -94,6 +95,7 @@ export async function POST(request: Request): Promise<Response> {
       run: view,
     } satisfies CreateResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     if (thrown instanceof EnqueueRejectedError) {
       const { rejection } = thrown
 
@@ -194,6 +196,7 @@ export async function GET(): Promise<Response> {
 
     return json(200, { runs } satisfies ListResponseBody)
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     console.error(
       `[api/runs] GET failed: ` +
         `${thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown}`

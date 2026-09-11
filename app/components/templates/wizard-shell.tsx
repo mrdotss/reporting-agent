@@ -114,6 +114,7 @@ type PublishState =
 type PatchResponse = { readonly error?: { readonly message?: string } }
 
 type PublishResponse = {
+  draftRevision?: number
   readonly version?: { readonly version: number }
   readonly created?: boolean
   readonly error?: {
@@ -202,7 +203,7 @@ export function WizardShell({
   // it as the consultant types would drag them backwards the moment an edit
   // briefly invalidated an earlier step.
   const [step, setStep] = useState<WizardStep>(() =>
-    openingStep(initialDefinition ?? EMPTY_DRAFT_V3(template.name))
+    initialDefinition === null ? WIZARD_STEPS[0]! : openingStep(initialDefinition)
   )
 
   const [highestReached, setHighestReached] = useState(step.number)
@@ -236,6 +237,7 @@ export function WizardShell({
   )
 
   /** The latest draft, for a persist that must not capture a stale closure. */
+  const draftRevision = useRef(template.draftRevision ?? 0)
   const latest = useRef(definition)
   useEffect(() => {
     latest.current = definition
@@ -248,7 +250,7 @@ export function WizardShell({
       const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draftDefinition: latest.current }),
+        body: JSON.stringify({ draftDefinition: latest.current, expectedRevision: draftRevision.current }),
       })
 
       if (!response.ok) {
@@ -264,6 +266,8 @@ export function WizardShell({
         return false
       }
 
+      const saved = await response.json()
+      draftRevision.current = saved.template?.draftRevision ?? draftRevision.current
       setSave({ kind: "saved", at: Date.now() })
       return true
     } catch {
@@ -289,9 +293,11 @@ export function WizardShell({
         const response = await fetch(`/api/report-profiles/${template.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name: trimmed }),
+          body: JSON.stringify({ name: trimmed, expectedRevision: draftRevision.current }),
         })
         if (!response.ok) return false
+        const saved = await response.json()
+        draftRevision.current = saved.template?.draftRevision ?? draftRevision.current
         setStoredName(trimmed)
         return true
       } catch {
@@ -401,7 +407,7 @@ export function WizardShell({
       const response = await fetch(`/api/report-profiles/${template.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ definition: latest.current }),
+        body: JSON.stringify({ definition: latest.current, expectedRevision: draftRevision.current }),
       })
 
       const body = (await response.json()) as PublishResponse
@@ -423,6 +429,7 @@ export function WizardShell({
         return
       }
 
+      if (body.draftRevision !== undefined) draftRevision.current = body.draftRevision
       setPublish({
         kind: "published",
         version: body.version.version,

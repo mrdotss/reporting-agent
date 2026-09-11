@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
-import { notFound } from "next/navigation"
+import { notFound, redirect } from "next/navigation"
 
+import { requireProject } from "@/lib/workspaces/access"
+import { can } from "@/lib/workspaces/policy"
 import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView, templateViewCurrentVersion } from "@/lib/db/views"
@@ -64,13 +66,18 @@ export default async function EditTemplatePage({ params }: PageProps) {
   // catch — which swallows an error thrown *during* render into a 404 that has
   // nothing to do with ownership.
   const loaded = await loadTemplate(user.id, id)
+  if (loaded.template.workspaceId && loaded.template.projectId) {
+    const project = await requireProject(user.id, { workspaceId: loaded.template.workspaceId, projectId: loaded.template.projectId })
+    if (!can(project.role, "edit") || project.archived_at) redirect(`/report-profiles/${id}`)
+  }
+
 
   // Requirement 14.7 — resolved here so step 7's action is disabled *with the
   // reason* rather than enabled and then failing. The first active subscription
   // is the default the panel previews against; a chooser for it belongs with the
   // panel, and until then defaulting is better than refusing to offer a preview
   // to a consultant who has exactly one customer connected.
-  const subscriptions = await listConnectedSubscriptions(user.id)
+  const subscriptions = await listConnectedSubscriptions(user.id, { workspaceId: loaded.template.workspaceId ?? undefined, projectId: loaded.template.projectId ?? undefined })
   const previewSubscription =
     subscriptions.find((entry) => entry.status === "active") ?? null
 

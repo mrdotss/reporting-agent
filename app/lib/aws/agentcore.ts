@@ -265,6 +265,8 @@ export type InvokeCommand =
        * them, and the refusal is the backstop rather than the plan.
        */
       snapshot_run_id?: string
+      /** Worker-only, independently resolved from persisted project-scoped runs. */
+      snapshot_source_actors?: Readonly<Record<string, string>>
       /** The revision-history row for the document-control page (Requirement 13.7). */
       revision_history_row?: {
         readonly revision: string

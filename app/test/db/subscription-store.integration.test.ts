@@ -42,6 +42,7 @@ const db = withScratchSchema(import.meta.url)
 
 vi.mock("@/lib/db", () => ({
   getDb: () => currentDb(),
+  getPool: () => db.pool(),
 }))
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
@@ -264,9 +265,11 @@ describe("createConnectedSubscription", () => {
       // A measurement of the customer's own telemetry depth — no secret, and it names no
       // resource — read by the profile wizard to say what a trend can cover.
       "metricsHistorySince",
+      "projectId",
       "scopeVerified",
       "secretExpiresAt",
       "status",
+      "workspaceId",
     ])
 
     expect(view.maskedSubscriptionId).toBe(maskSubscriptionId(SUBSCRIPTION_ID))

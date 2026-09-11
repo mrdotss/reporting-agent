@@ -1,3 +1,5 @@
+import { patchTemplate } from "@/lib/templates/store"
+import { DraftConflictError, WorkspaceAccessError } from "@/lib/workspaces/access"
 import {
   deleteTemplate,
   publishTemplateVersion,
@@ -93,6 +95,7 @@ type ReadResponseBody = {
 type PatchResponseBody = { readonly template: TemplateView }
 
 type PublishResponseBody = {
+  readonly draftRevision?: number
   readonly version: TemplateVersionView
   /**
    * `false` when the submitted digest matched the existing highest version and
@@ -123,7 +126,8 @@ function definitionRejected(thrown: TemplateInvalidError): Response {
 
 /** The one place a thrown store error becomes a status. */
 function storeFailure(operation: string, thrown: unknown): Response {
-  if (thrown instanceof TemplateNotFoundError) return notFound()
+  if (thrown instanceof TemplateNotFoundError || thrown instanceof WorkspaceAccessError) return notFound()
+  if (thrown instanceof DraftConflictError) return conflict(thrown.message, "DRAFT_CONFLICT")
 
   if (thrown instanceof TemplateInvalidError) return definitionRejected(thrown)
 
@@ -222,21 +226,7 @@ export async function PATCH(
   if (!parsed.success) return invalidInput(parsed.error)
 
   try {
-    let template =
-      parsed.data.name === undefined
-        ? await getTemplate(user.id, params.data.id)
-        : await renameTemplate(user.id, params.data.id, parsed.data.name)
-
-    // `in` rather than `!== undefined`: sending `draftDefinition: null` discards
-    // the draft, and omitting the key leaves it alone. The two are different
-    // requests and a truthiness check would collapse them.
-    if ("draftDefinition" in parsed.data) {
-      template = await saveDraft(
-        user.id,
-        params.data.id,
-        parsed.data.draftDefinition
-      )
-    }
+    const template = await patchTemplate(user.id, params.data.id, parsed.data)
 
     const version = (await readLatestVersion(user.id, params.data.id)) ?? null
 
@@ -283,7 +273,8 @@ export async function POST(
     const version = await publishTemplateVersion(
       user.id,
       params.data.id,
-      parsed.data.definition
+      parsed.data.definition,
+      parsed.data.expectedRevision
     )
 
     const created = version.id !== before?.id
@@ -291,6 +282,7 @@ export async function POST(
     return json(created ? 201 : 200, {
       version: toTemplateVersionView(version),
       created,
+      draftRevision: (await getTemplate(user.id, params.data.id)).draftRevision,
     } satisfies PublishResponseBody)
   } catch (thrown) {
     return storeFailure("POST", thrown)

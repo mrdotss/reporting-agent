@@ -37,6 +37,7 @@ const db = withScratchSchema(import.meta.url)
 
 vi.mock("@/lib/db", () => ({
   getDb: () => currentDb(),
+  getPool: () => db.pool(),
 }))
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
@@ -45,7 +46,7 @@ import * as schema from "@/lib/db/schema"
 import {
   createTemplate,
   getTemplate,
-  insertVersion,
+  insertVersion as insertVersionAtRevision,
   listTemplates,
   readLatestVersion,
   readVersion,
@@ -54,6 +55,16 @@ import {
   TemplateVersionNotFoundError,
   type InsertVersionInput,
 } from "@/lib/templates/store"
+
+// Test callers read a revision before publishing, just like the profile editor.
+async function insertVersion(userId: string, templateId: string, input: InsertVersionInput) {
+  const result = await db.query<{ draft_revision: number }>(
+    "select draft_revision from report_templates where id=$1", [templateId]
+  )
+  return insertVersionAtRevision(userId, templateId, {
+    ...input, expectedRevision: result.rows[0]?.draft_revision,
+  })
+}
 
 // --- Wiring ------------------------------------------------------------
 
@@ -382,43 +393,22 @@ describe("insertVersion", () => {
     expect(await allVersionRows()).toEqual([])
   })
 
-  test("Requirement 9.11 — two concurrent saves computing the same next version resolve to one committed row, the loser retried", async () => {
+  test("concurrent publishers cannot silently replace each other's version", async () => {
     const template = await createTemplate(ownerId, { name: "Racing" })
-
-    // Establish version 1 up front, so both concurrent calls below are racing
-    // for version 2 specifically.
-    await insertVersion(
-      ownerId,
-      template.id,
-      versionInput({ schema_version: 1, blocks: ["seed"] })
-    )
-
-    const [a, b] = await Promise.all([
-      insertVersion(
-        ownerId,
-        template.id,
-        versionInput({ schema_version: 1, blocks: ["a"] })
-      ),
-      insertVersion(
-        ownerId,
-        template.id,
-        versionInput({ schema_version: 1, blocks: ["b"] })
-      ),
+    await insertVersion(ownerId, template.id, versionInput({ blocks: ["seed"] }))
+    const results = await Promise.allSettled([
+      insertVersionAtRevision(ownerId, template.id, { ...versionInput({ blocks: ["a"] }), expectedRevision: 1 }),
+      insertVersionAtRevision(ownerId, template.id, { ...versionInput({ blocks: ["b"] }), expectedRevision: 1 }),
     ])
-
-    // Both calls succeeded — the retry settled the loser rather than raising —
-    // and between them they produced exactly one version 2 and one version 3.
-    const versions = [a.version, b.version].sort()
-    expect(versions).toEqual([2, 3])
-    expect(a.id).not.toBe(b.id)
-
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1)
+    const rejected = results.find(r => r.status === "rejected")
+    expect(rejected?.status === "rejected" && rejected.reason.name).toBe("DraftConflictError")
     const rows = await allVersionRows()
-    expect(rows.map((row) => row.version)).toEqual([1, 2, 3])
-
-    // The final `current_version_id` is whichever of the two committed last —
-    // either is a legitimate outcome of the race, but it must be one of them.
-    const finalPointer = (await templateRow(template.id))?.current_version_id
-    expect([a.id, b.id]).toContain(finalPointer)
+    expect(rows.map(row => row.version)).toEqual([1, 2])
+    const committed = results.find(r => r.status === "fulfilled")
+    expect((await templateRow(template.id))?.current_version_id).toBe(
+      committed?.status === "fulfilled" ? committed.value.id : undefined
+    )
   })
 
   test("Requirement 9.3 — no operation issues an UPDATE or a DELETE against an existing version row", async () => {

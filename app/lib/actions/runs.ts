@@ -1,4 +1,6 @@
 import "server-only"
+import { creationScope } from "@/lib/workspaces/context"
+import { accessWhere, WorkspaceAccessError } from "@/lib/workspaces/access"
 
 import { randomUUID } from "node:crypto"
 
@@ -8,6 +10,7 @@ import { z } from "zod"
 import { getDb } from "@/lib/db"
 import {
   connectedSubscriptions,
+  reportTemplates,
   reportRuns,
   type ReportRun,
   type RunErrorCode,
@@ -40,7 +43,8 @@ import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 /**
  * `enqueueRun` — insert one `queued` row and return (Requirement 37).
  *
- * ## Why this module carries `import "server-only"` and not `"use server"`
+ * ## Why this module carries `import "server-only"
+import { creationScope } from "@/lib/workspaces/context"` and not `"use server"`
  *
  * `lib/actions/auth.ts` carries the `"use server"` directive because the login and
  * register forms are `"use client"` leaves that call its exports directly. This
@@ -422,6 +426,10 @@ export async function findReusableSnapshot(
   },
   now: Date = new Date()
 ): Promise<ReportRun | null> {
+  const [pair] = await getDb().select({id:reportTemplates.id}).from(reportTemplates).innerJoin(connectedSubscriptions,
+    and(eq(connectedSubscriptions.id,input.connectedSubscriptionId),eq(connectedSubscriptions.projectId,reportTemplates.projectId),eq(connectedSubscriptions.workspaceId,reportTemplates.workspaceId))
+  ).where(and(eq(reportTemplates.id,input.templateId),accessWhere(reportTemplates,userId),accessWhere(connectedSubscriptions,userId))).limit(1)
+  if (!pair) return null
   const pinned = await readLatestVersion(userId, input.templateId)
   if (pinned === undefined) return null
 
@@ -446,6 +454,7 @@ export async function enqueueRun(
   input: RunCreateInput,
   now: Date = new Date()
 ): Promise<EnqueueResult> {
+  const projectScope = await creationScope(userId, input, "edit")
   // 1 — the subscription, scoped to its owner (Requirements 9.7, 37.9).
   const [subscription] = await getDb()
     .select()
@@ -453,7 +462,7 @@ export async function enqueueRun(
     .where(
       and(
         eq(connectedSubscriptions.id, input.connectedSubscriptionId),
-        eq(connectedSubscriptions.userId, userId)
+        accessWhere(connectedSubscriptions, userId, "edit", projectScope)
       )
     )
     .limit(1)
@@ -639,12 +648,23 @@ export async function enqueueRun(
         }
       : (input.revisionHistoryRow ?? null)
 
+  const [profileScope] = await getDb().select({id: reportTemplates.id}).from(reportTemplates).where(and(
+    eq(reportTemplates.id, input.templateId), accessWhere(reportTemplates, userId, "edit", projectScope),
+  )).limit(1)
+  if (!profileScope) throw new WorkspaceAccessError()
+  if (input.reuseSnapshotRunId) {
+    const [source] = await getDb().select({id: reportRuns.id}).from(reportRuns).where(and(
+      eq(reportRuns.id,input.reuseSnapshotRunId),accessWhere(reportRuns,userId,"read",projectScope),
+    )).limit(1)
+    if (!source) throw new WorkspaceAccessError()
+  }
+
   // 7 — the insert. Derived first, so the values are in hand and the statement is
   //     the only awaited operation left (Requirement 37.2).
   const runId = randomUUID()
 
   const dedupeKey = deriveDedupeKey({
-    userId,
+    userId: projectScope.projectId,
     connectedSubscriptionId: input.connectedSubscriptionId,
     periodStart: period.start,
     periodEnd: period.end,
@@ -660,6 +680,7 @@ export async function enqueueRun(
       .values({
         id: runId,
         userId,
+        ...projectScope,
         connectedSubscriptionId: input.connectedSubscriptionId,
         // Requirement 9.6 — the pin, set on every run this action inserts, and
         // the column `report_runs_template_version_id_ck` requires from the
@@ -712,7 +733,7 @@ export async function enqueueRun(
         .where(
           and(
             eq(reportRuns.dedupeKey, dedupeKey),
-            eq(reportRuns.userId, userId)
+            accessWhere(reportRuns, userId, "edit")
           )
         )
         .limit(1)

@@ -135,6 +135,7 @@ from reporting_agent.progress import ProgressReporter
 from reporting_agent.providers.base import PlainData
 from reporting_agent.redaction import scrub_exception
 from reporting_agent.storage.base import ObjectStore
+from reporting_agent.storage.snapshot_sources import SnapshotSourceStore, snapshot_source_actors
 from reporting_agent.verify import historical as historical_pass
 from reporting_agent.verify.findings import (
     FINDING_REPLAY_HASH_MISMATCH,
@@ -265,6 +266,7 @@ async def run_generate_report(
     # `outcome_from_snapshot` refuses a snapshot whose window or timezone is not this
     # run's, which is the one way reuse could produce a wrong document rather than a
     # stale one.
+    source_actors = snapshot_source_actors(payload.get("snapshot_source_actors"))
     reuse_run_id = str(payload.get("snapshot_run_id") or "")
     if reuse_run_id:
         step = steps.start(
@@ -280,6 +282,7 @@ async def run_generate_report(
         reuse_store = collection_kwargs.get("object_store") or _s3_store(
             artifact_bucket, aws_region
         )
+        reuse_store = SnapshotSourceStore(reuse_store, plan.actor_id, plan.run_id, source_actors)
         document = await reuse_store.get_json(
             _snapshot_key(plan.actor_id, reuse_run_id)
         )
@@ -307,6 +310,8 @@ async def run_generate_report(
         sink.collection = collection.require()
 
     store = collection_kwargs.get("object_store") or _s3_store(artifact_bucket, aws_region)
+
+    store = SnapshotSourceStore(store, plan.actor_id, plan.run_id, source_actors)
 
     # --- historical selection (Req 18.4, 18.8) -----------------------------------------
     # Walk the pinned definition for `historical_trend` blocks, collect their distinct
@@ -384,6 +389,7 @@ async def run_generate_report(
         artifact_bucket=artifact_bucket,
         sink=sink,
         now=now,
+        snapshot_sources=source_actors,
         historical_selections=historical_selections or None,
         historical_source=historical_source,
         front_matter=_resolve_front_matter_config(definition, front_matter_images),
@@ -1155,6 +1161,7 @@ async def _document_phases(
     artifact_bucket: str,
     sink: ReportOutcome,
     now: Callable[[], datetime],
+    snapshot_sources: Mapping[str, str] | None = None,
     historical_selections: Mapping[HistoricalSelectionKey, Selection] | None = None,
     historical_source: _HistoricalSourceFromStore | None = None,
     front_matter: object | None = None,
@@ -1355,7 +1362,7 @@ async def _document_phases(
         ledger_bytes=compiled.ledger.serialize(),
         ast=ast_to_plain(compiled.document),
         prose=_prose_bundle(compiled),
-        historical=_historical_bundle(historical_selections),
+        historical=_historical_bundle(historical_selections, snapshot_sources),
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
@@ -1767,6 +1774,7 @@ def _prose_bundle(compiled: Any) -> dict[str, Any]:
 
 def _historical_bundle(
     selections: Mapping[HistoricalSelectionKey, Selection] | None,
+    snapshot_sources: Mapping[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """`historical.json` — the pinned historical selection, persisted for recompilation.
 
@@ -1776,10 +1784,10 @@ def _historical_bundle(
     not carry. Without this pin, a template using `historical_trend` blocks fails
     re-verification with a ledger mismatch on a correct report.
     """
-    if not selections:
+    if not selections and not snapshot_sources:
         return None
     serialized: dict[str, Any] = {}
-    for (metric, statistic, lookback), selection in selections.items():
+    for (metric, statistic, lookback), selection in (selections or {}).items():
         key_str = f"{metric}|{statistic}|{lookback}"
         serialized[key_str] = {
             "selected": [
@@ -1797,7 +1805,7 @@ def _historical_bundle(
                 for c in selection.selected
             ],
         }
-    return {"schema_version": 1, "selections": serialized}
+    return {"schema_version": 1, "selections": serialized, **({"snapshot_source_actors": dict(snapshot_sources)} if snapshot_sources else {})}
 
 
 # --------------------------------------------------------------------------- #
@@ -2045,6 +2053,8 @@ async def run_verify_report(
     snapshot = await store.get_json(_snapshot_key(actor_id, run_id))
     prose = await _optional_json(store, f"{prefix}prose.json")
     historical_raw = await _optional_json(store, f"{prefix}historical.json")
+    sources = snapshot_source_actors(historical_raw.get("snapshot_source_actors") if isinstance(historical_raw, Mapping) else None)
+    store = SnapshotSourceStore(store, actor_id, run_id, sources)
 
     view = build_snapshot_view(
         snapshot, child_resource_types=_child_resource_types()

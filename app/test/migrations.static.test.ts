@@ -991,6 +991,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "brands",
       "connected_subscriptions",
       "login_attempts",
+      "projects",
       "report_profile_authored_matches",
       "report_runs",
       "report_template_versions",
@@ -999,6 +1000,10 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "sessions",
       "subscription_scans",
       "users",
+      "workspace_audit",
+      "workspace_invitations",
+      "workspace_members",
+      "workspaces",
     ])
 
     expect([...created.types.keys()].sort()).toEqual([
@@ -1012,6 +1017,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "table_style",
       "theme_preset",
       "verification_status",
+      "workspace_role",
     ])
 
     // The audit-trail columns Req 36.8 protects, plus the secret-bearing column

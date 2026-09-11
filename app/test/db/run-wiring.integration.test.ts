@@ -595,7 +595,7 @@ describe("Requirement 37.1 — the enqueue inserts one queued row and returns", 
     // The key is the pure derivation, not a random value.
     expect(row.dedupe_key).toBe(
       deriveDedupeKey({
-        userId,
+        userId: `imported-project-${userId}`,
         connectedSubscriptionId: subscriptionId,
         periodStart: PERIOD.start,
         periodEnd: PERIOD.end,

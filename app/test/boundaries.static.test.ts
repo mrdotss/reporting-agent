@@ -1671,6 +1671,10 @@ const SPEC_PURE_MODULES = [
   path.join("lib", "templates", "blocks.ts"),
   path.join("lib", "templates", "canonical-json.ts"),
   path.join("lib", "templates", "composer.ts"),
+  // Pure on the same terms as `migrate.ts` beside it: it takes a definition and returns
+  // a definition, applying current display defaults to a draft or preview and never to a
+  // stored run. Nothing here reads the environment or opens a connection.
+  path.join("lib", "templates", "current-format.ts"),
   path.join("lib", "templates", "definition.ts"),
   path.join("lib", "templates", "draft.ts"),
   path.join("lib", "templates", "input.ts"),

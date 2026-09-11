@@ -263,28 +263,44 @@ class TestV3SectionWalkReachesAPassingVerification:
             f"the fixture must render at least two machines for this to mean anything, "
             f"got {machines}"
         )
-        # The machines whose charted metric the run actually collected. The fixture answers
-        # a per-resource 403 on CPU for exactly one of them, so this is one fewer than
-        # `machines` — derived from the run's own gaps rather than written as `machines - 1`,
-        # which would pass on a fixture that had stopped creating the gap at all.
+        # One chart per (machine, collected metric) pair.
+        #
+        # **This counted one per machine, and that was right when it was written**: the
+        # section declared `metrics_from: "order_by_metric"`, so the chart plotted the
+        # ordering metric alone however many the profile selected. `17f9569` removed that,
+        # and a machine is now charted on every metric its section selects — which is the
+        # better behaviour and the reason the count moved rather than a regression: this
+        # fixture selects two metrics for two machines and answers a per-resource 403 on
+        # CPU for one of them, so three of the four pairs have data.
+        #
+        # Derived from the run's own gaps and the section's own metric list rather than
+        # written as a literal, so it still means something on a fixture that stops
+        # creating the gap or changes how many metrics it asks for.
         import json as _json
         from reporting_agent.collect.snapshot import snapshot_key
 
         stored = walk.store.get(snapshot_key(ACTOR_ID, RUN_ID))
         assert stored is not None
-        gapped = {
-            gap.get("resource_id")
-            for gap in _json.loads(stored.body)["gaps"]
-            if gap.get("metric") == "Percentage CPU"
+        selected = {
+            entry["metric"]
+            for section in v3_definition()["sections"]
+            for entry in section.get("metrics", [])
         }
-        assert gapped, "the fixture must record a CPU gap for this to mean anything"
-        charted = machines - len(gapped)
+        assert len(selected) >= 2, "the fixture must select more than one metric"
+        gapped_pairs = {
+            (gap.get("resource_id"), gap.get("metric"))
+            for gap in _json.loads(stored.body)["gaps"]
+            if gap.get("metric") in selected and gap.get("resource_id")
+        }
+        assert gapped_pairs, "the fixture must record a metric gap for this to mean anything"
+        charted = machines * len(selected) - len(gapped_pairs)
         assert charted >= 1
 
         inline_shapes = document.inline_shapes
         assert len(inline_shapes) == charted, (
-            f"expected exactly {charted} embedded chart images — one per machine whose "
-            f"charted metric was collected — got {len(inline_shapes)}"
+            f"expected exactly {charted} embedded chart images — one per machine and "
+            f"collected metric, over {machines} machine(s) and {len(selected)} metric(s) "
+            f"less {len(gapped_pairs)} gapped pair(s) — got {len(inline_shapes)}"
         )
 
         # And the machine without one says so, rather than silently having no chart. The

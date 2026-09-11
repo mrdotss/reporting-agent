@@ -11,13 +11,14 @@ import { requireEnv } from "@/lib/env"
 import { deriveProgressToken } from "@/lib/runs/progress-token"
 import type { ClaimedRun } from "@/lib/runs/claim"
 import { failClaimedRun, readRunStatus } from "@/lib/runs/claim"
+import { readSnapshotSources } from "@/lib/runs/snapshot-sources"
 import { fetchHistoricalCandidates } from "@/lib/runs/historical"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 import { readVersionById } from "@/lib/templates/store"
 import {
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
-  getConnectedSubscription,
+  getSubscriptionForRun,
   resolveSubscriptionCredentials,
 } from "@/lib/subscriptions/store"
 import { declaredLanguage, declaredSchemaVersion } from "@/lib/templates/definition"
@@ -303,8 +304,9 @@ export async function startRunInvocation(
   // 1 — the gate (Requirement 39.10).
   let view
   try {
-    view = await getConnectedSubscription(
+    view = await getSubscriptionForRun(
       run.userId,
+      run.id,
       run.connectedSubscriptionId
     )
   } catch (thrown) {
@@ -349,7 +351,8 @@ export async function startRunInvocation(
   try {
     credentials = await resolveSubscriptionCredentials(
       run.userId,
-      run.connectedSubscriptionId
+      run.connectedSubscriptionId,
+      run.id
     )
   } catch (thrown) {
     if (thrown instanceof SubscriptionSecretUnreadableError) {
@@ -468,6 +471,11 @@ export async function startRunInvocation(
     }))
   }
 
+  // Only server-resolved source owners enter the authenticated worker payload.
+  const snapshotSources = run.reuseSnapshotRunId !== null || (historicalCandidates?.length ?? 0) > 0
+    ? await readSnapshotSources(run.userId, run.id, (historicalCandidates ?? []).map(candidate => candidate.id))
+    : undefined
+
   try {
     const started = await startWithin(
       invokeAgentRuntime({
@@ -490,6 +498,7 @@ export async function startRunInvocation(
                 period: { start: run.periodStart, end: run.periodEnd },
                 scope: run.scope,
                 historical_candidates: historicalCandidates,
+                ...(snapshotSources ? { snapshot_source_actors: snapshotSources } : {}),
                 // The per-run front-matter values (Requirement 13.7), read off the
                 // claim rather than re-queried — `run` already holds what `enqueueRun`
                 // required present for this v2-pinned row. `customerName` /

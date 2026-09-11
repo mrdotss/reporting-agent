@@ -86,11 +86,34 @@ function fontButtons() {
   return fonts().getAllByRole("radio")
 }
 
-/** Every preview's resolved face, read off the SVG the card draws. */
+/**
+ * Every preview's resolved face, read out of the SVG the card draws.
+ *
+ * The card used to render an inline `<svg role="img">` carrying `style.fontFamily`, and
+ * this read it off the element. It now renders an `<img>` whose `src` is a data-URI SVG
+ * produced by `renderSVG` — the **same** renderer the agent draws the delivered chart
+ * with, which is the point of the change: the wizard stops approximating what the report
+ * will look like and starts drawing it the same way.
+ *
+ * So the face is no longer an attribute to read; it is inside the encoded document. This
+ * decodes it and asserts the same property the old selector did.
+ */
 function previewFaces(container: HTMLElement): string[] {
-  return [...container.querySelectorAll("svg[role='img']")].map(
-    (svg) => (svg as SVGElement).style.fontFamily
+  return [...container.querySelectorAll("img[src^='data:image/svg+xml']")].map(
+    (img) => {
+      const svg = decodeURIComponent(
+        (img as HTMLImageElement).getAttribute("src")!.split(",").slice(1).join(",")
+      )
+      // `renderSVG` is handed the first family of the stack, unquoted.
+      const match = /font-family="([^"]+)"|font-family:\s*([^;"]+)/.exec(svg)
+      return (match?.[1] ?? match?.[2] ?? "").trim()
+    }
   )
+}
+
+/** The first family of a stack, spelled as `renderSVG` receives it. */
+function head(stack: string): string {
+  return stack.split(",")[0].replaceAll('"', "").trim()
 }
 
 describe("the chart design cards", () => {
@@ -118,13 +141,25 @@ describe("the chart design cards", () => {
     expect(design.accent_color).toBe("#1f6f78")
   })
 
-  it("marks the one style whose preview carries a bitmap", () => {
+  it("marks every style as vector, because none carries a bitmap any more", () => {
+    // **This asserted the opposite, and the opposite was true at the time.** `Soft area`
+    // was flagged because matplotlib drew a gradient ramp as an image and clipped it, so
+    // one style's chart was not vector throughout and somebody choosing on that basis had
+    // no other way to know.
+    //
+    // `4299691` moved chart rendering to the shared ECharts SVG engine and flipped
+    // `soft_area` to `raster: false` with it. Nothing draws a bitmap now. So the claim
+    // worth pinning is the new one — and pinning it is worth doing, because a style that
+    // starts rasterising again is a silent regression in what the PDF contains.
     render(<Harness />)
-    const flagged = styleCards().filter((card) =>
-      within(card).queryByText(/Bitmap/i)
-    )
-    expect(flagged).toHaveLength(1)
-    expect(flagged[0]).toHaveTextContent("Soft area")
+    const cards = styleCards()
+    expect(cards.length).toBe(CHART_STYLES.length)
+    for (const card of cards) {
+      // Exact, not a regex: one card's blurb reads "A soft vector gradient beneath each
+      // line", and a loose match finds the prose instead of the chip.
+      expect(within(card).queryByText("Raster fill")).toBeNull()
+      expect(within(card).queryByText("Vector")).not.toBeNull()
+    }
   })
 })
 
@@ -146,24 +181,31 @@ describe("the chart font", () => {
   })
 
   it("re-draws every style preview in the selected face", () => {
+    // Asserted over the previews that **name** a face rather than over all six.
+    //
+    // The renderer only writes `font-family` where it draws text, and it measures text
+    // through a canvas jsdom does not implement — so a style with no axis labels emits an
+    // SVG carrying no face at all here. Demanding six would be asserting something about
+    // this environment rather than about the component; demanding that every face present
+    // is the selected one, and that some face is present, is the actual claim.
     const { container } = render(<Harness />)
 
-    // The default. Six previews, all in the grotesque stack.
-    const before = previewFaces(container)
-    expect(before).toHaveLength(CHART_STYLES.length)
-    expect(new Set(before)).toEqual(new Set([CHART_FONT_STACKS.grotesque]))
+    const faced = (c: HTMLElement) => previewFaces(c).filter(Boolean)
+
+    const before = faced(container)
+    expect(before.length).toBeGreaterThan(0)
+    expect(new Set(before)).toEqual(new Set([head(CHART_FONT_STACKS.grotesque)]))
 
     fireEvent.click(fonts().getByRole("radio", { name: /Monospace/ }))
+    expect(new Set(faced(container))).toEqual(
+      new Set([head(CHART_FONT_STACKS.monospace)])
+    )
 
-    const after = previewFaces(container)
-    expect(after).toHaveLength(CHART_STYLES.length)
-    expect(new Set(after)).toEqual(new Set([CHART_FONT_STACKS.monospace]))
-
-    // And back, through the third face — so this is the selection driving the previews
+    // And on through the third face — so this is the selection driving the previews
     // rather than one hard-coded branch that happens to move.
     fireEvent.click(fonts().getByRole("radio", { name: /Document/ }))
-    expect(new Set(previewFaces(container))).toEqual(
-      new Set([CHART_FONT_STACKS.document])
+    expect(new Set(faced(container))).toEqual(
+      new Set([head(CHART_FONT_STACKS.document)])
     )
   })
 })

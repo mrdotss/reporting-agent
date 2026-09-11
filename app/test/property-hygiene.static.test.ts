@@ -1306,10 +1306,14 @@ describe("Requirement 25.2 — the breadth property identifiers match the spec",
   ])
 
   test("every declared identifier maps to a registered property", () => {
+    // A type predicate rather than `.filter(Boolean)`: the latter drops the empties at
+    // runtime but does not narrow, so the set stayed `Set<string | undefined>` and every
+    // `DECLARED_IDENTIFIERS.has(id)` below was a type error `tsc` reported and `vitest`,
+    // which does not type-check, ran straight past.
     const registered = new Set(
-      Object.values(ledger.BREADTH_PROPERTIES).map(
-        (d) => d.identifier
-      ).filter(Boolean)
+      Object.values(ledger.BREADTH_PROPERTIES)
+        .map((d) => d.identifier)
+        .filter((identifier): identifier is string => Boolean(identifier))
     )
 
     const missing = [...DECLARED_IDENTIFIERS].filter(

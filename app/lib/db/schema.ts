@@ -37,6 +37,52 @@ import type {
  *     `test/migrations.static.test.ts` enforces that against the generated SQL.
  */
 
+// --- Shared reporting workspaces -------------------------------------------
+export const workspaceRole = pgEnum("workspace_role", ["owner", "admin", "editor", "viewer"])
+
+export const workspaces = pgTable("workspaces", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdBy: text("created_by").notNull().references((): AnyPgColumn => users.id),
+  importedForUserId: text("imported_for_user_id").unique().references((): AnyPgColumn => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+})
+export const workspaceMembers = pgTable("workspace_members", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id),
+  userId: text("user_id").notNull().references((): AnyPgColumn => users.id),
+  role: workspaceRole("role").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique("workspace_members_workspace_user_uq").on(t.workspaceId, t.userId), index("workspace_members_user_idx").on(t.userId)])
+export const projects = pgTable("projects", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [unique("projects_id_workspace_uq").on(t.id, t.workspaceId), index("projects_workspace_idx").on(t.workspaceId)])
+export const workspaceInvitations = pgTable("workspace_invitations", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  role: workspaceRole("role").notNull(),
+  createdBy: text("created_by").notNull().references((): AnyPgColumn => users.id),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedBy: text("accepted_by").references((): AnyPgColumn => users.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [check("workspace_invitation_not_owner", sql`${t.role} <> 'owner'`)])
+export const workspaceAudit = pgTable("workspace_audit", {
+  id: text("id").primaryKey(),
+  workspaceId: text("workspace_id").notNull().references(() => workspaces.id),
+  actorId: text("actor_id").notNull().references((): AnyPgColumn => users.id),
+  action: text("action").notNull(),
+  targetId: text("target_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, t => [index("workspace_audit_workspace_idx").on(t.workspaceId, t.createdAt)])
+
 // --- Enums ------------------------------------------------------------------
 
 /**
@@ -300,6 +346,8 @@ export const connectedSubscriptions = pgTable(
   {
     id: text("id").primaryKey(),
 
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    projectId: text("project_id").references(() => projects.id),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -441,6 +489,8 @@ export const reportRuns = pgTable(
   {
     id: text("id").primaryKey(),
 
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    projectId: text("project_id").references(() => projects.id),
     userId: text("user_id")
       .notNull()
       .references(() => users.id),
@@ -738,6 +788,9 @@ export const reportTemplates = pgTable(
   {
     id: text("id").primaryKey(),
 
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    projectId: text("project_id").references(() => projects.id),
+    draftRevision: integer("draft_revision").notNull().default(0),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -1013,6 +1066,8 @@ export const subscriptionScans = pgTable(
   {
     id: text("id").primaryKey(),
 
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    projectId: text("project_id").references(() => projects.id),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),

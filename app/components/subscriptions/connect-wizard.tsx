@@ -1,4 +1,5 @@
 "use client"
+import { useCreationScope } from "@/components/workspaces/workspace-shell"
 
 import { useCallback, useId, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -243,6 +244,7 @@ type ConnectWizardProps = Readonly<{
 }>
 
 export function ConnectWizard({ explainer, nowIso }: ConnectWizardProps) {
+  const projectScope = useCreationScope()
   const router = useRouter()
 
   const now = useMemo(() => new Date(nowIso), [nowIso])
@@ -430,6 +432,7 @@ export function ConnectWizard({ explainer, nowIso }: ConnectWizardProps) {
 
       try {
         const answer = await postJson(CREATE_ENDPOINT, {
+          ...projectScope,
           displayName: draft.displayName.trim(),
           subscriptionId,
           tenantId: draft.tenantId,

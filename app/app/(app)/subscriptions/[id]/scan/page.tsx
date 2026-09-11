@@ -3,7 +3,8 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { requireSession } from "@/lib/auth/guard"
 import { type MessageId, messageText } from "@/lib/messages/catalog"
 import { groupScanTypes, type ScanGroup } from "@/lib/scans/grouping"
@@ -122,15 +123,17 @@ export default async function ScanPage({ params }: ScanPageProps) {
   return (
     <div className="mx-auto w-full max-w-5xl space-y-8 px-6 py-8">
       <div className="space-y-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          render={<Link href="/subscriptions" />}
-          className="-ml-2"
+        <Link
+          data-slot="button"
+          href="/subscriptions"
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "sm" }),
+            "-ml-2"
+          )}
         >
           <ArrowLeftIcon />
           {subscription.displayName}
-        </Button>
+        </Link>
         <h1 className="font-heading text-xl font-medium tracking-tight">
           {t("ui.scan.heading")}
         </h1>
