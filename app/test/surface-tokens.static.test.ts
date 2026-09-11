@@ -69,6 +69,60 @@ function sourceFiles(dir: string): string[] {
   return found
 }
 
+/**
+ * Text is never faded below its token.
+ *
+ * `text-muted-foreground/70` measures **2.76:1** on a light card and 4.45:1 on a dark
+ * one. Both are below AA, and the asymmetry is why it shipped: an opacity chosen while
+ * looking at the dark theme looks deliberate there and turns to mist in the light one,
+ * which is the theme most people use. The gap list carried four of them and the connect
+ * wizard's step rail carried one at /60, which is 2.32:1.
+ *
+ * The rule is about **text**. An `aria-hidden` icon may fade — it carries no reading —
+ * and so may a border, a ring or a background.
+ */
+const FADED_TEXT = /\btext-(?:muted-)?foreground\/\d+/g
+
+/** Faded text that is allowed, with the reason it is. */
+const FADED_TEXT_ALLOWED = new Map([
+  [
+    "components/reports/run-phases.tsx",
+    "an aria-hidden circle marking a phase not yet reached",
+  ],
+])
+
+describe("no text is faded below its token", () => {
+  test("every faded text utility is either absent or explained", () => {
+    const offenders: string[] = []
+
+    for (const rel of [...sourceFiles("components"), ...sourceFiles("app")]) {
+      // The registry's own primitives are vendored; they are not ours to restyle here.
+      if (rel.startsWith("components/ui/")) continue
+      if (FADED_TEXT_ALLOWED.has(rel)) continue
+
+      const source = readFileSync(path.join(projectRoot, rel), "utf8").replace(
+        COMMENTS,
+        ""
+      )
+      for (const [token] of source.matchAll(FADED_TEXT)) {
+        offenders.push(`${rel}: ${token}`)
+      }
+    }
+
+    expect(offenders).toEqual([])
+  })
+
+  test("the sidebar rail's own faded tokens still clear AA", () => {
+    // The rail is exempt from the rule above because it is a fixed dark navy in both
+    // themes, so its fades were measured against that one ground rather than against a
+    // light card that never appears under them. Measured, not assumed: `#ccd9de` at 60%
+    // over `#122a36` is 4.68:1, and 60% is the lowest the rail uses.
+    expect(contrast(blend("#ccd9de", "#122a36", 0.6), "#122a36")).toBeGreaterThan(
+      4.5
+    )
+  })
+})
+
 describe("rail tokens stay on the rail", () => {
   test("no content component paints itself with the sidebar palette", () => {
     const offenders: string[] = []
@@ -95,3 +149,47 @@ describe("rail tokens stay on the rail", () => {
     }
   })
 })
+
+// --- Measuring ---------------------------------------------------------------
+
+function channel(value: number): number {
+  const c = value / 255
+  return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+}
+
+function parse(hex: string): readonly [number, number, number] {
+  const h = hex.replace("#", "")
+  return [
+    Number.parseInt(h.slice(0, 2), 16),
+    Number.parseInt(h.slice(2, 4), 16),
+    Number.parseInt(h.slice(4, 6), 16),
+  ] as const
+}
+
+function luminance(rgb: readonly [number, number, number]): number {
+  return (
+    0.2126 * channel(rgb[0]) + 0.7152 * channel(rgb[1]) + 0.0722 * channel(rgb[2])
+  )
+}
+
+/** `foreground` at `alpha` composited over an opaque `background`. */
+function blend(
+  foreground: string,
+  background: string,
+  alpha: number
+): readonly [number, number, number] {
+  const f = parse(foreground)
+  const b = parse(background)
+  return [0, 1, 2].map((i) =>
+    Math.round(f[i] * alpha + b[i] * (1 - alpha))
+  ) as unknown as readonly [number, number, number]
+}
+
+function contrast(
+  a: readonly [number, number, number] | string,
+  b: readonly [number, number, number] | string
+): number {
+  const la = luminance(typeof a === "string" ? parse(a) : a)
+  const lb = luminance(typeof b === "string" ? parse(b) : b)
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
+}

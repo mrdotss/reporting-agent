@@ -8,6 +8,7 @@ import {
   OnPremMark,
   type SourceKind,
 } from "@/components/subscriptions/provider-mark"
+import { Badge } from "@/components/ui/badge"
 
 export type { SourceKind }
 
@@ -81,7 +82,13 @@ export function SourcePicker({
         </p>
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-3">
+      {/*
+        One row, not a three-across grid. A grid gives the two sources nobody can pick
+        the same weight as the one they came for, and at this width each card's second
+        line wrapped to three. Stacked, the available source reads first and the other
+        two are visibly a roadmap.
+      */}
+      <ul className="flex flex-col gap-2.5">
         {SOURCES.map((source) => (
           <li key={source.kind}>
             <button
@@ -89,30 +96,26 @@ export function SourcePicker({
               disabled={!source.available}
               onClick={() => onSelect(source.kind)}
               aria-describedby={`source-${source.kind}-state`}
-              className="flex h-full w-full flex-col items-start gap-3 rounded-xl border border-border p-4 text-left transition-colors focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none enabled:hover:border-primary/55 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex w-full items-center gap-4 rounded-xl border border-border px-4 py-3.5 text-left transition-colors focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none enabled:hover:border-primary/55 enabled:hover:bg-primary/3 disabled:cursor-not-allowed disabled:opacity-55"
             >
-              <div className="flex w-full items-center justify-between">
-                {source.mark}
-                <span
-                  id={`source-${source.kind}-state`}
-                  className={
-                    source.available
-                      ? "text-xs font-medium text-cat-5"
-                      : "text-xs text-muted-foreground"
-                  }
-                >
-                  {source.available ? "Available" : "Coming soon"}
-                </span>
-              </div>
+              <span className="shrink-0">{source.mark}</span>
 
-              <div className="flex flex-col gap-1">
+              <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="font-heading text-sm font-medium tracking-tight">
                   {source.name}
                 </span>
                 <span className="text-sm text-muted-foreground">
                   {source.credential}
                 </span>
-              </div>
+              </span>
+
+              <Badge
+                id={`source-${source.kind}-state`}
+                variant={source.available ? "secondary" : "outline"}
+                className="ml-auto shrink-0"
+              >
+                {source.available ? "Available" : "Coming soon"}
+              </Badge>
             </button>
           </li>
         ))}

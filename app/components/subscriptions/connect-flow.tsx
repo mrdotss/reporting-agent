@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { ConnectWizard } from "@/components/subscriptions/connect-wizard"
+import { AzureMark } from "@/components/subscriptions/provider-mark"
 import {
   SourcePicker,
   type SourceKind,
@@ -36,18 +37,21 @@ export function ConnectFlow({
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-border px-4 py-3">
-        <div className="flex flex-col gap-0.5">
-          <span className="font-heading text-sm font-medium tracking-tight">
-            Microsoft Azure
-          </span>
-          <span className="text-sm text-muted-foreground">
-            Service principal, Reader at subscription scope
-          </span>
+    <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+        <div className="flex min-w-0 items-center gap-3">
+          {AzureMark}
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="font-heading text-sm font-medium tracking-tight">
+              Microsoft Azure
+            </span>
+            <span className="text-xs text-muted-foreground">
+              Service principal, Reader at subscription scope
+            </span>
+          </div>
         </div>
 
-        <Button variant="outline" size="sm" onClick={() => setSource(null)}>
+        <Button variant="ghost" size="sm" onClick={() => setSource(null)}>
           <ArrowLeftIcon aria-hidden="true" />
           Change source
         </Button>

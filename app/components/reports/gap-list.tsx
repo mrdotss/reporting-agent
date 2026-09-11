@@ -211,7 +211,7 @@ function MetricNotSelectedSection({
           {summary.typeCounts.map(({ type, count }) => (
             <li key={type} className="font-mono text-xs tabular-nums">
               {type}{" "}
-              <span className="text-muted-foreground/70">
+              <span className="text-muted-foreground">
                 ({count}{" "}
                 {count === 1
                   ? language === "id"
@@ -264,13 +264,13 @@ function InnerGroupList({
                 </>
               ) : null}
               {group.count > 1 ? (
-                <span className="text-muted-foreground/70">
+                <span className="text-muted-foreground">
                   {" "}
                   ×{group.count}
                 </span>
               ) : null}
               {group.range !== null ? (
-                <span className="text-muted-foreground/70">
+                <span className="text-muted-foreground">
                   {" "}
                   ({group.range.from} – {group.range.to})
                 </span>
@@ -285,7 +285,7 @@ function InnerGroupList({
       {overflow ? (
         <p
           data-slot="gap-overflow"
-          className="text-xs text-muted-foreground/70 italic"
+          className="text-xs text-muted-foreground italic"
         >
           {messageText("ui.gap_list.pagination", "en", { shownGroups: String(capped.length), totalGroups: String(innerGroups.length), shownEntries: String(shownEntryCount), totalEntries: String(totalCount) })}
         </p>

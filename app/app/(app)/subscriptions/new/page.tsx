@@ -4,6 +4,7 @@ import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { ConnectFlow } from "@/components/subscriptions/connect-flow"
 import { ReaderRoleExplainer } from "@/components/subscriptions/reader-role-explainer"
+import { Card, CardContent } from "@/components/ui/card"
 
 /**
  * `/subscriptions/new` — the onboarding wizard (Requirements 11.3–11.7, 11.9,
@@ -23,6 +24,14 @@ import { ReaderRoleExplainer } from "@/components/subscriptions/reader-role-expl
  *     `new Date()` read inside a client component differs between the server pass
  *     and hydration, which is a mismatch on any date the copy prints.
  *
+ * ## The long paragraph moved into the rail
+ *
+ * The header used to carry four sentences about how a connection is proved, above
+ * a wizard that then says the same thing in its own first step. A consultant who
+ * arrives here wants to know what they are about to do and roughly how long it
+ * takes; the guarantee belongs next to the control that enforces it, which is
+ * where `ReaderRoleExplainer` already sits.
+ *
  * The route is already guarded: `app/(app)/layout.tsx` calls `requireSession()` on
  * every authenticated render, so this page needs no check of its own and
  * deliberately performs none. It reads no database and holds no secret — the
@@ -41,36 +50,85 @@ export const metadata: Metadata = {
     "subscription scope before the connection is accepted.",
 }
 
+/** What connecting leads to. Three lines, because a consultant asked for four. */
+const JOURNEY = [
+  {
+    title: "Connect the subscription",
+    detail: "Read-only, proved against Azure's own permissions response.",
+  },
+  {
+    title: "Choose resources and metrics",
+    detail: "A scan discovers what the subscription holds.",
+  },
+  {
+    title: "Style and deliver the report",
+    detail: "A saved profile turns the snapshot into a document.",
+  },
+]
+
 export default function NewSubscriptionPage() {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
-      <div className="flex flex-col gap-3">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
+      <header className="flex flex-col gap-3">
         <Link
           href="/subscriptions"
-          className="flex w-fit items-center gap-1.5 rounded-sm text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+          className="flex w-fit items-center gap-1.5 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
         >
           <ArrowLeftIcon aria-hidden="true" className="size-4" />
-          Subscriptions
+          Connections
         </Link>
 
         <div className="flex flex-col gap-1">
-          <h1 className="font-heading text-xl font-medium tracking-tight">
-            Connect a subscription
-          </h1>
-
-          <p className="text-sm text-muted-foreground">
-            Read-only, at subscription scope, and proved before it is saved. A
-            connection is only accepted once Azure&apos;s own permissions
-            response confirms read at the subscription&apos;s scope — never
-            because an inventory query happened to succeed.
+          <h1 className="text-balance">Connect with confidence.</h1>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            A guided setup with a real access check before anything is saved.
           </p>
         </div>
-      </div>
+      </header>
 
-      <ConnectFlow
-        explainer={<ReaderRoleExplainer />}
-        nowIso={new Date().toISOString()}
-      />
+      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,1fr)]">
+        <Card className="min-w-0">
+          <CardContent>
+            <ConnectFlow
+              explainer={<ReaderRoleExplainer />}
+              nowIso={new Date().toISOString()}
+            />
+          </CardContent>
+        </Card>
+
+        <aside
+          aria-label="What happens next"
+          className="flex flex-col gap-4 lg:sticky lg:top-6"
+        >
+          <h2 className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+            What happens next
+          </h2>
+
+          <ol className="flex flex-col">
+            {JOURNEY.map((stage, index) => (
+              <li
+                key={stage.title}
+                className="flex gap-3 border-b border-border py-4 first:pt-0 last:border-b-0"
+              >
+                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="text-sm font-medium">{stage.title}</span>
+                  <span className="text-xs leading-relaxed text-muted-foreground">
+                    {stage.detail}
+                  </span>
+                </span>
+              </li>
+            ))}
+          </ol>
+
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Nothing is stored until Azure confirms read at subscription scope. If
+            it refuses, the wizard says which permission is missing.
+          </p>
+        </aside>
+      </div>
     </div>
   )
 }
