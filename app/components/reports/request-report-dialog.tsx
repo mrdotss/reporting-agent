@@ -7,7 +7,7 @@ import { useState } from "react"
 import { PlayIcon } from "@phosphor-icons/react/ssr"
 
 import { RunForm } from "@/components/reports/run-form"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -41,8 +41,32 @@ export function RequestReportDialog({
   nowIso: string
 }>) {
   const [open, setOpen] = useState(false)
-  const workspace=useWorkspace()
-  if (workspace) return <Button nativeButton={false} disabled={!workspace.projectId || workspace.archived || !can(workspace.role,"edit")} render={<Link href="/reports/new"/>}><PlayIcon/>{messageText("ui.run_table.request", "en")}</Button>
+  const workspace = useWorkspace()
+  if (workspace) {
+    // A link when it can be followed, a real disabled button when it cannot.
+    //
+    // Not one control with a `disabled` prop: `disabled` has no meaning on an anchor, so
+    // the "disabled" form would still be focusable and still navigate. And routing a
+    // navigation through Base UI's button sets `role="button"` on the anchor, which tells
+    // a screen reader this activates something when what it does is go somewhere.
+    // `buttonVariants` gives the same appearance with the element each case actually
+    // wants; `data-slot="button"` is what the workspace stylesheet keys its radius on.
+    const blocked =
+      !workspace.projectId || workspace.archived || !can(workspace.role, "edit")
+    const label = (
+      <>
+        <PlayIcon />
+        {messageText("ui.run_table.request", "en")}
+      </>
+    )
+    return blocked ? (
+      <Button disabled>{label}</Button>
+    ) : (
+      <Link data-slot="button" href="/reports/new" className={buttonVariants()}>
+        {label}
+      </Link>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

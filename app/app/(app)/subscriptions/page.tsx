@@ -4,7 +4,7 @@ import Link from "next/link"
 import { PlusIcon } from "@phosphor-icons/react/ssr"
 
 import { SubscriptionList } from "@/components/subscriptions/subscription-list"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { requireSession } from "@/lib/auth/guard"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 
@@ -54,15 +54,20 @@ export default async function SubscriptionsPage() {
           </h1>
 
           <p className="text-sm text-muted-foreground">
-            Manage customer access, discover resources, and keep connections ready for reporting.
+            Manage customer access, discover resources, and keep connections
+            ready for reporting.
           </p>
         </div>
 
         {subscriptions.length === 0 ? null : (
-          <Button variant="outline" render={<Link href="/subscriptions/new" />}>
+          <Link
+            data-slot="button"
+            href="/subscriptions/new"
+            className={buttonVariants({ variant: "outline" })}
+          >
             <PlusIcon aria-hidden="true" />
             Connect a subscription
-          </Button>
+          </Link>
         )}
       </div>
 

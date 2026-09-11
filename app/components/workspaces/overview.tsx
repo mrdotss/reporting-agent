@@ -4,7 +4,7 @@ import {
   WarningCircleIcon,
   PlugsConnectedIcon,
 } from "@phosphor-icons/react/ssr"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { RunTable } from "@/components/reports/run-table"
 import { selectedContext } from "@/lib/workspaces/context"
@@ -46,10 +46,14 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
           </p>
         </div>
         {project && !project.archivedAt && can(workspace.role, "edit") && (
-          <Button nativeButton={false} render={<Link href="/reports/new" />}>
+          <Link
+            data-slot="button"
+            href="/reports/new"
+            className={buttonVariants()}
+          >
             Request report
             <ArrowRightIcon />
-          </Button>
+          </Link>
         )}
       </div>
       {issues.length > 0 && (
@@ -66,9 +70,13 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
               </p>
             </div>
           </div>
-          <Button nativeButton={false} variant="ghost" render={<Link href="/subscriptions" />}>
+          <Link
+            data-slot="button"
+            href="/subscriptions"
+            className={buttonVariants({ variant: "ghost" })}
+          >
             Review connections →
-          </Button>
+          </Link>
         </div>
       )}
       <div>
@@ -186,9 +194,13 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
             Reuse your customer’s scope, metrics, and document style.
           </p>
         </div>
-        <Button nativeButton={false} variant="outline" render={<Link href="/report-profiles" />}>
+        <Link
+          data-slot="button"
+          href="/report-profiles"
+          className={buttonVariants({ variant: "outline" })}
+        >
           Browse profiles →
-        </Button>
+        </Link>
       </div>
     </div>
   )

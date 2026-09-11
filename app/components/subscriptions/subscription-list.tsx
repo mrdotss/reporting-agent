@@ -10,7 +10,7 @@ import {
 import { RotateSecretDialog } from "@/components/subscriptions/rotate-secret-dialog"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderMark } from "@/components/subscriptions/provider-mark"
 import type { ConnectedSubscriptionView } from "@/lib/db/views"
@@ -213,10 +213,14 @@ export function SubscriptionList({
           </p>
         </div>
 
-        <Button render={<Link href="/subscriptions/new" />}>
+        <Link
+          data-slot="button"
+          href="/subscriptions/new"
+          className={buttonVariants()}
+        >
           <PlusIcon aria-hidden="true" />
           Connect a subscription
-        </Button>
+        </Link>
       </div>
     )
   }
@@ -323,14 +327,17 @@ export function SubscriptionList({
                 */}
                 {view.scopeVerified && state.kind !== "expired" ? (
                   <div>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      render={<Link href={`/subscriptions/${view.id}/scan`} />}
+                    <Link
+                      data-slot="button"
+                      href={`/subscriptions/${view.id}/scan`}
+                      className={buttonVariants({
+                        variant: "outline",
+                        size: "sm",
+                      })}
                     >
                       <MagnifyingGlassIcon aria-hidden="true" />
                       Scan
-                    </Button>
+                    </Link>
                   </div>
                 ) : null}
               </CardContent>
