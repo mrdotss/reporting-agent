@@ -3,6 +3,7 @@
 import { useCallback, useRef, useState } from "react"
 import { FilePdfIcon } from "@phosphor-icons/react"
 
+import { PaperPreview } from "@/components/templates/paper-preview"
 import { Button } from "@/components/ui/button"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { PREVIEW_BUDGET_MS } from "@/lib/templates/input"
@@ -45,6 +46,8 @@ import { PREVIEW_BUDGET_MS } from "@/lib/templates/input"
 
 type PreviewResult = {
   readonly url: string
+  /** The emitter's own page, or `null` when it could not be read. */
+  readonly html: string | null
   readonly snapshotId: string
   readonly periodStart: string
   readonly periodEnd: string
@@ -60,6 +63,7 @@ type Phase =
 
 type PreviewResponse = {
   readonly url?: string
+  readonly html?: string | null
   readonly snapshotId?: string
   readonly periodStart?: string
   readonly periodEnd?: string
@@ -109,21 +113,24 @@ export function RealPreviewPanel({
     setPhase({ kind: "running" })
 
     try {
-      const response = await fetch(`/api/report-profiles/${templateId}/preview`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          connectedSubscriptionId: selectedSubscriptionId,
-          definition,
-          // The object this render replaces. Sent so the server can delete it
-          // after responding rather than before rendering — deleting first
-          // would remove the previous preview at the moment the new one might
-          // fail, leaving this panel with nothing to show.
-          ...(lastPreviewId.current === null
-            ? {}
-            : { supersedes: lastPreviewId.current }),
-        }),
-      })
+      const response = await fetch(
+        `/api/report-profiles/${templateId}/preview`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            connectedSubscriptionId: selectedSubscriptionId,
+            definition,
+            // The object this render replaces. Sent so the server can delete it
+            // after responding rather than before rendering — deleting first
+            // would remove the previous preview at the moment the new one might
+            // fail, leaving this panel with nothing to show.
+            ...(lastPreviewId.current === null
+              ? {}
+              : { supersedes: lastPreviewId.current }),
+          }),
+        }
+      )
 
       const body = (await response.json()) as PreviewResponse
 
@@ -147,6 +154,7 @@ export function RealPreviewPanel({
         kind: "ready",
         result: {
           url: body.url,
+          html: body.html ?? null,
           snapshotId: body.snapshotId ?? "",
           periodStart: body.periodStart ?? "",
           periodEnd: body.periodEnd ?? "",
@@ -167,125 +175,145 @@ export function RealPreviewPanel({
   }, [definition, disabledReason, selectedSubscriptionId, templateId])
 
   return (
-    <section
-      data-slot="real-preview-panel"
-      className="flex flex-col gap-3 rounded-xl border border-border px-4 py-4"
-    >
-      <div className="flex flex-col gap-1">
-        <h3 className="font-heading text-sm font-medium tracking-tight">
-          Render a real preview
-        </h3>
-
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Runs the true rendering path —{" "}
-          <code className="font-mono">python-docx</code> to LibreOffice to{" "}
-          <code className="font-mono">.pdf</code> — against the most recent
-          completed run&rsquo;s snapshot. This is the only place that shows you
-          what the delivered document actually looks like.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Button
-          type="button"
-          onClick={() => void render()}
-          disabled={disabledReason !== null || phase.kind === "running"}
-        >
-          <FilePdfIcon aria-hidden="true" />
-          {phase.kind === "running"
-            ? "Rendering…"
+    <div className="flex flex-col gap-3">
+      {/*
+        The composed page, above the control that produces it.
+        `render/html.py` emitted it from the same AST the `.docx` came from, so this is
+        the composition rather than an approximation of it — which is why it sits here
+        rather than behind the download.
+      */}
+      <PaperPreview
+        html={phase.kind === "ready" ? phase.result.html : null}
+        emptyReason={
+          phase.kind === "running"
+            ? "Rendering the page…"
             : phase.kind === "ready"
-              ? "Render again"
-              : "Render real preview"}
-        </Button>
+              ? "This preview produced a .pdf but no readable page. The document is below."
+              : "Render a preview and the composed page appears here."
+        }
+      />
 
-        {/*
+      <section
+        data-slot="real-preview-panel"
+        className="flex flex-col gap-3 rounded-xl border border-border px-4 py-4"
+      >
+        <div className="flex flex-col gap-1">
+          <h3 className="font-heading text-sm font-medium tracking-tight">
+            Render a real preview
+          </h3>
+
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Runs the true rendering path —{" "}
+            <code className="font-mono">python-docx</code> to LibreOffice to{" "}
+            <code className="font-mono">.pdf</code> — against the most recent
+            completed run&rsquo;s snapshot. This is the only place that shows
+            you what the delivered document actually looks like.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            onClick={() => void render()}
+            disabled={disabledReason !== null || phase.kind === "running"}
+          >
+            <FilePdfIcon aria-hidden="true" />
+            {phase.kind === "running"
+              ? "Rendering…"
+              : phase.kind === "ready"
+                ? "Render again"
+                : "Render real preview"}
+          </Button>
+
+          {/*
           Requirement 14.7 — the reason is beside the disabled control, in text.
           A disabled button with no explanation is a control a consultant presses
           repeatedly.
         */}
-        {disabledReason === null ? null : (
+          {disabledReason === null ? null : (
+            <p
+              data-slot="real-preview-disabled-reason"
+              className="max-w-prose text-xs text-muted-foreground"
+            >
+              {disabledReason}
+            </p>
+          )}
+        </div>
+
+        {phase.kind === "running" ? (
           <p
-            data-slot="real-preview-disabled-reason"
-            className="max-w-prose text-xs text-muted-foreground"
+            data-slot="real-preview-progress"
+            aria-live="polite"
+            className="text-sm text-muted-foreground"
           >
-            {disabledReason}
+            {/* Requirement 14.8 — in progress, said out loud, with the budget named. */}
+            Compiling, rendering and converting. This takes up to{" "}
+            {PREVIEW_BUDGET_MS / 1000} seconds; the preview above stays as it
+            is.
           </p>
-        )}
-      </div>
+        ) : null}
 
-      {phase.kind === "running" ? (
-        <p
-          data-slot="real-preview-progress"
-          aria-live="polite"
-          className="text-sm text-muted-foreground"
-        >
-          {/* Requirement 14.8 — in progress, said out loud, with the budget named. */}
-          Compiling, rendering and converting. This takes up to{" "}
-          {PREVIEW_BUDGET_MS / 1000} seconds; the preview above stays as it is.
-        </p>
-      ) : null}
+        {phase.kind === "failed" ? (
+          <p
+            data-slot="real-preview-error"
+            aria-live="polite"
+            className="max-w-prose text-sm text-destructive"
+          >
+            {phase.message}
+          </p>
+        ) : null}
 
-      {phase.kind === "failed" ? (
-        <p
-          data-slot="real-preview-error"
-          aria-live="polite"
-          className="max-w-prose text-sm text-destructive"
-        >
-          {phase.message}
-        </p>
-      ) : null}
-
-      {phase.kind === "ready" ? (
-        <div className="flex flex-col gap-2">
-          {/*
+        {phase.kind === "ready" ? (
+          <div className="flex flex-col gap-2">
+            {/*
             Requirement 14.10 — the four facts, above the document rather than
             below it, so a consultant who screenshots the page captures them.
           */}
-          <dl
-            data-slot="real-preview-provenance"
-            className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3"
-          >
-            <div className="flex flex-col">
-              <dt className="text-muted-foreground">Snapshot</dt>
-              <dd className="font-mono">
-                {phase.result.snapshotId.slice(0, 12)}
-              </dd>
-            </div>
+            <dl
+              data-slot="real-preview-provenance"
+              className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3"
+            >
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground">Snapshot</dt>
+                <dd className="font-mono">
+                  {phase.result.snapshotId.slice(0, 12)}
+                </dd>
+              </div>
 
-            <div className="flex flex-col">
-              <dt className="text-muted-foreground">Window</dt>
-              <dd className="font-mono tabular-nums">
-                {phase.result.periodStart} to {phase.result.periodEnd} (
-                {phase.result.timezone})
-              </dd>
-            </div>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground">Window</dt>
+                <dd className="font-mono tabular-nums">
+                  {phase.result.periodStart} to {phase.result.periodEnd} (
+                  {phase.result.timezone})
+                </dd>
+              </div>
 
-            <div className="flex flex-col">
-              <dt className="text-muted-foreground">Version compiled</dt>
-              <dd>the draft on screen, unsaved</dd>
-            </div>
-          </dl>
+              <div className="flex flex-col">
+                <dt className="text-muted-foreground">Version compiled</dt>
+                <dd>the draft on screen, unsaved</dd>
+              </div>
+            </dl>
 
-          <p className="max-w-prose text-xs text-muted-foreground">
-            The figures shown are that completed run&rsquo;s. What this
-            demonstrates about the delivered result is{" "}
-            <strong>pagination, table column widths and font metrics</strong>.
-          </p>
+            <p className="max-w-prose text-xs text-muted-foreground">
+              The figures shown are that completed run&rsquo;s. What this
+              demonstrates about the delivered result is{" "}
+              <strong>pagination, table column widths and font metrics</strong>.
+            </p>
 
-          {/*
+            {/*
             Inline (Requirement 14.5), and there is deliberately **no download
             control**: a preview is not a report, and the key it lives under is
             one the report download predicate cannot parse.
           */}
-          <iframe
-            data-slot="real-preview-pdf"
-            src={phase.result.url}
-            title="Rendered preview"
-            className="h-[42rem] w-full rounded-lg border border-border bg-white"
-          />
-        </div>
-      ) : null}
-    </section>
+            <iframe
+              data-slot="real-preview-pdf"
+              src={phase.result.url}
+              title="Rendered preview"
+              className="h-[42rem] w-full rounded-lg border border-border bg-white"
+            />
+          </div>
+        ) : null}
+      </section>
+    </div>
   )
 }
