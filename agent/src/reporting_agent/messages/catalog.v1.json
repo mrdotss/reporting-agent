@@ -917,6 +917,10 @@
       "en": "None of your report profiles has a saved version yet. A report profile gets its first version when the wizard's last step completes.",
       "id": "Belum ada profil laporan Anda yang memiliki versi tersimpan. Profil laporan mendapat versi pertamanya saat langkah terakhir wizard selesai."
     },
+    "ui.run_form.no_version": {
+      "en": "No saved version",
+      "id": "Belum ada versi tersimpan"
+    },
     "ui.run_form.no_templates_hint": {
       "en": "You have no report profiles. The three starters are created with your account; if none is listed, author one in the wizard.",
       "id": "Anda tidak memiliki profil laporan. Tiga profil awal dibuat bersama akun Anda; jika tidak ada yang tercantum, buat satu di wizard."

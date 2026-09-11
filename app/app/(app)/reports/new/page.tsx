@@ -1,18 +1,102 @@
 import Link from "next/link"
 import { notFound } from "next/navigation"
-import { requireSession } from "@/lib/auth/guard"
-import { selectedContext,workspaceUiEnabled } from "@/lib/workspaces/context"
-import { can } from "@/lib/workspaces/policy"
-import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
-import { listTemplates,readLatestVersionForView } from "@/lib/templates/store"
-import { toTemplateView } from "@/lib/db/views"
+import { ArrowLeftIcon, FolderIcon } from "@phosphor-icons/react/ssr"
+
 import { RunForm } from "@/components/reports/run-form"
-export default async function NewReportPage(){
- const user=await requireSession();if(!workspaceUiEnabled())notFound()
- const {workspace,project}=await selectedContext(user.id)
- if(!project||project.archivedAt||!can(workspace.role,"edit"))return <div className="space-y-3"><h1>Select an active customer project.</h1><p className="text-muted-foreground">Report requests require Editor access or higher.</p><Link href="/projects" className="text-primary underline">View projects</Link></div>
- const scope={workspaceId:workspace.id,projectId:project.id}
- const [subscriptions,rows]=await Promise.all([listConnectedSubscriptions(user.id,scope),listTemplates(user.id,scope)])
- const templates=await Promise.all(rows.map(async r=>toTemplateView(r,(await readLatestVersionForView(user.id,r.id))??null)))
- return <div className="space-y-7"><div><Link href="/reports" className="text-sm text-muted-foreground">← All reports</Link><h1 className="mt-4">Prepare your next report.</h1><p className="mt-2 text-sm text-muted-foreground">Choose a saved profile and review its period, scope, and document settings.</p></div><RunForm subscriptions={subscriptions} templates={templates} nowIso={new Date().toISOString()}/></div>
+import { buttonVariants } from "@/components/ui/button"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
+import { requireSession } from "@/lib/auth/guard"
+import { toTemplateView } from "@/lib/db/views"
+import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
+import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
+import { selectedContext, workspaceUiEnabled } from "@/lib/workspaces/context"
+import { can } from "@/lib/workspaces/policy"
+
+/**
+ * `/reports/new` — request a report against a saved profile.
+ *
+ * Two selects and a read-only summary of what the profile will print. There are
+ * deliberately no date fields: the period is a **rule** the profile declares and it
+ * resolves at the moment the run is enqueued, so a pair of dates here would be a
+ * different report from the one the profile describes.
+ */
+
+export default async function NewReportPage() {
+  const user = await requireSession()
+  if (!workspaceUiEnabled()) notFound()
+
+  const { workspace, project } = await selectedContext(user.id)
+
+  if (!project || project.archivedAt || !can(workspace.role, "edit")) {
+    return (
+      <Empty className="mx-auto max-w-lg py-16">
+        <EmptyHeader>
+          <EmptyMedia variant="icon">
+            <FolderIcon />
+          </EmptyMedia>
+          <EmptyTitle>Select an active customer project</EmptyTitle>
+          <EmptyDescription>
+            Requesting a report needs an unarchived project and Editor access or
+            higher.
+          </EmptyDescription>
+        </EmptyHeader>
+        <EmptyContent>
+          <Link href="/projects" className={buttonVariants({ variant: "outline" })}>
+            View projects
+          </Link>
+        </EmptyContent>
+      </Empty>
+    )
+  }
+
+  const scope = { workspaceId: workspace.id, projectId: project.id }
+
+  const [subscriptions, rows] = await Promise.all([
+    listConnectedSubscriptions(user.id, scope),
+    listTemplates(user.id, scope),
+  ])
+
+  const templates = await Promise.all(
+    rows.map(async (row) =>
+      toTemplateView(
+        row,
+        (await readLatestVersionForView(user.id, row.id)) ?? null
+      )
+    )
+  )
+
+  return (
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-col gap-3">
+        <Link
+          href="/reports"
+          className="flex w-fit items-center gap-1.5 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+        >
+          <ArrowLeftIcon aria-hidden="true" className="size-4" />
+          All reports
+        </Link>
+
+        <div className="flex flex-col gap-1">
+          <h1 className="text-balance">Prepare your next report.</h1>
+          <p className="max-w-prose text-sm text-muted-foreground">
+            Choose a connection and a saved profile. The profile decides the
+            period, the scope and the document.
+          </p>
+        </div>
+      </header>
+
+      <RunForm
+        subscriptions={subscriptions}
+        templates={templates}
+        nowIso={new Date().toISOString()}
+      />
+    </div>
+  )
 }

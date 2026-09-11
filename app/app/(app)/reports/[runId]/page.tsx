@@ -218,7 +218,7 @@ export default async function RunPage({ params }: RunPageProps) {
 
           {run.status === "completed" ? (
             <Card data-slot="snapshot-card">
-              <CardHeader className="pb-0">
+              <CardHeader>
                 <CardTitle className="font-heading text-sm font-medium tracking-tight">
                   Snapshot
                 </CardTitle>

@@ -10,6 +10,13 @@ import { PlayIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import type {
   ConnectedSubscriptionView,
   RunView,
@@ -373,6 +380,10 @@ export function RunForm({
     // missing.
     (!requiresFrontMatter || frontMatterComplete)
 
+  // Resolved once: it does not vary per option, and the literal guard wants message ids
+  // reaching `messageText` on one line rather than wrapped across four inside a map.
+  const noVersionLabel = messageText("ui.run_form.no_version", "en") ?? ""
+
   return (
     <form
       data-slot="run-form"
@@ -384,35 +395,53 @@ export function RunForm({
         <FieldLabel htmlFor={subscriptionFieldId}>{messageText("ui.run_form.subscription_label", "en")}</FieldLabel>
 
         {/*
-          A native `<select>` styled to match `Input`. The registry's Select is not in
-          this app yet, and adding a primitive is a separate decision from shipping this
-          screen — a native select is keyboard-accessible, works without JavaScript for
-          the value it holds, and needs no focus management.
+          The registry's Select rather than a native one. A native `<select>` paints its
+          own popup from the OS, so its options ignored every token this app declares and
+          inverted on a theme change — the one control on the page whose colours were not
+          ours. This is also where the option can carry two lines: the connection's name
+          and, under it, the reason it cannot be chosen.
         */}
-        <select
-          id={subscriptionFieldId}
+        <Select
           value={connectedSubscriptionId}
-          onChange={(event) => setConnectedSubscriptionId(event.target.value)}
-          className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+          onValueChange={(value) => value && setConnectedSubscriptionId(value)}
         >
-          {subscriptions.map((subscription) => {
-            const reason = blockedReason(subscription, now)
+          <SelectTrigger
+            id={subscriptionFieldId}
+            className="w-full"
+            aria-label={
+              messageText("ui.run_form.subscription_label", "en") ?? undefined
+            }
+          >
+            <SelectValue />
+          </SelectTrigger>
 
-            return (
-              <option
-                key={subscription.id}
-                value={subscription.id}
-                disabled={reason !== null}
-              >
-                {subscription.displayName}
-                {" — "}
-                {subscription.maskedSubscriptionId}
-                {/* Disabled *and* the reason, so the control never just refuses. */}
-                {reason === null ? "" : ` (unavailable: ${reason})`}
-              </option>
-            )
-          })}
-        </select>
+          <SelectContent>
+            {subscriptions.map((subscription) => {
+              const reason = blockedReason(subscription, now)
+
+              return (
+                <SelectItem
+                  key={subscription.id}
+                  value={subscription.id}
+                  disabled={reason !== null}
+                >
+                  <span className="flex flex-col gap-0.5">
+                    <span>{subscription.displayName}</span>
+                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                      {subscription.maskedSubscriptionId}
+                    </span>
+                    {/* Disabled *and* the reason, so the control never just refuses. */}
+                    {reason === null ? null : (
+                      <span className="text-xs text-muted-foreground">
+                        {reason}
+                      </span>
+                    )}
+                  </span>
+                </SelectItem>
+              )
+            })}
+          </SelectContent>
+        </Select>
 
         {selectable.length === 0 ? (
           <FieldDescription>
@@ -424,25 +453,39 @@ export function RunForm({
       <Field>
         <FieldLabel htmlFor={templateFieldId}>{messageText("ui.run_form.template_label", "en")}</FieldLabel>
 
-        <select
-          id={templateFieldId}
+        <Select
           value={templateId}
-          onChange={(event) => setTemplateId(event.target.value)}
-          className="h-9 w-full rounded-lg border border-input bg-transparent px-3 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+          onValueChange={(value) => value && setTemplateId(value)}
         >
-          {templates.map((template) => (
-            <option
-              key={template.id}
-              value={template.id}
-              disabled={template.currentVersion === null}
-            >
-              {template.name}
-              {template.currentVersion === null
-                ? " (unavailable: no saved version yet)"
-                : ` — version ${template.currentVersion}`}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger
+            id={templateFieldId}
+            className="w-full"
+            aria-label={
+              messageText("ui.run_form.template_label", "en") ?? undefined
+            }
+          >
+            <SelectValue />
+          </SelectTrigger>
+
+          <SelectContent>
+            {templates.map((template) => (
+              <SelectItem
+                key={template.id}
+                value={template.id}
+                disabled={template.currentVersion === null}
+              >
+                <span className="flex flex-col gap-0.5">
+                  <span>{template.name}</span>
+                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                    {template.currentVersion === null
+                      ? noVersionLabel
+                      : `v${template.currentVersion}`}
+                  </span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
 
         {templates.length === 0 ? (
           <FieldDescription>

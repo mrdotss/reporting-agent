@@ -79,7 +79,7 @@ export function RequestDetails({
 
   return (
     <Card data-slot="request-details">
-      <CardHeader className="pb-0">
+      <CardHeader>
         <CardTitle className="font-heading text-sm font-medium tracking-tight">
           {messageText("ui.request_details.heading", "en")}
         </CardTitle>

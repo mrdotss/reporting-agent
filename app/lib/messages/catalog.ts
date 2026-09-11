@@ -1102,6 +1102,10 @@ export const MESSAGE_CATALOG = {
     en: "None of your report profiles has a saved version yet. A report profile gets its first version when the wizard's last step completes.",
     id: "Belum ada profil laporan Anda yang memiliki versi tersimpan. Profil laporan mendapat versi pertamanya saat langkah terakhir wizard selesai.",
   },
+  "ui.run_form.no_version": {
+    en: "No saved version",
+    id: "Belum ada versi tersimpan",
+  },
   "ui.run_form.pinned_version_hint": {
     en: "Pins version {version}",
     id: "Menggunakan versi {version}",

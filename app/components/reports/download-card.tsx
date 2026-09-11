@@ -126,7 +126,7 @@ export function DownloadCard({
       // surface would make the accent mean "panel" rather than "this is ready".
       className="border-primary/25 bg-primary/4"
     >
-      <CardHeader className="pb-0">
+      <CardHeader>
         <CardTitle className="font-heading text-sm font-medium tracking-tight">
           {messageText("ui.download.heading", "en")}
         </CardTitle>
