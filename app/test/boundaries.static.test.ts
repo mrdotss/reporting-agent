@@ -1661,7 +1661,6 @@ const SPEC_SERVER_ONLY_MODULES = [
   // saved. Marked for the fetch as much as for the write: it is the one module that
   // requests an address a user typed, and a client component must not be able to name it.
   path.join("lib", "templates", "logo.ts"),
-  path.join("lib", "templates", "preview.ts"),
   path.join("lib", "templates", "seed.ts"),
   path.join("lib", "templates", "theme-thumbnails.ts"),
 ] as const
@@ -1762,20 +1761,18 @@ describe("Requirement 6.1 — the template and verification stores are server-on
 // --- Group B: the handlers this spec added ---------------------------------
 
 /**
- * Requirement 6.7 for the four handlers this spec adds.
+ * Requirement 6.7 for the handlers this spec adds.
  *
  * The rule above already asserts the declaration for **every** `app/**\/route.ts`,
  * which covers these by construction — so this group is not a second rule, it is
  * the anchor for that one. "Every handler declares it" is also what a listing
- * that stopped finding these four would report, and each of them is long-running
- * in a way that makes the edge runtime specifically wrong: the preview handler
- * drives a real `.docx` → `.pdf` render, the verification callback writes run
- * state, and the two template handlers open a Postgres connection.
+ * that stopped finding them would report, and each is long-running in a way that
+ * makes the edge runtime specifically wrong: the verification callback writes run
+ * state, and the template handlers open a Postgres connection.
  */
 const SPEC_ROUTE_HANDLERS = [
   path.join("app", "api", "templates", "route.ts"),
   path.join("app", "api", "templates", "[id]", "route.ts"),
-  path.join("app", "api", "templates", "[id]", "preview", "route.ts"),
   path.join("app", "api", "templates", "catalog", "route.ts"),
   path.join(
     "app",
@@ -1852,10 +1849,10 @@ describe("Requirements 43.2, 43.3 — exactly two artifact-key segments", () => 
     "raw",
     "",
   ])("a %s key does not", (segment) => {
-    // `previews` is the one that matters: a preview is written under
-    // `<actor>/previews/<previewId>/preview.pdf` and served inline by a route with
-    // its own key template, so the download path is structurally unable to serve
-    // one. The case variants are here because S3 keys are byte strings and
+    // `previews` is the one that matters: the bucket has held that prefix before and
+    // may again, and the download path is structurally unable to serve one whether or
+    // not anything is writing them today. The case variants are here because S3 keys
+    // are byte strings and
     // case-folding here would authorize against a key the writer never wrote.
     expect(parseArtifactKey(`alice/${segment}/run-1/artifact.bin`)).toBeNull()
   })

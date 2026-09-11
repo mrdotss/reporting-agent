@@ -1,5 +1,7 @@
 "use client"
 
+import { CaretRightIcon } from "@phosphor-icons/react"
+
 import { ActivityTimeline } from "@/components/reports/activity-timeline"
 import { GapList } from "@/components/reports/gap-list"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
@@ -105,10 +107,33 @@ export function RunProgress({
         The path first, then what the agent has reported inside it. The timeline alone
         left a reader a minute into a twelve-minute run with one line and no way to tell
         a run that is starting from one that is stuck.
-      */}
-      <RunPhases status={run.status} />
 
-      <ActivityTimeline steps={steps} />
+        Once the run is finished the path has served its purpose: seven rows all reading
+        "Complete" is the least informative thing on the page, and it sat above the gaps
+        and the downloads. It is kept, behind a summary — a reader auditing a delivered
+        report still wants to see that every phase ran.
+      */}
+      {finished ? (
+        <details data-slot="run-path" className="group">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-sm text-muted-foreground">
+            <CaretRightIcon
+              aria-hidden="true"
+              className="size-3.5 shrink-0 transition-transform group-open:rotate-90"
+            />
+            {messageText("ui.run_progress.path", "en")}
+          </summary>
+
+          <div className="mt-2">
+            <RunPhases status={run.status} />
+          </div>
+        </details>
+      ) : (
+        <>
+          <RunPhases status={run.status} />
+
+          <ActivityTimeline steps={steps} />
+        </>
+      )}
 
       {finished ? (
         <section className="flex flex-col gap-3">

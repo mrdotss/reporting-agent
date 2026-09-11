@@ -962,6 +962,10 @@ export const MESSAGE_CATALOG = {
     en: "This usually takes 8 to 12 minutes.",
     id: "Proses ini biasanya membutuhkan 8 hingga 12 menit.",
   },
+  "ui.run_progress.path": {
+    en: "Every phase of this run",
+    id: "Setiap tahap proses ini",
+  },
   "ui.run_progress.reconnecting": {
     en: "Reconnecting the live view. The run continues either way — its state is recorded, not streamed.",
     id: "Menghubungkan kembali tampilan langsung. Proses tetap berjalan — statusnya dicatat, bukan dialirkan.",
@@ -1097,6 +1101,10 @@ export const MESSAGE_CATALOG = {
   "ui.run_form.no_template_versions_hint": {
     en: "None of your report profiles has a saved version yet. A report profile gets its first version when the wizard's last step completes.",
     id: "Belum ada profil laporan Anda yang memiliki versi tersimpan. Profil laporan mendapat versi pertamanya saat langkah terakhir wizard selesai.",
+  },
+  "ui.run_form.no_version": {
+    en: "No saved version",
+    id: "Belum ada versi tersimpan",
   },
   "ui.run_form.pinned_version_hint": {
     en: "Pins version {version}",

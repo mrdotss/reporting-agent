@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react"
 
 import type {
@@ -290,33 +291,60 @@ describe("RunForm — a v1 template answers for no page it does not have", () =>
   })
 })
 
+/**
+ * Choose a report profile from the registry Select.
+ *
+ * The control used to be a native `<select>`, which a test drove with one
+ * `fireEvent.change`. It is a button plus a portalled listbox now — the native popup
+ * painted its own colours from the OS and inverted on a theme change, which is the one
+ * thing this app's palette could not reach. Driving it the way a person does is also
+ * the only way to find out that the listbox actually opens.
+ */
+function chooseProfile(name: string) {
+  fireEvent.click(screen.getByLabelText("Report profile"))
+
+  // Matched on the option's own name line, exactly. `textContent.includes` would
+  // resolve "Monthly utilization" to whichever of the two profiles React rendered
+  // first, and the whole point of these tests is which one is selected.
+  const option = screen
+    .getAllByRole("option")
+    .find((element) => within(element).queryByText(name) !== null)
+
+  if (option === undefined) {
+    throw new Error(`No profile option whose name is exactly "${name}"`)
+  }
+
+  // Committed with Enter rather than a click. The listbox opens and the options are in
+  // the tree either way, but a synthetic `click` on one is not what the control listens
+  // for — it commits on a real pointer sequence that jsdom does not produce, and on the
+  // keyboard. Enter on the focused option is a path a person actually uses, and it is
+  // the one that works here.
+  fireEvent.keyDown(option, { key: "Enter" })
+}
+
 describe("RunForm — changing the selected template", () => {
   test("v1 to v2 reveals the inputs, and back hides them", () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Report profile")
-
     expect(screen.queryByLabelText("Revision")).toBeNull()
 
-    fireEvent.change(select, { target: { value: "tmpl-v2" } })
+    chooseProfile(V2.name)
     expect(screen.getByLabelText("Revision")).toBeTruthy()
 
-    fireEvent.change(select, { target: { value: "tmpl-v1" } })
+    chooseProfile(V1.name)
     expect(screen.queryByLabelText("Revision")).toBeNull()
   })
 
   test("switching to v1 after filling the fields sends a v1 body, not a stale v2 one", async () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Report profile")
-
-    fireEvent.change(select, { target: { value: "tmpl-v2" } })
+    chooseProfile(V2.name)
     fillFrontMatter()
 
     // The values are deliberately retained in state so a consultant who looks away
     // does not lose their typing. What must not happen is them *travelling* on a run
     // whose template has no front matter to print them on.
-    fireEvent.change(select, { target: { value: "tmpl-v1" } })
+    chooseProfile(V1.name)
     fireEvent.click(submitButton())
 
     await waitFor(() => expect(bodies).toHaveLength(1))
@@ -328,13 +356,11 @@ describe("RunForm — changing the selected template", () => {
   test("switching back to v2 keeps the typed values rather than clearing them", () => {
     renderForm([V1, V2])
 
-    const select = screen.getByLabelText("Report profile")
-
-    fireEvent.change(select, { target: { value: "tmpl-v2" } })
+    chooseProfile(V2.name)
     fillFrontMatter({ revision: "1.0" })
 
-    fireEvent.change(select, { target: { value: "tmpl-v1" } })
-    fireEvent.change(select, { target: { value: "tmpl-v2" } })
+    chooseProfile(V1.name)
+    chooseProfile(V2.name)
 
     expect(
       (screen.getByLabelText("Revision") as HTMLInputElement).value

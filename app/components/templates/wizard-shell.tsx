@@ -18,7 +18,6 @@ import { StepAppearance } from "@/components/templates/step-appearance"
 import { StepDocument } from "@/components/templates/step-document"
 import { StepPeriod } from "@/components/templates/step-period"
 import { DocumentPreview } from "@/components/templates/document-preview"
-import { RealPreviewPanel } from "@/components/templates/real-preview-panel"
 import { StepPreview } from "@/components/templates/step-preview"
 import {
   StepSections,
@@ -135,8 +134,6 @@ export function WizardShell({
   catalog,
   thumbnails,
   sectionCatalogue,
-  previewSubscriptionId,
-  hasCompletedRun,
   scanTypeCounts,
   metricsHistorySince,
   collectedFactSources,
@@ -157,16 +154,6 @@ export function WizardShell({
   thumbnails: readonly ThemeThumbnail[]
   /** The section catalogue, resolved server-side (sections.ts is server-only). */
   sectionCatalogue: readonly SectionCatalogueEntry[]
-  /**
-   * The subscription a real preview renders against, and whether one can be
-   * rendered at all (Requirements 14.5, 14.7).
-   *
-   * Both resolved on the server: "is there a completed run for this
-   * subscription" is a query, and Requirement 14.7 wants the action disabled
-   * with the reason *before* a consultant presses it rather than after it fails.
-   */
-  previewSubscriptionId: string | null
-  hasCompletedRun: boolean
   /**
    * The most recent scan's `type_counts`, for `StepSections`'s offerability gate
    * (task 6.5, Req 15.9, 16.1-16.3). `undefined` means no scan to check
@@ -472,8 +459,6 @@ export function WizardShell({
     sectionCatalogue,
     problems,
     templateId: template.id,
-    previewSubscriptionId,
-    hasCompletedRun,
     storedName,
     identitySave,
     saveIdentityStep,
@@ -623,24 +608,11 @@ export function WizardShell({
       {showsPreview ? (
         <aside
           aria-label="Document preview"
-          className="flex w-full shrink-0 flex-col gap-4 lg:sticky lg:top-6 lg:w-[26rem]"
+          className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[26rem]"
         >
-          {/*
-            The sample first, because it always has something to show — the theme, the
-            page proportion, the table rules and the consultant's own section list, over
-            declared sample figures. The real render is beneath it, closed, because it
-            needs a completed run and twenty seconds of server time.
-          */}
           <DocumentPreview
             definition={definition}
             sectionCatalogue={sectionCatalogue}
-          />
-
-          <RealPreviewPanel
-            templateId={template.id}
-            definition={definition}
-            selectedSubscriptionId={previewSubscriptionId}
-            hasCompletedRun={hasCompletedRun}
           />
         </aside>
       ) : null}
@@ -824,8 +796,6 @@ function renderStep({
   sectionCatalogue,
   problems,
   templateId,
-  previewSubscriptionId,
-  hasCompletedRun,
   storedName,
   identitySave,
   saveIdentityStep,
@@ -842,8 +812,6 @@ function renderStep({
   sectionCatalogue: readonly SectionCatalogueEntry[]
   problems: ReturnType<typeof completionProblems>
   templateId: string
-  previewSubscriptionId: string | null
-  hasCompletedRun: boolean
   storedName: string
   identitySave: IdentitySaveResult
   saveIdentityStep: () => void

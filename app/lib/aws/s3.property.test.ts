@@ -2,11 +2,9 @@ import fc from "fast-check"
 import { describe, expect, test } from "vitest"
 
 import {
-  ARTIFACT_SEGMENT_PREVIEWS,
   DOWNLOADABLE_SEGMENTS,
   keyBelongsToActor,
   parseArtifactKey,
-  previewBelongsToActor,
 } from "@/lib/aws/s3"
 
 /**
@@ -230,22 +228,20 @@ describe("Property 12 — the second segment is one of exactly two", () => {
   })
 
   test("`previews` in particular is refused by the report path", () => {
-    // Requirement 43.3 stated as its own case rather than left to the generator:
-    // this is the segment the product actually writes, so it is the one a future
-    // widening would plausibly add.
+    // Stated as its own case rather than left to the generator. The bucket has held
+    // a `previews/` prefix before — the wizard's real-render canvas wrote one — and
+    // could again, so it is the segment a future widening would most plausibly add.
+    // The download path refuses it on the shape of the key, not on whether anything
+    // happens to be writing one this week.
     fc.assert(
       fc.property(
         actorId,
         fc.stringMatching(/^[A-Za-z0-9_-]{1,12}$/),
         (id, pv) => {
-          const key = `${id}/${ARTIFACT_SEGMENT_PREVIEWS}/${pv}/preview.pdf`
+          const key = `${id}/previews/${pv}/preview.pdf`
 
           expect(keyBelongsToActor(id, key)).toBe(false)
           expect(parseArtifactKey(key)).toBeNull()
-
-          // And the preview predicate admits it, so the two key spaces are
-          // genuinely disjoint rather than both closed.
-          expect(previewBelongsToActor(id, key)).toBe(true)
         }
       ),
       { numRuns: 200 }

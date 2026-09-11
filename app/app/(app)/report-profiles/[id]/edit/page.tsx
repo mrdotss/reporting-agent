@@ -10,7 +10,6 @@ import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { AZURE_SECTIONS } from "@/lib/profiles/sections"
 import { COLLECTED_FACT_SOURCES } from "@/lib/profiles/facts"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
-import { mostRecentSnapshotRun } from "@/lib/templates/preview"
 import { readLatestScan } from "@/lib/scans/store"
 import { readTypeCounts } from "@/lib/scans/view"
 import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
@@ -72,25 +71,16 @@ export default async function EditTemplatePage({ params }: PageProps) {
   }
 
 
-  // Requirement 14.7 — resolved here so step 7's action is disabled *with the
-  // reason* rather than enabled and then failing. The first active subscription
-  // is the default the panel previews against; a chooser for it belongs with the
-  // panel, and until then defaulting is better than refusing to offer a preview
-  // to a consultant who has exactly one customer connected.
+  // The first active subscription: what the section list's offerability gate and the
+  // Lookback hint both read from. A profile is not tied to a connection — one is chosen
+  // when a report is run — so this is a default for *describing* what is connected, never
+  // a constraint on what the profile may declare.
   const subscriptions = await listConnectedSubscriptions(user.id, { workspaceId: loaded.template.workspaceId ?? undefined, projectId: loaded.template.projectId ?? undefined })
   const previewSubscription =
     subscriptions.find((entry) => entry.status === "active") ?? null
 
-  const snapshotRun =
-    previewSubscription === null
-      ? null
-      : await mostRecentSnapshotRun(user.id, previewSubscription.id)
-
-  // Task 6.5 (Req 15.9, 16.1-16.3) — the most recent scan for the same
-  // subscription the preview panel already defaults to, so the section list's
-  // offerability gate and the preview panel agree on which subscription's data
-  // they are both reading. `null` (no subscription, or no scan yet) means every
-  // section renders offerable, unchanged from before this task.
+  // The most recent scan for that subscription. `null` (no subscription, or no scan
+  // yet) means every section renders offerable.
   const latestScan =
     previewSubscription === null
       ? null
@@ -110,14 +100,10 @@ export default async function EditTemplatePage({ params }: PageProps) {
       catalog={METRIC_CATALOG}
       sectionCatalogue={AZURE_SECTIONS}
       thumbnails={themeThumbnails()}
-      previewSubscriptionId={previewSubscription?.id ?? null}
-      hasCompletedRun={snapshotRun !== null}
       scanTypeCounts={scanTypeCounts}
       collectedFactSources={COLLECTED_FACT_SOURCES}
-      // The preview subscription's, on the same reasoning as `scanTypeCounts` above: a
-      // profile is not tied to a connection, so this is the depth of the one the preview
-      // panel already defaults to. It tells the Lookback control what to say, not what to
-      // allow.
+      // On the same reasoning as `scanTypeCounts` above: the depth of the connection this
+      // page defaults to, which tells the Lookback control what to say, not what to allow.
       metricsHistorySince={previewSubscription?.metricsHistorySince ?? null}
     />
   )

@@ -540,32 +540,34 @@ export function ConnectWizard({ explainer, nowIso }: ConnectWizardProps) {
         step is reachable by completing the one before it, and a jump to step 3
         would skip the id that steps 2 and 3 both depend on.
       */}
-      <nav aria-label="Connection steps">
-        <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+      <nav aria-label="Connection steps" className="border-b border-border">
+        <ol className="-mb-px flex flex-wrap items-center gap-x-5 gap-y-1 text-sm">
           {STEP_KEYS.map((key, index) => {
             const done = index < currentIndex
             const current = index === currentIndex
 
             return (
-              <li key={key} className="flex items-center gap-2">
+              <li key={key}>
                 <span
                   aria-current={current ? "step" : undefined}
                   className={cn(
-                    "flex items-center gap-1.5 rounded-4xl px-2.5 py-1",
-                    current && "bg-primary/10 font-medium text-foreground",
-                    done && "text-muted-foreground",
-                    !current && !done && "text-muted-foreground/70"
+                    // Underlined rather than pill-and-slash. Four pills separated by
+                    // slashes read as one crowded string at this size; a tab rail gives
+                    // the current step a baseline the eye can find without colour alone.
+                    "flex items-center gap-2 border-b-2 py-2.5",
+                    // A step still ahead is distinguished by weight and by the absence
+                    // of an underline, never by fading the text: `muted-foreground/60`
+                    // measures 2.32:1 on a light card, which is a label nobody can read
+                    // and one that looks fine in dark mode, where it was written.
+                    current && "border-primary font-medium text-foreground",
+                    !current && "border-transparent text-muted-foreground"
                   )}
                 >
-                  <span className="font-mono tabular-nums">{index + 1}</span>
+                  <span className="font-mono text-xs tabular-nums">
+                    {index + 1}
+                  </span>
                   {STEP_LABELS[key]}
                 </span>
-
-                {index < STEP_KEYS.length - 1 ? (
-                  <span aria-hidden="true" className="text-border">
-                    /
-                  </span>
-                ) : null}
               </li>
             )
           })}
