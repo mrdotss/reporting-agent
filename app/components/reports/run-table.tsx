@@ -12,6 +12,7 @@ import {
 import type { ConnectedSubscriptionView, RunView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
 import { periodLine } from "@/lib/runs/presentation"
+import { cn } from "@/lib/utils"
 
 /**
  * The run history, as a table (task 2.2).
@@ -44,8 +45,8 @@ import { periodLine } from "@/lib/runs/presentation"
  * declares the width it earns its place at, and the two that always render are the two
  * you came for — which report, and how it went.
  *
- * `variant="compact"` is the dashboard's: four columns at most, because that surface is
- * a summary with a "View all" link under it, not the history.
+ * `variant="compact"` is the dashboard's: four columns at most, and a tighter row, because
+ * that surface is a summary with a "View all" link under it, not the history.
  */
 
 function subscriptionName(
@@ -81,25 +82,34 @@ export function RunTable({
   const gapsAt = "hidden sm:table-cell"
   const startedAt = compact ? "hidden" : "hidden xl:table-cell"
 
+  // Compact trims the row to what a summary needs. `p-3` on every cell against a
+  // three-line profile stack made each row 76px tall, so five runs filled a screen.
+  const headCell = compact ? "h-8 px-0 first:pl-0 last:pr-0" : ""
+  const bodyCell = compact ? "py-2.5 px-0 first:pl-0 last:pr-0" : ""
+
   return (
     <Table aria-label={messageText("ui.run_list.aria_label", "en") ?? undefined}>
       <TableHeader>
         <TableRow>
-          <TableHead>{messageText("ui.run_table.profile", "en")}</TableHead>
-          <TableHead className={connectionAt}>
+          <TableHead className={headCell}>
+            {messageText("ui.run_table.profile", "en")}
+          </TableHead>
+          <TableHead className={cn(connectionAt, headCell)}>
             {messageText("ui.run_table.connection", "en")}
           </TableHead>
-          <TableHead>{messageText("ui.run_list.period", "en")}</TableHead>
-          <TableHead className={`w-24 text-right ${resourcesAt}`}>
+          <TableHead className={headCell}>
+            {messageText("ui.run_list.period", "en")}
+          </TableHead>
+          <TableHead className={cn("w-24 text-right", resourcesAt, headCell)}>
             {messageText("ui.run_list.resources", "en")}
           </TableHead>
-          <TableHead className={`w-20 text-right ${gapsAt}`}>
+          <TableHead className={cn("w-20 text-right", gapsAt, headCell)}>
             {messageText("ui.run_list.gaps", "en")}
           </TableHead>
-          <TableHead className={`w-40 ${startedAt}`}>
+          <TableHead className={cn("w-40", startedAt, headCell)}>
             {messageText("ui.run_list.started", "en")}
           </TableHead>
-          <TableHead className="w-28 text-right">
+          <TableHead className={cn("w-28 text-right", headCell)}>
             {messageText("ui.run_table.status", "en")}
           </TableHead>
         </TableRow>
@@ -108,7 +118,7 @@ export function RunTable({
       <TableBody>
         {runs.map((run) => (
           <TableRow key={run.id} data-slot="run-row" data-run-status={run.status}>
-            <TableCell>
+            <TableCell className={bodyCell}>
               <Link
                 href={`/reports/${run.id}`}
                 className="rounded-lg font-medium underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
@@ -134,20 +144,20 @@ export function RunTable({
               )}
             </TableCell>
 
-            <TableCell className={`text-sm text-muted-foreground ${connectionAt}`}>
+            <TableCell className={cn("text-sm text-muted-foreground", connectionAt, bodyCell)}>
               {subscriptionName(run, byId)}
             </TableCell>
 
             {/* The zone travels with the dates: "July" means July there. */}
-            <TableCell className="font-mono text-xs tabular-nums">
+            <TableCell className={cn("font-mono text-xs tabular-nums", bodyCell)}>
               {periodLine(run)}
             </TableCell>
 
-            <TableCell className={`text-right font-mono tabular-nums ${resourcesAt}`}>
+            <TableCell className={cn("text-right font-mono tabular-nums", resourcesAt, bodyCell)}>
               {run.resourceCount ?? "—"}
             </TableCell>
 
-            <TableCell className={`text-right font-mono tabular-nums ${gapsAt}`}>
+            <TableCell className={cn("text-right font-mono tabular-nums", gapsAt, bodyCell)}>
               {run.gapCount ?? "—"}
             </TableCell>
 
@@ -156,14 +166,14 @@ export function RunTable({
               locale-formatted: a locale format differs between the server pass
               and the browser, which on a list that re-renders would flicker.
             */}
-            <TableCell className={`font-mono text-xs tabular-nums ${startedAt}`}>
+            <TableCell className={cn("font-mono text-xs tabular-nums", startedAt, bodyCell)}>
               {run.createdAt.slice(0, 16).replace("T", " ")}
               <span className="ml-1 text-muted-foreground">
                 {messageText("ui.run_list.utc_suffix", "en")}
               </span>
             </TableCell>
 
-            <TableCell className="text-right">
+            <TableCell className={cn("text-right", bodyCell)}>
               <RunStatusBadge status={run.status} />
             </TableCell>
           </TableRow>

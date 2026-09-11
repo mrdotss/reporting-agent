@@ -12,14 +12,6 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardAction,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import {
   Empty,
   EmptyContent,
   EmptyDescription,
@@ -163,193 +155,193 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
       ) : null}
 
       {/*
-        `divide-*` rather than `border-r` on each cell. The old set put a right border on
-        every figure including the last of each row, so the 2-column phone layout showed
-        a rule down the middle and a second one hanging off the right edge.
+        No card. Four figures on the page ground, separated by hairlines — a box around a
+        box around a number is two containers more than the number needs, and the ring
+        plus the internal rules read as a table with a frame.
+
+        `divide-x` rather than a right border on each cell: a border on every figure put
+        a rule down the middle of the 2-column phone layout and a second one hanging off
+        the right edge.
       */}
-      <Card>
-        <CardContent className="grid grid-cols-2 gap-px bg-border p-px sm:grid-cols-4">
-          {figures.map(({ label, value, alarming }) => (
-            <div
-              key={label}
-              data-slot="dashboard-figure"
-              className="flex flex-col gap-1.5 bg-card px-5 py-5"
+      <dl
+        data-slot="dashboard-figures"
+        className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border sm:grid-cols-4 sm:divide-y-0"
+      >
+        {figures.map(({ label, value, alarming }) => (
+          <div
+            key={label}
+            data-slot="dashboard-figure"
+            className="flex flex-col gap-2 px-5 py-6 first:pl-0 sm:last:pr-0"
+          >
+            <dt className="text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
+              {label}
+            </dt>
+            <dd
+              data-slot="dashboard-stat"
+              className={cn(
+                "font-mono text-[2rem] leading-none font-medium tracking-tight tabular-nums",
+                alarming && "text-destructive"
+              )}
             >
-              <p className="text-[11px] tracking-wider text-muted-foreground uppercase">
-                {label}
-              </p>
-              <p
-                data-slot="dashboard-stat"
-                className={cn(
-                  "font-mono text-3xl leading-none font-medium tracking-tight tabular-nums",
-                  alarming && "text-destructive"
-                )}
-              >
-                {value}
-              </p>
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
 
-      <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1.85fr)_minmax(280px,1fr)]">
-        <Card className="min-w-0">
-          <CardHeader>
-            <CardTitle>Recent reports</CardTitle>
-            <CardAction className="self-center">
-              <Link
-                href="/reports"
-                className="rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
-              >
-                View all
-              </Link>
-            </CardAction>
-          </CardHeader>
+      <div className="grid items-start gap-10 xl:grid-cols-[minmax(0,1.9fr)_minmax(260px,1fr)] xl:gap-12">
+        {/*
+          A section, not a card. The rows already carry their own hairlines, so a border
+          around them is a second frame drawn over the first — and it is what made this
+          block read as heavier than the page it summarises.
+        */}
+        <section className="flex min-w-0 flex-col gap-4">
+          <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+            <h2 className="text-sm font-medium">Recent reports</h2>
+            <Link
+              href="/reports"
+              className="rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              View all
+            </Link>
+          </div>
 
-          <CardContent className="min-w-0 px-0">
-            {runs.length === 0 ? (
-              <Empty className="py-8">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <FileTextIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>No reports yet</EmptyTitle>
-                  <EmptyDescription>
-                    A report profile plus a connected subscription is everything
-                    a run needs.
-                  </EmptyDescription>
-                </EmptyHeader>
-                {canRequest ? (
-                  <EmptyContent>
-                    <Link
-                      href="/reports/new"
-                      className={buttonVariants({ variant: "outline" })}
-                    >
-                      Request your first report
-                    </Link>
-                  </EmptyContent>
-                ) : null}
-              </Empty>
-            ) : (
-              <RunTable
-                variant="compact"
-                runs={runs.map((run) =>
-                  toRunView(run, extras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
-                )}
-                subscriptions={subscriptions}
-              />
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Connection health</CardTitle>
-            {subscriptions.length === 0 ? null : (
-              <CardAction className="self-center">
-                <Badge variant="secondary" className="tabular-nums">
-                  {subscriptions.length}
-                </Badge>
-              </CardAction>
-            )}
-          </CardHeader>
-
-          <CardContent>
-            {subscriptions.length === 0 ? (
-              <Empty className="py-4">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <PlugsConnectedIcon />
-                  </EmptyMedia>
-                  <EmptyTitle>Nothing connected</EmptyTitle>
-                  <EmptyDescription>
-                    Connect a subscription to discover what it holds.
-                  </EmptyDescription>
-                </EmptyHeader>
+          {runs.length === 0 ? (
+            <Empty className="py-10">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <FileTextIcon />
+                </EmptyMedia>
+                <EmptyTitle>No reports yet</EmptyTitle>
+                <EmptyDescription>
+                  A report profile plus a connected subscription is everything a
+                  run needs.
+                </EmptyDescription>
+              </EmptyHeader>
+              {canRequest ? (
                 <EmptyContent>
                   <Link
-                    href="/subscriptions/new"
+                    href="/reports/new"
                     className={buttonVariants({ variant: "outline" })}
                   >
-                    Connect a source
+                    Request your first report
                   </Link>
                 </EmptyContent>
-              </Empty>
-            ) : (
-              <ul className="flex flex-col">
-                {states.slice(0, HEALTH_ROW_COUNT).map(({ subscription, state }) => (
-                  <li
-                    key={subscription.id}
-                    data-slot="subscription-health"
-                    data-state={state.kind}
-                    className="flex items-start justify-between gap-3 border-b border-border py-3 first:pt-0 last:border-b-0 last:pb-0"
-                  >
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <p className="truncate text-sm font-medium">
-                        {subscription.displayName}
-                      </p>
-                      <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
-                        {subscription.maskedSubscriptionId}
-                      </p>
-                    </div>
+              ) : null}
+            </Empty>
+          ) : (
+            <RunTable
+              variant="compact"
+              runs={runs.map((run) =>
+                toRunView(run, extras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
+              )}
+              subscriptions={subscriptions}
+            />
+          )}
+        </section>
 
-                    <Badge
-                      variant={
-                        state.kind === "active"
-                          ? "secondary"
-                          : state.kind === "expiring"
-                            ? "outline"
-                            : "destructive"
-                      }
-                      className="shrink-0"
-                    >
-                      {state.kind === "active"
-                        ? "Connected"
-                        : state.kind === "expiring"
-                          ? `${state.wholeDaysRemaining}d left`
-                          : state.kind}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+        <section className="flex flex-col gap-4">
+          <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
+            <h2 className="text-sm font-medium">Connection health</h2>
+            {subscriptions.length === 0 ? null : (
+              <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                {subscriptions.length}
+              </span>
             )}
-          </CardContent>
+          </div>
 
-          {subscriptions.length === 0 ? null : (
-            <CardFooter>
+          {subscriptions.length === 0 ? (
+            <Empty className="py-6">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <PlugsConnectedIcon />
+                </EmptyMedia>
+                <EmptyTitle>Nothing connected</EmptyTitle>
+                <EmptyDescription>
+                  Connect a subscription to discover what it holds.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Link
+                  href="/subscriptions/new"
+                  className={buttonVariants({ variant: "outline" })}
+                >
+                  Connect a source
+                </Link>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <>
+              <ul className="flex flex-col">
+                {states
+                  .slice(0, HEALTH_ROW_COUNT)
+                  .map(({ subscription, state }) => (
+                    <li
+                      key={subscription.id}
+                      data-slot="subscription-health"
+                      data-state={state.kind}
+                      className="flex items-start justify-between gap-3 border-b border-border py-3 last:border-b-0"
+                    >
+                      <div className="flex min-w-0 flex-col gap-0.5">
+                        <p className="truncate text-sm font-medium">
+                          {subscription.displayName}
+                        </p>
+                        <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
+                          {subscription.maskedSubscriptionId}
+                        </p>
+                      </div>
+
+                      <Badge
+                        variant={
+                          state.kind === "active"
+                            ? "secondary"
+                            : state.kind === "expiring"
+                              ? "outline"
+                              : "destructive"
+                        }
+                        className="shrink-0"
+                      >
+                        {state.kind === "active"
+                          ? "Connected"
+                          : state.kind === "expiring"
+                            ? `${state.wholeDaysRemaining}d left`
+                            : state.kind}
+                      </Badge>
+                    </li>
+                  ))}
+              </ul>
+
               <Link
                 href="/subscriptions"
-                className="flex items-center gap-1 rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+                className="flex w-fit items-center gap-1 rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
               >
                 Manage connections
                 <ArrowUpRightIcon className="size-3.5" />
               </Link>
-            </CardFooter>
+            </>
           )}
-        </Card>
+        </section>
       </div>
 
-      <Card className="border-primary/25 bg-primary/4">
-        <CardContent className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 flex-col gap-1">
-            <h2 className="text-base font-semibold">
-              A good report starts with a good profile.
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Reuse your customer&rsquo;s scope, metrics, and document style.
-            </p>
-          </div>
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">
+        <div className="flex min-w-0 flex-col gap-1">
+          <h2 className="text-sm font-medium">
+            A good report starts with a good profile.
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Reuse your customer&rsquo;s scope, metrics, and document style.
+          </p>
+        </div>
 
-          <Link
-            data-slot="button"
-            href="/report-profiles"
-            className={buttonVariants({ variant: "outline" })}
-          >
-            Browse profiles
-            <ArrowRightIcon />
-          </Link>
-        </CardContent>
-      </Card>
+        <Link
+          data-slot="button"
+          href="/report-profiles"
+          className={buttonVariants({ variant: "outline" })}
+        >
+          Browse profiles
+          <ArrowRightIcon />
+        </Link>
+      </div>
     </div>
   )
 }

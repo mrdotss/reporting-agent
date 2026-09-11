@@ -297,22 +297,25 @@ export function DocumentPreview({
         away and there is no control that hides it. What makes this panel safe is that a
         consultant never has to work out whether the figures are theirs.
       */}
-      <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-xs font-medium tracking-[0.14em] text-muted-foreground uppercase">
-          Design sample
-        </h3>
-        <span className="rounded-full border border-border px-2 py-0.5 text-[10px] text-muted-foreground">
-          {pageSize} · sample figures
-        </span>
-      </div>
+      <div className="flex flex-col gap-3 rounded-xl bg-muted/40 p-4">
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+            Document preview
+          </h3>
+          <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
+            Illustrative · {pageSize}
+          </span>
+        </div>
 
-      <div
+        <div
         data-slot="document-preview-page"
         data-preset={preset}
         data-density={density}
         data-table-style={tableStyle}
         data-page-size={pageSize}
-        className="overflow-hidden rounded-lg border border-border shadow-sm"
+        // Centred inside the tinted container, with a measure of its own, so the page
+        // reads as a sheet of paper on a desk rather than as the panel's own background.
+        className="mx-auto w-full max-w-[21rem] overflow-hidden rounded-md shadow-sm"
         style={{
           aspectRatio: String(PAGE_RATIO[pageSize]),
           background: "#fff",
@@ -329,6 +332,11 @@ export function DocumentPreview({
             height: "100%",
             display: "flex",
             flexDirection: "column",
+            // `minHeight: 0` on this and on the flowing region below is what actually
+            // pins the footer. Without it a long contents list could not shrink, so it
+            // grew past the page and printed straight over "Sample figures" and the page
+            // number — the two lines a reader needs to know this is not their report.
+            minHeight: 0,
             padding: pad,
             // The accent band a cover prints. Absent when the cover is switched off, so
             // the toggle on step 4 is visible here rather than only in a rendered file.
@@ -377,6 +385,21 @@ export function DocumentPreview({
             }}
           />
 
+          {/*
+            Everything between the masthead and the footer flows here and is clipped
+            here. `flex: 1` takes the space that is left, `minHeight: 0` lets it be
+            smaller than its content, and `overflow: hidden` cuts the remainder at the
+            page edge instead of letting it run over the footer.
+          */}
+          <div
+            style={{
+              flex: "1 1 auto",
+              minHeight: 0,
+              overflow: "hidden",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
           {/* The figures. Sample, and labelled as such at both ends of the page. */}
           <dl
             style={{
@@ -442,7 +465,12 @@ export function DocumentPreview({
           >
             <thead>
               <tr>
-                {["Resource", "Average", "Peak", "Memory"].map((heading, column) => (
+                {/*
+                  Three columns, not four. At 21rem the page is 21rem wide whatever the
+                  rail does, and a fourth numeric column pushed every figure to two lines.
+                  Peak is the one a reader can infer from the chart directly above it.
+                */}
+                {["Resource", "Average", "Memory"].map((heading, column) => (
                   <th
                     key={heading}
                     style={{
@@ -467,7 +495,7 @@ export function DocumentPreview({
                   key={row.resource}
                   style={{ background: index % 2 === 1 ? rules.stripe : "transparent" }}
                 >
-                  {[row.resource, row.average, row.peak, row.memory].map(
+                  {[row.resource, row.average, row.memory].map(
                     (cell, column) => (
                       <td
                         key={cell}
@@ -556,9 +584,11 @@ export function DocumentPreview({
             </div>
           )}
 
+          </div>
+
           <div
             style={{
-              marginTop: "auto",
+              flex: "0 0 auto",
               paddingTop: `${2.4 * scale}cqw`,
               display: "flex",
               justifyContent: "space-between",
@@ -573,13 +603,14 @@ export function DocumentPreview({
             <span style={{ fontVariantNumeric: "tabular-nums" }}>01</span>
           </div>
         </div>
-      </div>
+        </div>
 
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        Your theme, page size, table rules and section list, over{" "}
-        <strong className="font-medium text-foreground">sample figures</strong>.
-        Nothing here is collected data.
-      </p>
+        <p className="text-[11px] leading-relaxed text-muted-foreground">
+          Your theme, page size, table rules and section list, over{" "}
+          <strong className="font-medium text-foreground">sample figures</strong>
+          . Nothing here is collected data.
+        </p>
+      </div>
     </section>
   )
 }
