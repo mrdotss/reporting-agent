@@ -123,15 +123,15 @@ export function WorkspaceShell({
     <>
       <Link
         href="/dashboard"
-        className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight text-white"
+        className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight text-sidebar-foreground"
       >
-        <BuildingsIcon className="size-6 text-emerald-200" />
+        <BuildingsIcon className="size-6 text-sidebar-primary" />
         <span className={collapsed ? "md:hidden" : ""}>
           Utilization Reporting
         </span>
       </Link>
       <div className={collapsed ? "md:hidden" : ""}>
-        <span className="mb-2 block px-2 text-[10px] font-semibold tracking-widest text-slate-400 uppercase">
+        <span className="mb-2 block px-2 text-[10px] font-semibold tracking-widest text-sidebar-foreground/60 uppercase">
           Workspace
         </span>
         <Select
@@ -140,7 +140,7 @@ export function WorkspaceShell({
           disabled={busy}
         >
           <SelectTrigger
-            className="workspace-selector w-full border-slate-600 bg-transparent text-white"
+            className="workspace-selector w-full"
             aria-label="Workspace"
           >
             <SelectValue>{workspace.name}</SelectValue>
@@ -155,7 +155,7 @@ export function WorkspaceShell({
         </Select>
         <Button
           variant="ghost"
-          className="mt-2 w-full justify-start text-xs text-slate-300"
+          className="mt-2 w-full justify-start text-xs text-sidebar-foreground/85 hover:text-sidebar-foreground"
           onClick={() => setCreating(true)}
         >
           <PlusIcon />
@@ -172,10 +172,10 @@ export function WorkspaceShell({
             title={collapsed ? label : undefined}
             aria-current={current?.href === href ? "page" : undefined}
             className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-white/5 hover:text-white",
+              "flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
               current?.href === href
-                ? "bg-[#254650] text-[#b6f2dc]"
-                : "text-slate-300"
+                ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/85"
             )}
           >
             <Icon
@@ -191,7 +191,7 @@ export function WorkspaceShell({
         {can(workspace.role, "manage") && (
           <Link
             href="/workspace-settings"
-            className="flex items-center gap-3 px-3 text-sm text-slate-300"
+            className="flex items-center gap-3 px-3 text-sm text-sidebar-foreground/85"
           >
             <GearIcon className="size-5" />
             <span className={collapsed ? "md:hidden" : ""}>
@@ -220,7 +220,7 @@ export function WorkspaceShell({
         archived: !!project?.archivedAt,
       }}
     >
-      <div className="workspace-design flex min-h-svh bg-background">
+      <div className="flex min-h-svh bg-background">
         <a
           href="#app-content"
           className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:bg-card focus:p-3"
@@ -229,7 +229,7 @@ export function WorkspaceShell({
         </a>
         <aside
           className={cn(
-            "sticky top-0 hidden h-svh shrink-0 flex-col overflow-y-auto bg-[#122a36] p-5 text-slate-200 md:flex",
+            "sticky top-0 hidden h-svh shrink-0 flex-col overflow-y-auto bg-sidebar p-5 text-sidebar-foreground md:flex",
             collapsed ? "w-20 px-3" : "w-64"
           )}
         >
@@ -260,7 +260,7 @@ export function WorkspaceShell({
                 >
                   <ListIcon />
                 </DialogTrigger>
-                <DialogContent className="inset-y-0 left-0 flex h-svh w-72 translate-x-0 translate-y-0 flex-col rounded-none bg-[#122a36] p-5 text-white">
+                <DialogContent className="inset-y-0 left-0 flex h-svh w-72 translate-x-0 translate-y-0 flex-col rounded-none bg-sidebar p-5 text-sidebar-foreground">
                   <DialogTitle className="sr-only">
                     Workspace navigation
                   </DialogTitle>
