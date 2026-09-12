@@ -311,6 +311,12 @@ function statusPhraseFor(status: RunStatus): string {
       return "Starting the collection runtime"
     case "collecting":
       return "Enumerating resources and pulling metrics"
+    case "compiling":
+      return "Emitting figures from the snapshot"
+    case "rendering":
+      return "Rendering the document and its charts"
+    case "verifying":
+      return "Proving every figure against the snapshot"
     default:
       return "Working"
   }

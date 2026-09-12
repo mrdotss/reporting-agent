@@ -92,6 +92,21 @@ export const PHASE_PROGRESS_UNIT: Readonly<Record<string, string>> =
  * The relay derives these from the row's `status`, which is why the `id` of a
  * `progress` event is that same status: the step and the progress bar attached to it
  * are the same phase, named the same way, with no correlation table in between.
+ *
+ * ## Every non-terminal phase, not three of six
+ *
+ * This listed `queued`, `claimed` and `collecting` only, and the gap was visible on
+ * screen. `deriveRelayEvents` closes the open step on any phase change but opens a new
+ * one only when the phase has an entry here — so when a row moved `collecting` →
+ * `compiling` the client received a close and nothing else. The timeline showed
+ * "Enumerating resources and pulling metrics" complete while the phase list beside it
+ * still read Collecting · In progress, and both sat there through compiling, rendering
+ * and verifying until `done` arrived and the whole page jumped at once.
+ *
+ * Absent here does **not** mean "emits no `progress` event" — that is
+ * `PHASE_PROGRESS_UNIT`'s job, and it still lists `collecting` alone, because
+ * collecting is still the only phase with countable work. A phase can be narrated
+ * without being counted, and these three are exactly that case.
  */
 export const PHASE_TOOL_STEP: Readonly<
   Record<string, { readonly name: string; readonly label: string }>
@@ -99,6 +114,9 @@ export const PHASE_TOOL_STEP: Readonly<
   queued: Object.freeze({ name: "collect_inventory", label: "Queued" }),
   claimed: Object.freeze({ name: "collect_inventory", label: "Starting" }),
   collecting: Object.freeze({ name: "collect_metrics", label: "Collecting" }),
+  compiling: Object.freeze({ name: "compile_figures", label: "Compiling" }),
+  rendering: Object.freeze({ name: "render_document", label: "Rendering" }),
+  verifying: Object.freeze({ name: "verify_document", label: "Verifying" }),
 })
 
 // --- Relay timings ----------------------------------------------------------
