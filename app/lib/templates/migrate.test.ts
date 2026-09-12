@@ -472,3 +472,95 @@ describe("Requirement 13.2, 13.12 — a cover inside a row is migrated too", () 
     expect(pathsOf(migrated)).toEqual([])
   })
 })
+
+describe("a definition carrying `sections` is reconciled, not lifted to 2", () => {
+  // The shape this guards against reached production: a stored draft declaring
+  // `schema_version` 1 with a `sections` array written into it by an earlier build.
+  // `toSchemaVersion2` stamped it 2, where `sections` is not a legal key, and no
+  // v2→v3 lift exists — so the wizard reported `Unrecognized top-level key "sections"`
+  // on a profile whose sections the author had already authored, permanently.
+  const withSections = {
+    schema_version: 1,
+    identity: { name: "Standard" },
+    sections: [{ id: "s1", type: "azure_subscription_overview" }],
+    design: {},
+  }
+
+  test("its declared version is raised to 3 rather than lowered to 2", () => {
+    const out = toSchemaVersion2(withSections) as Record<string, unknown>
+    expect(out.schema_version).toBe(3)
+  })
+
+  test("no authored content is invented, dropped, or moved", () => {
+    const out = toSchemaVersion2(withSections) as Record<string, unknown>
+
+    // Reconciling the header is not the automatic restructure this module refuses to
+    // perform.
+    expect(out.sections).toEqual(withSections.sections)
+    expect(out.identity).toEqual(withSections.identity)
+  })
+
+  test("the v3 keys a v1 draft structurally cannot have are supplied", () => {
+    const out = toSchemaVersion2(withSections) as Record<string, unknown>
+
+    // Renumbering alone left the document failing on a key no wizard step can set,
+    // which is a different dead end rather than none.
+    expect(out.provider).toBe("azure")
+    expect(out.front_matter).toEqual({
+      cover: {},
+      document_control: {},
+      toc: {},
+    })
+  })
+
+  test("a declared provider and front matter are preserved, not overwritten", () => {
+    const out = toSchemaVersion2({
+      ...withSections,
+      provider: "azure",
+      front_matter: { cover: { logo: "x" }, document_control: {}, toc: {} },
+    }) as Record<string, unknown>
+
+    expect(out.front_matter).toEqual({
+      cover: { logo: "x" },
+      document_control: {},
+      toc: {},
+    })
+  })
+
+  test("keys `sections` replaced are dropped rather than left as issues", () => {
+    const out = toSchemaVersion2({
+      ...withSections,
+      scope: { resource_types: [] },
+      metrics: {},
+      blocks: [],
+    }) as Record<string, unknown>
+
+    // v3 has no key for any of these, so left in place each is an
+    // `Unrecognized top-level key` issue on a document already restructured.
+    expect(out).not.toHaveProperty("scope")
+    expect(out).not.toHaveProperty("metrics")
+    expect(out).not.toHaveProperty("blocks")
+  })
+
+  test("a v3 definition passes through untouched", () => {
+    const v3 = { ...withSections, schema_version: 3 }
+    expect(toSchemaVersion2(v3)).toBe(v3)
+  })
+
+  test("the wizard is not told that opening it raises the version", () => {
+    expect(needsSchemaVersion2Migration(withSections)).toBe(false)
+  })
+
+  test("a genuine v1 with no sections still migrates to 2", () => {
+    const v1 = {
+      schema_version: 1,
+      identity: { name: "Legacy" },
+      blocks: [],
+      design: {},
+    }
+    expect(needsSchemaVersion2Migration(v1)).toBe(true)
+    expect(
+      (toSchemaVersion2(v1) as Record<string, unknown>).schema_version
+    ).toBe(2)
+  })
+})

@@ -69,10 +69,13 @@ export function EMPTY_DRAFT(name: string): TemplateDefinition {
  * `StepSections` wrote a `sections` array into it — a shape `collectDefinitionIssues`
  * correctly rejects, since `sections` is not a legal key at `schema_version` 1).
  *
- * {@link EMPTY_DRAFT} itself is untouched and stays v1-shaped: `block-composer.tsx`
- * (a v1/v2 block-based builder still exercised by its own test) constructs one too,
- * and a v1/v2 authoring surface needs a v1/v2 empty draft. This is the v3 sibling,
- * not a replacement.
+ * {@link EMPTY_DRAFT} itself is untouched and stays v1-shaped. It no longer has an
+ * authoring surface — `block-composer.tsx` constructed one, and the block builder was
+ * deleted once `sections` replaced blocks as the authoring unit — but it is not dead
+ * weight: `draft.test.ts` uses it to assert the validator still accepts a v1 draft,
+ * and it has to, because v1 and v2 rows exist in `template_versions` and still
+ * compile. Keep it as the v1 fixture that guard needs. This is the v3 sibling, not a
+ * replacement.
  *
  * Same reasoning as {@link EMPTY_DRAFT} for why every key is present at its widest
  * empty value rather than the object being `{}`: `sections: []`, `provider: "azure"`
