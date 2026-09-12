@@ -47,7 +47,7 @@ function Row({
 }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+      <dt className="text-micro text-muted-foreground uppercase">
         {label}
       </dt>
       <dd className="flex flex-wrap items-center gap-1.5 font-mono text-sm tabular-nums">

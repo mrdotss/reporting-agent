@@ -2,18 +2,11 @@
 
 import { useMemo, useId } from "react"
 
+import { StylePresetPicker } from "@/components/templates/style-preset-picker"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select"
-import {
-  DESIGN_PRESETS,
   DENSITY_VALUES,
   LANGUAGES,
   MAX_DECIMAL_PLACES,
@@ -22,7 +15,6 @@ import {
   SEPARATOR_DEFAULTS,
   TABLE_STYLE_VALUES,
   resolveSeparators,
-  type DesignPreset,
   type DesignSpec,
   type TemplateDefinition,
 } from "@/lib/templates/definition"
@@ -149,6 +141,7 @@ export function StepDesign({
   definition,
   onChange,
   controls = "all",
+  thumbnails,
 }: Readonly<{
   controls?: "all" | "theme" | "details"
   definition: TemplateDefinition
@@ -157,6 +150,12 @@ export function StepDesign({
    * Resolved on the server, because deciding whether an image is current means
    * hashing a theme document on disk (Requirement 13.2). The verdict crosses to
    * the browser; the digests do not.
+   *
+   * Read by {@link StylePresetPicker} below. It was declared here and never
+   * destructured for long enough to ship — the server hashed four theme
+   * documents on every render to produce data that reached no pixel, and the
+   * theme was chosen from a dropdown of four words. `design-system.md` records
+   * the first time this happened; this is the prop being read.
    */
   thumbnails: readonly ThemeThumbnail[]
 }>) {
@@ -172,39 +171,37 @@ export function StepDesign({
   return (
     <div className="flex flex-col gap-5">
       {controls !== "details" && (
-        <section className="rounded-xl border border-border p-4">
-          <div className="grid items-start gap-5 lg:grid-cols-[minmax(180px,240px)_minmax(0,1fr)]">
-            <Field>
-              <FieldLabel>Document theme</FieldLabel>
-              <Select
-                value={design.preset}
-                onValueChange={(value) => {
-                  if (value) set({ preset: value as DesignPreset })
-                }}
-              >
-                <SelectTrigger
-                  aria-label="Document theme"
-                  className="w-full rounded-lg border-border bg-background"
-                >
-                  <SelectValue className="capitalize" />
-                </SelectTrigger>
-                <SelectContent
-                  align="start"
-                  alignItemWithTrigger={false}
-                  className="rounded-lg"
-                >
-                  {DESIGN_PRESETS.map((preset) => (
-                    <SelectItem
-                      key={preset}
-                      value={preset}
-                      className="capitalize"
-                    >
-                      {preset}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
+        <section className="flex flex-col gap-6 rounded-xl border border-border p-4">
+          {/*
+            The four themes as rendered pages, not as four words in a select.
+
+            Requirement 13.3, and `design-system.md` states the reason: "a theme is a
+            visual decision, and a dropdown of words gives the user nothing to decide
+            with". This is the decision that determines what the customer's delivered
+            PDF looks like, so it is made against pictures of the page.
+
+            `thumbnails` arrives resolved from the server — `theme-thumbnails.ts` hashes
+            each image against the theme document it derives from, so a card whose
+            picture fell out of step with its theme says so rather than showing a
+            consultant the previous theme.
+          */}
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <h3 className="text-title-sm">Document theme</h3>
+              <p className="text-meta max-w-prose">
+                Each card is a page from this theme, rendered through the same
+                pipeline as the delivered report.
+              </p>
+            </div>
+
+            <StylePresetPicker
+              selected={design.preset}
+              thumbnails={thumbnails}
+              onSelect={(preset) => set({ preset })}
+            />
+          </div>
+
+          <div className="border-t border-border pt-5">
             <Field>
               <FieldLabel htmlFor={accentId}>Accent colour</FieldLabel>
               <div className="flex items-center gap-3">
@@ -462,7 +459,7 @@ function SeparatorControls({
                   },
                 })
               }
-              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
             >
               <option value="">
                 Default ({separatorLabel(languageDefault.decimal_separator)})
@@ -493,7 +490,7 @@ function SeparatorControls({
                   },
                 })
               }
-              className="h-9 rounded-4xl border border-input bg-background px-3 text-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+              className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
             >
               <option value="">
                 Default ({separatorLabel(languageDefault.grouping_separator)})
@@ -516,7 +513,7 @@ function SeparatorControls({
         className="rounded-lg border border-border bg-muted/40 px-4 py-3"
         aria-label="Sample figures in the declared number format"
       >
-        <p className="mb-1.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">
+        <p className="mb-1.5 text-micro text-muted-foreground uppercase">
           Preview
         </p>
         <div className="flex flex-wrap gap-x-6 gap-y-1 font-mono text-sm tabular-nums">

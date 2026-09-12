@@ -68,7 +68,7 @@ export function CopyDigest({
         // The complete string in the accessible name, so a screen-reader user
         // hears what they are about to copy rather than "copy button".
         aria-label={`Copy the ${label}: ${value}`}
-        className="rounded-md p-0.5 text-muted-foreground focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
+        className="relative grid size-5 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors before:absolute before:top-1/2 before:left-1/2 before:size-11 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
       >
         {copied ? (
           <CheckIcon aria-hidden="true" className="size-3.5" />

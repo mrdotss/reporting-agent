@@ -83,7 +83,7 @@ export function RequestDetails({
   return (
     <Card data-slot="request-details">
       <CardHeader>
-        <CardTitle className="font-heading text-sm font-medium tracking-tight">
+        <CardTitle>
           {messageText("ui.request_details.heading", "en")}
         </CardTitle>
       </CardHeader>
@@ -92,7 +92,7 @@ export function RequestDetails({
         <dl className="flex flex-col gap-3.5">
           {rows.map(({ label, value, mono, identifier }) => (
             <div key={label} className="flex min-w-0 flex-col gap-0.5">
-              <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
+              <dt className="text-micro text-muted-foreground uppercase">
                 {label}
               </dt>
 

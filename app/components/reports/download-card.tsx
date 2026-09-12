@@ -129,8 +129,8 @@ export function DownloadCard({
       // empty tinted ground, which reads as a card that lost its right-hand side.
       className="border-primary/25 bg-primary/4 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
     >
-      <CardHeader>
-        <CardTitle className="font-heading text-sm font-medium tracking-tight">
+      <CardHeader className="min-w-0 lg:flex-1">
+        <CardTitle>
           {messageText("ui.download.heading", "en")}
         </CardTitle>
 

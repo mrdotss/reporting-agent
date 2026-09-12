@@ -487,7 +487,7 @@ export function WizardShell({
     <div className="flex w-full flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="font-heading text-xl font-medium tracking-tight">
+          <h1 className="text-title">
             {template.name}
           </h1>
 
@@ -521,7 +521,7 @@ export function WizardShell({
           <div className="flex flex-col gap-1">
             <h2
               id="wizard-step-title"
-              className="font-heading text-sm font-medium tracking-tight"
+              className="text-section"
             >
               {step.title}
             </h2>
@@ -608,10 +608,24 @@ export function WizardShell({
         <PublishNotice state={publish} />
       </div>
 
+      {/*
+          The preview is pinned to the middle of the viewport, not to its top.
+
+          It was `sticky top-6` in a 26rem column, so on a long step — Sections runs to
+          sixteen rows — it sat against the top of the screen with the rest of the
+          column empty beneath it, and the page it is previewing was small enough that
+          the theme it exists to show could not really be judged.
+
+          `h-svh` + `items-center` is what centres it: the aside is exactly one viewport
+          tall and sticks at the top, so its centred child lands in the middle of the
+          screen and stays there for the whole scroll. `svh` rather than `vh` because a
+          mobile toolbar retracting would otherwise push it off-centre by the height of
+          the chrome.
+      */}
       {showsPreview ? (
         <aside
           aria-label="Document preview"
-          className="w-full shrink-0 lg:sticky lg:top-6 lg:w-[26rem]"
+          className="w-full shrink-0 lg:sticky lg:top-0 lg:flex lg:h-svh lg:w-[30rem] lg:items-center lg:py-6 xl:w-[36rem]"
         >
           <DocumentPreview
             definition={definition}

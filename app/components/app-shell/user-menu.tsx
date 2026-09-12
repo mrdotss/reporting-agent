@@ -14,22 +14,29 @@ import { logoutAction } from "@/lib/actions/auth"
  * without dragging this file into the browser bundle. The Phosphor import is
  * therefore `/ssr`, not the default entry.
  *
- * ## Not a popover
+ * ## Still not a popover, and now laid out across
  *
- * The design's registry set for this spec carries no dropdown or popover
- * primitive, and a menu here would earn nothing: it would hide two items behind
- * a disclosure, add a focus trap and a keyboard contract to get right, and
- * force this file across the client boundary. Identity and sign-out are two
- * lines; they sit in the rail's footer where they are already reachable by Tab.
+ * A menu here would hide two items behind a disclosure, add a focus trap and a
+ * keyboard contract to get right, and force this file across the client
+ * boundary for nothing. That reasoning has not changed. What changed is where
+ * it sits: there is no rail any more, so a two-line block in its footer is now
+ * a two-line block inside a 48px register bar, which it overflowed — it
+ * rendered on top of the tab strip below it.
+ *
+ * So it lays out **horizontally**: the address, truncated, and sign-out as an
+ * icon-only control beside it. Two items, both still one Tab away, both fitting
+ * the band they are in.
  *
  * ## The email
  *
  * `font-mono` with `truncate`. Mono because an address is an identifier rather
  * than prose, matching how ids and figures are set everywhere else in this
- * product; truncated because a long address must not widen the rail or wrap into
- * a second line that pushes the sign-out control around. The `title` attribute
- * keeps the full value reachable on hover, and the text itself is never
- * abbreviated in the DOM, so a screen reader reads the whole address.
+ * product; truncated because a long address must not push the register bar's
+ * other controls around. It is capped at `max-w-44` and hidden below `sm`,
+ * where the bar has no room for it and the icon alone still carries the action.
+ * The `title` attribute keeps the full value reachable on hover, and the text
+ * itself is never abbreviated in the DOM, so a screen reader reads the whole
+ * address.
  */
 type UserMenuProps = Readonly<{
   /**
@@ -44,16 +51,16 @@ type UserMenuProps = Readonly<{
 
 export function UserMenu({ email }: UserMenuProps) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <div className="flex min-w-0 items-center gap-2 px-3 py-1">
+    <div className="flex min-w-0 items-center gap-1.5">
+      <div className="hidden min-w-0 items-center gap-1.5 sm:flex">
         <UserCircleIcon
           aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
+          className="size-3.5 shrink-0 text-muted-foreground"
         />
 
         <span
           title={email}
-          className="truncate font-mono text-xs text-sidebar-foreground/80"
+          className="max-w-44 truncate font-mono text-micro text-muted-foreground"
         >
           {email}
         </span>
@@ -70,11 +77,12 @@ export function UserMenu({ email }: UserMenuProps) {
         <Button
           type="submit"
           variant="ghost"
-          size="sm"
-          className="w-full justify-start text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground dark:hover:bg-sidebar-accent"
+          size="icon-sm"
+          aria-label="Sign out"
+          title="Sign out"
+          className="text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <SignOutIcon aria-hidden="true" />
-          Sign out
         </Button>
       </form>
     </div>

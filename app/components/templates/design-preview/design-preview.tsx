@@ -94,10 +94,10 @@ export function DesignPreview() {
     <div className="mx-auto max-w-[1500px]">
       <header className="mb-8 flex flex-wrap items-end justify-between gap-5 border-b border-border pb-7">
         <div>
-          <p className="mb-3 text-xs font-medium tracking-[0.18em] text-muted-foreground uppercase">
+          <p className="mb-3 text-micro text-muted-foreground uppercase">
             Report profiles / Design lab
           </p>
-          <h1 className="font-heading text-3xl font-medium tracking-tight md:text-4xl">
+          <h1 className="text-title">
             Make the report yours.
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">
@@ -114,7 +114,7 @@ export function DesignPreview() {
         <aside className="space-y-6" aria-label="Report appearance">
           <section>
             <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="text-sm font-semibold">Choose a starting point</h2>
+              <h2 className="text-section">Choose a starting point</h2>
               <span className="text-xs text-muted-foreground">01 / Theme</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -185,7 +185,7 @@ export function DesignPreview() {
 
           <section className="space-y-4 border-t border-border pt-5">
             <div className="flex justify-between">
-              <h2 className="text-sm font-semibold">Refine the details</h2>
+              <h2 className="text-section">Refine the details</h2>
               <span className="text-xs text-muted-foreground">
                 02 / Appearance
               </span>
@@ -285,7 +285,7 @@ export function DesignPreview() {
         >
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-background px-5 py-4">
             <div>
-              <h2 className="text-sm font-semibold">Your report, on paper</h2>
+              <h2 className="text-section">Your report, on paper</h2>
               <p role="status" className="mt-1 text-xs text-muted-foreground">
                 {busy
                   ? "Rendering your PDF…"
@@ -341,7 +341,7 @@ export function DesignPreview() {
                   ))}
                 </div>
               </div>
-              <h3 className="font-heading text-xl">
+              <h3 className="text-section">
                 A considered report starts here.
               </h3>
               <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">

@@ -86,10 +86,22 @@ export function RunProgress({
         announced without interrupting, and the region exists in the DOM from first paint
         so a later change is announced rather than treated as new content.
       */}
+      {/*
+        On a failure this region goes `sr-only` rather than silent. `RunFailureNotice`
+        below states what happened, why, and what to check — so printing "This run
+        failed." above it said the same thing twice and less well. The region itself
+        still has to exist from first paint and still has to carry the resolved status,
+        or a screen-reader user gets no announcement when the run reaches a terminal
+        state; it is the *visible* duplicate that is the problem, not the text.
+      */}
       <p
         data-slot="run-status-live"
         aria-live="polite"
-        className="max-w-prose text-sm text-muted-foreground"
+        className={
+          run.status === "failed"
+            ? "sr-only"
+            : "max-w-prose text-sm text-muted-foreground"
+        }
       >
         {finished
           ? run.status === "completed"
@@ -136,7 +148,7 @@ export function RunProgress({
 
       {finished ? (
         <section className="flex flex-col gap-3">
-          <h2 className="font-heading text-sm font-medium tracking-tight">
+          <h2 className="text-section">
             {messageText("ui.run_progress.collection_gaps", "en")}
           </h2>
 

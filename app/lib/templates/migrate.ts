@@ -56,6 +56,16 @@ import {
  * was deleted unused: nothing in the app ever called it.
  */
 export const MIGRATION_SOURCE_VERSION = MIN_SCHEMA_VERSION
+
+/**
+ * The provider a reconciled v3 document declares.
+ *
+ * Not a default this module invents. `providers/` is the only seam Azure is allowed
+ * through and the only one that exists, `EMPTY_DRAFT_V3` writes the same value, and the
+ * document being reconciled was authored against it — there is no second provider it
+ * could have meant.
+ */
+const RECONCILED_PROVIDER = "azure"
 export const MIGRATION_TARGET_VERSION = 2 as const
 
 /**
@@ -224,6 +234,67 @@ function coverSectionFrom(
  */
 export function toSchemaVersion2<T>(definition: T): T {
   if (!isPlainObject(definition)) return definition
+
+  // A definition that already carries `sections` is a version-3 definition whose
+  // header is stale, and lifting it to 2 is what makes it unopenable.
+  //
+  // `schema_version` is metadata *about* a shape. When the field and the shape
+  // disagree, the shape is the fact: `sections` is the v3 authoring unit and exists in
+  // no earlier key set, so a document containing one cannot be a v1 whatever its
+  // header says. Stamping it 2 on open produced exactly the contradiction seen in the
+  // wizard — `Unrecognized top-level key "sections"` on a profile whose sections the
+  // author had already written — and left it there permanently, because this module
+  // deliberately offers no v2→v3 lift and the restructure one would perform has in this
+  // case already happened.
+  //
+  // ## Where these documents come from
+  //
+  // `draft.ts` names the bug that produced them: the sections wizard started from the
+  // v1 `EMPTY_DRAFT`, so the moment `StepSections` wrote a `sections` array into it the
+  // row became `{schema_version: 1, sections: [...]}` — v3 content under a v1 header,
+  // and missing the v3-only keys a v1 draft never had. `EMPTY_DRAFT_V3` stopped new
+  // rows taking that shape; the rows already written kept it.
+  //
+  // ## Why this fills keys rather than only renumbering
+  //
+  // Renumbering alone moves the dead end rather than clearing it: the document then
+  // fails on `Missing required top-level key "provider"`, which no wizard step can set
+  // because the provider is fixed at creation. So the two keys a v1 draft structurally
+  // cannot have are supplied, and each has exactly one correct value rather than a
+  // guess — `azure` is the only provider this product has a port for, and an empty
+  // front matter is three empty sections, which is what `EMPTY_DRAFT_V3` writes.
+  //
+  // Nothing that carries authored content is touched: no section is invented, dropped,
+  // or moved. Whether those sections are themselves valid is then the v3 validator's
+  // question, which is the right place for it.
+  if (Array.isArray(definition.sections)) {
+    if (definition.schema_version === MAX_SUPPORTED_SCHEMA_VERSION) {
+      return definition
+    }
+
+    const reconciled: Record<string, unknown> = {
+      ...definition,
+      schema_version: MAX_SUPPORTED_SCHEMA_VERSION,
+    }
+
+    if (typeof reconciled.provider !== "string") {
+      reconciled.provider = RECONCILED_PROVIDER
+    }
+
+    if (!isPlainObject(reconciled.front_matter)) {
+      reconciled.front_matter = { cover: {}, document_control: {}, toc: {} }
+    }
+
+    // v3 has no key for any of these, and `sections` is what replaced them. Left in
+    // place they are three `Unrecognized top-level key` issues on a document whose
+    // author has already done the restructure.
+    for (const superseded of ["scope", "metrics", "blocks"]) {
+      delete reconciled[superseded]
+    }
+
+    return reconciled as unknown as T
+  }
+
   if (!declaresSourceVersion(definition)) return definition
 
   const blocks = Array.isArray(definition.blocks) ? definition.blocks : []
@@ -277,5 +348,11 @@ export function toSchemaVersion2<T>(definition: T): T {
  * definition without inferring that from the output.
  */
 export function needsSchemaVersion2Migration(definition: unknown): boolean {
-  return isPlainObject(definition) && declaresSourceVersion(definition)
+  return (
+    isPlainObject(definition) &&
+    // A definition carrying `sections` is reconciled to v3 rather than migrated to v2,
+    // so the wizard must not tell the consultant that opening it raises it to 2.
+    !Array.isArray(definition.sections) &&
+    declaresSourceVersion(definition)
+  )
 }

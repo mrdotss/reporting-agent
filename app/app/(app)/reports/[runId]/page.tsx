@@ -6,9 +6,8 @@ import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
-import { RequestDetails } from "@/components/reports/request-details"
 import { RunProgress } from "@/components/reports/run-progress"
-import { RunStatusBadge } from "@/components/reports/run-status-badge"
+import { Counterfoil } from "@/components/reports/counterfoil"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { VerificationPanel } from "@/components/reports/verification-panel"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
@@ -21,7 +20,6 @@ import {
   resolveRunExtras,
 } from "@/lib/runs/detail"
 import { loadRunGaps, loadRunProvenance } from "@/lib/runs/gaps"
-import { periodLine } from "@/lib/runs/presentation"
 import { findOwnedRun } from "@/lib/runs/state"
 import { resolveSubscriptionState } from "@/lib/subscriptions/state"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
@@ -148,43 +146,52 @@ export default async function RunPage({ params }: RunPageProps) {
       ? null
       : resolveSubscriptionState(subscription, new Date())
 
+  // Projected once: the counterfoil's seal and the verification panel must read the
+  // same row, or the digest on the stub could disagree with the digest in the body.
+  const verificationView =
+    verification.latest === undefined
+      ? null
+      : toVerificationView(verification.latest)
+
   const verified = verification.latest?.status === "pass"
   const delivered = run.status === "completed" && verified
   const terminal = run.status === "completed" || run.status === "failed"
 
   return (
     <PageBody kind="wide">
-      <header className="flex flex-col gap-3">
-        <Link
-          href="/reports"
-          className="flex w-fit items-center gap-1.5 rounded-lg text-sm text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
-        >
-          <ArrowLeftIcon aria-hidden="true" className="size-4" />
-          All reports
-        </Link>
+      <Link
+        href="/reports"
+        className="flex w-fit items-center gap-1.5 rounded-sm text-meta text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+      >
+        <ArrowLeftIcon aria-hidden="true" className="size-3.5" />
+        All reports
+      </Link>
 
-        <div className="flex min-w-0 flex-col gap-1.5">
-          {/*
-            The status sits with the title, not forty lines down beside the phase list.
-            A reader arriving at a run asks one question first — did this work — and it
-            was being answered below the download card, under a paragraph.
-          */}
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-heading text-2xl font-medium tracking-tight text-balance">
+      {/*
+        The certificate: a counterfoil down the left, the record beside it.
+
+        The stub carries the record's identity and its verdict — number, seal, window,
+        state — because those are what a reader checks *before* reading anything else,
+        and they were previously scattered across a header, a rail and a card four
+        sections down. Everything that is the record itself sits to the right of the
+        perforation.
+      */}
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <Counterfoil
+          run={view}
+          snapshotSha256={verificationView?.snapshotSha256 ?? null}
+          proven={verified}
+        />
+
+        <div className="flex min-w-0 flex-1 flex-col gap-6">
+          <header className="flex min-w-0 flex-col gap-1.5">
+            <h1 className="text-title text-balance">
               {view.templateName ?? subscriptionName}
             </h1>
-
-            <RunStatusBadge status={view.status} />
-          </div>
-
-          {/* The zone travels with the dates, on every surface that names a period. */}
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
-            <span className="font-mono tabular-nums">{periodLine(view)}</span>
-            <span aria-hidden="true">·</span>
-            <span>{subscriptionName}</span>
-          </p>
-        </div>
-      </header>
+            <p className="text-meta text-muted-foreground">
+              {subscriptionName}
+            </p>
+          </header>
 
       {/*
         Requirement 13.2 — the warning follows the subscription onto the run screens.
@@ -197,44 +204,30 @@ export default async function RunPage({ params }: RunPageProps) {
       ) : null}
 
       {/*
-        Requirement 40.1 — exactly one control per recorded artifact, and only while the
-        run is `completed` **and** its stored verification passed. 40.4's "present no
-        download control" is this condition being false, so the gate is one expression
-        rather than a prop the card has to honour.
+        The verdict leads.
 
-        Above the fold rather than four sections down: on a delivered run this is the
-        only thing most readers came for.
+        It used to sit at the foot of the page, below the download card, the phase
+        list and a collection-gap list that can run to several hundred pixels — so the
+        one statement this entire product exists to make ("every figure traced to
+        snapshot 9f2c…, verified") was outranked by neutral information a reader
+        consults second. A gap is not an error and never competes with a verdict.
+
+        So: the claim, then the artifact it licenses, then how the run went.
       */}
-      {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
-
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:gap-6">
-        <div className="flex min-w-0 flex-1 flex-col gap-6">
-          <RunProgress
-            initialRun={view}
-            initialGaps={gaps}
-            subscriptionLabel={subscriptionLabel}
-          />
-        </div>
-
-        {/*
-          The rail holds the request and nothing else. It used to hold the verification
-          and the snapshot too, and both are *grids* — three digests across, two evidence
-          panels side by side, a four-cell provenance table. At 20rem each of those
-          collapsed to one column of two-word lines, so the panel proving the report was
-          verified was the least legible thing on the page. They are below now, at full
-          width, where their own layout has room to be the layout it was written as.
-        */}
-        <aside className="w-full shrink-0 lg:w-80">
-          <RequestDetails
-            run={view}
-            subscriptionName={subscriptionName}
-            subscriptionMaskedId={subscriptionMaskedId}
-          />
-        </aside>
-      </div>
-
+      {/*
+        Two columns only when there are two things to put in them. The snapshot card
+        renders for a `completed` run alone, so on a **failed** run this grid held one
+        child and an empty column — the verification panel, which is the entire reason
+        that page is being read, squeezed into half the width beside a void.
+      */}
       {terminal ? (
-        <div className="grid items-start gap-6 lg:grid-cols-2">
+        <div
+          className={
+            run.status === "completed"
+              ? "grid items-start gap-6 lg:grid-cols-2"
+              : "grid items-start gap-6"
+          }
+        >
           {/*
             Requirement 39 — the audit certificate. Rendered for every terminal run,
             including one with no verification: 39.8 has the panel state that the report
@@ -242,17 +235,14 @@ export default async function RunPage({ params }: RunPageProps) {
             section is indistinguishable from one that failed to load.
           */}
           <VerificationPanel
-            verification={
-              verification.latest === undefined
-                ? null
-                : toVerificationView(verification.latest)
-            }
+            verification={verificationView}
+            delivered={delivered}
           />
 
           {run.status === "completed" ? (
             <Card data-slot="snapshot-card">
               <CardHeader>
-                <CardTitle className="font-heading text-sm font-medium tracking-tight">
+                <CardTitle>
                   Snapshot
                 </CardTitle>
               </CardHeader>
@@ -275,7 +265,7 @@ export default async function RunPage({ params }: RunPageProps) {
                 {pinned === null ? null : (
                   <dl className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-0.5">
-                      <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
+                      <dt className="text-micro text-muted-foreground uppercase">
                         Version rendered from
                       </dt>
                       <dd className="text-sm font-medium">
@@ -287,7 +277,7 @@ export default async function RunPage({ params }: RunPageProps) {
                     </div>
 
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
+                      <dt className="text-micro text-muted-foreground uppercase">
                         Definition digest
                       </dt>
                       <dd>
@@ -323,6 +313,30 @@ export default async function RunPage({ params }: RunPageProps) {
         </div>
       ) : null}
 
+      {/*
+        Requirement 40.1 — exactly one control per recorded artifact, and only while the
+        run is `completed` **and** its stored verification passed. 40.4's "present no
+        download control" is this condition being false, so the gate is one expression
+        rather than a prop the card has to honour.
+
+        Above the fold rather than four sections down: on a delivered run this is the
+        only thing most readers came for.
+      */}
+      {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
+
+      {/*
+        The rail that used to sit here is gone. The counterfoil took the identity, and
+        what was left — what was requested — is not something a reader consults beside
+        the record; it is something they check once, below it.
+      */}
+      <RunProgress
+        initialRun={view}
+        initialGaps={gaps}
+        subscriptionLabel={subscriptionLabel}
+      />
+
+        </div>
+      </div>
     </PageBody>
   )
 }

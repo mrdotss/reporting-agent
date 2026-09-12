@@ -42,9 +42,17 @@ describe("the workspace palette covers what it has to cover", () => {
     expect(inner).toEqual([])
   })
 
-  test("the scope declares the sidebar tokens the rail and its guests read", () => {
+  test("the scope declares the register tokens its guests read", () => {
     const css = read("app/globals.css")
-    const scope = css.slice(css.indexOf(".workspace-design,"))
+
+    // Sliced from the first `.workspace-design` rule rather than from a combined
+    // `.workspace-design,` selector. The register is a light surface that differs
+    // between themes, so it is declared twice — once per theme — and cannot be one
+    // grouped rule the way the old fixed-navy rail was. What has to stay true is that
+    // the scope declares these at all, which is the failure this test was written for:
+    // undeclared, `text-sidebar-foreground` fell back to the other theme's near-black
+    // and the signed-in address rendered at about 1.5:1.
+    const scope = css.slice(css.indexOf(".workspace-design {"))
     for (const token of [
       "--sidebar",
       "--sidebar-foreground",

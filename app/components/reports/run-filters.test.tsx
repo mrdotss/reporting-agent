@@ -55,7 +55,7 @@ describe("filters travel in the URL", () => {
     search = "page=3"
     renderFilters({ offset: 50 })
 
-    fireEvent.click(screen.getByRole("button", { name: /^Failed/ }))
+    fireEvent.click(screen.getByRole("button", { name: /^Not delivered/ }))
 
     expect(push).toHaveBeenCalledTimes(1)
     const [url] = push.mock.calls[0] as [string]

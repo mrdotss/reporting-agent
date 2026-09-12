@@ -48,7 +48,7 @@ export function AcceptInvitation() {
   return (
     <Card className="mx-auto max-w-lg">
       <CardContent className="space-y-5 pt-6">
-        <h1 className="text-xl font-semibold">Join a reporting workspace</h1>
+        <h1 className="text-title">Join a reporting workspace</h1>
         <p className="text-sm text-muted-foreground">
           Accepting gives you access to its customer projects according to the
           invitation’s role. Sign in if prompted, then confirm here. Opening

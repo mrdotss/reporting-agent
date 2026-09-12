@@ -88,7 +88,11 @@ function ThemeHotkey() {
         return
       }
 
-      if (event.key.toLowerCase() !== "d") {
+      // `key` is optional on `KeyboardEvent` and is genuinely absent on some
+      // synthetic events — a password manager filling the sign-in form emits one,
+      // and this threw `Cannot read properties of undefined (reading
+      // 'toLowerCase')` on every autofill.
+      if (event.key?.toLowerCase() !== "d") {
         return
       }
 

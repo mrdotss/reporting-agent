@@ -10,7 +10,7 @@ import {
 import { RotateSecretDialog } from "@/components/subscriptions/rotate-secret-dialog"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { Identifier } from "@/components/identifier"
-import { Badge } from "@/components/ui/badge"
+import { Stamp, type StampTone } from "@/components/ui/stamp"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProviderMark } from "@/components/subscriptions/provider-mark"
@@ -55,14 +55,14 @@ const STATE_BADGE: Record<
   SubscriptionState["kind"],
   {
     readonly label: string
-    readonly variant: "secondary" | "outline" | "destructive"
+    readonly tone: StampTone
   }
 > = {
-  disabled: { label: "credential rejected", variant: "destructive" },
-  expired: { label: "secret expired", variant: "destructive" },
-  expiring: { label: "secret expiring", variant: "outline" },
-  pending: { label: "scope unverified", variant: "outline" },
-  active: { label: "active", variant: "secondary" },
+  disabled: { label: "Credential rejected", tone: "unproven" },
+  expired: { label: "Secret expired", tone: "unproven" },
+  expiring: { label: "Secret expiring", tone: "attention" },
+  pending: { label: "Scope unverified", tone: "attention" },
+  active: { label: "Connected", tone: "verified" },
 }
 
 /**
@@ -74,29 +74,18 @@ const STATE_BADGE: Record<
  * recorded date is still in the future (Requirement 13.9). The second is the more
  * important message — the date a consultant typed in said the secret was fine.
  */
-function StateNotice({
-  state,
-  view,
-  nowIso,
-}: Readonly<{
-  state: SubscriptionState
-  view: ConnectedSubscriptionView
-  nowIso: string
-}>) {
+/**
+ * What this connector's state means, when it means something worth saying.
+ *
+ * It used to return the remedy too — a `RotateSecretDialog` under every branch — which
+ * is what put rotation at the foot of the card while Scan sat up in the facts row. The
+ * remedy moved to the actions group beside Scan, and with it went this component's need
+ * for the subscription and the clock: a notice explains, it does not act.
+ */
+function StateNotice({ state }: Readonly<{ state: SubscriptionState }>) {
   if (state.kind === "expiring") {
     return (
-      <div className="flex flex-col gap-2">
-        <SecretExpiryBanner state={state} />
-
-        <div className="flex justify-start">
-          <RotateSecretDialog
-            subscriptionId={view.id}
-            displayName={view.displayName}
-            emphasis="neutral"
-            nowIso={nowIso}
-          />
-        </div>
-      </div>
+      <SecretExpiryBanner state={state} />
     )
   }
 
@@ -125,14 +114,6 @@ function StateNotice({
           </p>
         </div>
 
-        <div className="flex justify-start">
-          <RotateSecretDialog
-            subscriptionId={view.id}
-            displayName={view.displayName}
-            emphasis="expired"
-            nowIso={nowIso}
-          />
-        </div>
       </div>
     )
   }
@@ -155,28 +136,11 @@ function StateNotice({
           </p>
         </div>
 
-        <div className="flex justify-start">
-          <RotateSecretDialog
-            subscriptionId={view.id}
-            displayName={view.displayName}
-            emphasis="neutral"
-            nowIso={nowIso}
-          />
-        </div>
       </div>
     )
   }
 
-  return (
-    <div className="flex justify-start">
-      <RotateSecretDialog
-        subscriptionId={view.id}
-        displayName={view.displayName}
-        emphasis="neutral"
-        nowIso={nowIso}
-      />
-    </div>
-  )
+  return null
 }
 
 type SubscriptionListProps = Readonly<{
@@ -203,7 +167,7 @@ export function SubscriptionList({
         />
 
         <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
+          <h2 className="text-section">
             No subscriptions connected yet
           </h2>
 
@@ -241,6 +205,7 @@ export function SubscriptionList({
             <Card
               data-slot="subscription-row"
               data-state={state.kind}
+              size="sm"
               className="rounded-xl border border-border shadow-none ring-0"
             >
               <CardHeader>
@@ -252,23 +217,25 @@ export function SubscriptionList({
                   later to a list that never had one is a layout change on every row.
                   When a second provider lands, this reads the connection's own field.
                 */}
-                <div className="flex items-center gap-2.5">
-                  <ProviderMark kind="azure" />
-                  <CardTitle>{view.displayName}</CardTitle>
-                </div>
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <span className="flex items-center gap-2.5">
+                    <ProviderMark kind="azure" />
+                    <CardTitle>{view.displayName}</CardTitle>
+                  </span>
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={badge.variant}>{badge.label}</Badge>
+                  <span className="flex flex-wrap items-center gap-2">
+                  <Stamp tone={badge.tone}>{badge.label}</Stamp>
 
-                  <Badge variant="outline">
+                  <Stamp tone="neutral">
                     {view.fidelityTier === "enhanced"
-                      ? "enhanced fidelity"
-                      : "baseline fidelity"}
-                  </Badge>
+                      ? "Enhanced fidelity"
+                      : "Baseline fidelity"}
+                  </Stamp>
 
                   {view.scopeVerified ? (
-                    <Badge variant="outline">scope verified</Badge>
+                    <Stamp tone="neutral">Scope verified</Stamp>
                   ) : null}
+                  </span>
                 </div>
               </CardHeader>
 
@@ -282,7 +249,7 @@ export function SubscriptionList({
                 <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
                 <dl className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-10">
                   <div className="flex flex-col gap-0.5">
-                    <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                    <dt className="text-micro text-muted-foreground uppercase">
                       Subscription
                     </dt>
 
@@ -301,7 +268,7 @@ export function SubscriptionList({
                   </div>
 
                   <div className="flex flex-col gap-0.5">
-                    <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                    <dt className="text-micro text-muted-foreground uppercase">
                       Secret expires
                     </dt>
 
@@ -346,10 +313,29 @@ export function SubscriptionList({
                       Scan
                     </Link>
                   ) : null}
+
+                  {/*
+                    Rotation sits with Scan rather than under the card, because both
+                    answer "what can I do with this connector" and a reader looking for
+                    one is looking in the same place for the other. It used to be
+                    returned by `StateNotice`, which put it at the foot of the card on
+                    every state while Scan sat up here — two controls on one object, in
+                    two unrelated positions.
+                  */}
+                  <RotateSecretDialog
+                    subscriptionId={view.id}
+                    displayName={view.displayName}
+                    emphasis={
+                      state.kind === "expired" || state.kind === "disabled"
+                        ? "expired"
+                        : "neutral"
+                    }
+                    nowIso={nowIso}
+                  />
                 </div>
                 </div>
 
-                <StateNotice state={state} view={view} nowIso={nowIso} />
+                <StateNotice state={state} />
               </CardContent>
             </Card>
           </li>

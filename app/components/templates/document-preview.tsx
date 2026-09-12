@@ -297,9 +297,9 @@ export function DocumentPreview({
         away and there is no control that hides it. What makes this panel safe is that a
         consultant never has to work out whether the figures are theirs.
       */}
-      <div className="flex flex-col gap-3 rounded-xl bg-muted/40 p-4">
+      <div className="flex w-full flex-col gap-3 rounded-xl bg-muted/40 p-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-[11px] font-medium tracking-[0.14em] text-muted-foreground uppercase">
+          <h3 className="text-micro text-muted-foreground uppercase">
             Document preview
           </h3>
           <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
@@ -313,11 +313,33 @@ export function DocumentPreview({
         data-density={density}
         data-table-style={tableStyle}
         data-page-size={pageSize}
-        // Centred inside the tinted container, with a measure of its own, so the page
-        // reads as a sheet of paper on a desk rather than as the panel's own background.
-        className="mx-auto w-full max-w-[21rem] overflow-hidden rounded-md shadow-sm"
+        // Centred inside the tinted container, so the page reads as a sheet of paper on
+        // a desk rather than as the panel's own background.
+        //
+        // The 21rem cap is gone: it held the sheet at 336px inside a column half again
+        // as wide, which is what made the theme hard to judge. It now fills the column
+        // and is bounded by *height* instead — `aspect-ratio` derives the width back
+        // down from `max-height`, so the sheet is always the largest one that fits the
+        // viewport whatever page size is selected, and never taller than the screen it
+        // is centred in.
+        className="mx-auto w-full overflow-hidden rounded-md shadow-sm"
         style={{
           aspectRatio: String(PAGE_RATIO[pageSize]),
+          // Bounded by *width*, derived from the height available.
+          //
+          // `max-height` cannot do this job: the sheet is `width: 100%`, so
+          // `aspect-ratio` computes its height from that width and a max-height then
+          // clips the page rather than shrinking it — which is what pushed the footer
+          // off the bottom of the screen. Capping the width by
+          // `available height x ratio` makes the constraint run the way the ratio
+          // already runs, so the sheet is the largest one that fits and stays whole.
+          //
+          // 10.5rem is the panel's own chrome, measured rather than guessed: the
+          // heading row (20px), the gap under it (12), the panel's padding (32), the
+          // caption beneath the sheet (34) and the column's vertical padding (48) —
+          // 146px, plus a little slack. It was 13rem, which cost the sheet ~45px of
+          // width for nothing on every screen.
+          maxWidth: `calc((100svh - 10.5rem) * ${PAGE_RATIO[pageSize]})`,
           background: "#fff",
           color: ink,
           fontFamily: face,

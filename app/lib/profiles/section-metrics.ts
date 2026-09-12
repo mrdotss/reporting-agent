@@ -8,14 +8,15 @@ import type {
  * The choices a section's Custom metric selection is made from, and the rules for
  * toggling one — pure, so the grid that renders them can be tested without a DOM.
  *
- * ## Why this exists beside `metric-picker.tsx`
+ * ## Why this exists rather than living in a picker component
  *
- * That picker predates `sections` and reads `definition.metrics[resourceType]` — the
- * **v2** top-level selection, which a v3 profile does not have. Its presentation is
- * right and its rules are right; where it writes is not. Rather than teach one component
- * two definition shapes, the selection logic moved here and the v3 surface renders it
- * against a section. `step-metrics.tsx` is what the wizard used to render for v2 and
- * renders for nothing now.
+ * It replaced `metric-picker.tsx`, which predated `sections` and read
+ * `definition.metrics[resourceType]` — the **v2** top-level selection, which a v3
+ * profile does not have. Its presentation was right and its rules were right; where it
+ * wrote was not. Rather than teach one component two definition shapes, the selection
+ * logic moved here, pure, and the v3 surface renders it against a section. That picker
+ * and the `step-metrics.tsx` that mounted it have since been deleted along with the
+ * rest of the block-authoring surface.
  *
  * ## Percentiles carry the catalogue's own metadata
  *

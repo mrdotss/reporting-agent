@@ -79,15 +79,15 @@ function Stat({
 }>) {
   return (
     <div className="flex flex-col gap-0.5">
-      <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+      <dt className="text-micro text-muted-foreground uppercase">
         {label}
       </dt>
       <dd
         data-slot="dashboard-stat"
         className={
           tone === "destructive"
-            ? "font-mono text-2xl text-destructive tabular-nums"
-            : "font-mono text-2xl tabular-nums"
+            ? "text-figure font-mono text-destructive tabular-nums"
+            : "text-figure font-mono tabular-nums"
         }
       >
         {value}
@@ -190,7 +190,7 @@ export default async function DashboardPage() {
   return (
     <PageBody kind="wide">
       <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-medium tracking-tight">
+        <h1 className="text-title">
           Dashboard
         </h1>
 
@@ -262,7 +262,7 @@ export default async function DashboardPage() {
 
       <section className="flex flex-col gap-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="font-heading text-sm font-medium tracking-tight">
+          <h2 className="text-section">
             Recent runs
           </h2>
 
@@ -283,7 +283,7 @@ export default async function DashboardPage() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="font-heading text-sm font-medium tracking-tight">
+        <h2 className="text-section">
           Subscription health
         </h2>
 

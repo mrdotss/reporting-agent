@@ -3,7 +3,7 @@
 // are only meaningful in the jsdom one. Both projects share this file.
 import "@testing-library/jest-dom/vitest"
 
-import { writeFileSync } from "node:fs"
+import { renameSync, writeFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -84,12 +84,24 @@ afterAll(() => {
 
   const modulePath = records[0].modulePath
 
-  // One document per test file, so parallel workers never write the same path.
-  writeFileSync(
-    ledgerFileFor(modulePath),
-    JSON.stringify(records, null, 2),
-    "utf8"
-  )
+  // One document per test file, so parallel workers never write the same path —
+  // and written **atomically**, because not every reader of this directory is a
+  // writer of it.
+  //
+  // `property-hygiene.static.test.ts` calls `readLedger()`, which `readdir`s this
+  // directory and parses every `.json` in it. That test is itself a file Vitest
+  // runs in parallel with the property modules, so a plain `writeFileSync` — which
+  // truncates and then fills — gives it a window to read a file that exists and is
+  // empty or half-written. The symptom is a flake with no stable shape: a parse
+  // error on one run, an execution that appears to carry no seed on another.
+  //
+  // `rename` is atomic within a filesystem, so a reader sees either the previous
+  // file or the complete new one and never the state in between.
+  const destination = ledgerFileFor(modulePath)
+  const staging = `${destination}.${process.pid}.tmp`
+
+  writeFileSync(staging, JSON.stringify(records, null, 2), "utf8")
+  renameSync(staging, destination)
 
   // Requirement 45.8's "in the suite's own output". The global teardown prints the
   // whole-run roll-up; this is the same four values beside the file that produced

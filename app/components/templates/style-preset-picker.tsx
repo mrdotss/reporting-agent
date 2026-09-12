@@ -151,8 +151,19 @@ export function StylePresetPicker({
       aria-label="Style preset"
       className="grid grid-cols-1 gap-3 sm:grid-cols-2"
     >
-      {thumbnails.map((thumbnail) => {
-        const preset = thumbnail.preset
+      {/*
+        Driven by `DESIGN_PRESETS`, not by the `thumbnails` array.
+
+        Every preset the schema accepts gets a card whether or not an image
+        resolved for it. Mapping the array instead made the *control* conditional
+        on the pictures: a resolver that returned fewer entries — or none — left a
+        consultant with no way to choose a theme at all, silently, which is a
+        worse failure than the one Requirement 13.8 already handles. A missing
+        entry is now just an unavailable image, which is a case this component
+        already draws.
+      */}
+      {DESIGN_PRESETS.map((preset) => {
+        const thumbnail = thumbnails.find((entry) => entry.preset === preset)
         const isSelected = preset === selected
         const description = THEME_DESCRIPTION[preset]
 
@@ -166,7 +177,7 @@ export function StylePresetPicker({
             type="button"
             data-slot="preset-card"
             data-preset={preset}
-            data-image={thumbnail.src === null ? "unavailable" : "present"}
+            data-image={thumbnail?.src ? "present" : "unavailable"}
             role="radio"
             aria-checked={isSelected}
             // Only the selected card is in the tab order; arrow keys move within
@@ -197,7 +208,7 @@ export function StylePresetPicker({
               ) : null}
             </div>
 
-            {thumbnail.src === null ? (
+            {!thumbnail?.src ? (
               <div
                 data-slot="preset-image-unavailable"
                 // Requirement 13.8 — the name, the description, and an explicit

@@ -829,6 +829,110 @@
       "en": "No advisory findings.",
       "id": "Tidak ada temuan saran."
     },
+    "ui.gap_label.advisor_not_available": {
+      "en": "Advisor unavailable",
+      "id": "Advisor tidak tersedia"
+    },
+    "ui.gap_label.archive_write_failed": {
+      "en": "Archive write failed",
+      "id": "Penulisan arsip gagal"
+    },
+    "ui.gap_label.backup_not_configured": {
+      "en": "Backup not configured",
+      "id": "Pencadangan belum dikonfigurasi"
+    },
+    "ui.gap_label.catalog_entry_invalid": {
+      "en": "Catalogue entry invalid",
+      "id": "Entri katalog tidak valid"
+    },
+    "ui.gap_label.deallocated": {
+      "en": "Virtual machine deallocated",
+      "id": "Mesin virtual dinonaktifkan"
+    },
+    "ui.gap_label.definitions_unavailable": {
+      "en": "Metric definitions unavailable",
+      "id": "Definisi metrik tidak tersedia"
+    },
+    "ui.gap_label.duplicate_inventory_row": {
+      "en": "Duplicate inventory row",
+      "id": "Baris inventaris ganda"
+    },
+    "ui.gap_label.fact_unavailable": {
+      "en": "Fact unavailable",
+      "id": "Fakta tidak tersedia"
+    },
+    "ui.gap_label.instance_name_collapsed": {
+      "en": "Instance names collapsed",
+      "id": "Nama instans digabungkan"
+    },
+    "ui.gap_label.interval_counts_missing": {
+      "en": "Interval counts missing",
+      "id": "Jumlah interval tidak ada"
+    },
+    "ui.gap_label.interval_malformed": {
+      "en": "Interval malformed",
+      "id": "Format interval salah"
+    },
+    "ui.gap_label.metric_error": {
+      "en": "Metric returned an error",
+      "id": "Metrik mengembalikan galat"
+    },
+    "ui.gap_label.metric_not_emitted": {
+      "en": "Metric not emitted",
+      "id": "Metrik tidak dikirim"
+    },
+    "ui.gap_label.metric_not_selected": {
+      "en": "No metric selected",
+      "id": "Tidak ada metrik dipilih"
+    },
+    "ui.gap_label.no_reservations": {
+      "en": "No reservations found",
+      "id": "Tidak ada reservasi ditemukan"
+    },
+    "ui.gap_label.no_samples": {
+      "en": "No samples in the window",
+      "id": "Tidak ada sampel dalam jendela"
+    },
+    "ui.gap_label.percentile_unsupported_unit": {
+      "en": "Percentile unsupported for this unit",
+      "id": "Persentil tidak didukung untuk satuan ini"
+    },
+    "ui.gap_label.permission_denied": {
+      "en": "Permission denied",
+      "id": "Akses ditolak"
+    },
+    "ui.gap_label.power_state_unknown": {
+      "en": "Power state unknown",
+      "id": "Status daya tidak diketahui"
+    },
+    "ui.gap_label.region_unreachable": {
+      "en": "Region unreachable",
+      "id": "Region tidak dapat dijangkau"
+    },
+    "ui.gap_label.replication_not_enabled": {
+      "en": "Replication not enabled",
+      "id": "Replikasi tidak diaktifkan"
+    },
+    "ui.gap_label.resource_absent_from_response": {
+      "en": "Resource absent from response",
+      "id": "Sumber daya tidak ada dalam respons"
+    },
+    "ui.gap_label.response_too_large": {
+      "en": "Response too large",
+      "id": "Respons terlalu besar"
+    },
+    "ui.gap_label.sku_capability_missing": {
+      "en": "SKU capability missing",
+      "id": "Kapabilitas SKU tidak ada"
+    },
+    "ui.gap_label.sku_unknown": {
+      "en": "SKU unknown",
+      "id": "SKU tidak dikenal"
+    },
+    "ui.gap_list.unrecognized": {
+      "en": "Unrecognised gap type",
+      "id": "Jenis celah tidak dikenal"
+    },
     "ui.gap_list.collapse": {
       "en": "Hide resources",
       "id": "Sembunyikan sumber daya"
@@ -1150,12 +1254,12 @@
       "id": "Semua"
     },
     "ui.run_table.status_completed": {
-      "en": "Completed",
-      "id": "Selesai"
+      "en": "Verified",
+      "id": "Terverifikasi"
     },
     "ui.run_table.status_failed": {
-      "en": "Failed",
-      "id": "Gagal"
+      "en": "Not delivered",
+      "id": "Tidak dikirim"
     },
     "ui.run_table.status_running": {
       "en": "In flight",
@@ -1273,6 +1377,26 @@
       "en": "Resources",
       "id": "Sumber daya"
     },
+    "ui.counterfoil.aria": {
+      "en": "Record identity",
+      "id": "Identitas catatan"
+    },
+    "ui.counterfoil.record": {
+      "en": "Record",
+      "id": "Catatan"
+    },
+    "ui.counterfoil.seal": {
+      "en": "Seal",
+      "id": "Segel"
+    },
+    "ui.counterfoil.state": {
+      "en": "State",
+      "id": "Keadaan"
+    },
+    "ui.counterfoil.window": {
+      "en": "Window",
+      "id": "Jendela"
+    },
     "ui.snapshot.label_snapshot": {
       "en": "Snapshot",
       "id": "Cuplikan"
@@ -1308,6 +1432,10 @@
     "ui.verification.digest_pdf": {
       "en": "Document (.pdf)",
       "id": "Dokumen (.pdf)"
+    },
+    "ui.verification.passed_not_delivered": {
+      "en": "The run did not finish, so no document was produced and none is offered for download. These checks describe the figures that were compiled before it stopped.",
+      "id": "Proses tidak selesai, sehingga tidak ada dokumen yang dihasilkan dan tidak ada yang ditawarkan untuk diunduh. Pemeriksaan ini menjelaskan angka yang dikompilasi sebelum proses berhenti."
     },
     "ui.verification.digest_snapshot": {
       "en": "Snapshot",

@@ -420,7 +420,7 @@ export function StepSections({
           if (items.length === 0) return null
           return (
             <div key={group} className="flex flex-col gap-1">
-              <h3 className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+              <h3 className="text-micro text-muted-foreground uppercase">
                 {GROUP_LABELS[group]}
               </h3>
               <ol
@@ -778,7 +778,7 @@ function AvailableHistory({
   return (
     <p
       className={
-        short ? "text-xs text-amber-700 dark:text-amber-500" : "text-xs text-muted-foreground"
+        short ? "text-xs text-(--status-attention)" : "text-xs text-muted-foreground"
       }
     >
       Available: <span className="font-mono tabular-nums">{months}</span>{" "}
@@ -928,9 +928,10 @@ function SectionInspector({
             and a section that collected nothing, which is the same defect the preset
             row was added to fix, one tier down.
 
-            Not the v2 `MetricPicker`: that reads and writes `definition.metrics[type]`,
-            which a v3 profile does not have. The rules moved to
-            `lib/profiles/section-metrics.ts` and this renders them against the section.
+            Not the v2 `MetricPicker`, which read and wrote `definition.metrics[type]` —
+            a field a v3 profile does not have. Its rules moved to
+            `lib/profiles/section-metrics.ts` and this renders them against the section;
+            the picker itself was deleted with the block-authoring surface.
           */}
           {activePreset === null && (
             <SectionMetricGrid

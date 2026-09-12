@@ -56,10 +56,10 @@ export function RequestSummary({
   return (
     <aside className="h-fit space-y-5 rounded-xl border bg-card p-6 lg:sticky lg:top-24">
       <div>
-        <p className="text-[10px] font-semibold tracking-widest text-muted-foreground uppercase">
+        <p className="text-micro text-muted-foreground uppercase">
           {messageText("ui.request_summary.heading", "en")}
         </p>
-        <h2 className="mt-3 text-xl font-semibold">
+        <h2 className="text-section mt-3">
           {workspace?.projectName ?? "Your report"}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">

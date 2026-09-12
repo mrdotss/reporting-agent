@@ -135,12 +135,29 @@ export default async function ScanPage({ params }: ScanPageProps) {
           <ArrowLeftIcon />
           {subscription.displayName}
         </Link>
-        <h1 className="font-heading text-xl font-medium tracking-tight">
-          {t("ui.scan.heading")}
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-title">{t("ui.scan.heading")}</h1>
+
+          {/* Beside the title, where every other page in this product puts its one
+              primary action. It used to sit inside the figure strip below, which made
+              a row of counts also a toolbar. */}
+          <RescanButton subscriptionId={id} language={language} />
+        </div>
       </div>
 
-      <section className="flex flex-wrap items-center gap-x-8 gap-y-3 rounded-lg border border-border px-5 py-4">
+      {/*
+        Hairlines, not a box.
+
+        These four were in a bordered card — the stat-card pattern the register's tally
+        replaced, for the reason stated there: a border and a radius around a number add
+        a container the number did not need. Here the labels are one or two words and
+        the counts are peers being compared, so they stay on one row rather than
+        becoming a vertical tally; what changes is the frame.
+
+        `divide-x` with `border-y` is the register's own treatment, so a reader moving
+        between the two screens sees one language for "a row of counts".
+      */}
+      <section className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border sm:grid-cols-4 sm:divide-y-0">
         <Figure
           label={t("ui.scan.resources_label")}
           value={reported ? (scan?.resourceCount ?? null) : null}
@@ -157,14 +174,13 @@ export default async function ScanPage({ params }: ScanPageProps) {
           label={t("ui.scan.groups_label")}
           value={reported ? groups.length : null}
         />
-        <RescanButton subscriptionId={id} language={language} />
       </section>
 
       {grouped.length > 0 && (
         <section className="space-y-6">
           {grouped.map((bucket) => (
             <div key={bucket.group} className="space-y-2">
-              <h2 className="font-heading text-sm font-medium tracking-wide uppercase">
+              <h2 className="text-micro font-heading uppercase">
                 {t(GROUP_LABEL_IDS[bucket.group])}{" "}
                 <span className="font-mono text-muted-foreground tabular-nums">
                   {bucket.total}
@@ -268,11 +284,9 @@ function Figure({
   value: number | null
 }) {
   return (
-    <div className="space-y-0.5">
-      <div className="text-xs tracking-wide text-muted-foreground uppercase">
-        {label}
-      </div>
-      <div className="font-mono text-lg tabular-nums">{value ?? "—"}</div>
+    <div className="flex flex-col gap-1 px-5 py-4 max-sm:nth-[odd]:pl-0 sm:first:pl-0 sm:last:pr-0">
+      <div className="text-micro text-muted-foreground uppercase">{label}</div>
+      <div className="text-figure-sm font-mono tabular-nums">{value ?? "—"}</div>
     </div>
   )
 }

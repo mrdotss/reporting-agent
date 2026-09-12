@@ -139,12 +139,9 @@
     font-family: var(--font-heading);
     text-wrap: balance;
     }
-  h1 {
-    font-size: clamp(1.5rem, 2.1vw, 1.875rem);
-    line-height: 1.15;
-    letter-spacing: -0.032em;
-    font-weight: 600;
-    }
+  /* `h1`'s size, leading, tracking and weight are declared once, with the rest of
+     the type ramp, at the foot of this file. Stating them here as well is how the
+     page title came to be drawn five different ways. */
   h2 {
     letter-spacing: -0.02em;
     }
@@ -432,73 +429,282 @@
     font-size: 0.875em;
     margin-block: 0.25em 0;
 }
-/* Reporting workspace: app tokens are deliberately separate from PDF appearance. */
+/* ==========================================================================
+   THE ASSAY OFFICE PALETTE — the app's own token layer.
+
+   Deliberately separate from two things above, and it has to stay that way:
+
+     * the vendored Luma preset in `:root`/`.dark`, which ships untouched and is
+       guarded by `globals-preset.static.test.ts`;
+     * the `--cat-*` categorical chart palette, whose lightness ladder was measured
+       against three dichromacy simulations and is mirrored into
+       `components/charts/palette.ts` and the agent's `chartstyle.py`, with
+       `agent/tests/test_chartstyle.py` asserting all three agree. Charts belong to
+       the *rendered document*, whose appearance the author chooses per profile.
+       This block is app chrome. They are different surfaces and different problems.
+
+   ## Where these colours come from
+
+   This product's thesis is that a number in a delivered report can be proved. A
+   deterministic pipeline collects into an immutable snapshot, a compiler emits
+   figures from that snapshot and nothing else, a verifier proves the document and
+   the snapshot agree, and nothing ships if a check fails.
+
+   That is not a dashboard's job. It is a calibration certificate's job. So the
+   palette is inventoried from the room where certificates are written, sealed and
+   entered into a register:
+
+     ground      accountant's columnar pad — a green-grey sheet, not the cream a
+                 generated interface reaches for, and not a cool SaaS slate
+     ink         iron-gall, oxidised to a blue-black with a green cast
+     verdigris   oxidised copper on the instrument fittings. The one chromatic
+                 voice, and it means exactly one thing: THIS IS TRACEABLE.
+     vermilion   the stamp. It means exactly one thing: THIS COULD NOT BE PROVEN,
+                 and where it appears, no document was delivered.
+     brass       a credential approaching expiry. Attention, not failure.
+
+   ## Depth is rules and tint. There are no shadows.
+
+   Paper does not cast a shadow on itself. Every surface here separates by a hairline
+   rule or a few percent of lightness, never by elevation — which is also what keeps a
+   dense register quiet. `--shadow-*` is declared to `none` so a stray `shadow-sm`
+   inherited from a primitive cannot reintroduce the other strategy.
+
+   ## Radii are 2–3px because printed forms have square corners.
+   ========================================================================== */
 .workspace-design {
-  --background: #f5f7f7; --foreground: #172c37; --card: #fff; --card-foreground: #172c37;
-  --primary: #177c78; --primary-foreground: #fff; --muted: #edf2f1;
-  --muted-foreground: #61747e; --border: #dfe7e8; --input: #d8e2e3; --ring: #42a59b;
+  --background: #ecefe8;          /* the ledger sheet */
+  --foreground: #18282c;          /* iron-gall ink */
+  --card: #f5f7f2;                /* a sheet laid on the stack */
+  --card-foreground: #18282c;
+  --popover: #f5f7f2;
+  --popover-foreground: #18282c;
 
-  /* The app's own radius base, scoped here so the vendored Luma preset's `:root`
-     block stays exactly as shipped — `globals-preset.static.test.ts` guards it, and
-     that guard is worth keeping. Every `--radius-*` step is `calc()`ed from this, so
-     redefining it here re-resolves the whole scale inside the app:
+  --primary: #2c6b5e;             /* verdigris */
+  --primary-foreground: #f5f7f2;
+  --secondary: #e2e6dc;
+  --secondary-foreground: #18282c;
 
-       sm  4.8px   md  6.4px   lg   8px    (controls: button, input, select, textarea)
-       xl  11.2px  2xl 14.4px  3xl  17.6px (surfaces: card, dialog, menu)
+  --muted: #e2e6dc;               /* the well: inputs are inset, they receive */
+  --muted-foreground: #6e7d78;
+  --accent: #dfe6df;
+  --accent-foreground: #18282c;
 
-     8px controls and ~11px surfaces are what the workspace already rendered — but
-     through element-selector overrides at the bottom of this file, which beat the
-     utility classes inside the primitives. `card.tsx` said `rounded-4xl shadow-md`
-     and a card drew at 12px with no shadow. Those overrides are gone now and the
-     primitives say what they mean. */
-  --radius: 0.5rem;
+  --border: #cdd3c8;
+  --input: #d6dcd1;
+  --ring: #2c6b5e;
 
-  /* Status is not the accent.
-     The teal means "this product"; it cannot also mean "this passed", or a verified
-     chip and a primary button become the same signal. Four states, each measured
-     against card, ground and muted in this theme — the lowest is 4.75:1. */
-  --status-verified: #1f6b4d;   --status-verified-soft: #e4f1ea;
-  --status-inflight: #3d6382;   --status-inflight-soft: #e6edf3;
-  --status-attention: #8a6410;  --status-attention-soft: #f6eedb;
-  --status-failed: #9a3b1f;     --status-failed-soft: #f7e8e2;
+  --destructive: #a03726;         /* vermilion. Unproven. Nothing else. */
+
+  /* Printed forms have square corners. Every `--radius-*` step is calc()ed from
+     this, so one declaration re-resolves the whole scale inside the app:
+       sm 1.2px  md 1.6px  lg 2px   (controls)
+       xl 2.8px  2xl 3.6px  3xl 4.4px  4xl 5.2px  (surfaces)
+     Controls land at 2px and surfaces at ~3px, which is the contrast this design
+     wants: a form's box and a form's field are both ruled, not rounded. */
+  --radius: 0.125rem;
+
+  /* Status is not the accent — the rule the previous palette got right and this one
+     keeps. Verdigris means "this product"; it cannot also mean "this passed", or a
+     verified stamp and a primary button become the same signal. Four states, each
+     measured against --card, --background and --muted in this theme; lowest is
+     4.83:1. */
+  --status-verified: #1f5e4e;   --status-verified-soft: #dfebe3;
+  --status-inflight: #3c5f78;   --status-inflight-soft: #e0e8ed;
+  --status-attention: #856520;  --status-attention-soft: #f0ead6;
+  --status-failed: #a03726;     --status-failed-soft: #f4e3de;
 }
-.dark .workspace-design {
-  --background: #101c24; --foreground: #e8eff0; --card: #182a34; --card-foreground: #e8eff0;
-  --primary: #5ac8b6; --primary-foreground: #102d29; --muted: #223640;
-  --muted-foreground: #a8bbc3; --border: #314650; --input: #37505a; --ring: #5ac8b6;
 
-  /* Lightened rather than inverted, and measured the same way: lowest is 5.69:1. */
-  --status-verified: #68cfa2;   --status-verified-soft: #16362a;
-  --status-inflight: #93bbdd;   --status-inflight-soft: #1a2c3a;
-  --status-attention: #dcb76b;  --status-attention-soft: #332913;
-  --status-failed: #ec9a80;     --status-failed-soft: #3a1f17;
+/* The same room under a microfilm reader. Re-derived, not inverted: verdigris is
+   lifted to clear the dark ground rather than reused, and the ladder of surfaces
+   keeps one hue and moves only lightness. */
+.dark .workspace-design {
+  --background: #141a1b;
+  --foreground: #e3e8e2;
+  --card: #1c2426;
+  --card-foreground: #e3e8e2;
+  --popover: #1c2426;
+  --popover-foreground: #e3e8e2;
+
+  --primary: #63ac96;
+  --primary-foreground: #0e1817;
+  --secondary: #242d2f;
+  --secondary-foreground: #e3e8e2;
+
+  --muted: #0e1314;
+  --muted-foreground: #7c8983;
+  --accent: #232c2e;
+  --accent-foreground: #e3e8e2;
+
+  --border: #2b3437;
+  --input: #323c3f;
+  --ring: #63ac96;
+
+  --destructive: #de7862;
+
+  /* Lightened rather than inverted, and measured the same way: lowest is 5.41:1. */
+  --status-verified: #6fc3a4;   --status-verified-soft: #16302a;
+  --status-inflight: #93bbdd;   --status-inflight-soft: #18272f;
+  --status-attention: #c9a659;  --status-attention-soft: #302713;
+  --status-failed: #de7862;     --status-failed-soft: #361d18;
 }
 @media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* The navigation rail is a **fixed dark surface in both themes** — that is the design,
-   not an oversight. So it gets the sidebar token set rather than hardcoded hexes, and it
-   gets the same values twice.
+/* The navigation register.
 
-   Declaring them matters: `components/app-shell/user-menu.tsx` renders inside this rail
-   and colours itself with `text-sidebar-foreground`. Left undeclared, that resolved to
-   the light theme's near-black on navy — the signed-in address and "Sign out" were
-   legible only as a shape. Anything else dropped into the rail inherits correctly now
-   instead of having to know it is on a dark ground. */
-.workspace-design,
+   It used to be a fixed dark navy rail in both themes — a dark slab dropped into a
+   light page, which fragmented the app into "sidebar world" and "content world".
+   This design has no such rail. Navigation is a register bar and a tab strip sitting
+   on the same paper as the content, separated by one hairline rule, because a file
+   header is part of the file.
+
+   The `--sidebar-*` names are kept and re-valued rather than deleted: the primitives
+   and `surface-tokens.static.test.ts` both know them, and anything dropped into the
+   register still needs to inherit a correct foreground. They now mean "the register's
+   own surface", which is a half-step off the page rather than a different world. */
+.workspace-design {
+  --sidebar: #f5f7f2;
+  --sidebar-foreground: #18282c;
+  --sidebar-primary: #2c6b5e;
+  --sidebar-primary-foreground: #f5f7f2;
+  --sidebar-accent: #dfe6df;
+  --sidebar-accent-foreground: #18282c;
+  --sidebar-border: #cdd3c8;
+  --sidebar-ring: #2c6b5e;
+}
 .dark .workspace-design {
-  --sidebar: #122a36;
-  --sidebar-foreground: #ccd9de;
-  --sidebar-primary: #b6f2dc;
-  --sidebar-primary-foreground: #0d2029;
-  --sidebar-accent: #254650;
-  --sidebar-accent-foreground: #b6f2dc;
-  --sidebar-border: #2c4a56;
-  --sidebar-ring: #5ac8b6;
+  --sidebar: #1c2426;
+  --sidebar-foreground: #e3e8e2;
+  --sidebar-primary: #63ac96;
+  --sidebar-primary-foreground: #0e1817;
+  --sidebar-accent: #232c2e;
+  --sidebar-accent-foreground: #e3e8e2;
+  --sidebar-border: #2b3437;
+  --sidebar-ring: #63ac96;
 }
 
-/* The workspace switcher sits on the rail, so it reads from the rail's tokens. */
+/* The project selector sits in the register, so it reads as an inset well. */
 .workspace-design .workspace-selector[data-slot="select-trigger"] {
-  background: color-mix(in oklab, var(--sidebar) 82%, white);
-  border-color: var(--sidebar-border);
-  color: var(--sidebar-foreground);
+  background: var(--muted);
+  border-color: var(--border);
+  color: var(--foreground);
+}
+
+
+/* ==========================================================================
+   The type ramp.
+
+   APPENDED, and additive only: no preset token above is altered.
+
+   ## Why this exists
+
+   Before this block the product had two font sizes. `text-sm` and `text-xs`
+   carried 479 of ~513 sized elements — 93% — and everything above them was 12
+   uses of 16px, 7 of 18px, 9 of 20px and 4 of 24px. Hierarchy therefore had to
+   come from colour and hairlines alone, because size was doing almost nothing,
+   and `design-system.md`'s claim that "hierarchy comes from size, weight and
+   whitespace" was not true of the build.
+
+   Two repeated elements showed it worst:
+
+     * The page title — the most repeated element in the product — was drawn five
+       ways with no rule: the bare global rule (~30px/600), `text-2xl`/500,
+       `text-xl`/500, `text-xl`/600 and `text-base`/500. Moving Overview → Reports
+       → a run shrank the title 30 → 20 → 24.
+     * The small uppercase label had **19 distinct spellings** across ~33 uses —
+       four sizes, four weights, and six trackings of which three were invented
+       bracket values (0.12em, 0.14em, 0.18em) matching neither each other nor any
+       scale.
+
+   ## The shape of the ramp
+
+   Six steps, restrained on purpose: this is an instrument, not a marketing page,
+   so the top of the ramp is ~31px rather than something that shouts. Each token
+   carries its own line-height, tracking and weight, because those are the three
+   things that drift when only the size is stated — which is how one label
+   acquired nineteen spellings.
+
+   `--text-meta` at 13px is the step the product did not have. Most of the 222
+   `text-xs` uses are secondary prose sitting one step below body; at 12px against
+   14px that step is nearly invisible, and 13px is where it reads.
+
+   Body text stays `text-sm`. This ramp names the *decisions* — title, section,
+   meta, micro — and does not attempt to rewrite every paragraph in the app.
+   ========================================================================== */
+
+@theme {
+    /* The landing title. One surface uses it: the workspace overview. */
+    --text-display: 2.125rem;
+    --text-display--line-height: 1.1;
+    --text-display--letter-spacing: -0.02em;
+    --text-display--font-weight: 400;
+
+    /* Every other page title, on every working surface. */
+    --text-title: 1.625rem;
+    --text-title--line-height: 1.16;
+    --text-title--letter-spacing: -0.016em;
+    --text-title--font-weight: 600;
+
+    /* A section heading within a page. Replaces `text-sm font-medium` h2s, which
+       rendered section headings at body size and made them read as labels. */
+    --text-section: 1.0625rem;
+    --text-section--line-height: 1.4;
+    --text-section--letter-spacing: -0.008em;
+    --text-section--font-weight: 600;
+
+    /* Secondary prose: the note under a figure, the description under a heading.
+       The step between body and micro that the product was missing. */
+    --text-meta: 0.8125rem;
+    --text-meta--line-height: 1.55;
+    --text-meta--letter-spacing: 0;
+    --text-meta--font-weight: 400;
+
+    /* The eyebrow / micro-label, stated once. Pair with `uppercase` and, where it
+       is a label rather than a heading, `text-muted-foreground`. */
+    --text-micro: 0.6875rem;
+    --text-micro--line-height: 1.4;
+    --text-micro--letter-spacing: 0.13em;
+    --text-micro--font-weight: 600;
+
+    /* Figures have their own two steps, and they are not the text steps.
+
+       A figure is the thing this product exists to make trustworthy, so it is
+       allowed to be the largest thing on a page — larger than the title above it.
+       It was drawn at `text-[2rem]`, `text-2xl` and `text-lg` with no rule about
+       which went where, which is the same drift the text ramp above just settled.
+
+       Two roles, because two exist: the page-level figure a reader came for, and
+       the supporting count inside a row or a panel. A figure set inline in a table
+       or a sentence takes the size of the text around it and needs no token.
+
+       Neither carries a family or `tabular-nums` — `font-mono tabular-nums` stays
+       at the call site, where it is already used without exception. */
+    --text-figure: 1.75rem;
+    --text-figure--line-height: 1;
+    --text-figure--letter-spacing: -0.015em;
+    --text-figure--font-weight: 500;
+
+    --text-figure-sm: 1.125rem;
+    --text-figure-sm--line-height: 1.2;
+    --text-figure-sm--letter-spacing: -0.008em;
+    --text-figure-sm--font-weight: 500;
+}
+
+@layer base {
+    /* A bare `<h1>` is the landing title, and **exactly one surface uses it**:
+       the workspace overview, whose title is the customer project on screen.
+       Every other page says `text-title` explicitly, which wins from the
+       utilities layer.
+
+       That is the whole rule. Before it there were five treatments and no rule,
+       so moving Overview → Reports → a run shrank the title 30 → 20 → 24. If a
+       second page ever wants the display size, the question to answer first is
+       which of the two is the landing surface — not whether this one feels
+       important. */
+    h1 {
+        font-size: var(--text-display);
+        line-height: var(--text-display--line-height);
+        letter-spacing: var(--text-display--letter-spacing);
+        font-weight: var(--text-display--font-weight);
+    }
 }

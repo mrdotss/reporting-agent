@@ -1,13 +1,17 @@
 /**
- * Tests for task 8.4 — the fixed front-matter section of the builder.
+ * Tests for task 8.4 — the fixed front-matter section of the profile wizard.
  *
  * Verifies:
  * - FrontMatterForm renders all three sections (cover, document control, TOC)
  * - Signature slots show per-role with the "ruled box" statement
  * - Document-number pattern validates its closed placeholder set on the step
  * - TOC section shows "retained and not emitted" when approach is `none`
- * - BlockPalette has no entry for cover, document_control, or toc
- * - The palette's first entry is a content block (heading)
+ *
+ * Two cases were dropped with the block builder: that `BlockPalette` offered no
+ * entry for `cover`, `document_control` or `toc`, and that its first entry was a
+ * heading. Both guarded a palette that no longer exists — front matter is
+ * configured on the wizard's Document step, and there is no surface left that
+ * could offer a front-matter type as a block.
  */
 
 import { render, screen, fireEvent } from "@testing-library/react"
@@ -18,10 +22,6 @@ import {
   TOC_ADOPTED_APPROACH,
   type FrontMatterFormValues,
 } from "@/components/templates/front-matter-form"
-import {
-  BlockPalette,
-  PALETTE_GROUPS,
-} from "@/components/templates/block-palette"
 import { APPROVER_ROLES } from "@/lib/templates/definition"
 
 // ---------------------------------------------------------------------------
@@ -211,33 +211,3 @@ describe("FrontMatterForm", () => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// BlockPalette — no cover, no document control, no TOC
-// ---------------------------------------------------------------------------
-
-describe("BlockPalette", () => {
-  it("has NO palette entry for cover", () => {
-    const allTypes = PALETTE_GROUPS.flatMap((g) => g.entries.map((e) => e.type))
-    expect(allTypes).not.toContain("cover")
-  })
-
-  it("has NO palette entry for document_control or toc (they are not block types)", () => {
-    const allTypes = PALETTE_GROUPS.flatMap((g) => g.entries.map((e) => e.type))
-    expect(allTypes).not.toContain("document_control")
-    expect(allTypes).not.toContain("toc")
-  })
-
-  it("first entry in the palette is a content block (heading), not cover", () => {
-    const firstEntry = PALETTE_GROUPS[0].entries[0]
-    expect(firstEntry.type).toBe("heading")
-  })
-
-  it("renders without cover in the DOM", () => {
-    const onInsert = vi.fn()
-    render(<BlockPalette onInsert={onInsert} />)
-
-    const buttons = screen.getAllByRole("button")
-    const blockTypes = buttons.map((b) => b.getAttribute("data-block-type"))
-    expect(blockTypes).not.toContain("cover")
-  })
-})
