@@ -29,12 +29,15 @@ import { describe, expect, test } from "vitest"
  * the assertions below are about the *wiring* rather than the rendering:
  *
  * 1. Something that is not a test imports `StylePresetPicker`.
- * 2. `StepDesign` destructures `thumbnails` rather than only declaring it.
- * 3. No `<Select>` in the wizard is labelled as the document theme.
+ * 2. No `<Select>` in the wizard is labelled as the document theme.
  *
- * Requirement 13.3 is the rule these defend: "not names in a select — a theme is
- * a visual decision, and a dropdown of words gives the user nothing to decide
- * with".
+ * The `thumbnails` assertions this file used to carry are gone with the prop. The
+ * picker is a list now — each theme named, with its heading face, table treatment
+ * and density in words — rather than a grid of rendered page images, so there is no
+ * server-resolved prop left to drop on the floor. What Requirement 13.3 actually
+ * protects survives the change and is asserted below: the choice is never four bare
+ * words in a dropdown, because "a dropdown of words gives the user nothing to decide
+ * with". A list that describes what each theme does is not that.
  */
 
 const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
@@ -53,26 +56,25 @@ describe("the theme picker is reachable (Requirement 13.3)", () => {
     expect(stepDesign).toContain("<StylePresetPicker")
   })
 
-  test("StepDesign destructures `thumbnails`, it does not only declare it", () => {
-    const source = read("components/templates/step-design.tsx")
+  test("every preset is offered with what it does, not only its name", () => {
+    const picker = read("components/templates/style-preset-picker.tsx")
 
-    // The parameter list, up to the type annotation that follows it.
-    const params = source.slice(
-      source.indexOf("export function StepDesign({"),
-      source.indexOf("}: Readonly<{")
-    )
-
-    expect(params).not.toHaveLength(0)
-    expect(params).toContain("thumbnails")
+    // The descriptions are the control's content, not an accessibility afterthought:
+    // they are what a reader chooses between when there is no picture to compare.
+    expect(picker).toContain("THEME_DESCRIPTION")
+    for (const preset of ["editorial", "corporate", "technical", "minimal"]) {
+      expect(picker).toContain(`${preset}:`)
+    }
   })
 
-  test("`thumbnails` reaches the picker rather than stopping at the prop", () => {
-    const source = read("components/templates/step-design.tsx")
+  test("selection is conveyed by more than a fill", () => {
+    const picker = read("components/templates/style-preset-picker.tsx")
 
-    const picker = source.slice(source.indexOf("<StylePresetPicker"))
-    expect(picker.slice(0, picker.indexOf("/>"))).toContain(
-      "thumbnails={thumbnails}"
-    )
+    // Requirement 13.4. A row that differed only by background would be invisible in
+    // monochrome and to a reader who cannot separate the two tones.
+    expect(picker).toContain('role="radio"')
+    expect(picker).toContain("aria-checked")
+    expect(picker).toContain("CheckCircleIcon")
   })
 
   test("the document theme is not offered as a select of names", () => {

@@ -18,7 +18,6 @@ import {
   type DesignSpec,
   type TemplateDefinition,
 } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 /**
  * Step 6 — design (Requirements 7.1, 7.2, 11.1).
@@ -141,23 +140,10 @@ export function StepDesign({
   definition,
   onChange,
   controls = "all",
-  thumbnails,
 }: Readonly<{
   controls?: "all" | "theme" | "details"
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
-  /**
-   * Resolved on the server, because deciding whether an image is current means
-   * hashing a theme document on disk (Requirement 13.2). The verdict crosses to
-   * the browser; the digests do not.
-   *
-   * Read by {@link StylePresetPicker} below. It was declared here and never
-   * destructured for long enough to ship — the server hashed four theme
-   * documents on every render to produce data that reached no pixel, and the
-   * theme was chosen from a dropdown of four words. `design-system.md` records
-   * the first time this happened; this is the prop being read.
-   */
-  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const accentId = useId()
   const decimalsId = useId()
@@ -180,23 +166,27 @@ export function StepDesign({
             with". This is the decision that determines what the customer's delivered
             PDF looks like, so it is made against pictures of the page.
 
-            `thumbnails` arrives resolved from the server — `theme-thumbnails.ts` hashes
-            each image against the theme document it derives from, so a card whose
-            picture fell out of step with its theme says so rather than showing a
-            consultant the previous theme.
+            A list rather than a grid of page images. The images were the earlier
+            answer and they cost more than they returned: four rendered pages at
+            thumbnail size show mostly grey text, the difference between two themes is
+            legible only at a size the rail cannot give, and each one had to be hashed
+            against its theme document on every render to prove it was not stale.
+
+            What actually distinguishes these four is stated in words instead — the
+            heading face, the table treatment, the density — which reads at any size
+            and needs no freshness check to stay true.
           */}
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
               <h3 className="text-title-sm">Document theme</h3>
               <p className="text-meta max-w-prose">
-                Each card is a page from this theme, rendered through the same
-                pipeline as the delivered report.
+                What each theme does to the page: its headings, its tables, and how
+                much air it leaves.
               </p>
             </div>
 
             <StylePresetPicker
               selected={design.preset}
-              thumbnails={thumbnails}
               onSelect={(preset) => set({ preset })}
             />
           </div>

@@ -6,6 +6,25 @@ import type { RunView } from "@/lib/db/views"
 import { RELAY_REOPEN_MS } from "@/lib/events"
 import type { RunGap } from "@/lib/runs/gaps"
 
+/**
+ * `next/navigation`, because the hook now refreshes the server-rendered half of the
+ * page when the run's phase changes — the counterfoil's stamp, the download controls
+ * and the verification panel are server components and do not move with this hook's
+ * state. `refresh` is a spy rather than a no-op so that behaviour is assertable.
+ */
+const refresh = vi.fn()
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    refresh,
+    push: vi.fn(),
+    replace: vi.fn(),
+    back: vi.fn(),
+    forward: vi.fn(),
+    prefetch: vi.fn(),
+  }),
+}))
+
 import { useRunStream } from "./useRunStream"
 
 /**
@@ -547,5 +566,80 @@ describe("teardown", () => {
     unmount()
 
     expect(source?.closed).toBe(true)
+  })
+})
+
+describe("the phase the relay describes reaches the run, not only the timeline", () => {
+  test("a tool event advances the run's status", async () => {
+    // `lib/events.ts`: "the `id` of a `progress` event is that same status". The hook
+    // used to apply that id to `steps` alone, so the phase list rendered from
+    // `run.status` sat at the status the server happened to render while the timeline
+    // beside it advanced through three phases. They disagreed on screen.
+    const { result } = renderHook(() =>
+      useRunStream({ initialRun: view({ status: "queued" }) })
+    )
+
+    const source = latest()
+
+    await act(async () => {
+      source?.emit({ type: "tool", id: "collecting", phase: "start" })
+    })
+
+    await waitFor(() => expect(result.current.run.status).toBe("collecting"))
+  })
+
+  test("it never moves the status backwards", async () => {
+    // A reconnect replays steps the relay had already opened, and the relay reopens a
+    // step it has already sent. A status that could move backwards would show a run
+    // returning to Queued after it had started collecting.
+    const { result } = renderHook(() =>
+      useRunStream({ initialRun: view({ status: "collecting" }) })
+    )
+
+    const source = latest()
+
+    await act(async () => {
+      source?.emit({ type: "tool", id: "queued", phase: "start" })
+    })
+
+    expect(result.current.run.status).toBe("collecting")
+  })
+})
+
+describe("the server-rendered half of the page is refreshed when the phase changes", () => {
+  test("a status change refreshes the route", async () => {
+    // The counterfoil's stamp, the download controls, the verification panel and the
+    // snapshot provenance are server components reading the row and S3 at request
+    // time. None of them moves with this hook's state, which is why a finished run
+    // showed a stale stamp and offered no document until the page was reloaded.
+    refresh.mockClear()
+
+    const { result } = renderHook(() =>
+      useRunStream({ initialRun: view({ status: "queued" }) })
+    )
+
+    const source = latest()
+
+    await act(async () => {
+      source?.emit({ type: "tool", id: "collecting", phase: "start" })
+    })
+
+    await waitFor(() => expect(result.current.run.status).toBe("collecting"))
+    expect(refresh).toHaveBeenCalled()
+  })
+
+  test("a status that has not changed refreshes nothing", async () => {
+    // `refresh()` re-renders the component that called it, so a guard that forgot
+    // which status it had already acted on would refresh in a loop.
+    renderHook(() => useRunStream({ initialRun: view({ status: "collecting" }) }))
+
+    const source = latest()
+    refresh.mockClear()
+
+    await act(async () => {
+      source?.emit({ type: "tool", id: "collecting", phase: "start" })
+    })
+
+    expect(refresh).not.toHaveBeenCalled()
   })
 })

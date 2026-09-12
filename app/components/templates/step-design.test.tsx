@@ -64,7 +64,7 @@ describe("StepDesign separator controls", () => {
         <StepDesign
           definition={makeDefinition()}
           onChange={() => {}}
-          thumbnails={[]}
+
         />
       </StrictMode>
     )
@@ -82,7 +82,7 @@ describe("StepDesign separator controls", () => {
       <StepDesign
         definition={makeDefinition({ language: "en" })}
         onChange={() => {}}
-        thumbnails={[]}
+
       />
     )
 
@@ -100,7 +100,7 @@ describe("StepDesign separator controls", () => {
       <StepDesign
         definition={makeDefinition({ language: "id" })}
         onChange={() => {}}
-        thumbnails={[]}
+
       />
     )
 
@@ -126,7 +126,7 @@ describe("StepDesign separator controls", () => {
           },
         })}
         onChange={() => {}}
-        thumbnails={[]}
+
       />
     )
 

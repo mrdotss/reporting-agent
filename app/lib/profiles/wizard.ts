@@ -91,8 +91,8 @@ export const WIZARD_STEPS: readonly WizardStep[] = [
   {
     id: "preview",
     number: 6,
-    title: "Preview",
-    summary: "What the document will look like, and saving the version.",
+    title: "Review",
+    summary: "Everything this preset declares, and saving the version.",
   },
 ]
 

@@ -11,8 +11,114 @@ import {
   type CompletionProblem,
 } from "@/lib/profiles/wizard"
 
+
+/** One fact on the review sheet. */
+type SummaryRow = {
+  readonly label: string
+  readonly value: string
+  /** Identifiers and figures are mono; prose and names are not. */
+  readonly mono?: boolean
+}
+
+/** An optional that is genuinely unset, drawn so it cannot be mistaken for empty. */
+const UNSET = "—"
+
+function text(value: unknown): string {
+  return typeof value === "string" && value.trim() !== "" ? value : UNSET
+}
+
+function record(source: unknown, key: string): unknown {
+  if (typeof source !== "object" || source === null) return undefined
+  return (source as Record<string, unknown>)[key]
+}
+
 /**
- * Step 7 — preview and completion (Requirements 11.1, 11.5, 11.10).
+ * The period rule, in the words the wizard used to set it.
+ *
+ * `last_full_month` and a pair of dates are different facts — the first resolves when
+ * the run is enqueued and the second does not — so the rule is shown rather than the
+ * dates it happens to resolve to today.
+ */
+function periodLabel(definition: TemplateDefinition): string {
+  const period = record(definition, "period")
+  const kind = record(period, "kind")
+  if (typeof kind !== "string") return UNSET
+
+  const start = record(period, "start")
+  const end = record(period, "end")
+  if (typeof start === "string" && typeof end === "string") {
+    return `${start} to ${end}`
+  }
+
+  return kind.replace(/_/g, " ")
+}
+
+/**
+ * The review sheet, grouped by the step each fact was set on.
+ *
+ * Grouped rather than flat because the point of the sheet is to be checked: a reader
+ * who disagrees with a value needs to know which step to go back to, and the grouping
+ * is that answer without a link per row.
+ */
+const SUMMARY_GROUPS: readonly {
+  readonly title: string
+  readonly rows: (definition: TemplateDefinition) => readonly SummaryRow[]
+}[] = [
+  {
+    title: "Identity",
+    rows: (definition) => {
+      const identity = record(definition, "identity")
+      return [
+        { label: "Profile name", value: text(record(identity, "name")) },
+        { label: "Report title", value: text(record(identity, "report_title")) },
+        { label: "Customer", value: text(record(identity, "customer_name")) },
+        { label: "Language", value: text(record(identity, "language")), mono: true },
+      ]
+    },
+  },
+  {
+    title: "Content",
+    rows: (definition) => [
+      { label: "Sections", value: String(sectionCount(definition)), mono: true },
+      {
+        label: "Resource types in scope",
+        value:
+          scopedResourceTypeCount(definition) === 0
+            ? "all"
+            : String(scopedResourceTypeCount(definition)),
+        mono: true,
+      },
+      {
+        label: "Metric entries",
+        value: String(metricItemCount(definition)),
+        mono: true,
+      },
+      { label: "Period", value: periodLabel(definition), mono: true },
+    ],
+  },
+  {
+    title: "Document",
+    rows: (definition) => {
+      const design = record(definition, "design")
+      const front = record(definition, "front_matter")
+      const cover = record(front, "cover")
+      return [
+        { label: "Theme", value: text(designPreset(definition)) },
+        { label: "Page size", value: text(record(design, "page_size")), mono: true },
+        { label: "Density", value: text(record(design, "density")) },
+        { label: "Table style", value: text(record(design, "table_style")) },
+        {
+          label: "Cover page",
+          value: record(design, "cover_page") === false ? "off" : "on",
+        },
+        { label: "Cover logo", value: record(cover, "logo_key") ? "set" : UNSET },
+      ]
+    },
+  },
+]
+
+/**
+ * Step 6 — review and completion (Requirements 11.1, 11.5, 11.10).
  *
  * ## Three things, in this order
  *
@@ -50,10 +156,6 @@ export function StepPreview({
   definition: TemplateDefinition
   problems: readonly CompletionProblem[]
 }>) {
-  const sections = sectionCount(definition)
-  const resourceTypes = scopedResourceTypeCount(definition)
-  const metricEntries = metricItemCount(definition)
-  const preset = designPreset(definition)
   const ready = problems.length === 0
 
   return (
@@ -131,29 +233,50 @@ export function StepPreview({
         </ul>
       )}
 
-      <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-        <div className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">Sections</dt>
-          <dd className="font-mono tabular-nums">{sections}</dd>
-        </div>
+      {/*
+        What this preset declares, end to end.
 
-        <div className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">Resource types</dt>
-          <dd className="font-mono tabular-nums">
-            {resourceTypes === 0 ? "all" : resourceTypes}
-          </dd>
-        </div>
+        This was four counts — sections, resource types, metric entries, preset — which
+        answered "is it filled in" and not "is it right". The step is called Review, and
+        a reader on it is about to cut a version that a delivered report will be pinned
+        to: they need to see the decisions, not a tally of them.
 
-        <div className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">Metric entries</dt>
-          <dd className="font-mono tabular-nums">{metricEntries}</dd>
-        </div>
+        Grouped by the step each fact came from, so a wrong one is one click from where
+        it is changed. Values are mono where they are identifiers or figures, and every
+        absent optional reads as an em dash rather than as blank — "not set" and "set to
+        nothing" are different facts, and this is the screen that must not blur them.
+      */}
+      <div className="flex flex-col divide-y divide-border border-y border-border">
+        {SUMMARY_GROUPS.map((group) => (
+          <div
+            key={group.title}
+            className="grid gap-x-8 gap-y-3 py-4 sm:grid-cols-[10rem_1fr]"
+          >
+            <h3 className="text-micro text-muted-foreground uppercase">
+              {group.title}
+            </h3>
 
-        <div className="flex flex-col">
-          <dt className="text-xs text-muted-foreground">Preset</dt>
-          <dd className="capitalize">{preset ?? "—"}</dd>
-        </div>
-      </dl>
+            <dl className="grid gap-x-8 gap-y-2.5 sm:grid-cols-2">
+              {group.rows(definition).map((row) => (
+                <div key={row.label} className="flex flex-col gap-0.5">
+                  <dt className="text-meta text-muted-foreground">
+                    {row.label}
+                  </dt>
+                  <dd
+                    className={
+                      row.mono
+                        ? "font-mono text-sm tabular-nums"
+                        : "text-sm"
+                    }
+                  >
+                    {row.value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

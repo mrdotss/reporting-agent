@@ -3,7 +3,6 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 
 import { StepDocument } from "./step-document"
 import type { TemplateDefinition } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 afterEach(cleanup)
 
@@ -17,17 +16,6 @@ afterEach(cleanup)
  * validator actually requires.
  */
 
-/**
- * The four cards the preset picker renders. `src: null` is a legitimate state
- * (Requirement 13.8 — the card says the image is unavailable and stays
- * selectable), so these exercise the picker without needing real PNG bytes.
- */
-const THUMBNAILS: readonly ThemeThumbnail[] = [
-  { preset: "editorial", src: null, unavailableReason: "absent" },
-  { preset: "corporate", src: null, unavailableReason: "absent" },
-  { preset: "technical", src: null, unavailableReason: "absent" },
-  { preset: "minimal", src: null, unavailableReason: "absent" },
-]
 
 function v3Definition(frontMatter?: unknown): TemplateDefinition {
   return {
