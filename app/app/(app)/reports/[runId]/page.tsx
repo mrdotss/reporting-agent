@@ -1,11 +1,14 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
+import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
 import { RequestDetails } from "@/components/reports/request-details"
 import { RunProgress } from "@/components/reports/run-progress"
+import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { VerificationPanel } from "@/components/reports/verification-panel"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
@@ -139,7 +142,7 @@ export default async function RunPage({ params }: RunPageProps) {
   const terminal = run.status === "completed" || run.status === "failed"
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 lg:max-w-6xl">
+    <PageBody kind="reading">
       <header className="flex flex-col gap-3">
         <Link
           href="/reports"
@@ -150,9 +153,18 @@ export default async function RunPage({ params }: RunPageProps) {
         </Link>
 
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="font-heading text-2xl font-medium tracking-tight text-balance">
-            {view.templateName ?? subscriptionName}
-          </h1>
+          {/*
+            The status sits with the title, not forty lines down beside the phase list.
+            A reader arriving at a run asks one question first — did this work — and it
+            was being answered below the download card, under a paragraph.
+          */}
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-heading text-2xl font-medium tracking-tight text-balance">
+              {view.templateName ?? subscriptionName}
+            </h1>
+
+            <RunStatusBadge status={view.status} />
+          </div>
 
           {/* The zone travels with the dates, on every surface that names a period. */}
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
@@ -267,8 +279,13 @@ export default async function RunPage({ params }: RunPageProps) {
                       <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
                         Definition digest
                       </dt>
-                      <dd className="truncate font-mono text-xs text-muted-foreground">
-                        {pinned.definitionSha256.slice(0, 24)}
+                      <dd>
+                        <Identifier
+                          value={pinned.definitionSha256}
+                          kind="digest"
+                          label="Definition digest"
+                          className="text-muted-foreground"
+                        />
                       </dd>
                     </div>
                   </dl>
@@ -295,6 +312,6 @@ export default async function RunPage({ params }: RunPageProps) {
         </div>
       ) : null}
 
-    </div>
+    </PageBody>
   )
 }

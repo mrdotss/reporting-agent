@@ -1,8 +1,9 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
 import { RequestReportDialog } from "@/components/reports/request-report-dialog"
-import { RunFilters } from "@/components/reports/run-filters"
+import { RunFilters, RunPagination } from "@/components/reports/run-filters"
 import { RunTable } from "@/components/reports/run-table"
 import { requireSession } from "@/lib/auth/guard"
 import type { RunStatus } from "@/lib/db/schema"
@@ -145,7 +146,7 @@ export default async function ReportsPage({
   const now = new Date()
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+    <PageBody kind="wide">
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-medium tracking-tight">
           Reports
@@ -173,7 +174,6 @@ export default async function ReportsPage({
           total={total}
           shown={runs.length}
           offset={query.offset ?? 0}
-          pageSize={RUN_PAGE_SIZE}
           counts={counts}
         />
 
@@ -183,7 +183,14 @@ export default async function ReportsPage({
           )}
           subscriptions={subscriptions}
         />
+
+        {/* After the rows, not before them. */}
+        <RunPagination
+          total={total}
+          offset={query.offset ?? 0}
+          pageSize={RUN_PAGE_SIZE}
+        />
       </section>
-    </div>
+    </PageBody>
   )
 }

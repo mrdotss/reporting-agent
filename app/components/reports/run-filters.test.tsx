@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen } from "@testing-library/react"
 
-import { RunFilters } from "./run-filters"
+import { RunFilters, RunPagination } from "./run-filters"
 
 const push = vi.fn()
 let search = ""
@@ -22,14 +22,23 @@ const COUNTS = { all: 31, completed: 6, failed: 25, running: 0 }
 
 function renderFilters(overrides: Partial<Parameters<typeof RunFilters>[0]> = {}) {
   return render(
-    <RunFilters
-      total={31}
-      shown={25}
-      offset={0}
-      pageSize={25}
-      counts={COUNTS}
-      {...overrides}
-    />
+    <RunFilters total={31} shown={25} offset={0} counts={COUNTS} {...overrides} />
+  )
+}
+
+/**
+ * The pager is its own component now, and its own render here.
+ *
+ * It used to sit inside the toolbar, which put "Previous / 1 of 5 / Next" *above* the
+ * rows it pages through. Both halves still read and write the same query string, so
+ * the split duplicates no state — which is what these two suites, sharing one set of
+ * URL assertions, are here to keep true.
+ */
+function renderPager(
+  overrides: Partial<Parameters<typeof RunPagination>[0]> = {}
+) {
+  return render(
+    <RunPagination total={31} offset={0} pageSize={25} {...overrides} />
   )
 }
 
@@ -81,23 +90,34 @@ describe("filters travel in the URL", () => {
   })
 })
 
-describe("the pager", () => {
-  test("is absent when everything fits on one page", () => {
-    renderFilters({ total: 12, shown: 12 })
-    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument()
-  })
-
-  test("states the range against the true total, not the page size", () => {
+describe("the toolbar states the range", () => {
+  test("against the true total, not the page size", () => {
     renderFilters({ total: 31, shown: 25, offset: 0 })
     expect(screen.getByText("1–25 / 31")).toBeInTheDocument()
   })
+})
+
+describe("the pager", () => {
+  test("is absent when everything fits on one page", () => {
+    renderPager({ total: 12 })
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument()
+  })
 
   test("Previous is disabled on the first page and Next on the last", () => {
-    renderFilters({ total: 31, shown: 25, offset: 0 })
+    renderPager({ total: 31, offset: 0 })
     expect(screen.getByRole("button", { name: "Previous" })).toBeDisabled()
 
     cleanup()
-    renderFilters({ total: 31, shown: 6, offset: 25 })
+    renderPager({ total: 31, offset: 25 })
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled()
+  })
+
+  test("it is not part of the toolbar", () => {
+    // The whole point of the split: the filters render without a pager in them.
+    renderFilters({ total: 31, shown: 25, offset: 0 })
+    expect(screen.queryByRole("button", { name: "Next" })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Previous" })
+    ).not.toBeInTheDocument()
   })
 })

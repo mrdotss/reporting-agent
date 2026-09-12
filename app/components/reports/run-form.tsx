@@ -10,6 +10,7 @@ import { PlayIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Identifier } from "@/components/identifier"
 import {
   Select,
   SelectContent,
@@ -380,6 +381,22 @@ export function RunForm({
     // missing.
     (!requiresFrontMatter || frontMatterComplete)
 
+  /**
+   * Why the submit is refused, in one sentence, or `undefined` when it is not.
+   *
+   * Derived from the same conditions `canSubmit` is, rather than written beside each
+   * field: a reason that lived next to the input it came from was four lines away from
+   * the control it explained, in the other column.
+   */
+  const submitBlockedReason =
+    selectable.length === 0
+      ? (messageText("ui.run_form.no_selectable_hint", "en") ?? undefined)
+      : runnable.length === 0
+        ? (messageText("ui.run_form.no_template_versions_hint", "en") ?? undefined)
+        : requiresFrontMatter && !frontMatterComplete
+          ? (messageText("ui.run_form.front_matter_incomplete", "en") ?? undefined)
+          : undefined
+
   // Resolved once: it does not vary per option, and the literal guard wants message ids
   // reaching `messageText` on one line rather than wrapped across four inside a map.
   const noVersionLabel = messageText("ui.run_form.no_version", "en") ?? ""
@@ -441,9 +458,12 @@ export function RunForm({
                 >
                   <span className="flex flex-col gap-0.5">
                     <span>{subscription.displayName}</span>
-                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                      {subscription.maskedSubscriptionId}
-                    </span>
+                    <Identifier
+                      value={subscription.maskedSubscriptionId}
+                      kind="mask"
+                      label="Subscription"
+                      className="text-muted-foreground"
+                    />
                     {/* Disabled *and* the reason, so the control never just refuses. */}
                     {reason === null ? null : (
                       <span className="text-xs text-muted-foreground">
@@ -529,9 +549,11 @@ export function RunForm({
             face, the same treatment every other digest in the app gets.
           */}
           {messageText("ui.run_form.pinned_version_hint", "en", { version: String(selectedTemplate.currentVersion) })}{" "}
-          <span className="font-mono">
-            {selectedTemplate.currentVersionSha256.slice(0, 12)}
-          </span>
+          <Identifier
+            value={selectedTemplate.currentVersionSha256}
+            kind="digest"
+            label="Definition digest"
+          />
         </p>
       )}
 
@@ -695,7 +717,7 @@ export function RunForm({
         {messageText("ui.run_form.duration_hint", "en")}
       </p>
       </div>
-      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting}/>}
+      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason}/>}
     </form>
   )
 }

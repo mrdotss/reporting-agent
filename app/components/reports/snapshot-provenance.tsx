@@ -1,3 +1,4 @@
+import { Identifier } from "@/components/identifier"
 import { CopyButton } from "@/components/subscriptions/copy-button"
 import { FidelityBadge } from "@/components/reports/fidelity-badge"
 import type { RunView } from "@/lib/db/views"
@@ -39,8 +40,6 @@ import type { RunProvenance } from "@/lib/runs/gaps"
  * quotes when they dispute a figure.
  */
 
-/** How much of the 64-character digest is shown inline. */
-const SNAPSHOT_ID_VISIBLE = 12
 
 function Row({
   label,
@@ -87,15 +86,14 @@ export function SnapshotProvenance({
       className="grid grid-cols-1 gap-4 sm:grid-cols-2"
     >
       <Row label={messageText("ui.snapshot.label_snapshot", language ?? "en") ?? "Snapshot"}>
-        <span
-          data-slot="snapshot-id"
-          // The full digest in `title`, so a reader can see it without copying, and the
-          // copy control so they do not have to select 64 characters by hand.
-          title={run.snapshotId}
-          className="break-all"
-        >
-          {run.snapshotId.slice(0, SNAPSHOT_ID_VISIBLE)}…
-        </span>
+        {/* `Identifier` truncates to the app's one digest length and carries the full
+            value in `title` and to a screen reader; the copy control beside it is for
+            anyone who needs all 64 characters. */}
+        <Identifier
+          value={run.snapshotId}
+          kind="digest"
+          label="Snapshot"
+        />
 
         <CopyButton value={run.snapshotId} label={messageText("ui.snapshot.copy_snapshot_id", language ?? "en") ?? "Copy the snapshot id"} />
       </Row>

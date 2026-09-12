@@ -1,4 +1,5 @@
 "use client"
+import { PageBody } from "@/components/app-shell/page-body"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import {
@@ -53,8 +54,8 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
     }
   }
   return (
-    <>
-      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+    <PageBody kind="wide" className="gap-8">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="mb-2 text-xs font-medium tracking-widest text-muted-foreground uppercase">
             Customer work
@@ -82,39 +83,53 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
           {error}
         </p>
       )}
-      <div className="grid gap-5 lg:grid-cols-2 xl:grid-cols-3">
+      {/*
+        A list, not a three-across grid of cards.
+        One project in a 3-column grid is one card and two empty columns, and that is
+        the ordinary case here — a consultant has a handful of customers, not thirty.
+        A row reads correctly at one project and at forty, and the counts line up down
+        a column instead of being three separate figures inside three separate boxes.
+      */}
+      <ul className="flex flex-col divide-y divide-border border-y border-border">
         {projects.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="space-y-5 pt-6">
-              <div className="flex items-start justify-between gap-3">
-                <div className="rounded-lg bg-primary/10 p-3 text-primary">
-                  <FolderIcon className="size-6" />
+          <li key={p.id}>
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-4 py-5">
+              <div className="flex min-w-0 flex-1 items-start gap-3.5">
+                <div className="rounded-lg bg-primary/10 p-2.5 text-primary">
+                  <FolderIcon className="size-5" />
                 </div>
-                {p.archivedAt && (
-                  <span className="rounded-md bg-muted px-2 py-1 text-xs">
-                    Archived
-                  </span>
-                )}
+
+                <div className="flex min-w-0 flex-col gap-0.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold">{p.name}</h2>
+                    {p.archivedAt && (
+                      <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                        Archived
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {p.description || "Customer reporting project"}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h2 className="text-lg font-semibold">{p.name}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {p.description || "Customer reporting project"}
-                </p>
-              </div>
-              <dl className="grid grid-cols-3 gap-3 border-y py-4">
+
+              <dl className="flex shrink-0 gap-7">
                 {[
                   ["Connections", p.connections],
                   ["Profiles", p.profiles],
                   ["Reports", p.reports],
                 ].map(([label, value]) => (
-                  <div key={label}>
-                    <dd className="font-mono text-xl tabular-nums">{value}</dd>
+                  <div key={label} className="flex flex-col">
+                    <dd className="font-mono text-lg leading-tight tabular-nums">
+                      {value}
+                    </dd>
                     <dt className="text-xs text-muted-foreground">{label}</dt>
                   </div>
                 ))}
               </dl>
-              <div className="flex flex-wrap items-center justify-between gap-2">
+
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Button
                   variant="ghost"
                   disabled={busy}
@@ -157,10 +172,10 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
                   </div>
                 )}
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </li>
         ))}
-      </div>
+      </ul>
       {projects.length === 0 && (
         <Card>
           <CardContent className="py-10">
@@ -228,6 +243,6 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
           </form>
         </DialogContent>
       </Dialog>
-    </>
+    </PageBody>
   )
 }

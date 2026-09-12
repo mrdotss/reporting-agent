@@ -127,6 +127,27 @@
   html {
     @apply font-sans;
     }
+
+  /* Heading typography, in the base layer rather than as a `.workspace-design h1`
+     override at the bottom of the file.
+     Same reason as the card: an element selector down there beat `font-heading` on
+     every heading that asked for it, so the class was decorative. Declared once,
+     here, where a heading inherits it and a utility class can still win.
+     `.rpt-*` sets its own family — the document preview is set in the *document's*
+     face, not the app's, and must not inherit this. */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    text-wrap: balance;
+    }
+  h1 {
+    font-size: clamp(1.5rem, 2.1vw, 1.875rem);
+    line-height: 1.15;
+    letter-spacing: -0.032em;
+    font-weight: 600;
+    }
+  h2 {
+    letter-spacing: -0.02em;
+    }
 }
 
 /* ==========================================================================
@@ -416,18 +437,42 @@
   --background: #f5f7f7; --foreground: #172c37; --card: #fff; --card-foreground: #172c37;
   --primary: #177c78; --primary-foreground: #fff; --muted: #edf2f1;
   --muted-foreground: #61747e; --border: #dfe7e8; --input: #d8e2e3; --ring: #42a59b;
+
+  /* The app's own radius base, scoped here so the vendored Luma preset's `:root`
+     block stays exactly as shipped — `globals-preset.static.test.ts` guards it, and
+     that guard is worth keeping. Every `--radius-*` step is `calc()`ed from this, so
+     redefining it here re-resolves the whole scale inside the app:
+
+       sm  4.8px   md  6.4px   lg   8px    (controls: button, input, select, textarea)
+       xl  11.2px  2xl 14.4px  3xl  17.6px (surfaces: card, dialog, menu)
+
+     8px controls and ~11px surfaces are what the workspace already rendered — but
+     through element-selector overrides at the bottom of this file, which beat the
+     utility classes inside the primitives. `card.tsx` said `rounded-4xl shadow-md`
+     and a card drew at 12px with no shadow. Those overrides are gone now and the
+     primitives say what they mean. */
+  --radius: 0.5rem;
+
+  /* Status is not the accent.
+     The teal means "this product"; it cannot also mean "this passed", or a verified
+     chip and a primary button become the same signal. Four states, each measured
+     against card, ground and muted in this theme — the lowest is 4.75:1. */
+  --status-verified: #1f6b4d;   --status-verified-soft: #e4f1ea;
+  --status-inflight: #3d6382;   --status-inflight-soft: #e6edf3;
+  --status-attention: #8a6410;  --status-attention-soft: #f6eedb;
+  --status-failed: #9a3b1f;     --status-failed-soft: #f7e8e2;
 }
 .dark .workspace-design {
   --background: #101c24; --foreground: #e8eff0; --card: #182a34; --card-foreground: #e8eff0;
   --primary: #5ac8b6; --primary-foreground: #102d29; --muted: #223640;
   --muted-foreground: #a8bbc3; --border: #314650; --input: #37505a; --ring: #5ac8b6;
+
+  /* Lightened rather than inverted, and measured the same way: lowest is 5.69:1. */
+  --status-verified: #68cfa2;   --status-verified-soft: #16362a;
+  --status-inflight: #93bbdd;   --status-inflight-soft: #1a2c3a;
+  --status-attention: #dcb76b;  --status-attention-soft: #332913;
+  --status-failed: #ec9a80;     --status-failed-soft: #3a1f17;
 }
-.workspace-design :is([data-slot="button"],[data-slot="input"],[data-slot="select-trigger"],[data-slot="textarea"]){border-radius:8px}
-.workspace-design :is([data-slot="input"],[data-slot="select-trigger"]){border:1px solid var(--input);background:var(--card)}
-.workspace-design [data-slot="card"]{border-radius:12px;box-shadow:none;border:1px solid var(--border);background:var(--card)}
-.workspace-design h1{font-size:clamp(1.5rem,2.1vw,1.875rem);line-height:1.2;letter-spacing:-.045em;font-weight:600}
-.workspace-design h2{letter-spacing:-.02em}
-.workspace-design #app-content>div{max-width:100%}
 @media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
 /* The navigation rail is a **fixed dark surface in both themes** — that is the design,

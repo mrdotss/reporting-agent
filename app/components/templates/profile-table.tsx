@@ -10,6 +10,7 @@ import {
   TrashIcon,
 } from "@phosphor-icons/react/ssr"
 
+import { Identifier } from "@/components/identifier"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -208,9 +209,12 @@ export function ProfileTable({
                     {template.name}
                   </Link>
                   {template.currentVersionSha256 === null ? null : (
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {template.currentVersionSha256.slice(0, 12)}
-                    </p>
+                    <Identifier
+                      value={template.currentVersionSha256}
+                      kind="digest"
+                      label="Definition digest"
+                      className="text-muted-foreground"
+                    />
                   )}
                 </TableCell>
 

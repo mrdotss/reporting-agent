@@ -7,7 +7,9 @@ import {
   WarningCircleIcon,
 } from "@phosphor-icons/react/ssr"
 
+import { PageBody } from "@/components/app-shell/page-body"
 import { RunTable } from "@/components/reports/run-table"
+import { Identifier } from "@/components/identifier"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
@@ -103,7 +105,7 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
   ]
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageBody kind="wide">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex min-w-0 flex-col gap-1">
           <p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
@@ -286,9 +288,12 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
                         <p className="truncate text-sm font-medium">
                           {subscription.displayName}
                         </p>
-                        <p className="truncate font-mono text-xs text-muted-foreground tabular-nums">
-                          {subscription.maskedSubscriptionId}
-                        </p>
+                        <Identifier
+                          value={subscription.maskedSubscriptionId}
+                          kind="mask"
+                          label="Subscription"
+                          className="text-muted-foreground"
+                        />
                       </div>
 
                       <Badge
@@ -342,6 +347,6 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
           <ArrowRightIcon />
         </Link>
       </div>
-    </div>
+    </PageBody>
   )
 }

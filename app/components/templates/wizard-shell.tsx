@@ -481,7 +481,10 @@ export function WizardShell({
   const showsPreview = step.id !== "identity"
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 lg:max-w-7xl lg:flex-row lg:items-start lg:gap-8">
+    // No measure of its own: the page decides how wide a page is, and this one is a
+    // workbench. Capping here at 7xl inside a 1500px shell was a tenth private opinion
+    // about page width, in a component rather than a page so the guard could not see it.
+    <div className="flex w-full flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
       <div className="flex min-w-0 flex-1 flex-col gap-6">
         <header className="flex flex-col gap-1">
           <h1 className="font-heading text-xl font-medium tracking-tight">

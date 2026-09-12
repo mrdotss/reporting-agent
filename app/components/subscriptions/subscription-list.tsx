@@ -9,6 +9,7 @@ import {
 
 import { RotateSecretDialog } from "@/components/subscriptions/rotate-secret-dialog"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
+import { Identifier } from "@/components/identifier"
 import { Badge } from "@/components/ui/badge"
 import { buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -283,11 +284,12 @@ export function SubscriptionList({
                       numerals so a column of ids lines up and a differing id does
                       not reflow its row.
                     */}
-                    <dd
-                      data-slot="masked-subscription-id"
-                      className="font-mono tabular-nums"
-                    >
-                      {view.maskedSubscriptionId}
+                    <dd data-slot="masked-subscription-id">
+                      <Identifier
+                        value={view.maskedSubscriptionId}
+                        kind="mask"
+                        label="Subscription"
+                      />
                     </dd>
                   </div>
 

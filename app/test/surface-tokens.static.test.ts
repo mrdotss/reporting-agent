@@ -123,6 +123,63 @@ describe("no text is faded below its token", () => {
   })
 })
 
+/**
+ * The primitives are the source of truth for how a primitive looks.
+ *
+ * `globals.css` used to carry a second design system at the bottom of the file —
+ * element selectors keyed on `data-slot` that beat the utility classes inside the
+ * components. `card.tsx` said `rounded-4xl shadow-md`; a card drew at 12px with no
+ * shadow. Both were "right"; only one was true, and the file that looked authoritative
+ * was the one that wasn't.
+ *
+ * A stylesheet rule that targets a `data-slot` attribute is how that comes back. Styling
+ * a primitive belongs in the primitive.
+ *
+ * The one exemption is a *scoping* selector — a rule that positions or themes one named
+ * instance of a control, like the workspace switcher sitting on the dark rail — which is
+ * about where the thing is, not what the thing is.
+ */
+describe("no second design system in the stylesheet", () => {
+  test("no rule styles a primitive by its data-slot", () => {
+    const css = readFileSync(path.join(projectRoot, "app", "globals.css"), "utf8")
+
+    const offenders = [...css.matchAll(/^[^{}\n]*\[data-slot=[^\]]+\][^{}\n]*\{/gm)]
+      .map(([rule]) => rule.trim())
+      // A selector that also names a class is scoping one instance, not restyling the
+      // primitive everywhere it appears.
+      .filter((rule) => !/\.[a-z][\w-]*\[data-slot/.test(rule))
+
+    expect(offenders).toEqual([])
+  })
+
+  test("the status scale is declared in both themes and is not the accent", () => {
+    // Status has to survive a theme change and has to stay distinguishable from the
+    // product's own colour: a chip that means "verified" and a button that means
+    // "primary" cannot be the same teal, or neither reads as either.
+    const css = readFileSync(path.join(projectRoot, "app", "globals.css"), "utf8")
+
+    const light = css.slice(css.indexOf(".workspace-design {"))
+    const dark = css.slice(css.indexOf(".dark .workspace-design {"))
+
+    for (const state of ["verified", "inflight", "attention", "failed"]) {
+      for (const [name, block] of [
+        ["light", light.slice(0, light.indexOf("}"))],
+        ["dark", dark.slice(0, dark.indexOf("}"))],
+      ] as const) {
+        expect(block, `--status-${state} in ${name}`).toContain(
+          `--status-${state}:`
+        )
+      }
+    }
+
+    const primary = /--primary:\s*(#[0-9a-f]{3,8})/i.exec(light)?.[1]
+    expect(primary).toBeTruthy()
+    expect(light.slice(0, light.indexOf("}"))).not.toContain(
+      `--status-verified: ${primary}`
+    )
+  })
+})
+
 describe("rail tokens stay on the rail", () => {
   test("no content component paints itself with the sidebar palette", () => {
     const offenders: string[] = []
