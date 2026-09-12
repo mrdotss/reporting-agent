@@ -2,7 +2,7 @@ import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
-import { PlusIcon } from "@phosphor-icons/react/ssr"
+import { InfoIcon, PlusIcon } from "@phosphor-icons/react/ssr"
 
 import { SubscriptionList } from "@/components/subscriptions/subscription-list"
 import { buttonVariants } from "@/components/ui/button"
@@ -73,6 +73,22 @@ export default async function SubscriptionsPage() {
       </div>
 
       <SubscriptionList subscriptions={subscriptions} now={new Date()} />
+
+      {/*
+        A page that stops is a page that looks like it failed to load, and a list of one
+        connection stops very early. This is not filler: an expired secret is the failure
+        that produces a plausible-looking *empty* report — it authenticates, returns zero
+        resources, and every downstream gate passes — which is the one thing worth
+        saying at the foot of the page that manages secrets.
+      */}
+      {subscriptions.length === 0 ? null : (
+        <p className="flex items-start gap-2 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
+          <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+          A connection is read-only and scoped to one subscription. When its secret
+          expires the next run fails rather than delivering an empty report, so rotate
+          it before the date above rather than after.
+        </p>
+      )}
     </PageBody>
   )
 }

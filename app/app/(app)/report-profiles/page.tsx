@@ -6,7 +6,14 @@ import { PlusIcon, StackIcon } from "@phosphor-icons/react/ssr"
 
 import { NewTemplateButton } from "@/components/templates/new-template-button"
 import { ProfileTable } from "@/components/templates/profile-table"
-import { Card, CardContent } from "@/components/ui/card"
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty"
 import { requireSession } from "@/lib/auth/guard"
 import { designPreviewEnabled } from "@/lib/design-preview/enabled"
 import { toTemplateView } from "@/lib/db/views"
@@ -90,20 +97,21 @@ export default async function TemplatesPage() {
       </div>
 
       {templates.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-start gap-2">
-            <StackIcon
-              aria-hidden="true"
-              className="size-5 text-muted-foreground"
-            />
-
-            <p className="text-sm text-muted-foreground">
-              You have no report profiles. Three starters are normally created
-              with your account; if none is here, author one and the wizard will
-              walk you through the steps.
-            </p>
-          </CardContent>
-        </Card>
+        <Empty className="py-12">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <StackIcon />
+            </EmptyMedia>
+            <EmptyTitle>No report profiles</EmptyTitle>
+            <EmptyDescription>
+              Three starters are normally created with your account. If none is
+              here, author one and the wizard walks you through the steps.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <NewTemplateButton />
+          </EmptyContent>
+        </Empty>
       ) : (
         <ProfileTable templates={templates} />
       )}

@@ -381,6 +381,22 @@ export function RunForm({
     // missing.
     (!requiresFrontMatter || frontMatterComplete)
 
+  /**
+   * Why the submit is refused, in one sentence, or `undefined` when it is not.
+   *
+   * Derived from the same conditions `canSubmit` is, rather than written beside each
+   * field: a reason that lived next to the input it came from was four lines away from
+   * the control it explained, in the other column.
+   */
+  const submitBlockedReason =
+    selectable.length === 0
+      ? (messageText("ui.run_form.no_selectable_hint", "en") ?? undefined)
+      : runnable.length === 0
+        ? (messageText("ui.run_form.no_template_versions_hint", "en") ?? undefined)
+        : requiresFrontMatter && !frontMatterComplete
+          ? (messageText("ui.run_form.front_matter_incomplete", "en") ?? undefined)
+          : undefined
+
   // Resolved once: it does not vary per option, and the literal guard wants message ids
   // reaching `messageText` on one line rather than wrapped across four inside a map.
   const noVersionLabel = messageText("ui.run_form.no_version", "en") ?? ""
@@ -701,7 +717,7 @@ export function RunForm({
         {messageText("ui.run_form.duration_hint", "en")}
       </p>
       </div>
-      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting}/>}
+      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason}/>}
     </form>
   )
 }

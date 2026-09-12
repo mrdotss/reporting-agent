@@ -8,6 +8,7 @@ import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
 import { RequestDetails } from "@/components/reports/request-details"
 import { RunProgress } from "@/components/reports/run-progress"
+import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { VerificationPanel } from "@/components/reports/verification-panel"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
@@ -152,9 +153,18 @@ export default async function RunPage({ params }: RunPageProps) {
         </Link>
 
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 className="font-heading text-2xl font-medium tracking-tight text-balance">
-            {view.templateName ?? subscriptionName}
-          </h1>
+          {/*
+            The status sits with the title, not forty lines down beside the phase list.
+            A reader arriving at a run asks one question first — did this work — and it
+            was being answered below the download card, under a paragraph.
+          */}
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-heading text-2xl font-medium tracking-tight text-balance">
+              {view.templateName ?? subscriptionName}
+            </h1>
+
+            <RunStatusBadge status={view.status} />
+          </div>
 
           {/* The zone travels with the dates, on every surface that names a period. */}
           <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">

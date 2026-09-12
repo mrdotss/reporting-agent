@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import type { Metadata } from "next"
 import { notFound, redirect } from "next/navigation"
 
@@ -89,7 +90,8 @@ export default async function EditTemplatePage({ params }: PageProps) {
     latestScan === null ? undefined : readTypeCounts(latestScan.typeCounts)
 
   return (
-    <WizardShell
+    <PageBody kind="wide">
+      <WizardShell
       template={toTemplateView(
         loaded.template,
         loaded.version === null
@@ -105,7 +107,8 @@ export default async function EditTemplatePage({ params }: PageProps) {
       // On the same reasoning as `scanTypeCounts` above: the depth of the connection this
       // page defaults to, which tells the Lookback control what to say, not what to allow.
       metricsHistorySince={previewSubscription?.metricsHistorySince ?? null}
-    />
+      />
+    </PageBody>
   )
 }
 

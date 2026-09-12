@@ -18,12 +18,15 @@ export function RequestSummary({
   timezone,
   disabled,
   submitting,
+  blockedReason,
 }: {
   connectionId: string
   templateId: string
   timezone: string
   disabled: boolean
   submitting: boolean
+  /** Why the control is disabled, when it is. */
+  blockedReason?: string
 }) {
   const workspace = useWorkspace()
   const [summary, setSummary] = useState<Summary | null>(null),
@@ -98,13 +101,33 @@ export function RequestSummary({
           ))}
         </dl>
       )}
-      <Button
-        className="w-full"
-        type="submit"
-        disabled={disabled || !summary || !!error}
-      >
-        {submitting ? "Submitting…" : "Generate report →"}
-      </Button>
+      <div className="flex flex-col gap-2">
+        <Button
+          className="w-full"
+          type="submit"
+          disabled={disabled || !summary || !!error}
+        >
+          {submitting ? "Submitting…" : "Generate report →"}
+        </Button>
+
+        {/*
+          Why it is disabled, beside it.
+          The reason used to be four lines up the other column, under the fields it
+          refers to, so the control a consultant was actually looking at just refused.
+          `aria-live` because the button going from enabled to disabled is otherwise a
+          silent change.
+        */}
+        {blockedReason === undefined ? null : (
+          <p
+            data-slot="request-summary-blocked"
+            aria-live="polite"
+            className="text-xs leading-relaxed text-muted-foreground"
+          >
+            {blockedReason}
+          </p>
+        )}
+      </div>
+
       <p className="text-xs text-muted-foreground">
         {messageText("ui.request_summary.period_hint", "en")}
       </p>

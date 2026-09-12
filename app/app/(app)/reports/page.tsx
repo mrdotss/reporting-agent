@@ -3,7 +3,7 @@ import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
 import { RequestReportDialog } from "@/components/reports/request-report-dialog"
-import { RunFilters } from "@/components/reports/run-filters"
+import { RunFilters, RunPagination } from "@/components/reports/run-filters"
 import { RunTable } from "@/components/reports/run-table"
 import { requireSession } from "@/lib/auth/guard"
 import type { RunStatus } from "@/lib/db/schema"
@@ -174,7 +174,6 @@ export default async function ReportsPage({
           total={total}
           shown={runs.length}
           offset={query.offset ?? 0}
-          pageSize={RUN_PAGE_SIZE}
           counts={counts}
         />
 
@@ -183,6 +182,13 @@ export default async function ReportsPage({
             toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
           )}
           subscriptions={subscriptions}
+        />
+
+        {/* After the rows, not before them. */}
+        <RunPagination
+          total={total}
+          offset={query.offset ?? 0}
+          pageSize={RUN_PAGE_SIZE}
         />
       </section>
     </PageBody>

@@ -62,6 +62,9 @@ export function TeamManager({
       setBusy(false)
     }
   }
+  /** Invitations that still need something. An accepted one is a member, listed above. */
+  const open = invitations.filter((invitation) => invitation.acceptedAt === null)
+
   return (
     <div className="space-y-7">
       <div>
@@ -226,18 +229,35 @@ export function TeamManager({
       </div>
       <Card>
         <CardContent className="pt-6">
-          <h2 className="mb-4 text-lg font-semibold">Invitations</h2>
-          {invitations.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No invitations yet.</p>
+          <h2 className="mb-1 text-lg font-semibold">Invitations</h2>
+
+          {/*
+            Accepted invitations are not listed here.
+            An accepted invitation *is* a member, and the members list above already
+            says so — with their email, their role and the controls to change it. This
+            card was repeating that with less detail: "Viewer · Accepted", for somebody
+            named in full two inches higher.
+
+            What belongs here is an invitation that still needs something: one waiting to
+            be accepted, or one that ran out.
+          */}
+          <p className="mb-4 text-xs text-muted-foreground">
+            Accepted invitations appear as members above.
+          </p>
+
+          {open.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              {invitations.length === 0
+                ? "No invitations yet."
+                : "Nothing waiting — every invitation has been accepted."}
+            </p>
           ) : (
-            invitations.map((i) => {
-              const status = i.acceptedAt
-                ? "Accepted"
-                : i.revokedAt
-                  ? "Revoked"
-                  : new Date(i.expiresAt) <= new Date(nowIso)
-                    ? "Expired"
-                    : "Pending"
+            open.map((i) => {
+              const status = i.revokedAt
+                ? "Revoked"
+                : new Date(i.expiresAt) <= new Date(nowIso)
+                  ? "Expired"
+                  : "Pending"
               return (
                 <div
                   key={i.id}

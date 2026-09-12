@@ -6,7 +6,6 @@ import { ActivityTimeline } from "@/components/reports/activity-timeline"
 import { GapList } from "@/components/reports/gap-list"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
 import { RunPhases } from "@/components/reports/run-phases"
-import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import type { RunView } from "@/lib/db/views"
 import type { RunGap } from "@/lib/runs/gaps"
 import { RUN_STATUS_PRESENTATION } from "@/lib/runs/presentation"
@@ -64,9 +63,9 @@ export function RunProgress({
 
   return (
     <div data-slot="run-progress" className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-center gap-2">
-        <RunStatusBadge status={run.status} />
-
+      <div className="flex flex-wrap items-center gap-2 empty:hidden">
+        {/* The badge moved to the page heading, where the question it answers is asked.
+            This row keeps the one thing that only the live view knows. */}
         {presentation.inFlight && !connected ? (
           // Said plainly rather than hidden. The relay closes every two idle minutes on
           // purpose and the client reopens within a couple of seconds, so this is the
