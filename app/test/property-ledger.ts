@@ -303,7 +303,11 @@ export function readLedger(): readonly Execution[] {
 
   const records: Execution[] = []
   for (const entry of readdirSync(LEDGER_DIRECTORY)) {
+    // `.tmp` is a staging file a worker is mid-write on. `test/setup.ts` renames it
+    // into place atomically, so anything still carrying the suffix is by definition
+    // not yet a record.
     if (!entry.endsWith(".json")) continue
+
     const parsed: unknown = JSON.parse(
       readFileSync(path.join(LEDGER_DIRECTORY, entry), "utf8")
     )
