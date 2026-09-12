@@ -57,6 +57,17 @@ import { latestForRun } from "@/lib/verifications/store"
  * snapshot object cannot be read is still a completed run; failing this page because a gap
  * list was unavailable would turn a cosmetic problem into an apparent run failure.
  *
+ * ## Why this page is `wide` and the figures page is not
+ *
+ * It looks like a document and it is not one. The verification panel is three digests
+ * across plus two evidence panels side by side; the snapshot card is a four-cell
+ * provenance table. At the reading measure each half of that row was 532px and both
+ * collapsed into columns of three-word lines — so the panel whose job is to prove the
+ * report was verified was the least legible thing on the page.
+ *
+ * At `wide` each half is 702px and the grids are grids again. `/figures` stays
+ * `reading`, because that page genuinely is a document.
+ *
  * ## The figures live on their own route
  *
  * `loadRunDocumentHtml` is read here only to decide whether to *offer* the link. The
@@ -142,7 +153,7 @@ export default async function RunPage({ params }: RunPageProps) {
   const terminal = run.status === "completed" || run.status === "failed"
 
   return (
-    <PageBody kind="reading">
+    <PageBody kind="wide">
       <header className="flex flex-col gap-3">
         <Link
           href="/reports"

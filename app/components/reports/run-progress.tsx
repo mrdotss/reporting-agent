@@ -89,7 +89,7 @@ export function RunProgress({
       <p
         data-slot="run-status-live"
         aria-live="polite"
-        className="text-sm text-muted-foreground"
+        className="max-w-prose text-sm text-muted-foreground"
       >
         {finished
           ? run.status === "completed"

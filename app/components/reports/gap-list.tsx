@@ -276,7 +276,7 @@ function InnerGroupList({
                 </span>
               ) : null}
             </span>
-            <span className="text-muted-foreground">
+            <span className="max-w-prose text-muted-foreground">
               {group.representative.message}
             </span>
           </li>
