@@ -1,6 +1,7 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
+import { useRouter } from "next/navigation"
 
 import type { RunView } from "@/lib/db/views"
 import {
@@ -9,6 +10,7 @@ import {
   isDeclaredEventType,
 } from "@/lib/events"
 import type { RunGap } from "@/lib/runs/gaps"
+import { RUN_PHASE_ORDER } from "@/lib/runs/presentation"
 
 /**
  * `useRunStream` — the one place a run's SSE stream is parsed (Requirement 40.8).
@@ -95,6 +97,36 @@ function asNumber(value: unknown): number | undefined {
  */
 function isTerminal(status: RunView["status"]): boolean {
   return status === "completed" || status === "failed"
+}
+
+/**
+ * The phase a `tool` event describes, when it describes one this build knows.
+ *
+ * `lib/events.ts` states the contract this reads: "The relay derives these from the
+ * row's `status`, which is why the `id` of a `progress` event is that same status."
+ * So a `tool` event's id already *is* a run status — the hook simply never read it,
+ * which is why `run.status` sat at whatever the server render found while the
+ * timeline beside it advanced through three phases.
+ */
+function phaseFromEventId(id: unknown): RunView["status"] | undefined {
+  if (typeof id !== "string") return undefined
+  return RUN_PHASE_ORDER.find((phase) => phase === id)
+}
+
+/**
+ * Whether `next` is further along the path than `current`.
+ *
+ * Forward only, and deliberately. Events can arrive out of order after a reconnect,
+ * and the relay re-opens a step it had already opened; a status that could move
+ * backwards would show a run returning to `queued` after it had started collecting.
+ * A terminal status is never left this way either — that one comes from the row.
+ */
+function advances(
+  current: RunView["status"],
+  next: RunView["status"]
+): boolean {
+  if (isTerminal(current)) return false
+  return RUN_PHASE_ORDER.indexOf(next) > RUN_PHASE_ORDER.indexOf(current)
 }
 
 /** Apply one declared event to the step list. Pure. */
@@ -220,6 +252,39 @@ export function useRunStream({
   const finished = isTerminal(run.status)
 
   /**
+   * Bring the server-rendered half of the page up to date, once, when the run ends.
+   *
+   * This hook owns the *client* view of a run. The counterfoil, the download card,
+   * the verification panel and the snapshot provenance are server components reading
+   * the row and S3 at request time, so none of them changes when this state does —
+   * which is why a finished run showed a stale state stamp and offered no document
+   * until the page was reloaded by hand.
+   *
+   * `router.refresh()` re-runs the server render for the current route and patches
+   * the result in without losing client state, so the stub, the digests and the
+   * download controls appear on the same paint the timeline finishes on.
+   *
+   * Keyed on the status rather than only on the run finishing, because the
+   * counterfoil's stamp is server-rendered too: refreshing only at the end would
+   * leave it reading QUEUED for the eight to twelve minutes the phase list beside it
+   * spent advancing. A run passes through six phases, so this is six server renders
+   * over that span — cheap, and the alternative is a stub that states the wrong thing
+   * for the whole run.
+   *
+   * The ref holds the status already refreshed for, not a boolean: `refresh()`
+   * re-renders this component, so a guard that forgot which status it had acted on
+   * would refresh in a loop.
+   */
+  const router = useRouter()
+  const refreshedFor = useRef<RunView["status"]>(initialRun.status)
+
+  useEffect(() => {
+    if (refreshedFor.current === run.status) return
+    refreshedFor.current = run.status
+    router.refresh()
+  }, [run.status, router])
+
+  /**
    * Re-read the row before rendering a reconnect (Requirement 40.4).
    *
    * Returns whether the run is terminal, so the caller can decide not to reopen. A
@@ -307,6 +372,21 @@ export function useRunStream({
           // `onmessage` cannot be async without swallowing the rejection.
           void refetch()
           return
+        }
+
+        // The phase the relay is describing, applied to the run as well as to the
+        // timeline. Without this the two disagreed on screen: the timeline showed
+        // "Enumerating resources and pulling metrics" complete while the phase list
+        // beside it still said Queued, because only `steps` was ever updated.
+        if (type === "tool" || type === "progress") {
+          const phase = phaseFromEventId((event as { id?: unknown }).id)
+          if (phase !== undefined) {
+            setRun((current) =>
+              advances(current.status, phase)
+                ? { ...current, status: phase }
+                : current
+            )
+          }
         }
 
         setSteps((current) => applyEvent(current, type, event))
