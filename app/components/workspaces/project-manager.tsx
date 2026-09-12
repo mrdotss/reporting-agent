@@ -57,10 +57,10 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
     <PageBody kind="wide" className="gap-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="mb-2 text-xs font-medium tracking-widest text-muted-foreground uppercase">
+          <p className="mb-2 text-micro text-muted-foreground uppercase">
             Customer work
           </p>
-          <h1>Projects</h1>
+          <h1 className="text-title">Projects</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Keep each customer’s connections, profiles, and reports together.
           </p>
@@ -121,7 +121,7 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
                   ["Reports", p.reports],
                 ].map(([label, value]) => (
                   <div key={label} className="flex flex-col">
-                    <dd className="font-mono text-lg leading-tight tabular-nums">
+                    <dd className="text-figure-sm font-mono tabular-nums">
                       {value}
                     </dd>
                     <dt className="text-xs text-muted-foreground">{label}</dt>

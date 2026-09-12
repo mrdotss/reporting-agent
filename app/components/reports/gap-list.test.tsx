@@ -149,7 +149,7 @@ describe("Requirement 20.6 — expansion with keyboard and focus indicator", () 
 })
 
 describe("Requirement 20.13 — unrecognized gap type still presented", () => {
-  test("a type with no copy presents its gapType value, count, and representative message", () => {
+  test("a newly-catalogued type presents its label, count, and explanation", () => {
     render(
       <GapList
         gaps={[
@@ -172,13 +172,20 @@ describe("Requirement 20.13 — unrecognized gap type still presented", () => {
     )
     expect(group).not.toBeNull()
 
-    // Presents the gapType value
-    expect(group?.textContent).toContain("backup_not_configured")
+    // Presents the type in a form a consultant can read. This used to assert the raw
+    // `backup_not_configured` token, which was how presence happened to be achieved
+    // while the type had no catalogue copy — criterion 20.13 is about the group being
+    // *presented rather than omitted*, not about which characters carry it. The machine
+    // value is still on `data-gap-type`, which is what this query selects on.
+    expect(group?.textContent).toContain("Backup not configured")
     // Presents entry count
     expect(group?.textContent).toContain("2")
-    // Presents the representative message
+    // Presents the catalogue's explanation of the type. The per-resource message the
+    // agent recorded is specific to each entry and lives in the expanded rows, not in
+    // the group header — see the unrecognised-type test below, where there is no
+    // explanation to show and the representative message takes its place.
     expect(group?.textContent).toContain(
-      "no backup configured for this resource"
+      "No backup is configured for this resource"
     )
   })
 
@@ -208,8 +215,36 @@ describe("Requirement 20.13 — unrecognized gap type still presented", () => {
     for (const type of newTypes) {
       const group = document.querySelector(`[data-gap-type="${type}"]`)
       expect(group).not.toBeNull()
-      expect(group?.textContent).toContain(type)
+      // Presented, labelled and non-empty. The raw type stays available on the
+      // attribute this selects by; what a reader sees is the catalogue label.
+      expect(group?.textContent?.trim()).not.toHaveLength(0)
+      expect(group?.textContent).not.toContain(type)
     }
+  })
+
+  test("a type this build has no copy for is named as unrecognised, not as a token", () => {
+    // The forward-compatibility case the old assertion was really protecting: a newer
+    // agent writing a gap type an older app has never heard of. It must still appear,
+    // still carry its entries, and must not print `snake_case` at a consultant.
+    render(
+      <GapList
+        gaps={[
+          gap({
+            gapType: "a_type_from_the_future",
+            resourceId: "/vm/a",
+            message: "something this build cannot explain",
+          }),
+        ]}
+      />
+    )
+
+    const group = document.querySelector(
+      '[data-gap-type="a_type_from_the_future"]'
+    )
+    expect(group).not.toBeNull()
+    expect(group?.textContent).toContain("Unrecognised gap type")
+    expect(group?.textContent).not.toContain("a_type_from_the_future")
+    expect(group?.textContent).toContain("something this build cannot explain")
   })
 })
 

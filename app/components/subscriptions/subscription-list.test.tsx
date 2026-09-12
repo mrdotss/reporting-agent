@@ -314,10 +314,12 @@ describe("Requirement 10.2 — only the browser-safe projection is rendered", ()
     )
   })
 
-  test("the fidelity tier is shown as a badge", () => {
+  test("the fidelity tier is shown as a stamp", () => {
     renderList([view({ fidelityTier: "enhanced" })])
 
-    expect(screen.getByText("enhanced fidelity")).toBeInTheDocument()
+    // Sentence case in the DOM. The stamp uppercases in CSS, so the accessible name
+    // and anything reading `textContent` still get a normally-cased string.
+    expect(screen.getByText("Enhanced fidelity")).toBeInTheDocument()
   })
 })
 

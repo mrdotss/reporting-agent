@@ -148,19 +148,19 @@ export default async function ReportsPage({
   return (
     <PageBody kind="wide">
       <div className="flex flex-col gap-1">
-        <h1 className="font-heading text-xl font-medium tracking-tight">
+        <h1 className="text-title">
           Reports
         </h1>
 
         <p className="max-w-prose text-sm text-muted-foreground">
-          Every request, its progress, and the finished customer document.
+          Every run, its progress, and the document it did or did not deliver.
         </p>
       </div>
 
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="font-heading text-sm font-medium tracking-tight">
-            Run history
+          <h2 className="text-section">
+            All runs
           </h2>
 
           <RequestReportDialog

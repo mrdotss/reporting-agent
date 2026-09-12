@@ -1,40 +1,48 @@
-import { Badge } from "@/components/ui/badge"
+import { Stamp, type StampTone } from "@/components/ui/stamp"
 import { cn } from "@/lib/utils"
 import type { RunStatus } from "@/lib/db/schema"
 import { RUN_STATUS_PRESENTATION, type RunTone } from "@/lib/runs/presentation"
 
 /**
- * A run's status, as one badge.
+ * A run's status, as a struck stamp.
  *
  * Presentational and free of parsing: it takes a status and renders it. The label and
- * the tone come from `lib/runs/presentation.ts`, so the run list, the run detail screen
- * and the dashboard all say the same word for the same row rather than each mapping the
+ * the tone come from `lib/runs/presentation.ts`, so the register, the certificate and
+ * the overview all say the same word for the same row rather than each mapping the
  * enum themselves.
+ *
+ * ## The words changed with the drawing
+ *
+ * `completed` reads **Verified** and `failed` reads **Not delivered**, because those
+ * are the facts a consultant needs. "Completed" describes the pipeline's state; a run
+ * that completed and failed verification is not something anyone should call complete.
+ * "Failed" describes the machine; what the reader needs to know is that no document
+ * was handed over. The in-flight phases keep their own verbs — they are genuinely
+ * describing what the machine is doing right now.
  *
  * ## Status has its own scale, and it is not the accent
  *
- * The `positive` tone used to render `secondary` and `accent` rendered `default` — the
- * teal. So a completed run and a primary button were the same colour, and "verified"
- * and "this product" were the same signal. `--status-*` is four measured steps that
- * exist only to mean state, and `--destructive` keeps its one job: a run whose document
- * could not be proven. A queued run is mist; a collecting one is the in-flight blue.
- *
- * ## The dot carries the state before the word does
- *
- * A table of runs is scanned, not read. A filled dot in the state's own colour resolves
- * at a glance and at any zoom; the word confirms it. Both are present because colour
- * alone is not a signal — about one reader in twelve cannot separate these hues.
+ * Verdigris means "this product" and is spent on primary actions. `--status-*` is four
+ * measured steps that exist only to mean state, and `--status-failed` — vermilion —
+ * keeps its one job: a document that could not be proven.
  */
 
-const TONE_STYLE: Readonly<Record<RunTone, string>> = Object.freeze({
-  neutral:
-    "border-border bg-transparent text-muted-foreground [--dot:var(--muted-foreground)]",
-  accent:
-    "border-transparent bg-(--status-inflight-soft) text-(--status-inflight) [--dot:var(--status-inflight)]",
-  positive:
-    "border-transparent bg-(--status-verified-soft) text-(--status-verified) [--dot:var(--status-verified)]",
-  destructive:
-    "border-transparent bg-(--status-failed-soft) text-(--status-failed) [--dot:var(--status-failed)]",
+/** The presentation layer's tones, mapped onto the stamp's. */
+const TONE: Readonly<Record<RunTone, StampTone>> = Object.freeze({
+  neutral: "neutral",
+  accent: "working",
+  positive: "verified",
+  destructive: "unproven",
+})
+
+/**
+ * Where the stamp's word differs from the pipeline's word. Only the two terminal
+ * states differ, and both differ for the same reason: the reader is asking about the
+ * document, not about the job.
+ */
+const TERMINAL_WORD: Readonly<Partial<Record<RunStatus, string>>> = Object.freeze({
+  completed: "Verified",
+  failed: "Not delivered",
 })
 
 export function RunStatusBadge({
@@ -44,19 +52,13 @@ export function RunStatusBadge({
   const presentation = RUN_STATUS_PRESENTATION[status]
 
   return (
-    <Badge
+    <Stamp
       data-slot="run-status-badge"
       data-status={status}
-      data-tone={presentation.tone}
-      variant="outline"
-      className={cn(TONE_STYLE[presentation.tone], className)}
+      tone={TONE[presentation.tone]}
+      className={cn(className)}
     >
-      <span
-        aria-hidden="true"
-        data-slot="run-status-dot"
-        className="size-1.5 shrink-0 rounded-full bg-(--dot)"
-      />
-      {presentation.label}
-    </Badge>
+      {TERMINAL_WORD[status] ?? presentation.label}
+    </Stamp>
   )
 }

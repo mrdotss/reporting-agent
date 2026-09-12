@@ -73,7 +73,7 @@ export function SourcePicker({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
-        <h2 className="font-heading text-sm font-medium tracking-tight">
+        <h2 className="text-section">
           Where does the estate live?
         </h2>
         <p className="max-w-prose text-sm text-muted-foreground">
@@ -101,7 +101,7 @@ export function SourcePicker({
               <span className="shrink-0">{source.mark}</span>
 
               <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="font-heading text-sm font-medium tracking-tight">
+                <span className="text-section">
                   {source.name}
                 </span>
                 <span className="text-sm text-muted-foreground">

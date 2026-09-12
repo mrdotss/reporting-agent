@@ -1,43 +1,103 @@
 # Design system & agentic UX
 
-Target: a **calm, instrument-grade** product. This app's job is to make a number
-trustworthy, so the surface should read like a well-made measuring instrument —
-quiet, precise, legible under scrutiny. Not a dashboard casino, not a generic
-AI-chat template.
+Target: **an issuing room, not a dashboard.**
 
-## Skills to apply
-If workspace skills for `shadcn`, `minimalist-ui`, `high-end-visual-design` or
-`design-taste-frontend` are installed, apply them when building UI.
-**On any conflict, the preset tokens below win.**
+This product's thesis is that a number in a delivered report can be proved. A
+deterministic pipeline collects into an immutable snapshot, a compiler emits figures
+from that snapshot and nothing else, a verifier proves the document and the snapshot
+agree, and nothing ships if a check fails. That is not a dashboard's job — it is a
+**calibration certificate's** job. So the surface is built from the room where
+certificates are written, sealed and entered into a register.
 
-## Read this before porting anything from `cold-agent`
-`cold-agent` is a useful source of *component structure* — the chat anatomy, the
-activity timeline, the stream hook. It is a **poisonous source of visual
-guidance**, because it was initialized from a different preset ("Sera") and almost
-every axis differs:
+## The direction, in five decisions
 
-| axis | cold-agent (**Sera**) | reporting-agent (**Luma**) |
+1. **The app is shaped like the record it issues.** No sidebar. Navigation is a
+   register bar and a tab strip on the same paper as the content, because a document
+   has a header, not a rail. Five links never needed 256px and a second mobile
+   rendering.
+2. **The counterfoil is the signature element.** A record's identity and verdict —
+   number, seal, window, state — sit in a narrow column behind a perforation rule, the
+   way a counterfoil is torn from a receipt and retained. It is the one thing a reader
+   consults before trusting anything beside it. `components/reports/counterfoil.tsx`.
+3. **A digest is drawn as a seal, not as a string.** The snapshot id *is* the hash of
+   the snapshot's bytes, which makes it the most load-bearing identifier on any screen.
+   `components/ui/seal.tsx` gives it a well, a struck leading edge, an eight-character
+   head at reading size and the full tail beneath — nothing hidden, nothing truncated.
+4. **State is a struck stamp, not a pill.** Small caps, tracked, ruled on all four
+   sides, in the state's own ink, with a dot so colour is never the only channel.
+   A pill says "tag"; these are verdicts. `components/ui/stamp.tsx`.
+5. **Figures are a ledger tally, not KPI cards.** One right edge, a dotted leader, and
+   labels that get to be whole sentences. A box around a number adds a container the
+   number did not need and shrinks its label to a two-word caption.
+
+## Palette — the assay office
+
+Inventoried from the physical room, and declared in `.workspace-design` in
+`app/globals.css`. That scope is the app's own token layer and is deliberately separate
+from two things it must not disturb: the vendored Luma preset in `:root`/`.dark`
+(guarded by `globals-preset.static.test.ts`) and the `--cat-*` categorical chart
+palette, whose lightness ladder is measured against three dichromacy simulations and
+mirrored into the agent (`agent/tests/test_chartstyle.py` asserts all three agree).
+**Charts belong to the rendered document; this palette is app chrome.**
+
+| role | light | meaning |
 |---|---|---|
-| `style` | `base-sera` | **`base-luma`** |
-| `baseColor` | `zinc` | **`mist`** (cool, teal-tinted neutrals) |
-| primary | violet | **teal** — `oklch(0.52 0.105 223.128)` |
-| `--radius` | `0rem` (sharp) | **`0.625rem`** (rounded) |
-| fonts | Noto Serif + Lora | **Geist + Geist Mono + Inter** (all sans) |
-| icons | HugeIcons | **Phosphor** (`@phosphor-icons/react`) |
+| ground | `#ecefe8` | accountant's columnar pad — not cream, not slate |
+| sheet | `#f5f7f2` | a page laid on the stack |
+| well | `#e2e6dc` | inset. Inputs receive content |
+| ink | `#18282c` | iron-gall, oxidised blue-black with a green cast |
+| verdigris | `#2c6b5e` | oxidised copper. **The one accent. Means: traceable.** |
+| vermilion | `#a03726` | the stamp. **Means: could not be proven. Nothing else.** |
+| brass | `#856520` | a credential approaching expiry. Attention, not failure |
 
-So: **rounded corners, all-sans typography, teal accent.** Any inherited
-instruction that says "sharp corners", "serif display", "editorial serif", "violet
-series" or "violet active-state border" is **wrong here** and must not be carried
-across. If you find yourself writing `rounded-none`, stop.
+Status keeps its own four-step scale (`--status-*`), separate from the accent, so a
+verified stamp and a primary button are never the same signal.
 
-**Porting cold-agent's chat components also means migrating every HugeIcons import
-to Phosphor.** This is not optional and it is not a find-and-replace of the package
-name — the icon *names* differ (`HugeiconsIcon`-style named exports vs Phosphor's
-`<CloudArrowUp />`), the sizing API differs, and Phosphor carries a `weight` prop
-that HugeIcons does not. Budget for it as real work, and do not leave a half-ported
-file importing both.
+## Typography — three voices, each doing a job
 
-## Design DNA — the Luma preset (already generated; do not re-init)
+| role | face | why |
+|---|---|---|
+| document | **Spectral** | the artifact is a printed document; the app's headings speak in its register so the two read as one object |
+| interface | **Archivo** | a grotesk with institutional bones that holds at 11px in a table cell |
+| figure | **IBM Plex Mono** | every figure, hash, identifier and timestamp — always tabular |
+
+A serif is deliberate here. The previous system banned it, defending against an
+inherited editorial-serif direction; that defence was right about the inheritance and
+wrong about the merits, because this product's output really is a document.
+
+The ramp is declared as Tailwind `@theme` tokens at the foot of `globals.css`:
+`text-display · text-title · text-section · text-meta · text-micro`, plus
+`text-figure` and `text-figure-sm`. Each carries its own line-height, tracking and
+weight, because those are what drift when only the size is stated. **A bare `<h1>` is
+the landing title and exactly one surface uses it**; every other page says
+`text-title`.
+
+## Depth — rules and tint. No shadows.
+
+Paper does not cast a shadow on itself. Surfaces separate by a hairline or a few
+percent of lightness. The one exception is an overlay, which still has to read as
+*above*: `dialog.tsx`, `select.tsx` and `popover.tsx` carry a tight 1px ring of the
+ink rather than a blur. Do not reintroduce `shadow-md` anywhere else, and do not try
+to suppress it by overriding `--shadow-*` — Tailwind v4 inlines a shadow's value at
+build time, so that override is a declaration that looks like it works and does not.
+
+**Radii are 2–3px** (`--radius: 0.125rem`), because printed forms have square corners.
+
+## Design DNA — the Luma preset (vendored; describes `:root`, not the app)
+
+> **Read this heading carefully.** Everything in this section is still an accurate
+> description of the preset tokens in `:root` and `.dark`, which ship exactly as
+> generated and are guarded by `globals-preset.static.test.ts`. It is **no longer a
+> description of what the app renders.** The app renders the assay-office palette
+> above, declared in `.workspace-design`, which overrides every colour, the radius
+> scale and all three typefaces.
+>
+> The preset is kept rather than regenerated for two reasons: the shadcn registry
+> resolves components against it, and the `--cat-*` chart palette is derived from its
+> primary and mirrored into the agent. Where this section and the direction above
+> disagree — teal against verdigris, 10px against 2px, pills against ruled controls,
+> "no serif anywhere" against Spectral — **the direction above wins**, and this section
+> is describing the layer underneath it.
 Initialized with `--preset b3f0SLkV6m`. The tokens below are transcribed from the
 **actual** `app/components.json` and `app/app/globals.css` in this repo — they are
 facts about the code, not aspirations.
@@ -480,34 +540,45 @@ screen that distinguishes the product.
   where fidelity tiers differ between runs are marked as **not comparable** rather
   than shown as a delta.
 
-## Template builder surface
-There is **no upload step and no placeholder mapping** — a template is composed from
-typed blocks, so the builder is the surface, not a wizard. Three panes:
-**palette · canvas · inspector**.
+## Template builder surface — superseded, and why it is recorded rather than deleted
 
-- **Left — block palette.** The typed blocks grouped into Structure · Data ·
-  Narrative · Record, each a small card at `rounded-lg` with a Phosphor icon and one
-  line describing **what it emits**, not what it is called. Palette sits on
-  `--sidebar`. Drag onto the canvas, or select and press Enter to append.
-- **Centre — canvas (paper preview).** A live HTML paper-preview at document
-  proportions, emitted from the **same AST** as the `.docx` by the HTML emitter and
-  styled from the same theme tokens — there is no third layout definition anywhere.
-  Blocks are drag-reorderable with an explicit drop indicator: a 2px `--primary` rule
-  at the insertion point, never a shifting ghost layout. The selected block takes a
-  `--ring` outline, **not** a colour fill — the preview has to keep looking like the
-  document it is previewing.
-- **Right — inspector.** The selected block's config schema as a form, plus its
-  **scope override** (`scope-editor`): resource types, tag filters, resource groups,
-  top-N by metric, sort. Show the inherited template default in `--muted-foreground`
-  above the override, so "inheriting" and "narrowed" are visually distinct states
-  rather than the same empty field.
+**This surface no longer exists, and nothing should be built against it.** A profile
+is authored through the six-step wizard (`identity · sections · period · document ·
+appearance · preview`), not a three-pane block builder.
 
-### The row splitter
-A `row` block presents 2 or 3 drop zones, and splitting is an **explicit control on
-the row**, not a drag gesture to discover. Because **nesting is one level deep**, a
-row's drop zones must **refuse** another row — and must *show* the refusal (blocked
-cursor plus a muted "rows can't nest" hint). A drag that silently does nothing reads
-as a bug, and the user will try it repeatedly.
+`.kiro/specs/restructure-the-template-to-report-flow-around/requirements.md` states
+the change in one line: **"A section is the unit the author manipulates; blocks are
+no longer an authoring concept."** The recorded decision behind it is a new
+top-level `sections[]` array at `schema_version` 3, with `blocks[]` kept only so v1
+and v2 definitions still compile. `64dba7c` is the commit that moved the wizard to
+the v3 model and left the builder without a call site.
+
+What this section used to specify — a left palette of typed blocks, a centre canvas
+with drag-reorder and a drop indicator, a right inspector carrying the block's
+config schema and its scope override, and a row splitter refusing nested rows — is
+therefore **historical**. `Requirement 6` and the `Block_Composer` requirement in
+`.kiro/specs/reporting-agent-templates-reports/requirements.md` describe the same
+superseded surface; they are not live requirements.
+
+The components that satisfied them are still in `components/templates/` and are
+**unreachable** — a closed island of fourteen modules rooted at `step-blocks.tsx`,
+which nothing imports: `block-composer`, `block-canvas`, `block-canvas-item`,
+`block-palette`, `block-inspector`, `row-splitter`, `move-announcer`, and, reachable
+only through the inspector, `config-picker`, `scope-editor`, `step-scope`,
+`scope-picker`, `step-metrics` and `metric-picker`. They are pending deletion. Do
+not import one back into the wizard to reuse a control: the wizard's equivalents are
+`step-sections.tsx` and `step-appearance.tsx`.
+
+The paragraph is kept rather than deleted because the builder's components sat in
+the repository for months after they stopped being reachable, and a reader finding
+them needs to know they are dead rather than unfinished. Two rules from it do
+survive, and they moved rather than lapsed:
+
+- **The paper preview is emitted from the same AST as the `.docx`.** That is still
+  true, still load-bearing, and now lives in the wizard's preview step — see
+  *HTML preview vs rendered PDF* below.
+- **A zero-resource block still renders.** Still true of a zero-resource *section*;
+  see that section below.
 
 ### Style preset picker — real thumbnails
 **Render the four themes as actual page images and show them as a 2×2 grid of
@@ -547,21 +618,30 @@ Word decides for itself and a browser cannot predict.
   pagination the HTML emitter cannot determine is worse than omitting it — a wrong
   page count is a promise the document will break.
 
-### A zero-resource block still renders
-A block whose scope matches nothing shows an explicit **"No resources matched this
+### A zero-resource section still renders
+A section whose scope matches nothing shows an explicit **"No resources matched this
 scope"** row, in mist neutrals, not `--destructive` — it is information, not an
-error. It must never collapse to nothing: a vanished block is indistinguishable from
-one the author never configured, both in the builder and in the delivered document.
+error. It must never collapse to nothing: a vanished section is indistinguishable
+from one the author never configured, both in the wizard and in the delivered
+document.
 
-### Accessibility — the part drag/drop usually fails
-- **Every reorder is reachable from the keyboard.** Select a block, move it with
-  modifier+arrows, confirm. A requirement, not a follow-up — it constrains the
-  drag-and-drop library choice (see `tech.md`).
-- Announce moves through an `aria-live="polite"` region: "KPI row moved to position 3
-  of 7."
-- The canvas is a real list in the DOM order it renders in, so reading order matches
+### Accessibility — reordering
+The builder solved this with a drag-and-drop library and a keyboard escape hatch.
+The wizard's section list solves it by **not having a drag gesture at all**: reorder
+is a pair of up/down buttons, which is keyboard-reachable because it is a button.
+That is the cheaper answer and it is the one that shipped.
+
+What still binds, and what `step-sections.tsx` already satisfies:
+
+- **Every reorder is reachable from the keyboard.** A real `<button>` per direction,
+  each with an accessible name naming the section it moves.
+- **Announce every move** through an `aria-live="polite"` region: "Utilization moved
+  to position 3 of 7." Implemented as `announceMove` writing into
+  `#section-move-announcer`.
+- The list is a real list in the DOM order it renders in, so reading order matches
   document order.
-- Drop targets need an accessible name describing the position, not just "drop here".
+- A section the catalogue pins (`position !== "free"`) offers no move control rather
+  than a control that refuses — and nothing may swap past one.
 
 ## Motion & quality bar
 Heavy section whitespace, clear type hierarchy, custom cubic-bezier transitions,

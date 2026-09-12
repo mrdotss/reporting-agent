@@ -54,10 +54,27 @@ const FAIL_NOUN_PLURAL: MessageId = "ui.verification.fail_noun_plural"
 
 export function VerificationPanel({
   verification,
+  delivered = true,
   language = "en",
 }: Readonly<{
   /** The stored row, or `null` when the run carries none (Requirement 39.8). */
   verification: VerificationView | null
+  /**
+   * Whether the run actually handed over a document.
+   *
+   * A verification can pass and the run still deliver nothing — the reaper fails a
+   * run that exceeds its phase deadline, and that can land after the verifier has
+   * already checked every figure it compiled. The stored row then says `pass` on a
+   * run whose state is `failed`, and this panel read "verified" beside a counterfoil
+   * stamped NOT DELIVERED: the page contradicted itself on the one question it
+   * exists to answer.
+   *
+   * A passing check is still true and still worth showing — it says the figures that
+   * were compiled traced to the snapshot. What it does not say is that anything was
+   * delivered, so when this is false the panel states that in the same breath rather
+   * than leaving the reader to reconcile two opposite words.
+   */
+  delivered?: boolean
   language?: Language
 }>) {
   // Requirement 39.8 — no verification, or a status that is neither pass nor
@@ -86,7 +103,7 @@ export function VerificationPanel({
           />
           <h2
             id="verification-heading"
-            className="font-heading text-sm font-medium tracking-tight"
+            className="text-section"
           >
             {messageText("ui.verification.failed", language ?? "en")}
           </h2>
@@ -107,11 +124,16 @@ export function VerificationPanel({
     // A `Card`, so it sits level with the snapshot card beside it. The failure case
     // keeps its own border colour: a report that could not be proved is the one thing on
     // this page allowed to use `--destructive`.
+    //
+    // The width is not optional. This was `ring-destructive/40` alone, and a ring
+    // *colour* with no ring *width* compiles to `--tw-ring-color` and no box-shadow —
+    // so the failed panel was drawn identically to the passed one, and the only thing
+    // distinguishing "this document could not be proven" was the text inside it.
     <Card
       data-slot="verification-panel"
       data-status={verification.status}
       aria-labelledby="verification-heading"
-      className={passed ? undefined : "ring-destructive/40"}
+      className={passed ? undefined : "border-destructive/40 ring-2 ring-destructive/25"}
       // A div with `aria-labelledby` is not a landmark; the role is what keeps this
       // announced as the labelled region Requirement 39 asks for.
       role="region"
@@ -146,7 +168,7 @@ export function VerificationPanel({
         <div className="flex flex-col gap-1">
           <h2
             id="verification-heading"
-            className="font-heading text-sm font-medium tracking-tight"
+            className="text-section"
           >
             {passed ? messageText("ui.verification.passed", language ?? "en") : messageText("ui.verification.not_delivered_heading", language ?? "en")}
           </h2>
@@ -154,11 +176,19 @@ export function VerificationPanel({
           {passed ? (
             // Requirement 39.2 — the status word, the count and the snapshot
             // digest as **one statement**, in mist neutrals.
-            <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-              <span className="font-mono tabular-nums">
-                {messageText("ui.verification.pass_summary", language ?? "en", { count: grouped(verification.figureCount), digest: verification.snapshotSha256.slice(0, 12) })}
-              </span>
-            </p>
+            <div className="flex flex-col gap-1.5">
+              <p className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+                <span className="font-mono tabular-nums">
+                  {messageText("ui.verification.pass_summary", language ?? "en", { count: grouped(verification.figureCount), digest: verification.snapshotSha256.slice(0, 12) })}
+                </span>
+              </p>
+
+              {delivered ? null : (
+                <p className="max-w-prose text-sm text-(--status-failed)">
+                  {messageText("ui.verification.passed_not_delivered", language ?? "en")}
+                </p>
+              )}
+            </div>
           ) : (
             // Requirement 39.3 — the count, and the plain statement.
             <p className="max-w-prose text-sm text-destructive">

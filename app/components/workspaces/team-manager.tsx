@@ -1,6 +1,7 @@
 "use client"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { PageBody } from "@/components/app-shell/page-body"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import {
@@ -66,12 +67,12 @@ export function TeamManager({
   const open = invitations.filter((invitation) => invitation.acceptedAt === null)
 
   return (
-    <div className="space-y-7">
+    <PageBody kind="wide" className="gap-7">
       <div>
-        <p className="mb-2 text-xs tracking-widest text-muted-foreground uppercase">
+        <p className="mb-2 text-micro text-muted-foreground uppercase">
           Workspace settings
         </p>
-        <h1>Your team, one reporting workspace.</h1>
+        <h1 className="text-title">Team</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Roles apply across every customer project in{" "}
           {workspace.workspaceId ? "this workspace" : "your workspace"}.
@@ -92,7 +93,7 @@ export function TeamManager({
         <div className="flex flex-col gap-6">
         <Card>
           <CardContent className="pt-6">
-            <h2 className="mb-4 text-lg font-semibold">Members</h2>
+            <h2 className="text-section mb-4">Members</h2>
             {members.map((m) => (
               <div
                 key={m.userId}
@@ -167,7 +168,7 @@ export function TeamManager({
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <h2 className="mb-1 text-lg font-semibold">Invitations</h2>
+            <h2 className="text-section mb-1">Invitations</h2>
 
             {/*
               Accepted invitations are not listed here.
@@ -227,7 +228,7 @@ export function TeamManager({
         </div>
         <Card>
           <CardContent className="space-y-4 pt-6">
-            <h2 className="text-lg font-semibold">Invite a teammate</h2>
+            <h2 className="text-section">Invite a teammate</h2>
             <p className="text-sm text-muted-foreground">
               Anyone with this link can join after signing in. Share it only
               with the intended teammate. It can be used once and expires in
@@ -314,6 +315,6 @@ export function TeamManager({
           </Button>
         </DialogContent>
       </Dialog>
-    </div>
+    </PageBody>
   )
 }

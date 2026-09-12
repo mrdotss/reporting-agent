@@ -9,19 +9,10 @@ import {
 } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import {
-  BuildingsIcon,
-  SquaresFourIcon,
-  FolderIcon,
-  PlugsConnectedIcon,
-  StackIcon,
-  FileTextIcon,
-  GearIcon,
-  SidebarSimpleIcon,
-  ListIcon,
-  PlusIcon,
-} from "@phosphor-icons/react"
+import { GaugeIcon, PlusIcon } from "@phosphor-icons/react"
+
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   Select,
   SelectTrigger,
@@ -31,7 +22,6 @@ import {
 } from "@/components/ui/select"
 import {
   Dialog,
-  DialogTrigger,
   DialogContent,
   DialogTitle,
   DialogDescription,
@@ -40,6 +30,37 @@ import { ThemeToggle } from "@/components/app-shell/theme-toggle"
 import { can, type WorkspaceRole } from "@/lib/workspaces/policy"
 import { cn } from "@/lib/utils"
 
+/**
+ * The shell, as a file header rather than a rail.
+ *
+ * ## Why there is no sidebar
+ *
+ * There was a 256px dark navy rail down the left in both themes. It cost a sixth of
+ * the working width on every screen, and it split the app into "rail world" and
+ * "content world" — two different grounds, two different token sets, a permanent
+ * vertical seam. What it bought was five links.
+ *
+ * This product issues documents and proves them. A document does not have a rail; it
+ * has a **header** — who it belongs to, what it is, where you are in it — and then it
+ * has the document. So navigation is two shallow bands on the same paper as the
+ * content, separated from it by one hairline:
+ *
+ *   1. the **register bar** — the mark, where you are, which customer project is in
+ *      scope, and the controls that are always available;
+ *   2. the **strip** — the five destinations, as a tab row.
+ *
+ * Five links do not need a drawer, a collapse toggle, or a second mobile rendering.
+ * The strip scrolls horizontally under its own overflow at phone width and that is the
+ * whole mobile story — which is why `collapsed`, the mobile `Dialog`, and the
+ * duplicated `navigation` tree that had to render inside both are all gone.
+ *
+ * ## The project picker is in the header because it is scope, not navigation
+ *
+ * Every figure on every screen below is filtered by it. Putting it in the register bar
+ * beside the breadcrumb states that: this is which customer's work you are looking at,
+ * and it does not change what page you are on.
+ */
+
 type Scope = {
   workspaceId: string
   projectId?: string
@@ -47,10 +68,13 @@ type Scope = {
   projectName?: string
   archived: boolean
 }
+
 const WorkspaceContext = createContext<Scope | null>(null)
+
 export function useWorkspace() {
   return useContext(WorkspaceContext)
 }
+
 export function useCreationScope() {
   const context = useWorkspace()
   const workspaceId = context?.workspaceId
@@ -60,6 +84,7 @@ export function useCreationScope() {
     [workspaceId, projectId]
   )
 }
+
 export async function workspaceMutation(body: unknown) {
   const response = await fetch("/api/workspaces", {
     method: "POST",
@@ -71,13 +96,32 @@ export async function workspaceMutation(body: unknown) {
     throw new Error(result.error?.message ?? "The change could not be saved.")
   return result
 }
+
+/**
+ * The five destinations.
+ *
+ * Named for what a consultant is looking for, not for the metaphor the rest of this
+ * design runs on. An earlier pass labelled these Register · Records · Profiles ·
+ * Sources, which is the assay vocabulary applied to navigation — and navigation is the
+ * one place it should not be. A tab label is read in a fifth of a second by someone
+ * who already knows what they want; it has to name the thing, not evoke it.
+ *
+ * The metaphor still carries the surfaces it belongs to — the counterfoil, the seal,
+ * the stamp, the tally — where a reader is actually looking at a record and the
+ * framing does work. Here it only made someone guess which tab held last month's
+ * report.
+ */
 const NAV = [
-  { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
-  { href: "/projects", label: "Projects", icon: FolderIcon },
-  { href: "/subscriptions", label: "Connections", icon: PlugsConnectedIcon },
-  { href: "/report-profiles", label: "Report profiles", icon: StackIcon },
-  { href: "/reports", label: "Reports", icon: FileTextIcon },
+  { href: "/dashboard", label: "Overview" },
+  { href: "/reports", label: "Reports" },
+  { href: "/report-profiles", label: "Presets" },
+  { href: "/subscriptions", label: "Connectors" },
+  { href: "/projects", label: "Projects" },
 ]
+
+/** The switcher's one non-workspace row. Not a valid workspace id, by construction. */
+const NEW_WORKSPACE = "__new_workspace__"
+
 type Props = {
   children: ReactNode
   userMenu: ReactNode
@@ -86,6 +130,7 @@ type Props = {
   projects: { id: string; name: string; archivedAt: Date | null }[]
   project?: { id: string; name: string; archivedAt: Date | null }
 }
+
 export function WorkspaceShell({
   children,
   userMenu,
@@ -94,23 +139,23 @@ export function WorkspaceShell({
   projects,
   project,
 }: Props) {
-  const pathname = usePathname(),
-    router = useRouter()
-  const [collapsed, setCollapsed] = useState(false),
-    [mobile, setMobile] = useState(false),
-    [busy, setBusy] = useState(false),
-    [error, setError] = useState("")
-  const [creating, setCreating] = useState(false),
-    [name, setName] = useState("")
+  const pathname = usePathname()
+  const router = useRouter()
+
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [name, setName] = useState("")
+
   const current = NAV.find(
     (n) => pathname === n.href || pathname.startsWith(n.href + "/")
   )
+
   async function select(workspaceId: string, projectId?: string) {
     setBusy(true)
     setError("")
     try {
       await workspaceMutation({ action: "select", workspaceId, projectId })
-      setMobile(false)
       router.push("/dashboard")
       router.refresh()
     } catch (e) {
@@ -119,97 +164,7 @@ export function WorkspaceShell({
       setBusy(false)
     }
   }
-  const navigation = (
-    <>
-      <Link
-        href="/dashboard"
-        className="mb-8 flex items-center gap-2 px-2 text-lg font-semibold tracking-tight text-sidebar-foreground"
-      >
-        <BuildingsIcon className="size-6 text-sidebar-primary" />
-        <span className={collapsed ? "md:hidden" : ""}>
-          Utilization Reporting
-        </span>
-      </Link>
-      <div className={collapsed ? "md:hidden" : ""}>
-        <span className="mb-2 block px-2 text-[10px] font-semibold tracking-widest text-sidebar-foreground/60 uppercase">
-          Workspace
-        </span>
-        <Select
-          value={workspace.id}
-          onValueChange={(v) => v && void select(v)}
-          disabled={busy}
-        >
-          <SelectTrigger
-            className="workspace-selector w-full"
-            aria-label="Workspace"
-          >
-            <SelectValue>{workspace.name}</SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {workspaces.map((w) => (
-              <SelectItem key={w.id} value={w.id}>
-                {w.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          variant="ghost"
-          className="mt-2 w-full justify-start text-xs text-sidebar-foreground/85 hover:text-sidebar-foreground"
-          onClick={() => setCreating(true)}
-        >
-          <PlusIcon />
-          New workspace
-        </Button>
-        <div className="my-6 h-px bg-slate-700" />
-      </div>
-      <nav aria-label="Workspace navigation" className="space-y-1">
-        {NAV.map(({ href, label, icon: Icon }) => (
-          <Link
-            key={href}
-            href={href}
-            onClick={() => setMobile(false)}
-            title={collapsed ? label : undefined}
-            aria-current={current?.href === href ? "page" : undefined}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
-              current?.href === href
-                ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                : "text-sidebar-foreground/85"
-            )}
-          >
-            <Icon
-              aria-hidden
-              className="size-5 shrink-0"
-              weight={current?.href === href ? "fill" : "regular"}
-            />
-            <span className={collapsed ? "md:hidden" : ""}>{label}</span>
-          </Link>
-        ))}
-      </nav>
-      <div className="mt-auto space-y-5 pt-10">
-        {can(workspace.role, "manage") && (
-          <Link
-            href="/workspace-settings"
-            className="flex items-center gap-3 px-3 text-sm text-sidebar-foreground/85"
-          >
-            <GearIcon className="size-5" />
-            <span className={collapsed ? "md:hidden" : ""}>
-              Workspace settings
-            </span>
-          </Link>
-        )}
-        <div
-          className={cn(
-            "border-t border-slate-700 pt-5",
-            collapsed && "md:hidden"
-          )}
-        >
-          {userMenu}
-        </div>
-      </div>
-    </>
-  )
+
   return (
     <WorkspaceContext.Provider
       value={{
@@ -220,65 +175,87 @@ export function WorkspaceShell({
         archived: !!project?.archivedAt,
       }}
     >
-      <div className="flex min-h-svh bg-background">
+      <div className="flex min-h-svh flex-col bg-background">
         <a
           href="#app-content"
-          className="sr-only focus:not-sr-only focus:fixed focus:z-50 focus:bg-card focus:p-3"
+          className="sr-only rounded-sm bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none focus-visible:not-sr-only focus-visible:absolute focus-visible:start-4 focus-visible:top-4 focus-visible:z-50"
         >
           Skip to content
         </a>
-        <aside
-          className={cn(
-            "sticky top-0 hidden h-svh shrink-0 flex-col overflow-y-auto bg-sidebar p-5 text-sidebar-foreground md:flex",
-            collapsed ? "w-20 px-3" : "w-64"
-          )}
-        >
-          {navigation}
-        </aside>
-        <div className="min-w-0 flex-1">
-          <header className="sticky top-0 z-20 flex h-17 items-center justify-between gap-3 border-b bg-card px-4 md:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="hidden md:flex"
-                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-                onClick={() => setCollapsed(!collapsed)}
+
+        <header className="sticky top-0 z-20 flex flex-col bg-sidebar text-sidebar-foreground">
+          {/* Band one: identity, position, scope. */}
+          <div className="flex h-12 flex-wrap items-center gap-x-3 gap-y-1 border-b border-sidebar-border px-4 md:px-6">
+            <Link
+              href="/dashboard"
+              className="flex shrink-0 items-center gap-2 rounded-sm font-heading text-sm font-semibold tracking-tight outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              {/*
+                A gauge, not a seal.
+
+                The mark should say what the product measures, and this one measures how
+                much of a provisioned capacity is actually in use — a gauge is the
+                instrument that reads exactly that, and it keeps the register bar in the
+                same instrument vocabulary as the seal, the stamp and the counterfoil
+                further down the page. `duotone` so it reads as a dial face rather than
+                a solid blob at 16px.
+              */}
+              <GaugeIcon
+                aria-hidden="true"
+                weight="duotone"
+                className="size-4 text-primary"
+              />
+              Utilize Space
+            </Link>
+
+            {/*
+              The breadcrumb's first segment *is* the workspace, so it is the switcher
+              rather than a label beside one. A separate picker would state the same
+              fact twice and put the control somewhere other than where the fact is
+              already written. With one workspace there is nothing to switch, so it
+              renders as plain text and no empty control appears.
+            */}
+            <span className="flex min-w-0 items-center gap-1.5 text-meta text-muted-foreground">
+              <Select
+                value={workspace.id}
+                onValueChange={(v) => {
+                  if (!v) return
+                  // Creating a workspace belongs in the control you open when you
+                  // want a different one — not as a permanent button at the foot of
+                  // whatever page you happen to be reading.
+                  if (v === NEW_WORKSPACE) setCreating(true)
+                  else void select(v)
+                }}
+                disabled={busy}
               >
-                <SidebarSimpleIcon />
-              </Button>
-              <Dialog open={mobile} onOpenChange={setMobile}>
-                <DialogTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="md:hidden"
-                      aria-label="Open navigation"
-                    />
-                  }
+                <SelectTrigger
+                  aria-label="Workspace"
+                  className="h-7 w-auto min-w-0 gap-1.5 border-transparent bg-transparent px-1.5 text-meta hover:bg-accent"
                 >
-                  <ListIcon />
-                </DialogTrigger>
-                <DialogContent className="inset-y-0 left-0 flex h-svh w-72 translate-x-0 translate-y-0 flex-col rounded-none bg-sidebar p-5 text-sidebar-foreground">
-                  <DialogTitle className="sr-only">
-                    Workspace navigation
-                  </DialogTitle>
-                  <DialogDescription className="sr-only">
-                    Switch workspaces and navigate reporting.
-                  </DialogDescription>
-                  {navigation}
-                </DialogContent>
-              </Dialog>
-              <div className="truncate text-sm text-muted-foreground">
-                {workspace.name}
-                <span className="mx-2 text-border">/</span>
-                <span className="text-foreground">
-                  {current?.label ?? "Workspace settings"}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
+                  <SelectValue>{workspace.name}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {workspaces.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem value={NEW_WORKSPACE}>
+                    <PlusIcon aria-hidden="true" />
+                    New workspace
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+
+              <span aria-hidden="true" className="text-border">
+                /
+              </span>
+              <span className="truncate text-foreground">
+                {current?.label ?? "Settings"}
+              </span>
+            </span>
+
+            <span className="ml-auto flex items-center gap-2">
               <Select
                 value={project?.id ?? "all"}
                 onValueChange={(v) =>
@@ -288,7 +265,7 @@ export function WorkspaceShell({
               >
                 <SelectTrigger
                   aria-label="Customer project"
-                  className="w-40 border-input bg-card md:w-52"
+                  className="workspace-selector h-7 w-36 text-meta md:w-52"
                 >
                   <SelectValue>{project?.name ?? "All projects"}</SelectValue>
                 </SelectTrigger>
@@ -302,30 +279,77 @@ export function WorkspaceShell({
                   ))}
                 </SelectContent>
               </Select>
+
               <ThemeToggle />
-            </div>
-          </header>
-          {error && (
-            <p
-              role="alert"
-              className="m-4 rounded-lg bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              {error}
+              {userMenu}
+            </span>
+          </div>
+
+          {/* Band two: the strip. Scrolls rather than collapsing. */}
+          <nav
+            aria-label="Sections"
+            className="flex overflow-x-auto border-b border-border px-2 md:px-4"
+          >
+            {NAV.map(({ href, label }) => (
+              <Link
+                key={href}
+                href={href}
+                aria-current={current?.href === href ? "page" : undefined}
+                className={cn(
+                  "-mb-px shrink-0 border-b-2 px-3 py-2 text-meta whitespace-nowrap outline-none transition-colors",
+                  "focus-visible:ring-3 focus-visible:ring-ring/30",
+                  current?.href === href
+                    ? "border-primary font-semibold text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </Link>
+            ))}
+
+            {can(workspace.role, "manage") && (
+              <Link
+                href="/workspace-settings"
+                aria-current={
+                  pathname.startsWith("/workspace-settings") ? "page" : undefined
+                }
+                className={cn(
+                  "-mb-px ml-auto shrink-0 border-b-2 px-3 py-2 text-meta whitespace-nowrap outline-none transition-colors",
+                  "focus-visible:ring-3 focus-visible:ring-ring/30",
+                  pathname.startsWith("/workspace-settings")
+                    ? "border-primary font-semibold text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                Settings
+              </Link>
+            )}
+          </nav>
+        </header>
+
+        {error && (
+          <p
+            role="alert"
+            className="mx-4 mt-4 rounded-sm border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive md:mx-6"
+          >
+            {error}
+          </p>
+        )}
+
+        <main
+          id="app-content"
+          className="mx-auto w-full max-w-[92rem] px-4 py-8 md:px-6 md:py-10"
+        >
+          {project?.archivedAt && (
+            <p className="mb-6 rounded-sm border border-border bg-muted px-3 py-2.5 text-sm">
+              This project is archived. Its records remain available to read.
             </p>
           )}
-          <main
-            id="app-content"
-            className="mx-auto max-w-[1500px] px-4 py-7 md:px-9 md:py-9"
-          >
-            {project?.archivedAt && (
-              <p className="mb-5 rounded-lg border bg-muted p-3 text-sm">
-                This project is archived. Its records remain available to read.
-              </p>
-            )}
-            {children}
-          </main>
-        </div>
+          {children}
+        </main>
+
       </div>
+
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
           <DialogTitle>Create workspace</DialogTitle>
@@ -347,20 +371,24 @@ export function WorkspaceShell({
                 setBusy(false)
               }
             }}
-            className="space-y-4"
+            className="flex flex-col gap-4"
           >
-            <label className="text-sm" htmlFor="workspace-name">
-              Workspace name
-            </label>
-            <input
-              id="workspace-name"
-              required
-              maxLength={120}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border p-2.5"
-            />
-            <Button disabled={busy} type="submit">
+            <div className="flex flex-col gap-1.5">
+              <label
+                className="text-sm font-medium"
+                htmlFor="workspace-name"
+              >
+                Workspace name
+              </label>
+              <Input
+                id="workspace-name"
+                required
+                maxLength={120}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <Button disabled={busy} type="submit" className="w-fit">
               Create workspace
             </Button>
             {error && (

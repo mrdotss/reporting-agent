@@ -1,4 +1,4 @@
-import { ShieldCheckIcon } from "@phosphor-icons/react/ssr"
+import { GaugeIcon } from "@phosphor-icons/react/ssr"
 
 /**
  * The shell both public auth pages render into (Requirement 7.8).
@@ -31,13 +31,16 @@ export default function AuthLayout({
   return (
     <main className="flex min-h-svh flex-col items-center justify-center gap-10 bg-background px-4 py-16">
       <div className="flex w-full max-w-sm flex-col items-center gap-3 text-center">
-        <ShieldCheckIcon
+        {/* The same mark as the register bar, at the same weight — a gauge reads
+            utilization, which is what this product measures and then proves. */}
+        <GaugeIcon
           aria-hidden="true"
+          weight="duotone"
           className="size-7 text-primary dark:text-sidebar-primary"
         />
 
-        <h1 className="font-heading text-base font-medium tracking-tight">
-          Infrastructure Utilization Reporting
+        <h1 className="text-title">
+          Utilize Space
         </h1>
 
         <p className="text-sm leading-relaxed text-muted-foreground">

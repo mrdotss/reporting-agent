@@ -63,7 +63,7 @@ export function RunList({
         />
 
         <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
+          <h2 className="text-section">
             {messageText("ui.run_list.empty_heading", "en")}
           </h2>
 
@@ -102,7 +102,7 @@ export function RunList({
 
               <dl className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-8">
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                  <dt className="text-micro text-muted-foreground uppercase">
                     {messageText("ui.run_list.period", "en")}
                   </dt>
                   {/* The zone travels with the dates: "July" means July there. */}
@@ -110,7 +110,7 @@ export function RunList({
                 </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                  <dt className="text-micro text-muted-foreground uppercase">
                     {messageText("ui.run_list.resources", "en")}
                   </dt>
                   <dd className="font-mono tabular-nums">
@@ -119,7 +119,7 @@ export function RunList({
                 </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                  <dt className="text-micro text-muted-foreground uppercase">
                     {messageText("ui.run_list.gaps", "en")}
                   </dt>
                   <dd className="font-mono tabular-nums">
@@ -128,7 +128,7 @@ export function RunList({
                 </div>
 
                 <div className="flex flex-col gap-0.5">
-                  <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+                  <dt className="text-micro text-muted-foreground uppercase">
                     {messageText("ui.run_list.started", "en")}
                   </dt>
                   {/*

@@ -11,7 +11,7 @@ import { PageBody } from "@/components/app-shell/page-body"
 import { RunTable } from "@/components/reports/run-table"
 import { Identifier } from "@/components/identifier"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
+import { Stamp } from "@/components/ui/stamp"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Empty,
@@ -102,43 +102,61 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
    */
   const figures = [
     {
-      label: "Completed",
+      label: "Reports issued and verified",
       value: counts.completed,
-      note: "runs, last 30 days",
+      note: "last 30 days",
     },
     {
-      label: "In progress",
+      label: "Collecting or rendering now",
       value: counts.running,
-      note: counts.running === 0 ? "nothing running" : "collecting or rendering",
+      note: counts.running === 0 ? "nothing in flight" : "in flight",
     },
     {
-      label: "Needs attention",
+      label: "Connectors that cannot authenticate",
       value: issues.length,
-      note: issues.length === 0 ? "every connection healthy" : "connections",
+      note:
+        issues.length === 0
+          ? "every connector healthy"
+          : "a source that cannot authenticate returns zero resources",
       // The only figure allowed to shout, and only when it is not zero. A permanently
       // red numeral is a numeral people stop reading.
       alarming: issues.length > 0,
     },
     {
-      label: "Connections",
+      label: "Subscriptions connected",
       value: subscriptions.length,
-      note: "subscriptions in this project",
+      note: "in this project",
     },
   ]
 
   return (
     <PageBody kind="wide">
       <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1">
-          <p className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
-            {project?.name ?? "All customer projects"}
-          </p>
+        {/*
+          The title is the project, not a sentence about reporting.
 
-          <h1 className="text-balance">A clear view of your reporting.</h1>
+          It read "A clear view of your reporting." over an eyebrow carrying the
+          project name — a line from a marketing page, at the top of an internal
+          instrument, saying nothing a consultant who opened the page did not
+          already know. This module's own footer comment rejects exactly that
+          about a slogan it removed from the bottom of the page, and then the page
+          opened with one.
+
+          Swapping the two puts the one fact that actually changes between renders
+          — which customer's work is on screen — in the largest type on the page,
+          which is the only place a mis-scoped view can be caught before it is
+          acted on.
+        */}
+        <div className="flex min-w-0 flex-col gap-1">
+          <p className="text-micro text-muted-foreground uppercase">Overview</p>
+
+          <h1 className="text-balance">
+            {project?.name ?? "All customer projects"}
+          </h1>
 
           <p className="max-w-prose text-sm text-muted-foreground">
-            Monitor delivery, keep connections healthy, and prepare your next
-            report.
+            Delivery, connection health and recent activity, over the last 30
+            days.
           </p>
         </div>
 
@@ -179,37 +197,57 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
       ) : null}
 
       {/*
-        No card. Four figures on the page ground, separated by hairlines — a box around a
-        box around a number is two containers more than the number needs, and the ring
-        plus the internal rules read as a table with a frame.
+        The ledger tally.
 
-        `divide-x` rather than a right border on each cell: a border on every figure put
-        a rule down the middle of the 2-column phone layout and a second one hanging off
-        the right edge.
+        Four figures, and deliberately not four boxes. A KPI card row is the most
+        generic element in this entire product category, and it costs twice: a border
+        and a radius around every number adds a container the number did not need, and
+        the label has to shrink to a two-word caption to fit the box.
+
+        A printed register does this differently and better. The figures align on one
+        right edge, a dotted leader carries the eye from the claim to its number, and
+        the label gets to be a whole sentence — "Sources that cannot authenticate"
+        rather than "NEEDS ATTENTION". One edge also means the four are comparable at a
+        glance, which four separately-centred boxes never are.
+
+        Only the figure that can demand action is allowed colour, and only when it is
+        not zero: a permanently red numeral is a numeral people stop reading.
       */}
-      <dl
-        data-slot="dashboard-figures"
-        className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border sm:grid-cols-4 sm:divide-y-0"
-      >
+      <dl data-slot="dashboard-figures" className="flex flex-col border-t border-border">
         {figures.map(({ label, value, note, alarming }) => (
           <div
             key={label}
             data-slot="dashboard-figure"
-            className="flex flex-col gap-1.5 px-5 py-6 first:pl-0 sm:last:pr-0"
+            className="grid grid-cols-[1fr_auto] items-baseline gap-x-3 border-b border-border/60 py-3"
           >
-            <dt className="text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
+            <dt
+              className={cn(
+                "flex items-baseline gap-2 text-sm",
+                alarming ? "text-foreground" : "text-muted-foreground"
+              )}
+            >
               {label}
+              {/* The leader. A rule, not a row of periods: it holds at any zoom and
+                  never wraps to a second line the way repeated characters do. */}
+              <span
+                aria-hidden="true"
+                className="min-w-4 flex-1 translate-y-[-3px] border-b border-dotted border-border"
+              />
             </dt>
+
             <dd
               data-slot="dashboard-stat"
               className={cn(
-                "font-mono text-[2rem] leading-none font-medium tracking-tight tabular-nums",
+                "text-figure-sm min-w-[3ch] text-right font-mono tabular-nums",
                 alarming && "text-destructive"
               )}
             >
               {value}
             </dd>
-            <dd className="text-xs text-muted-foreground">{note}</dd>
+
+            <dd className="text-micro col-span-2 text-muted-foreground normal-case">
+              {note}
+            </dd>
           </div>
         ))}
       </dl>
@@ -222,7 +260,7 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
         */}
         <section className="flex min-w-0 flex-col gap-4">
           <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-            <h2 className="text-sm font-medium">Recent reports</h2>
+            <h2 className="text-section">Recent reports</h2>
             <Link
               href="/reports"
               className="rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
@@ -267,7 +305,7 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
 
         <section className="flex flex-col gap-4">
           <div className="flex items-baseline justify-between gap-4 border-b border-border pb-3">
-            <h2 className="text-sm font-medium">Connection health</h2>
+            <h2 className="text-section">Connector health</h2>
             {subscriptions.length === 0 ? null : (
               <span className="font-mono text-xs text-muted-foreground tabular-nums">
                 {subscriptions.length}
@@ -319,25 +357,22 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
                         />
                       </div>
 
-                      <Badge
-                        variant="outline"
-                        className={cn(
-                          "shrink-0 border-transparent",
-                          state.kind === "active" &&
-                            "bg-(--status-verified-soft) text-(--status-verified)",
-                          state.kind === "expiring" &&
-                            "bg-(--status-attention-soft) text-(--status-attention)",
-                          state.kind !== "active" &&
-                            state.kind !== "expiring" &&
-                            "bg-(--status-failed-soft) text-(--status-failed)"
-                        )}
+                      <Stamp
+                        className="shrink-0"
+                        tone={
+                          state.kind === "active"
+                            ? "verified"
+                            : state.kind === "expiring"
+                              ? "attention"
+                              : "unproven"
+                        }
                       >
                         {state.kind === "active"
                           ? "Connected"
                           : state.kind === "expiring"
                             ? `${state.wholeDaysRemaining}d left`
                             : state.kind}
-                      </Badge>
+                      </Stamp>
                     </li>
                   ))}
               </ul>
@@ -346,7 +381,7 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
                 href="/subscriptions"
                 className="flex w-fit items-center gap-1 rounded-lg text-xs font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
               >
-                Manage connections
+                Manage connectors
                 <ArrowUpRightIcon className="size-3.5" />
               </Link>
             </>

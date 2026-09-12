@@ -71,7 +71,7 @@ export default async function FiguresPage({ params }: FiguresPageProps) {
 
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
           <div className="flex min-w-0 flex-col gap-1">
-            <h1 className="font-heading text-2xl font-medium tracking-tight">
+            <h1 className="text-title">
               Figures
             </h1>
             <p className="max-w-prose text-sm text-muted-foreground">

@@ -74,8 +74,8 @@ export default async function TemplatesPage() {
     <PageBody kind="wide">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
-          <h1 className="font-heading text-xl font-medium tracking-tight">
-            Report Profiles
+          <h1 className="text-title">
+            Report presets
           </h1>
 
           <p className="max-w-prose text-sm text-muted-foreground">

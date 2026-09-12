@@ -29,47 +29,63 @@ export const MAX_EXPANDED_ENTRIES = 200
  * A type with NO entry here presents its `gapType` value, its entry count and its
  * representative message — it is presented rather than omitted (Requirement 20.13).
  */
+/**
+ * Every gap type, with the short label that heads its group and the sentence that
+ * explains it.
+ *
+ * ## Two ids, not one
+ *
+ * This map used to point `labelId` and `noteId` at the **same** catalog id, so a
+ * group's heading and its body rendered the identical sentence — "This resource's
+ * type was in scope but no metric was requested for it." printed twice, once as a
+ * title and once as its own explanation.
+ *
+ * ## Twenty-five, not eight
+ *
+ * It also covered only eight of the twenty-five `doc.gap.*` explanations the catalogue
+ * carries. The other seventeen fell through `resolveLabel`'s fallback and rendered
+ * their raw `snake_case` gap type as a user-facing heading — `fact_unavailable` is the
+ * one that shows on almost every run — and lost their explanatory note entirely,
+ * because `resolveNote` keyed off the same absent entry.
+ *
+ * A humanised token was the cheaper fix and is the wrong one here: this product ships
+ * in English and Indonesian, and `"Fact unavailable"` derived from a machine token is
+ * English in both. Every label is therefore a real catalogue string, and
+ * `message-catalog.static.test.ts` holds the two halves together.
+ */
 const GAP_TYPE_COPY_IDS: Readonly<
   Record<string, { readonly labelId: MessageId; readonly noteId: MessageId }>
 > = Object.freeze({
-  deallocated: {
-    labelId: "doc.gap.deallocated",
-    noteId: "doc.gap.deallocated",
-  },
-  metric_not_emitted: {
-    labelId: "doc.gap.metric_not_emitted",
-    noteId: "doc.gap.metric_not_emitted",
-  },
-  permission_denied: {
-    labelId: "doc.gap.permission_denied",
-    noteId: "doc.gap.permission_denied",
-  },
-  metric_error: {
-    labelId: "doc.gap.metric_error",
-    noteId: "doc.gap.metric_error",
-  },
-  power_state_unknown: {
-    labelId: "doc.gap.power_state_unknown",
-    noteId: "doc.gap.power_state_unknown",
-  },
-  response_too_large: {
-    labelId: "doc.gap.response_too_large",
-    noteId: "doc.gap.response_too_large",
-  },
-  region_unreachable: {
-    labelId: "doc.gap.region_unreachable",
-    noteId: "doc.gap.region_unreachable",
-  },
-  metric_not_selected: {
-    labelId: "doc.gap.metric_not_selected",
-    noteId: "doc.gap.metric_not_selected",
-  },
+  advisor_not_available: { labelId: "ui.gap_label.advisor_not_available", noteId: "doc.gap.advisor_not_available" },
+  archive_write_failed: { labelId: "ui.gap_label.archive_write_failed", noteId: "doc.gap.archive_write_failed" },
+  backup_not_configured: { labelId: "ui.gap_label.backup_not_configured", noteId: "doc.gap.backup_not_configured" },
+  catalog_entry_invalid: { labelId: "ui.gap_label.catalog_entry_invalid", noteId: "doc.gap.catalog_entry_invalid" },
+  deallocated: { labelId: "ui.gap_label.deallocated", noteId: "doc.gap.deallocated" },
+  definitions_unavailable: { labelId: "ui.gap_label.definitions_unavailable", noteId: "doc.gap.definitions_unavailable" },
+  duplicate_inventory_row: { labelId: "ui.gap_label.duplicate_inventory_row", noteId: "doc.gap.duplicate_inventory_row" },
+  fact_unavailable: { labelId: "ui.gap_label.fact_unavailable", noteId: "doc.gap.fact_unavailable" },
+  instance_name_collapsed: { labelId: "ui.gap_label.instance_name_collapsed", noteId: "doc.gap.instance_name_collapsed" },
+  interval_counts_missing: { labelId: "ui.gap_label.interval_counts_missing", noteId: "doc.gap.interval_counts_missing" },
+  interval_malformed: { labelId: "ui.gap_label.interval_malformed", noteId: "doc.gap.interval_malformed" },
+  metric_error: { labelId: "ui.gap_label.metric_error", noteId: "doc.gap.metric_error" },
+  metric_not_emitted: { labelId: "ui.gap_label.metric_not_emitted", noteId: "doc.gap.metric_not_emitted" },
+  metric_not_selected: { labelId: "ui.gap_label.metric_not_selected", noteId: "doc.gap.metric_not_selected" },
+  no_reservations: { labelId: "ui.gap_label.no_reservations", noteId: "doc.gap.no_reservations" },
+  no_samples: { labelId: "ui.gap_label.no_samples", noteId: "doc.gap.no_samples" },
+  percentile_unsupported_unit: { labelId: "ui.gap_label.percentile_unsupported_unit", noteId: "doc.gap.percentile_unsupported_unit" },
+  permission_denied: { labelId: "ui.gap_label.permission_denied", noteId: "doc.gap.permission_denied" },
+  power_state_unknown: { labelId: "ui.gap_label.power_state_unknown", noteId: "doc.gap.power_state_unknown" },
+  region_unreachable: { labelId: "ui.gap_label.region_unreachable", noteId: "doc.gap.region_unreachable" },
+  replication_not_enabled: { labelId: "ui.gap_label.replication_not_enabled", noteId: "doc.gap.replication_not_enabled" },
+  resource_absent_from_response: { labelId: "ui.gap_label.resource_absent_from_response", noteId: "doc.gap.resource_absent_from_response" },
+  response_too_large: { labelId: "ui.gap_label.response_too_large", noteId: "doc.gap.response_too_large" },
+  sku_capability_missing: { labelId: "ui.gap_label.sku_capability_missing", noteId: "doc.gap.sku_capability_missing" },
+  sku_unknown: { labelId: "ui.gap_label.sku_unknown", noteId: "doc.gap.sku_unknown" },
 })
 
 // ---------------------------------------------------------------------------
 // Props
 // ---------------------------------------------------------------------------
-
 export type GapListProps = Readonly<{
   gaps: readonly RunGap[]
   /** The grain + utcOffset needed by the grouper. */
@@ -83,13 +99,20 @@ export type GapListProps = Readonly<{
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
 function resolveLabel(
   gapType: string,
   language: Language
 ): string {
   const entry = GAP_TYPE_COPY_IDS[gapType]
-  if (entry === undefined) return gapType
+
+  // A gap type with no catalogue entry is a type this build does not know about —
+  // a newer agent writing into an older app. Printing the raw `snake_case` token at a
+  // consultant is worse than saying plainly that it is unrecognised, and the entries
+  // themselves are still listed underneath either way, so nothing is hidden.
+  if (entry === undefined) {
+    return messageText("ui.gap_list.unrecognized", language) ?? gapType
+  }
+
   return messageText(entry.labelId, language) ?? gapType
 }
 

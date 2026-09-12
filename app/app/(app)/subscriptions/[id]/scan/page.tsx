@@ -135,7 +135,7 @@ export default async function ScanPage({ params }: ScanPageProps) {
           <ArrowLeftIcon />
           {subscription.displayName}
         </Link>
-        <h1 className="font-heading text-xl font-medium tracking-tight">
+        <h1 className="text-title">
           {t("ui.scan.heading")}
         </h1>
       </div>
@@ -164,7 +164,7 @@ export default async function ScanPage({ params }: ScanPageProps) {
         <section className="space-y-6">
           {grouped.map((bucket) => (
             <div key={bucket.group} className="space-y-2">
-              <h2 className="font-heading text-sm font-medium tracking-wide uppercase">
+              <h2 className="text-micro font-heading uppercase">
                 {t(GROUP_LABEL_IDS[bucket.group])}{" "}
                 <span className="font-mono text-muted-foreground tabular-nums">
                   {bucket.total}
@@ -269,10 +269,10 @@ function Figure({
 }) {
   return (
     <div className="space-y-0.5">
-      <div className="text-xs tracking-wide text-muted-foreground uppercase">
+      <div className="text-micro text-muted-foreground uppercase">
         {label}
       </div>
-      <div className="font-mono text-lg tabular-nums">{value ?? "—"}</div>
+      <div className="text-figure-sm font-mono tabular-nums">{value ?? "—"}</div>
     </div>
   )
 }

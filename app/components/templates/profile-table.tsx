@@ -238,9 +238,21 @@ export function ProfileTable({
                 </TableCell>
 
                 <TableCell className="text-right">
-                  <div className="flex justify-end gap-0.5">
+                  {/*
+                    `size="xs"` is a *text* button size — 24px tall with horizontal
+                    padding for a label — and these carry an icon and no label, so each
+                    row action was a 24px target. `icon-sm` is the square size for this,
+                    at 32px with the glyph optically centred.
+
+                    Not 44px: three actions sit side by side in a 48px row, and
+                    expanding each to the WCAG target would overlap its neighbours,
+                    which trades a small target for a mis-hit destructive one. Reaching
+                    44 here needs the row to hold one control and a menu, which is a
+                    bigger change than this pass.
+                  */}
+                  <div className="flex justify-end gap-1">
                     <Button
-                      size="xs"
+                      size="icon-sm"
                       variant="ghost"
                       aria-label={`Edit ${template.name}`}
                       render={
@@ -250,7 +262,7 @@ export function ProfileTable({
                       <PencilSimpleIcon aria-hidden="true" />
                     </Button>
                     <Button
-                      size="xs"
+                      size="icon-sm"
                       variant="ghost"
                       aria-label={`Duplicate ${template.name}`}
                       disabled
@@ -259,7 +271,7 @@ export function ProfileTable({
                       <CopyIcon aria-hidden="true" />
                     </Button>
                     <Button
-                      size="xs"
+                      size="icon-sm"
                       variant="ghost"
                       aria-label={`Delete ${template.name}`}
                       onClick={() => {

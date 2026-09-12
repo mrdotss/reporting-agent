@@ -468,7 +468,7 @@ export function FrontMatterForm({
     >
       <div className="flex items-center gap-2">
         <FileText aria-hidden className="size-4 text-primary" />
-        <h2 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        <h2 className="text-micro text-muted-foreground uppercase">
           Front Matter
         </h2>
         <span className="ml-auto text-xs text-muted-foreground">Fixed</span>
@@ -515,7 +515,7 @@ export function FrontMatterForm({
             the only symptom is a blank cover and nothing saying why.
           */}
           {values.cover.logo && !values.cover.logo_key ? (
-            <span className="text-xs text-amber-700 dark:text-amber-500">
+            <span className="text-xs text-(--status-attention)">
               This URL was not readable at the last save, so the cover prints no logo.
               It must answer over HTTPS with a PNG or JPEG under 2&nbsp;MB.
             </span>
@@ -550,7 +550,7 @@ export function FrontMatterForm({
             className="h-8 rounded-md border border-input bg-background px-2.5 text-sm placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           />
           {values.cover.background && !values.cover.background_key ? (
-            <span className="text-xs text-amber-700 dark:text-amber-500">
+            <span className="text-xs text-(--status-attention)">
               This URL was not readable at the last save, so the cover prints no
               background. It must answer over HTTPS with a PNG or JPEG under
               5&nbsp;MB.

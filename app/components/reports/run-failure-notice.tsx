@@ -86,14 +86,14 @@ export function RunFailureNotice({
       */}
       <dl className="flex flex-col gap-1 text-sm sm:flex-row sm:gap-8">
         <div className="flex flex-col gap-0.5">
-          <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+          <dt className="text-micro text-muted-foreground uppercase">
             {messageText("ui.failure.subscription_label", language ?? "en")}
           </dt>
           <dd className="font-mono tabular-nums">{subscriptionLabel}</dd>
         </div>
 
         <div className="flex flex-col gap-0.5">
-          <dt className="text-xs tracking-widest text-muted-foreground uppercase">
+          <dt className="text-micro text-muted-foreground uppercase">
             {messageText("ui.failure.period_label", language ?? "en")}
           </dt>
           {/* The zone is named, because "July" means July there and not in UTC. */}
@@ -113,7 +113,7 @@ export function RunFailureNotice({
 
       {failure.causes.length === 0 ? null : (
         <div className="flex flex-col gap-1.5">
-          <h3 className="text-xs tracking-widest text-muted-foreground uppercase">
+          <h3 className="text-micro text-muted-foreground uppercase">
             {messageText("ui.failure.what_to_check", language ?? "en")}
           </h3>
 

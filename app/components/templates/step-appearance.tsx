@@ -196,7 +196,7 @@ export function StepAppearance({
       />
       <section className="flex flex-col gap-4">
         <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
+          <h2 className="text-section">
             Chart design
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -266,7 +266,7 @@ export function StepAppearance({
 
       <section className="flex flex-col gap-4 border-t border-border pt-8">
         <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
+          <h2 className="text-section">
             Chart font
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -322,7 +322,7 @@ export function StepAppearance({
 
       <section className="flex flex-col gap-5 border-t border-border pt-8">
         <div className="flex flex-col gap-1">
-          <h2 className="font-heading text-base font-medium tracking-tight">
+          <h2 className="text-section">
             Tables and page layout
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -359,7 +359,7 @@ function Chip({ children }: Readonly<{ children: React.ReactNode }>) {
 function OutputChip({ raster }: Readonly<{ raster: boolean }>) {
   if (raster) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-400">
+      <span className="inline-flex items-center gap-1 rounded-full bg-(--status-attention-soft) px-1.5 py-0.5 text-[10px] font-medium text-(--status-attention)">
         <svg
           width="10"
           height="10"
@@ -377,7 +377,7 @@ function OutputChip({ raster }: Readonly<{ raster: boolean }>) {
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
+    <span className="inline-flex items-center gap-1 rounded-full bg-(--status-verified-soft) px-1.5 py-0.5 text-[10px] font-medium text-(--status-verified)">
       <svg
         width="10"
         height="10"

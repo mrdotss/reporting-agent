@@ -80,7 +80,7 @@ export default function NewSubscriptionPage() {
         </Link>
 
         <div className="flex flex-col gap-1">
-          <h1 className="text-balance">Connect with confidence.</h1>
+          <h1 className="text-title text-balance">Connect a subscription</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             A guided setup with a real access check before anything is saved.
           </p>
@@ -101,7 +101,7 @@ export default function NewSubscriptionPage() {
           aria-label="What happens next"
           className="flex flex-col gap-4 lg:sticky lg:top-6"
         >
-          <h2 className="text-[11px] font-semibold tracking-widest text-muted-foreground uppercase">
+          <h2 className="text-micro text-muted-foreground uppercase">
             What happens next
           </h2>
 

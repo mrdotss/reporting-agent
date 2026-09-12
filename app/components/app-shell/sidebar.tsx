@@ -133,7 +133,7 @@ export function AppSidebar({ children }: SidebarProps) {
         */}
         <h2
           id={navLabelId}
-          className="px-3 text-xs font-medium tracking-widest text-muted-foreground uppercase"
+          className="px-3 text-micro text-muted-foreground uppercase"
         >
           Workspace
         </h2>

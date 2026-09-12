@@ -2,6 +2,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon, FolderIcon } from "@phosphor-icons/react/ssr"
 
+import { PageBody } from "@/components/app-shell/page-body"
 import { RunForm } from "@/components/reports/run-form"
 import { buttonVariants } from "@/components/ui/button"
 import {
@@ -73,7 +74,7 @@ export default async function NewReportPage() {
   )
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageBody kind="reading">
       <header className="flex flex-col gap-3">
         <Link
           href="/reports"
@@ -84,7 +85,7 @@ export default async function NewReportPage() {
         </Link>
 
         <div className="flex flex-col gap-1">
-          <h1 className="text-balance">Prepare your next report.</h1>
+          <h1 className="text-title text-balance">Request a report</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
             Choose a connection and a saved profile. The profile decides the
             period, the scope and the document.
@@ -97,6 +98,6 @@ export default async function NewReportPage() {
         templates={templates}
         nowIso={new Date().toISOString()}
       />
-    </div>
+    </PageBody>
   )
 }
