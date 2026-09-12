@@ -1,11 +1,9 @@
 "use client"
 
 import { useRef, type KeyboardEvent } from "react"
-import Image from "next/image"
 import { CheckCircleIcon } from "@phosphor-icons/react"
 
 import { DESIGN_PRESETS, type DesignPreset } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 
 /**
  * The four themes as a 2×2 grid of real page images (Requirement 13).
@@ -53,11 +51,14 @@ import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
  * looked at.
  */
 
-const GRID_COLUMNS = 2
-
 /**
  * Each theme in words: heading typography, table treatment, density
  * (Requirement 13.7).
+ *
+ * They open on what the theme *does*, not on its name. Each used to begin "Editorial
+ * theme. …", which was right when this was an image's `alt` and the name was not
+ * otherwise spoken — and is a stutter now that the name is the label directly above
+ * the sentence.
  *
  * Written against `THEME_SPECS` in the agent's `render/themes.py`. If a theme's
  * declared faces change, these sentences are wrong and the thumbnail is stale —
@@ -67,30 +68,28 @@ const GRID_COLUMNS = 2
  */
 const THEME_DESCRIPTION: Readonly<Record<DesignPreset, string>> = {
   editorial:
-    "Editorial theme. Serif headings in the accent colour above a hairline rule, " +
+    "Serif headings in the accent colour above a hairline rule, " +
     "serif body text at generous leading, and tables with a ruled header and no " +
     "cell shading. The most spacious of the four — it reads like a printed report.",
   corporate:
-    "Corporate theme. Bold sans-serif headings in a deep navy, sans-serif body " +
+    "Bold sans-serif headings in a deep navy, sans-serif body " +
     "text at normal leading, and tables with a filled header band and ruled rows. " +
     "Conventional and dense enough for a long resource table.",
   technical:
-    "Technical theme. Sans-serif headings at a heavier weight with tight letter " +
+    "Sans-serif headings at a heavier weight with tight letter " +
     "spacing, compact body text, and tables with visible rules on every side. " +
     "The densest of the four — most rows per page.",
   minimal:
-    "Minimal theme. Light sans-serif headings with no rule beneath them, plenty " +
+    "Light sans-serif headings with no rule beneath them, plenty " +
     "of white space around body text, and tables with a single rule under the " +
     "header and nothing else. The quietest of the four.",
 }
 
 export function StylePresetPicker({
   selected,
-  thumbnails,
   onSelect,
 }: Readonly<{
   selected: DesignPreset
-  thumbnails: readonly ThemeThumbnail[]
   onSelect: (preset: DesignPreset) => void
 }>) {
   const refs = useRef(new Map<DesignPreset, HTMLButtonElement>())
@@ -99,22 +98,20 @@ export function StylePresetPicker({
     const index = DESIGN_PRESETS.indexOf(from)
     if (index === -1) return
 
+    // One row per step in every direction. This was a 2x2 grid, where Down meant
+    // "two along"; in a list that would skip a theme.
     const delta =
-      key === "ArrowRight"
+      key === "ArrowRight" || key === "ArrowDown"
         ? 1
-        : key === "ArrowLeft"
+        : key === "ArrowLeft" || key === "ArrowUp"
           ? -1
-          : key === "ArrowDown"
-            ? GRID_COLUMNS
-            : key === "ArrowUp"
-              ? -GRID_COLUMNS
-              : 0
+          : 0
 
     if (delta === 0) return
 
-    // Clamped rather than wrapped. Wrapping in a 2×2 grid puts ArrowRight from
-    // the last card onto the first, which reads as the focus jumping rather than
-    // as having reached the end.
+    // Clamped rather than wrapped. Wrapping puts ArrowDown from the last row onto
+    // the first, which reads as the focus jumping rather than as having reached the
+    // end of the list.
     const target =
       DESIGN_PRESETS[
         Math.min(DESIGN_PRESETS.length - 1, Math.max(0, index + delta))
@@ -149,21 +146,9 @@ export function StylePresetPicker({
       data-slot="style-preset-picker"
       role="radiogroup"
       aria-label="Style preset"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2"
+      className="flex flex-col divide-y divide-border overflow-hidden rounded-md border border-border"
     >
-      {/*
-        Driven by `DESIGN_PRESETS`, not by the `thumbnails` array.
-
-        Every preset the schema accepts gets a card whether or not an image
-        resolved for it. Mapping the array instead made the *control* conditional
-        on the pictures: a resolver that returned fewer entries — or none — left a
-        consultant with no way to choose a theme at all, silently, which is a
-        worse failure than the one Requirement 13.8 already handles. A missing
-        entry is now just an unavailable image, which is a case this component
-        already draws.
-      */}
       {DESIGN_PRESETS.map((preset) => {
-        const thumbnail = thumbnails.find((entry) => entry.preset === preset)
         const isSelected = preset === selected
         const description = THEME_DESCRIPTION[preset]
 
@@ -175,68 +160,56 @@ export function StylePresetPicker({
               else refs.current.set(preset, element)
             }}
             type="button"
-            data-slot="preset-card"
+            data-slot="preset-row"
             data-preset={preset}
-            data-image={thumbnail?.src ? "present" : "unavailable"}
             role="radio"
             aria-checked={isSelected}
-            // Only the selected card is in the tab order; arrow keys move within
-            // the group. The roving pattern is what stops a four-card grid
-            // costing four tab stops on the way to the next control.
+            // Only the selected row is in the tab order; arrow keys move within the
+            // group. The roving pattern is what stops four rows costing four tab stops
+            // on the way to the next control.
             tabIndex={isSelected ? 0 : -1}
             onClick={() => onSelect(preset)}
             onKeyDown={(event) => handleKey(event, preset)}
             className={[
-              "flex flex-col gap-2 rounded-xl border p-2 text-left focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none",
-              isSelected ? "border-primary ring-2 ring-ring" : "border-border",
+              "flex items-start gap-3 px-3.5 py-3 text-left transition-colors",
+              "focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none",
+              isSelected
+                ? "bg-primary/6 text-foreground"
+                : "text-foreground hover:bg-accent",
             ].join(" ")}
           >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm capitalize">{preset}</span>
-
-              {/*
-                Requirement 13.4 — a glyph, not only a border colour. Hidden from
-                the reader because `aria-checked` already carries the state, and
-                announcing it twice is noise.
-              */}
+            {/*
+              Requirement 13.4 — a glyph, not only a fill. The reserved box keeps the
+              four labels on one left edge whether or not a row is the selected one.
+            */}
+            <span className="mt-0.5 grid size-4 shrink-0 place-items-center">
               {isSelected ? (
                 <CheckCircleIcon
                   aria-hidden="true"
                   weight="fill"
                   className="size-4 text-primary"
                 />
-              ) : null}
-            </div>
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="size-3 rounded-full border border-border"
+                />
+              )}
+            </span>
 
-            {!thumbnail?.src ? (
-              <div
-                data-slot="preset-image-unavailable"
-                // Requirement 13.8 — the name, the description, and an explicit
-                // statement. Still a card, still selectable, still in the grid.
-                className="flex min-h-[16rem] flex-col justify-center gap-2 rounded-lg border border-dashed border-border px-3 py-4"
-              >
-                <p className="text-sm">Page image unavailable</p>
-                <p className="text-xs text-muted-foreground">{description}</p>
-              </div>
-            ) : (
-              <Image
-                src={thumbnail.src}
-                // Requirement 13.7 — the description *is* the alternative.
-                alt={description}
-                // The raster's own intrinsic size, so the card shows the page
-                // shape rather than a crop of it (Requirement 13.1). Declaring
-                // both is also what lets the browser reserve the space before
-                // the file arrives, so selecting a preset does not reflow the
-                // grid under the pointer.
-                width={720}
-                height={1019}
-                // Requirement 13.1's floor of 240 CSS pixels, held at every
-                // breakpoint: one column below `sm`, two above, and the grid's
-                // own gutters are what the calculation subtracts.
-                sizes="(min-width: 640px) 20rem, 100vw"
-                className="w-full min-w-[240px] rounded-lg border border-border bg-white"
-              />
-            )}
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span className="text-sm font-medium capitalize">{preset}</span>
+
+              {/*
+                Requirement 13.7's text alternative, promoted to the visible label.
+                It describes the theme's heading typography, table treatment and
+                density in words — which is what a reader needs to choose between four
+                themes, and is exactly what four bare names withhold.
+              */}
+              <span className="text-meta text-muted-foreground">
+                {description}
+              </span>
+            </span>
           </button>
         )
       })}

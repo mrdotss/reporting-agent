@@ -62,7 +62,6 @@ function Harness({ onDefinition }: { onDefinition?: (d: TemplateDefinition) => v
         setDefinition(next)
         onDefinition?.(next)
       }}
-      thumbnails={[]}
     />
   )
 }

@@ -107,10 +107,19 @@ describe("the document preview outlives the step that rendered it", () => {
     expect(shell.slice(switchStart)).not.toMatch(/<DocumentPreview/)
   })
 
-  test("Identity is the one step without it", () => {
-    // A name and a customer describe no page yet, so there is nothing to show.
+  test("every step has it, Identity included", () => {
+    // It used to start at Sections, on the reasoning that a name and a customer
+    // describe no page yet. They describe the most visible text in the document: the
+    // report title and the customer name are printed on the cover and in the running
+    // header. Withholding the preview there also made the form jump a third of the
+    // page wider on the way to step two, which reads as a layout bug rather than as a
+    // step change.
+    //
+    // Asserted as an unconditional value rather than as "not identity", so a later
+    // edit cannot reintroduce a per-step condition — which is what would remount the
+    // preview and throw away a render the test above exists to preserve.
     expect(read("components/templates/wizard-shell.tsx")).toMatch(
-      /showsPreview = step\.id !== "identity"/
+      /const showsPreview = true/
     )
   })
 

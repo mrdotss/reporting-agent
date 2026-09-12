@@ -29,7 +29,6 @@ import type {
   MetricCatalogSnapshot,
   TemplateDefinition,
 } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 import { EMPTY_DRAFT_V3 } from "@/lib/templates/draft"
 import {
   canAdvance,
@@ -132,7 +131,6 @@ export function WizardShell({
   template,
   initialDefinition,
   catalog,
-  thumbnails,
   sectionCatalogue,
   scanTypeCounts,
   metricsHistorySince,
@@ -150,8 +148,6 @@ export function WizardShell({
    * replay. See `lib/profiles/presets.ts`.
    */
   catalog: MetricCatalogSnapshot
-  /** Resolved on the server — see `StepDesign`'s own note. */
-  thumbnails: readonly ThemeThumbnail[]
   /** The section catalogue, resolved server-side (sections.ts is server-only). */
   sectionCatalogue: readonly SectionCatalogueEntry[]
   /**
@@ -466,8 +462,7 @@ export function WizardShell({
     scanTypeCounts,
     metricsHistorySince,
     collectedFactSources,
-    thumbnails,
-  })
+    })
 
   // The preview is mounted **here**, outside `renderStep`, from Sections onward.
   //
@@ -476,9 +471,15 @@ export function WizardShell({
   // PDF upload. Unmounting would throw that away each time the consultant moved a step,
   // so it would only ever be useful on the step that rendered it — which is what it was.
   //
-  // From Sections onward rather than from Identity, because Identity is a name and a
-  // customer: there is nothing yet whose shape a page could show.
-  const showsPreview = step.id !== "identity"
+  // Every step, Identity included.
+  //
+  // It used to start at Sections, on the reasoning that a name and a customer have no
+  // shape a page could show. That is wrong twice over: the report *title* and the
+  // customer name are printed on the cover and in the running header, so Identity edits
+  // the most visible text in the document — and a rail that appears on step two makes
+  // the form jump a third of the page wider on the way there, which reads as a layout
+  // bug rather than as a step change.
+  const showsPreview = true
 
   return (
     // No measure of its own: the page decides how wide a page is, and this one is a
@@ -820,7 +821,6 @@ function renderStep({
   scanTypeCounts,
   metricsHistorySince,
   collectedFactSources,
-  thumbnails,
 }: Readonly<{
   step: WizardStep
   definition: TemplateDefinition
@@ -845,7 +845,6 @@ function renderStep({
    */
   metricsHistorySince?: string | null
   collectedFactSources?: ReadonlySet<string>
-  thumbnails: readonly ThemeThumbnail[]
 }>) {
   switch (step.id) {
     case "identity":
@@ -881,7 +880,6 @@ function renderStep({
         <StepAppearance
           definition={definition}
           onChange={setDefinition}
-          thumbnails={thumbnails}
         />
       )
     case "preview":

@@ -16,7 +16,6 @@ import {
   type ChartStyle,
   type TemplateDefinition,
 } from "@/lib/templates/definition"
-import type { ThemeThumbnail } from "@/lib/templates/theme-thumbnails"
 import {
   CHART_FONT_STACKS,
   CHART_STYLE_NOTES,
@@ -163,13 +162,9 @@ function ChartPreview({
 export function StepAppearance({
   definition,
   onChange,
-  thumbnails,
 }: Readonly<{
   definition: TemplateDefinition
   onChange: (next: TemplateDefinition) => void
-  /** Resolved on the server — see `StepDesign`'s own note. Passed straight
-   * through: this component never inspects a thumbnail. */
-  thumbnails: readonly ThemeThumbnail[]
 }>) {
   const style = currentStyle(definition)
   const font = currentFont(definition)
@@ -191,7 +186,6 @@ export function StepAppearance({
       <StepDesign
         definition={definition}
         onChange={onChange}
-        thumbnails={thumbnails}
         controls="theme"
       />
       <section className="flex flex-col gap-4">
@@ -333,8 +327,7 @@ export function StepAppearance({
         <StepDesign
           definition={definition}
           onChange={onChange}
-          thumbnails={thumbnails}
-          controls="details"
+            controls="details"
         />
       </section>
     </div>

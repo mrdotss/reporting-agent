@@ -13,7 +13,6 @@ import { COLLECTED_FACT_SOURCES } from "@/lib/profiles/facts"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { readLatestScan } from "@/lib/scans/store"
 import { readTypeCounts } from "@/lib/scans/view"
-import { themeThumbnails } from "@/lib/templates/theme-thumbnails"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import {
   getTemplate,
@@ -101,7 +100,6 @@ export default async function EditTemplatePage({ params }: PageProps) {
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
       sectionCatalogue={AZURE_SECTIONS}
-      thumbnails={themeThumbnails()}
       scanTypeCounts={scanTypeCounts}
       collectedFactSources={COLLECTED_FACT_SOURCES}
       // On the same reasoning as `scanTypeCounts` above: the depth of the connection this
