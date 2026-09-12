@@ -136,8 +136,21 @@ export function SnapshotProvenance({
             Half-open on the UTC side: `endUtc` is midnight of the local day *after*
             the last one, and is excluded. Stated so nobody reads it as an extra day.
           */}
-          <span data-slot="snapshot-window-utc" className="break-all">
-            {provenance.startUtc} {messageText("ui.snapshot.range_to", language ?? "en")} {provenance.endUtc}
+          {/*
+            Each instant on its own line, and neither one breakable.
+            `break-all` on the pair broke a timestamp mid-character — the cell read
+            `2026-07-31T17:00:00Z to 202` / `6-08-31T17:00:00Z`, which is not a date any
+            more. An instant is an atom; the pair is what wraps.
+          */}
+          <span
+            data-slot="snapshot-window-utc"
+            className="flex flex-col items-start"
+          >
+            <span className="whitespace-nowrap">{provenance.startUtc}</span>
+            <span className="whitespace-nowrap text-muted-foreground">
+              {messageText("ui.snapshot.range_to", language ?? "en")}{" "}
+              {provenance.endUtc}
+            </span>
           </span>
         </Row>
       )}

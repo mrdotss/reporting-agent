@@ -855,8 +855,8 @@ export const MESSAGE_CATALOG = {
     id: "Unduh",
   },
   "ui.download.description": {
-    en: "Every figure in these documents traced to the snapshot named above. Links are minted when you press the button and expire within five minutes.",
-    id: "Setiap angka dalam dokumen ini terlacak ke snapshot yang disebutkan di atas. Tautan dibuat saat Anda menekan tombol dan kedaluwarsa dalam lima menit.",
+    en: "Every figure in these documents traces to this run's snapshot. Links are minted when you press the button and expire within five minutes.",
+    id: "Setiap angka dalam dokumen ini terlacak ke snapshot proses ini. Tautan dibuat saat Anda menekan tombol dan kedaluwarsa dalam lima menit.",
   },
   "ui.download.preparing": {
     en: "Preparing…",

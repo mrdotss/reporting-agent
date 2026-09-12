@@ -273,7 +273,14 @@ export function SubscriptionList({
               </CardHeader>
 
               <CardContent className="flex flex-col gap-4">
-                <dl className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-8">
+                {/*
+                  Facts on the left, actions on the right, on one line where there is
+                  room. The column layout put four short values and two small buttons
+                  down the left edge of a surface 1200px wide and left the rest empty —
+                  which reads as a card that failed to load its right-hand side.
+                */}
+                <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+                <dl className="flex flex-col gap-2 text-sm sm:flex-row sm:gap-10">
                   <div className="flex flex-col gap-0.5">
                     <dt className="text-xs tracking-widest text-muted-foreground uppercase">
                       Subscription
@@ -313,8 +320,6 @@ export function SubscriptionList({
                   </div>
                 </dl>
 
-                <StateNotice state={state} view={view} nowIso={nowIso} />
-
                 {/*
                   The entry point to the scan (Requirement 4.5). Phase 0 ships a screen
                   nobody can reach without it: there is no `subscriptions/[id]` page, so
@@ -327,8 +332,8 @@ export function SubscriptionList({
                   certain to be refused trains the reader to ignore refusals, so the
                   condition here mirrors the route's rather than restating a subset of it.
                 */}
-                {view.scopeVerified && state.kind !== "expired" ? (
-                  <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {view.scopeVerified && state.kind !== "expired" ? (
                     <Link
                       data-slot="button"
                       href={`/subscriptions/${view.id}/scan`}
@@ -340,8 +345,11 @@ export function SubscriptionList({
                       <MagnifyingGlassIcon aria-hidden="true" />
                       Scan
                     </Link>
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
+                </div>
+
+                <StateNotice state={state} view={view} nowIso={nowIso} />
               </CardContent>
             </Card>
           </li>

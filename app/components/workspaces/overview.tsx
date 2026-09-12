@@ -91,17 +91,39 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
     !project.archivedAt &&
     can(workspace.role, "edit")
 
+  /**
+   * The four figures, each with what it actually counts.
+   *
+   * "Ready to send 46" was a count of completed *runs* in thirty days, presented as a
+   * number of deliverables. For a consultant re-running one profile all month those are
+   * the same report forty-six times, and a headline figure that means something other
+   * than what it says is worse than no figure. The sub-label is not decoration: it is
+   * the difference between a number and a claim.
+   */
   const figures = [
-    { label: "Ready to send", value: counts.completed },
-    { label: "In progress", value: counts.running },
+    {
+      label: "Completed",
+      value: counts.completed,
+      note: "runs, last 30 days",
+    },
+    {
+      label: "In progress",
+      value: counts.running,
+      note: counts.running === 0 ? "nothing running" : "collecting or rendering",
+    },
     {
       label: "Needs attention",
       value: issues.length,
+      note: issues.length === 0 ? "every connection healthy" : "connections",
       // The only figure allowed to shout, and only when it is not zero. A permanently
       // red numeral is a numeral people stop reading.
       alarming: issues.length > 0,
     },
-    { label: "Connected sources", value: subscriptions.length },
+    {
+      label: "Connections",
+      value: subscriptions.length,
+      note: "subscriptions in this project",
+    },
   ]
 
   return (
@@ -169,11 +191,11 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
         data-slot="dashboard-figures"
         className="grid grid-cols-2 divide-x divide-y divide-border border-y border-border sm:grid-cols-4 sm:divide-y-0"
       >
-        {figures.map(({ label, value, alarming }) => (
+        {figures.map(({ label, value, note, alarming }) => (
           <div
             key={label}
             data-slot="dashboard-figure"
-            className="flex flex-col gap-2 px-5 py-6 first:pl-0 sm:last:pr-0"
+            className="flex flex-col gap-1.5 px-5 py-6 first:pl-0 sm:last:pr-0"
           >
             <dt className="text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
               {label}
@@ -187,6 +209,7 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
             >
               {value}
             </dd>
+            <dd className="text-xs text-muted-foreground">{note}</dd>
           </div>
         ))}
       </dl>
@@ -297,14 +320,17 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
                       </div>
 
                       <Badge
-                        variant={
-                          state.kind === "active"
-                            ? "secondary"
-                            : state.kind === "expiring"
-                              ? "outline"
-                              : "destructive"
-                        }
-                        className="shrink-0"
+                        variant="outline"
+                        className={cn(
+                          "shrink-0 border-transparent",
+                          state.kind === "active" &&
+                            "bg-(--status-verified-soft) text-(--status-verified)",
+                          state.kind === "expiring" &&
+                            "bg-(--status-attention-soft) text-(--status-attention)",
+                          state.kind !== "active" &&
+                            state.kind !== "expiring" &&
+                            "bg-(--status-failed-soft) text-(--status-failed)"
+                        )}
                       >
                         {state.kind === "active"
                           ? "Connected"
@@ -328,25 +354,51 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
         </section>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6">
-        <div className="flex min-w-0 flex-col gap-1">
-          <h2 className="text-sm font-medium">
-            A good report starts with a good profile.
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Reuse your customer&rsquo;s scope, metrics, and document style.
-          </p>
-        </div>
-
-        <Link
-          data-slot="button"
-          href="/report-profiles"
-          className={buttonVariants({ variant: "outline" })}
-        >
-          Browse profiles
-          <ArrowRightIcon />
-        </Link>
-      </div>
+      {/*
+        The page ends on where to go, not on a slogan.
+        "A good report starts with a good profile" is a line from a marketing page, on an
+        internal tool, as the last thing a consultant sees. These are the three places
+        work actually continues, with the counts that say whether there is anything there.
+      */}
+      <nav
+        aria-label="Elsewhere in this project"
+        className="grid gap-px border-t border-border bg-border sm:grid-cols-3"
+      >
+        {[
+          {
+            href: "/report-profiles",
+            title: "Report profiles",
+            note: "Scope, metrics and document style, reused every month.",
+          },
+          {
+            href: "/subscriptions",
+            title: "Connections",
+            note: "Customer access, resource discovery, secret expiry.",
+          },
+          {
+            href: "/reports",
+            title: "Run history",
+            note: "Every request, its progress and its finished document.",
+          },
+        ].map((entry) => (
+          <Link
+            key={entry.href}
+            href={entry.href}
+            className="group flex flex-col gap-1 bg-background px-5 py-5 outline-none transition-colors hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/30"
+          >
+            <span className="flex items-center gap-1.5 text-sm font-medium">
+              {entry.title}
+              <ArrowRightIcon
+                aria-hidden="true"
+                className="size-3.5 text-muted-foreground transition-transform group-hover:translate-x-0.5"
+              />
+            </span>
+            <span className="text-xs leading-relaxed text-muted-foreground">
+              {entry.note}
+            </span>
+          </Link>
+        ))}
+      </nav>
     </PageBody>
   )
 }

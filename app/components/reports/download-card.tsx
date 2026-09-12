@@ -124,7 +124,10 @@ export function DownloadCard({
       // The delivered artifact is the point of the whole run, so this card carries the
       // one tinted ground on the page. Everything else stays neutral: a second tinted
       // surface would make the accent mean "panel" rather than "this is ready".
-      className="border-primary/25 bg-primary/4"
+      // Prose and controls on one line once there is room for both. Stacked at
+      // `wide` this card was a paragraph and three small buttons against 900px of
+      // empty tinted ground, which reads as a card that lost its right-hand side.
+      className="border-primary/25 bg-primary/4 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
     >
       <CardHeader>
         <CardTitle className="font-heading text-sm font-medium tracking-tight">
@@ -136,7 +139,7 @@ export function DownloadCard({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="flex flex-wrap gap-2">
+      <CardContent className="flex flex-wrap gap-2 lg:shrink-0">
         {downloadable.map((key) => {
           const leaf = DOWNLOADABLE_LEAF_NAMES.find((name) =>
             key.endsWith(`/${name}`)
