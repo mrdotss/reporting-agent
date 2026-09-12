@@ -402,18 +402,18 @@ export async function WorkspaceOverview({ userId }: { userId: string }) {
         {[
           {
             href: "/report-profiles",
-            title: "Report profiles",
+            title: "Report presets",
             note: "Scope, metrics and document style, reused every month.",
           },
           {
             href: "/subscriptions",
-            title: "Connections",
+            title: "Connectors",
             note: "Customer access, resource discovery, secret expiry.",
           },
           {
             href: "/reports",
-            title: "Run history",
-            note: "Every request, its progress and its finished document.",
+            title: "Reports",
+            note: "Every run, its progress and the document it delivered.",
           },
         ].map((entry) => (
           <Link
