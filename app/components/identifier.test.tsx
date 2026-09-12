@@ -45,7 +45,7 @@ describe("the identifier", () => {
     const visible = [...container.querySelectorAll("[aria-hidden='true']")]
       .map((node) => node.textContent ?? "")
       .join("")
-      .replace(/[·]/g, "")
+      .replace(/[•]/g, "")
 
     expect(MASKED).toContain(visible)
   })

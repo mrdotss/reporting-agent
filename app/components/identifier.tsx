@@ -32,8 +32,15 @@ import { cn } from "@/lib/utils"
 /** How much of a digest is enough to tell two apart at a glance. */
 export const DIGEST_VISIBLE = 12
 
-/** The glyph standing in for the masked run of a subscription id. */
-const MASK_GLYPH = "····"
+/**
+ * The glyph standing in for the masked run.
+ *
+ * Bullets set tight, not middle dots set loose. `····` with letter-spacing rendered as
+ * four dots floating apart at 12px, which reads as a loading state rather than as a
+ * redaction — the thing it stands for is a solid run of characters, so it should look
+ * like one.
+ */
+const MASK_GLYPH = "••••"
 
 export type IdentifierKind = "mask" | "digest"
 
@@ -71,12 +78,15 @@ export function Identifier({
       data-kind={kind}
       title={value}
       className={cn(
-        "inline-flex items-baseline gap-1 font-mono text-xs tabular-nums",
+        "inline-flex items-baseline gap-1.5 font-mono text-xs tabular-nums",
         className
       )}
     >
       {masked ? (
-        <span aria-hidden="true" className="tracking-[0.12em] opacity-60">
+        <span
+          aria-hidden="true"
+          className="tracking-tighter text-muted-foreground"
+        >
           {MASK_GLYPH}
         </span>
       ) : null}

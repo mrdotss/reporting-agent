@@ -431,3 +431,47 @@ export function runPhases(
             : "pending",
   }))
 }
+
+/**
+ * How long ago an instant was, for a summary that is scanned rather than audited.
+ *
+ * ## Why the dashboard needs this at all
+ *
+ * Five recent runs of one profile against one connection for one period are five
+ * identical rows — same profile, same period, same gap count, same status. The only
+ * field that separates them is when they ran, and the compact table dropped it as a
+ * column that would not fit. So the summary listed the same line five times and the
+ * reader could not tell which was the latest.
+ *
+ * ## Coarse on purpose
+ *
+ * "4 h ago" rather than "4 hours 12 minutes ago": the question this answers on a
+ * summary is *is this recent*, and a precise duration invites reading it as a
+ * measurement. The exact instant travels beside it in a `title`, and the run history
+ * prints it in full.
+ *
+ * Pure over `now`, which the caller passes: a function reading its own clock cannot be
+ * tested for the boundary it is most likely to get wrong.
+ */
+export function relativeInstant(iso: string, now: Date): string {
+  const then = Date.parse(iso)
+  if (Number.isNaN(then)) return ""
+
+  const seconds = Math.round((now.getTime() - then) / 1000)
+
+  // A clock skew between the server and the row is not a future event worth naming.
+  if (seconds < 60) return "just now"
+
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes} min ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+
+  const days = Math.floor(hours / 24)
+  if (days < 7) return `${days} d ago`
+
+  // Past a week the calendar date is what a reader is actually after, and it is stable
+  // rather than drifting by one every midnight. UTC, like every other instant here.
+  return iso.slice(0, 10)
+}

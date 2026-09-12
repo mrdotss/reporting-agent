@@ -202,6 +202,9 @@ export function ProfileTable({
             return (
               <TableRow key={template.id}>
                 <TableCell>
+                  {/* A column, because `Identifier` is inline-flex: dropped straight
+                      after the link it ran onto the end of the name. */}
+                  <div className="flex flex-col items-start gap-0.5">
                   <Link
                     href={`/report-profiles/${template.id}/edit`}
                     className="font-medium underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
@@ -216,6 +219,7 @@ export function ProfileTable({
                       className="text-muted-foreground"
                     />
                   )}
+                  </div>
                 </TableCell>
 
                 <TableCell>

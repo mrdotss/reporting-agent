@@ -82,7 +82,14 @@ export function TeamManager({
           {error}
         </p>
       )}
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_1fr]">
+      {/*
+        Who is in this workspace, and who has been asked, in one column.
+        Invitations was a full-width card under a 480px-tall Members card holding two
+        rows — the same subject, split across two surfaces, with the taller one mostly
+        empty. The invite form is the action beside them, not a third peer.
+      */}
+      <div className="grid items-start gap-6 xl:grid-cols-[1.7fr_1fr]">
+        <div className="flex flex-col gap-6">
         <Card>
           <CardContent className="pt-6">
             <h2 className="mb-4 text-lg font-semibold">Members</h2>
@@ -159,6 +166,66 @@ export function TeamManager({
           </CardContent>
         </Card>
         <Card>
+          <CardContent className="pt-6">
+            <h2 className="mb-1 text-lg font-semibold">Invitations</h2>
+
+            {/*
+              Accepted invitations are not listed here.
+              An accepted invitation *is* a member, and the members list above already
+              says so — with their email, their role and the controls to change it. This
+              card was repeating that with less detail: "Viewer · Accepted", for somebody
+              named in full two inches higher.
+
+              What belongs here is an invitation that still needs something: one waiting to
+              be accepted, or one that ran out.
+            */}
+            <p className="mb-4 text-xs text-muted-foreground">
+              Accepted invitations appear as members above.
+            </p>
+
+            {open.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {invitations.length === 0
+                  ? "No invitations yet."
+                  : "Nothing waiting — every invitation has been accepted."}
+              </p>
+            ) : (
+              open.map((i) => {
+                const status = i.revokedAt
+                  ? "Revoked"
+                  : new Date(i.expiresAt) <= new Date(nowIso)
+                    ? "Expired"
+                    : "Pending"
+                return (
+                  <div
+                    key={i.id}
+                    className="flex justify-between gap-4 border-t py-3 text-sm"
+                  >
+                    <span className="capitalize">
+                      {i.role}{" "}
+                      <span className="ml-2 text-muted-foreground">{status}</span>
+                    </span>
+                    {status === "Pending" &&
+                      canManageMember(workspace.role, i.role) && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() =>
+                            void action({ action: "revoke", id: i.id })
+                          }
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                  </div>
+                )
+              })
+            )}
+          </CardContent>
+        </Card>
+        </div>
+        <Card>
           <CardContent className="space-y-4 pt-6">
             <h2 className="text-lg font-semibold">Invite a teammate</h2>
             <p className="text-sm text-muted-foreground">
@@ -227,65 +294,6 @@ export function TeamManager({
           </CardContent>
         </Card>
       </div>
-      <Card>
-        <CardContent className="pt-6">
-          <h2 className="mb-1 text-lg font-semibold">Invitations</h2>
-
-          {/*
-            Accepted invitations are not listed here.
-            An accepted invitation *is* a member, and the members list above already
-            says so — with their email, their role and the controls to change it. This
-            card was repeating that with less detail: "Viewer · Accepted", for somebody
-            named in full two inches higher.
-
-            What belongs here is an invitation that still needs something: one waiting to
-            be accepted, or one that ran out.
-          */}
-          <p className="mb-4 text-xs text-muted-foreground">
-            Accepted invitations appear as members above.
-          </p>
-
-          {open.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              {invitations.length === 0
-                ? "No invitations yet."
-                : "Nothing waiting — every invitation has been accepted."}
-            </p>
-          ) : (
-            open.map((i) => {
-              const status = i.revokedAt
-                ? "Revoked"
-                : new Date(i.expiresAt) <= new Date(nowIso)
-                  ? "Expired"
-                  : "Pending"
-              return (
-                <div
-                  key={i.id}
-                  className="flex justify-between gap-4 border-t py-3 text-sm"
-                >
-                  <span className="capitalize">
-                    {i.role}{" "}
-                    <span className="ml-2 text-muted-foreground">{status}</span>
-                  </span>
-                  {status === "Pending" &&
-                    canManageMember(workspace.role, i.role) && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={busy}
-                        onClick={() =>
-                          void action({ action: "revoke", id: i.id })
-                        }
-                      >
-                        Revoke
-                      </Button>
-                    )}
-                </div>
-              )
-            })
-          )}
-        </CardContent>
-      </Card>
       <Dialog
         open={!!confirm}
         onOpenChange={(open) => !open && setConfirm(null)}

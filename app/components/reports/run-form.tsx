@@ -616,7 +616,10 @@ export function RunForm({
             />
           </Field>
 
-          {frontMatterComplete ? null : (
+          {/* Only where there is no summary rail to carry it. With the rail, this
+              printed the same sentence twice on one screen — once under the fields and
+              once beside the button. */}
+          {frontMatterComplete || workspace ? null : (
             <p
               data-slot="run-form-front-matter-incomplete"
               // Announced for the same reason the submit error is: the button going

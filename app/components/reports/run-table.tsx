@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/table"
 import type { ConnectedSubscriptionView, RunView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
-import { periodLine } from "@/lib/runs/presentation"
+import { periodLine, relativeInstant } from "@/lib/runs/presentation"
 import { cn } from "@/lib/utils"
 
 /**
@@ -45,8 +45,14 @@ import { cn } from "@/lib/utils"
  * declares the width it earns its place at, and the two that always render are the two
  * you came for — which report, and how it went.
  *
- * `variant="compact"` is the dashboard's: four columns at most, and a tighter row, because
- * that surface is a summary with a "View all" link under it, not the history.
+ * `variant="compact"` is the dashboard's: a tighter row, no connection or resource
+ * column — and "when", read coarsely.
+ *
+ * "When" is there for a specific reason. A consultant running one profile against one
+ * connection for one period gets five recent runs that are identical in every other
+ * field: same profile, same period, same gap count, same status. Dropping the column
+ * that would not fit dropped the only one that separated them, and the summary listed
+ * the same line five times.
  */
 
 function subscriptionName(
@@ -75,12 +81,16 @@ export function RunTable({
 
   const compact = variant === "compact"
 
+  // Read once for the whole table, so every row in one render is relative to the same
+  // instant — rows a millisecond apart must not read as different ages.
+  const now = new Date()
+
   // Declared once and spread onto the header and the cell together: a column that
   // disappears at a width its header does not is a header over the wrong values.
   const connectionAt = compact ? "hidden" : "hidden lg:table-cell"
   const resourcesAt = compact ? "hidden" : "hidden sm:table-cell"
   const gapsAt = "hidden sm:table-cell"
-  const startedAt = compact ? "hidden" : "hidden xl:table-cell"
+  const startedAt = compact ? "w-24 text-right" : "hidden xl:table-cell"
 
   // Compact trims the row to what a summary needs. `p-3` on every cell against a
   // three-line profile stack made each row 76px tall, so five runs filled a screen.
@@ -166,11 +176,24 @@ export function RunTable({
               locale-formatted: a locale format differs between the server pass
               and the browser, which on a list that re-renders would flicker.
             */}
-            <TableCell className={cn("font-mono text-xs tabular-nums", startedAt, bodyCell)}>
-              {run.createdAt.slice(0, 16).replace("T", " ")}
-              <span className="ml-1 text-muted-foreground">
-                {messageText("ui.run_list.utc_suffix", "en")}
-              </span>
+            <TableCell
+              className={cn("font-mono text-xs tabular-nums", startedAt, bodyCell)}
+              // The exact instant, for a reader who needs it. The cell itself reads
+              // coarsely in compact, because a summary answers "is this recent".
+              title={`${run.createdAt.slice(0, 16).replace("T", " ")} UTC`}
+            >
+              {compact ? (
+                <span className="text-muted-foreground">
+                  {relativeInstant(run.createdAt, now)}
+                </span>
+              ) : (
+                <>
+                  {run.createdAt.slice(0, 16).replace("T", " ")}
+                  <span className="ml-1 text-muted-foreground">
+                    {messageText("ui.run_list.utc_suffix", "en")}
+                  </span>
+                </>
+              )}
             </TableCell>
 
             <TableCell className={cn("text-right", bodyCell)}>
