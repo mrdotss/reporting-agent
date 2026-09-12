@@ -286,9 +286,19 @@ export function WorkspaceShell({
           </div>
 
           {/* Band two: the strip. Scrolls rather than collapsing. */}
+          {/*
+            `overflow-y-hidden` is load-bearing, not belt-and-braces.
+
+            CSS computes an axis from `visible` to `auto` the moment the *other* axis
+            is anything else, so `overflow-x-auto` alone silently made this
+            `overflow-y: auto` too. The tab links carry `-mb-px` to sit their active
+            border on the strip's own, which puts the content one pixel taller than the
+            box — and one pixel of vertical overflow is enough for a full scrollbar,
+            arrows and all, parked at the right of the strip.
+          */}
           <nav
             aria-label="Sections"
-            className="flex overflow-x-auto border-b border-border px-2 md:px-4"
+            className="flex overflow-x-auto overflow-y-hidden border-b border-border px-2 md:px-4"
           >
             {NAV.map(({ href, label }) => (
               <Link
