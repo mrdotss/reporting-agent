@@ -220,12 +220,26 @@ export default async function RunPage({ params }: RunPageProps) {
         child and an empty column — the verification panel, which is the entire reason
         that page is being read, squeezed into half the width beside a void.
       */}
+      {/*
+        A short reveal, because these arrive mid-read.
+
+        The verdict, the snapshot and the download controls are server-rendered and
+        appear on the `router.refresh()` that follows the run going terminal — so they
+        land on a page somebody is already looking at, with no navigation to explain
+        them. Cutting them in is the jump; a 200ms fade with two pixels of travel reads
+        as "this just finished" without becoming an effect.
+
+        `animate-in` only: there is no exit, and nothing here animates on a page loaded
+        after the fact, because the markup is identical either way and the animation
+        plays once on mount. `prefers-reduced-motion` is honoured by the blanket rule in
+        `globals.css`, which drops the movement and keeps the result.
+      */}
       {terminal ? (
         <div
           className={
             run.status === "completed"
-              ? "grid items-start gap-6 lg:grid-cols-2"
-              : "grid items-start gap-6"
+              ? "grid items-start gap-6 duration-200 animate-in fade-in-0 slide-in-from-bottom-2 lg:grid-cols-2"
+              : "grid items-start gap-6 duration-200 animate-in fade-in-0 slide-in-from-bottom-2"
           }
         >
           {/*
@@ -322,7 +336,11 @@ export default async function RunPage({ params }: RunPageProps) {
         Above the fold rather than four sections down: on a delivered run this is the
         only thing most readers came for.
       */}
-      {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
+      {delivered ? (
+        <div className="duration-200 animate-in fade-in-0 slide-in-from-bottom-2">
+          <DownloadCard artifactKeys={view.artifactKeys} />
+        </div>
+      ) : null}
 
       {/*
         The rail that used to sit here is gone. The counterfoil took the identity, and

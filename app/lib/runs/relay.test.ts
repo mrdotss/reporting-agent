@@ -172,6 +172,80 @@ describe("the tool step tracks the row's phase", () => {
   })
 })
 
+describe("every non-terminal phase is narrated, not the first three", () => {
+  // The gap this closes was visible on screen. `PHASE_TOOL_STEP` listed `queued`,
+  // `claimed` and `collecting` only, and a phase change closes the open step whether
+  // or not the new phase has an entry — so `collecting` → `compiling` sent a close and
+  // nothing else. The timeline showed collecting complete while the phase list beside
+  // it still read Collecting · In progress, and both sat there through compiling,
+  // rendering and verifying until `done` arrived and the page jumped at once.
+  const LATER_PHASES = [
+    { status: "compiling", name: "compile_figures" },
+    { status: "rendering", name: "render_document" },
+    { status: "verifying", name: "verify_document" },
+  ] as const
+
+  for (const phase of LATER_PHASES) {
+    test(`${phase.status} opens a step of its own`, () => {
+      const before = poll(EMPTY_CURSOR, rowState({ status: "collecting" }))
+      const { events } = poll(before.cursor, rowState({ status: phase.status }))
+
+      const tools = of(events, "tool")
+      expect(tools).toHaveLength(2)
+      expect(tools[0]).toMatchObject({ phase: "end", id: "collecting" })
+      expect(tools[1]).toMatchObject({
+        phase: "start",
+        id: phase.status,
+        name: phase.name,
+      })
+    })
+  }
+
+  test("each carries a phrase of its own, not the fallback", () => {
+    // The line the timeline shows beside a spinner for minutes at a time. "Working"
+    // is indistinguishable from a hang, which is why the fallback is not good enough
+    // for a phase that actually runs.
+    const phrases = new Set<string>()
+
+    let cursor = EMPTY_CURSOR
+    for (const status of [
+      "queued",
+      "claimed",
+      "collecting",
+      "compiling",
+      "rendering",
+      "verifying",
+    ] as const) {
+      const result = poll(cursor, rowState({ status }))
+      cursor = result.cursor
+
+      const start = of(result.events, "tool").find(
+        (event) => event.phase === "start"
+      )
+      expect(start, `${status} opened no step`).toBeDefined()
+      expect(start?.status).not.toBe("Working")
+      phrases.add(String(start?.status))
+    }
+
+    // Six phases, six distinct sentences — a repeated phrase would make two steps
+    // indistinguishable in the timeline.
+    expect(phrases.size).toBe(6)
+  })
+
+  test("narrating a phase does not give it a progress bar", () => {
+    // `PHASE_PROGRESS_UNIT` is a different question and still lists `collecting`
+    // alone: collecting is the only phase with countable work. Requirement 40.14 —
+    // a phase carrying no counts produces no determinate bar.
+    const before = poll(EMPTY_CURSOR, rowState({ status: "collecting" }))
+    const { events } = poll(
+      before.cursor,
+      rowState({ status: "compiling", progressCurrent: null, progressTotal: null })
+    )
+
+    expect(of(events, "progress")).toHaveLength(0)
+  })
+})
+
 describe("Requirement 40.14 — no progress event without both counts", () => {
   test.each([
     ["both absent", { progressCurrent: null, progressTotal: null }],
