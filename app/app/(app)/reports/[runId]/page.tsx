@@ -1,8 +1,10 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
+import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
 import { RequestDetails } from "@/components/reports/request-details"
 import { RunProgress } from "@/components/reports/run-progress"
@@ -139,7 +141,7 @@ export default async function RunPage({ params }: RunPageProps) {
   const terminal = run.status === "completed" || run.status === "failed"
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 lg:max-w-6xl">
+    <PageBody kind="reading">
       <header className="flex flex-col gap-3">
         <Link
           href="/reports"
@@ -267,8 +269,13 @@ export default async function RunPage({ params }: RunPageProps) {
                       <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
                         Definition digest
                       </dt>
-                      <dd className="truncate font-mono text-xs text-muted-foreground">
-                        {pinned.definitionSha256.slice(0, 24)}
+                      <dd>
+                        <Identifier
+                          value={pinned.definitionSha256}
+                          kind="digest"
+                          label="Definition digest"
+                          className="text-muted-foreground"
+                        />
                       </dd>
                     </div>
                   </dl>
@@ -295,6 +302,6 @@ export default async function RunPage({ params }: RunPageProps) {
         </div>
       ) : null}
 
-    </div>
+    </PageBody>
   )
 }

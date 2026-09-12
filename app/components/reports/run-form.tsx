@@ -10,6 +10,7 @@ import { PlayIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Identifier } from "@/components/identifier"
 import {
   Select,
   SelectContent,
@@ -441,9 +442,12 @@ export function RunForm({
                 >
                   <span className="flex flex-col gap-0.5">
                     <span>{subscription.displayName}</span>
-                    <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                      {subscription.maskedSubscriptionId}
-                    </span>
+                    <Identifier
+                      value={subscription.maskedSubscriptionId}
+                      kind="mask"
+                      label="Subscription"
+                      className="text-muted-foreground"
+                    />
                     {/* Disabled *and* the reason, so the control never just refuses. */}
                     {reason === null ? null : (
                       <span className="text-xs text-muted-foreground">
@@ -529,9 +533,11 @@ export function RunForm({
             face, the same treatment every other digest in the app gets.
           */}
           {messageText("ui.run_form.pinned_version_hint", "en", { version: String(selectedTemplate.currentVersion) })}{" "}
-          <span className="font-mono">
-            {selectedTemplate.currentVersionSha256.slice(0, 12)}
-          </span>
+          <Identifier
+            value={selectedTemplate.currentVersionSha256}
+            kind="digest"
+            label="Definition digest"
+          />
         </p>
       )}
 

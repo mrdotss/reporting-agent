@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -58,7 +59,7 @@ export default async function FiguresPage({ params }: FiguresPageProps) {
   const view = toRunView(run, await resolveRunExtras(run))
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <PageBody kind="reading">
       <header className="flex flex-col gap-3">
         <Link
           href={`/reports/${runId}`}
@@ -86,6 +87,6 @@ export default async function FiguresPage({ params }: FiguresPageProps) {
       </header>
 
       <PaperRender html={html} />
-    </div>
+    </PageBody>
   )
 }

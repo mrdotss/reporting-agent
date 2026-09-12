@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import { WorkspaceOverview } from "@/components/workspaces/overview"
 import { workspaceUiEnabled } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
@@ -8,6 +9,7 @@ import {
   SealWarningIcon,
 } from "@phosphor-icons/react/ssr"
 
+import { Identifier } from "@/components/identifier"
 import { RunList } from "@/components/reports/run-list"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { Badge } from "@/components/ui/badge"
@@ -115,9 +117,12 @@ function SubscriptionHealth({
           {subscription.displayName}
         </Link>
 
-        <span className="font-mono text-xs text-muted-foreground tabular-nums">
-          {subscription.maskedSubscriptionId}
-        </span>
+        <Identifier
+          value={subscription.maskedSubscriptionId}
+          kind="mask"
+          label="Subscription"
+          className="text-muted-foreground"
+        />
       </span>
 
       {/*
@@ -183,7 +188,7 @@ export default async function DashboardPage() {
   const expiring = states.filter(({ state }) => state.kind === "expiring")
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <PageBody kind="wide">
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-medium tracking-tight">
           Dashboard
@@ -319,6 +324,6 @@ export default async function DashboardPage() {
           </ul>
         )}
       </section>
-    </div>
+    </PageBody>
   )
 }

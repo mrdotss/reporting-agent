@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
@@ -46,7 +47,7 @@ export default async function SubscriptionsPage() {
   const subscriptions = await listConnectedSubscriptions(user.id, projectScope)
 
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col gap-8">
+    <PageBody kind="wide">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="font-heading text-xl font-medium tracking-tight">
@@ -72,6 +73,6 @@ export default async function SubscriptionsPage() {
       </div>
 
       <SubscriptionList subscriptions={subscriptions} now={new Date()} />
-    </div>
+    </PageBody>
   )
 }

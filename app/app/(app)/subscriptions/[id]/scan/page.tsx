@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
@@ -121,7 +122,7 @@ export default async function ScanPage({ params }: ScanPageProps) {
   const grouped = groupScanTypes(counts, declaredTypes)
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-6 py-8">
+    <PageBody kind="reading" className="gap-8">
       <div className="space-y-1">
         <Link
           data-slot="button"
@@ -245,7 +246,7 @@ export default async function ScanPage({ params }: ScanPageProps) {
           className="flex flex-col items-start gap-1"
         />
       )}
-    </div>
+    </PageBody>
   )
 }
 

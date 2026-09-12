@@ -273,14 +273,29 @@ describe("Requirement 10.2 — only the browser-safe projection is rendered", ()
   test("the masked id is shown, in mono with tabular numerals", () => {
     renderList([view()])
 
-    const id = document.querySelector('[data-slot="masked-subscription-id"]')
+    const row = document.querySelector('[data-slot="masked-subscription-id"]')
+    const id = row?.querySelector('[data-slot="identifier"]')
 
-    expect(id?.textContent).toBe(MASKED_ID)
+    // Rendered through `Identifier` now rather than printed: the 32 mask characters
+    // draw as one short glyph and the four real ones sit beside it. The whole value
+    // is still here — in `title` and in the visually-hidden span — so the guarantee
+    // the next test asserts is unchanged.
+    expect(id).not.toBeNull()
+    expect(id?.getAttribute("title")).toBe(MASKED_ID)
+    expect(id?.textContent).toContain(MASKED_ID)
+
     // Every figure and identifier in this product is set in Geist Mono with
     // tabular numerals, so a column of ids lines up and a differing value does not
     // reflow its row.
     expect(id?.className).toMatch(/\bfont-mono\b/)
     expect(id?.className).toMatch(/\btabular-nums\b/)
+
+    // And the mask itself is no longer thirty-two characters of ink.
+    const shown = [...id!.querySelectorAll("[aria-hidden='true']")]
+      .map((node) => node.textContent ?? "")
+      .join("")
+    expect(shown).not.toContain("****")
+    expect(shown).toContain(MASKED_ID.slice(-4))
   })
 
   test("no unmasked subscription id can appear, because none is in the props", () => {

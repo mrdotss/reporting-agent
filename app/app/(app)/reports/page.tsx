@@ -1,3 +1,4 @@
+import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
@@ -145,7 +146,7 @@ export default async function ReportsPage({
   const now = new Date()
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-8">
+    <PageBody kind="wide">
       <div className="flex flex-col gap-1">
         <h1 className="font-heading text-xl font-medium tracking-tight">
           Reports
@@ -184,6 +185,6 @@ export default async function ReportsPage({
           subscriptions={subscriptions}
         />
       </section>
-    </div>
+    </PageBody>
   )
 }

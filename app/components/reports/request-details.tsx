@@ -1,3 +1,4 @@
+import { Identifier } from "@/components/identifier"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { RunView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
@@ -44,11 +45,13 @@ export function RequestDetails({
     readonly label: string
     readonly value: string
     readonly mono?: string
+    /** Rendered through `Identifier` rather than printed. */
+    readonly identifier?: string
   }[] = [
     {
       label: messageText("ui.request_details.connection", "en") ?? "",
       value: subscriptionName,
-      mono: subscriptionMaskedId ?? undefined,
+      identifier: subscriptionMaskedId ?? undefined,
     },
     {
       label: messageText("ui.request_details.profile", "en") ?? "",
@@ -87,7 +90,7 @@ export function RequestDetails({
 
       <CardContent>
         <dl className="flex flex-col gap-3.5">
-          {rows.map(({ label, value, mono }) => (
+          {rows.map(({ label, value, mono, identifier }) => (
             <div key={label} className="flex min-w-0 flex-col gap-0.5">
               <dt className="text-[11px] tracking-wider text-muted-foreground uppercase">
                 {label}
@@ -97,8 +100,19 @@ export function RequestDetails({
                 {value}
               </dd>
 
+              {identifier === undefined ? null : (
+                <dd>
+                  <Identifier
+                    value={identifier}
+                    kind="mask"
+                    label="Subscription"
+                    className="text-muted-foreground"
+                  />
+                </dd>
+              )}
+
               {mono === undefined ? null : (
-                <dd className="font-mono text-xs break-all text-muted-foreground tabular-nums">
+                <dd className="font-mono text-xs text-muted-foreground tabular-nums">
                   {mono}
                 </dd>
               )}
