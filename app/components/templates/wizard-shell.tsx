@@ -482,42 +482,37 @@ export function WizardShell({
   const showsPreview = true
 
   return (
-    // No measure of its own: the page decides how wide a page is, and this one is a
-    // workbench. Capping here at 7xl inside a 1500px shell was a tenth private opinion
-    // about page width, in a component rather than a page so the guard could not see it.
-    <div className="flex w-full flex-col gap-6 lg:flex-row lg:items-start lg:gap-8">
-      <div className="flex min-w-0 flex-1 flex-col gap-6">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-title">
-            {template.name}
-          </h1>
+    // Three columns on a wide screen: the steps, the form, the page it produces. The
+    // rail and the preview both stick, so on a long step (Sections runs to sixteen rows)
+    // neither where you are nor what the document looks like scrolls away.
+    <div className="grid w-full items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)] xl:grid-cols-[12rem_minmax(0,1fr)_minmax(20rem,26rem)]">
+      <header className="flex flex-col gap-1 lg:col-span-full">
+        <p className="text-micro text-muted-foreground uppercase">Preset</p>
+        <h1 className="text-title">{template.name}</h1>
 
-          {/*
-          Requirement 11.1 — the current step's position and the total of five,
-          on **every** step. In the header rather than inside a step body, so
-          there is one place it is rendered and no step can omit it.
+        {/*
+          Requirement 11.1 — the current step's position and the total, on **every**
+          step. In the header rather than inside a step body, so there is one place it
+          is rendered and no step can omit it.
         */}
-          <p
-            data-slot="wizard-position"
-            className="text-sm text-muted-foreground"
-          >
-            Step <span className="font-mono tabular-nums">{step.number}</span>{" "}
-            of{" "}
-            <span className="font-mono tabular-nums">{WIZARD_STEP_COUNT}</span>{" "}
-            · {step.title}
-          </p>
-        </header>
+        <p data-slot="wizard-position" className="text-meta text-muted-foreground">
+          Step <span className="font-mono tabular-nums">{step.number}</span> of{" "}
+          <span className="font-mono tabular-nums">{WIZARD_STEP_COUNT}</span> ·{" "}
+          {step.title}
+        </p>
+      </header>
 
-        <StepRail
-          current={step}
-          highestReached={highestReached}
-          issues={issues}
-          onSelect={(target) => void goTo(target)}
-        />
+      <StepRail
+        current={step}
+        highestReached={highestReached}
+        issues={issues}
+        onSelect={(target) => void goTo(target)}
+      />
 
+      <div className="flex min-w-0 flex-col gap-5">
         <section
           aria-labelledby="wizard-step-title"
-          className="flex flex-col gap-4 rounded-xl border border-border px-4 py-4"
+          className="flex flex-col gap-5 rounded-xl border border-border bg-card p-5"
         >
           <div className="flex flex-col gap-1">
             <h2
@@ -610,24 +605,18 @@ export function WizardShell({
       </div>
 
       {/*
-          The preview is pinned to the middle of the viewport, not to its top.
-
-          It was `sticky top-6` in a 26rem column, so on a long step — Sections runs to
-          sixteen rows — it sat against the top of the screen with the rest of the
-          column empty beneath it, and the page it is previewing was small enough that
-          the theme it exists to show could not really be judged.
-
-          `h-svh` + `items-center` is what centres it: the aside is exactly one viewport
-          tall and sticks at the top, so its centred child lands in the middle of the
-          screen and stays there for the whole scroll. `svh` rather than `vh` because a
-          mobile toolbar retracting would otherwise push it off-centre by the height of
-          the chrome.
+          The preview sticks beside the form, under the shell's header, for the whole
+          scroll of a long step. Below `xl` it drops under the form at full width, where
+          a page is still large enough for its theme to be judged.
       */}
       {showsPreview ? (
         <aside
           aria-label="Document preview"
-          className="w-full shrink-0 lg:sticky lg:top-0 lg:flex lg:h-svh lg:w-[30rem] lg:items-center lg:py-6 xl:w-[36rem]"
+          className="flex w-full min-w-0 flex-col gap-2.5 lg:col-span-2 xl:sticky xl:top-20 xl:col-span-1"
         >
+          <span className="text-micro text-muted-foreground uppercase">
+            Document preview
+          </span>
           <DocumentPreview
             definition={definition}
             sectionCatalogue={sectionCatalogue}
@@ -639,15 +628,16 @@ export function WizardShell({
 }
 
 /**
- * The five-step rail.
+ * The step rail.
  *
  * A `nav` of buttons rather than links: navigating a step is state in this
  * component, not a route, and a link would put the wizard's position in the URL
  * where a reload would restore a step rather than the step Requirement 11.8
  * derives from the draft.
  *
- * A step above `highestReached` is disabled rather than hidden — a consultant can
- * see there are five and how far along they are, which is what Requirement 11.1's
+ * Vertical beside the form on a wide screen, a scrolling strip above it on a narrow
+ * one. A step above `highestReached` is disabled rather than hidden — a consultant can
+ * see how many there are and how far along they are, which is what Requirement 11.1's
  * "position and the total" is for.
  */
 function StepRail({
@@ -662,38 +652,61 @@ function StepRail({
   onSelect: (step: WizardStep) => void
 }>) {
   return (
-    <nav aria-label="Wizard steps" data-slot="wizard-rail">
-      <ol className="flex flex-wrap gap-2">
+    <nav
+      aria-label="Wizard steps"
+      data-slot="wizard-rail"
+      className="-mx-1 overflow-x-auto px-1 lg:sticky lg:top-20 lg:mx-0 lg:overflow-visible lg:px-0"
+    >
+      <ol className="flex gap-1 lg:flex-col">
         {WIZARD_STEPS.map((step) => {
           const reachable = canReturnTo(step, highestReached)
           const failing = issues[step.id].length > 0
           const isCurrent = step.id === current.id
+          const passed = !isCurrent && !failing && step.number < highestReached
 
           return (
-            <li key={step.id}>
+            <li key={step.id} className="shrink-0">
               <button
                 type="button"
                 disabled={!reachable}
                 aria-current={isCurrent ? "step" : undefined}
                 onClick={() => onSelect(step)}
                 className={[
-                  "rounded-lg border px-3 py-1.5 text-xs focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none",
+                  "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left text-meta whitespace-nowrap transition-colors focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none",
                   isCurrent
-                    ? "border-primary text-foreground"
-                    : "border-border text-muted-foreground",
+                    ? "bg-muted font-medium text-foreground"
+                    : "text-muted-foreground enabled:hover:bg-muted enabled:hover:text-foreground",
                   reachable ? "" : "opacity-50",
                 ].join(" ")}
               >
-                <span className="font-mono tabular-nums">{step.number}</span>{" "}
-                {step.title}
-                {/*
-                  A word, not only a colour: "needs attention" is readable to
-                  somebody who cannot distinguish the border tint, and this rail
-                  is the one place a consultant scans to find what is wrong.
-                */}
-                {failing ? (
-                  <span className="text-destructive"> · needs attention</span>
-                ) : null}
+                <span
+                  className={[
+                    "grid size-6 shrink-0 place-items-center rounded-full font-mono text-[11px] font-semibold tabular-nums",
+                    isCurrent
+                      ? "bg-primary text-primary-foreground"
+                      : failing
+                        ? "bg-(--status-attention-soft) text-(--status-attention)"
+                        : passed
+                          ? "bg-(--status-verified-soft) text-(--status-verified)"
+                          : "shadow-[inset_0_0_0_1px_var(--input)]",
+                  ].join(" ")}
+                >
+                  {step.number}
+                </span>{" "}
+                <span className="flex min-w-0 flex-col leading-tight">
+                  {step.title}
+                  {/*
+                    A word, not only a colour: "needs attention" is readable to somebody
+                    who cannot distinguish the tint, and this rail is the one place a
+                    consultant scans to find what is wrong.
+                  */}
+                  {failing ? (
+                    <span className="text-xs text-(--status-attention)">
+                      {" "}
+                      · needs attention
+                    </span>
+                  ) : null}
+                </span>
               </button>
             </li>
           )
