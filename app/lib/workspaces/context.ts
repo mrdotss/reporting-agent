@@ -8,10 +8,6 @@ import {
 } from "./access"
 import { listProjects, listWorkspaces } from "./store"
 
-/** Rollout controls presentation only. Scoped authorization is always active. */
-export function workspaceUiEnabled() {
-  return process.env.REPORT_WORKSPACE_UI === "1"
-}
 export async function selectedContext(userId: string) {
   const workspaces = await listWorkspaces(userId)
   const jar = await cookies()
@@ -30,24 +26,29 @@ export async function selectedContext(userId: string) {
 }
 export async function selectedFilter(
   userId: string
-): Promise<Partial<ProjectScope> | undefined> {
-  if (!workspaceUiEnabled()) return undefined
+): Promise<Partial<ProjectScope>> {
   const c = await selectedContext(userId)
   return { workspaceId: c.workspace.id, projectId: c.project?.id }
 }
+/**
+ * The scope a new preset, connector or run is created in.
+ *
+ * The shell passes one from every page. A caller with no scope — the starter presets
+ * seeded at registration, before anyone has picked a customer — lands in the user's own
+ * imported workspace, and still has to pass `requireProject` there.
+ */
 export async function creationScope(
   userId: string,
   input: Partial<ProjectScope>,
   permission: "edit" | "connect"
 ) {
   if (!input.workspaceId || !input.projectId) {
-    if (workspaceUiEnabled()) throw new WorkspaceAccessError()
-    const scope = {
+    const personal = {
       workspaceId: `imported-${userId}`,
       projectId: `imported-project-${userId}`,
     }
-    await requireProject(userId, scope, permission)
-    return scope
+    await requireProject(userId, personal, permission)
+    return personal
   }
   const scope = { workspaceId: input.workspaceId, projectId: input.projectId }
   await requireProject(userId, scope, permission)

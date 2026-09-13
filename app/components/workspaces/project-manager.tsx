@@ -18,7 +18,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { can } from "@/lib/workspaces/policy"
-import { useWorkspace, workspaceMutation } from "./workspace-shell"
+import { useWorkspace, workspaceMutation } from "./workspace-context"
 type Project = {
   id: string
   name: string

@@ -2,7 +2,6 @@ import { Instrument_Sans, Spline_Sans_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { workspaceUiEnabled } from "@/lib/workspaces/context"
 import { cn } from "@/lib/utils"
 
 /**
@@ -59,12 +58,10 @@ export default function RootLayout({
       )}
     >
       {/* The workspace palette is scoped **here**, not on a wrapper inside the shell.
-          Radix renders every `Select`, `Dialog` and `Popover` through a portal attached to
-          `document.body`, so a scope opened further down covered the trigger and not the
-          menu it opens: the control took the new palette and its own options kept the old
-          one, and the two drifted apart differently in each theme. A token scope has to
-          sit above the portal root or it does not cover the portal. */}
-      <body className={workspaceUiEnabled() ? "workspace-design" : undefined}>
+          Every `Select`, `Dialog`, `Menu` and `Popover` renders through a portal attached
+          to `document.body`, so a scope opened further down would cover the trigger and
+          not the menu it opens. A token scope has to sit above the portal root. */}
+      <body className="workspace-design">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

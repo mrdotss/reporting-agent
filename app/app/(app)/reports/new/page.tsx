@@ -1,6 +1,5 @@
 import Link from "next/link"
-import { notFound } from "next/navigation"
-import { ArrowLeftIcon, FolderIcon } from "@phosphor-icons/react/ssr"
+import { ArrowLeftIcon, UsersThreeIcon } from "@phosphor-icons/react/ssr"
 
 import { PageBody } from "@/components/app-shell/page-body"
 import { RunForm } from "@/components/reports/run-form"
@@ -17,21 +16,20 @@ import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
-import { selectedContext, workspaceUiEnabled } from "@/lib/workspaces/context"
+import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
 
 /**
- * `/reports/new` — request a report against a saved profile.
+ * `/reports/new` — request a report against a saved preset.
  *
- * Two selects and a read-only summary of what the profile will print. There are
- * deliberately no date fields: the period is a **rule** the profile declares and it
+ * Two selects and a read-only summary of what the preset will print. There are
+ * deliberately no date fields: the period is a **rule** the preset declares and it
  * resolves at the moment the run is enqueued, so a pair of dates here would be a
- * different report from the one the profile describes.
+ * different report from the one the preset describes.
  */
 
 export default async function NewReportPage() {
   const user = await requireSession()
-  if (!workspaceUiEnabled()) notFound()
 
   const { workspace, project } = await selectedContext(user.id)
 
@@ -40,17 +38,20 @@ export default async function NewReportPage() {
       <Empty className="mx-auto max-w-lg py-16">
         <EmptyHeader>
           <EmptyMedia variant="icon">
-            <FolderIcon />
+            <UsersThreeIcon />
           </EmptyMedia>
-          <EmptyTitle>Select an active customer project</EmptyTitle>
+          <EmptyTitle>Pick a customer first</EmptyTitle>
           <EmptyDescription>
-            Requesting a report needs an unarchived project and Editor access or
-            higher.
+            A report is requested for one active customer, by an Editor or
+            higher. Choose a customer in the sidebar.
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
-          <Link href="/projects" className={buttonVariants({ variant: "outline" })}>
-            View projects
+          <Link
+            href="/workspace-settings?tab=customers"
+            className={buttonVariants({ variant: "outline" })}
+          >
+            View customers
           </Link>
         </EmptyContent>
       </Empty>
@@ -87,8 +88,8 @@ export default async function NewReportPage() {
         <div className="flex flex-col gap-1">
           <h1 className="text-title text-balance">Request a report</h1>
           <p className="max-w-prose text-sm text-muted-foreground">
-            Choose a connection and a saved profile. The profile decides the
-            period, the scope and the document.
+            Choose a connector and a preset for {project.name}. The preset
+            decides the period, the scope and the document.
           </p>
         </div>
       </header>

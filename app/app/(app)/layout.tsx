@@ -1,43 +1,43 @@
-import { WorkspaceShell } from "@/components/workspaces/workspace-shell"
-import { selectedContext, workspaceUiEnabled } from "@/lib/workspaces/context"
-import { AppSidebar } from "@/components/app-shell/sidebar"
+import { cookies } from "next/headers"
+
+import { AppHeader } from "@/components/app-shell/app-header"
+import { AppSidebar } from "@/components/app-shell/app-sidebar"
 import { UserMenu } from "@/components/app-shell/user-menu"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { Toaster } from "@/components/ui/sonner"
+import { TooltipProvider } from "@/components/ui/tooltip"
+import { WorkspaceProvider } from "@/components/workspaces/workspace-context"
 import { requireSession } from "@/lib/auth/guard"
+import { loadAttention } from "@/lib/close/attention"
+import { loadClose } from "@/lib/close/load"
+import { monthName } from "@/lib/close/period"
+import { selectedContext } from "@/lib/workspaces/context"
+import { can } from "@/lib/workspaces/policy"
 
 /**
  * The authenticated shell (Requirements 7.6, 7.8).
  *
  * ## This layout is the route guard
  *
- * `requireSession()` runs on **every** authenticated render and resolves the
- * session against Postgres — expiry is a column and sign-out is a `DELETE`, so
- * only the row can answer whether a request is still signed in. There is no
- * `proxy.ts` and no `middleware.ts` in this app on purpose: Next 16 renamed
- * `middleware` to `proxy`, a proxy check sees a cookie rather than a session, and
- * a revoked session still presents a cookie. `proxy` also runs on every request
- * including prefetches, which would multiply the cost of the one check that has
- * to be right.
+ * `requireSession()` runs on **every** authenticated render and resolves the session
+ * against Postgres — expiry is a column and sign-out is a `DELETE`, so only the row can
+ * answer whether a request is still signed in. There is no `proxy.ts` and no
+ * `middleware.ts` in this app on purpose: a proxy check sees a cookie rather than a
+ * session, and a revoked session still presents a cookie.
  *
- * Called with **no argument**, so an unauthenticated request lands on a clean
- * `/login` with no `returnTo`. A layout cannot know the pathname — the App
- * Router exposes it to the browser only — so a target passed from here would be
- * a guess. Pages that want their deep link to survive sign-in pass their own.
- *
- * It is also awaited outside any `try`/`catch`: `redirect` signals by throwing
- * `NEXT_REDIRECT`, and a `catch` in its path would swallow the redirect and
- * render this shell to a visitor who has no session.
+ * Called with **no argument**, so an unauthenticated request lands on a clean `/login`
+ * with no `returnTo`. It is awaited outside any `try`/`catch`: `redirect` signals by
+ * throwing `NEXT_REDIRECT`, and a `catch` in its path would swallow the redirect.
  *
  * ## The composition
  *
- * A server component that renders one client leaf. `<UserMenu />` is
- * server-rendered here and handed to {@link AppSidebar} as `children` rather
- * than imported by it, so the rail's `usePathname` does not drag the signed-in
- * email, the sign-out form or `logoutAction` across the client boundary. The
- * only thing in the browser bundle is the rail itself and the theme toggle.
+ * shadcn's inset sidebar around one lifted page. The close — the open period and each
+ * customer's state in it — is loaded here, once, because the rail shows it on every
+ * page. `<UserMenu />` is server-rendered and handed down as a node, so the signed-in
+ * email and the sign-out Server Function never cross into the rail's client bundle.
  *
- * `min-h-svh`, not `min-h-screen`: on mobile browsers `100vh` includes the
- * retracting toolbar, so a full-height rail overshoots the viewport by the
- * height of the chrome.
+ * The sidebar's open state is read from shadcn's own `sidebar_state` cookie, so a
+ * collapsed rail renders collapsed on the server and does not flash open.
  */
 export default async function AppLayout({
   children,
@@ -46,35 +46,75 @@ export default async function AppLayout({
 }>) {
   const user = await requireSession()
 
-  if (workspaceUiEnabled()) {
-    const context = await selectedContext(user.id)
-    return <WorkspaceShell {...context} userMenu={<UserMenu email={user.email} />}>{children}</WorkspaceShell>
-  }
+  const [{ workspace, workspaces, project }, jar] = await Promise.all([
+    selectedContext(user.id),
+    cookies(),
+  ])
+  const { period, board } = await loadClose(user.id, workspace)
+  const attention = await loadAttention(user.id, workspace.id, board)
+
+  const customers = board.rows.map((row) => ({
+    id: row.project.id,
+    name: row.project.name,
+    state: row.current.state,
+  }))
+  const canRequest =
+    project !== undefined && !project.archivedAt && can(workspace.role, "edit")
 
   return (
-    <div className="flex min-h-svh flex-col bg-background md:flex-row">
-      {/*
-        The rail is a long, repeated stop on every page, so keyboard users get a
-        way past it. Hidden until focused, then a real, visible control — the
-        pattern only works if it can be seen once it has focus.
-      */}
-      <a
-        href="#app-content"
-        className="sr-only rounded-4xl bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none focus-visible:not-sr-only focus-visible:absolute focus-visible:start-4 focus-visible:top-4 focus-visible:z-50"
-      >
-        Skip to content
-      </a>
+    <WorkspaceProvider
+      scope={{
+        workspaceId: workspace.id,
+        projectId: project?.id,
+        projectName: project?.name,
+        role: workspace.role,
+        archived: !!project?.archivedAt,
+      }}
+    >
+      <TooltipProvider>
+        <SidebarProvider defaultOpen={jar.get("sidebar_state")?.value !== "false"}>
+          <a
+            href="#app-content"
+            className="sr-only rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground outline-none focus-visible:not-sr-only focus-visible:absolute focus-visible:start-4 focus-visible:top-4 focus-visible:z-50"
+          >
+            Skip to content
+          </a>
 
-      <AppSidebar>
-        <UserMenu email={user.email} />
-      </AppSidebar>
+          <AppSidebar
+            workspace={workspace}
+            workspaces={workspaces}
+            customers={customers}
+            selectedCustomerId={project?.id}
+            period={period}
+            connectorsNeedAttention={attention.some((item) =>
+              item.key.startsWith("connector:")
+            )}
+            userMenu={<UserMenu email={user.email} />}
+          />
 
-      <main
-        id="app-content"
-        className="min-w-0 flex-1 px-4 py-8 md:px-8 md:py-10"
-      >
-        {children}
-      </main>
-    </div>
+          <SidebarInset className="min-w-0">
+            <AppHeader
+              periodLabel={monthName(period.month)}
+              scopeLabel={project?.name}
+              workspaceId={workspace.id}
+              customers={customers}
+              canRequest={canRequest}
+            />
+            <div
+              id="app-content"
+              className="mx-auto w-full max-w-[80rem] px-4 py-6 md:px-7 md:py-7"
+            >
+              {project?.archivedAt && (
+                <p className="mb-6 rounded-lg border border-border bg-muted px-3 py-2.5 text-sm">
+                  This customer is archived. Its reports remain available to read.
+                </p>
+              )}
+              {children}
+            </div>
+          </SidebarInset>
+        </SidebarProvider>
+        <Toaster position="bottom-right" />
+      </TooltipProvider>
+    </WorkspaceProvider>
   )
 }

@@ -1,5 +1,5 @@
 "use client"
-import { useCreationScope } from "@/components/workspaces/workspace-shell"
+import { useCreationScope } from "@/components/workspaces/workspace-context"
 
 import { useCallback, useId, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"

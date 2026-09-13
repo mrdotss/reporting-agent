@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
-import { useWorkspace } from "@/components/workspaces/workspace-shell"
+import { useWorkspace } from "@/components/workspaces/workspace-context"
 import { messageText } from "@/lib/messages/catalog"
 type Summary = {
   connection: string
