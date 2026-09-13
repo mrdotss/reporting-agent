@@ -45,8 +45,11 @@ export const workspaces = pgTable("workspaces", {
   name: text("name").notNull(),
   createdBy: text("created_by").notNull().references((): AnyPgColumn => users.id),
   importedForUserId: text("imported_for_user_id").unique().references((): AnyPgColumn => users.id),
+  // The day of the month each period's reports are due. Capped at 28 so every month
+  // can honour it; the close board and the sidebar's period chip both read it.
+  closeDay: integer("close_day").notNull().default(15),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-})
+}, t => [check("workspaces_close_day_ck", sql`${t.closeDay} between 1 and 28`)])
 export const workspaceMembers = pgTable("workspace_members", {
   id: text("id").primaryKey(),
   workspaceId: text("workspace_id").notNull().references(() => workspaces.id),

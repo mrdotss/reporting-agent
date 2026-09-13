@@ -6,7 +6,13 @@ import { getPool } from "@/lib/db"
 import { canManageMember, type WorkspaceRole } from "./policy"
 import { requireWorkspace, WorkspaceAccessError } from "./access"
 
-export type WorkspaceView = { id: string; name: string; role: WorkspaceRole }
+export type WorkspaceView = {
+  id: string
+  name: string
+  role: WorkspaceRole
+  /** Day of the month each period's reports are due, 1–28. */
+  closeDay: number
+}
 export type ProjectView = {
   id: string
   workspaceId: string
@@ -75,7 +81,7 @@ export async function ensurePersonalWorkspace(userId: string) {
 }
 export async function listWorkspaces(userId: string): Promise<WorkspaceView[]> {
   const { rows } = await getPool().query(
-    "select w.id,w.name,m.role from workspaces w join workspace_members m on m.workspace_id=w.id where m.user_id=$1 order by w.created_at,w.id",
+    'select w.id,w.name,m.role,w.close_day as "closeDay" from workspaces w join workspace_members m on m.workspace_id=w.id where m.user_id=$1 order by w.created_at,w.id',
     [userId]
   )
   return rows
@@ -149,6 +155,21 @@ export async function changeProject(
       id
     )
     return id
+  })
+}
+/** Moves the day each period's reports are due. Owners and admins only. */
+export async function setCloseDay(
+  userId: string,
+  workspaceId: string,
+  closeDay: number
+) {
+  return transaction(async (db) => {
+    await manager(db, userId, workspaceId)
+    await db.query("update workspaces set close_day=$2 where id=$1", [
+      workspaceId,
+      closeDay,
+    ])
+    await audit(db, workspaceId, userId, "workspace.close_day", workspaceId)
   })
 }
 export async function createInvitation(

@@ -54,6 +54,13 @@ export const workspaceActionSchema = z.discriminatedUnion("action", [
     .strict(),
   z
     .object({
+      action: z.literal("close_day"),
+      workspaceId: z.string().min(1).max(200),
+      closeDay: z.number().int().min(1).max(28),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("transfer"),
       workspaceId: z.string().min(1).max(200),
       userId: z.string().min(1).max(200),
