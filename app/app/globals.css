@@ -473,114 +473,100 @@
    ## Radii are 2–3px because printed forms have square corners.
    ========================================================================== */
 .workspace-design {
-  --background: #ecefe8;          /* the ledger sheet */
-  --foreground: #18282c;          /* iron-gall ink */
-  --card: #f5f7f2;                /* a sheet laid on the stack */
-  --card-foreground: #18282c;
-  --popover: #f5f7f2;
-  --popover-foreground: #18282c;
+  /* The inset panel the work sits on. The sidebar is the mori ground around it. */
+  --background: #fdfdfc;
+  --foreground: #17181c;          /* jelaga: lamp-soot ink */
+  --card: #fdfdfc;
+  --card-foreground: #17181c;
+  --popover: #ffffff;             /* one step above the panel it opens from */
+  --popover-foreground: #17181c;
 
-  --primary: #2c6b5e;             /* verdigris */
-  --primary-foreground: #f5f7f2;
-  --secondary: #e2e6dc;
-  --secondary-foreground: #18282c;
+  --primary: #2f3c7e;             /* nila: natural indigo, the one accent */
+  --primary-foreground: #f4f5fb;
+  --secondary: #ebebe7;
+  --secondary-foreground: #17181c;
 
-  --muted: #e2e6dc;               /* the well: inputs are inset, they receive */
-  --muted-foreground: #6e7d78;
-  --accent: #dfe6df;
-  --accent-foreground: #18282c;
+  --muted: #ebebe7;               /* the well: inputs are inset, they receive */
+  --muted-foreground: #696b73;
+  --accent: #efefeb;
+  --accent-foreground: #17181c;
 
-  --border: #cdd3c8;
-  --input: #d6dcd1;
-  --ring: #2c6b5e;
+  --border: #e3e3de;
+  --input: #d2d2cc;
+  --ring: #2f3c7e;
 
-  --destructive: #a03726;         /* vermilion. Unproven. Nothing else. */
+  --destructive: #962029;
 
-  /* Printed forms have square corners. Every `--radius-*` step is calc()ed from
-     this, so one declaration re-resolves the whole scale inside the app:
-       sm 1.2px  md 1.6px  lg 2px   (controls)
-       xl 2.8px  2xl 3.6px  3xl 4.4px  4xl 5.2px  (surfaces)
-     Controls land at 2px and surfaces at ~3px, which is the contrast this design
-     wants: a form's box and a form's field are both ruled, not rounded. */
-  --radius: 0.125rem;
+  /* Controls 6-8px, surfaces 12-14px. */
+  --radius: 0.5rem;
 
-  /* Status is not the accent — the rule the previous palette got right and this one
-     keeps. Verdigris means "this product"; it cannot also mean "this passed", or a
-     verified stamp and a primary button become the same signal. Four states, each
-     measured against --card, --background and --muted in this theme; lowest is
-     4.83:1. */
-  --status-verified: #1f5e4e;   --status-verified-soft: #dfebe3;
-  --status-inflight: #3c5f78;   --status-inflight-soft: #e0e8ed;
-  --status-attention: #856520;  --status-attention-soft: #f0ead6;
-  --status-failed: #a03726;     --status-failed-soft: #f4e3de;
+  /* Status is not the accent. Each value is the ink step, so it holds as text on its
+     own wash as well as a mark fill; the shape of the mark carries state before hue. */
+  --status-verified: #17603c;   --status-verified-soft: #e2f1e8;
+  --status-inflight: #1f5f78;   --status-inflight-soft: #e0eef3;
+  --status-attention: #7e5104;  --status-attention-soft: #f6ecd6;
+  --status-failed: #962029;     --status-failed-soft: #f8e4e5;
+
+  --soga: #8e5b2a;                /* the second data hue: memory beside CPU */
 }
 
-/* The same room under a microfilm reader. Re-derived, not inverted: verdigris is
-   lifted to clear the dark ground rather than reused, and the ladder of surfaces
-   keeps one hue and moves only lightness. */
+/* Dark: re-derived, not inverted. Indigo is lifted to clear the ground and the
+   surface ladder keeps one hue, moving only lightness. */
 .dark .workspace-design {
-  --background: #141a1b;
-  --foreground: #e3e8e2;
-  --card: #1c2426;
-  --card-foreground: #e3e8e2;
-  --popover: #1c2426;
-  --popover-foreground: #e3e8e2;
+  --background: #17181b;
+  --foreground: #ededea;
+  --card: #17181b;
+  --card-foreground: #ededea;
+  --popover: #1e1f23;
+  --popover-foreground: #ededea;
 
-  --primary: #63ac96;
-  --primary-foreground: #0e1817;
-  --secondary: #242d2f;
-  --secondary-foreground: #e3e8e2;
+  --primary: #8d9bea;
+  --primary-foreground: #12152b;
+  --secondary: #26282c;
+  --secondary-foreground: #ededea;
 
-  --muted: #0e1314;
-  --muted-foreground: #7c8983;
-  --accent: #232c2e;
-  --accent-foreground: #e3e8e2;
+  --muted: #0d0e10;
+  --muted-foreground: #8d8e95;
+  --accent: #222327;
+  --accent-foreground: #ededea;
 
-  --border: #2b3437;
-  --input: #323c3f;
-  --ring: #63ac96;
+  --border: #26282c;
+  --input: #34363b;
+  --ring: #8d9bea;
 
-  --destructive: #de7862;
+  --destructive: #f4a1a7;
 
-  /* Lightened rather than inverted, and measured the same way: lowest is 5.41:1. */
-  --status-verified: #6fc3a4;   --status-verified-soft: #16302a;
-  --status-inflight: #93bbdd;   --status-inflight-soft: #18272f;
-  --status-attention: #c9a659;  --status-attention-soft: #302713;
-  --status-failed: #de7862;     --status-failed-soft: #361d18;
+  --status-verified: #7ed4a6;   --status-verified-soft: #17291f;
+  --status-inflight: #8acae2;   --status-inflight-soft: #15262d;
+  --status-attention: #edc074;  --status-attention-soft: #2a2213;
+  --status-failed: #f4a1a7;     --status-failed-soft: #2e1a1c;
+
+  --soga: #cf9a63;
 }
 @media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
-/* The navigation register.
-
-   It used to be a fixed dark navy rail in both themes — a dark slab dropped into a
-   light page, which fragmented the app into "sidebar world" and "content world".
-   This design has no such rail. Navigation is a register bar and a tab strip sitting
-   on the same paper as the content, separated by one hairline rule, because a file
-   header is part of the file.
-
-   The `--sidebar-*` names are kept and re-valued rather than deleted: the primitives
-   and `surface-tokens.static.test.ts` both know them, and anything dropped into the
-   register still needs to inherit a correct foreground. They now mean "the register's
-   own surface", which is a half-step off the page rather than a different world. */
+/* The sidebar is the mori ground itself, not a different world: shadcn's inset
+   variant lifts the page (`--background`) off it, so navigation and content share one
+   surface family and the panel is the only elevated object. */
 .workspace-design {
-  --sidebar: #f5f7f2;
-  --sidebar-foreground: #18282c;
-  --sidebar-primary: #2c6b5e;
-  --sidebar-primary-foreground: #f5f7f2;
-  --sidebar-accent: #dfe6df;
-  --sidebar-accent-foreground: #18282c;
-  --sidebar-border: #cdd3c8;
-  --sidebar-ring: #2c6b5e;
+  --sidebar: #f1f1ee;
+  --sidebar-foreground: #17181c;
+  --sidebar-primary: #2f3c7e;
+  --sidebar-primary-foreground: #f4f5fb;
+  --sidebar-accent: #e6e6e2;
+  --sidebar-accent-foreground: #17181c;
+  --sidebar-border: #dcdcd7;
+  --sidebar-ring: #2f3c7e;
 }
 .dark .workspace-design {
-  --sidebar: #1c2426;
-  --sidebar-foreground: #e3e8e2;
-  --sidebar-primary: #63ac96;
-  --sidebar-primary-foreground: #0e1817;
-  --sidebar-accent: #232c2e;
-  --sidebar-accent-foreground: #e3e8e2;
-  --sidebar-border: #2b3437;
-  --sidebar-ring: #63ac96;
+  --sidebar: #101113;
+  --sidebar-foreground: #ededea;
+  --sidebar-primary: #8d9bea;
+  --sidebar-primary-foreground: #12152b;
+  --sidebar-accent: #1c1d20;
+  --sidebar-accent-foreground: #ededea;
+  --sidebar-border: #26282c;
+  --sidebar-ring: #8d9bea;
 }
 
 /* The project selector sits in the register, so it reads as an inset well. */
@@ -633,37 +619,38 @@
    ========================================================================== */
 
 @theme {
-    /* The landing title. One surface uses it: the workspace overview. */
-    --text-display: 2.125rem;
-    --text-display--line-height: 1.1;
-    --text-display--letter-spacing: -0.02em;
-    --text-display--font-weight: 400;
+    /* A 1.2 ratio on a 14px working size: a calm, dense operations tool. Weight and
+       ink do most of the hierarchy work; size only separates the tiers. */
+
+    /* The landing title. One surface uses it: the close board's hero sentence. */
+    --text-display: 1.875rem;
+    --text-display--line-height: 1.12;
+    --text-display--letter-spacing: -0.024em;
+    --text-display--font-weight: 600;
 
     /* Every other page title, on every working surface. */
-    --text-title: 1.625rem;
-    --text-title--line-height: 1.16;
-    --text-title--letter-spacing: -0.016em;
+    --text-title: 1.5rem;
+    --text-title--line-height: 1.18;
+    --text-title--letter-spacing: -0.02em;
     --text-title--font-weight: 600;
 
-    /* A section heading within a page. Replaces `text-sm font-medium` h2s, which
-       rendered section headings at body size and made them read as labels. */
-    --text-section: 1.0625rem;
-    --text-section--line-height: 1.4;
+    /* A card or section heading within a page. */
+    --text-section: 0.9375rem;
+    --text-section--line-height: 1.35;
     --text-section--letter-spacing: -0.008em;
     --text-section--font-weight: 600;
 
-    /* Secondary prose: the note under a figure, the description under a heading.
-       The step between body and micro that the product was missing. */
+    /* Secondary prose: the note under a figure, the description under a heading. */
     --text-meta: 0.8125rem;
-    --text-meta--line-height: 1.55;
+    --text-meta--line-height: 1.5;
     --text-meta--letter-spacing: 0;
     --text-meta--font-weight: 400;
 
-    /* The eyebrow / micro-label, stated once. Pair with `uppercase` and, where it
+    /* The eyebrow / group label, stated once. Pair with `uppercase` and, where it
        is a label rather than a heading, `text-muted-foreground`. */
     --text-micro: 0.6875rem;
     --text-micro--line-height: 1.4;
-    --text-micro--letter-spacing: 0.13em;
+    --text-micro--letter-spacing: 0.07em;
     --text-micro--font-weight: 600;
 
     /* Figures have their own two steps, and they are not the text steps.

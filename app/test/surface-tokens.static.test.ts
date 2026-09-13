@@ -30,6 +30,9 @@ const projectRoot = path.join(
  */
 
 const RAIL_FILES = new Set([
+  // The shadcn primitive is the rail: every `--sidebar-*` utility it carries paints
+  // the navigation ground, which is what the tokens exist for.
+  "components/ui/sidebar.tsx",
   "components/app-shell/sidebar.tsx",
   "components/app-shell/user-menu.tsx",
   "components/app-shell/theme-toggle.tsx",
