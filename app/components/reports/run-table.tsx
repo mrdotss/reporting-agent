@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { monthName } from "@/lib/close/period"
 import type { ConnectedSubscriptionView, RunView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
 import { periodLine, relativeInstant } from "@/lib/runs/presentation"
@@ -97,6 +98,17 @@ export function RunTable({
   const headCell = compact ? "h-8 px-0 first:pl-0 last:pr-0" : ""
   const bodyCell = compact ? "py-2.5 px-0 first:pl-0 last:pr-0" : ""
 
+  // Grouped by the month each run reports on, in the order the months first appear —
+  // the list is newest first, so the open period leads. A consultant reads history as
+  // "what did August look like", not as a flat stream of timestamps.
+  const groups = new Map<string, RunView[]>()
+  for (const run of runs) {
+    const month = run.periodStart.slice(0, 7)
+    const list = groups.get(month)
+    if (list) list.push(run)
+    else groups.set(month, [run])
+  }
+
   return (
     <Table aria-label={messageText("ui.run_list.aria_label", "en") ?? undefined}>
       <TableHeader>
@@ -126,7 +138,26 @@ export function RunTable({
       </TableHeader>
 
       <TableBody>
-        {runs.map((run) => (
+        {[...groups].flatMap(([month, monthRuns]) => [
+          compact ? null : (
+            <TableRow
+              key={`period-${month}`}
+              data-slot="run-period-group"
+              className="hover:bg-transparent"
+            >
+              <TableHead
+                colSpan={7}
+                scope="colgroup"
+                className="h-8 bg-muted text-xs font-semibold text-muted-foreground"
+              >
+                {monthName(month)}
+                <span className="ml-2 font-mono font-medium tabular-nums">
+                  {monthRuns.length} {monthRuns.length === 1 ? "run" : "runs"}
+                </span>
+              </TableHead>
+            </TableRow>
+          ),
+          ...monthRuns.map((run) => (
           <TableRow key={run.id} data-slot="run-row" data-run-status={run.status}>
             <TableCell className={bodyCell}>
               <Link
@@ -200,7 +231,8 @@ export function RunTable({
               <RunStatusBadge status={run.status} />
             </TableCell>
           </TableRow>
-        ))}
+          )),
+        ])}
       </TableBody>
     </Table>
   )

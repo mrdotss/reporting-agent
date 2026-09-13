@@ -1082,27 +1082,6 @@ export const MESSAGE_CATALOG = {
     en: "This run produced no snapshot, so there is nothing to trace its figures to.",
     id: "Proses ini tidak menghasilkan snapshot, sehingga tidak ada yang dapat ditelusuri angkanya.",
   },
-  /* The counterfoil — the record's identity and verdict, torn from the certificate. */
-  "ui.counterfoil.aria": {
-    en: "Record identity",
-    id: "Identitas catatan",
-  },
-  "ui.counterfoil.record": {
-    en: "Record",
-    id: "Catatan",
-  },
-  "ui.counterfoil.seal": {
-    en: "Seal",
-    id: "Segel",
-  },
-  "ui.counterfoil.window": {
-    en: "Window",
-    id: "Jendela",
-  },
-  "ui.counterfoil.state": {
-    en: "State",
-    id: "Keadaan",
-  },
   "ui.snapshot.label_snapshot": {
     en: "Snapshot",
     id: "Cuplikan",
