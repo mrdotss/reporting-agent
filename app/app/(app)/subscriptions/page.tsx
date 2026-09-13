@@ -47,7 +47,7 @@ export default async function SubscriptionsPage() {
   const subscriptions = await listConnectedSubscriptions(user.id, projectScope)
 
   return (
-    <PageBody kind="reading">
+    <PageBody kind="wide">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <h1 className="text-title">

@@ -1,5 +1,5 @@
 "use client"
-import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-shell"
+import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-context"
 import { can } from "@/lib/workspaces/policy"
 
 import { useCallback, useState } from "react"

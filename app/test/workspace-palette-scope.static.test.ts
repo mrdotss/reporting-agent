@@ -36,7 +36,8 @@ describe("the workspace palette covers what it has to cover", () => {
     // A second, inner scope is not additive — it is a smaller scope that looks like the
     // fix while leaving portalled content outside it.
     const inner = [
-      "components/workspaces/workspace-shell.tsx",
+      "app/(app)/layout.tsx",
+      "components/app-shell/app-sidebar.tsx",
       "app/invitations/accept/page.tsx",
     ].filter((file) => /className="[^"]*workspace-design/.test(read(file)))
     expect(inner).toEqual([])
@@ -70,11 +71,18 @@ describe("the workspace palette covers what it has to cover", () => {
   test("the rail carries no literal colour of its own", () => {
     // Every one of these was a hex or a palette class before, which is why the rail and
     // the components inside it could disagree about what colour they were sitting on.
-    const shell = read("components/workspaces/workspace-shell.tsx")
-    expect(shell).not.toMatch(/#[0-9a-fA-F]{6}/)
-    expect(shell).not.toMatch(/text-slate-\d|text-emerald-\d/)
-    expect(shell).toMatch(/bg-sidebar\b/)
-    expect(shell).toMatch(/text-sidebar-foreground/)
+    for (const file of [
+      "components/app-shell/app-sidebar.tsx",
+      "components/app-shell/period-chip.tsx",
+    ]) {
+      const source = read(file)
+      expect(source, file).not.toMatch(/#[0-9a-fA-F]{6}/)
+      expect(source, file).not.toMatch(/text-slate-\d|text-emerald-\d/)
+    }
+    // The ground and its ink come from the primitive, through the sidebar tokens.
+    const primitive = read("components/ui/sidebar.tsx")
+    expect(primitive).toMatch(/bg-sidebar\b/)
+    expect(primitive).toMatch(/text-sidebar-foreground/)
   })
 })
 

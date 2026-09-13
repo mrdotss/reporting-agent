@@ -147,29 +147,23 @@ export default async function ReportsPage({
 
   return (
     <PageBody kind="wide">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-title">
-          Reports
-        </h1>
-
-        <p className="max-w-prose text-sm text-muted-foreground">
-          Every run, its progress, and the document it did or did not deliver.
-        </p>
-      </div>
-
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-section">
-            All runs
-          </h2>
-
-          <RequestReportDialog
-            subscriptions={subscriptions}
-            templates={templates}
-            nowIso={now.toISOString()}
-          />
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-title">Reports</h1>
+          <p className="max-w-[62ch] text-meta text-muted-foreground">
+            Every run, grouped by the period it reports on. A report is only
+            offered for download once every figure in it is proven.
+          </p>
         </div>
 
+        <RequestReportDialog
+          subscriptions={subscriptions}
+          templates={templates}
+          nowIso={now.toISOString()}
+        />
+      </header>
+
+      <section aria-label="Runs" className="flex flex-col gap-4">
         <RunFilters
           total={total}
           shown={runs.length}
@@ -177,12 +171,14 @@ export default async function ReportsPage({
           counts={counts}
         />
 
-        <RunTable
-          runs={runs.map((run) =>
-            toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
-          )}
-          subscriptions={subscriptions}
-        />
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          <RunTable
+            runs={runs.map((run) =>
+              toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
+            )}
+            subscriptions={subscriptions}
+          />
+        </div>
 
         {/* After the rows, not before them. */}
         <RunPagination

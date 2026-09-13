@@ -1,54 +1,39 @@
-import { Archivo, IBM_Plex_Mono, Spectral } from "next/font/google"
+import { Instrument_Sans, Spline_Sans_Mono } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
-import { workspaceUiEnabled } from "@/lib/workspaces/context"
 import { cn } from "@/lib/utils"
 
 /**
- * Three voices, and each one is doing a job the other two cannot.
+ * Two voices: the working face and the figure's face.
  *
- * This product issues a printed document and then proves it. The interface is the
- * room that issues it, so the type has to speak in three registers at once — the
- * document's, the instrument's, and the figure's.
+ * **Instrument Sans** carries the interface and its headings. This is an operations
+ * tool scanned between customer calls, so hierarchy comes from weight and ink rather
+ * than from a second display family; it holds its shape at 11px in a table cell and
+ * tightens cleanly at 30px.
  *
- * **Spectral** (`--font-heading`) is the document's voice. A serif, deliberately:
- * the artifact this app produces is a Word file and a PDF, and letting the app's
- * headings speak in that register makes the two read as one object rather than as a
- * tool and its output. Spectral is drawn for screen and has a plotted, slightly
- * technical cut, which keeps it from reading as an editorial flourish.
+ * **Spline Sans Mono** is every figure, digest, resource id and date — always tabular,
+ * because a numeral that shifts width as a run streams undercuts the claim that the
+ * numbers are proven.
  *
- * **Archivo** (`--font-sans`) is the working voice — labels, tables, controls,
- * everything a consultant actually operates. A grotesk with institutional bones that
- * holds its shape at 11px in a table cell, which is where most of this app's text
- * lives.
- *
- * **IBM Plex Mono** (`--font-mono`) is every figure, hash, identifier and timestamp.
- * Engineered rather than decorative, with numerals that read cleanly at small sizes,
- * and always tabular: a numeral that shifts width as it streams undercuts the entire
- * argument this product is making.
- *
- * The previous build loaded Geist twice, under two variables, so `font-heading` and
- * `font-sans` resolved to the same face and every heading differed from body by
- * weight alone. Three families here are three families, not a third request for the
- * same one.
+ * `--font-heading` points at the sans rather than being dropped, so existing
+ * `font-heading` call sites resolve to the working face instead of a fallback serif.
  */
-const fontHeading = Spectral({
+const fontSans = Instrument_Sans({
   subsets: ["latin"],
-  weight: ["300", "400", "600"],
-  style: ["normal", "italic"],
-  variable: "--font-heading",
-  display: "swap",
-})
-
-const fontSans = Archivo({
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
   variable: "--font-sans",
   display: "swap",
 })
 
-const fontMono = IBM_Plex_Mono({
+const fontHeading = Instrument_Sans({
+  subsets: ["latin"],
+  weight: ["500", "600", "700"],
+  variable: "--font-heading",
+  display: "swap",
+})
+
+const fontMono = Spline_Sans_Mono({
   subsets: ["latin"],
   weight: ["400", "500", "600"],
   variable: "--font-mono",
@@ -73,12 +58,10 @@ export default function RootLayout({
       )}
     >
       {/* The workspace palette is scoped **here**, not on a wrapper inside the shell.
-          Radix renders every `Select`, `Dialog` and `Popover` through a portal attached to
-          `document.body`, so a scope opened further down covered the trigger and not the
-          menu it opens: the control took the new palette and its own options kept the old
-          one, and the two drifted apart differently in each theme. A token scope has to
-          sit above the portal root or it does not cover the portal. */}
-      <body className={workspaceUiEnabled() ? "workspace-design" : undefined}>
+          Every `Select`, `Dialog`, `Menu` and `Popover` renders through a portal attached
+          to `document.body`, so a scope opened further down would cover the trigger and
+          not the menu it opens. A token scope has to sit above the portal root. */}
+      <body className="workspace-design">
         <ThemeProvider>{children}</ThemeProvider>
       </body>
     </html>

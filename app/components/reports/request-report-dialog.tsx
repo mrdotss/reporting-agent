@@ -1,6 +1,6 @@
 "use client"
 import Link from "next/link"
-import { useWorkspace } from "@/components/workspaces/workspace-shell"
+import { useWorkspace } from "@/components/workspaces/workspace-context"
 import { can } from "@/lib/workspaces/policy"
 
 import { useState } from "react"

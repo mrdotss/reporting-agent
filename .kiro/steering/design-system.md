@@ -1,103 +1,95 @@
 # Design system & agentic UX
 
-Target: **an issuing room, not a dashboard.**
+Target: **the month-end close, not a dashboard.**
 
-This product's thesis is that a number in a delivered report can be proved. A
-deterministic pipeline collects into an immutable snapshot, a compiler emits figures
-from that snapshot and nothing else, a verifier proves the document and the snapshot
-agree, and nothing ships if a check fails. That is not a dashboard's job — it is a
-**calibration certificate's** job. So the surface is built from the room where
-certificates are written, sealed and entered into a register.
+A consultant's month is a close. Every customer's utilization report for last month has
+to be requested, proven against its snapshot and delivered before the workspace's close
+day. The product's thesis — a number in a delivered report can be proved — is what makes
+a report *deliverable*; the close is what the consultant is actually trying to finish.
+So the landing surface is that close, and every other screen is a step toward it.
 
 ## The direction, in five decisions
 
-1. **The app is shaped like the record it issues.** No sidebar. Navigation is a
-   register bar and a tab strip on the same paper as the content, because a document
-   has a header, not a rail. Five links never needed 256px and a second mobile
-   rendering.
-2. **The counterfoil is the signature element.** A record's identity and verdict —
-   number, seal, window, state — sit in a narrow column behind a perforation rule, the
-   way a counterfoil is torn from a receipt and retained. It is the one thing a reader
-   consults before trusting anything beside it. `components/reports/counterfoil.tsx`.
-3. **A digest is drawn as a seal, not as a string.** The snapshot id *is* the hash of
-   the snapshot's bytes, which makes it the most load-bearing identifier on any screen.
-   `components/ui/seal.tsx` gives it a well, a struck leading edge, an eight-character
-   head at reading size and the full tail beneath — nothing hidden, nothing truncated.
-4. **State is a struck stamp, not a pill.** Small caps, tracked, ruled on all four
-   sides, in the state's own ink, with a dot so colour is never the only channel.
-   A pill says "tag"; these are verdicts. `components/ui/stamp.tsx`.
-5. **Figures are a ledger tally, not KPI cards.** One right edge, a dotted leader, and
-   labels that get to be whole sentences. A box around a number adds a container the
-   number did not need and shrinks its label to a two-word caption.
+1. **A left sidebar on the same ground as the page.** shadcn `Sidebar`,
+   `variant="inset"`, `collapsible="icon"` (Ctrl/⌘+B), a drawer on phones. The rail and
+   the page share one surface family; the page is the one lifted object.
+   `components/app-shell/app-sidebar.tsx`.
+2. **The close is always in view.** The sidebar's period chip names the open month,
+   the days left, and one tick per day from the 1st to the close day, with today
+   standing taller. The close day is a workspace setting (`workspaces.close_day`, 1–28).
+   `components/app-shell/period-chip.tsx`, `lib/close/period.ts`.
+3. **The close board is the signature surface.** A hero sentence ("6 of 9 customers
+   delivered — 3 to go before Tuesday's close — …"), a segmented close bar, a
+   customers × six-months period board with the open month tinted, and a *Needs you*
+   list whose every item carries the action that clears it. `components/close/`.
+4. **State is a shape before it is a colour.** `StatusMark`: delivered is a filled
+   circle, in flight a turning half-circle, queued a dashed ring, not requested a hollow
+   ring, not delivered a diamond, needs attention a triangle, not a customer yet a dash.
+   A board of marks reads in greyscale. `components/ui/status-mark.tsx`.
+5. **Customers are projects.** The interface says *customer*; routes, tables and code
+   keep `project`. Picking a customer in the sidebar scopes the app; *All customers*
+   clears it.
 
-## Palette — the assay office
+## Palette — a batik workshop
 
-Inventoried from the physical room, and declared in `.workspace-design` in
-`app/globals.css`. That scope is the app's own token layer and is deliberately separate
-from two things it must not disturb: the vendored Luma preset in `:root`/`.dark`
-(guarded by `globals-preset.static.test.ts`) and the `--cat-*` categorical chart
-palette, whose lightness ladder is measured against three dichromacy simulations and
-mirrored into the agent (`agent/tests/test_chartstyle.py` asserts all three agree).
+Declared in `.workspace-design` in `app/globals.css`, on `<body>` so portalled menus and
+dialogs are covered. Separate from the vendored Luma preset in `:root`/`.dark` (guarded
+by `globals-preset.static.test.ts`) and from the `--cat-*` chart palette, which is
+measured against three dichromacy simulations and mirrored into the agent.
 **Charts belong to the rendered document; this palette is app chrome.**
 
-| role | light | meaning |
-|---|---|---|
-| ground | `#ecefe8` | accountant's columnar pad — not cream, not slate |
-| sheet | `#f5f7f2` | a page laid on the stack |
-| well | `#e2e6dc` | inset. Inputs receive content |
-| ink | `#18282c` | iron-gall, oxidised blue-black with a green cast |
-| verdigris | `#2c6b5e` | oxidised copper. **The one accent. Means: traceable.** |
-| vermilion | `#a03726` | the stamp. **Means: could not be proven. Nothing else.** |
-| brass | `#856520` | a credential approaching expiry. Attention, not failure |
+| role | light | dark | meaning |
+|---|---|---|---|
+| mori (sidebar ground) | `#f1f1ee` | `#101113` | unbleached cotton |
+| panel (`--background`, `--card`) | `#fdfdfc` | `#17181b` | the lifted page |
+| well (`--muted`) | `#ebebe7` | `#0d0e10` | inset. Inputs receive content |
+| jelaga (ink) | `#17181c` | `#ededea` | lamp-soot black |
+| nila (`--primary`) | `#2f3c7e` | `#8d9bea` | natural indigo. **The one accent** |
+| soga | `#8e5b2a` | `#cf9a63` | brown dye. The second data hue (memory beside CPU) |
 
-Status keeps its own four-step scale (`--status-*`), separate from the accent, so a
-verified stamp and a primary button are never the same signal.
+Status keeps its own scale, separate from the accent: `--status-verified`,
+`--status-inflight`, `--status-attention`, `--status-failed`, each with a `-soft` wash.
+Values are the ink step, so they hold as text on their own wash. `--destructive` stays
+reserved for a credential that can no longer authenticate and a document that could not
+be proven (Requirement 13.6).
 
-## Typography — three voices, each doing a job
+## Typography — two voices
 
 | role | face | why |
 |---|---|---|
-| document | **Spectral** | the artifact is a printed document; the app's headings speak in its register so the two read as one object |
-| interface | **Archivo** | a grotesk with institutional bones that holds at 11px in a table cell |
-| figure | **IBM Plex Mono** | every figure, hash, identifier and timestamp — always tabular |
+| interface and headings | **Instrument Sans** | an operations tool scanned between customer calls; hierarchy from weight and ink, not from a second display family |
+| figure | **Spline Sans Mono** | every figure, digest, resource id and date — always tabular |
 
-A serif is deliberate here. The previous system banned it, defending against an
-inherited editorial-serif direction; that defence was right about the inheritance and
-wrong about the merits, because this product's output really is a document.
+`--font-heading` points at Instrument Sans so existing `font-heading` call sites resolve.
+The ramp is a 1.2 ratio on 14px, declared as `@theme` tokens at the foot of
+`globals.css`: `text-display` 30 · `text-title` 24 · `text-section` 15 · `text-meta` 13 ·
+`text-micro` 11 (uppercase, tracked), plus `text-figure` and `text-figure-sm`. Only the
+close board's hero uses `text-display`.
 
-The ramp is declared as Tailwind `@theme` tokens at the foot of `globals.css`:
-`text-display · text-title · text-section · text-meta · text-micro`, plus
-`text-figure` and `text-figure-sm`. Each carries its own line-height, tracking and
-weight, because those are what drift when only the size is stated. **A bare `<h1>` is
-the landing title and exactly one surface uses it**; every other page says
-`text-title`.
+## Depth — one lifted page, hairlines inside it
 
-## Depth — rules and tint. No shadows.
+The inset page carries the only elevation. Inside it, surfaces separate by a hairline
+border (`--border`) or a well tint; cards are `rounded-xl border bg-card` with no shadow.
+Overlays (menus, dialogs, the command palette) sit one step above what opened them.
+Do not try to suppress a shadow by overriding `--shadow-*` — Tailwind v4 inlines a
+shadow's value at build time.
 
-Paper does not cast a shadow on itself. Surfaces separate by a hairline or a few
-percent of lightness. The one exception is an overlay, which still has to read as
-*above*: `dialog.tsx`, `select.tsx` and `popover.tsx` carry a tight 1px ring of the
-ink rather than a blur. Do not reintroduce `shadow-md` anywhere else, and do not try
-to suppress it by overriding `--shadow-*` — Tailwind v4 inlines a shadow's value at
-build time, so that override is a declaration that looks like it works and does not.
-
-**Radii are 2–3px** (`--radius: 0.125rem`), because printed forms have square corners.
+**Radius is 8px** (`--radius: 0.5rem`): controls land around 6–8px, cards at 12px.
 
 ## Design DNA — the Luma preset (vendored; describes `:root`, not the app)
 
 > **Read this heading carefully.** Everything in this section is still an accurate
 > description of the preset tokens in `:root` and `.dark`, which ship exactly as
 > generated and are guarded by `globals-preset.static.test.ts`. It is **no longer a
-> description of what the app renders.** The app renders the assay-office palette
-> above, declared in `.workspace-design`, which overrides every colour, the radius
-> scale and all three typefaces.
+> description of what the app renders.** The app renders the batik palette above,
+> declared in `.workspace-design`, which overrides every colour, the radius scale and
+> the typefaces.
 >
 > The preset is kept rather than regenerated for two reasons: the shadcn registry
 > resolves components against it, and the `--cat-*` chart palette is derived from its
 > primary and mirrored into the agent. Where this section and the direction above
-> disagree — teal against verdigris, 10px against 2px, pills against ruled controls,
-> "no serif anywhere" against Spectral — **the direction above wins**, and this section
-> is describing the layer underneath it.
+> disagree, **the direction above wins**, and this section is describing the layer
+> underneath it.
 Initialized with `--preset b3f0SLkV6m`. The tokens below are transcribed from the
 **actual** `app/components.json` and `app/app/globals.css` in this repo — they are
 facts about the code, not aspirations.

@@ -1,0 +1,2 @@
+ALTER TABLE "workspaces" ADD COLUMN "close_day" integer DEFAULT 15 NOT NULL;--> statement-breakpoint
+ALTER TABLE "workspaces" ADD CONSTRAINT "workspaces_close_day_ck" CHECK ("workspaces"."close_day" between 1 and 28);

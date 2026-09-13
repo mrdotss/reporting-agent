@@ -18,7 +18,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { canManageMember, type WorkspaceRole } from "@/lib/workspaces/policy"
-import { useWorkspace, workspaceMutation } from "./workspace-shell"
+import { useWorkspace, workspaceMutation } from "./workspace-context"
 type Member = { userId: string; email: string; role: WorkspaceRole }
 type Invite = {
   id: string

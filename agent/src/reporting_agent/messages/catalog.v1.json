@@ -1377,26 +1377,6 @@
       "en": "Resources",
       "id": "Sumber daya"
     },
-    "ui.counterfoil.aria": {
-      "en": "Record identity",
-      "id": "Identitas catatan"
-    },
-    "ui.counterfoil.record": {
-      "en": "Record",
-      "id": "Catatan"
-    },
-    "ui.counterfoil.seal": {
-      "en": "Seal",
-      "id": "Segel"
-    },
-    "ui.counterfoil.state": {
-      "en": "State",
-      "id": "Keadaan"
-    },
-    "ui.counterfoil.window": {
-      "en": "Window",
-      "id": "Jendela"
-    },
     "ui.snapshot.label_snapshot": {
       "en": "Snapshot",
       "id": "Cuplikan"

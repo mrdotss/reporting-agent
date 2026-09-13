@@ -1,6 +1,6 @@
 "use client"
 import { RequestSummary } from "@/components/reports/request-summary"
-import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-shell"
+import { useWorkspace, useCreationScope } from "@/components/workspaces/workspace-context"
 import { can } from "@/lib/workspaces/policy"
 
 import { useCallback, useEffect, useId, useState } from "react"

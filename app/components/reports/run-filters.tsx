@@ -97,8 +97,37 @@ export function RunFilters({
   }, [draft, urlSearch])
 
   return (
-    <div className="flex flex-wrap items-center gap-2">
-      <div className="relative w-full max-w-xs">
+    <div className="flex flex-wrap items-center gap-3">
+      {/*
+        A segmented control rather than a row of chips: the four are one question —
+        which runs — with exactly one answer at a time. Still toggle buttons with
+        `aria-pressed`, because each one filters the list rather than switching panels.
+      */}
+      <div
+        className="inline-flex gap-0.5 rounded-[9px] bg-muted p-[3px]"
+        role="group"
+        aria-label={messageText("ui.run_table.filter_label", "en") ?? undefined}
+      >
+        {GROUP_KEYS.map((key) => (
+          <Button
+            key={key}
+            size="sm"
+            variant="ghost"
+            aria-pressed={group === key}
+            onClick={() =>
+              push({ status: key === "all" ? null : key, page: null })
+            }
+            className="h-7.5 gap-1.5 rounded-md px-2.5 text-meta font-medium text-muted-foreground hover:bg-transparent hover:text-foreground aria-pressed:bg-card aria-pressed:text-foreground aria-pressed:shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(0_0_0/0.05)]"
+          >
+            {messageText(`ui.run_table.status_${key}`, "en")}{" "}
+            <span className="font-mono text-xs tabular-nums text-muted-foreground">
+              {counts[key]}
+            </span>
+          </Button>
+        ))}
+      </div>
+
+      <div className="relative ms-auto w-full sm:w-64">
         <MagnifyingGlassIcon
           aria-hidden="true"
           className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
@@ -114,30 +143,7 @@ export function RunFilters({
         />
       </div>
 
-      <div
-        className="flex gap-1.5"
-        role="group"
-        aria-label={messageText("ui.run_table.filter_label", "en") ?? undefined}
-      >
-        {GROUP_KEYS.map((key) => (
-          <Button
-            key={key}
-            size="sm"
-            variant={group === key ? "secondary" : "ghost"}
-            aria-pressed={group === key}
-            onClick={() =>
-              push({ status: key === "all" ? null : key, page: null })
-            }
-          >
-            {messageText(`ui.run_table.status_${key}`, "en")}{" "}
-            <span className="font-mono tabular-nums opacity-65">
-              {counts[key]}
-            </span>
-          </Button>
-        ))}
-      </div>
-
-      <p aria-live="polite" className="ms-auto text-xs text-muted-foreground">
+      <p aria-live="polite" className="sr-only">
         {shown === 0
           ? messageText("ui.run_table.none_shown", "en")
           : `${offset + 1}–${offset + shown} / ${total}`}

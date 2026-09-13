@@ -9,13 +9,12 @@ import {
   internalError,
 } from "@/lib/api/response"
 import { workspaceActionSchema, permitsWorkspaceOrigin } from "@/lib/workspaces/input"
-import { workspaceUiEnabled, selectContext } from "@/lib/workspaces/context"
+import { selectContext } from "@/lib/workspaces/context"
 import { WorkspaceAccessError } from "@/lib/workspaces/access"
 import * as store from "@/lib/workspaces/store"
 export async function POST(request: Request) {
   const user = await requireSessionForApi()
   if (!user) return unauthorized()
-  if (!workspaceUiEnabled()) return notFound()
   if (!permitsWorkspaceOrigin(request.headers.get("origin"), request.headers.get("host"), request.headers.get("sec-fetch-site"))) return notFound()
   const parsed = workspaceActionSchema.safeParse(await readJsonBody(request))
   if (!parsed.success) return invalidInput(parsed.error)
@@ -52,6 +51,9 @@ export async function POST(request: Request) {
         break
       case "transfer":
         await store.transferOwnership(user.id, d.workspaceId, d.userId)
+        break
+      case "close_day":
+        await store.setCloseDay(user.id, d.workspaceId, d.closeDay)
         break
     }
     return json(200, { ok: true })
