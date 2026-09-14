@@ -12,6 +12,7 @@ import {
   TEMPLATE_NAME_MIN_LENGTH,
   TEMPLATE_NAME_MESSAGE,
 } from "@/lib/templates/input"
+import { cn } from "@/lib/utils"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -29,6 +30,12 @@ type NameDivergence = {
   readonly draftName: string
 }
 
+/** The two document languages a v2+ definition declares (Requirement 15.1). */
+const LANGUAGES = [
+  { value: "en", label: "English" },
+  { value: "id", label: "Bahasa Indonesia" },
+] as const
+
 // ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
@@ -36,18 +43,18 @@ type NameDivergence = {
 /**
  * Step 1 — identity (Requirement 11.1, 23.1–23.12).
  *
- * `name` is what the template is called in the list; `report_title` is what is
- * printed on the cover of the document. They are separate fields and not one,
- * because they answer to different readers.
+ * `name` is what the preset is called in the list; `report_title` is what is printed on
+ * the cover of the document. They are separate fields and not one, because they answer
+ * to different readers. The preset name and the customer sit on one row because they are
+ * the two a consultant scans for; the language is a segmented choice because there are
+ * exactly two and both should be visible at once.
  *
  * ## The rename contract (Requirement 23)
  *
  * On save, this step writes the submitted name to the draft definition's
  * `identity.name` AND invokes `renameTemplate` against `report_templates.name`,
- * in that order, as two separate writes. This is what keeps the template list in
+ * in that order, as two separate writes. This is what keeps the preset list in
  * sync with the identity step.
- *
- * The six failure modes are implemented distinctly — see the task description.
  */
 export function StepIdentity({
   definition,
@@ -75,6 +82,7 @@ export function StepIdentity({
   const titleId = useId()
   const customerId = useId()
   const descriptionId = useId()
+  const languageId = useId()
 
   // --- Validation --------------------------------------------------------
 
@@ -93,43 +101,64 @@ export function StepIdentity({
       ? { storedName, draftName: definition.identity.name }
       : null
 
-  // Show divergence only when the stored name differs from the draft name AND
-  // the save state is idle (not just-failed-rename, which has its own message).
   const showDivergence =
     divergence !== null &&
     saveState.kind === "idle" &&
     storedName !== trimmedName
 
-  const set = (identity: Partial<TemplateDefinition["identity"]>) => {
+  const identity = definition.identity as TemplateDefinition["identity"] & {
+    readonly language?: string
+  }
+  const language = identity.language === "id" ? "id" : "en"
+
+  const set = (patch: Record<string, unknown>) => {
     onChange({
       ...definition,
-      identity: { ...definition.identity, ...identity },
-    })
+      identity: { ...definition.identity, ...patch },
+    } as TemplateDefinition)
   }
 
   return (
     <div className="flex flex-col gap-4">
-      <Field>
-        <FieldLabel htmlFor={nameId}>Report profile name</FieldLabel>
-        <Input
-          id={nameId}
-          value={definition.identity.name}
-          onChange={(event) => set({ name: event.target.value })}
-          aria-invalid={nameError || undefined}
-        />
-        <FieldDescription>
-          What this template is called in your list. Not printed on the report.
-        </FieldDescription>
-        {nameError ? (
-          <p
-            data-slot="identity-name-error"
-            className="text-sm text-destructive"
-            role="alert"
-          >
-            {TEMPLATE_NAME_MESSAGE}
-          </p>
-        ) : null}
-      </Field>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor={nameId}>Preset name</FieldLabel>
+          <Input
+            id={nameId}
+            value={definition.identity.name}
+            onChange={(event) => set({ name: event.target.value })}
+            aria-invalid={nameError || undefined}
+          />
+          <FieldDescription className="text-xs">
+            Only you see this. Not printed.
+          </FieldDescription>
+          {nameError ? (
+            <p
+              data-slot="identity-name-error"
+              className="text-sm text-destructive"
+              role="alert"
+            >
+              {TEMPLATE_NAME_MESSAGE}
+            </p>
+          ) : null}
+        </Field>
+
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor={customerId}>Customer name</FieldLabel>
+          <Input
+            id={customerId}
+            value={definition.identity.customer_name ?? ""}
+            onChange={(event) => set({ customer_name: event.target.value })}
+          />
+          {/*
+            Requirement 12.2 — authored here rather than asked for per run, and a run is
+            refused without one, so the description says both.
+          */}
+          <FieldDescription className="text-xs">
+            Printed on the cover. Required to request a run.
+          </FieldDescription>
+        </Field>
+      </div>
 
       {showDivergence ? (
         <div
@@ -151,50 +180,78 @@ export function StepIdentity({
         </div>
       ) : null}
 
-      <Field>
+      <Field className="gap-1.5">
         <FieldLabel htmlFor={titleId}>Report title</FieldLabel>
         <Input
           id={titleId}
           value={definition.identity.report_title ?? ""}
           onChange={(event) => set({ report_title: event.target.value })}
         />
-        <FieldDescription>
-          Printed on the document&rsquo;s cover page and in its header.
+        <FieldDescription className="text-xs">
+          The cover headline and the running header.
         </FieldDescription>
       </Field>
 
-      <Field>
-        <FieldLabel htmlFor={customerId}>Customer name</FieldLabel>
-        <Input
-          id={customerId}
-          value={definition.identity.customer_name ?? ""}
-          onChange={(event) => set({ customer_name: event.target.value })}
-        />
-        <FieldDescription>
-          {/*
-            Requirement 12.2 — authored here rather than asked for per run. The
-            description says so, because this field moved: a consultant who used
-            to type a customer name on the run form needs to know why it is no
-            longer there, and that a run will be refused without one.
-          */}
-          Who the report is for. Printed on the cover and in the
-          document-control page. A run cannot be requested until this is set.
-        </FieldDescription>
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <span id={languageId} className="text-sm font-medium">
+          Document language
+        </span>
+        <div
+          role="radiogroup"
+          aria-labelledby={languageId}
+          className="inline-flex w-fit gap-0.5 rounded-[9px] bg-muted p-[3px]"
+        >
+          {LANGUAGES.map(({ value, label }) => {
+            const checked = language === value
+            return (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={checked}
+                tabIndex={checked ? 0 : -1}
+                onClick={() => set({ language: value })}
+                onKeyDown={(event) => {
+                  if (!event.key.startsWith("Arrow")) return
+                  event.preventDefault()
+                  const next = language === "en" ? "id" : "en"
+                  set({ language: next })
+                  const group = event.currentTarget.parentElement
+                  requestAnimationFrame(() =>
+                    group
+                      ?.querySelector<HTMLButtonElement>('[aria-checked="true"]')
+                      ?.focus()
+                  )
+                }}
+                className={cn(
+                  "h-7.5 rounded-md px-3 text-meta font-medium outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30",
+                  checked
+                    ? "bg-card text-foreground shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(0_0_0/0.05)]"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {label}
+              </button>
+            )
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Headings, labels and dates in the delivered document.
+        </p>
+      </div>
 
-      <Field>
+      <Field className="gap-1.5">
         <FieldLabel htmlFor={descriptionId}>Description</FieldLabel>
-        <Input
+        <textarea
           id={descriptionId}
+          rows={2}
           value={definition.identity.description ?? ""}
           onChange={(event) => set({ description: event.target.value })}
+          placeholder="Optional — a line that tells this preset apart from a similar one"
+          className="min-h-16 w-full resize-y rounded-lg border border-input bg-muted px-3 py-2 text-sm outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
         />
-        <FieldDescription>
-          Optional. A line to tell this template apart from a similar one.
-        </FieldDescription>
       </Field>
 
-      {/* Save state feedback */}
       {saveState.kind === "draft_saved_rename_failed" ? (
         <div
           data-slot="identity-rename-failed"
@@ -204,7 +261,7 @@ export function StepIdentity({
           <p className="text-sm text-muted-foreground">
             The draft was saved, but{" "}
             <span className="font-medium text-foreground">
-              the template name was not updated
+              the preset name was not updated
             </span>
             . The list may still show the previous name.
           </p>

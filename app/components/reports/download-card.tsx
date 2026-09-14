@@ -1,51 +1,42 @@
 "use client"
 
 import { useCallback, useState } from "react"
-import { DownloadSimpleIcon } from "@phosphor-icons/react"
+import { CaretDownIcon, DownloadSimpleIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { messageText } from "@/lib/messages/catalog"
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { DOWNLOADABLE_LEAF_NAMES } from "@/lib/runs/artifacts"
 
 /**
- * The two download controls, offered only behind a passing verification
+ * The downloads, as one control, offered only behind a passing verification
  * (Requirement 40).
+ *
+ * One "Download" button that opens the artifacts, rather than a card of three buttons:
+ * the report header is where a reader looks for it, and three buttons there compete with
+ * the title. Each item names what it is and its file type.
  *
  * ## The URL is minted at activation, never at render
  *
- * Requirement 40.1, and 40.3 explains why: a presigned URL is a **credential**,
- * and one placed in a server-rendered payload is a credential in the page
- * source, in the RSC flight data, and in whatever cached that response. Minting
- * at the click means the credential exists for the seconds it takes the browser
- * to follow it.
- *
- * That is also why this component holds no URL in state after the navigation.
- * There is no `useState<string>` carrying a link here — the fetched URL is a
- * local `const` inside the handler and is gone when it returns.
+ * Requirement 40.1, and 40.3 explains why: a presigned URL is a **credential**. Minting
+ * at the click means the credential exists for the seconds it takes the browser to follow
+ * it, and this component holds no URL in state — the fetched URL is a local `const`
+ * inside the handler.
  *
  * ## The gate is upstream, and this is the second line rather than the first
  *
- * `page.tsx` renders this component only for a `completed` run with a `pass`
- * verification (Requirement 40.4), and `GET /api/artifact-url` re-checks all
- * four assertions before any storage call (40.2). Neither is redundant: a
- * control that is not rendered is not a control that cannot be reached, and the
- * route is what makes "no route and no action returns one" true.
+ * `page.tsx` renders this only for a `completed` run with a `pass` verification
+ * (Requirement 40.4), and `GET /api/artifact-url` re-checks before any storage call.
  *
  * ## A failed mint keeps the control
  *
- * Requirement 40.7 — an unavailable object states that it is unavailable, leaves
- * the row and the verification unchanged, and **keeps the control available for
- * a further activation**. So the failure is a message beside the button, not a
- * disabled button: a transient S3 error should cost a retry, not the ability to
- * download a report that verified.
+ * Requirement 40.7 — an unavailable object states that it is unavailable and keeps the
+ * control available for a further activation, so the failure is a message beside the
+ * button, not a disabled button.
  */
 
 type ArtifactUrlResponse = {
@@ -54,27 +45,19 @@ type ArtifactUrlResponse = {
 }
 
 const LABEL: Readonly<
-  Record<(typeof DOWNLOADABLE_LEAF_NAMES)[number], string>
+  Record<(typeof DOWNLOADABLE_LEAF_NAMES)[number], { name: string; ext: string }>
 > = {
-  "report.docx": "Word document",
-  "report.pdf": "PDF",
-  // The reading copy (requirements 23.11-23.15): the same document laid out by a print
-  // stylesheet rather than converted from the Word file. Named for what distinguishes it
-  // to a reader, not for how it was produced — "PDF" and "PDF" would be two identical
-  // buttons.
-  "report-styled.pdf": "PDF (designed)",
+  "report.docx": { name: "Word document", ext: ".docx" },
+  "report.pdf": { name: "PDF", ext: ".pdf" },
+  // The reading copy (requirements 23.11-23.15), laid out by a print stylesheet rather
+  // than converted from the Word file — named for what distinguishes it to a reader.
+  "report-styled.pdf": { name: "PDF (designed)", ext: ".pdf" },
 }
 
 export function DownloadCard({
   artifactKeys,
 }: Readonly<{
-  /**
-   * The run's recorded downloadable keys.
-   *
-   * Keys, never URLs — `RunView.artifactKeys` carries keys precisely so a run
-   * payload can be rendered and cached without carrying a credential
-   * (Requirement 40.3).
-   */
+  /** The run's recorded downloadable keys. Keys, never URLs (Requirement 40.3). */
   artifactKeys: readonly string[]
 }>) {
   const [failed, setFailed] = useState<string | null>(null)
@@ -85,10 +68,7 @@ export function DownloadCard({
     setPending(key)
 
     try {
-      const response = await fetch(
-        `/api/artifact-url?key=${encodeURIComponent(key)}`
-      )
-
+      const response = await fetch(`/api/artifact-url?key=${encodeURIComponent(key)}`)
       const body = (await response.json()) as ArtifactUrlResponse
 
       if (!response.ok || body.url === undefined) {
@@ -100,13 +80,10 @@ export function DownloadCard({
         return
       }
 
-      // Navigating rather than storing: the URL is used once, immediately, and
-      // is never held anywhere this component could later render it.
+      // Navigating rather than storing: the URL is used once, immediately.
       window.location.assign(body.url)
     } catch {
-      setFailed(
-        "The download could not be requested — the server could not be reached."
-      )
+      setFailed("The download could not be requested — the server could not be reached.")
     } finally {
       setPending(null)
     }
@@ -119,67 +96,41 @@ export function DownloadCard({
   if (downloadable.length === 0) return null
 
   return (
-    <Card
-      data-slot="download-card"
-      // The delivered artifact is the point of the whole run, so this card carries the
-      // one tinted ground on the page. Everything else stays neutral: a second tinted
-      // surface would make the accent mean "panel" rather than "this is ready".
-      // Prose and controls on one line once there is room for both. Stacked at
-      // `wide` this card was a paragraph and three small buttons against 900px of
-      // empty tinted ground, which reads as a card that lost its right-hand side.
-      className="border-primary/25 bg-primary/4 lg:flex-row lg:items-center lg:justify-between lg:gap-4"
-    >
-      <CardHeader className="min-w-0 lg:flex-1">
-        <CardTitle>
-          {messageText("ui.download.heading", "en")}
-        </CardTitle>
-
-        <CardDescription className="max-w-prose">
-          {messageText("ui.download.description", "en")}
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent className="flex flex-wrap gap-2 lg:shrink-0">
-        {downloadable.map((key) => {
-          const leaf = DOWNLOADABLE_LEAF_NAMES.find((name) =>
-            key.endsWith(`/${name}`)
-          )
-
-          return (
-            <Button
-              key={key}
-              type="button"
-              variant="outline"
-              disabled={pending === key}
-              onClick={() => void download(key)}
-            >
-              <DownloadSimpleIcon aria-hidden="true" />
-              {pending === key
-                ? "Preparing…"
-                : leaf === undefined
-                  ? key
-                  : LABEL[leaf]}
-            </Button>
-          )
-        })}
-      </CardContent>
+    <div data-slot="download-card" className="flex flex-col items-end gap-1.5">
+      <DropdownMenu>
+        <DropdownMenuTrigger render={<Button disabled={pending !== null} />}>
+          <DownloadSimpleIcon aria-hidden="true" />
+          {pending === null ? "Download" : "Preparing…"}
+          <CaretDownIcon aria-hidden="true" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="min-w-56">
+          {downloadable.map((key) => {
+            const leaf = DOWNLOADABLE_LEAF_NAMES.find((name) => key.endsWith(`/${name}`))
+            const label = leaf === undefined ? { name: key, ext: "" } : LABEL[leaf]
+            return (
+              <DropdownMenuItem key={key} onClick={() => void download(key)}>
+                <DownloadSimpleIcon aria-hidden="true" />
+                {label.name}
+                <span className="ml-auto pl-4 font-mono text-xs text-muted-foreground">
+                  {label.ext}
+                </span>
+              </DropdownMenuItem>
+            )
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
 
       {failed === null ? null : (
-        <CardFooter>
-          <p
-            data-slot="download-error"
-            aria-live="polite"
-            className="max-w-prose text-sm text-muted-foreground"
-          >
-            {/*
-              Mist neutrals, not `--destructive` (Requirement 39.6). An artifact that
-              could not be fetched is not a document that could not be proven, and the
-              token means only the second.
-            */}
-            {failed}
-          </p>
-        </CardFooter>
+        <p
+          data-slot="download-error"
+          aria-live="polite"
+          className="max-w-xs text-right text-xs text-muted-foreground"
+        >
+          {/* Neutral, not `--destructive` (Requirement 39.6): an artifact that could not
+              be fetched is not a document that could not be proven. */}
+          {failed}
+        </p>
       )}
-    </Card>
+    </div>
   )
 }

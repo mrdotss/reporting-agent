@@ -242,78 +242,55 @@ export function StepDesign({
       )}
       {controls !== "theme" && (
         <>
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-2 text-sm font-medium">Density</legend>
+          {/*
+            Three segmented choices on two rows instead of three stacked lists. Each is
+            still a native radio group — the input is visually hidden inside its label —
+            so arrow keys, form semantics and label queries behave as they did; only the
+            one-line description of the selected value is shown beneath, rather than a
+            paragraph under every option.
+          */}
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Segmented
+              legend="Density"
+              name="design-density"
+              value={design.density}
+              options={DENSITY_VALUES.map((density) => ({
+                value: density,
+                label: density,
+              }))}
+              hint={DENSITY_SUMMARY[design.density]}
+              onSelect={(density) => set({ density })}
+            />
 
-            {DENSITY_VALUES.map((density) => (
-              <label
-                key={density}
-                className="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
-              >
-                <input
-                  type="radio"
-                  name="design-density"
-                  value={density}
-                  checked={design.density === density}
-                  onChange={() => set({ density })}
-                  className="mt-1"
-                />
-                <span className="flex flex-col gap-0.5">
-                  <span className="capitalize">{density}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {DENSITY_SUMMARY[density]}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+            <Segmented
+              legend="Page size"
+              name="design-page-size"
+              value={design.page_size}
+              options={PAGE_SIZE_VALUES.map((size) => ({
+                value: size,
+                label: size,
+              }))}
+              onSelect={(page_size) => set({ page_size })}
+            />
+          </div>
 
-          <fieldset className="flex flex-wrap gap-3">
-            <legend className="mb-2 w-full text-sm font-medium">
-              Table style
-            </legend>
-
-            {TABLE_STYLE_VALUES.map((style) => (
-              <label key={style} className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="radio"
-                  name="design-table-style"
-                  value={style}
-                  checked={design.table_style === style}
-                  onChange={() => set({ table_style: style })}
-                />
-                <span>
-                  <span className="capitalize">{style}</span>
-                  <span className="block text-xs text-muted-foreground">
-                    {style === "bordered"
-                      ? "Full grid with vertical and horizontal borders"
-                      : style === "banded"
-                        ? "Alternating row shading with horizontal rules"
-                        : "Fine horizontal rules, no vertical borders"}
-                  </span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
-
-          <fieldset className="flex flex-wrap gap-3">
-            <legend className="mb-2 w-full text-sm font-medium">
-              Page size
-            </legend>
-
-            {PAGE_SIZE_VALUES.map((size) => (
-              <label key={size} className="flex items-center gap-1.5 text-sm">
-                <input
-                  type="radio"
-                  name="design-page-size"
-                  value={size}
-                  checked={design.page_size === size}
-                  onChange={() => set({ page_size: size })}
-                />
-                <span>{size}</span>
-              </label>
-            ))}
-          </fieldset>
+          <Segmented
+            legend="Table style"
+            name="design-table-style"
+            value={design.table_style}
+            options={TABLE_STYLE_VALUES.map((style) => ({
+              value: style,
+              label: style,
+            }))}
+            hint={
+              design.table_style === "bordered"
+                ? "Full grid with vertical and horizontal borders."
+                : design.table_style === "banded"
+                  ? "Alternating row shading with horizontal rules."
+                  : "Fine horizontal rules, no vertical borders."
+            }
+            onSelect={(table_style) => set({ table_style })}
+          />
 
           <p className="text-sm text-muted-foreground">
             Memory and storage values use GiB in new report versions. Save a
@@ -377,6 +354,58 @@ export function StepDesign({
         </>
       )}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Segmented radio group
+// ---------------------------------------------------------------------------
+
+/**
+ * A native radio group drawn as a segmented control.
+ *
+ * The inputs stay real `<input type="radio">` elements, visually hidden inside their
+ * labels, so the group keeps the browser's arrow-key behaviour and its form semantics;
+ * the label is what gets the pressed look, through `has-checked`.
+ */
+function Segmented<T extends string>({
+  legend,
+  name,
+  value,
+  options,
+  hint,
+  onSelect,
+}: Readonly<{
+  legend: string
+  name: string
+  value: T
+  options: readonly { value: T; label: string }[]
+  hint?: string
+  onSelect: (value: T) => void
+}>) {
+  return (
+    <fieldset className="flex min-w-0 flex-col gap-1.5">
+      <legend className="mb-1.5 text-sm font-medium">{legend}</legend>
+      <div className="inline-flex w-fit max-w-full flex-wrap gap-0.5 rounded-[9px] bg-muted p-[3px]">
+        {options.map((option) => (
+          <label
+            key={option.value}
+            className="relative inline-flex h-7.5 cursor-pointer items-center rounded-md px-3 text-meta font-medium text-muted-foreground capitalize transition-colors hover:text-foreground has-checked:bg-card has-checked:text-foreground has-checked:shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(0_0_0/0.05)] has-focus-visible:ring-3 has-focus-visible:ring-ring/30"
+          >
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              checked={value === option.value}
+              onChange={() => onSelect(option.value)}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {hint ? <p className="text-xs text-muted-foreground">{hint}</p> : null}
+    </fieldset>
   )
 }
 

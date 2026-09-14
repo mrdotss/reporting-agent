@@ -72,8 +72,25 @@ export async function CloseBoard({ userId }: Readonly<{ userId: string }>) {
   return (
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-2">
-        <p className="text-micro text-muted-foreground uppercase">
-          {monthName(period.month)} close · due {due}
+        <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <span className="text-micro text-muted-foreground uppercase">
+            {monthName(period.month)} close · due {due}
+          </span>
+          <time
+            dateTime={now.toISOString()}
+            className="font-mono text-xs text-muted-foreground tabular-nums"
+          >
+            as of{" "}
+            {new Intl.DateTimeFormat("en-GB", {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+              hourCycle: "h23",
+              timeZone: "Asia/Jakarta",
+            }).format(now)}{" "}
+            WIB
+          </time>
         </p>
         <h1 className="text-display text-balance">
           <span className="font-mono font-medium tracking-[-0.04em]">

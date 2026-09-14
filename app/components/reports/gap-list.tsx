@@ -339,7 +339,9 @@ function GapGroupSection({
     <section
       data-slot="gap-group"
       data-gap-type={group.gapType}
-      className="flex flex-col gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3"
+      // A row of one list rather than a tinted box per type: the types are peers, and a
+      // stack of boxes read as a stack of warnings. A hairline separates them.
+      className="flex flex-col gap-2 border-t border-border/60 px-4 py-3 first:border-t-0 md:px-5"
     >
       <button
         type="button"
@@ -451,7 +453,7 @@ export function GapList({
   const groups = groupGaps(gaps, options)
 
   return (
-    <div data-slot="gap-list" className="flex flex-col gap-4">
+    <div data-slot="gap-list" className="flex flex-col">
       {groups.map((group) => (
         <GapGroupSection
           key={group.gapType}

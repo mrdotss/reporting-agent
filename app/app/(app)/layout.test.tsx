@@ -225,7 +225,7 @@ describe("Requirement 7.6 — an authenticated request renders the shell", () =>
       document.querySelector<HTMLElement>('[data-slot="sidebar"]')!
     )
 
-    expect(rail.getByRole("link", { name: "Close board" })).toHaveAttribute(
+    expect(rail.getByRole("link", { name: "Overview" })).toHaveAttribute(
       "aria-current",
       "page"
     )

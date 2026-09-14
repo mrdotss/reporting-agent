@@ -298,10 +298,8 @@ export function DocumentPreview({
         consultant never has to work out whether the figures are theirs.
       */}
       <div className="flex w-full flex-col gap-3 rounded-xl bg-muted/40 p-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-micro text-muted-foreground uppercase">
-            Document preview
-          </h3>
+        {/* The heading lives once, above this panel, in the wizard shell. */}
+        <div className="flex items-baseline justify-end gap-3">
           <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
             Illustrative · {pageSize}
           </span>

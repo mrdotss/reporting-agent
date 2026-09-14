@@ -2,61 +2,60 @@ import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
-import { InfoIcon, PlusIcon } from "@phosphor-icons/react/ssr"
+import { PlusIcon } from "@phosphor-icons/react/ssr"
 
-import { SubscriptionList } from "@/components/subscriptions/subscription-list"
+import { ConnectorInventory } from "@/components/subscriptions/connector-inventory"
+import {
+  SubscriptionList,
+  canScanConnector,
+} from "@/components/subscriptions/subscription-list"
 import { buttonVariants } from "@/components/ui/button"
 import { requireSession } from "@/lib/auth/guard"
+import { readLatestScan } from "@/lib/scans/store"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 
 /**
- * `/subscriptions` — the connected subscriptions screen (Requirements 10.2, 13.2,
- * 13.3, 13.6).
+ * `/subscriptions` — the connectors, and what the selected one can see.
  *
- * A **server** component that does three things and delegates the rest:
- *
- *   * resolves the signed-in user. `requireSession()` again, not because the `(app)`
- *     layout's check was insufficient but because this page needs the **user id** to
- *     scope its read, and a layout cannot hand a value to a page. Every read of
- *     `connected_subscriptions` is scoped by that id (Requirement 9.7), so another
- *     user's row resolves as absent rather than as forbidden.
- *   * reads the rows as {@link listConnectedSubscriptions} projections — the only
- *     shape allowed to cross to the browser (Requirement 10.2). The unmasked
- *     subscription id, the tenant id, the client id and the ciphertext never enter
- *     this component's props.
- *   * fixes **one** `now` for the whole render, so every row's state is judged
- *     against the same instant.
- *
- * The page is dynamic without saying so: `requireSession()` reads the session cookie
- * and resolves it against Postgres, which opts the route out of static rendering. That
- * is what makes Requirement 13.2's "on every render of the subscriptions screen"
- * true — a cached page would freeze a day count that is supposed to be counting down.
+ * The selection is in the URL (`?c=<id>`) so the inventory beside the list is a server
+ * render of the latest scan, and a link can land on one connector. With no selection the
+ * first connector is shown, so the right-hand side is never an empty column.
  */
 
 export const metadata: Metadata = {
-  title: "Subscriptions",
+  title: "Connectors",
   description:
-    "Connected Azure subscriptions, their verification state and their client " +
-    "secret expiry.",
+    "Connected Azure subscriptions, their client secret expiry and the resources each " +
+    "one can read.",
 }
 
-export default async function SubscriptionsPage() {
+export default async function SubscriptionsPage({
+  searchParams,
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}>) {
   const user = await requireSession()
   const projectScope = await selectedFilter(user.id)
+  const params = await searchParams
 
   const subscriptions = await listConnectedSubscriptions(user.id, projectScope)
+  const now = new Date()
+
+  const requested = typeof params.c === "string" ? params.c : undefined
+  const selected =
+    subscriptions.find((subscription) => subscription.id === requested) ??
+    subscriptions[0]
+  const scan = selected === undefined ? null : await readLatestScan(user.id, selected.id)
 
   return (
     <PageBody kind="wide">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-title">
-            Connectors
-          </h1>
-
-          <p className="text-sm text-muted-foreground">
-            Manage customer access, discover resources, and keep connections
-            ready for reporting.
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-col gap-1.5">
+          <h1 className="text-title">Connectors</h1>
+          <p className="max-w-[62ch] text-meta text-muted-foreground">
+            Read-only access to each customer&rsquo;s Azure subscription. A connector
+            with an expired secret fails its next run instead of delivering an empty
+            report.
           </p>
         </div>
 
@@ -67,27 +66,26 @@ export default async function SubscriptionsPage() {
             className={buttonVariants({ variant: "outline" })}
           >
             <PlusIcon aria-hidden="true" />
-            Connect a subscription
+            Add connector
           </Link>
         )}
-      </div>
+      </header>
 
-      <SubscriptionList subscriptions={subscriptions} now={new Date()} />
-
-      {/*
-        A page that stops is a page that looks like it failed to load, and a list of one
-        connection stops very early. This is not filler: an expired secret is the failure
-        that produces a plausible-looking *empty* report — it authenticates, returns zero
-        resources, and every downstream gate passes — which is the one thing worth
-        saying at the foot of the page that manages secrets.
-      */}
-      {subscriptions.length === 0 ? null : (
-        <p className="flex items-start gap-2 border-t border-border pt-5 text-xs leading-relaxed text-muted-foreground">
-          <InfoIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
-          A connection is read-only and scoped to one subscription. When its secret
-          expires the next run fails rather than delivering an empty report, so rotate
-          it before the date above rather than after.
-        </p>
+      {subscriptions.length === 0 || selected === undefined ? (
+        <SubscriptionList subscriptions={subscriptions} now={now} />
+      ) : (
+        <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
+          <SubscriptionList
+            subscriptions={subscriptions}
+            now={now}
+            selectedId={selected.id}
+          />
+          <ConnectorInventory
+            subscription={selected}
+            scan={scan}
+            canScan={canScanConnector(selected, now)}
+          />
+        </div>
       )}
     </PageBody>
   )

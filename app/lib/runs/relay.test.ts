@@ -614,6 +614,7 @@ describe("the row state type is a projection of report_runs", () => {
     const row: ReportRun = {
     workspaceId: null,
     projectId: null,
+    phaseTimings: null,
       id: "run-1",
       userId: "user-1",
       connectedSubscriptionId: "sub-1",

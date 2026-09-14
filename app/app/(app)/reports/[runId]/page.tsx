@@ -6,12 +6,15 @@ import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
+import { GapList } from "@/components/reports/gap-list"
+import { RunFailureNotice } from "@/components/reports/run-failure-notice"
 import { RunProgress } from "@/components/reports/run-progress"
+import { RunReplay } from "@/components/reports/run-replay"
 import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
+import { UtilizationCard } from "@/components/reports/utilization-card"
 import { VerificationPanel } from "@/components/reports/verification-panel"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { requireSession } from "@/lib/auth/guard"
 import { monthName } from "@/lib/close/period"
 import { toRunView, toVerificationView } from "@/lib/db/views"
@@ -23,6 +26,7 @@ import {
 import { loadRunGaps, loadRunProvenance } from "@/lib/runs/gaps"
 import { periodLine } from "@/lib/runs/presentation"
 import { findOwnedRun } from "@/lib/runs/state"
+import { loadTopUtilization } from "@/lib/runs/utilization"
 import { resolveSubscriptionState } from "@/lib/subscriptions/state"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
 import { latestForRun } from "@/lib/verifications/store"
@@ -30,36 +34,25 @@ import { latestForRun } from "@/lib/verifications/store"
 /**
  * `/reports/[runId]` — one report (Requirements 36.7, 36.10, 36.11, 40.4).
  *
- * A **server** component with one live client leaf below it: `RunProgress`, which owns
- * the stream. Everything the first paint needs is read here and passed down, so the page
- * is correct before any connection opens — and a terminal run opens no connection at all.
- *
  * ## The order is the order a reader asks in
  *
- * Which report, for which period, and did it go out — the header answers all three, with
- * the status mark beside the title. Then, on a delivered run, the verdict and the
- * snapshot it rests on, then the downloads it licenses; then how the run went. On a run
- * still in flight there is no verdict yet, so the phase track sits directly under the
- * header, where the reader is looking.
+ * Which report, for which period, did it go out — and the download, beside the title.
+ * Then, on a finished run: the verdict and the snapshot it rests on, the three busiest
+ * machines, what could not be read, and the run itself with a way to watch it again. On a
+ * run still in flight there is no verdict yet, so the live phase track sits directly
+ * under the header.
  *
  * ## Terminal state is read from the row
  *
- * Requirement 36.7. `TIMEOUT` is written by the reaper when the run's container may
- * already be gone, so it arrives with **no event to carry it** — the row is read here and
- * handed to the client leaf as `initialRun`, so the failure notice renders on a page that
- * received no events.
+ * Requirement 36.7. `TIMEOUT` is written by the reaper with **no event to carry it**, so
+ * the row is read here; a live leaf is mounted only while the run is in flight, and it
+ * refreshes this page the moment the run goes terminal.
  *
- * ## Two S3 reads, both on a terminal row only, and neither able to fail the page
+ * ## The S3 reads cannot fail the page
  *
- * `loadRunGaps` and `loadRunProvenance` each return an empty result for a non-terminal run
- * **without making a request**, and both swallow a read failure. A completed run whose
- * snapshot object cannot be read is still a completed run.
- *
- * ## The expiry banner appears here too
- *
- * Requirement 13.2 puts the approaching-expiry warning on the run screens for that
- * subscription — because this is where a consultant looks when they are about to request
- * another one.
+ * `loadRunGaps`, `loadRunProvenance` and `loadTopUtilization` each return an empty result
+ * for a non-terminal run without a request, and swallow a read failure: a completed run
+ * whose snapshot cannot be read is still a completed run.
  */
 
 type RunPageProps = Readonly<{ params: Promise<{ runId: string }> }>
@@ -67,25 +60,28 @@ type RunPageProps = Readonly<{ params: Promise<{ runId: string }> }>
 export const metadata: Metadata = {
   title: "Report",
   description:
-    "One report: its verdict, its snapshot provenance, its downloads and how the " +
-    "run went.",
+    "One report: its verdict, its snapshot, its busiest machines, its gaps and how " +
+    "the run went.",
+}
+
+function iso(value: Date | string | null): string | null {
+  if (value === null) return null
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString()
 }
 
 export default async function RunPage({ params }: RunPageProps) {
   const user = await requireSession()
-
   const { runId } = await params
 
-  // Requirements 36.10, 36.11 — scoped by `user_id` inside the statement, so another
-  // user's run matches no row and no field of it is read. `notFound()` rather than a
-  // "forbidden" page: confirming the run exists would itself be a fact about somebody
+  // Scoped by `user_id` inside the statement; another user's run is not found rather
+  // than forbidden, because confirming it exists would itself be a fact about somebody
   // else's customer.
   const run = await findOwnedRun(user.id, runId)
   if (run === undefined) notFound()
 
   const view = toRunView(run, await resolveRunExtras(run))
 
-  const [gaps, provenance, documentHtml, verification, pinned] =
+  const [gaps, provenance, documentHtml, verification, pinned, machines] =
     await Promise.all([
       loadRunGaps(run),
       loadRunProvenance(run),
@@ -94,11 +90,9 @@ export default async function RunPage({ params }: RunPageProps) {
       run.templateVersionId === null
         ? Promise.resolve(null)
         : readPinnedVersion(run.templateVersionId),
+      loadTopUtilization(run),
     ])
 
-  // The subscription may have been removed since the run — `report_runs` rows are audit
-  // artifacts and outlive the connection they targeted — so this read is allowed to come
-  // back empty and the page still renders.
   const subscription = await getConnectedSubscription(
     user.id,
     run.connectedSubscriptionId
@@ -112,14 +106,10 @@ export default async function RunPage({ params }: RunPageProps) {
       : `${subscriptionName} — ${subscriptionMaskedId}`
 
   const subscriptionState =
-    subscription === null
-      ? null
-      : resolveSubscriptionState(subscription, new Date())
+    subscription === null ? null : resolveSubscriptionState(subscription, new Date())
 
   const verificationView =
-    verification.latest === undefined
-      ? null
-      : toVerificationView(verification.latest)
+    verification.latest === undefined ? null : toVerificationView(verification.latest)
 
   const verified = verification.latest?.status === "pass"
   const delivered = run.status === "completed" && verified
@@ -135,101 +125,90 @@ export default async function RunPage({ params }: RunPageProps) {
         Reports
       </Link>
 
-      <header className="flex min-w-0 flex-col gap-1.5">
-        <p className="text-micro text-muted-foreground uppercase">
-          {monthName(view.periodStart.slice(0, 7))}
-        </p>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-title text-balance">
-            {view.templateName ?? subscriptionName}
-          </h1>
-          <RunStatusBadge status={view.status} />
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <p className="text-micro text-muted-foreground uppercase">
+            {monthName(view.periodStart.slice(0, 7))}
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-title text-balance">
+              {view.templateName ?? subscriptionName}
+            </h1>
+            <RunStatusBadge status={view.status} />
+          </div>
+          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted-foreground">
+            <span>{subscriptionName}</span>
+            {subscriptionMaskedId === null ? null : (
+              <>
+                <span aria-hidden="true">·</span>
+                <Identifier
+                  value={subscriptionMaskedId}
+                  kind="mask"
+                  label="Subscription"
+                  className="text-muted-foreground"
+                />
+              </>
+            )}
+            <span aria-hidden="true">·</span>
+            <span className="font-mono text-xs tabular-nums">{periodLine(view)}</span>
+          </p>
         </div>
-        <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted-foreground">
-          <span>{subscriptionName}</span>
-          {subscriptionMaskedId === null ? null : (
-            <>
-              <span aria-hidden="true">·</span>
-              <Identifier
-                value={subscriptionMaskedId}
-                kind="mask"
-                label="Subscription"
-                className="text-muted-foreground"
-              />
-            </>
-          )}
-          <span aria-hidden="true">·</span>
-          <span className="font-mono text-xs tabular-nums">{periodLine(view)}</span>
-        </p>
+
+        {/*
+          Requirement 40.1 — one control per recorded artifact, and only while the run is
+          `completed` **and** its stored verification passed. The gate is this expression.
+        */}
+        {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
       </header>
 
       {subscriptionState?.kind === "expiring" ? (
         <SecretExpiryBanner state={subscriptionState} />
       ) : null}
 
-      {/*
-        The verdict leads a finished run. A short reveal, because these arrive mid-read:
-        they appear on the `router.refresh()` that follows the run going terminal, on a
-        page somebody is already looking at. `prefers-reduced-motion` keeps the result
-        and drops the movement.
-
-        Two columns only when there are two things to put in them — the snapshot card
-        renders for a `completed` run alone.
-      */}
       {terminal ? (
-        <div
-          className={
-            run.status === "completed"
-              ? "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)]"
-              : "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2"
-          }
-        >
+        <>
           {/*
-            Requirement 39 — rendered for every terminal run, including one with no
-            verification: an absent section is indistinguishable from one that failed to
-            load.
+            A short reveal: these arrive on the refresh that follows the run going
+            terminal, on a page somebody is already looking at.
           */}
-          <VerificationPanel
-            verification={verificationView}
-            delivered={delivered}
-          />
+          <div
+            className={
+              run.status === "completed"
+                ? "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
+                : "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2"
+            }
+          >
+            {/* Requirement 39 — rendered for every terminal run, verified or not. */}
+            <VerificationPanel verification={verificationView} delivered={delivered} />
 
-          {run.status === "completed" ? (
-            <Card data-slot="snapshot-card">
-              <CardHeader>
-                <CardTitle>Snapshot</CardTitle>
-              </CardHeader>
-
-              <CardContent className="flex flex-col gap-4">
-                <p className="max-w-prose text-meta text-muted-foreground">
-                  Content-addressed: its id is the hash of its bytes, so a figure
-                  quoted from this report traces to exactly the data it came from.
-                </p>
+            {run.status === "completed" ? (
+              <section
+                aria-labelledby="snapshot-title"
+                data-slot="snapshot-card"
+                className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 md:p-5"
+              >
+                <div className="flex flex-col gap-0.5">
+                  <h2 id="snapshot-title" className="text-section">
+                    Snapshot
+                  </h2>
+                  <p className="text-meta text-muted-foreground">
+                    Content-addressed: its id is the hash of its bytes.
+                  </p>
+                </div>
 
                 <SnapshotProvenance run={view} provenance={provenance} />
 
-                {/*
-                  Requirements 4.9, 9.9 — the pinned version and its digest, so the rule
-                  ("last full month") and the dates it resolved to stay distinct facts.
-                */}
                 {pinned === null ? null : (
                   <dl className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
                     <div className="flex flex-col gap-0.5">
-                      <dt className="text-xs text-muted-foreground">
-                        Rendered from
-                      </dt>
+                      <dt className="text-xs text-muted-foreground">Rendered from</dt>
                       <dd className="text-sm font-medium">
                         {pinned.templateName}{" "}
-                        <span className="font-mono tabular-nums">
-                          v{pinned.version}
-                        </span>
+                        <span className="font-mono tabular-nums">v{pinned.version}</span>
                       </dd>
                     </div>
-
                     <div className="flex min-w-0 flex-col gap-0.5">
-                      <dt className="text-xs text-muted-foreground">
-                        Definition digest
-                      </dt>
+                      <dt className="text-xs text-muted-foreground">Definition digest</dt>
                       <dd>
                         <Identifier
                           value={pinned.definitionSha256}
@@ -251,33 +230,61 @@ export default async function RunPage({ params }: RunPageProps) {
                     <ArrowUpRightIcon aria-hidden="true" className="size-4" />
                   </Link>
                 )}
-              </CardContent>
-            </Card>
+              </section>
+            ) : null}
+          </div>
+
+          {run.status === "failed" ? (
+            <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
           ) : null}
-        </div>
-      ) : null}
 
-      {/*
-        Requirement 40.1 — one control per recorded artifact, and only while the run is
-        `completed` **and** its stored verification passed. The gate is this one
-        expression rather than a prop the card has to honour.
-      */}
-      {delivered ? (
-        <div className="duration-200 animate-in fade-in-0 slide-in-from-bottom-2">
-          <DownloadCard artifactKeys={view.artifactKeys} />
-        </div>
-      ) : null}
+          <UtilizationCard machines={machines} />
 
-      <section
-        aria-label="Run"
-        className="rounded-xl border border-border bg-card p-4 md:p-5"
-      >
-        <RunProgress
-          initialRun={view}
-          initialGaps={gaps}
-          subscriptionLabel={subscriptionLabel}
-        />
-      </section>
+          <RunReplay
+            status={run.status}
+            createdAt={view.createdAt}
+            claimedAt={iso(run.claimedAt)}
+            finishedAt={view.updatedAt}
+            phaseTimings={run.phaseTimings ?? null}
+          />
+
+          <section
+            aria-labelledby="gaps-title"
+            data-slot="collection-gaps"
+            className="rounded-xl border border-border bg-card"
+          >
+            <div className="flex flex-col gap-0.5 p-4 pb-3 md:px-5">
+              <h2 id="gaps-title" className="text-section">
+                Collection gaps
+              </h2>
+              <p className="text-meta text-muted-foreground">
+                What could not be read, recorded instead of filled with zeros. A gap is
+                information, not a failure.
+              </p>
+            </div>
+            <div className="border-t border-border">
+              {gaps.length === 0 ? (
+                <div className="px-4 py-4 md:px-5">
+                  <GapList gaps={gaps} />
+                </div>
+              ) : (
+                <GapList gaps={gaps} />
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <section
+          aria-label="Run"
+          className="rounded-xl border border-border bg-card p-4 md:p-5"
+        >
+          <RunProgress
+            initialRun={view}
+            initialGaps={gaps}
+            subscriptionLabel={subscriptionLabel}
+          />
+        </section>
+      )}
     </PageBody>
   )
 }

@@ -1,0 +1,1 @@
+ALTER TABLE "report_runs" ADD COLUMN "phase_timings" jsonb;

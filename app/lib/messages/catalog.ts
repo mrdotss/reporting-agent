@@ -1074,6 +1074,60 @@ export const MESSAGE_CATALOG = {
     en: "Reconnecting the live view. The run continues either way — its state is recorded, not streamed.",
     id: "Menghubungkan kembali tampilan langsung. Proses tetap berjalan — statusnya dicatat, bukan dialirkan.",
   },
+  /* A finished run's phases, replayed from its recorded timings. */
+  "ui.run_replay.heading": {
+    en: "Run",
+    id: "Proses",
+  },
+  "ui.run_replay.elapsed": {
+    en: "elapsed",
+    id: "berlangsung",
+  },
+  "ui.run_replay.phases_label": {
+    en: "Run phases",
+    id: "Tahapan proses",
+  },
+  "ui.run_replay.not_recorded": {
+    en: "This run finished before phase timings were recorded, so its queue wait and total are real and the replay paces the other phases evenly.",
+    id: "Proses ini selesai sebelum waktu tiap tahap dicatat, jadi waktu antre dan totalnya nyata, dan pemutaran ulang membagi tahap lainnya secara merata.",
+  },
+  "ui.run_table.figures": {
+    en: "Figures",
+    id: "Angka",
+  },
+  "ui.run_table.local_zone": {
+    en: "WIB",
+    id: "WIB",
+  },
+  /* The three busiest virtual machines on the report page. */
+  "ui.utilization.heading": {
+    en: "Utilization",
+    id: "Utilisasi",
+  },
+  "ui.utilization.description": {
+    en: "Top {count} virtual machines by average CPU for the period, from the snapshot this report was compiled from.",
+    id: "{count} mesin virtual teratas berdasarkan rata-rata CPU pada periode ini, dari snapshot yang menjadi dasar laporan ini.",
+  },
+  "ui.utilization.col_resource": {
+    en: "Resource",
+    id: "Sumber daya",
+  },
+  "ui.utilization.col_cpu": {
+    en: "Average CPU",
+    id: "Rata-rata CPU",
+  },
+  "ui.utilization.col_memory": {
+    en: "Memory in use",
+    id: "Memori terpakai",
+  },
+  "ui.utilization.col_finding": {
+    en: "Finding",
+    id: "Temuan",
+  },
+  "ui.utilization.idle": {
+    en: "Under {percent}% all period",
+    id: "Di bawah {percent}% sepanjang periode",
+  },
   "ui.run_progress.collection_gaps": {
     en: "Collection gaps",
     id: "Celah pengumpulan",
@@ -1255,7 +1309,7 @@ export const MESSAGE_CATALOG = {
     id: "Grup sumber daya",
   },
   "ui.scan.rescan": {
-    en: "Re-scan",
+    en: "Scan",
     id: "Pindai ulang",
   },
   "ui.scan.rescan_running": {

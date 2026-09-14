@@ -162,10 +162,15 @@ export function StepPreview({
     <div className="flex flex-col gap-4">
       <div
         data-slot="completion-summary"
-        className="flex items-start gap-2 rounded-lg border border-border px-3 py-2"
+        data-ready={ready}
+        className={
+          ready
+            ? "flex items-start gap-2 rounded-lg bg-(--status-verified-soft) px-3 py-2.5 text-(--status-verified)"
+            : "flex items-start gap-2 rounded-lg border border-border px-3 py-2.5"
+        }
       >
         {ready ? (
-          <CheckCircleIcon aria-hidden="true" className="mt-0.5 size-4" />
+          <CheckCircleIcon aria-hidden="true" weight="fill" className="mt-0.5 size-4" />
         ) : (
           <WarningCircleIcon
             aria-hidden="true"

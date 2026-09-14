@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/status-mark"
 import type { Board, BoardCell, BoardRow } from "@/lib/close/board"
 import { monthName } from "@/lib/close/period"
-import { RUN_STATUS_PRESENTATION } from "@/lib/runs/presentation"
+import { RUN_STATUS_PRESENTATION, relativeInstant } from "@/lib/runs/presentation"
 import { cn } from "@/lib/utils"
 
 /**
@@ -132,17 +132,20 @@ function CustomerName({ row }: Readonly<{ row: BoardRow }>) {
   )
 }
 
-function note(cell: BoardCell): string {
+function note(cell: BoardCell, now: Date = new Date()): string {
   const run = cell.run
+  const when = run ? ` · ${relativeInstant(run.createdAt, now)}` : ""
   switch (cell.state) {
     case "delivered":
       return run?.figures != null
-        ? `${run.figures.toLocaleString("en-US")} figures proven`
-        : "Delivered"
+        ? `${run.figures.toLocaleString("en-US")} figures${when}`
+        : `Delivered${when}`
     case "running":
-      return run ? `${RUN_STATUS_PRESENTATION[run.status].label}…` : "In flight"
+      return run
+        ? `${RUN_STATUS_PRESENTATION[run.status].label}${when}`
+        : "In flight"
     case "queued":
-      return "Waiting for a worker"
+      return `Waiting for a worker${when}`
     case "undelivered":
       return "No document went out"
     case "due":

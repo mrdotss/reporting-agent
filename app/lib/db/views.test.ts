@@ -578,6 +578,7 @@ function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
   return {
     workspaceId: null,
     projectId: null,
+    phaseTimings: null,
     id: RUN_ID,
     userId: RUN_USER_ID,
     connectedSubscriptionId: "sub-0001",

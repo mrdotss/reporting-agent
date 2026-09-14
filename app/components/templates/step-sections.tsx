@@ -1,7 +1,9 @@
 "use client"
 
 import { useCallback, useMemo, useState } from "react"
-import { ArrowDownIcon, ArrowUpIcon, PlusIcon } from "@phosphor-icons/react"
+import { PlusIcon } from "@phosphor-icons/react"
+
+import { SectionList } from "@/components/templates/section-list"
 
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 import { missingInputs } from "@/lib/profiles/offerability"
@@ -412,80 +414,42 @@ export function StepSections({
     : undefined
 
   return (
-    <div className="flex gap-4" data-testid="step-sections">
+    // The list gets the wider share: section names like "PostgreSQL Flexible Servers"
+    // wrapped to two lines when the list and the inspector split the step evenly.
+    <div
+      className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]"
+      data-testid="step-sections"
+    >
       {/* Left: section list */}
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        {(["inventory", "utilisation", "closing"] as const).map((group) => {
-          const items = grouped[group]!
-          if (items.length === 0) return null
-          return (
-            <div key={group} className="flex flex-col gap-1">
-              <h3 className="text-micro text-muted-foreground uppercase">
-                {GROUP_LABELS[group]}
-              </h3>
-              <ol
-                className="flex flex-col gap-1"
-                aria-label={`${GROUP_LABELS[group]} sections`}
-              >
-                {items.map(({ entry, section }) => {
-                  const isFixed =
-                    entry?.position === "fixed" || entry?.position === "always"
-                  const isCurrent = section.id === selectedId
-                  return (
-                    <li
-                      key={section.id}
-                      className={[
-                        "flex items-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                        isCurrent
-                          ? "border-primary bg-accent"
-                          : "border-border",
-                      ].join(" ")}
-                    >
-                      <button
-                        type="button"
-                        className="flex-1 text-left"
-                        onClick={() => setSelectedId(section.id)}
-                        aria-current={isCurrent ? "true" : undefined}
-                      >
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {entry?.number ?? "?"}
-                        </span>{" "}
-                        {resolveTitle(entry, language)}
-                      </button>
-
-                      {!isFixed && (
-                        <span className="flex gap-0.5">
-                          <button
-                            type="button"
-                            aria-label={`Move ${resolveTitle(entry, language)} up`}
-                            className="rounded p-0.5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                            onClick={() => moveSection(section.id, "up")}
-                          >
-                            <ArrowUpIcon size={14} aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label={`Move ${resolveTitle(entry, language)} down`}
-                            className="rounded p-0.5 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                            onClick={() => moveSection(section.id, "down")}
-                          >
-                            <ArrowDownIcon size={14} aria-hidden="true" />
-                          </button>
-                        </span>
-                      )}
-
-                      {isFixed && (
-                        <span className="text-xs text-muted-foreground">
-                          Fixed
-                        </span>
-                      )}
-                    </li>
-                  )
-                })}
-              </ol>
-            </div>
-          )
-        })}
+      <div className="flex min-w-0 flex-col gap-3">
+        <SectionList
+          groups={(["inventory", "utilisation", "closing"] as const).map((group) => ({
+            key: group,
+            label: GROUP_LABELS[group],
+            items: grouped[group]!.map(({ entry, section }) => ({
+              id: section.id,
+              title: resolveTitle(entry, language),
+              number: entry?.number ?? "?",
+              fixed: entry?.position === "fixed" || entry?.position === "always",
+            })),
+          }))}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onMoveStep={moveSection}
+          onReorder={(_group, orderedIds) => {
+            // Rebuild the whole list, filling the reordered group's free positions in
+            // their new order and leaving every other position exactly where it was.
+            const queue = [...orderedIds]
+            const moved = new Set(orderedIds)
+            updateSections(
+              sections.map((section) =>
+                moved.has(section.id)
+                  ? sections.find((candidate) => candidate.id === queue.shift())!
+                  : section
+              )
+            )
+          }}
+        />
 
         {/* Add section */}
         {addable.length > 0 && (

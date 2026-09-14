@@ -103,18 +103,33 @@ afterEach(() => {
   cleanup()
 })
 
-function controls(): HTMLElement[] {
-  return screen.getAllByRole("button")
+/**
+ * The downloads are one "Download" button that opens a menu of the artifacts, so every
+ * activation opens the menu first and then chooses the item.
+ */
+async function openMenu(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole("button", { name: /download/i }))
+}
+
+async function controls(user: ReturnType<typeof userEvent.setup>): Promise<HTMLElement[]> {
+  await openMenu(user)
+  return screen.findAllByRole("menuitem")
+}
+
+async function choose(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
+  await openMenu(user)
+  await user.click(await screen.findByRole("menuitem", { name }))
 }
 
 describe("Requirement 40.1 — exactly two controls, and no URL at render", () => {
-  test("the two report keys get a control each and the snapshot key gets none", () => {
+  test("the two report keys get a control each and the snapshot key gets none", async () => {
+    const user = userEvent.setup()
     render(<DownloadCard artifactKeys={ARTIFACT_KEYS} />)
 
-    expect(controls()).toHaveLength(2)
-    expect(screen.getByRole("button", { name: /word document/i })).toBeVisible()
-    expect(screen.getByRole("button", { name: /^pdf$/i })).toBeVisible()
-    expect(screen.queryByRole("button", { name: /snapshot/i })).toBeNull()
+    expect(await controls(user)).toHaveLength(2)
+    expect(screen.getByRole("menuitem", { name: /word document/i })).toBeVisible()
+    expect(screen.getByRole("menuitem", { name: /^pdf/i })).toBeVisible()
+    expect(screen.queryByRole("menuitem", { name: /snapshot/i })).toBeNull()
   })
 
   test("no request is made and no URL appears in the markup before an activation", () => {
@@ -149,8 +164,8 @@ describe("Requirement 40.3 — a fresh URL per activation, held nowhere", () => 
     const user = userEvent.setup()
     render(<DownloadCard artifactKeys={ARTIFACT_KEYS} />)
 
-    await user.click(screen.getByRole("button", { name: /word document/i }))
-    await user.click(screen.getByRole("button", { name: /^pdf$/i }))
+    await choose(user, /word document/i)
+    await choose(user, /^pdf\b.*\.pdf$/i)
 
     expect(requested).toHaveLength(2)
     expect(
@@ -169,9 +184,8 @@ describe("Requirement 40.3 — a fresh URL per activation, held nowhere", () => 
     const user = userEvent.setup()
     const { container } = render(<DownloadCard artifactKeys={ARTIFACT_KEYS} />)
 
-    const docx = screen.getByRole("button", { name: /word document/i })
-    await user.click(docx)
-    await user.click(docx)
+    await choose(user, /word document/i)
+    await choose(user, /word document/i)
 
     expect(requested).toHaveLength(2)
     expect(assigned[0]).not.toBe(assigned[1])
@@ -193,18 +207,18 @@ describe("Requirement 40.7 — a failed mint keeps the control", () => {
       })
 
     render(<DownloadCard artifactKeys={ARTIFACT_KEYS} />)
-    const docx = screen.getByRole("button", { name: /word document/i })
-    await user.click(docx)
+    await choose(user, /word document/i)
 
     const notice = await screen.findByText(/unavailable for download/i)
     expect(notice).toBeVisible()
     expect(notice.getAttribute("aria-live")).toBe("polite")
     expect(assigned).toEqual([])
 
-    // Still two controls, neither disabled, and a second activation is made.
-    expect(controls()).toHaveLength(2)
-    expect(docx).not.toBeDisabled()
-    await user.click(docx)
+    // Still two controls, the trigger enabled again, and a second activation is made.
+    expect(screen.getByRole("button", { name: /download/i })).not.toBeDisabled()
+    const items = await controls(user)
+    expect(items).toHaveLength(2)
+    await user.click(screen.getByRole("menuitem", { name: /word document/i }))
     expect(requested).toHaveLength(2)
   })
 })

@@ -21,7 +21,7 @@ import { cn } from "@/lib/utils"
 
 /** Where each top-level path sits: this period's work, or the library it is built from. */
 const TRAIL: readonly { prefix: string; parent: "period" | "Library"; label: string }[] = [
-  { prefix: "/dashboard", parent: "period", label: "Close board" },
+  { prefix: "/dashboard", parent: "period", label: "Overview" },
   { prefix: "/reports/new", parent: "period", label: "Request report" },
   { prefix: "/reports", parent: "period", label: "Reports" },
   { prefix: "/report-profiles", parent: "Library", label: "Presets" },

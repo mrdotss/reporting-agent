@@ -206,7 +206,7 @@ export function RotateSecretDialog({
         }
       >
         <ArrowsClockwiseIcon aria-hidden="true" />
-        Rotate the secret
+        Rotate
       </DialogTrigger>
 
       <DialogContent>

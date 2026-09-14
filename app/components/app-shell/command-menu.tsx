@@ -35,7 +35,7 @@ import { workspaceMutation } from "@/components/workspaces/workspace-context"
 import type { SidebarCustomer } from "@/components/app-shell/app-sidebar"
 
 const PAGES = [
-  { href: "/dashboard", label: "Close board", icon: SquaresFourIcon },
+  { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
   { href: "/report-profiles", label: "Presets", icon: StackIcon },
   { href: "/subscriptions", label: "Connectors", icon: PlugsIcon },
