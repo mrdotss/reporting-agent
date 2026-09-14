@@ -41,6 +41,7 @@ function view(
   overrides: Partial<ConnectedSubscriptionView> = {}
 ): ConnectedSubscriptionView {
   return {
+    provider: "azure",
     id: "sub-1",
     displayName: "Northwind production",
     maskedSubscriptionId: "********-****-****-****-********3301",

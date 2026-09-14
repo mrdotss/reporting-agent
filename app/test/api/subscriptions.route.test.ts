@@ -98,6 +98,7 @@ const NOW = new Date("2026-07-15T09:30:00.000Z")
 
 /** What the store returns and the only shape allowed to cross to a client. */
 const VIEW: ConnectedSubscriptionView = {
+  provider: "azure",
   id: "sub-01HZX9",
   displayName: "Northwind production",
   maskedSubscriptionId: "************************************3301",
@@ -395,6 +396,11 @@ describe("Requirements 10.2, 12.5, 12.14 — POST /api/subscriptions", () => {
       // customer's own telemetry depth, carrying no secret and naming no resource. The
       // profile wizard reads it to say what a trend can cover.
       "metricsHistorySince",
+
+      // Reviewed and admitted: the source this connector reads, one of three fixed words.
+
+      "provider",
+
       "scopeVerified",
       "secretExpiresAt",
       "status",

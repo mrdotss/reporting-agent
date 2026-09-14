@@ -127,6 +127,7 @@ const IDENTITY: SubscriptionIdentity = {
 
 /** What the store returns, and the only shape allowed to cross to a client. */
 const VIEW: ConnectedSubscriptionView = {
+  provider: "azure",
   id: SUBSCRIPTION_ROW_ID,
   displayName: "Northwind production",
   maskedSubscriptionId: "************************************3301",
@@ -398,6 +399,11 @@ describe("Requirements 13.7, 13.8 — the identity, the preflight, then the writ
       // customer's own telemetry depth, carrying no secret and naming no resource. The
       // profile wizard reads it to say what a trend can cover.
       "metricsHistorySince",
+
+      // Reviewed and admitted: the source this connector reads, one of three fixed words.
+
+      "provider",
+
       "scopeVerified",
       "secretExpiresAt",
       "status",

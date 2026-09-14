@@ -227,7 +227,7 @@ export function SubscriptionList({ subscriptions, now, selectedId }: Subscriptio
               )}
             >
               <header className="flex items-center gap-2.5">
-                <ProviderMark kind="azure" />
+                <ProviderMark kind={view.provider} />
                 {/*
                   The name is the selection. Its link covers the whole card through
                   `after:inset-0`, and the actions below sit above that layer, so a click

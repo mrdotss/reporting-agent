@@ -128,6 +128,11 @@ export async function POST(request: Request): Promise<Response> {
         case "subscription_inactive":
           return unprocessable(thrown.message, rejection.code)
 
+        case "provider_mismatch":
+          // 422: well-formed, understood, and refused because a connector and a preset
+          // from different sources cannot make one report. The fix is the other select.
+          return unprocessable(thrown.message, "PROVIDER_MISMATCH")
+
         case "front_matter_values_missing":
           // 422, and the same reasoning as `template_unversioned`: the request is
           // well-formed, the answer is that this profile cannot run yet, and the

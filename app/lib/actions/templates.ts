@@ -227,6 +227,22 @@ export async function publishTemplateVersion(
   )
   if (providerIssue !== null) throw new TemplateInvalidError([providerIssue])
 
+  // The preset's own provider, chosen when it was created, is the lock even before a
+  // first version exists: a draft edited to declare another source would otherwise
+  // publish a preset whose sections belong to a catalogue it was never created for.
+  const templateRow = await store.getTemplate(userId, templateId)
+  const declaredProvider = (definition as Record<string, unknown>).provider
+  if (declaredProvider !== undefined && declaredProvider !== templateRow.provider) {
+    throw new TemplateInvalidError([
+      {
+        path: ["provider"],
+        message:
+          `This preset was created for "${templateRow.provider}" and its source is ` +
+          `locked, but the definition declares "${String(declaredProvider)}".`,
+      },
+    ])
+  }
+
   // --- The design is the profile's own -------------------------------------
   // It was resolved from a Brand here, on Requirement 2.6/2.7's reading that one
   // consultancy has one visual identity. The Brand is gone: a profile is a

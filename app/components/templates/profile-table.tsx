@@ -4,6 +4,11 @@ import Link from "next/link"
 import { useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import {
+  ProviderMark,
+  SOURCE_NAMES,
+  type SourceKind,
+} from "@/components/subscriptions/provider-mark"
+import {
   CopyIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
@@ -87,6 +92,16 @@ export function ProfileTable({
   const router = useRouter()
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
+  // Which source's presets are shown. A preset belongs to one source, and a consultant
+  // looking for the AWS one should not scan past every Azure one to find it.
+  const [provider, setProvider] = useState<"all" | SourceKind>("all")
+  const providers = useMemo(() => {
+    const seen = new Map<SourceKind, number>()
+    for (const template of templates) {
+      seen.set(template.provider, (seen.get(template.provider) ?? 0) + 1)
+    }
+    return [...seen]
+  }, [templates])
   const [pending, startTransition] = useTransition()
 
   /** The profile the confirm dialog is about, or `null` when it is closed. */
@@ -102,6 +117,7 @@ export function ProfileTable({
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return templates
+      .filter((t) => provider === "all" || t.provider === provider)
       .filter((t) =>
         filter === "all"
           ? true
@@ -115,7 +131,7 @@ export function ProfileTable({
           t.name.toLowerCase().includes(needle) ||
           t.description.toLowerCase().includes(needle)
       )
-  }, [templates, query, filter])
+  }, [templates, query, filter, provider])
 
   async function confirmDelete(template: TemplateView) {
     const response = await fetch(`/api/report-profiles/${template.id}`, {
@@ -177,6 +193,26 @@ export function ProfileTable({
           ))}
         </div>
 
+        <div className="flex gap-1.5" role="group" aria-label="Filter by source">
+          {(
+            [["all", "All sources", templates.length], ...providers.map(([kind, count]) => [kind, SOURCE_NAMES[kind], count])] as const
+          ).map(([value, sourceLabel, count]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant={provider === value ? "secondary" : "ghost"}
+              aria-pressed={provider === value}
+              onClick={() => setProvider(value as "all" | SourceKind)}
+            >
+              {value === "all" ? null : (
+                <ProviderMark kind={value as SourceKind} className="[&_svg]:size-3.5" />
+              )}
+              {sourceLabel}{" "}
+              <span className="font-mono tabular-nums opacity-65">{count}</span>
+            </Button>
+          ))}
+        </div>
+
         <p
           aria-live="polite"
           className="ms-auto text-xs text-muted-foreground"
@@ -205,12 +241,16 @@ export function ProfileTable({
                   {/* A column, because `Identifier` is inline-flex: dropped straight
                       after the link it ran onto the end of the name. */}
                   <div className="flex flex-col items-start gap-0.5">
+                  <span className="flex items-center gap-2">
+                  <ProviderMark kind={template.provider} className="[&_svg]:size-4" />
+                  <span className="sr-only">{SOURCE_NAMES[template.provider]} preset: </span>
                   <Link
                     href={`/report-profiles/${template.id}/edit`}
                     className="font-medium underline-offset-4 hover:underline focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
                   >
                     {template.name}
                   </Link>
+                  </span>
                   {template.currentVersionSha256 === null ? null : (
                     <Identifier
                       value={template.currentVersionSha256}

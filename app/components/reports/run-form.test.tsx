@@ -69,6 +69,7 @@ function subscription(
   over: Partial<ConnectedSubscriptionView> = {}
 ): ConnectedSubscriptionView {
   return {
+    provider: "azure",
     id: "sub-0001",
     displayName: "Contoso production",
     maskedSubscriptionId: "…c0ffee",
@@ -84,6 +85,7 @@ function subscription(
 
 function template(over: Partial<TemplateView> = {}): TemplateView {
   return {
+    provider: "azure",
     id: "tmpl-v1",
     name: "Monthly utilization",
     description: "CPU, memory, disk and network.",
@@ -475,5 +477,43 @@ describe("RunForm — an incomplete v2 submission is refused here, not by the se
       )
     ).toBeNull()
     expect(submitButton().disabled).toBe(false)
+  })
+})
+
+describe("presets narrow to the selected connector's source", () => {
+  // A preset is written for one source, and a run pairs a connector only with presets
+  // for the same one. The enqueue refuses a mismatched pair; the form never offers one.
+  test("an AWS connector offers only AWS presets", () => {
+    render(
+      <RunForm
+        subscriptions={[
+          subscription({ id: "sub-aws", displayName: "AWS production", provider: "aws" }),
+        ]}
+        templates={[
+          template({ id: "tmpl-azure", name: "Azure monthly", provider: "azure" }),
+          template({ id: "tmpl-aws", name: "AWS monthly", provider: "aws" }),
+        ]}
+        nowIso={NOW_ISO}
+      />
+    )
+
+    expect(screen.getByText(/Showing Amazon Web Services presets/)).toBeInTheDocument()
+    expect(screen.queryByText("Azure monthly")).toBeNull()
+    expect(screen.getAllByText("AWS monthly").length).toBeGreaterThan(0)
+  })
+
+  test("a connector whose source has no preset says so rather than offering another", () => {
+    render(
+      <RunForm
+        subscriptions={[
+          subscription({ id: "sub-aws", displayName: "AWS production", provider: "aws" }),
+        ]}
+        templates={[template({ id: "tmpl-azure", name: "Azure monthly", provider: "azure" })]}
+        nowIso={NOW_ISO}
+      />
+    )
+
+    expect(screen.getByText(/No Amazon Web Services preset yet/)).toBeInTheDocument()
+    expect(screen.queryByText("Azure monthly")).toBeNull()
   })
 })

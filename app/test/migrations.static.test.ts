@@ -1013,6 +1013,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "run_error_code",
       "run_status",
       "scan_status",
+      "source_provider",
       "subscription_status",
       "table_style",
       "theme_preset",

@@ -1181,6 +1181,14 @@
       "en": "What couldn’t be read, recorded instead of filled with zeros. A gap is information, not a failure.",
       "id": "Apa yang tidak dapat dibaca, dicatat alih-alih diisi nol. Celah adalah informasi, bukan kegagalan."
     },
+    "ui.run_form.no_provider_presets": {
+      "en": "No {provider} preset yet. A preset is written for one source, so create one for {provider} first.",
+      "id": "Belum ada preset {provider}. Preset ditulis untuk satu sumber, jadi buat preset untuk {provider} terlebih dahulu."
+    },
+    "ui.run_form.provider_presets": {
+      "en": "Showing {provider} presets, the source this connector reads.",
+      "id": "Menampilkan preset {provider}, sumber yang dibaca konektor ini."
+    },
     "ui.run_table.figures": {
       "en": "Figures",
       "id": "Angka"

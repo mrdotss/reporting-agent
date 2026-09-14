@@ -113,6 +113,8 @@ export type ConnectedSubscriptionView = {
    */
   metricsHistorySince: string | null
   status: SubscriptionStatus
+  /** The source this connector reads; a run pairs it only with presets for the same one. */
+  provider: ConnectedSubscription["provider"]
 }
 
 /**
@@ -141,6 +143,7 @@ export function toConnectedSubscriptionView(
     fidelityTier: row.fidelityTier,
     metricsHistorySince: row.metricsHistorySince?.toISOString() ?? null,
     status: row.status,
+    provider: row.provider,
   }
 }
 
@@ -528,6 +531,8 @@ export type TemplateView = {
   schemaVersion: number
   createdAt: string
   updatedAt: string
+  /** The source this preset is written for, set when it was created and locked. */
+  provider: ReportTemplate["provider"]
 }
 
 /**
@@ -613,6 +618,7 @@ export function toTemplateView(
     schemaVersion: currentVersion?.schemaVersion ?? MIN_SCHEMA_VERSION,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    provider: row.provider,
   }
 }
 

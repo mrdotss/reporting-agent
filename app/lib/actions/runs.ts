@@ -111,6 +111,11 @@ export type EnqueueRejection =
    * finished in the wizard needs step 7, not a different template.
    */
   | { readonly kind: "template_unversioned" }
+  | {
+      readonly kind: "provider_mismatch"
+      readonly connectorProvider: string
+      readonly presetProvider: string
+    }
   /**
    * Requirements 4.6, 4.7, 4.11 — the pinned version's period specification is
    * unrecognized, or resolves to a window that cannot be collected.
@@ -542,6 +547,25 @@ export async function enqueueRun(
   // `unrecognized_period` for anything outside the six kinds (Requirement 4.11),
   // and `declaredScopes` walks a `blocks` array that may not be one.
   const definition = pinned.definition as TemplateDefinition
+
+  // 3b — the source. A preset's sections are one provider's catalogue and a connector
+  // reads one provider's estate, so the two must name the same one. The pinned version
+  // is what runs, so it is the one compared; a definition from before providers were
+  // recorded on it is Azure, which every such preset was.
+  const declaredProvider = (definition as { readonly provider?: unknown }).provider
+  const presetProvider =
+    typeof declaredProvider === "string" ? declaredProvider : "azure"
+  if (presetProvider !== subscription.provider) {
+    throw new EnqueueRejectedError(
+      {
+        kind: "provider_mismatch",
+        connectorProvider: subscription.provider,
+        presetProvider,
+      },
+      `That preset is written for ${presetProvider}, but the connector reads ` +
+        `${subscription.provider}. Choose a preset for the same source.`
+    )
+  }
 
   // 4 — the period, resolved from the pinned specification rather than
   //     submitted (Requirements 4.3, 4.5, 4.6, 4.7, 4.11). Every run resolves

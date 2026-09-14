@@ -1,5 +1,6 @@
 import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
+import { SUPPORTED_PROVIDERS } from "@/lib/templates/definition"
 
 /**
  * Every input the template routes parse — bodies, path parameters and search
@@ -102,6 +103,16 @@ export const templateCreateInputSchema = z
     name: templateNameSchema,
     description: templateDescriptionSchema.optional(),
     definition: z.unknown().optional(),
+    /**
+     * The source the preset is written for. Only a source with a section catalogue can
+     * be chosen; the others are declared in the enum and refused here until one ships.
+     */
+    provider: z
+      .enum(SUPPORTED_PROVIDERS, {
+        error:
+          "Presets can only be created for Microsoft Azure until a catalogue exists for that source.",
+      })
+      .optional(),
   })
   .strict()
 

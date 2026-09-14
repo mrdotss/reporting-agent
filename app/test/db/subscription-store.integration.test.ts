@@ -266,6 +266,11 @@ describe("createConnectedSubscription", () => {
       // resource — read by the profile wizard to say what a trend can cover.
       "metricsHistorySince",
       "projectId",
+
+      // Reviewed and admitted: the source this connector reads, one of three fixed words.
+
+      "provider",
+
       "scopeVerified",
       "secretExpiresAt",
       "status",

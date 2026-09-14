@@ -88,10 +88,15 @@ export function EMPTY_DRAFT(name: string): TemplateDefinition {
  * `schema_version`-specific branch, so the same starting preset is correct at
  * every version.
  */
-export function EMPTY_DRAFT_V3(name: string): TemplateDefinition {
+export function EMPTY_DRAFT_V3(
+  name: string,
+  provider: "azure" | "aws" | "onprem" = "azure"
+): TemplateDefinition {
   return {
     schema_version: 3,
-    provider: "azure",
+    // The preset's own source. Only `azure` has a catalogue and a create path today, so
+    // the definition type still names it; the value is the preset row's, not a default.
+    provider: provider as "azure",
     identity: { name, description: "", report_title: name, language: "en" },
     sections: [],
     period: { kind: "last_full_month" },

@@ -31,6 +31,7 @@ import {
   MAX_REVISION_NOTE_LENGTH,
 } from "@/lib/runs/input"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
+import { SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
 
 /**
  * Request a report run (Requirements 37.1, 37.2, 37.4, 37.9, 37.10).
@@ -165,7 +166,19 @@ export function RunForm({
   const [connectedSubscriptionId, setConnectedSubscriptionId] = useState(
     selectable[0]?.id ?? ""
   )
-  const runnable = templates.filter(
+
+  // A preset is written for one source and a run pairs a connector only with presets
+  // for the same one, so the preset choices narrow to the selected connector's provider.
+  // The enqueue refuses a mismatched pair as well; this is what keeps the form from
+  // offering one.
+  const providerOf = (subscriptionId: string) =>
+    subscriptions.find((entry) => entry.id === subscriptionId)?.provider ?? "azure"
+  const selectedProvider = providerOf(connectedSubscriptionId)
+  const providerName = SOURCE_NAMES[selectedProvider]
+  const forProvider = templates.filter(
+    (template) => template.provider === selectedProvider
+  )
+  const runnable = forProvider.filter(
     (template) => template.currentVersion !== null
   )
 
@@ -420,7 +433,20 @@ export function RunForm({
         */}
         <Select
           value={connectedSubscriptionId}
-          onValueChange={(value) => value && setConnectedSubscriptionId(value)}
+          onValueChange={(value) => {
+            if (!value) return
+            setConnectedSubscriptionId(value)
+            // A preset for another source is no longer a valid choice; move to the
+            // first runnable preset for this connector's source instead.
+            const nextProvider = providerOf(value)
+            if (templates.find((entry) => entry.id === templateId)?.provider !== nextProvider) {
+              setTemplateId(
+                templates.find(
+                  (entry) => entry.provider === nextProvider && entry.currentVersion !== null
+                )?.id ?? ""
+              )
+            }
+          }}
         >
           <SelectTrigger
             id={subscriptionFieldId}
@@ -506,7 +532,7 @@ export function RunForm({
           </SelectTrigger>
 
           <SelectContent>
-            {templates.map((template) => (
+            {forProvider.map((template) => (
               <SelectItem
                 key={template.id}
                 value={template.id}
@@ -530,11 +556,19 @@ export function RunForm({
           <FieldDescription>
             {messageText("ui.run_form.no_templates_hint", "en")}
           </FieldDescription>
+        ) : forProvider.length === 0 ? (
+          <FieldDescription>
+            {messageText("ui.run_form.no_provider_presets", "en", { provider: providerName })}
+          </FieldDescription>
         ) : runnable.length === 0 ? (
           <FieldDescription>
             {messageText("ui.run_form.no_template_versions_hint", "en")}
           </FieldDescription>
-        ) : null}
+        ) : (
+          <FieldDescription>
+            {messageText("ui.run_form.provider_presets", "en", { provider: providerName })}
+          </FieldDescription>
+        )}
       </Field>
 
       {selectedTemplate?.currentVersionSha256 == null ? null : (
