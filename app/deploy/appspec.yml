@@ -1,0 +1,39 @@
+# CodeDeploy's instructions for one release of the web app on the on-premises server.
+#
+# The bundle CodeBuild uploads has this file at its root (see buildspec.yml):
+#   appspec.yml
+#   RELEASE                  build number and commit
+#   release.tar.gz           the standalone server: app/server.js, node_modules, static, public
+#   deploy/hooks/*.sh        the scripts below
+#   deploy/migrate.cjs       the bundled migration runner
+#   deploy/migrations/       lib/db/migrations, as committed
+#   deploy/reporting-agent.service
+#
+# Every release lands in a fresh `incoming` directory; the hooks move it to
+# /opt/reporting-agent-app/releases/<deployment id>, run the migrations, point `current`
+# at it, restart the service and check /api/health. If the check fails, `current` is
+# pointed back at the previous release and the hook fails, so CodeDeploy marks the
+# deployment failed.
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /opt/reporting-agent-app/incoming
+file_exists_behavior: OVERWRITE
+hooks:
+  BeforeInstall:
+    - location: deploy/hooks/before-install.sh
+      timeout: 120
+      runas: root
+  AfterInstall:
+    - location: deploy/hooks/after-install.sh
+      timeout: 600
+      runas: root
+  ApplicationStart:
+    - location: deploy/hooks/application-start.sh
+      timeout: 180
+      runas: root
+  ValidateService:
+    - location: deploy/hooks/validate-service.sh
+      timeout: 240
+      runas: root

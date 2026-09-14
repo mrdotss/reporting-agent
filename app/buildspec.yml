@@ -1,0 +1,76 @@
+# CodeBuild spec for the web app — project `reporting-agent-app-build`, triggered by every
+# push to main.
+#
+# One run takes a commit all the way to the on-premises server:
+#
+#   install     Node and pnpm at the server's versions, uv for the agent's Python
+#   pre_build   agent venv (the mirror tests run the Python validator), install,
+#               typecheck, tests
+#   build       next build → package → CodeDeploy, then wait for the deployment
+#
+# Deploying inside `build` rather than `post_build` is deliberate: post_build runs even
+# when an earlier phase failed, and a failed test must never reach the server. The build
+# goes red when the deployment does, so the build status is the deploy status.
+#
+# No runtime secrets here. `next build` needs none (lib/env.ts reads at request time), and
+# the server keeps its own in /etc/reporting-agent/app.env. Database integration tests
+# skip without TEST_DATABASE_URL.
+version: 0.2
+
+env:
+  shell: bash
+  variables:
+    NODE_VERSION: "24.19.0"     # /usr/bin/node on the app server
+    PNPM_VERSION: "11.20.0"
+    UV_VERSION: "0.12.2"
+    ESBUILD_VERSION: "0.28.1"   # the version the app's lockfile already resolves
+    RELEASE_BUCKET: reporting-agent-releases-279199663312-us-east-1
+    DEPLOY_APPLICATION: reporting-agent-app
+    DEPLOY_GROUP: production
+    NEXT_TELEMETRY_DISABLED: "1"
+
+phases:
+  install:
+    commands:
+      - curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" | tar -xJ -C /opt
+      - export PATH="/opt/node-v${NODE_VERSION}-linux-x64/bin:$PATH"
+      - npm install -g "pnpm@${PNPM_VERSION}"
+      - curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | env UV_INSTALL_DIR=/opt/uv INSTALLER_NO_MODIFY_PATH=1 sh
+      - export PATH="/opt/uv:$PATH"
+      - node --version && pnpm --version && uv --version
+
+  pre_build:
+    commands:
+      - cd "$CODEBUILD_SRC_DIR/agent"
+      - uv venv --python 3.12 .venv
+      - uv pip install --python .venv/bin/python --require-hashes -r requirements-dev.lock
+      - cd "$CODEBUILD_SRC_DIR/app"
+      - pnpm install --frozen-lockfile
+      - pnpm run typecheck
+      - pnpm test
+
+  build:
+    commands:
+      - cd "$CODEBUILD_SRC_DIR/app"
+      - pnpm run build
+      - bash deploy/package.sh "$CODEBUILD_SRC_DIR/.bundle"
+      - REVISION_KEY="app/$(date -u +%Y%m%dT%H%M%SZ)-${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}.zip"
+      - >-
+        aws deploy push
+        --application-name "$DEPLOY_APPLICATION"
+        --source "$CODEBUILD_SRC_DIR/.bundle"
+        --s3-location "s3://$RELEASE_BUCKET/$REVISION_KEY"
+        --description "commit ${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}, build $CODEBUILD_BUILD_NUMBER"
+      - >-
+        DEPLOYMENT_ID=$(aws deploy create-deployment
+        --application-name "$DEPLOY_APPLICATION"
+        --deployment-group-name "$DEPLOY_GROUP"
+        --s3-location "bucket=$RELEASE_BUCKET,key=$REVISION_KEY,bundleType=zip"
+        --file-exists-behavior OVERWRITE
+        --description "commit ${CODEBUILD_RESOLVED_SOURCE_VERSION:0:12}, build $CODEBUILD_BUILD_NUMBER"
+        --query deploymentId --output text)
+      - echo "CodeDeploy deployment $DEPLOYMENT_ID"
+      - >-
+        aws deploy wait deployment-successful --deployment-id "$DEPLOYMENT_ID" ||
+        { aws deploy get-deployment --deployment-id "$DEPLOYMENT_ID"
+        --query 'deploymentInfo.{status:status,error:errorInformation}' --output json; exit 1; }

@@ -10,6 +10,16 @@ const repoRoot = path.resolve(appRoot, "..")
 
 const nextConfig: NextConfig = {
   /**
+   * A self-contained server under `.next/standalone`, with only the `node_modules` the
+   * app actually imports. CodeBuild ships that directory as the release, so the server
+   * runs `node server.js` without installing dependencies or compiling anything. Because
+   * the trace root below is the monorepo root, the server lands at
+   * `.next/standalone/app/server.js`; `.next/static` and `public` are copied beside it
+   * by `buildspec.yml`, since the standalone output deliberately leaves them out.
+   */
+  output: "standalone",
+
+  /**
    * Resolve modules from the monorepo root, not from `app/`.
    *
    * `lib/templates/catalog.ts` imports
