@@ -14,10 +14,12 @@ import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { UtilizationCard } from "@/components/reports/utilization-card"
 import { VerificationPanel } from "@/components/reports/verification-panel"
+import { WatchRunButton } from "@/components/reports/watch-run-button"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { requireSession } from "@/lib/auth/guard"
 import { monthName } from "@/lib/close/period"
 import { toRunView, toVerificationView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
 import {
   loadRunDocumentHtml,
   readPinnedVersion,
@@ -36,11 +38,10 @@ import { latestForRun } from "@/lib/verifications/store"
  *
  * ## The order is the order a reader asks in
  *
- * Which report, for which period, did it go out — and the download, beside the title.
- * Then, on a finished run: the verdict and the snapshot it rests on, the three busiest
- * machines, what could not be read, and the run itself with a way to watch it again. On a
- * run still in flight there is no verdict yet, so the live phase track sits directly
- * under the header.
+ * Which report, for which period, did it go out — with Watch and Download beside the
+ * title. Then how the run went, as six phases; then the verdict and the snapshot it rests
+ * on, the three busiest machines, and what could not be read. On a run still in flight
+ * the live phase track takes the run's place and the rest waits for the verdict.
  *
  * ## Terminal state is read from the row
  *
@@ -51,8 +52,7 @@ import { latestForRun } from "@/lib/verifications/store"
  * ## The S3 reads cannot fail the page
  *
  * `loadRunGaps`, `loadRunProvenance` and `loadTopUtilization` each return an empty result
- * for a non-terminal run without a request, and swallow a read failure: a completed run
- * whose snapshot cannot be read is still a completed run.
+ * for a non-terminal run without a request, and swallow a read failure.
  */
 
 type RunPageProps = Readonly<{ params: Promise<{ runId: string }> }>
@@ -60,8 +60,8 @@ type RunPageProps = Readonly<{ params: Promise<{ runId: string }> }>
 export const metadata: Metadata = {
   title: "Report",
   description:
-    "One report: its verdict, its snapshot, its busiest machines, its gaps and how " +
-    "the run went.",
+    "One report: how the run went, its verdict, its snapshot, its busiest machines " +
+    "and its gaps.",
 }
 
 function iso(value: Date | string | null): string | null {
@@ -74,8 +74,7 @@ export default async function RunPage({ params }: RunPageProps) {
   const { runId } = await params
 
   // Scoped by `user_id` inside the statement; another user's run is not found rather
-  // than forbidden, because confirming it exists would itself be a fact about somebody
-  // else's customer.
+  // than forbidden.
   const run = await findOwnedRun(user.id, runId)
   if (run === undefined) notFound()
 
@@ -154,11 +153,14 @@ export default async function RunPage({ params }: RunPageProps) {
           </p>
         </div>
 
-        {/*
-          Requirement 40.1 — one control per recorded artifact, and only while the run is
-          `completed` **and** its stored verification passed. The gate is this expression.
-        */}
-        {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
+        <div className="flex flex-wrap items-start gap-2">
+          {terminal ? <WatchRunButton /> : null}
+          {/*
+            Requirement 40.1 — one control per recorded artifact, and only while the run
+            is `completed` **and** its stored verification passed.
+          */}
+          {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
+        </div>
       </header>
 
       {subscriptionState?.kind === "expiring" ? (
@@ -167,10 +169,18 @@ export default async function RunPage({ params }: RunPageProps) {
 
       {terminal ? (
         <>
-          {/*
-            A short reveal: these arrive on the refresh that follows the run going
-            terminal, on a page somebody is already looking at.
-          */}
+          <RunReplay
+            status={run.status}
+            createdAt={view.createdAt}
+            claimedAt={iso(run.claimedAt)}
+            finishedAt={view.updatedAt}
+            phaseTimings={run.phaseTimings ?? null}
+          />
+
+          {run.status === "failed" ? (
+            <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
+          ) : null}
+
           <div
             className={
               run.status === "completed"
@@ -189,36 +199,30 @@ export default async function RunPage({ params }: RunPageProps) {
               >
                 <div className="flex flex-col gap-0.5">
                   <h2 id="snapshot-title" className="text-section">
-                    Snapshot
+                    {messageText("ui.snapshot.label_snapshot", "en")}
                   </h2>
                   <p className="text-meta text-muted-foreground">
-                    Content-addressed: its id is the hash of its bytes.
+                    {messageText("ui.snapshot.subtitle", "en")}
                   </p>
                 </div>
 
                 <SnapshotProvenance run={view} provenance={provenance} />
 
                 {pinned === null ? null : (
-                  <dl className="grid gap-4 border-t border-border pt-4 sm:grid-cols-2">
-                    <div className="flex flex-col gap-0.5">
-                      <dt className="text-xs text-muted-foreground">Rendered from</dt>
-                      <dd className="text-sm font-medium">
-                        {pinned.templateName}{" "}
-                        <span className="font-mono tabular-nums">v{pinned.version}</span>
-                      </dd>
-                    </div>
-                    <div className="flex min-w-0 flex-col gap-0.5">
-                      <dt className="text-xs text-muted-foreground">Definition digest</dt>
-                      <dd>
-                        <Identifier
-                          value={pinned.definitionSha256}
-                          kind="digest"
-                          label="Definition digest"
-                          className="text-muted-foreground"
-                        />
-                      </dd>
-                    </div>
-                  </dl>
+                  <div className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-xs text-muted-foreground">Rendered from</span>
+                    <span className="flex flex-wrap items-center gap-x-1.5 text-sm">
+                      {pinned.templateName}{" "}
+                      <span className="font-mono tabular-nums">v{pinned.version}</span>
+                      <span aria-hidden="true" className="text-muted-foreground">·</span>
+                      <span className="text-muted-foreground">definition</span>
+                      <Identifier
+                        value={pinned.definitionSha256}
+                        kind="digest"
+                        label="Definition digest"
+                      />
+                    </span>
+                  </div>
                 )}
 
                 {documentHtml === null ? null : (
@@ -234,19 +238,7 @@ export default async function RunPage({ params }: RunPageProps) {
             ) : null}
           </div>
 
-          {run.status === "failed" ? (
-            <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
-          ) : null}
-
           <UtilizationCard machines={machines} />
-
-          <RunReplay
-            status={run.status}
-            createdAt={view.createdAt}
-            claimedAt={iso(run.claimedAt)}
-            finishedAt={view.updatedAt}
-            phaseTimings={run.phaseTimings ?? null}
-          />
 
           <section
             aria-labelledby="gaps-title"
@@ -255,11 +247,10 @@ export default async function RunPage({ params }: RunPageProps) {
           >
             <div className="flex flex-col gap-0.5 p-4 pb-3 md:px-5">
               <h2 id="gaps-title" className="text-section">
-                Collection gaps
+                {messageText("ui.gap_list.heading", "en")}
               </h2>
               <p className="text-meta text-muted-foreground">
-                What could not be read, recorded instead of filled with zeros. A gap is
-                information, not a failure.
+                {messageText("ui.gap_list.description", "en")}
               </p>
             </div>
             <div className="border-t border-border">

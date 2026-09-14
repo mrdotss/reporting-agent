@@ -1091,6 +1091,30 @@ export const MESSAGE_CATALOG = {
     en: "This run finished before phase timings were recorded, so its queue wait and total are real and the replay paces the other phases evenly.",
     id: "Proses ini selesai sebelum waktu tiap tahap dicatat, jadi waktu antre dan totalnya nyata, dan pemutaran ulang membagi tahap lainnya secara merata.",
   },
+  "ui.run_replay.watch": {
+    en: "Watch this run",
+    id: "Tonton proses ini",
+  },
+  "ui.run_replay.stop": {
+    en: "Stop",
+    id: "Hentikan",
+  },
+  "ui.verification.traced_heading": {
+    en: "{count} figures traced to the snapshot",
+    id: "{count} angka tertelusur ke snapshot",
+  },
+  "ui.verification.drift_short": {
+    en: "{n} resources re-queried",
+    id: "{n} sumber daya dikueri ulang",
+  },
+  "ui.snapshot.subtitle": {
+    en: "Content-addressed: its id is the hash of its bytes.",
+    id: "Beralamat konten: id-nya adalah hash dari isinya.",
+  },
+  "ui.gap_list.description": {
+    en: "What couldn’t be read, recorded instead of filled with zeros. A gap is information, not a failure.",
+    id: "Apa yang tidak dapat dibaca, dicatat alih-alih diisi nol. Celah adalah informasi, bukan kegagalan.",
+  },
   "ui.run_table.figures": {
     en: "Figures",
     id: "Angka",

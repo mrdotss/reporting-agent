@@ -20,11 +20,11 @@ import { cn } from "@/lib/utils"
  *
  * ## Success is quiet; failure is loud and specific
  *
- * A pass is a verdict line — the figure count and the snapshot it traced to — with the
- * three digests in wells and each check on one line beneath. A fail is a count, every
- * blocking finding with its locating fields, and a plain statement that the report was
- * not delivered. When a consultant sees red in this product it means *this document
- * could not be proven*, and nothing else (Requirement 39.6).
+ * A pass is one heading — how many figures traced to the snapshot — the three digests in
+ * wells, and three checks, one line each. A fail is a count, every blocking finding with
+ * its locating fields, and a plain statement that the report was not delivered. When a
+ * consultant sees red in this product it means *this document could not be proven*, and
+ * nothing else (Requirement 39.6).
  *
  * ## Every value comes from the stored row
  *
@@ -41,7 +41,7 @@ function grouped(count: number): string {
 const FAIL_NOUN_SINGULAR: MessageId = "ui.verification.fail_noun_singular"
 const FAIL_NOUN_PLURAL: MessageId = "ui.verification.fail_noun_plural"
 
-/** One check on one line: a tick, what was checked, what it recorded. */
+/** One check: a tick, what was checked, and one line of what it recorded. */
 function Check({
   slot,
   heading,
@@ -55,8 +55,10 @@ function Check({
         className="mt-0.5 size-3.5 text-(--status-verified)"
       />
       <div className="flex min-w-0 flex-col gap-0.5">
-        <p className="text-meta font-medium">{heading}</p>
-        <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">{children}</div>
+        <p className="text-meta">{heading}</p>
+        <div className="flex min-w-0 flex-col gap-0.5 text-xs text-muted-foreground">
+          {children}
+        </div>
       </div>
     </div>
   )
@@ -88,8 +90,7 @@ export function VerificationPanel({
   /**
    * Whether the run actually handed over a document. A verification can pass and the
    * run still deliver nothing — the reaper fails a run that exceeds its phase deadline
-   * after the verifier has checked every figure — so the panel states that in the same
-   * breath rather than leaving the reader to reconcile two opposite words.
+   * after the verifier has checked every figure — so the panel says so in the same breath.
    */
   delivered?: boolean
   language?: Language
@@ -127,6 +128,7 @@ export function VerificationPanel({
   const passed = verification.status === "pass"
   const blockingCount = verification.blockingFindings.length
   const failNoun = messageText(blockingCount === 1 ? FAIL_NOUN_SINGULAR : FAIL_NOUN_PLURAL, language ?? "en") ?? ""
+  const advisoryCount = verification.advisoryFindings.length
 
   return (
     <Card
@@ -136,7 +138,7 @@ export function VerificationPanel({
       className={passed ? undefined : "border-destructive/40 ring-2 ring-destructive/25"}
       role="region"
     >
-      <CardContent className="flex flex-col gap-5">
+      <CardContent className="flex flex-col gap-4">
         {/* Requirement 39.7 — one polite region, one sentence. */}
         <p data-slot="verification-announcement" aria-live="polite" className="sr-only">
           {passed
@@ -168,18 +170,15 @@ export function VerificationPanel({
           <div className="flex min-w-0 flex-col gap-1">
             <h2 id="verification-heading" className="text-section">
               {passed
-                ? messageText("ui.verification.passed", language ?? "en")
+                ? messageText("ui.verification.traced_heading", language ?? "en", { count: grouped(verification.figureCount) })
                 : messageText("ui.verification.not_delivered_heading", language ?? "en")}
             </h2>
 
             {passed ? (
-              // Requirement 39.2 — the count and the snapshot digest as one statement.
               <>
-                <p className="font-mono text-meta text-muted-foreground tabular-nums">
-                  {messageText("ui.verification.pass_summary", language ?? "en", {
-                    count: grouped(verification.figureCount),
-                    digest: verification.snapshotSha256.slice(0, 12),
-                  })}
+                {/* Requirement 39.2 — the count and the snapshot digest as one statement. */}
+                <p className="font-mono text-xs text-muted-foreground tabular-nums">
+                  {messageText("ui.verification.pass_summary", language ?? "en", { count: grouped(verification.figureCount), digest: verification.snapshotSha256.slice(0, 12) })}
                 </p>
                 {delivered ? null : (
                   <p className="max-w-prose text-meta text-(--status-failed)">
@@ -200,10 +199,7 @@ export function VerificationPanel({
         </div>
 
         {/* Requirement 39.1 — all three digests, mono, each with a copy, each in a well. */}
-        <dl
-          data-slot="verification-digests"
-          className="grid grid-cols-1 gap-2 sm:grid-cols-3"
-        >
+        <dl data-slot="verification-digests" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           <DigestWell
             label={messageText("ui.verification.digest_snapshot", language ?? "en")}
             value={verification.snapshotSha256}
@@ -221,8 +217,8 @@ export function VerificationPanel({
           />
         </dl>
 
-        {/* Requirement 39.4 — replay and drift, each with what it actually recorded. */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {/* Requirements 39.4, 39.5 — what each check recorded, one line each. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <Check
             slot="replay-outcome"
             heading={messageText("ui.verification.replay_heading", language ?? "en")}
@@ -239,22 +235,12 @@ export function VerificationPanel({
                   })}
                 </p>
                 {verification.replay.recomputedSha256 === undefined ? null : (
-                  <p className="flex flex-wrap items-center gap-1.5">
+                  <p className="flex min-w-0 items-center gap-1">
                     {messageText("ui.verification.replay_recomputed_label", language ?? "en")}{" "}
                     <CopyDigest
                       value={verification.replay.recomputedSha256}
                       label="recomputed snapshot digest"
                     />
-                    {verification.replay.storedSha256 === undefined ? null : (
-                      <>
-                        {" "}
-                        {messageText("ui.verification.replay_stored_label", language ?? "en")}{" "}
-                        <CopyDigest
-                          value={verification.replay.storedSha256}
-                          label="stored snapshot digest"
-                        />
-                      </>
-                    )}
                   </p>
                 )}
               </>
@@ -269,35 +255,45 @@ export function VerificationPanel({
               <p>{messageText("ui.verification.drift_empty", language ?? "en")}</p>
             ) : (
               <>
-                <p className="flex flex-wrap items-center gap-1.5">
-                  {messageText("ui.verification.drift_summary", language ?? "en", {
-                    n: grouped(verification.driftSample.n),
-                    method: verification.driftSample.method,
-                  })}{" "}
+                <p>
+                  {messageText("ui.verification.drift_short", language ?? "en", { n: grouped(verification.driftSample.n) })}
+                </p>
+                {/* Requirements 21.3, 21.9 — the seed, copyable, or a plain statement that none was recorded. */}
+                <p className="flex min-w-0 items-center gap-1">
                   {verification.driftSample.seed ? (
-                    <CopyDigest
-                      value={verification.driftSample.seed}
-                      label="drift sample seed"
-                    />
+                    <CopyDigest value={verification.driftSample.seed} label="drift sample seed" />
                   ) : (
-                    <span>{messageText("ui.verification.drift_no_seed", language ?? "en")}</span>
+                    messageText("ui.verification.drift_no_seed", language ?? "en")
                   )}
                 </p>
-                {verification.driftSample.notRequeried.length === 0 ? null : (
-                  <p>
-                    {messageText("ui.verification.drift_not_requeried", language ?? "en", {
-                      count: grouped(verification.driftSample.notRequeried.length),
-                    })}
-                  </p>
-                )}
               </>
+            )}
+          </Check>
+
+          <Check
+            slot="advisory-findings"
+            heading={messageText("ui.finding.advisory_heading", language ?? "en")}
+          >
+            {advisoryCount === 0 ? (
+              <p>{messageText("ui.finding.empty_advisory", language ?? "en")}</p>
+            ) : (
+              <p>{messageText("ui.finding.advisory_note", language ?? "en")}</p>
             )}
           </Check>
         </div>
 
+        {/* Requirement 39.5 — the advisory findings themselves, when there are any. */}
+        {advisoryCount === 0 ? null : (
+          <FindingList
+            findings={verification.advisoryFindings}
+            blocking={false}
+            emptyText={messageText("ui.finding.empty_advisory", language ?? "en") ?? ""}
+          />
+        )}
+
         {/* Requirement 39.3 — every blocking finding, with its locating fields. */}
         {passed ? null : (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 border-t border-border pt-4">
             <h3 className="text-xs font-medium text-destructive">
               {messageText("ui.finding.blocking_heading", language ?? "en")}
             </h3>
@@ -308,24 +304,6 @@ export function VerificationPanel({
             />
           </div>
         )}
-
-        {/*
-          Requirement 39.5 — a separate labelled region, no `--destructive`, and never
-          presented as a cause of the status.
-        */}
-        <div className="flex flex-col gap-1.5 border-t border-border pt-4">
-          <h3 className="text-meta font-medium">
-            {messageText("ui.finding.advisory_heading", language ?? "en")}
-          </h3>
-          <p className="text-xs text-muted-foreground">
-            {messageText("ui.finding.advisory_note", language ?? "en")}
-          </p>
-          <FindingList
-            findings={verification.advisoryFindings}
-            blocking={false}
-            emptyText={messageText("ui.finding.empty_advisory", language ?? "en") ?? ""}
-          />
-        </div>
       </CardContent>
     </Card>
   )
