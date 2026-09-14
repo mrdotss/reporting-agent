@@ -576,7 +576,17 @@ export async function updateOwnedRun(
 ): Promise<ReportRun> {
   const [row] = await getDb()
     .update(reportRuns)
-    .set({ ...values, updatedAt: now })
+    .set({
+        ...values,
+        updatedAt: now,
+        // Stamp the moment the run entered its new status, merged into the map rather
+        // than replacing it, so a finished report can replay its phases at their pace.
+        ...(values.status === undefined
+          ? {}
+          : {
+              phaseTimings: sql`coalesce(${reportRuns.phaseTimings}, '{}'::jsonb) || jsonb_build_object(${values.status}::text, ${now.toISOString()}::text)`,
+            }),
+      })
     .where(and(eq(reportRuns.id, runId), accessWhere(reportRuns, userId, "edit")))
     .returning()
 
@@ -706,7 +716,17 @@ export async function applyRunWriteIfStatus(
 ): Promise<ReportRun | undefined> {
   const [row] = await getDb()
     .update(reportRuns)
-    .set({ ...values, updatedAt: now })
+    .set({
+        ...values,
+        updatedAt: now,
+        // Stamp the moment the run entered its new status, merged into the map rather
+        // than replacing it, so a finished report can replay its phases at their pace.
+        ...(values.status === undefined
+          ? {}
+          : {
+              phaseTimings: sql`coalesce(${reportRuns.phaseTimings}, '{}'::jsonb) || jsonb_build_object(${values.status}::text, ${now.toISOString()}::text)`,
+            }),
+      })
     .where(and(eq(reportRuns.id, runId), eq(reportRuns.status, expectedStatus)))
     .returning()
 
@@ -764,7 +784,17 @@ export async function applyVerifiedCompletion(
 
     const [row] = await tx
       .update(reportRuns)
-      .set({ ...values, updatedAt: now })
+      .set({
+        ...values,
+        updatedAt: now,
+        // Stamp the moment the run entered its new status, merged into the map rather
+        // than replacing it, so a finished report can replay its phases at their pace.
+        ...(values.status === undefined
+          ? {}
+          : {
+              phaseTimings: sql`coalesce(${reportRuns.phaseTimings}, '{}'::jsonb) || jsonb_build_object(${values.status}::text, ${now.toISOString()}::text)`,
+            }),
+      })
       .where(
         and(eq(reportRuns.id, runId), eq(reportRuns.status, expectedStatus))
       )

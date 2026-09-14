@@ -163,7 +163,9 @@ describe("step 2's inspector sets a section's lookback", () => {
    */
   function selectSection(listLabel: string) {
     const list = screen.getByLabelText(listLabel)
-    const row = list.querySelector("li button")
+    // The row's own button is the one without an `aria-label`: the drag grip and the
+    // move buttons beside it are named for the action, the row is named by its title.
+    const row = list.querySelector("li button:not([aria-label])")
     if (!(row instanceof HTMLElement)) {
       throw new Error(`no section row found in "${listLabel}"`)
     }

@@ -163,7 +163,7 @@ describe("Requirement 13.2 — the approaching-expiry warning", () => {
     // offer it — outside the banner, whose text is the one sentence the
     // requirement names.
     expect(
-      screen.getByRole("button", { name: /rotate the secret/i })
+      screen.getByRole("button", { name: /^rotate$/i })
     ).toBeInTheDocument()
   })
 })
@@ -210,7 +210,7 @@ describe("Requirement 13.3 — the expired state, and the rotation it offers", (
     expect(expiredNotice()).not.toBeNull()
     expect(banner()).toBeNull()
     expect(
-      screen.getByRole("button", { name: /rotate the secret/i })
+      screen.getByRole("button", { name: /^rotate$/i })
     ).toBeInTheDocument()
   })
 
@@ -245,7 +245,7 @@ describe("Requirement 13.3 — the expired state, and the rotation it offers", (
     expect(copy).toMatch(/Azure rejected this credential as expired/i)
     expect(copy).toMatch(/entered by hand/i)
     expect(
-      screen.getByRole("button", { name: /rotate the secret/i })
+      screen.getByRole("button", { name: /^rotate$/i })
     ).toBeInTheDocument()
   })
 })
@@ -314,12 +314,14 @@ describe("Requirement 10.2 — only the browser-safe projection is rendered", ()
     )
   })
 
-  test("the fidelity tier is shown as a stamp", () => {
+  test("the card carries no fidelity or scope chips", () => {
+    // Fidelity moved to the inventory panel beside the list, and a verified scope is the
+    // normal state rather than a badge: the card keeps its three lines for the name, the
+    // expiry and the actions.
     renderList([view({ fidelityTier: "enhanced" })])
 
-    // Sentence case in the DOM. The stamp uppercases in CSS, so the accessible name
-    // and anything reading `textContent` still get a normally-cased string.
-    expect(screen.getByText("Enhanced fidelity")).toBeInTheDocument()
+    expect(screen.queryByText("Enhanced fidelity")).toBeNull()
+    expect(screen.queryByText("Scope verified")).toBeNull()
   })
 })
 
@@ -369,19 +371,20 @@ describe("The empty state", () => {
 // The scan entry point (task 1.7, Requirement 4.5)
 // --------------------------------------------------------------------------- //
 
-function scanLink(): HTMLAnchorElement | null {
-  return document.querySelector<HTMLAnchorElement>(
-    'a[href^="/subscriptions/"][href$="/scan"]'
-  )
+function scanButton(): HTMLElement | null {
+  return screen.queryByRole("button", { name: /^scan$/i })
 }
 
+/** Kept under its old name so the refusal tests below read unchanged. */
+const scanLink = scanButton
+
 describe("the scan entry point", () => {
-  test("a scannable subscription offers a Scan link to its own scan route", () => {
-    // Phase 0 ships a screen nobody can reach without this: there is no
-    // `subscriptions/[id]` page, so the list is the only place the action can hang.
+  test("a scannable subscription offers Scan in place on its card", () => {
+    // The scan runs from the card and its inventory shows beside the list, rather than
+    // the card navigating away to a separate scan page.
     renderList([view()])
 
-    expect(scanLink()?.getAttribute("href")).toBe("/subscriptions/row-0001/scan")
+    expect(scanButton()).not.toBeNull()
   })
 
   test("an unverified scope offers no Scan link", () => {
@@ -406,16 +409,16 @@ describe("the scan entry point", () => {
     expect(scanLink()).toBeNull()
   })
 
-  test("each row links to its own subscription", () => {
+  test("each card selects its own connector", () => {
     renderList([view({ id: "row-0001" }), view({ id: "row-0002" })])
 
     const hrefs = [
-      ...document.querySelectorAll<HTMLAnchorElement>('a[href$="/scan"]'),
+      ...document.querySelectorAll<HTMLAnchorElement>('a[href^="/subscriptions?c="]'),
     ].map((anchor) => anchor.getAttribute("href"))
 
     expect(hrefs).toEqual([
-      "/subscriptions/row-0001/scan",
-      "/subscriptions/row-0002/scan",
+      "/subscriptions?c=row-0001",
+      "/subscriptions?c=row-0002",
     ])
   })
 })

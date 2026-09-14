@@ -2,13 +2,15 @@ import { PageBody } from "@/components/app-shell/page-body"
 import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
+import { LiveRefresh } from "@/components/reports/live-refresh"
 import { RequestReportDialog } from "@/components/reports/request-report-dialog"
 import { RunFilters, RunPagination } from "@/components/reports/run-filters"
 import { RunTable } from "@/components/reports/run-table"
 import { requireSession } from "@/lib/auth/guard"
 import type { RunStatus } from "@/lib/db/schema"
 import { NO_RUN_VIEW_EXTRAS, toRunView, toTemplateView } from "@/lib/db/views"
-import { resolveRunExtrasBatch } from "@/lib/runs/detail"
+import { resolveFigureCounts, resolveRunExtrasBatch } from "@/lib/runs/detail"
+import { RUN_STATUS_PRESENTATION } from "@/lib/runs/presentation"
 import {
   RUN_PAGE_SIZE,
   countOwnedRuns,
@@ -26,14 +28,8 @@ import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
  * subscriptions scoped by `user_id`, projects both to their browser-safe shapes, and
  * hands them down. Nothing here parses an event and nothing here writes.
  *
- * `requireSession()` again, not because the `(app)` layout's check was insufficient but
- * because this page needs the **user id** to scope its reads and a layout cannot hand a
- * value to a page. That call also opts the route out of static rendering, which is what
- * keeps the run list current rather than frozen at build time.
- *
- * One `now` is fixed for the whole render and passed to the form, so every subscription
- * option is judged against the same instant and the date bounds cannot differ between
- * the server pass and hydration.
+ * While any run on the page is still in flight, `LiveRefresh` re-reads the page on an
+ * interval, so "In flight" turns into "Verified" without a reload.
  */
 
 export const metadata: Metadata = {
@@ -46,9 +42,8 @@ export const metadata: Metadata = {
 /**
  * The status groups a chip selects, and the only ones the URL admits.
  *
- * `running` is a group rather than a status: a consultant asking "what is in
- * flight" does not distinguish `collecting` from `verifying`, and offering five
- * chips for one question would be five chips.
+ * `running` is a group rather than a status: a consultant asking "what is in flight"
+ * does not distinguish `collecting` from `verifying`.
  */
 const STATUS_GROUPS = {
   all: [],
@@ -77,9 +72,8 @@ export default async function ReportsPage({
   const user = await requireSession()
   const projectScope = await selectedFilter(user.id)
 
-  // The filters live in the URL so the server can read them — this page's list
-  // pages and filters in SQL, and a filter held in client state could only ever
-  // narrow the rows already fetched.
+  // The filters live in the URL so the server can read them — this page's list pages
+  // and filters in SQL.
   const params = await searchParams
   const group = readGroup(
     typeof params.status === "string" ? params.status : undefined
@@ -95,12 +89,9 @@ export default async function ReportsPage({
     offset: (page - 1) * RUN_PAGE_SIZE,
   }
 
-  // Both reads scoped by `user_id` (Requirements 9.7, 36.10), and both projected: only
-  // `RunView` and `ConnectedSubscriptionView` cross to the browser, so the unmasked
-  // subscription id, the tenant id, the client id, the ciphertext, `progress_token_hash`,
-  // `dedupe_key` and the requested scope are absent by construction.
-  // The chip counts share the search term but not the status, so each says how
-  // much *that* chip would show rather than how much the current view holds.
+  // Both reads scoped by `user_id` (Requirements 9.7, 36.10), and both projected. The
+  // chip counts share the search term but not the status, so each says how much *that*
+  // chip would show.
   const [runs, total, counts, subscriptions, templateRows] = await Promise.all([
     listOwnedRuns(user.id, query),
     countOwnedRuns(user.id, { ...projectScope, statuses: STATUS_GROUPS[group], search }),
@@ -124,29 +115,29 @@ export default async function ReportsPage({
     listTemplates(user.id, projectScope),
   ])
 
-  // The **highest existing** version per template, which is what the enqueue
-  // pins (Requirement 9.6) — not the cached `current_version_id`, so the version
-  // number the form shows is the one a run would actually use.
-  //
-  // `readLatestVersionForView` rather than `readLatestVersion`: the form needs the
-  // definition's `schema_version` to know whether to ask for the per-run
-  // front-matter values a v2 template requires (Requirement 13.14), and that read
-  // projects the one scalar in SQL instead of pulling N whole block trees over to
-  // decide N option labels.
+  // The **highest existing** version per template, which is what the enqueue pins
+  // (Requirement 9.6).
   const templates = await Promise.all(
     templateRows.map(async (row) =>
       toTemplateView(row, (await readLatestVersionForView(user.id, row.id)) ?? null)
     )
   )
 
-  // Requirement 37.1 — the template name, the pinned version and the
-  // verification status, per run, in two queries rather than two per row.
-  const runExtras = await resolveRunExtrasBatch(runs)
+  // Requirement 37.1 — the template name, the pinned version and the verification
+  // status per run, plus the figures each passing verification proved; one query each
+  // for the whole page.
+  const [runExtras, figures] = await Promise.all([
+    resolveRunExtrasBatch(runs),
+    resolveFigureCounts(runs),
+  ])
 
   const now = new Date()
+  const anyInFlight = runs.some((run) => RUN_STATUS_PRESENTATION[run.status].inFlight)
 
   return (
     <PageBody kind="wide">
+      <LiveRefresh active={anyInFlight} />
+
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-title">Reports</h1>
@@ -177,6 +168,7 @@ export default async function ReportsPage({
               toRunView(run, runExtras.get(run.id) ?? NO_RUN_VIEW_EXTRAS)
             )}
             subscriptions={subscriptions}
+            figures={figures}
           />
         </div>
 

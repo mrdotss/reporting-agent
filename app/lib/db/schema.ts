@@ -598,6 +598,12 @@ export const reportRuns = pgTable(
     progressCurrent: integer("progress_current"),
     progressTotal: integer("progress_total"),
     progressLabel: text("progress_label"),
+    /**
+     * When the run entered each status, as `{ status: ISO instant }`, merged on every
+     * status write. It exists so a finished report can replay its own phases at their
+     * recorded pace; a row written before this column has none, and the replay says so.
+     */
+    phaseTimings: jsonb("phase_timings").$type<Record<string, string>>(),
 
     /** The snapshot's `content_hash`: 64 lowercase hex, set on completion. */
     snapshotId: text("snapshot_id"),

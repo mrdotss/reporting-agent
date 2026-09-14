@@ -1,6 +1,6 @@
 "use client"
 
-import { CaretDown, CaretRight, Info } from "@phosphor-icons/react"
+import { CaretDown, CaretRight } from "@phosphor-icons/react"
 import Link from "next/link"
 import { useState } from "react"
 
@@ -339,66 +339,69 @@ function GapGroupSection({
     <section
       data-slot="gap-group"
       data-gap-type={group.gapType}
-      className="flex flex-col gap-2 rounded-lg border border-border bg-muted/40 px-4 py-3"
+      // A row of one list rather than a tinted box per type: the types are peers, and a
+      // stack of boxes read as a stack of warnings. A hairline separates them.
+      className="flex flex-col gap-2 border-t border-border/60 px-4 py-3 first:border-t-0 md:px-5"
     >
+      {/*
+        One row per type: a hollow ring (a gap is recorded, not failed), the label and
+        its count, and the disclosure chevron at the far edge where a reader looks for it.
+        The explanation stays visible under the row — Requirement 20 wants a reader to
+        know what a gap type means without opening it — and the affected entries are what
+        the row opens.
+      */}
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
         aria-expanded={expanded}
         aria-label={accessibleName}
-        className="flex flex-wrap items-center gap-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+        className="flex w-full items-center gap-2.5 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
-        {expanded ? (
-          <CaretDown
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        ) : (
-          <CaretRight
-            aria-hidden="true"
-            className="size-4 shrink-0 text-muted-foreground"
-          />
-        )}
-
-        <Info
+        <span
           aria-hidden="true"
-          className="size-4 shrink-0 text-muted-foreground"
+          className="size-2.5 shrink-0 rounded-full border-[1.5px] border-muted-foreground/60"
         />
 
-        <h3 className="font-heading text-sm font-medium tracking-tight">
-          {label}
-        </h3>
+        <h3 className="text-sm font-medium">{label}</h3>
 
         <span className="font-mono text-xs text-muted-foreground tabular-nums">
           {group.count}
         </span>
+
+        {expanded ? (
+          <CaretDown aria-hidden="true" className="ml-auto size-4 shrink-0 text-muted-foreground" />
+        ) : (
+          <CaretRight aria-hidden="true" className="ml-auto size-4 shrink-0 text-muted-foreground" />
+        )}
       </button>
 
-      {/* Note for recognized types, or representative message for unrecognized */}
-      {hasCopy && note !== undefined ? (
-        <p className="max-w-prose text-sm text-muted-foreground">{note}</p>
-      ) : !hasCopy ? (
-        <p className="max-w-prose text-sm text-muted-foreground italic">
-          {group.innerGroups[0]?.representative.message}
-        </p>
-      ) : null}
+      <div className="flex flex-col gap-2 pl-5">
+        {/* Note for recognized types, or representative message for unrecognized */}
+        {hasCopy && note !== undefined ? (
+          <p className="max-w-prose text-meta text-muted-foreground">{note}</p>
+        ) : !hasCopy ? (
+          <p className="max-w-prose text-meta text-muted-foreground italic">
+            {group.innerGroups[0]?.representative.message}
+          </p>
+        ) : null}
 
-      {/* metric_not_selected special section (Requirement 20.8, 20.9) */}
-      {isMetricNotSelected ? (
-        <MetricNotSelectedSection
-          group={group}
-          language={language}
-          templateId={templateId}
-        />
-      ) : null}
+        {/* metric_not_selected special section (Requirement 20.8, 20.9) */}
+        {isMetricNotSelected ? (
+          <MetricNotSelectedSection
+            group={group}
+            language={language}
+            templateId={templateId}
+          />
+        ) : null}
 
-      {/* Expanded inner groups */}
-      {expanded ? (
-        <InnerGroupList
-          innerGroups={group.innerGroups}
-          totalCount={group.count}
-        />
-      ) : null}
+        {/* Expanded inner groups */}
+        {expanded && !isMetricNotSelected ? (
+          <InnerGroupList
+            innerGroups={group.innerGroups}
+            totalCount={group.count}
+          />
+        ) : null}
+      </div>
     </section>
   )
 }
@@ -451,7 +454,7 @@ export function GapList({
   const groups = groupGaps(gaps, options)
 
   return (
-    <div data-slot="gap-list" className="flex flex-col gap-4">
+    <div data-slot="gap-list" className="flex flex-col">
       {groups.map((group) => (
         <GapGroupSection
           key={group.gapType}

@@ -182,27 +182,31 @@ export function StepAppearance({
   }
 
   return (
-    <div className="flex flex-col gap-8">
+    <div className="flex flex-col gap-6">
       <StepDesign
         definition={definition}
         onChange={onChange}
         controls="theme"
       />
-      <section className="flex flex-col gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-section">
-            Chart design
-          </h2>
-          <p className="text-sm text-muted-foreground">
+
+      {/*
+        Chart design as a two-column list rather than a grid of tall cards: a small
+        preview beside the name keeps every shape comparable at a glance, and only the
+        selected design spends a line on its description.
+      */}
+      <section className="flex flex-col gap-3 border-t border-border pt-6">
+        <div className="flex flex-col gap-0.5">
+          <h2 className="text-section">Charts</h2>
+          <p className="text-meta text-muted-foreground">
             Applies to every chart in the report. Each preview plots the same
-            real series, so the shapes are comparable rather than flattering.
+            real series.
           </p>
         </div>
 
         <div
           role="radiogroup"
           aria-label="Chart design"
-          className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"
+          className="grid gap-2 sm:grid-cols-2"
         >
           {CHART_STYLES.map((candidate) => {
             const selected = candidate === style
@@ -215,130 +219,88 @@ export function StepAppearance({
                 role="radio"
                 aria-checked={selected}
                 onClick={() => setDesign({ chart_style: candidate })}
-                className={`flex flex-col overflow-hidden rounded-lg border text-left transition-colors ${
+                className={`grid grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-3 rounded-lg border p-2 text-left transition-colors ${
                   selected
-                    ? "border-primary ring-3 ring-primary/15"
+                    ? "border-primary bg-primary/4 ring-3 ring-primary/15"
                     : "border-border hover:border-primary/40"
                 }`}
               >
-                <div
-                  className={`px-3.5 pt-3.5 pb-1.5 ${selected ? "bg-primary/4" : "bg-card"}`}
-                >
+                <span className="block overflow-hidden rounded-md bg-card px-1 py-1.5">
                   <ChartPreview
                     style={candidate}
                     accent={accent}
                     fontStack={fontStack}
                   />
-                </div>
+                </span>
 
-                <div className="flex flex-col gap-1.5 border-t border-border px-3.5 py-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium">
+                <span className="flex min-w-0 flex-col gap-1">
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-sm font-medium">
                       {STYLE_LABELS[candidate]}
                     </span>
                     {candidate === "stacked" ? (
-                      <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
                         Default
                       </span>
                     ) : null}
-                  </div>
-
-                  <p className="text-xs leading-relaxed text-muted-foreground">
-                    {note.blurb}
-                  </p>
-
-                  <div className="mt-0.5 flex flex-wrap gap-1">
+                  </span>
+                  <span className="flex flex-wrap gap-1">
                     <OutputChip raster={note.raster} />
-                    <Chip>Fits report content</Chip>
-                  </div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </section>
-
-      <section className="flex flex-col gap-4 border-t border-border pt-8">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-section">
-            Chart font
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            The face a chart&rsquo;s labels and figures are set in. The previews
-            above change with it.
-          </p>
-        </div>
-
-        <div
-          role="radiogroup"
-          aria-label="Chart font"
-          className="grid gap-2 sm:grid-cols-3"
-        >
-          {CHART_FONTS.map((candidate) => {
-            const selected = candidate === font
-            return (
-              <button
-                key={candidate}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setDesign({ chart_font: candidate })}
-                className={`flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors ${
-                  selected
-                    ? "border-primary bg-primary/4"
-                    : "border-border hover:border-primary/40"
-                }`}
-              >
-                <span
-                  className="text-sm font-medium"
-                  style={{ fontFamily: CHART_FONT_STACKS[candidate] }}
-                >
-                  {FONT_LABELS[candidate]}{" "}
-                  <span className="text-xs font-normal text-muted-foreground">
-                    18.30%
                   </span>
                 </span>
-                <span className="text-xs leading-relaxed text-muted-foreground">
-                  {FONT_HINTS[candidate]}
-                </span>
               </button>
             )
           })}
         </div>
-
-        <p className="flex items-start gap-2 rounded-lg bg-muted px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          <InfoIcon />
-          Each face is one the runtime already carries, so a chart renders the
-          same on every run. A face the runtime does not have cannot be offered
-          here — the chart is drawn on the server, not in your browser.
+        <p className="text-xs text-muted-foreground">
+          {CHART_STYLE_NOTES[style].blurb}
         </p>
       </section>
 
-      <section className="flex flex-col gap-5 border-t border-border pt-8">
-        <div className="flex flex-col gap-1">
-          <h2 className="text-section">
-            Tables and page layout
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Choose table borders, spacing and page size for the exported report.
+      <section className="flex flex-col gap-4 border-t border-border pt-6">
+        <div className="flex flex-col gap-1.5">
+          <span id="chart-font-label" className="text-sm font-medium">
+            Chart font
+          </span>
+          <div
+            role="radiogroup"
+            aria-label="Chart font"
+            className="inline-flex w-fit max-w-full flex-wrap gap-0.5 rounded-[9px] bg-muted p-[3px]"
+          >
+            {CHART_FONTS.map((candidate) => {
+              const selected = candidate === font
+              return (
+                <button
+                  key={candidate}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  onClick={() => setDesign({ chart_font: candidate })}
+                  style={{ fontFamily: CHART_FONT_STACKS[candidate] }}
+                  className={`h-7.5 rounded-md px-3 text-meta font-medium transition-colors ${
+                    selected
+                      ? "bg-card text-foreground shadow-[0_0_0_1px_var(--border),0_1px_2px_rgb(0_0_0/0.05)]"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {FONT_LABELS[candidate]}
+                </button>
+              )
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {FONT_HINTS[font]} Only faces the runtime carries are offered, because
+            charts are drawn on the server.
           </p>
         </div>
 
         <StepDesign
           definition={definition}
           onChange={onChange}
-            controls="details"
+          controls="details"
         />
       </section>
     </div>
-  )
-}
-
-function Chip({ children }: Readonly<{ children: React.ReactNode }>) {
-  return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-      {children}
-    </span>
   )
 }
 
@@ -387,21 +349,3 @@ function OutputChip({ raster }: Readonly<{ raster: boolean }>) {
   )
 }
 
-function InfoIcon() {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      aria-hidden="true"
-      className="mt-0.5 shrink-0"
-    >
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 11v5" strokeLinecap="round" />
-      <circle cx="12" cy="7.6" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  )
-}

@@ -711,7 +711,13 @@ export function FrontMatterForm({
           <span className="text-xs text-muted-foreground">Distribution</span>
           <div className="flex flex-col gap-2">
             {values.document_control.distribution.map((row, index) => (
-              <div key={index} className="flex items-center gap-1.5">
+              // A grid with `minmax(0, 1fr)` tracks, not three `flex-1` inputs: an input's
+              // intrinsic width is ~20 characters, so three of them plus the remove button
+              // overflowed the card at the Document step's column width.
+              <div
+                key={index}
+                className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_2rem] items-center gap-1.5 [&>input]:w-full [&>input]:min-w-0"
+              >
                 <input
                   type="text"
                   value={row.recipient}

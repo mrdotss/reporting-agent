@@ -75,7 +75,7 @@ describe("Requirement 23: identity step renames the template on save", () => {
       definition: makeDefinition({ name: "My Report" }),
     })
 
-    const input = screen.getByLabelText("Report profile name")
+    const input = screen.getByLabelText("Preset name")
     expect(input).toHaveValue("My Report")
   })
 
@@ -118,7 +118,7 @@ describe("Requirement 23.4: draft_saved_rename_failed", () => {
     })
 
     const alert = screen.getByRole("alert")
-    expect(alert).toHaveTextContent("the template name was not updated")
+    expect(alert).toHaveTextContent("the preset name was not updated")
   })
 
   test("presents a retry rename control", () => {

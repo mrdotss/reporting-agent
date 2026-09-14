@@ -16,6 +16,7 @@ import {
 } from "@phosphor-icons/react"
 
 import {
+  Command,
   CommandDialog,
   CommandEmpty,
   CommandGroup,
@@ -35,7 +36,7 @@ import { workspaceMutation } from "@/components/workspaces/workspace-context"
 import type { SidebarCustomer } from "@/components/app-shell/app-sidebar"
 
 const PAGES = [
-  { href: "/dashboard", label: "Close board", icon: SquaresFourIcon },
+  { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
   { href: "/report-profiles", label: "Presets", icon: StackIcon },
   { href: "/subscriptions", label: "Connectors", icon: PlugsIcon },
@@ -96,6 +97,13 @@ export function CommandMenu({
         title="Search"
         description="Jump to a page or a customer, or run an action."
       >
+        {/*
+          cmdk's input, list and items read their store from the `Command` root. This
+          registry's `CommandDialog` renders its children straight into the dialog with no
+          root, so without this wrapper opening the palette threw "can't access property
+          'subscribe'" and took the whole shell down with it.
+        */}
+        <Command>
         <CommandInput placeholder="Search customers, pages, actions…" />
         <CommandList>
           <CommandEmpty>Nothing matches that.</CommandEmpty>
@@ -157,6 +165,7 @@ export function CommandMenu({
             </CommandItem>
           </CommandGroup>
         </CommandList>
+        </Command>
       </CommandDialog>
     </>
   )

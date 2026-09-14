@@ -15,7 +15,7 @@ vi.mock("next/navigation", () => ({
 }))
 
 /**
- * The "Re-scan" control (task: post-v3 bug fix).
+ * The "Scan" control (task: post-v3 bug fix).
  *
  * It was a native `<form method="post" action="/api/subscriptions/[id]/scan">`,
  * which cannot work: a native form POST sends `application/x-www-form-urlencoded`
@@ -53,7 +53,7 @@ describe("RescanButton", () => {
     const fetchMock = stubFetch({ ok: true })
 
     render(<RescanButton subscriptionId="sub-1" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
 
@@ -72,7 +72,7 @@ describe("RescanButton", () => {
     const fetchMock = stubFetch({ ok: true })
 
     render(<RescanButton subscriptionId="a/b?c" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     expect(fetchMock.mock.calls[0]![0]).toBe(
@@ -84,7 +84,7 @@ describe("RescanButton", () => {
     stubFetch({ ok: true })
 
     render(<RescanButton subscriptionId="sub-1" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
   })
@@ -104,7 +104,7 @@ describe("RescanButton", () => {
     })
 
     render(<RescanButton subscriptionId="sub-1" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /client secret has expired/
@@ -121,7 +121,7 @@ describe("RescanButton", () => {
     })
 
     render(<RescanButton subscriptionId="sub-1" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The scan could not be started."
@@ -133,7 +133,7 @@ describe("RescanButton", () => {
     vi.stubGlobal("fetch", fetchMock)
 
     render(<RescanButton subscriptionId="sub-1" language="en" />)
-    fireEvent.click(screen.getByRole("button", { name: "Re-scan" }))
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }))
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       /Check your connection/

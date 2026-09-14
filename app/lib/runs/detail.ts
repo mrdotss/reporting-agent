@@ -214,3 +214,43 @@ export async function resolveRunExtrasBatch(
 
   return extras
 }
+
+/**
+ * The number of figures each run's latest *passing* verification proved, by run id.
+ *
+ * Only a pass counts: a failed verification's figure count describes a document that
+ * was never delivered, and the reports list prints this number beside "Verified". A run
+ * with no passing verification is absent from the map, which the list renders as "—".
+ * One query for the whole page, like the extras above.
+ */
+export async function resolveFigureCounts(
+  runs: readonly ReportRun[]
+): Promise<ReadonlyMap<string, number>> {
+  const counts = new Map<string, number>()
+  if (runs.length === 0) return counts
+
+  const rows = await getDb()
+    .select({
+      runId: reportVerifications.runId,
+      status: reportVerifications.status,
+      figureCount: reportVerifications.figureCount,
+      createdAt: reportVerifications.createdAt,
+    })
+    .from(reportVerifications)
+    .where(
+      inArray(
+        reportVerifications.runId,
+        runs.map((run) => run.id)
+      )
+    )
+
+  const latest = new Map<string, { status: string; figureCount: number; createdAt: Date }>()
+  for (const row of rows) {
+    const held = latest.get(row.runId)
+    if (held === undefined || row.createdAt > held.createdAt) latest.set(row.runId, row)
+  }
+  for (const [runId, row] of latest) {
+    if (row.status === "pass") counts.set(runId, row.figureCount)
+  }
+  return counts
+}

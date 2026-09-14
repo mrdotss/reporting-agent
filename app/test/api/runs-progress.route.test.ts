@@ -88,6 +88,7 @@ function row(over: Partial<ReportRun> = {}): ReportRun {
   return {
     workspaceId: null,
     projectId: null,
+    phaseTimings: null,
     id: RUN_ID,
     userId: "user-1",
     connectedSubscriptionId: "sub-1",

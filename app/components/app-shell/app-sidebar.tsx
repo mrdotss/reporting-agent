@@ -89,7 +89,7 @@ export type AppSidebarProps = Readonly<{
 }>
 
 const THIS_PERIOD = [
-  { href: "/dashboard", label: "Close board", icon: SquaresFourIcon },
+  { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
 ] as const
 

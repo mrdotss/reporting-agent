@@ -145,6 +145,45 @@ const PERIOD_LABELS: Readonly<Record<PeriodKind, string>> = {
   custom: "A fixed window",
 }
 
+/** The same labels in Bahasa Indonesia, for a preset whose document language is `id`. */
+const PERIOD_LABELS_ID: Readonly<Record<PeriodKind, string>> = {
+  last_24h: "24 jam terakhir",
+  last_7d: "7 hari terakhir",
+  last_30d: "30 hari terakhir",
+  last_full_month: "Bulan penuh terakhir",
+  mtd: "Bulan berjalan",
+  custom: "Rentang tetap",
+}
+
+/**
+ * The preview's own words, in the document's language. The figures are samples and stay
+ * as they are; only the text a delivered page would translate follows the setting.
+ */
+const PREVIEW_COPY = {
+  en: {
+    customer: "Customer",
+    overview: "Utilisation overview",
+    headings: ["Resource", "Average", "Memory"],
+    contents: "In this report",
+    more: (n: number) => `and ${n} more ${n === 1 ? "section" : "sections"}`,
+    sample: "Sample figures",
+    kpis: {} as Record<string, string>,
+  },
+  id: {
+    customer: "Pelanggan",
+    overview: "Ringkasan utilisasi",
+    headings: ["Sumber daya", "Rata-rata", "Memori"],
+    contents: "Dalam laporan ini",
+    more: (n: number) => `dan ${n} bagian lainnya`,
+    sample: "Angka contoh",
+    kpis: {
+      "Virtual machines": "Mesin virtual",
+      "Average CPU": "Rata-rata CPU",
+      "Available memory": "Memori tersedia",
+    } as Record<string, string>,
+  },
+} as const
+
 // --- Theme -> page -----------------------------------------------------------
 
 /** How each preset is named in prose. The key is not a label. */
@@ -262,7 +301,10 @@ export function DocumentPreview({
     "Untitled report profile"
   const customer = definition.identity?.customer_name?.trim() ?? null
   const documentName = documentNameOf(definition)
-  const periodLabel = PERIOD_LABELS[definition.period?.kind ?? "last_full_month"]
+  const periodLabel = (language === "id" ? PERIOD_LABELS_ID : PERIOD_LABELS)[
+    definition.period?.kind ?? "last_full_month"
+  ]
+  const copy = PREVIEW_COPY[language]
 
   const titles = useMemo(() => {
     const byKey = new Map(sectionCatalogue.map((entry) => [entry.key, entry]))
@@ -298,10 +340,8 @@ export function DocumentPreview({
         consultant never has to work out whether the figures are theirs.
       */}
       <div className="flex w-full flex-col gap-3 rounded-xl bg-muted/40 p-4">
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-micro text-muted-foreground uppercase">
-            Document preview
-          </h3>
+        {/* The heading lives once, above this panel, in the wizard shell. */}
+        <div className="flex items-baseline justify-end gap-3">
           <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
             Illustrative · {pageSize}
           </span>
@@ -376,7 +416,7 @@ export function DocumentPreview({
               color: muted,
             }}
           >
-            {customer ?? "Customer"} · {periodLabel}
+            {customer ?? copy.customer} · {periodLabel}
           </p>
 
           <h4
@@ -441,7 +481,7 @@ export function DocumentPreview({
                     color: muted,
                   }}
                 >
-                  {kpi.label}
+                  {copy.kpis[kpi.label] ?? kpi.label}
                 </dt>
                 <dd
                   style={{
@@ -474,7 +514,7 @@ export function DocumentPreview({
               color: accent,
             }}
           >
-            Utilisation overview
+            {copy.overview}
           </h5>
 
           <table
@@ -492,7 +532,7 @@ export function DocumentPreview({
                   rail does, and a fourth numeric column pushed every figure to two lines.
                   Peak is the one a reader can infer from the chart directly above it.
                 */}
-                {["Resource", "Average", "Memory"].map((heading, column) => (
+                {copy.headings.map((heading, column) => (
                   <th
                     key={heading}
                     style={{
@@ -550,7 +590,7 @@ export function DocumentPreview({
                   color: muted,
                 }}
               >
-                In this report
+                {copy.contents}
               </p>
               <ol
                 style={{
@@ -599,8 +639,7 @@ export function DocumentPreview({
                     color: muted,
                   }}
                 >
-                  and {overflowCount} more{" "}
-                  {overflowCount === 1 ? "section" : "sections"}
+                  {copy.more(overflowCount)}
                 </p>
               )}
             </div>
@@ -621,7 +660,7 @@ export function DocumentPreview({
           >
             {/* Said again at the foot of the page, so a screenshot of the bottom half
                 carries the disclaimer too. */}
-            <span>Sample figures · {PRESET_LABELS[preset]}</span>
+            <span>{copy.sample} · {PRESET_LABELS[preset]}</span>
             <span style={{ fontVariantNumeric: "tabular-nums" }}>01</span>
           </div>
         </div>

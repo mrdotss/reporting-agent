@@ -1,5 +1,3 @@
-import { Identifier } from "@/components/identifier"
-import { CopyButton } from "@/components/subscriptions/copy-button"
 import { FidelityBadge } from "@/components/reports/fidelity-badge"
 import type { RunView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
@@ -7,50 +5,35 @@ import type { Language } from "@/lib/messages/language"
 import type { RunProvenance } from "@/lib/runs/gaps"
 
 /**
- * Where a completed run's numbers came from.
+ * Where a completed run's numbers came from, as six facts.
  *
- * A report is an **audit artifact**, so its inputs have to be pinned and visible: the
- * snapshot id that content-addresses the collected data, the window in the customer's
- * zone **with the offset shown**, the grain the collection ran at, and the resource
- * counts by fidelity tier.
+ * The window in the customer's zone with its offset, the resources and gaps it recorded,
+ * the grain it collected at, and the resources by fidelity tier. The snapshot id itself
+ * is not repeated here: it is the first digest in the verdict beside this card, with its
+ * copy control, and printing it twice made the two cards read as one long list.
  *
  * ## Why the offset is shown and not just the zone
  *
- * The customer is Asia/Jakarta, UTC+07:00, and a "July 2026" report means July in *local*
- * time. A reader checking a figure against their own records has to know which seven
- * hours were included at each edge — so the panel names the zone, its resolved offset,
- * and the half-open UTC instants the collector actually queried. Naming only the local
- * dates would let two people compute different totals from the same document and both be
- * right about what they thought they were reading.
+ * The customer is Asia/Jakarta, UTC+07:00, and an "August 2026" report means August in
+ * *local* time. Naming the offset is what lets a reader reconcile the window with a
+ * UTC-based record.
  *
  * ## Where these values come from
  *
- * The snapshot id, the resource count and the gap count are on the `report_runs` row. The
- * grain, the resolved offset and the UTC instants are in the **snapshot document**, read
- * server-side by `lib/runs/gaps.ts#loadRunProvenance`. That is why they are not on the
- * relay's `snapshot_ready` event: Requirement 40.5 restricts the relay to the row and the
- * gap list, and a stated grain that was not the collector's would be worse than an
- * omitted one. This panel is a server render, so it can read the object directly.
- *
- * Every field is independently optional, so a snapshot missing one — an older agent, a
- * newer schema — omits that line rather than failing the page.
- *
- * Every value is mono tabular. The snapshot id is truncated with a copy control beside
- * it: 64 hex characters is unreadable inline, and it is precisely the value somebody
- * quotes when they dispute a figure.
+ * The resource and gap counts are on the `report_runs` row. The grain, the offset and
+ * the local window are in the **snapshot document**, read server-side by
+ * `lib/runs/gaps.ts#loadRunProvenance`. Every field is independently optional, so a
+ * snapshot missing one omits that line rather than failing the page.
  */
-
 
 function Row({
   label,
   children,
 }: Readonly<{ label: string; children: React.ReactNode }>) {
   return (
-    <div className="flex flex-col gap-0.5">
-      <dt className="text-micro text-muted-foreground uppercase">
-        {label}
-      </dt>
-      <dd className="flex flex-wrap items-center gap-1.5 font-mono text-sm tabular-nums">
+    <div className="flex min-w-0 flex-col gap-0.5">
+      <dt className="text-xs text-muted-foreground">{label}</dt>
+      <dd className="flex flex-wrap items-center gap-1.5 font-mono text-[13px] tabular-nums">
         {children}
       </dd>
     </div>
@@ -69,33 +52,39 @@ export function SnapshotProvenance({
 }>) {
   if (run.snapshotId === null) {
     return (
-      <p
-        data-slot="snapshot-provenance-absent"
-        className="text-sm text-muted-foreground"
-      >
+      <p data-slot="snapshot-provenance-absent" className="text-sm text-muted-foreground">
         {messageText("ui.snapshot.no_snapshot", language ?? "en")}
       </p>
     )
   }
 
   const tiers = Object.entries(provenance?.fidelityTiers ?? {})
+  const start = provenance?.localStart ?? run.periodStart
+  const end = provenance?.localEnd ?? run.periodEnd
+  // `2026-08-01 → 08-31` when both ends share a year: the year is said once.
+  const window = start.slice(0, 4) === end.slice(0, 4) ? `${start} → ${end.slice(5)}` : `${start} → ${end}`
 
   return (
-    <dl
-      data-slot="snapshot-provenance"
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
-    >
-      <Row label={messageText("ui.snapshot.label_snapshot", language ?? "en") ?? "Snapshot"}>
-        {/* `Identifier` truncates to the app's one digest length and carries the full
-            value in `title` and to a screen reader; the copy control beside it is for
-            anyone who needs all 64 characters. */}
-        <Identifier
-          value={run.snapshotId}
-          kind="digest"
-          label="Snapshot"
-        />
+    <dl data-slot="snapshot-provenance" className="grid grid-cols-2 gap-x-4 gap-y-3.5">
+      <Row label={messageText("ui.snapshot.label_window", language ?? "en") ?? "Window"}>
+        <span data-slot="snapshot-window">{window}</span>
+      </Row>
 
-        <CopyButton value={run.snapshotId} label={messageText("ui.snapshot.copy_snapshot_id", language ?? "en") ?? "Copy the snapshot id"} />
+      <Row label={messageText("ui.snapshot.label_timezone", language ?? "en") ?? "Timezone"}>
+        <span data-slot="snapshot-timezone">
+          {provenance?.timezone ?? run.timezone}
+          {provenance?.utcOffset === undefined || provenance.utcOffset === null
+            ? null
+            : ` ${provenance.utcOffset}`}
+        </span>
+      </Row>
+
+      <Row label={messageText("ui.snapshot.label_resources", language ?? "en") ?? "Resources"}>
+        <span data-slot="snapshot-resource-count">{run.resourceCount ?? "—"}</span>
+      </Row>
+
+      <Row label={messageText("ui.snapshot.label_gaps_recorded", language ?? "en") ?? "Gaps recorded"}>
+        <span data-slot="snapshot-gap-count">{run.gapCount ?? "—"}</span>
       </Row>
 
       {provenance?.grain === undefined || provenance.grain === null ? null : (
@@ -104,70 +93,9 @@ export function SnapshotProvenance({
         </Row>
       )}
 
-      <Row label={messageText("ui.snapshot.label_window", language ?? "en") ?? "Window"}>
-        <span data-slot="snapshot-window">
-          {provenance?.localStart ?? run.periodStart} {messageText("ui.snapshot.range_to", language ?? "en")}{" "}
-          {provenance?.localEnd ?? run.periodEnd}
-        </span>
-      </Row>
-
-      <Row label={messageText("ui.snapshot.label_timezone", language ?? "en") ?? "Timezone"}>
-        <span data-slot="snapshot-timezone">
-          {provenance?.timezone ?? run.timezone}
-          {provenance?.utcOffset === undefined ||
-          provenance.utcOffset === null ? null : (
-            <>
-              {" "}
-              {/* The resolved offset, which is the half a reader needs to reconcile
-                  this window with a UTC-based record. */}
-              <span className="text-muted-foreground">
-                ({provenance.utcOffset})
-              </span>
-            </>
-          )}
-        </span>
-      </Row>
-
-      {provenance?.startUtc === undefined ||
-      provenance.startUtc === null ||
-      provenance.endUtc === null ? null : (
-        <Row label={messageText("ui.snapshot.label_collected_utc", language ?? "en") ?? "Collected (UTC)"}>
-          {/*
-            Half-open on the UTC side: `endUtc` is midnight of the local day *after*
-            the last one, and is excluded. Stated so nobody reads it as an extra day.
-          */}
-          {/*
-            Each instant on its own line, and neither one breakable.
-            `break-all` on the pair broke a timestamp mid-character — the cell read
-            `2026-07-31T17:00:00Z to 202` / `6-08-31T17:00:00Z`, which is not a date any
-            more. An instant is an atom; the pair is what wraps.
-          */}
-          <span
-            data-slot="snapshot-window-utc"
-            className="flex flex-col items-start"
-          >
-            <span className="whitespace-nowrap">{provenance.startUtc}</span>
-            <span className="whitespace-nowrap text-muted-foreground">
-              {messageText("ui.snapshot.range_to", language ?? "en")}{" "}
-              {provenance.endUtc}
-            </span>
-          </span>
-        </Row>
-      )}
-
-      <Row label={messageText("ui.snapshot.label_resources", language ?? "en") ?? "Resources"}>
-        <span data-slot="snapshot-resource-count">
-          {run.resourceCount ?? "—"}
-        </span>
-      </Row>
-
-      <Row label={messageText("ui.snapshot.label_gaps_recorded", language ?? "en") ?? "Gaps recorded"}>
-        <span data-slot="snapshot-gap-count">{run.gapCount ?? "—"}</span>
-      </Row>
-
       {tiers.length === 0 ? null : (
         <Row label={messageText("ui.snapshot.label_fidelity", language ?? "en") ?? "Fidelity"}>
-          <span className="flex flex-wrap items-center gap-1.5">
+          <span className="flex flex-wrap items-center gap-1.5 font-sans">
             {tiers.map(([tier, count]) => (
               <FidelityBadge key={tier} tier={tier} count={count} />
             ))}
