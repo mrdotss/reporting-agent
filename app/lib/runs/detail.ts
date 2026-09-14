@@ -249,8 +249,14 @@ export async function resolveFigureCounts(
     const held = latest.get(row.runId)
     if (held === undefined || row.createdAt > held.createdAt) latest.set(row.runId, row)
   }
+  // A passing verification on a run that then failed — the reaper can fail a run after
+  // its figures were checked — proved figures for a document that was never delivered,
+  // so only a completed run's count is shown.
+  const completed = new Set(
+    runs.filter((run) => run.status === "completed").map((run) => run.id)
+  )
   for (const [runId, row] of latest) {
-    if (row.status === "pass") counts.set(runId, row.figureCount)
+    if (row.status === "pass" && completed.has(runId)) counts.set(runId, row.figureCount)
   }
   return counts
 }

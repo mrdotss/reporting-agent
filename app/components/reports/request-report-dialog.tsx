@@ -22,14 +22,14 @@ import { messageText } from "@/lib/messages/catalog"
 /**
  * The request form, behind a button (task 2.2).
  *
- * The form occupied the whole first screen of `/reports` and pushed the run
- * history below the fold — on a page a consultant opens mostly to *read* that
- * history. Requesting a report is the rarer act of the two, so it is the one
- * behind a control.
+ * In the workspace shell the button is a link to `/reports/new`. It is enabled whenever
+ * the reader can edit, **including with All customers selected**: a report is requested
+ * for one customer, so with no customer in scope the request page asks which one rather
+ * than this button refusing without saying why. Only a reader who cannot edit, or an
+ * archived customer, gets a disabled button.
  *
- * `RunForm` is unchanged and unaware of the dialog. It owns its own submission,
- * its own validation and its own error surface; this only decides when it is on
- * screen, which is why the two can be reasoned about separately.
+ * `RunForm` is unchanged and unaware of the dialog. It owns its own submission, its own
+ * validation and its own error surface; this only decides when it is on screen.
  */
 export function RequestReportDialog({
   subscriptions,
@@ -43,16 +43,9 @@ export function RequestReportDialog({
   const [open, setOpen] = useState(false)
   const workspace = useWorkspace()
   if (workspace) {
-    // A link when it can be followed, a real disabled button when it cannot.
-    //
-    // Not one control with a `disabled` prop: `disabled` has no meaning on an anchor, so
-    // the "disabled" form would still be focusable and still navigate. And routing a
-    // navigation through Base UI's button sets `role="button"` on the anchor, which tells
-    // a screen reader this activates something when what it does is go somewhere.
-    // `buttonVariants` gives the same appearance with the element each case actually
-    // wants; `data-slot="button"` is what the workspace stylesheet keys its radius on.
-    const blocked =
-      !workspace.projectId || workspace.archived || !can(workspace.role, "edit")
+    // A link when it can be followed, a real disabled button when it cannot — `disabled`
+    // has no meaning on an anchor, so the disabled form is a button.
+    const blocked = workspace.archived || !can(workspace.role, "edit")
     const label = (
       <>
         <PlayIcon />
