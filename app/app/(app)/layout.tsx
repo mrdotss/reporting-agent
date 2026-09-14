@@ -58,8 +58,9 @@ export default async function AppLayout({
     name: row.project.name,
     state: row.current.state,
   }))
-  const canRequest =
-    project !== undefined && !project.archivedAt && can(workspace.role, "edit")
+  // Not tied to the selected customer: with All customers selected, the request page
+  // asks which customer the report is for. What it needs is an editor and a customer.
+  const canRequest = can(workspace.role, "edit") && board.rows.length > 0
 
   return (
     <WorkspaceProvider
