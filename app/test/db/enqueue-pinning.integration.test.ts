@@ -703,3 +703,45 @@ describe.skipIf(!db.enabled)("findReusableSnapshotRun", () => {
     expect(run.reuseSnapshotRunId).toBeNull()
   })
 })
+
+describe.skipIf(!db.enabled)("a connector and a preset must name the same source", () => {
+  test("an AWS connector refuses an Azure preset, and nothing is inserted", async () => {
+    // A preset's sections are one provider's catalogue and a connector reads one
+    // provider's estate. The form never offers a mismatched pair; this is the refusal
+    // for a request that arrives without the form.
+    const templateId = await insertTemplate(ownerId, [{ ...BASE, provider: "azure" }])
+    await db.query(`UPDATE connected_subscriptions SET provider = 'aws' WHERE id = $1`, [
+      subscriptionId,
+    ])
+
+    const rejection = await rejectionFrom(
+      enqueueRun(ownerId, {
+        connectedSubscriptionId: subscriptionId,
+        templateId,
+        timezone: JAKARTA,
+      })
+    )
+
+    expect(rejection).toEqual({
+      kind: "provider_mismatch",
+      connectorProvider: "aws",
+      presetProvider: "azure",
+    })
+    expect(await runCount()).toBe(0)
+  })
+
+  test("a definition from before providers were recorded is Azure, and runs on an Azure connector", async () => {
+    // `BASE` carries no `provider` key, like every version saved before the column
+    // existed. It is read as Azure, which every such preset was.
+    const templateId = await insertTemplate(ownerId, [BASE])
+
+    const { run } = await enqueueRun(ownerId, {
+      connectedSubscriptionId: subscriptionId,
+      templateId,
+      timezone: JAKARTA,
+    })
+
+    expect(run.id).toBeTruthy()
+    expect(await runCount()).toBe(1)
+  })
+})

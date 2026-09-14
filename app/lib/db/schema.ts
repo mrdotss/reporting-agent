@@ -117,6 +117,14 @@ export const subscriptionStatus = pgEnum("subscription_status", [
 export const fidelityTier = pgEnum("fidelity_tier", ["baseline", "enhanced"])
 
 /**
+ * Where an estate lives, and so which collector reads it and which section catalogue a
+ * preset is written against. A connector and a preset each carry exactly one, set when
+ * they are created and never changed, and a run pairs only a connector and a preset that
+ * name the same one — Azure's resource types and metrics mean nothing to an AWS account.
+ */
+export const sourceProvider = pgEnum("source_provider", ["azure", "aws", "onprem"])
+
+/**
  * Requirement 36.1 — all eight values.
  *
  * `compiling`, `rendering` and `verifying` are defined here and **not driven by
@@ -384,6 +392,9 @@ export const connectedSubscriptions = pgTable(
     scopeVerified: boolean("scope_verified").notNull().default(false),
 
     fidelityTier: fidelityTier("fidelity_tier").notNull().default("baseline"),
+
+    /** The source this connector reads. Every connector before this column was Azure. */
+    provider: sourceProvider("provider").notNull().default("azure"),
 
     /**
      * Azure service-principal secrets expire — 24 months at most, commonly 6 to
@@ -841,6 +852,12 @@ export const reportTemplates = pgTable(
      * deleted starter is never resurrected (Requirement 10.7).
      */
     seededStarterKey: text("seeded_starter_key"),
+
+    /**
+     * The source this preset is written for, chosen when it is created and locked: its
+     * sections are that provider's catalogue, so changing it would invalidate every one.
+     */
+    provider: sourceProvider("provider").notNull().default("azure"),
 
     createdAt: instant("created_at").notNull().defaultNow(),
 

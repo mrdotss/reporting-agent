@@ -306,6 +306,8 @@ export type CreateTemplateInput = {
   readonly projectId?: string
   readonly name: string
   readonly description?: string
+  /** The source the preset is written for. Defaults to Azure, the only catalogue today. */
+  readonly provider?: ReportTemplate["provider"]
 }
 
 /**
@@ -327,6 +329,7 @@ export async function createTemplate(
     id: randomUUID(),
     userId,
     name: input.name,
+    provider: input.provider ?? "azure",
     ...(input.description === undefined
       ? {}
       : { description: input.description }),

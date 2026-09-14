@@ -70,7 +70,7 @@ const WORKSPACE_ID = "fixture-workspace-44444444-4444-4444-4444-444444444444"
  * the requirement is therefore unsatisfiable for reasons that have nothing to do
  * with a leak.
  *
- * So the masked portion here uses only `g h j q w z`, which appear in **no** key
+ * So the masked portion here uses only `g h j q w Ю`, which appear in **no** key
  * name and in none of the other fixture values, and the revealed final four are
  * digits. The forbidden set is then genuinely disjoint from everything the
  * document may legitimately contain, the assertion can run over the entire
@@ -78,7 +78,7 @@ const WORKSPACE_ID = "fixture-workspace-44444444-4444-4444-4444-444444444444"
  * through `maskedSubscriptionId`. `REALISTIC_SUBSCRIPTION_ID` below covers the
  * GUID case separately.
  */
-const SUBSCRIPTION_ID = "ghЖqЩzghЖqЩzghЖqЩzghЖqЩzghЖqЩzgh6789"
+const SUBSCRIPTION_ID = "ghЖqЩЮghЖqЩЮghЖqЩЮghЖqЩЮghЖqЩЮgh6789"
 
 /** A real Azure subscription GUID: 36 characters, 32 of them masked. */
 const REALISTIC_SUBSCRIPTION_ID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
@@ -89,13 +89,14 @@ const REALISTIC_SUBSCRIPTION_ID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
  * Requirement 10.6 is after — rather than letting the new column arrive with no
  * verdict on whether it may reach the browser.
  *
- * `id` and `displayName` deliberately avoid `g h j q w z` too; see
+ * `id` and `displayName` deliberately avoid `g h j q w Ю` too; see
  * {@link SUBSCRIPTION_ID}.
  */
 function connectedSubscriptionRow(
   overrides: Partial<ConnectedSubscription> = {}
 ): ConnectedSubscription {
   return {
+    provider: "azure",
     workspaceId: null,
     projectId: null,
     id: "sub-0001",
@@ -133,6 +134,13 @@ const CONNECTED_SUBSCRIPTION_VIEW_KEYS = [
   // a trend can cover.
   "metricsHistorySince",
   "projectId",
+
+  // Reviewed and admitted: the source this connector reads, one of three fixed words.
+
+  // No secret, and it names no resource; the run form pairs connectors and presets on it.
+
+  "provider",
+
   "scopeVerified",
   "secretExpiresAt",
   "status",
@@ -297,7 +305,10 @@ describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => 
       // can say what a trend can cover. A measurement of the customer's own telemetry
       // depth: no secret, and it names no resource.
       metricsHistorySince: null,
+
       status: "active",
+
+      provider: "azure",
     })
   })
 
@@ -1289,6 +1300,7 @@ function reportTemplateRow(
   overrides: Partial<ReportTemplate> = {}
 ): ReportTemplate {
   return {
+    provider: "azure",
     workspaceId: null,
     projectId: null,
     draftRevision: 0,
@@ -1335,6 +1347,13 @@ const TEMPLATE_VIEW_KEYS = [
   "id",
   "name",
   "projectId",
+
+  // Reviewed and admitted: the source this preset is written for, one of three fixed
+
+  // words, set at creation and locked.
+
+  "provider",
+
   "schemaVersion",
   "updatedAt",
   "workspaceId",
@@ -1374,7 +1393,10 @@ describe("toTemplateView — Requirement 43.9", () => {
       hasDraft: false,
       schemaVersion: 2,
       createdAt: "2026-05-01T00:00:00.000Z",
+
       updatedAt: "2026-05-02T00:00:00.000Z",
+
+      provider: "azure",
     })
   })
 

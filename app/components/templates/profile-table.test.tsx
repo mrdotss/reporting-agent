@@ -23,6 +23,7 @@ vi.mock("next/navigation", () => ({
 
 function profile(overrides: Partial<TemplateView> = {}): TemplateView {
   return {
+    provider: "azure",
     id: "t-1",
     name: "Enesis Monthly",
     description: "",

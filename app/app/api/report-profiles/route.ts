@@ -103,6 +103,7 @@ export async function POST(request: Request): Promise<Response> {
       workspaceId: parsed.data.workspaceId,
       projectId: parsed.data.projectId,
       name: parsed.data.name,
+      ...(parsed.data.provider === undefined ? {} : { provider: parsed.data.provider }),
       ...(parsed.data.description === undefined
         ? {}
         : { description: parsed.data.description }),

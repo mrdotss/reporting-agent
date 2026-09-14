@@ -30,6 +30,7 @@ import type {
   TemplateDefinition,
 } from "@/lib/templates/definition"
 import { EMPTY_DRAFT_V3 } from "@/lib/templates/draft"
+import { ProviderMark, SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
 import {
   canAdvance,
   canReturnTo,
@@ -179,7 +180,7 @@ export function WizardShell({
 
   const [definition, setDefinition] = useState<TemplateDefinition>(() =>
     initialDefinition === null
-      ? EMPTY_DRAFT_V3(template.name)
+      ? EMPTY_DRAFT_V3(template.name, template.provider)
       : (currentDisplayFormat(initialDefinition) as TemplateDefinition)
   )
 
@@ -487,7 +488,11 @@ export function WizardShell({
     // neither where you are nor what the document looks like scrolls away.
     <div className="grid w-full items-start gap-6 lg:grid-cols-[12rem_minmax(0,1fr)] xl:grid-cols-[12rem_minmax(0,1fr)_minmax(20rem,26rem)]">
       <header className="flex flex-col gap-1 lg:col-span-full">
-        <p className="text-micro text-muted-foreground uppercase">Preset</p>
+        {/* The source is part of what a preset is, set when it was created and locked. */}
+        <p className="flex items-center gap-1.5 text-micro text-muted-foreground uppercase">
+          <ProviderMark kind={template.provider} className="[&_svg]:size-3.5" />
+          Preset · {SOURCE_NAMES[template.provider]}
+        </p>
         <h1 className="text-title">{template.name}</h1>
 
         {/*
