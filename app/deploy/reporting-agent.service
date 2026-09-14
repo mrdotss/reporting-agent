@@ -1,0 +1,26 @@
+# Installed to /etc/systemd/system/reporting-agent.service by the deploy's
+# ApplicationStart hook. Edit it here, not on the server: the next release overwrites it.
+[Unit]
+Description=Utilize Space web app (reporting-agent)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mrdotss
+# `current` is a symlink the deploy moves atomically; a restart follows it to the new release.
+WorkingDirectory=/opt/reporting-agent-app/current/app
+# Secrets live outside every release, so a deploy never overwrites them.
+EnvironmentFile=/etc/reporting-agent/app.env
+# RPT_RELEASE_ID, written by the deploy; /api/health reports it back.
+EnvironmentFile=-/etc/reporting-agent/release.env
+Environment=NODE_ENV=production
+Environment=PORT=3000
+# Caddy is the only thing in front of this, on the same host.
+Environment=HOSTNAME=127.0.0.1
+ExecStart=/usr/bin/node server.js
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
