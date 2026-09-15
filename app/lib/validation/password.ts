@@ -22,18 +22,24 @@ export const PASSWORD_MIN = 12
 export const PASSWORD_MAX = 256
 
 /**
- * The rejection message (Requirement 1.4), carrying the accepted range and
- * nothing drawn from the submitted value — not its content and not its length
- * (Requirement 1.12).
+ * The rejection a sign-up form shows, one per bound (Requirement 1.4;
+ * roles-and-ask-access Req 8).
  *
- * A constant rather than a template built at each call site, because
- * `lib/auth/password.ts` raises it as a `PasswordPolicyError` and the register
- * form displays it: two surfaces stating one policy.
+ * Split by bound, because a single "at least 12 and at most 256" sentence
+ * answered a short password with a limit it had not broken, and the sign-up
+ * form was reported as asking for hundreds of characters. Each message says
+ * what to change and carries nothing drawn from the submitted value — not its
+ * content and not its length (Requirement 1.12).
+ */
+export const PASSWORD_TOO_SHORT_MESSAGE = `Use at least ${PASSWORD_MIN} characters.`
+export const PASSWORD_TOO_LONG_MESSAGE = `Use at most ${PASSWORD_MAX} characters.`
+
+/**
+ * The policy as a whole, for a caller that is not answering a form —
+ * `lib/auth/password.ts` raises it as a `PasswordPolicyError`.
  */
 export const PASSWORD_POLICY_MESSAGE =
-  `A password must be at least ${PASSWORD_MIN} and at most ` +
-  `${PASSWORD_MAX} characters. Its value and length are excluded from ` +
-  `this message.`
+  `Use a password of ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`
 
 /**
  * Length in Unicode code points. The spread iterates the string by code point,
@@ -66,13 +72,19 @@ export function isPasswordWithinPolicy(value: string): boolean {
  *
  * **No `.min()` / `.max()`, and no `.trim()`.** Zod's string length checks count
  * UTF-16 units, which is the exact miscount {@link passwordCodePointLength}
- * exists to avoid, so the policy is applied through the predicate instead — one
- * implementation, used by the schema, by the hasher and by any hint the form
- * renders. Trimming would change the credential rather than validate it.
+ * exists to avoid, so each bound is its own refinement over code points. The two
+ * cannot both fail, so a rejected password carries exactly one message — the
+ * bound it broke. Trimming would change the credential rather than validate it.
  *
  * Parsing `unknown` rather than `string`, because that is what a `FormData`
- * entry or a JSON body actually is at the boundary.
+ * entry or a JSON body actually is at the boundary; a missing field is answered
+ * as a short password.
  */
 export const passwordSchema = z
-  .string({ error: PASSWORD_POLICY_MESSAGE })
-  .refine(isPasswordWithinPolicy, { error: PASSWORD_POLICY_MESSAGE })
+  .string({ error: PASSWORD_TOO_SHORT_MESSAGE })
+  .refine((value) => passwordCodePointLength(value) >= PASSWORD_MIN, {
+    error: PASSWORD_TOO_SHORT_MESSAGE,
+  })
+  .refine((value) => passwordCodePointLength(value) <= PASSWORD_MAX, {
+    error: PASSWORD_TOO_LONG_MESSAGE,
+  })

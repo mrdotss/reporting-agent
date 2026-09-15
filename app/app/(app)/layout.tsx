@@ -6,6 +6,7 @@ import { UserMenu } from "@/components/app-shell/user-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { PendingInvitationResume } from "@/components/workspaces/pending-invitation-resume"
 import { WorkspaceProvider } from "@/components/workspaces/workspace-context"
 import { requireSession } from "@/lib/auth/guard"
 import { loadAttention } from "@/lib/close/attention"
@@ -115,6 +116,7 @@ export default async function AppLayout({
           </SidebarInset>
         </SidebarProvider>
         <Toaster position="bottom-right" />
+        <PendingInvitationResume />
       </TooltipProvider>
     </WorkspaceProvider>
   )
