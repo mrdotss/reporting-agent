@@ -264,16 +264,24 @@ SILENT_SEAMS: Mapping[str, Callable[[], Any]] = {
 
 
 def test_no_new_boto3_bedrock_runtime_construction_site_outside_narrate() -> None:
-    """The only place ``boto3.client("bedrock-runtime", ...)`` should appear is
-    ``narrate/summary.py``.  A second site would be another silent-failure seam."""
+    """The only places ``boto3.client("bedrock-runtime", ...)`` should appear are
+    ``narrate/summary.py`` and ``narrate/chat.py``.  A third site would be another
+    silent-failure seam.
+
+    ``narrate/chat.py`` is the opposite of a silent seam: ``bedrock_chat_model`` fails
+    closed with ``ChatNotConfiguredError`` and has no broad except around construction
+    (ask-chat Req 5.3), which ``test_chat.py`` pins."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "reporting_agent"
-    narrate_summary = source_root / "narrate" / "summary.py"
+    known = {
+        source_root / "narrate" / "summary.py",
+        source_root / "narrate" / "chat.py",
+    }
 
     sites: set[str] = set()
     for path in source_root.rglob("*.py"):
-        if path == narrate_summary:
+        if path in known:
             continue
         for line in path.read_text(encoding="utf-8").splitlines():
             if 'boto3.client("bedrock-runtime"' in line and not line.lstrip().startswith("#"):

@@ -574,6 +574,7 @@ class TestEveryCommandHasEndToEndCoverage:
         "verify_report": "test_invoke_verify_and_preview.py",
         "render_preview": "test_invoke_verify_and_preview.py",
         "list_inventory": "test_run_wiring.py",  # list_inventory is snapshot-only like wiring
+        "chat": "test_invoke_chat.py",
     }
 
     # compare_runs is declared but deliberately UNROUTED.

@@ -1,0 +1,80 @@
+import {
+  internalError,
+  invalidInput,
+  json,
+  malformedBody,
+  notFound,
+  readJsonBody,
+  unauthorized,
+} from "@/lib/api/response"
+import { requireSessionForApi } from "@/lib/auth/guard"
+import { updateThreadSchema } from "@/lib/chat/input"
+import { listChatSources } from "@/lib/chat/sources"
+import {
+  ChatThreadNotFoundError,
+  listMessages,
+  readThread,
+  updateThread,
+} from "@/lib/chat/store"
+
+/**
+ * `GET /api/chat/threads/[threadId]` — a conversation and its messages.
+ * `PATCH /api/chat/threads/[threadId]` — rename it, or change what it is grounded in.
+ *
+ * A thread outside the user's workspaces is a 404, the same as one that does not exist.
+ */
+export const runtime = "nodejs"
+
+type ThreadRouteContext = Readonly<{ params: Promise<{ threadId: string }> }>
+
+export async function GET(_request: Request, context: ThreadRouteContext): Promise<Response> {
+  const user = await requireSessionForApi()
+  if (user === null) return unauthorized()
+  const { threadId } = await context.params
+
+  try {
+    const thread = await readThread(user.id, threadId)
+    const messages = await listMessages(thread)
+    return json(200, { thread, messages })
+  } catch (thrown) {
+    if (thrown instanceof ChatThreadNotFoundError) return notFound()
+    console.error(`[api/chat/threads/:id] GET failed: ${describe(thrown)}`)
+    return internalError()
+  }
+}
+
+export async function PATCH(request: Request, context: ThreadRouteContext): Promise<Response> {
+  const user = await requireSessionForApi()
+  if (user === null) return unauthorized()
+  const { threadId } = await context.params
+
+  const body = await readJsonBody(request)
+  if (body === undefined) return malformedBody()
+  const parsed = updateThreadSchema.safeParse(body)
+  if (!parsed.success) return invalidInput(parsed.error)
+
+  try {
+    const thread = await readThread(user.id, threadId)
+    let attachments = parsed.data.attachments
+    if (attachments !== undefined) {
+      const sources = await listChatSources(user.id, thread.workspaceId)
+      const runIds = new Set(sources.runs.map((run) => run.runId))
+      const connectorIds = new Set(sources.connectors.map((connector) => connector.id))
+      attachments = {
+        runIds: attachments.runIds.filter((id) => runIds.has(id)),
+        connectorIds: attachments.connectorIds.filter((id) => connectorIds.has(id)),
+      }
+    }
+
+    const updated = await updateThread(thread, { title: parsed.data.title, attachments })
+    return json(200, { thread: updated })
+  } catch (thrown) {
+    if (thrown instanceof ChatThreadNotFoundError) return notFound()
+    console.error(`[api/chat/threads/:id] PATCH failed: ${describe(thrown)}`)
+    return internalError()
+  }
+}
+
+function describe(thrown: unknown): string {
+  return thrown instanceof Error ? `${thrown.name}: ${thrown.message}` : typeof thrown
+}

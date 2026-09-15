@@ -1,0 +1,20 @@
+{
+  "name": "rpt-chat",
+  "description": "Ask page: blocks prompt attacks and prompt-leak attempts on the user's question. Topic scope is enforced by the runtime's system prompt and output filter.",
+  "contentPolicyConfig": {
+    "filtersConfig": [
+      {
+        "type": "PROMPT_ATTACK",
+        "inputStrength": "LOW",
+        "outputStrength": "NONE",
+        "inputAction": "BLOCK",
+        "inputEnabled": true,
+        "outputEnabled": false
+      }
+    ],
+    "tierConfig": { "tierName": "STANDARD" }
+  },
+  "crossRegionConfig": { "guardrailProfileIdentifier": "us.guardrail.v1:0" },
+  "blockedInputMessaging": "RPT_CHAT_REFUSED",
+  "blockedOutputsMessaging": "RPT_CHAT_REFUSED"
+}

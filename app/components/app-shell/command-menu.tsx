@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import {
+  ChatsCircleIcon,
   FileTextIcon,
   GearSixIcon,
   MagnifyingGlassIcon,
@@ -38,6 +39,7 @@ import type { SidebarCustomer } from "@/components/app-shell/app-sidebar"
 const PAGES = [
   { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
+  { href: "/ask", label: "Ask", icon: ChatsCircleIcon },
   { href: "/report-profiles", label: "Presets", icon: StackIcon },
   { href: "/subscriptions", label: "Connectors", icon: PlugsIcon },
   { href: "/workspace-settings", label: "Workspace", icon: GearSixIcon },

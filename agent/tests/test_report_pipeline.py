@@ -76,7 +76,10 @@ def test_a_full_run_reaches_a_passing_verification_and_two_report_files(complete
     assert pipeline.outcome.verification["status"] == "pass", (
         pipeline.outcome.verification["findings"]
     )
-    assert types_of(events).count("report_file") == 2
+    # The delivered pair, plus the styled reading copy when it rendered with every figure.
+    delivered = [e["key"].rsplit("/", 1)[-1] for e in events if e["type"] == "report_file"]
+    assert len(delivered) == len(set(delivered)), delivered
+    assert sorted(set(delivered) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], delivered
     assert {ref.kind for ref in pipeline.outcome.artifacts} == {"docx", "pdf"}
 
 

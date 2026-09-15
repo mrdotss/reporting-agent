@@ -1,0 +1,29 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AskChatHistory",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:UpdateItem",
+        "dynamodb:Query",
+        "dynamodb:ConditionCheckItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rpt-chat-history",
+        "arn:aws:dynamodb:us-east-1:<ACCOUNT_ID>:table/rpt-chat-history/index/GSI1"
+      ]
+    },
+    {
+      "Sid": "AskConversationTitles",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:*::foundation-model/*",
+        "arn:aws:bedrock:us-east-1:<ACCOUNT_ID>:inference-profile/*"
+      ]
+    }
+  ]
+}

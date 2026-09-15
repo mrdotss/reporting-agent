@@ -359,13 +359,18 @@ SDK_SCAN_PACKAGES: tuple[str, ...] = (
     "storage",
     "providers",
     "catalog",
+    "chat",
+    "pricing",
 )
 """The packages the SDK rule now has to actually reach.
 
 Rule 1 is written as "everything outside `azure/`", which was correct and unfalsifiable
-while most of the tree was empty: a scan matching four modules passed it. These nine are
+while most of the tree was empty: a scan matching four modules passed it. These are
 asserted present and non-empty so the rule's reach grows with the tree rather than being
-re-argued each time a package lands."""
+re-argued each time a package lands. `chat/` and `pricing/` (ask-chat) are here in
+particular because both sit next to customer data — `pricing/` reaches the network — and
+neither may ever authenticate to Azure: pricing is a public API, and chat reads saved
+scans, not live subscriptions."""
 
 
 def test_no_module_outside_the_azure_package_imports_an_azure_sdk() -> None:
@@ -1065,7 +1070,8 @@ def test_the_narrate_package_exists_and_holds_exactly_two_call_sites() -> None:
     narrate = SRC_ROOT / NARRATE_PACKAGE
     modules = {path.name for path in _source_modules(narrate)}
 
-    assert modules == {"__init__.py", "summary.py", "review.py"}, sorted(modules)
+    # ask-chat Req 5 — `chat.py` is the third call site: the one model-facing command.
+    assert modules == {"__init__.py", "summary.py", "review.py", "chat.py"}, sorted(modules)
     assert _bedrock_offenders(_source_modules(narrate)), (
         "narrate/ must actually reach a model, or rule 6 is a rule about nothing"
     )
@@ -2709,12 +2715,14 @@ def test_the_handler_scan_permits_a_gap_or_a_raise(tmp_path: Path, source: str) 
 GUARDED_PACKAGES: tuple[str, ...] = (
     "azure",
     "catalog",
+    "chat",
     "collect",
     "compare",
     "compile",
     "compile/blocks",
     "messages",
     "narrate",
+    "pricing",
     "providers",
     "render",
     "storage",

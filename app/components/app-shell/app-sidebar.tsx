@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
   CaretUpDownIcon,
+  ChatsCircleIcon,
   CheckIcon,
   FileTextIcon,
   GearSixIcon,
@@ -91,6 +92,7 @@ export type AppSidebarProps = Readonly<{
 const THIS_PERIOD = [
   { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
+  { href: "/ask", label: "Ask", icon: ChatsCircleIcon },
 ] as const
 
 const LIBRARY = [

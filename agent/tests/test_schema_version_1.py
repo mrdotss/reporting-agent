@@ -283,8 +283,11 @@ class TestV1CompileAndVerify:
             f"V1 fixture failed with unexpected error: {error}"
         )
         report_file_events = [e for e in events if e.get("type") == "report_file"]
-        assert len(report_file_events) == 2, (
-            f"Expected 2 report_file events (docx + pdf), got {len(report_file_events)}"
+        # The delivered pair, plus the styled reading copy when it rendered with every figure.
+        leaves = [e["key"].rsplit("/", 1)[-1] for e in report_file_events]
+        assert len(leaves) == len(set(leaves)), leaves
+        assert sorted(set(leaves) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], (
+            f"Expected report.docx + report.pdf (and at most the styled reading copy), got {leaves}"
         )
         kinds = {e["kind"] for e in report_file_events}
         assert kinds == {"docx", "pdf"}, f"Got kinds: {kinds}"

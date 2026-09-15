@@ -589,14 +589,17 @@ def test_the_stream_is_snapshot_ready_then_verification_then_two_report_files_th
     verification = one(ordered, "verification")
     assert verification["status"] == "pass", verification["findings"]
 
-    # Both `report_file` events after it.
+    # Every `report_file` event after it: the delivered pair, plus the styled reading copy
+    # when it rendered with every figure.
     verification_at = index_of(ordered, "verification")
     report_files = [
         position
         for position, event in enumerate(ordered)
         if event["type"] == "report_file"
     ]
-    assert len(report_files) == 2, types
+    leaves = [ordered[position]["key"].rsplit("/", 1)[-1] for position in report_files]
+    assert len(leaves) == len(set(leaves)), leaves
+    assert sorted(set(leaves) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], leaves
     assert all(position > verification_at for position in report_files), types
     assert {ordered[position]["kind"] for position in report_files} == {"docx", "pdf"}
 
@@ -890,9 +893,10 @@ def test_the_four_artifacts_are_written_under_the_actor_reports_run_prefix(
         assert len(segments) == 4
         assert walk.store.get(key).tags == {"owner-actor-id": ACTOR_ID}
 
-    # The two downloadable ones, and only those two, are named by a `report_file`.
+    # The two delivered documents are named by a `report_file`, and the only other key one
+    # may name is the styled reading copy — offered when it rendered with every figure.
     named = {event["key"] for event in events if event["type"] == "report_file"}
-    assert named == {
+    assert named - {reports_key(ACTOR_ID, RUN_ID, "report-styled.pdf")} == {
         reports_key(ACTOR_ID, RUN_ID, "report.docx"),
         reports_key(ACTOR_ID, RUN_ID, "report.pdf"),
     }

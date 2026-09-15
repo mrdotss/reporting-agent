@@ -45,7 +45,12 @@ REQUIRED_ENV_VARS: Final[tuple[str, ...]] = (
     "RPT_PROSE_MODEL_ID",
 )
 
-OPTIONAL_ENV_VARS: Final[tuple[str, ...]] = ("RPT_CA_BUNDLE",)
+OPTIONAL_ENV_VARS: Final[tuple[str, ...]] = (
+    "RPT_CA_BUNDLE",
+    "RPT_CHAT_MODEL_ID",
+    "RPT_CHAT_GUARDRAIL_ID",
+    "RPT_CHAT_GUARDRAIL_VERSION",
+)
 """Variables a deployment **may** set, declared so `agent/.env.example` can document
 them without `_require` refusing a container that leaves them blank.
 
@@ -113,7 +118,15 @@ class Config:
     first construction, which is as loud as a failure gets.
     """
 
-    __slots__ = ("artifact_bucket", "aws_region", "ca_bundle", "prose_model_id")
+    __slots__ = (
+        "artifact_bucket",
+        "aws_region",
+        "ca_bundle",
+        "chat_guardrail_id",
+        "chat_guardrail_version",
+        "chat_model_id",
+        "prose_model_id",
+    )
 
     aws_region: str
     """Region for the S3 artifact writes and for every other AWS client."""
@@ -148,6 +161,20 @@ class Config:
     and a `verify=False` flag is the kind of thing that survives into production.
     """
 
+    chat_model_id: str
+    """`RPT_CHAT_MODEL_ID` — the model the `chat` command answers with, or `""` for the
+    prose model. Optional: a deployment that never chats needs nothing new."""
+
+    chat_guardrail_id: str
+    """`RPT_CHAT_GUARDRAIL_ID` — the Bedrock guardrail every chat question runs through.
+
+    Optional **for the process**, required **for chat**: a blank value does not stop the
+    runtime starting, because every report command works without it, but a `chat`
+    invocation refuses to run (ask-chat Req 5.3). An unguarded chat fails closed."""
+
+    chat_guardrail_version: str
+    """`RPT_CHAT_GUARDRAIL_VERSION` — the pinned version of that guardrail."""
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
         """Read every required variable and return a frozen `Config`.
@@ -167,4 +194,7 @@ class Config:
             # Optional: read directly rather than through `_require`, which exists to
             # refuse a blank. A blank here *is* the default and must not raise.
             ca_bundle=(source.get("RPT_CA_BUNDLE") or "").strip(),
+            chat_model_id=(source.get("RPT_CHAT_MODEL_ID") or "").strip(),
+            chat_guardrail_id=(source.get("RPT_CHAT_GUARDRAIL_ID") or "").strip(),
+            chat_guardrail_version=(source.get("RPT_CHAT_GUARDRAIL_VERSION") or "").strip(),
         )
