@@ -46,10 +46,10 @@ import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
  */
 
 export const metadata: Metadata = {
-  title: "Report Profiles",
+  title: "Presets",
   description:
-    "Compose a report profile from typed sections. A profile is rules, not " +
-    "resource ids, so one works for every subscription you have connected.",
+    "Compose a preset from typed sections. A preset is rules, not resource ids, so " +
+    "one works for every connector of its source.",
 }
 
 export default async function TemplatesPage() {

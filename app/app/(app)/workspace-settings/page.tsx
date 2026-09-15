@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 
@@ -10,6 +11,11 @@ import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
 import { teamDetails } from "@/lib/workspaces/store"
 import { cn } from "@/lib/utils"
+
+export const metadata: Metadata = {
+  title: "Workspace",
+  description: "The workspace's customers, its team, and its close day.",
+}
 
 /**
  * `/workspace-settings` — the workspace's customers, its team, and its close.

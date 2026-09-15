@@ -1,4 +1,11 @@
+import type { Metadata } from "next"
+
 import { AcceptInvitation } from "@/components/workspaces/accept-invitation"
+
+export const metadata: Metadata = {
+  title: "Join a workspace",
+  description: "Accept an invitation to a Utilize Space workspace.",
+}
 
 export default function InvitePage() {
   return (

@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import Link from "next/link"
 import { notFound } from "next/navigation"
 import { ArrowLeftIcon, UsersThreeIcon } from "@phosphor-icons/react/ssr"
@@ -20,6 +21,11 @@ import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
+
+export const metadata: Metadata = {
+  title: "Request a report",
+  description: "Request a customer's report against a saved preset.",
+}
 
 /**
  * `/reports/new` — request a report against a saved preset.

@@ -11,7 +11,7 @@ import { requireSession } from "@/lib/auth/guard"
  */
 
 export const metadata: Metadata = {
-  title: "Close board",
+  title: "Overview",
   description:
     "Each customer's report for the open period: what is delivered, in flight, " +
     "not delivered or not yet requested.",

@@ -35,11 +35,11 @@ from reporting_agent.chat.payload import ChatRequest, detect_language
 from reporting_agent.chat.stream_filter import AnswerFilter
 from reporting_agent.narrate.chat import (
     GUARDRAIL_INTERVENED,
-    SYSTEM_PROMPT,
     ChatModel,
     build_grounding,
     build_messages,
     refusal_text,
+    system_prompt,
 )
 from reporting_agent.pricing.azure_retail import (
     MAX_PAIRS,
@@ -144,7 +144,7 @@ async def run_chat(
     )
     messages = build_messages(history=request.history, prompt=request.prompt, grounding=grounding)
 
-    async for kind, value in model.stream(system=SYSTEM_PROMPT, messages=messages):
+    async for kind, value in model.stream(system=system_prompt(language), messages=messages):
         if kind == "stop":
             if value == GUARDRAIL_INTERVENED:
                 answer.mark_refused()
