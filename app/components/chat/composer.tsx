@@ -1,11 +1,19 @@
 "use client"
 
 import { useRef, useState } from "react"
-import { ArrowUpIcon, FileTextIcon, PaperclipIcon, PlugsIcon, XIcon } from "@phosphor-icons/react"
+import {
+  ArrowUpIcon,
+  FileTextIcon,
+  LightningIcon,
+  PaperclipIcon,
+  PlugsIcon,
+  XIcon,
+} from "@phosphor-icons/react"
 
+import type { AttachmentKind } from "@/components/chat/context-panel"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import type { AttachableConnector, AttachableRun } from "@/lib/chat/sources"
+import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/chat/sources"
 import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
 
 /**
@@ -17,6 +25,7 @@ import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
 export function Composer({
   runs,
   connectors,
+  live,
   busy,
   onSend,
   onAttach,
@@ -24,21 +33,22 @@ export function Composer({
 }: Readonly<{
   runs: readonly AttachableRun[]
   connectors: readonly AttachableConnector[]
+  live: readonly AttachableLive[]
   busy: boolean
   onSend: (question: string) => Promise<boolean>
   onAttach: () => void
-  onRemove: (kind: "run" | "connector", id: string) => void
+  onRemove: (kind: AttachmentKind, id: string) => void
 }>) {
   const [draft, setDraft] = useState("")
   const [notice, setNotice] = useState("")
   const input = useRef<HTMLTextAreaElement>(null)
-  const nothingAttached = runs.length === 0 && connectors.length === 0
+  const nothingAttached = runs.length === 0 && connectors.length === 0 && live.length === 0
 
   async function submit() {
     const question = draft.trim()
     if (!question || busy) return
     if (nothingAttached) {
-      setNotice("Attach a verified report or a scanned connector first.")
+      setNotice("Attach a verified report, a scanned connector or live metrics first.")
       return
     }
     setNotice("")
@@ -68,12 +78,21 @@ export function Composer({
                 onRemove={() => onRemove("run", run.runId)}
               />
             ))}
+            {live.map((pull) => (
+              <Chip
+                key={pull.id}
+                icon={<LightningIcon className="size-3.5 text-muted-foreground" />}
+                label={pull.resourceNames.join(", ")}
+                detail={`live · ${pull.windowLabel}`}
+                onRemove={() => onRemove("live", pull.id)}
+              />
+            ))}
             {connectors.map((connector) => (
               <Chip
                 key={connector.id}
                 icon={<PlugsIcon className="size-3.5 text-primary" />}
                 label={connector.label}
-                detail="live"
+                detail="inventory"
                 onRemove={() => onRemove("connector", connector.id)}
               />
             ))}
@@ -98,7 +117,7 @@ export function Composer({
           }}
           placeholder={
             nothingAttached
-              ? "Attach a report to start asking…"
+              ? "Attach a report or live metrics to start asking…"
               : "Ask about the attached usage — e.g. which VMs could move down a size?"
           }
           className="block max-h-44 min-h-12 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"

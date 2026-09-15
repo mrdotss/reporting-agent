@@ -1,15 +1,16 @@
 """One chat turn: ground, price, answer, enforce (ask-chat Req 1).
 
 The order is the design. Everything the model may cite is gathered **before** the model is
-called — verified ledgers, saved scan counts, list prices — and every chunk the model writes
-passes through :class:`~reporting_agent.chat.stream_filter.AnswerFilter` before it becomes a
-`delta`. The turn's result rides on `done` through the invocation outcome:
+called — verified ledgers, saved scan counts, live metrics pulls, list prices — and every
+chunk the model writes passes through
+:class:`~reporting_agent.chat.stream_filter.AnswerFilter` before it becomes a `delta`. The
+turn's result rides on `done` through the invocation outcome:
 
-- `language` — the language this runtime's own sentences were written in;
+- `language` — the language this turn was answered in;
 - `citations` — each fact the answer used, with the path or price it came from;
 - `proposal` — a report request the user may confirm, when one survived the allow-list;
-- `refused`, `unavailable_runs`, `prices_unavailable`, `withheld_figures` — what the UI
-  should say about what was not used.
+- `refused`, `unavailable_runs`, `unavailable_live`, `prices_unavailable`,
+  `withheld_figures` — what the UI should say about what was not used.
 
 No new event type: `tool` for the three steps, `delta` for the answer text.
 """
@@ -24,8 +25,12 @@ from typing import TYPE_CHECKING, Any, Final
 from reporting_agent.chat.grounding import (
     SOURCE_PRICE,
     Fact,
+    LiveGrounding,
+    LiveUnavailableError,
     RunGrounding,
     RunUnavailableError,
+    VmSize,
+    load_live_grounding,
     load_run_grounding,
     number_facts,
     scan_facts,
@@ -91,8 +96,10 @@ async def run_chat(
     outcome["language"] = language
 
     groundings: list[RunGrounding] = []
+    live_groundings: list[LiveGrounding] = []
     unavailable: list[RunUnavailableError] = []
-    if request.runs or request.scans:
+    unavailable_live: list[LiveUnavailableError] = []
+    if request.runs or request.scans or request.live:
         step = steps.start(
             TOOL_READ_GROUNDING, label="Grounding", status=_grounding_status(request)
         )
@@ -102,13 +109,23 @@ async def run_chat(
                 groundings.append(await load_run_grounding(store, run))
             except RunUnavailableError as exc:
                 unavailable.append(exc)
+        for live in request.live:
+            try:
+                live_groundings.append(await load_live_grounding(store, live))
+            except LiveUnavailableError as exc:
+                unavailable_live.append(exc)
         yield steps.end(step["id"])
 
     facts: list[Fact] = [fact for grounding in groundings for fact in grounding.facts]
+    for live_grounding in live_groundings:
+        facts.extend(live_grounding.facts)
     for scan in request.scans:
         facts.extend(scan_facts(scan))
 
-    pairs = _price_pairs(groundings)
+    pairs = _price_pairs(
+        [size for grounding in groundings for size in grounding.vm_sizes]
+        + [size for live_grounding in live_groundings for size in live_grounding.vm_sizes]
+    )
     if pairs and prices is not None:
         step = steps.start(
             TOOL_LOOKUP_PRICES,
@@ -129,6 +146,10 @@ async def run_chat(
         outcome["unavailable_runs"] = [
             {"run_id": exc.run.run_id, "reason": exc.reason} for exc in unavailable
         ]
+    if unavailable_live:
+        outcome["unavailable_live"] = [
+            {"pull_id": exc.live.pull_id, "reason": exc.reason} for exc in unavailable_live
+        ]
 
     step = steps.start(TOOL_COMPOSE_ANSWER, label="Answer", status="Writing the answer")
     yield step
@@ -138,9 +159,11 @@ async def run_chat(
         nonce=secrets.token_hex(12),
         runs=[grounding.run for grounding in groundings],
         scans=request.scans,
+        live=[live_grounding.live for live_grounding in live_groundings],
         facts=numbered,
         targets=request.targets,
-        unavailable=[f"{exc.run.customer_name} {exc.run.period_display}" for exc in unavailable],
+        unavailable=[f"{exc.run.customer_name} {exc.run.period_display}" for exc in unavailable]
+        + [f"{exc.live.connector_label} {exc.live.window_display}" for exc in unavailable_live],
     )
     messages = build_messages(history=request.history, prompt=request.prompt, grounding=grounding)
 
@@ -187,13 +210,12 @@ def price_facts(prices: Sequence[RetailPrice]) -> list[Fact]:
     ]
 
 
-def _price_pairs(groundings: Sequence[RunGrounding]) -> list[VmPricePair]:
+def _price_pairs(sizes: Sequence[VmSize]) -> list[VmPricePair]:
     pairs: dict[VmPricePair, None] = {}
-    for grounding in groundings:
-        for size in grounding.vm_sizes:
-            pair = normalize_pair(size.sku, size.region)
-            if pair is not None:
-                pairs.setdefault(pair, None)
+    for size in sizes:
+        pair = normalize_pair(size.sku, size.region)
+        if pair is not None:
+            pairs.setdefault(pair, None)
     return list(pairs)[:MAX_PAIRS]
 
 
@@ -213,6 +235,8 @@ def _grounding_status(request: ChatRequest) -> str:
     parts = []
     if request.runs:
         parts.append(_plural(len(request.runs), "verified report"))
+    if request.live:
+        parts.append(_plural(len(request.live), "live metrics pull"))
     if request.scans:
         parts.append(_plural(len(request.scans), "connector scan"))
     return "Reading " + " and ".join(parts)

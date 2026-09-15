@@ -65,6 +65,13 @@ export const COMMAND_RENDER_PREVIEW = "render_preview"
 export const COMMAND_LIST_INVENTORY = "list_inventory"
 
 /**
+ * The machines a connector can see — id, name, region, size and power state — for the Ask
+ * page's live metrics picker (ask-chat Req 8.1). Deterministic, and separate from
+ * `list_inventory` because that listing structurally carries no resource identifier.
+ */
+export const COMMAND_LIST_RESOURCES = "list_resources"
+
+/**
  * `chat` — the one command that carries a `prompt` (ask-chat Req 1.1).
  *
  * Every other command is deterministic and the runtime ignores a prompt beside it. Chat
@@ -112,6 +119,15 @@ export interface ChatRequestTarget {
   readonly provider: string
 }
 
+/** One completed live metrics pull: a snapshot under its puller's prefix, never verified. */
+export interface ChatLiveAttachment {
+  readonly pull_id: string
+  readonly owner_actor_id: string
+  readonly connector_label: string
+  readonly window_display: string
+  readonly collected_at: string
+}
+
 export interface ChatCommand {
   readonly command: typeof COMMAND_CHAT
   readonly prompt: string
@@ -119,6 +135,7 @@ export interface ChatCommand {
   readonly attachments: {
     readonly runs: readonly ChatRunAttachment[]
     readonly scans: readonly ChatScanAttachment[]
+    readonly live: readonly ChatLiveAttachment[]
   }
   readonly request_targets: readonly ChatRequestTarget[]
 }
@@ -370,6 +387,11 @@ export type InvokeCommand =
    * be a filter on the very list the pickers exist to offer.
    */
   | { command: typeof COMMAND_LIST_INVENTORY }
+  /**
+   * `list_resources` — the machines for the live metrics picker. `resource_types`
+   * defaults to virtual machines in the runtime when absent.
+   */
+  | { command: typeof COMMAND_LIST_RESOURCES; resource_types?: readonly string[] }
   | {
       command: typeof COMMAND_RENDER_PREVIEW
       /** Minted per activation; the key the runtime writes under. */

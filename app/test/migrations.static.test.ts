@@ -990,6 +990,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
     expect([...created.tables.keys()].sort()).toEqual([
       "brands",
       "connected_subscriptions",
+      "live_metric_pulls",
       "login_attempts",
       "projects",
       "report_profile_authored_matches",

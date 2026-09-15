@@ -113,6 +113,8 @@ function toThreadView(item: Record<string, unknown>): ChatThreadView {
       connectorIds: Array.isArray(attachments.connectorIds)
         ? attachments.connectorIds.map(String)
         : [],
+      // Absent on a thread saved before live metrics existed.
+      liveIds: Array.isArray(attachments.liveIds) ? attachments.liveIds.map(String) : [],
     },
   }
 }

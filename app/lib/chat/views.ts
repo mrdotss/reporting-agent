@@ -23,6 +23,11 @@ export const CHAT_PROMPT_MAX = 4000
 export type ChatAttachments = {
   readonly runIds: readonly string[]
   readonly connectorIds: readonly string[]
+  /**
+   * Completed live metrics pulls (ask-chat Req 8). Optional so a thread stored before
+   * live metrics existed still reads as a valid attachment set.
+   */
+  readonly liveIds?: readonly string[]
 }
 
 export type ChatThreadView = {
@@ -38,7 +43,10 @@ export type ChatThreadView = {
 
 export type ChatCitation = {
   readonly fact_id: string
-  readonly source: "report" | "scan" | "price" | string
+  /** `live` is a live metrics pull: collected on request and never verified. */
+  readonly source: "report" | "scan" | "live" | "price" | string
+  readonly pull_id?: string
+  readonly connector_label?: string
   readonly label: string
   readonly formatted: string
   readonly run_id?: string

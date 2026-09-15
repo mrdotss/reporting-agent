@@ -192,6 +192,38 @@ The caller bounds its own wait at 30 seconds and writes no cache entry for a lis
 did not answer. Neither bound is enforced here: this command has no run row, so there is no
 reaper behind it and the timeout belongs to the endpoint.
 
+### `list_resources`
+
+```jsonc
+{ "command": "list_resources",
+  "resource_types": ["Microsoft.Compute/virtualMachines"],   // optional; this is the default
+  "context": { /* `subscription_id` and the three Azure credential fields */ } }
+```
+
+The machines a connector can see, for the Ask page's live metrics picker (ask-chat Req 8.1).
+A separate command from `list_inventory` because that listing structurally carries no resource
+identifier, while a picker needs one. One pass through the report run's own
+`InventoryCollector`, with no archive and no fact projection.
+
+**The result rides on `done`**, written only on success:
+
+```jsonc
+{ "type": "done", "run_id": null, "status": "completed",
+  "resources": [ { "resource_id": "/subscriptions/…/virtualMachines/cpn-app", "name": "cpn-app",
+                   "resource_type": "Microsoft.Compute/virtualMachines", "location": "southeastasia",
+                   "resource_group": "rg-prod", "sku_name": "Standard_B2als_v2", "power_state": "running" } ],
+  "resources_truncated": false }                 // true past 500 machines
+```
+
+### Live metrics pulls — a collection-only `generate_report`
+
+A live metrics pull (ask-chat Req 8) is the snapshot-only `generate_report` shape above with one
+more scope key: `scope.resource_ids`, an explicit machine list applied beside the resource-group
+and tag filters. `context.run_id` is the pull's id, so the snapshot lands at
+`<actor_id>/snapshots/<pull id>/snapshot.json`; `progress_url` and `progress_token` are empty, so
+nothing posts progress. The snapshot records `requested_scope.resource_ids` **only when requested**,
+so a report run's snapshot bytes and content hash are unchanged.
+
 ### `chat`
 
 The one model-facing command (`.kiro/specs/ask-chat/requirements.md`). The app sends only
@@ -206,7 +238,11 @@ credential** — `actor_id` only.
     "runs":  [ { "run_id": "…", "owner_actor_id": "…", "verification_attempt_id": "…",
                  "customer_name": "Satu Data Labs", "period_display": "August 2026", "provider": "azure" } ],
     "scans": [ { "scan_id": "…", "connector_label": "satu-prod", "provider": "azure",
-                 "collected_at": "2026-09-14T02:00:00Z", "inventory": { /* ScanView counts */ } } ] },
+                 "collected_at": "2026-09-14T02:00:00Z", "inventory": { /* ScanView counts */ } } ],
+    // Live metrics pulls (ask-chat Req 8): a snapshot under the puller's prefix, never
+    // verified. Its statistics become facts with source `live`, cited as unverified.
+    "live":  [ { "pull_id": "…", "owner_actor_id": "…", "connector_label": "satu-prod",
+                 "window_display": "1–7 Sept 2026", "collected_at": "2026-09-15T09:30:00Z" } ] },
   "request_targets": [ { "target_id": "t1", "customer_name": "…", "connector_label": "…", "provider": "azure" } ],
   "context": { "actor_id": "…" } }
 ```

@@ -486,6 +486,8 @@ export type RunScope = {
   resource_types: string[]
   resource_groups: string[]
   tag_filters: Record<string, string>
+  /** An explicit machine list — set by a live metrics pull, never by a report run. */
+  resource_ids?: string[]
 }
 
 /**
@@ -1137,6 +1139,62 @@ export const subscriptionScans = pgTable(
 )
 
 /**
+ * One live metrics pull for the Ask page (ask-chat Req 8).
+ *
+ * A collection-only `generate_report` over machines the user picked and a window of
+ * whole local days. It writes a snapshot under `<user_id>/snapshots/<id>/` and no
+ * document, so nothing here is verified: a chat cites its figures as live and
+ * unverified. The lifecycle reuses `scan_status` rather than declaring a new type.
+ */
+export const liveMetricPulls = pgTable(
+  "live_metric_pulls",
+  {
+    id: text("id").primaryKey(),
+
+    workspaceId: text("workspace_id").references(() => workspaces.id),
+    projectId: text("project_id").references(() => projects.id),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+
+    connectedSubscriptionId: text("connected_subscription_id")
+      .notNull()
+      .references(() => connectedSubscriptions.id),
+
+    /** The machines picked, as full resource ids. */
+    resourceIds: jsonb("resource_ids").$type<string[]>().notNull(),
+    /** Their names at pick time, for labels; the snapshot is the authority on data. */
+    resourceNames: jsonb("resource_names").$type<string[]>().notNull(),
+
+    periodStart: date("period_start", { mode: "string" }).notNull(),
+    periodEnd: date("period_end", { mode: "string" }).notNull(),
+    timezone: text("timezone").notNull(),
+
+    status: scanStatus("status").notNull().default("queued"),
+
+    resourceCount: integer("resource_count"),
+    gapCount: integer("gap_count"),
+
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+
+    completedAt: instant("completed_at"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at")
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("live_metric_pulls_workspace_created_at_idx").on(
+      table.workspaceId,
+      table.createdAt
+    ),
+    index("live_metric_pulls_subscription_idx").on(table.connectedSubscriptionId),
+  ]
+)
+
+/**
  * One row per (template version, section) — the resources that section's rule
  * matched at PUBLISH time, against the scan the consultant was looking at while
  * authoring it (task 3.10, Requirement 9.5).
@@ -1227,6 +1285,7 @@ export type NewConnectedSubscription =
   typeof connectedSubscriptions.$inferInsert
 
 export type ReportRun = typeof reportRuns.$inferSelect
+export type LiveMetricPull = typeof liveMetricPulls.$inferSelect
 export type NewReportRun = typeof reportRuns.$inferInsert
 
 export type ReportTemplate = typeof reportTemplates.$inferSelect

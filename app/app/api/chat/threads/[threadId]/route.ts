@@ -60,9 +60,11 @@ export async function PATCH(request: Request, context: ThreadRouteContext): Prom
       const sources = await listChatSources(user.id, thread.workspaceId)
       const runIds = new Set(sources.runs.map((run) => run.runId))
       const connectorIds = new Set(sources.connectors.map((connector) => connector.id))
+      const liveIds = new Set(sources.live.map((pull) => pull.id))
       attachments = {
         runIds: attachments.runIds.filter((id) => runIds.has(id)),
         connectorIds: attachments.connectorIds.filter((id) => connectorIds.has(id)),
+        liveIds: attachments.liveIds.filter((id) => liveIds.has(id)),
       }
     }
 

@@ -3,15 +3,15 @@
 import { useCallback, useMemo, useRef, useState } from "react"
 import { ChatsCircleIcon, NotePencilIcon, SidebarSimpleIcon } from "@phosphor-icons/react"
 
-import { AttachDialog } from "@/components/chat/attach-dialog"
+import { AttachDialog, MAX_LIVE } from "@/components/chat/attach-dialog"
 import { Composer } from "@/components/chat/composer"
-import { ContextPanel } from "@/components/chat/context-panel"
+import { ContextPanel, type AttachmentKind } from "@/components/chat/context-panel"
 import { Conversation } from "@/components/chat/conversation"
 import { ThreadList } from "@/components/chat/thread-list"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useChatStream } from "@/hooks/useChatStream"
-import type { ChatSources } from "@/lib/chat/sources"
+import type { AttachableLive, ChatSources } from "@/lib/chat/sources"
 import type {
   ChatAttachments,
   ChatMessageView,
@@ -28,16 +28,20 @@ import type {
  * A conversation is created on its first question, not when "New" is pressed, so the
  * workspace's list never fills with empty threads. The URL follows the open conversation
  * (`?t=`) without a navigation, so it can be copied and sent to a teammate.
+ *
+ * The sources are state, not props: a live metrics pull collected in the attach dialog
+ * joins them and is attached at once, without reloading the page.
  */
 
-const NO_ATTACHMENTS: ChatAttachments = { runIds: [], connectorIds: [] }
+const NO_ATTACHMENTS: ChatAttachments = { runIds: [], connectorIds: [], liveIds: [] }
 const JSON_HEADERS = { "Content-Type": "application/json" }
 
-export function suggestionsFor(runs: number, connectors: number): string[] {
+export function suggestionsFor(runs: number, connectors: number, live = 0): string[] {
   const suggestions: string[] = []
+  if (live > 0) suggestions.push("How busy was CPU on these machines over the window?")
   if (runs > 0) suggestions.push("Which VMs look over-provisioned?")
   if (runs > 1) suggestions.push("How did usage change between the attached reports?")
-  if (runs > 0) suggestions.push("What would these VM sizes cost per month at list price?")
+  if (runs > 0 || live > 0) suggestions.push("What would these VM sizes cost per month at list price?")
   if (connectors > 0) suggestions.push("What does this connector's inventory look like?")
   return suggestions.slice(0, 3)
 }
@@ -46,7 +50,7 @@ export function AskWorkspace({
   workspaceName,
   currentUserId,
   threads: initialThreads,
-  sources,
+  sources: initialSources,
   initialThread,
   initialMessages,
   canRequest,
@@ -62,6 +66,7 @@ export function AskWorkspace({
   historyUnavailable: boolean
 }>) {
   const [threads, setThreads] = useState<readonly ChatThreadView[]>(initialThreads)
+  const [sources, setSources] = useState<ChatSources>(initialSources)
   const [thread, setThread] = useState<ChatThreadView | null>(initialThread)
   const [messages, setMessages] = useState<readonly ChatMessageView[]>(initialMessages)
   const [draft, setDraft] = useState<ChatAttachments>(NO_ATTACHMENTS)
@@ -78,6 +83,7 @@ export function AskWorkspace({
   const { live, send } = useChatStream({ onUserMessage })
 
   const attachments = thread?.attachments ?? draft
+  const liveIds = useMemo(() => attachments.liveIds ?? [], [attachments.liveIds])
   const attachedRuns = useMemo(
     () => sources.runs.filter((run) => attachments.runIds.includes(run.runId)),
     [sources.runs, attachments.runIds]
@@ -86,10 +92,15 @@ export function AskWorkspace({
     () => sources.connectors.filter((connector) => attachments.connectorIds.includes(connector.id)),
     [sources.connectors, attachments.connectorIds]
   )
+  const attachedLive = useMemo(
+    () => sources.live.filter((pull) => liveIds.includes(pull.id)),
+    [sources.live, liveIds]
+  )
   const gone =
-    attachments.runIds.length + attachments.connectorIds.length -
+    attachments.runIds.length + attachments.connectorIds.length + liveIds.length -
     attachedRuns.length -
-    attachedConnectors.length
+    attachedConnectors.length -
+    attachedLive.length
 
   function remember(next: ChatThreadView) {
     setThread(next)
@@ -136,7 +147,9 @@ export function AskWorkspace({
     const response = await fetch(`/api/chat/threads/${encodeURIComponent(thread.id)}`, {
       method: "PATCH",
       headers: JSON_HEADERS,
-      body: JSON.stringify({ attachments: next }),
+      body: JSON.stringify({
+        attachments: { runIds: next.runIds, connectorIds: next.connectorIds, liveIds: next.liveIds ?? [] },
+      }),
     })
     if (!response.ok) {
       setError("The attachments couldn’t be saved. Try again.")
@@ -145,15 +158,31 @@ export function AskWorkspace({
     remember(((await response.json()) as { thread: ChatThreadView }).thread)
   }
 
-  function detach(kind: "run" | "connector", id: string) {
+  function detach(kind: AttachmentKind, id: string) {
     void changeAttachments(
       kind === "run"
         ? { ...attachments, runIds: attachments.runIds.filter((runId) => runId !== id) }
-        : {
-            ...attachments,
-            connectorIds: attachments.connectorIds.filter((connectorId) => connectorId !== id),
-          }
+        : kind === "connector"
+          ? {
+              ...attachments,
+              connectorIds: attachments.connectorIds.filter((connectorId) => connectorId !== id),
+            }
+          : { ...attachments, liveIds: liveIds.filter((liveId) => liveId !== id) }
     )
+  }
+
+  function attachCollected(pull: AttachableLive) {
+    setSources((current) => ({
+      ...current,
+      live: [
+        { ...pull, ownerId: pull.ownerId || currentUserId },
+        ...current.live.filter((entry) => entry.id !== pull.id),
+      ],
+    }))
+    void changeAttachments({
+      ...attachments,
+      liveIds: [pull.id, ...liveIds.filter((id) => id !== pull.id)].slice(0, MAX_LIVE),
+    })
   }
 
   async function ask(question: string): Promise<boolean> {
@@ -163,7 +192,9 @@ export function AskWorkspace({
       const response = await fetch("/api/chat/threads", {
         method: "POST",
         headers: JSON_HEADERS,
-        body: JSON.stringify({ attachments: draft }),
+        body: JSON.stringify({
+          attachments: { runIds: draft.runIds, connectorIds: draft.connectorIds, liveIds: draft.liveIds ?? [] },
+        }),
       })
       if (!response.ok) {
         setError("The conversation couldn’t be started. Try again.")
@@ -196,13 +227,17 @@ export function AskWorkspace({
     )
   }
 
+  const attachedCount = attachedRuns.length + attachedConnectors.length + attachedLive.length
   const customers = [...new Set(attachedRuns.map((run) => run.customerName))]
   const scopeLine =
-    attachedRuns.length + attachedConnectors.length === 0
-      ? "Nothing attached — attach a verified report to ask about it"
+    attachedCount === 0
+      ? "Nothing attached — attach a verified report or live metrics to ask about it"
       : [
           attachedRuns.length > 0
             ? `${attachedRuns.length} verified ${attachedRuns.length === 1 ? "report" : "reports"}`
+            : null,
+          attachedLive.length > 0
+            ? `${attachedLive.length} live ${attachedLive.length === 1 ? "pull" : "pulls"}`
             : null,
           attachedConnectors.length > 0
             ? `${attachedConnectors.length} ${attachedConnectors.length === 1 ? "connector" : "connectors"}`
@@ -227,6 +262,7 @@ export function AskWorkspace({
     <ContextPanel
       runs={attachedRuns}
       connectors={attachedConnectors}
+      live={attachedLive}
       onAdd={() => setAttachOpen(true)}
       onRemove={detach}
     />
@@ -277,8 +313,8 @@ export function AskWorkspace({
           live={live}
           currentUserId={currentUserId}
           canRequest={canRequest}
-          hasAttachments={attachedRuns.length + attachedConnectors.length > 0}
-          suggestions={suggestionsFor(attachedRuns.length, attachedConnectors.length)}
+          hasAttachments={attachedCount > 0}
+          suggestions={suggestionsFor(attachedRuns.length, attachedConnectors.length, attachedLive.length)}
           onAsk={(question) => void ask(question)}
           onAttach={() => setAttachOpen(true)}
           onProposalChange={changeProposal}
@@ -293,6 +329,7 @@ export function AskWorkspace({
         <Composer
           runs={attachedRuns}
           connectors={attachedConnectors}
+          live={attachedLive}
           busy={live !== null}
           onSend={ask}
           onAttach={() => setAttachOpen(true)}
@@ -328,6 +365,7 @@ export function AskWorkspace({
         sources={sources}
         attachments={attachments}
         onChange={(next) => void changeAttachments(next)}
+        onCollected={attachCollected}
       />
     </div>
   )

@@ -241,6 +241,7 @@ def test_every_accepted_command_is_routed_and_compare_runs_is_neither() -> None:
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
         COMMAND_LIST_INVENTORY,
+        main.COMMAND_LIST_RESOURCES,
         main.COMMAND_CHAT,
     }
     assert set(COMMAND_HANDLERS) == COMMANDS

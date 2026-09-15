@@ -3,6 +3,7 @@
 import {
   FileTextIcon,
   LightbulbIcon,
+  LightningIcon,
   LockSimpleIcon,
   PlugsIcon,
   PlusIcon,
@@ -11,27 +12,31 @@ import {
 } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
-import type { AttachableConnector, AttachableRun } from "@/lib/chat/sources"
+import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/chat/sources"
 
 /**
- * What the conversation is grounded in, and the three rules that make its answers
- * checkable (ask-chat Req 2, 3).
+ * What the conversation is grounded in, and the rules that make its answers checkable
+ * (ask-chat Req 2, 3, 8).
  */
 
 const COUNT = new Intl.NumberFormat("en-US")
 
+export type AttachmentKind = "run" | "connector" | "live"
+
 export function ContextPanel({
   runs,
   connectors,
+  live,
   onAdd,
   onRemove,
 }: Readonly<{
   runs: readonly AttachableRun[]
   connectors: readonly AttachableConnector[]
+  live: readonly AttachableLive[]
   onAdd: () => void
-  onRemove: (kind: "run" | "connector", id: string) => void
+  onRemove: (kind: AttachmentKind, id: string) => void
 }>) {
-  const empty = runs.length === 0 && connectors.length === 0
+  const empty = runs.length === 0 && connectors.length === 0 && live.length === 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
@@ -45,8 +50,8 @@ export function ContextPanel({
 
       {empty ? (
         <p className="text-meta text-muted-foreground">
-          Nothing attached. Attach a verified report or a scanned connector and answers can
-          cite its figures.
+          Nothing attached. Attach a verified report, a scanned connector or live metrics and
+          answers can cite their figures.
         </p>
       ) : (
         <ul className="flex flex-col gap-2.5">
@@ -86,6 +91,37 @@ export function ContextPanel({
               </div>
             </li>
           ))}
+          {live.map((pull) => (
+            <li key={pull.id} className="flex flex-col gap-2.5 rounded-xl border border-dashed border-input bg-card p-3">
+              <div className="flex items-start gap-2.5">
+                <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+                  <LightningIcon aria-hidden="true" className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-sm font-semibold">{pull.resourceNames.join(", ")}</p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {pull.windowLabel} · {pull.connectorLabel}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => onRemove("live", pull.id)}
+                  aria-label={`Detach live metrics for ${pull.resourceNames.join(", ")}`}
+                >
+                  <XIcon aria-hidden="true" />
+                </Button>
+              </div>
+              <dl className="grid grid-cols-2 gap-1.5">
+                <Fact label="machines" value={pull.resourceCount === null ? "—" : COUNT.format(pull.resourceCount)} />
+                <Fact label="gaps" value={pull.gapCount === null ? "—" : COUNT.format(pull.gapCount)} />
+              </dl>
+              <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                <span className="font-medium uppercase tracking-wide">Live · not verified</span>
+                <span className="font-mono">{pull.collectedAt.slice(0, 16).replace("T", " ")} UTC</span>
+              </div>
+            </li>
+          ))}
           {connectors.map((connector) => (
             <li key={connector.id} className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3">
               <div className="flex items-start gap-2.5">
@@ -95,7 +131,7 @@ export function ContextPanel({
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-mono text-sm font-semibold">{connector.label}</p>
                   <p className="truncate text-xs text-muted-foreground">
-                    {connector.customerName ?? "No customer"} · live inventory
+                    {connector.customerName ?? "No customer"} · inventory
                   </p>
                 </div>
                 <Button
@@ -124,15 +160,18 @@ export function ContextPanel({
       <ul aria-label="How answers are grounded" className="flex flex-col gap-2 rounded-xl bg-muted p-3">
         <Rule icon={<SealCheckIcon className="size-3.5" />}>
           A <span className="font-medium text-(--status-verified)">green figure</span> is read from an
-          attached artifact. Hover it to see where.
+          attached report, scan or price. Hover it to see where.
+        </Rule>
+        <Rule icon={<LightningIcon className="size-3.5" />}>
+          A <span className="font-medium">grey Live figure</span> was collected on request and
+          isn&rsquo;t verified like a report.
         </Rule>
         <Rule icon={<LightbulbIcon className="size-3.5" />}>
           An <span className="font-medium text-(--status-attention)">estimate</span> is reasoning or
-          arithmetic, including list-price costs. It is not a figure the report proves.
+          arithmetic, including list-price costs. It is not a figure the data proves.
         </Rule>
         <Rule icon={<LockSimpleIcon className="size-3.5" />}>
-          Only verified reports can be attached, and answers stay on reports, connectors and
-          pricing.
+          Answers stay on reports, connectors, live metrics and pricing.
         </Rule>
       </ul>
 

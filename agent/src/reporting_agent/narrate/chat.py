@@ -24,7 +24,13 @@ from collections.abc import AsyncIterator, Mapping, Sequence
 from typing import Any, Final, Protocol
 
 from reporting_agent.chat.grounding import Fact
-from reporting_agent.chat.payload import AttachedRun, AttachedScan, HistoryTurn, RequestTarget
+from reporting_agent.chat.payload import (
+    AttachedLive,
+    AttachedRun,
+    AttachedScan,
+    HistoryTurn,
+    RequestTarget,
+)
 from reporting_agent.chat.stream_filter import plain_text
 
 __all__ = [
@@ -63,6 +69,7 @@ FIGURES
 - Never type a figure from the data yourself. Write the fact reference instead, exactly like {{f12}}; it is replaced with the verified value.
 - If you compute something from facts — a difference, a monthly cost from an hourly price at 730 hours, a total — wrap the whole computed statement in <est>...</est> and refer to the facts it uses. A computed value is an estimate.
 - If the data does not contain what the question needs, say so plainly. Never guess a figure.
+- Facts whose source is `live` come from a live metrics pull: collected on request and not verified. When you cite them, say they are live figures, and never call them verified or report figures.
 
 PRICING
 - Price facts are Azure Retail Prices list prices in USD for pay-as-you-go consumption. Always call them list-price estimates. They are not the customer's bill and exclude discounts, reservations, savings plans, licences and taxes. If no price fact exists, say list prices are unavailable.
@@ -129,6 +136,7 @@ def build_grounding(
     facts: Mapping[str, Fact],
     targets: Sequence[RequestTarget],
     unavailable: Sequence[str] = (),
+    live: Sequence[AttachedLive] = (),
 ) -> str:
     lines = [f'<grounding nonce="{nonce}">']
     _section(
@@ -141,6 +149,14 @@ def build_grounding(
     )
     if unavailable:
         _section(lines, "unreadable reports (not verified or not found):", [_safe(item) for item in unavailable])
+    _section(
+        lines,
+        "live metrics pulls (collected on request, NOT verified — call these live figures):",
+        [
+            f"{_safe(pull.connector_label)} | window {_safe(pull.window_display)} | collected {_safe(pull.collected_at)}"
+            for pull in live
+        ],
+    )
     _section(
         lines,
         "connector scans:",

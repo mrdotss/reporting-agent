@@ -1118,17 +1118,19 @@ def _window_from(document: Mapping[str, object]) -> Window:
 def _scope_from(
     document: Mapping[str, object], requested: Mapping[str, object]
 ) -> ScopeSpec:
-    return cast(
-        "ScopeSpec",
-        {
-            "subscription_id": str(document.get("subscription_id") or ""),
-            "resource_types": [str(value) for value in requested.get("resource_types") or []],
-            "resource_groups": [
-                str(value) for value in requested.get("resource_groups") or []
-            ],
-            "tag_filters": dict(requested.get("tag_filters") or {}),  # type: ignore[arg-type]
-        },
-    )
+    scope: dict[str, object] = {
+        "subscription_id": str(document.get("subscription_id") or ""),
+        "resource_types": [str(value) for value in requested.get("resource_types") or []],
+        "resource_groups": [
+            str(value) for value in requested.get("resource_groups") or []
+        ],
+        "tag_filters": dict(requested.get("tag_filters") or {}),  # type: ignore[arg-type]
+    }
+    # Present only on a snapshot whose collection named an explicit machine list.
+    resource_ids = requested.get("resource_ids")
+    if isinstance(resource_ids, list) and resource_ids:
+        scope["resource_ids"] = [str(value) for value in resource_ids]
+    return cast("ScopeSpec", scope)
 
 
 def _metrics_by_resource_type(
