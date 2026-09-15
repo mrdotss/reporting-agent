@@ -34,11 +34,13 @@ from reporting_agent.chat.payload import (
 from reporting_agent.chat.session import _trim_price, price_facts
 from reporting_agent.chat.stream_filter import REFUSAL_SENTINEL, AnswerFilter, plain_text
 from reporting_agent.narrate.chat import (
+    SYSTEM_PROMPT,
     BedrockChatModel,
     ChatNotConfiguredError,
     bedrock_chat_model,
     build_grounding,
     build_messages,
+    system_prompt,
 )
 from reporting_agent.pricing.azure_retail import (
     RETAIL_PRICES_URL,
@@ -403,6 +405,20 @@ def test_grounding_values_cannot_close_the_fence() -> None:
     assert text.count("</grounding") == 1
     assert text.endswith('</grounding nonce="abc">')
     assert "⟦" not in text
+
+
+@pytest.mark.parametrize(
+    ("language", "line"),
+    [
+        ("en", "Reply language: English."),
+        ("id", "Reply language: Indonesian (Bahasa Indonesia)."),
+        ("fr", "Reply language: English."),
+    ],
+)
+def test_the_reply_language_is_decided_by_the_runtime_not_the_model(language: str, line: str) -> None:
+    prompt = system_prompt(language)
+    assert prompt.startswith(SYSTEM_PROMPT)
+    assert prompt.rstrip().endswith(line)
 
 
 def test_an_unguarded_chat_model_is_never_built() -> None:

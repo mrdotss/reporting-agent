@@ -50,8 +50,8 @@ import {
  */
 
 export const metadata: Metadata = {
-  title: "Edit report profile",
-  description: "Compose a report profile from typed sections.",
+  title: "Edit preset",
+  description: "Compose a preset from typed sections.",
 }
 
 type PageProps = Readonly<{ params: Promise<{ id: string }> }>

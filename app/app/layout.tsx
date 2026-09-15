@@ -1,3 +1,4 @@
+import type { Metadata } from "next"
 import { Instrument_Sans, Spline_Sans_Mono } from "next/font/google"
 
 import "./globals.css"
@@ -39,6 +40,15 @@ const fontMono = Spline_Sans_Mono({
   variable: "--font-mono",
   display: "swap",
 })
+
+/**
+ * Every tab reads "<page> · Utilize Space". A page names itself with `metadata.title`
+ * using the sidebar's word for it; a page that names nothing still gets the product name
+ * rather than its URL.
+ */
+export const metadata: Metadata = {
+  title: { default: "Utilize Space", template: "%s · Utilize Space" },
+}
 
 export default function RootLayout({
   children,

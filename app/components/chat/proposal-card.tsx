@@ -4,6 +4,7 @@ import Link from "next/link"
 import { useEffect, useState } from "react"
 import { ArrowRightIcon, FilePlusIcon } from "@phosphor-icons/react"
 
+import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { Button } from "@/components/ui/button"
 import {
   Select,
@@ -13,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import type { ChatProposal } from "@/lib/chat/views"
+import type { RunStatus } from "@/lib/db/schema"
 import type { TemplateView } from "@/lib/db/views"
 
 /**
@@ -21,7 +23,52 @@ import type { TemplateView } from "@/lib/db/views"
  * Nothing was requested when this card appears. Requesting goes through the same enqueue
  * as the Reports form — the preset chosen here decides the period, scope and document —
  * and a teammate without edit access sees the proposal but not the button.
+ *
+ * Once requested, the card follows the run: its status badge is read from
+ * `GET /api/runs/[runId]` every few seconds until the run reaches a terminal state, so the
+ * conversation says "Verified" or "Not delivered" without anyone opening the run.
  */
+
+const RUN_POLL_MS = 5_000
+const TERMINAL: ReadonlySet<RunStatus> = new Set<RunStatus>(["completed", "failed"])
+
+function useRunStatus(runId: string | undefined): RunStatus | null {
+  const [status, setStatus] = useState<RunStatus | null>(null)
+
+  useEffect(() => {
+    if (runId === undefined) return
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+
+    const read = async () => {
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, {
+          cache: "no-store",
+        })
+        if (response.ok) {
+          const body = (await response.json()) as { run?: { status?: RunStatus } }
+          const next = body.run?.status
+          if (!cancelled && next !== undefined) {
+            setStatus(next)
+            if (TERMINAL.has(next)) return
+          }
+        }
+      } catch {
+        // A missed read is retried on the next tick; the link still reaches the run.
+      }
+      if (!cancelled) timer = setTimeout(read, RUN_POLL_MS)
+    }
+
+    void read()
+    return () => {
+      cancelled = true
+      if (timer !== undefined) clearTimeout(timer)
+    }
+  }, [runId])
+
+  return status
+}
+
 export function ProposalCard({
   threadId,
   messageId,
@@ -45,6 +92,7 @@ export function ProposalCard({
 
   const endpoint = `/api/chat/threads/${encodeURIComponent(threadId)}/proposals/${encodeURIComponent(messageId)}`
   const open = proposal.state === "open"
+  const runStatus = useRunStatus(proposal.state === "requested" ? proposal.runId : undefined)
 
   useEffect(() => {
     if (!open || !canRequest) return
@@ -102,23 +150,39 @@ export function ProposalCard({
           <FilePlusIcon aria-hidden="true" className="size-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">Request a report for {proposal.customerName}?</p>
+          <p className="text-sm font-semibold">
+            {proposal.state === "requested"
+              ? `Report requested for ${proposal.customerName}`
+              : `Request a report for ${proposal.customerName}?`}
+          </p>
           <p className="text-xs text-muted-foreground">
             <span className="font-mono">{proposal.connectorLabel}</span> · the preset&rsquo;s
             period rule decides the window
           </p>
         </div>
+        {proposal.state === "requested" && runStatus !== null ? (
+          <span aria-live="polite" className="shrink-0">
+            <RunStatusBadge status={runStatus} />
+          </span>
+        ) : null}
       </div>
 
       {proposal.state === "requested" ? (
-        <p className="flex items-center gap-2 text-sm text-(--status-inflight)">
-          Requested.
+        <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+          {runStatus === null
+            ? "Requested."
+            : runStatus === "completed"
+              ? "The report is verified and ready."
+              : runStatus === "failed"
+                ? "The run finished without a delivered report."
+                : "The run is in progress — this updates on its own."}
           {proposal.runId ? (
             <Link
               href={`/reports/${encodeURIComponent(proposal.runId)}`}
               className="inline-flex items-center gap-1 font-medium text-primary underline-offset-4 hover:underline"
             >
-              Watch the run <ArrowRightIcon aria-hidden="true" className="size-3.5" />
+              {runStatus !== null && TERMINAL.has(runStatus) ? "Open the report" : "Watch the run"}
+              <ArrowRightIcon aria-hidden="true" className="size-3.5" />
             </Link>
           ) : null}
         </p>

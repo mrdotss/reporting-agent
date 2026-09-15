@@ -38,6 +38,7 @@ __all__ = [
     "build_grounding",
     "build_messages",
     "refusal_text",
+    "system_prompt",
 ]
 
 MAX_OUTPUT_TOKENS: Final[int] = 1500
@@ -67,13 +68,28 @@ PRICING
 - Price facts are Azure Retail Prices list prices in USD for pay-as-you-go consumption. Always call them list-price estimates. They are not the customer's bill and exclude discounts, reservations, savings plans, licences and taxes. If no price fact exists, say list prices are unavailable.
 
 LANGUAGE
-- Reply in Indonesian (Bahasa Indonesia) when the user's latest message is written in Indonesian; otherwise reply in English. Keep fact references and tags unchanged.
+- Reply in the language named on the last line of these instructions, whatever language the data, names or earlier turns are in. Keep fact references and tags unchanged.
 
 REPORT REQUESTS
 - You cannot request, run, change or delete anything. When the user asks for a new report, you may end the answer with exactly one line: <propose_report target="TARGET_ID" period="YYYY-MM"/> using a target id from the request_targets section. The user confirms it themselves; never say a report was requested.
 
 STYLE
 - Lead with the answer. Short paragraphs of plain text: no markdown headings, tables or bullet symbols."""
+
+_LANGUAGE_LINES: Final[dict[str, str]] = {
+    "en": "Reply language: English.",
+    "id": "Reply language: Indonesian (Bahasa Indonesia).",
+}
+
+
+def system_prompt(language: str) -> str:
+    """The instructions with this turn's reply language decided, not left to the model.
+
+    The runtime detects the question's language (`chat/payload.detect_language`) and states
+    it. Asked to infer it, the model answered an English question in Indonesian on a
+    workspace whose customer names and data read as Indonesian.
+    """
+    return f"{SYSTEM_PROMPT}\n\n{_LANGUAGE_LINES.get(language, _LANGUAGE_LINES['en'])}"
 
 _REFUSALS: Final[dict[str, str]] = {
     "en": (
