@@ -43,12 +43,15 @@ export function Conversation({
   onAsk,
   onAttach,
   onProposalChange,
+  canChat = true,
 }: Readonly<{
   threadId: string | null
   messages: readonly ChatMessageView[]
   live: LiveTurn | null
   currentUserId: string
   canRequest: boolean
+  /** False for a member who can only read Ask here (roles-and-ask-access Req 6). */
+  canChat?: boolean
   hasAttachments: boolean
   suggestions: readonly string[]
   onAsk: (question: string) => void
@@ -68,6 +71,7 @@ export function Conversation({
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-4 py-6">
         {empty ? (
           <EmptyConversation
+            canChat={canChat}
             hasAttachments={hasAttachments}
             suggestions={suggestions}
             onAsk={onAsk}
@@ -128,16 +132,35 @@ export function Conversation({
 }
 
 function EmptyConversation({
+  canChat,
   hasAttachments,
   suggestions,
   onAsk,
   onAttach,
 }: Readonly<{
+  canChat: boolean
   hasAttachments: boolean
   suggestions: readonly string[]
   onAsk: (question: string) => void
   onAttach: () => void
 }>) {
+  if (!canChat) {
+    return (
+      <div className="flex flex-col items-center gap-3 pt-10 text-center">
+        <span className="grid size-10 place-items-center rounded-xl bg-muted text-muted-foreground">
+          <SparkleIcon aria-hidden="true" className="size-5" />
+        </span>
+        <h2 className="text-lg font-semibold tracking-tight text-balance">
+          Read this workspace&rsquo;s conversations
+        </h2>
+        <p className="max-w-[46ch] text-meta text-muted-foreground">
+          Open a conversation to read its answers and the figures they cite. Editors,
+          admins and the owner can ask new questions.
+        </p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col items-center gap-3 pt-10 text-center">
       <span className="grid size-10 place-items-center rounded-xl bg-primary/10 text-primary">

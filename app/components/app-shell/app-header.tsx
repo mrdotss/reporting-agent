@@ -24,9 +24,11 @@ const TRAIL: readonly { prefix: string; parent: "period" | "Library"; label: str
   { prefix: "/dashboard", parent: "period", label: "Overview" },
   { prefix: "/reports/new", parent: "period", label: "Request report" },
   { prefix: "/reports", parent: "period", label: "Reports" },
+  { prefix: "/ask", parent: "period", label: "Ask" },
   { prefix: "/report-profiles", parent: "Library", label: "Presets" },
   { prefix: "/subscriptions", parent: "Library", label: "Connectors" },
   { prefix: "/workspace-settings", parent: "Library", label: "Workspace" },
+  { prefix: "/admin", parent: "Library", label: "Admin" },
 ]
 
 export function AppHeader({
@@ -35,6 +37,8 @@ export function AppHeader({
   workspaceId,
   customers,
   canRequest,
+  askAvailable,
+  settingsAvailable,
 }: Readonly<{
   periodLabel: string
   /** The selected customer's name, or undefined when every customer is in scope. */
@@ -42,6 +46,10 @@ export function AppHeader({
   workspaceId: string
   customers: readonly SidebarCustomer[]
   canRequest: boolean
+  /** Whether Ask is open to this member in this workspace (roles-and-ask-access Req 6). */
+  askAvailable: boolean
+  /** Whether this member may open Workspace settings (Editor and up). */
+  settingsAvailable: boolean
 }>) {
   const pathname = usePathname()
   const crumb = TRAIL.find(
@@ -78,6 +86,8 @@ export function AppHeader({
           workspaceId={workspaceId}
           customers={customers}
           canRequest={canRequest}
+          askAvailable={askAvailable}
+          settingsAvailable={settingsAvailable}
         />
         <ThemeToggle />
         {canRequest && (

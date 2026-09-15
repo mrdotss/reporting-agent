@@ -10,6 +10,7 @@ import {
   unprocessable,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { requireAskLevel } from "@/lib/chat/access"
 import { sendMessageSchema } from "@/lib/chat/input"
 import { assistantMessageFrom } from "@/lib/chat/outcome"
 import { chatLimiter } from "@/lib/chat/rate-limit"
@@ -24,6 +25,7 @@ import { streamChatTurn } from "@/lib/chat/stream"
 import { fallbackTitle, generateTitle } from "@/lib/chat/title"
 import type { ChatStep, ChatStreamEvent } from "@/lib/chat/views"
 import { sessionIdForThread } from "@/lib/session-id"
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 
 /**
  * `POST /api/chat/threads/[threadId]/messages` — ask one question, streamed
@@ -31,7 +33,8 @@ import { sessionIdForThread } from "@/lib/session-id"
  *
  * The order is what makes the history trustworthy:
  *
- *   1. the thread is read and the user's membership checked (404 otherwise);
+ *   1. the thread is read and the user's Ask level checked — asking needs chat, which a
+ *      Viewer does not have (roles-and-ask-access Req 6) — and anything else is a 404;
  *   2. the attachments are **re-authorized now** (`buildChatTurn`) — a report whose
  *      verification was superseded since it was attached is not read;
  *   3. the question is stored before the runtime is invoked, so a turn that fails still
@@ -67,8 +70,11 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
   let thread
   try {
     thread = await readThread(user.id, threadId)
+    await requireAskLevel(user.id, thread.workspaceId, "chat")
   } catch (thrown) {
-    if (thrown instanceof ChatThreadNotFoundError) return notFound()
+    if (thrown instanceof ChatThreadNotFoundError || thrown instanceof WorkspaceAccessError) {
+      return notFound()
+    }
     console.error(`[api/chat/messages] read failed: ${describe(thrown)}`)
     return internalError()
   }

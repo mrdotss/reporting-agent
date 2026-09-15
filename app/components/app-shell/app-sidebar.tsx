@@ -11,6 +11,7 @@ import {
   GearSixIcon,
   PlugsIcon,
   PlusIcon,
+  ShieldCheckIcon,
   SquaresFourIcon,
   StackIcon,
   UsersThreeIcon,
@@ -86,6 +87,10 @@ export type AppSidebarProps = Readonly<{
   selectedCustomerId?: string
   period: ClosePeriod
   connectorsNeedAttention: boolean
+  /** Whether Ask is open to this member in this workspace (roles-and-ask-access Req 6). */
+  askAvailable: boolean
+  /** Whether this account administers Ask (roles-and-ask-access Req 7). */
+  platformAdmin: boolean
   userMenu: ReactNode
 }>
 
@@ -111,6 +116,8 @@ export function AppSidebar({
   selectedCustomerId,
   period,
   connectorsNeedAttention,
+  askAvailable,
+  platformAdmin,
   userMenu,
 }: AppSidebarProps) {
   const pathname = usePathname()
@@ -195,7 +202,7 @@ export function AppSidebar({
           <SidebarGroup>
             <SidebarGroupLabel>This period</SidebarGroupLabel>
             <SidebarMenu>
-              {THIS_PERIOD.map(({ href, label, icon: Icon }) => (
+              {THIS_PERIOD.filter(({ href }) => href !== "/ask" || askAvailable).map(({ href, label, icon: Icon }) => (
                 <SidebarMenuItem key={href}>
                   <SidebarMenuButton
                     isActive={isCurrent(pathname, href)}
@@ -291,6 +298,18 @@ export function AppSidebar({
 
         <SidebarFooter>
           <SidebarMenu>
+            {platformAdmin && (
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={isCurrent(pathname, "/admin")}
+                  tooltip="Admin"
+                  render={<Link href="/admin" />}
+                >
+                  <ShieldCheckIcon aria-hidden="true" />
+                  <span>Admin</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            )}
             {can(workspace.role, "edit") && (
               <SidebarMenuItem>
                 <SidebarMenuButton

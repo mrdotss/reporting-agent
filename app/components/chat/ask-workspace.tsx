@@ -31,6 +31,11 @@ import type {
  *
  * The sources are state, not props: a live metrics pull collected in the attach dialog
  * joins them and is attached at once, without reloading the page.
+ *
+ * A member who can only read Ask here (`canChat` false — a Viewer in a platform admin's
+ * workspace, roles-and-ask-access Req 6) gets the same panes without anything that changes
+ * a conversation: no New, no composer, no attaching or detaching. The routes refuse those
+ * writes regardless; this is so the page never offers one.
  */
 
 const NO_ATTACHMENTS: ChatAttachments = { runIds: [], connectorIds: [], liveIds: [] }
@@ -53,6 +58,7 @@ export function AskWorkspace({
   sources: initialSources,
   initialThread,
   initialMessages,
+  canChat,
   canRequest,
   historyUnavailable,
 }: Readonly<{
@@ -62,6 +68,8 @@ export function AskWorkspace({
   sources: ChatSources
   initialThread: ChatThreadView | null
   initialMessages: readonly ChatMessageView[]
+  /** Whether this member may ask here, rather than only read (roles-and-ask-access Req 6). */
+  canChat: boolean
   canRequest: boolean
   historyUnavailable: boolean
 }>) {
@@ -231,7 +239,9 @@ export function AskWorkspace({
   const customers = [...new Set(attachedRuns.map((run) => run.customerName))]
   const scopeLine =
     attachedCount === 0
-      ? "Nothing attached — attach a verified report or live metrics to ask about it"
+      ? canChat
+        ? "Nothing attached — attach a verified report or live metrics to ask about it"
+        : "Nothing attached"
       : [
           attachedRuns.length > 0
             ? `${attachedRuns.length} verified ${attachedRuns.length === 1 ? "report" : "reports"}`
@@ -253,7 +263,7 @@ export function AskWorkspace({
       threads={threads}
       activeId={thread?.id ?? null}
       onSelect={(id) => void openThread(id)}
-      onNew={startNew}
+      onNew={canChat ? startNew : undefined}
       unavailable={historyUnavailable}
     />
   )
@@ -263,8 +273,8 @@ export function AskWorkspace({
       runs={attachedRuns}
       connectors={attachedConnectors}
       live={attachedLive}
-      onAdd={() => setAttachOpen(true)}
-      onRemove={detach}
+      onAdd={canChat ? () => setAttachOpen(true) : undefined}
+      onRemove={canChat ? detach : undefined}
     />
   )
 
@@ -290,7 +300,7 @@ export function AskWorkspace({
           </Button>
           <div className="min-w-0 flex-1">
             <h1 id="ask-title" className="truncate text-section">
-              {thread?.title ?? "New conversation"}
+              {thread?.title ?? (canChat ? "New conversation" : "Conversations")}
             </h1>
             <p className="truncate text-xs text-muted-foreground">
               <span className="sr-only">{workspaceName}: </span>
@@ -301,10 +311,12 @@ export function AskWorkspace({
             <SidebarSimpleIcon aria-hidden="true" />
             <span className="hidden sm:inline">Grounded in</span>
           </Button>
-          <Button variant="outline" size="sm" onClick={startNew}>
-            <NotePencilIcon aria-hidden="true" />
-            New
-          </Button>
+          {canChat ? (
+            <Button variant="outline" size="sm" onClick={startNew}>
+              <NotePencilIcon aria-hidden="true" />
+              New
+            </Button>
+          ) : null}
         </header>
 
         <Conversation
@@ -312,6 +324,7 @@ export function AskWorkspace({
           messages={messages}
           live={live}
           currentUserId={currentUserId}
+          canChat={canChat}
           canRequest={canRequest}
           hasAttachments={attachedCount > 0}
           suggestions={suggestionsFor(attachedRuns.length, attachedConnectors.length, attachedLive.length)}
@@ -326,15 +339,25 @@ export function AskWorkspace({
           </p>
         ) : null}
 
-        <Composer
-          runs={attachedRuns}
-          connectors={attachedConnectors}
-          live={attachedLive}
-          busy={live !== null}
-          onSend={ask}
-          onAttach={() => setAttachOpen(true)}
-          onRemove={detach}
-        />
+        {canChat ? (
+          <Composer
+            runs={attachedRuns}
+            connectors={attachedConnectors}
+            live={attachedLive}
+            busy={live !== null}
+            onSend={ask}
+            onAttach={() => setAttachOpen(true)}
+            onRemove={detach}
+          />
+        ) : (
+          <p
+            data-slot="ask-read-only"
+            className="border-t border-border px-4 py-3 text-center text-xs text-muted-foreground"
+          >
+            You can read this workspace&rsquo;s conversations. Editors, admins and the owner can
+            ask.
+          </p>
+        )}
       </section>
 
       <aside aria-label="Grounded in" className="hidden min-h-0 flex-col border-l border-border xl:flex">
@@ -359,14 +382,16 @@ export function AskWorkspace({
         </SheetContent>
       </Sheet>
 
-      <AttachDialog
-        open={attachOpen}
-        onOpenChange={(open) => setAttachOpen(open)}
-        sources={sources}
-        attachments={attachments}
-        onChange={(next) => void changeAttachments(next)}
-        onCollected={attachCollected}
-      />
+      {canChat ? (
+        <AttachDialog
+          open={attachOpen}
+          onOpenChange={(open) => setAttachOpen(open)}
+          sources={sources}
+          attachments={attachments}
+          onChange={(next) => void changeAttachments(next)}
+          onCollected={attachCollected}
+        />
+      ) : null}
     </div>
   )
 }

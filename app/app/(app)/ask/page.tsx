@@ -1,7 +1,9 @@
 import type { Metadata } from "next"
+import { notFound } from "next/navigation"
 
 import { AskWorkspace } from "@/components/chat/ask-workspace"
 import { requireSession } from "@/lib/auth/guard"
+import { readAskLevel } from "@/lib/chat/access"
 import { listChatSources } from "@/lib/chat/sources"
 import {
   ChatThreadNotFoundError,
@@ -17,8 +19,10 @@ import { can } from "@/lib/workspaces/policy"
  * `/ask` — ask about a customer's usage, grounded in verified reports, saved connector
  * scans and Azure list prices (ask-chat).
  *
- * Conversations are the selected workspace's and every member sees them. `?t=<id>` opens
- * one, so a teammate can be sent a link to a conversation.
+ * Conversations are the selected workspace's, and the members who may use Ask there see
+ * them. Ask is an account grant (roles-and-ask-access Req 6): where it is not open the page
+ * is not found, and a member at the read level reads conversations without asking.
+ * `?t=<id>` opens one, so a teammate can be sent a link to a conversation.
  *
  * The history store is DynamoDB. A deployment that cannot reach it still renders the page
  * — with the reason stated — rather than an error screen, because the sources beside it
@@ -39,6 +43,9 @@ export default async function AskPage({
 }>) {
   const user = await requireSession()
   const { workspace } = await selectedContext(user.id)
+  const level = await readAskLevel(user.id, workspace.id)
+  if (level === "none") notFound()
+  const canChat = level === "chat"
   const params = await searchParams
 
   const sources = await listChatSources(user.id, workspace.id)
@@ -79,7 +86,8 @@ export default async function AskPage({
       sources={sources}
       initialThread={initialThread}
       initialMessages={initialMessages}
-      canRequest={can(workspace.role, "edit")}
+      canChat={canChat}
+      canRequest={canChat && can(workspace.role, "edit")}
       historyUnavailable={historyUnavailable}
     />
   )
