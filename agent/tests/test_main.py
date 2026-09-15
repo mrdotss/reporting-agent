@@ -241,12 +241,24 @@ def test_every_accepted_command_is_routed_and_compare_runs_is_neither() -> None:
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
         COMMAND_LIST_INVENTORY,
+        main.COMMAND_CHAT,
     }
     assert set(COMMAND_HANDLERS) == COMMANDS
     assert COMMAND_COMPARE_RUNS not in COMMANDS
 
 
-@pytest.mark.parametrize("command", sorted(COMMANDS))
+def test_chat_is_the_only_command_that_reads_a_prompt() -> None:
+    """ask-chat Req 1.1, amending Req 14.2 — exactly one model-facing command.
+
+    The exemption below is a single named command, not a set: every report command stays
+    deterministic, and a second model-facing command would have to be added here by name.
+    """
+    deterministic = COMMANDS - {main.COMMAND_CHAT}
+    assert main.COMMAND_CHAT in COMMANDS
+    assert len(deterministic) == len(COMMANDS) - 1
+
+
+@pytest.mark.parametrize("command", sorted(COMMANDS - {main.COMMAND_CHAT}))
 def test_a_recognised_command_reaches_its_handler_and_its_prompt_is_ignored(
     command: str,
 ) -> None:

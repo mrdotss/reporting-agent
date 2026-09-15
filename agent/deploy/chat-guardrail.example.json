@@ -1,0 +1,40 @@
+{
+  "name": "rpt-chat",
+  "description": "Ask page: blocks prompt attacks and requests unrelated to utilization reports, connector inventory and cloud list prices.",
+  "contentPolicyConfig": {
+    "filtersConfig": [
+      {
+        "type": "PROMPT_ATTACK",
+        "inputStrength": "LOW",
+        "outputStrength": "NONE",
+        "inputAction": "BLOCK",
+        "inputEnabled": true,
+        "outputEnabled": false
+      }
+    ],
+    "tierConfig": { "tierName": "STANDARD" }
+  },
+  "topicPolicyConfig": {
+    "topicsConfig": [
+      {
+        "name": "Unrelated_requests",
+        "definition": "Requests unrelated to cloud utilization reports, connector inventory or cloud pricing, such as general knowledge, coding, creative writing, or personal, legal or medical advice.",
+        "examples": [
+          "Write me a poem about the ocean",
+          "How do I reverse a linked list in Python?",
+          "Who won the football match last night?",
+          "Which stocks should I buy this week?",
+          "Tolong buatkan surat lamaran kerja"
+        ],
+        "type": "DENY",
+        "inputAction": "BLOCK",
+        "inputEnabled": true,
+        "outputEnabled": false
+      }
+    ],
+    "tierConfig": { "tierName": "STANDARD" }
+  },
+  "crossRegionConfig": { "guardrailProfileIdentifier": "us.guardrail.v1:0" },
+  "blockedInputMessaging": "RPT_CHAT_REFUSED",
+  "blockedOutputsMessaging": "RPT_CHAT_REFUSED"
+}

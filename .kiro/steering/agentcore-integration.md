@@ -99,9 +99,13 @@ the same event stream.
 { "command": "preflight", "context": { /* … */ } }
 ```
 
-A `prompt` payload is for **chat only** — prose and Q&A about an existing report.
-When a prompt is scoped to a report, pass `run_id` alongside it; the model reads
-that run's snapshot and ledger and quotes figures **from the ledger**.
+Chat is the **`chat` command** — a payload with no `command` is still refused. The app
+sends the prompt, the last turns of history, and the verified runs, saved scans and
+report-request targets it has already authorized for the asking user's workspace. The
+runtime reads each run's ledger (checked against its verification digest), asks the model
+to cite facts by id, and rewrites the stream so every figure is a ledger, scan or
+list-price string. The contract is in `agent/AGENTCORE_INTEGRATION.md` under `chat`; the
+requirements are `.kiro/specs/ask-chat/requirements.md`.
 
 ## Run orchestration — Postgres is the state machine
 

@@ -29,6 +29,8 @@
     "AWS_REGION": "us-east-1",
     "RPT_ARTIFACT_BUCKET": "<ARTIFACT_BUCKET>",
     "RPT_PROSE_MODEL_ID": "zai.glm-5",
-    "RPT_CA_BUNDLE": "/etc/ssl/private-ca/root.pem"
+    "RPT_CA_BUNDLE": "/etc/ssl/private-ca/root.pem",
+    "RPT_CHAT_GUARDRAIL_ID": "<CHAT_GUARDRAIL_ID>",
+    "RPT_CHAT_GUARDRAIL_VERSION": "<CHAT_GUARDRAIL_VERSION>"
   }
 }

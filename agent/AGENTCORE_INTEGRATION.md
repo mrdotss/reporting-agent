@@ -39,11 +39,14 @@ constructs one.
 | `verify_report` | yes | yes |
 | `render_preview` | yes | yes |
 | `list_inventory` | yes | yes |
+| `chat` | yes | **no — the one model-facing command** |
 | `compare_runs` | **no — declared and unrouted** | — |
 
-Every routed command is deterministic: a `prompt` alongside the payload is **ignored**.
-The only model calls in the runtime are the two in `narrate/`, and neither is reachable
-from a payload field.
+Every routed command except `chat` is deterministic: a `prompt` alongside the payload is
+**ignored**. The model calls in the runtime are the three in `narrate/`. The two report call
+sites are unreachable from a payload field; the third, `narrate/chat.py`, is reachable only
+through the `chat` command, carries no tool list, runs behind a Bedrock guardrail, and
+writes nothing (see [`chat`](#chat) and `.kiro/specs/ask-chat/requirements.md`).
 
 `compare_runs` is named here and refused at the router. A comparison is a
 `comparison_delta` block compiled *inside* a run, not a standalone invocation, and a
@@ -188,6 +191,61 @@ a defect in the runtime's own query and a `5xx` is Azure's, and neither is an ex
 The caller bounds its own wait at 30 seconds and writes no cache entry for a listing that
 did not answer. Neither bound is enforced here: this command has no run row, so there is no
 reaper behind it and the timeout belongs to the endpoint.
+
+### `chat`
+
+The one model-facing command (`.kiro/specs/ask-chat/requirements.md`). The app sends only
+what it has already authorized for the asking user's workspace; the context carries **no
+credential** — `actor_id` only.
+
+```jsonc
+{ "command": "chat",
+  "prompt": "Which VMs look over-provisioned?",                 // ≤ 4000 chars
+  "history": [ { "role": "user", "text": "…" }, { "role": "assistant", "text": "…" } ],  // ≤ 12
+  "attachments": {
+    "runs":  [ { "run_id": "…", "owner_actor_id": "…", "verification_attempt_id": "…",
+                 "customer_name": "Satu Data Labs", "period_display": "August 2026", "provider": "azure" } ],
+    "scans": [ { "scan_id": "…", "connector_label": "satu-prod", "provider": "azure",
+                 "collected_at": "2026-09-14T02:00:00Z", "inventory": { /* ScanView counts */ } } ] },
+  "request_targets": [ { "target_id": "t1", "customer_name": "…", "connector_label": "…", "provider": "azure" } ],
+  "context": { "actor_id": "…" } }
+```
+
+**Grounding.** A run contributes facts only when `verification-<attempt>.json` says `pass`
+and the SHA-256 of `ledger.json`'s bytes equals its `ledger_sha256`. VM sizes in the run's
+snapshot are priced from the public Azure Retail Prices API (pay-as-you-go, Linux and
+Windows); a failed lookup costs the price, not the turn.
+
+**The model call.** One `ConverseStream` with **no `toolConfig`**, behind the guardrail named
+by `RPT_CHAT_GUARDRAIL_ID` / `RPT_CHAT_GUARDRAIL_VERSION` (`deploy/chat-guardrail.example.json`).
+Only the user's latest prompt is a `guardContent` block. With either variable unset, `chat`
+fails closed: `error` then `done`. The guardrail answers a blocked prompt with the token
+`RPT_CHAT_REFUSED`, which the runtime replaces with its own refusal sentence.
+
+**Events.** `tool` steps `read_grounding`, `lookup_prices`, `compose_answer`; `delta`
+(`block_id: "answer"`) for the text; no new event type. Delta text carries two markers the UI
+renders and nothing else may produce:
+
+- `⟦fig:f3⟧8.06%⟦/fig⟧` — a verified fact, its string exactly as read;
+- `⟦est⟧…⟦/est⟧` — reasoning or arithmetic over facts, never a figure.
+
+A numeral the model typed outside an estimate that is not a fact string, identifier, date or
+small count arrives as `—`.
+
+```jsonc
+{ "type": "done", "run_id": null, "status": "completed",
+  "language": "en",
+  "citations": { "f3": { "fact_id": "f3", "source": "report", "label": "vm-mcp-prod-01 · Percentage CPU · avg",
+                         "formatted": "8.06%", "run_id": "…", "snapshot_path": "…" } },
+  "proposal": { "target_id": "t1", "period": "2026-09" },   // only for an offered target
+  "withheld_figures": 0,
+  "refused": true,                                           // only when refused
+  "unavailable_runs": [ { "run_id": "…", "reason": "…" } ],  // only when any
+  "prices_unavailable": [ "Standard_D4s_v5 (southeastasia)" ] }
+```
+
+A `proposal` enqueues nothing. The user confirms it with a preset, and the app enqueues through
+`POST /api/runs`'s own checks.
 
 ---
 

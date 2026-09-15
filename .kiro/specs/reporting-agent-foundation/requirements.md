@@ -685,6 +685,9 @@ consulting the model, so that report generation is reproducible run to run.
 13. IF a payload carries no `command` field, THEN THE Agent_Runtime SHALL emit an `error` event
     carrying `terminal` true, SHALL make no model invocation, and SHALL emit `done` as the next
     and final event, because model-facing chat is out of this spec's scope.
+    *(Amended by `ask-chat` Req 1: chat is the explicit `chat` command. This criterion still
+    holds — a payload with no `command` reaches no model — and criterion 2's "no model" now
+    reads "no model on any command other than `chat`".)*
 14. IF a phase for which the Agent_Runtime emitted a `tool` event with `phase` `start` ends
     without a matching `phase` `end` event, including a phase that ended by raising an
     exception, THEN THE Agent_Runtime SHALL emit that matching `phase` `end` event before it

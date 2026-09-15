@@ -157,6 +157,14 @@ COMMAND_VERIFY_REPORT: Final[str] = "verify_report"
 COMMAND_RENDER_PREVIEW: Final[str] = "render_preview"
 COMMAND_LIST_INVENTORY: Final[str] = "list_inventory"
 
+COMMAND_CHAT: Final[str] = "chat"
+"""**The one model-facing command** (ask-chat Req 1.1, amending Req 14.2 and 14.13).
+
+Every other command is deterministic and ignores a `prompt`. `chat` answers a question with
+one streamed, tool-less, guardrailed model call over artifacts the app authorized, writes
+nothing, and emits no `verification` and no `report_file` — see `chat/` and
+`narrate/chat.py`. A payload with no `command` is still refused: chat is asked for by name."""
+
 COMMAND_COMPARE_RUNS: Final[str] = "compare_runs"
 """**Declared and unrouted**, deliberately (Req 14.5).
 
@@ -173,6 +181,7 @@ COMMANDS: Final[frozenset[str]] = frozenset(
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
         COMMAND_LIST_INVENTORY,
+        COMMAND_CHAT,
     }
 )
 """The commands this runtime accepts (Req 14.3).
@@ -257,6 +266,10 @@ KNOWN_TOOL_NAMES: Final[frozenset[str]] = FOUNDATION_TOOL_NAMES | frozenset(
         "verify_document",
         "upload_artifact",
         "compare_snapshots",
+        # ask-chat — the `chat` command's three steps.
+        "read_grounding",
+        "lookup_prices",
+        "compose_answer",
     }
 )
 
@@ -743,8 +756,8 @@ def parse_invocation(payload: object, request_context: object = None) -> Invocat
 
 def _reject_command(raw_command: object) -> Rejection | None:
     if raw_command is None:
-        # Req 14.13 — a payload with no command is model-facing chat, which is out of this
-        # spec's scope. There is no model client here to route it to.
+        # Req 14.13 — a payload with no command is refused. Chat is the `chat` command,
+        # asked for by name (ask-chat Req 1.1); a bare `prompt` reaches no model.
         return Rejection(
             CODE_MISSING_COMMAND,
             "This runtime routes deterministic commands only, and this payload carries "
@@ -1107,12 +1120,63 @@ async def handle_list_inventory(
     )
 
 
+async def handle_chat(invocation: Invocation, steps: StepTracker) -> AsyncIterator[Event]:
+    """Answer one question over grounding the app authorized (ask-chat Req 1).
+
+    The only model-facing command. It writes nothing, emits no `verification` and no
+    `report_file`, and reads only the artifacts the payload names — see `chat/`. The
+    dependencies are built by :func:`_chat_dependencies` so a test can substitute them
+    without touching the module registry.
+    """
+    from reporting_agent.chat.payload import parse_chat_request
+    from reporting_agent.chat.session import run_chat
+
+    request = parse_chat_request(invocation.payload)
+    dependencies = _chat_dependencies()
+    async for event in run_chat(
+        request,
+        steps=steps,
+        outcome=invocation.outcome,
+        store=dependencies.store,
+        model=dependencies.model,
+        prices=dependencies.prices,
+    ):
+        yield event
+
+
+_CHAT_PRICES: Any = None
+"""The process's price lookup, built once so its cache outlives one invocation."""
+
+
+def _chat_dependencies() -> Any:
+    from reporting_agent.chat.session import ChatDependencies
+    from reporting_agent.narrate.chat import bedrock_chat_model
+    from reporting_agent.pricing.azure_retail import AzureRetailPrices
+    from reporting_agent.storage.s3 import S3ObjectStore
+
+    global _CHAT_PRICES
+    model = bedrock_chat_model(
+        model_id=CONFIG.chat_model_id or CONFIG.prose_model_id,
+        guardrail_id=CONFIG.chat_guardrail_id,
+        guardrail_version=CONFIG.chat_guardrail_version,
+        region=CONFIG.aws_region,
+    )
+    if _CHAT_PRICES is None:
+        _CHAT_PRICES = AzureRetailPrices(ca_bundle=CONFIG.ca_bundle)
+    return ChatDependencies(
+        store=S3ObjectStore(CONFIG.artifact_bucket, region=CONFIG.aws_region),
+        model=model,
+        prices=_CHAT_PRICES,
+    )
+
+
 COMMAND_HANDLERS: Final[dict[str, CommandHandler]] = {
     COMMAND_GENERATE_REPORT: handle_generate_report,
     COMMAND_PREFLIGHT: handle_preflight,
     COMMAND_VERIFY_REPORT: handle_verify_report,
     COMMAND_RENDER_PREVIEW: handle_render_preview,
     COMMAND_LIST_INVENTORY: handle_list_inventory,
+    COMMAND_CHAT: handle_chat,
 }
 
 
