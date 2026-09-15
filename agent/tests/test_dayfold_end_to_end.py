@@ -20,7 +20,7 @@ import pytest
 # Imported first: it performs the `os.environ` bootstrap `reporting_agent.main` reads at
 # import, so nothing under `reporting_agent` may be imported above it.
 from negatives import Negative
-from pipeline_harness import definition, df, report_objects, types_of
+from pipeline_harness import definition, df, report_objects
 import messages_factory as mf
 
 TWO_VMS: Final[tuple[str, ...]] = ("prod-web-01", "prod-sql-01")
@@ -122,7 +122,10 @@ def test_the_timeseries_block_emits_a_chart_rather_than_a_notice(run) -> None:
         run.pipeline.outcome.verification["findings"]
     )
     assert run.pipeline.outcome.verification["counts"]["charts_checked"] == 1
-    assert types_of(run.events).count("report_file") == 2
+    # The delivered pair, plus the styled reading copy when it rendered with every figure.
+    delivered = [e["key"].rsplit("/", 1)[-1] for e in run.events if e["type"] == "report_file"]
+    assert len(delivered) == len(set(delivered)), delivered
+    assert sorted(set(delivered) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], delivered
 
 
 def test_the_chart_is_verified_by_both_of_its_gates(run) -> None:

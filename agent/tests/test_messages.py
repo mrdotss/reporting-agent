@@ -139,6 +139,9 @@ def test_the_two_languages_are_actually_different_copy() -> None:
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
         "ui.run_list.utc_suffix",
+        # "WIB" (Waktu Indonesia Barat) is the zone abbreviation, and it is written the
+        # same in English copy about Jakarta time — the `UTC` case again.
+        "ui.run_table.local_zone",
         # "Status" is the Indonesian word too. Translating it to something else
         # to satisfy this assertion would be a mistranslation performed to please
         # a test, which is the exact trade the docstring above warns against.

@@ -336,7 +336,10 @@ def test_n3b_a_legitimately_empty_scope_still_delivers() -> None:
     ] == []
     assert int(result["counts"]["blocking_findings_observed"]) == 0
 
-    assert types_of(run.events).count("report_file") == 2
+    # The delivered pair, plus the styled reading copy when it rendered with every figure.
+    delivered = [e["key"].rsplit("/", 1)[-1] for e in run.events if e["type"] == "report_file"]
+    assert len(delivered) == len(set(delivered)), delivered
+    assert sorted(set(delivered) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], delivered
     assert {ref.kind for ref in run.pipeline.outcome.artifacts} == {"docx", "pdf"}
 
     # Criterion 3.7's explicit row, in the delivered document rather than an empty grid.

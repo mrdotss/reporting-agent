@@ -475,8 +475,11 @@ def test_15_7_short_trend_is_a_labelled_normal_outcome() -> None:
     assert PRIOR_1 in point_run_ids
     assert PRIOR_2 in point_run_ids
 
-    # A document was delivered (2 report_file events: docx + pdf)
-    assert types_of(events).count("report_file") == 2
+    # A document was delivered: the docx + pdf pair, plus the styled reading copy when it
+    # rendered with every figure.
+    delivered = [e["key"].rsplit("/", 1)[-1] for e in events if e["type"] == "report_file"]
+    assert len(delivered) == len(set(delivered)), delivered
+    assert sorted(set(delivered) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], delivered
 
 
 # ---------------------------------------------------------------------------

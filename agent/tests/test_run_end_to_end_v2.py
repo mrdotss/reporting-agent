@@ -599,7 +599,10 @@ class TestEventOrdering:
         ordered = without_heartbeats(events)
         verification_at = index_of(ordered, "verification")
         report_files = [i for i, e in enumerate(ordered) if e["type"] == "report_file"]
-        assert len(report_files) == 2
+        # The delivered pair, plus the styled reading copy when it rendered with every figure.
+        leaves = [ordered[i]["key"].rsplit("/", 1)[-1] for i in report_files]
+        assert len(leaves) == len(set(leaves)), leaves
+        assert sorted(set(leaves) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], leaves
         assert all(pos > verification_at for pos in report_files)
 
     def test_nothing_after_done(self, walked: tuple[V2Walk, list[Event]]) -> None:
