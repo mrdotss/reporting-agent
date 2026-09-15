@@ -5,8 +5,8 @@ The third model call site, and the only one reachable from a payload — which i
 bounded structurally rather than by its instructions:
 
 - **No tool list.** The call carries no `toolConfig`; the model can call nothing.
-- **A guardrail, required.** The Bedrock guardrail's prompt-attack filter and denied topics
-  run on the user's latest message, wrapped in a `guardContent` block so the grounding data
+- **A guardrail, required.** The Bedrock guardrail's prompt-attack filter runs on the
+  user's latest message, wrapped in a `guardContent` block so the grounding data
   — which carries customer resource names — cannot trip it. A deployment without a
   guardrail configured cannot chat at all: :func:`bedrock_chat_model` refuses to build.
 - **Fenced data.** Grounding arrives inside a `<grounding>` element whose opening and

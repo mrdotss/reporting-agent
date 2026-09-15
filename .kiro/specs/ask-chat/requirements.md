@@ -69,8 +69,8 @@ every figure.
 1. THE model call SHALL carry no tool configuration.
 2. Grounding SHALL be fenced in an element whose tags carry a per-turn random nonce, with
    angle brackets, marker characters and line breaks removed from every value.
-3. THE model call SHALL run through a Bedrock guardrail (prompt-attack filter; denied topic
-   for unrelated requests) applied to the user's latest message only, and IF no guardrail is
+3. THE model call SHALL run through a Bedrock guardrail (prompt-attack filter) applied to the
+   user's latest message only, and IF no guardrail is
    configured, THEN the `chat` command SHALL fail closed.
 4. A guardrail intervention SHALL be replaced by the runtime's own refusal sentence, in
    Indonesian when the question is Indonesian and English otherwise.
