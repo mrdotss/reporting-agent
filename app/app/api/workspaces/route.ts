@@ -26,6 +26,9 @@ export async function POST(request: Request) {
         await selectContext(user.id, scope.workspaceId, scope.projectId)
         return json(201, scope)
       }
+      case "rename_workspace":
+        await store.renameWorkspace(user.id, d.workspaceId, d.name)
+        break
       case "select":
         await selectContext(user.id, d.workspaceId, d.projectId)
         return json(200, { ok: true })

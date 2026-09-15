@@ -4,6 +4,7 @@ import { notFound } from "next/navigation"
 
 import { CloseDayForm } from "@/components/workspaces/close-day-form"
 import { ProjectManager } from "@/components/workspaces/project-manager"
+import { RenameWorkspace } from "@/components/workspaces/rename-workspace"
 import { TeamManager } from "@/components/workspaces/team-manager"
 import { requireSession } from "@/lib/auth/guard"
 import { getPool } from "@/lib/db"
@@ -60,7 +61,13 @@ export default async function SettingsPage({
     <div className="flex flex-col gap-6">
       <header className="flex flex-col gap-1.5">
         <p className="text-micro text-muted-foreground uppercase">Workspace</p>
-        <h1 className="text-title">{workspace.name}</h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="text-title">{workspace.name}</h1>
+          {/* The owner names the workspace, the default one included (Req 10). */}
+          {can(workspace.role, "own") ? (
+            <RenameWorkspace workspaceId={workspace.id} name={workspace.name} />
+          ) : null}
+        </div>
       </header>
 
       <nav aria-label="Workspace sections">
