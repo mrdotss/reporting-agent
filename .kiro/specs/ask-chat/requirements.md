@@ -102,6 +102,20 @@ every figure.
    report formatter, rendered as grey "Live" chips, and described to the model as not
    verified. The chat call SHALL still carry no credential and no tool list.
 
+## Requirement 9 — Charts
+
+1. THE model MAY place at most three charts, each as a `<chart>` directive naming fact ids.
+   THE runtime SHALL build each chart only from those facts' values and, for a daily chart,
+   the attached snapshot's daily buckets — never from a number the model wrote — and SHALL
+   drop a directive it cannot build.
+2. A comparison SHALL chart 2–12 facts that share one unit. A daily chart SHALL chart one
+   fact whose snapshot series has 2–93 days; the model SHALL be told which facts have one.
+3. THE runtime SHALL mark a chart's place in the answer with a marker only it can write, and
+   `done.charts` SHALL carry each chart's values, its facts' formatted strings, and whether
+   its figures are verified, live, or both. A refused answer SHALL carry no chart.
+4. THE app SHALL accept a chart by shape only, SHALL label every value with its formatted
+   string, and SHALL label a chart drawn from a live pull as not verified.
+
 ## Requirement 7 — History
 
 1. Conversations SHALL be stored in DynamoDB (`rpt-chat-history`) and visible to every member

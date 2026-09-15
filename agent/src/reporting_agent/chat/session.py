@@ -1,4 +1,4 @@
-"""One chat turn: ground, price, answer, enforce (ask-chat Req 1).
+"""One chat turn: ground, price, answer, enforce (ask-chat Req 1, 9).
 
 The order is the design. Everything the model may cite is gathered **before** the model is
 called — verified ledgers, saved scan counts, live metrics pulls, list prices — and every
@@ -8,6 +8,8 @@ turn's result rides on `done` through the invocation outcome:
 
 - `language` — the language this turn was answered in;
 - `citations` — each fact the answer used, with the path or price it came from;
+- `charts` — each chart the answer placed, built from those facts' values and the snapshots'
+  daily buckets, never from numbers the model wrote;
 - `proposal` — a report request the user may confirm, when one survived the allow-list;
 - `refused`, `unavailable_runs`, `unavailable_live`, `prices_unavailable`,
   `withheld_figures` — what the UI should say about what was not used.
@@ -22,6 +24,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
 
+from reporting_agent.chat.charts import ChartRequest, SeriesKey, build_chart
 from reporting_agent.chat.grounding import (
     SOURCE_PRICE,
     Fact,
@@ -30,6 +33,7 @@ from reporting_agent.chat.grounding import (
     RunGrounding,
     RunUnavailableError,
     VmSize,
+    format_statistic,
     load_live_grounding,
     load_run_grounding,
     number_facts,
@@ -117,8 +121,12 @@ async def run_chat(
         yield steps.end(step["id"])
 
     facts: list[Fact] = [fact for grounding in groundings for fact in grounding.facts]
+    series: dict[SeriesKey, Sequence[tuple[str, str]]] = {}
+    for grounding in groundings:
+        series.update(grounding.series)
     for live_grounding in live_groundings:
         facts.extend(live_grounding.facts)
+        series.update(live_grounding.series)
     for scan in request.scans:
         facts.extend(scan_facts(scan))
 
@@ -154,7 +162,20 @@ async def run_chat(
     step = steps.start(TOOL_COMPOSE_ANSWER, label="Answer", status="Writing the answer")
     yield step
 
-    answer = AnswerFilter(numbered, frozenset(target.target_id for target in request.targets))
+    def chart_builder(chart_request: ChartRequest, chart_id: str) -> dict[str, Any] | None:
+        return build_chart(
+            chart_request,
+            chart_id=chart_id,
+            facts=numbered,
+            series=series,
+            format_value=format_statistic,
+        )
+
+    answer = AnswerFilter(
+        numbered,
+        frozenset(target.target_id for target in request.targets),
+        chart_builder=chart_builder,
+    )
     grounding = build_grounding(
         nonce=secrets.token_hex(12),
         runs=[grounding.run for grounding in groundings],
@@ -164,6 +185,11 @@ async def run_chat(
         targets=request.targets,
         unavailable=[f"{exc.run.customer_name} {exc.run.period_display}" for exc in unavailable]
         + [f"{exc.live.connector_label} {exc.live.window_display}" for exc in unavailable_live],
+        daily_series=frozenset(
+            fact_id
+            for fact_id, fact in numbered.items()
+            if fact.series_key is not None and len(series.get(fact.series_key, ())) >= 2
+        ),
     )
     messages = build_messages(history=request.history, prompt=request.prompt, grounding=grounding)
 
@@ -186,6 +212,8 @@ async def run_chat(
 
     outcome["citations"] = answer.citations()
     outcome["withheld_figures"] = answer.withheld
+    if answer.charts:
+        outcome["charts"] = answer.charts
     if answer.proposal is not None:
         outcome["proposal"] = answer.proposal
 
@@ -205,6 +233,8 @@ def price_facts(prices: Sequence[RetailPrice]) -> list[Fact]:
                 "effective_start": price.effective_start,
                 "price_source": "Azure Retail Prices",
             },
+            value=price.retail_price if "e" not in price.retail_price.lower() else None,
+            unit=f"{price.currency} per {price.unit_of_measure}",
         )
         for price in prices
     ]

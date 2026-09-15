@@ -83,6 +83,43 @@ export type ChatProposal = {
 
 export type ChatStep = { readonly name: string; readonly label: string; readonly status: string }
 
+/**
+ * A chart the runtime built for an answer (ask-chat Req 9), from facts it read — never from
+ * numbers the model wrote. `value` is the fact's decimal string, `formatted` the string a
+ * figure chip shows; the drawing uses the first, every label the second.
+ */
+export type ChatChartSource = "verified" | "live" | "mixed"
+
+export type ChatCompareChart = {
+  readonly id: string
+  readonly kind: "compare"
+  readonly title: string
+  readonly unit: string
+  readonly source: ChatChartSource
+  readonly bars: readonly {
+    readonly fact_id: string
+    readonly label: string
+    readonly value: string
+    readonly formatted: string
+  }[]
+}
+
+export type ChatDailyChart = {
+  readonly id: string
+  readonly kind: "daily"
+  readonly title: string
+  readonly unit: string
+  readonly source: ChatChartSource
+  readonly series_label: string
+  readonly points: readonly {
+    readonly day: string
+    readonly value: string
+    readonly formatted: string
+  }[]
+}
+
+export type ChatChart = ChatCompareChart | ChatDailyChart
+
 export type ChatMessageView = {
   readonly id: string
   readonly threadId: string
@@ -92,6 +129,8 @@ export type ChatMessageView = {
   readonly createdAt: string
   readonly citations: Readonly<Record<string, ChatCitation>>
   readonly steps: readonly ChatStep[]
+  /** Charts the runtime built for this answer, placed by `⟦chart:cN⟧` markers in `text`. */
+  readonly charts?: readonly ChatChart[]
   readonly proposal?: ChatProposal
   readonly refused?: boolean
   readonly failed?: boolean
@@ -162,4 +201,5 @@ export function answerPlainText(text: string): string {
   return text
     .replace(/⟦fig:f\d{1,4}⟧([^⟦⟧]*)⟦\/fig⟧/g, "$1")
     .replace(/⟦\/?est⟧/g, "")
+    .replace(/⟦chart:c\d{1,2}⟧/g, "[chart]")
 }
