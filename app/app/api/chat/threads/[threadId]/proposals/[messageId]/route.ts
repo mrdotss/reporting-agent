@@ -12,6 +12,7 @@ import {
   unprocessable,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { requireAskLevel } from "@/lib/chat/access"
 import { proposalActionSchema } from "@/lib/chat/input"
 import { listProposalPresets } from "@/lib/chat/sources"
 import {
@@ -87,6 +88,9 @@ export async function POST(request: Request, context: ProposalRouteContext): Pro
 
   try {
     const { thread, proposal } = await readProposal(user.id, threadId, messageId)
+    // Acting on a proposal is part of asking: a member who can only read Ask here cannot
+    // (roles-and-ask-access Req 6), whatever their workspace role.
+    await requireAskLevel(user.id, thread.workspaceId, "chat")
     if (proposal.state !== "open") {
       return conflict(new ChatProposalClosedError().message, "PROPOSAL_CLOSED")
     }

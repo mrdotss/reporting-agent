@@ -1,5 +1,6 @@
 import { internalError, json, notFound, unauthorized } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { requireAskLevel } from "@/lib/chat/access"
 import { listChatSources } from "@/lib/chat/sources"
 import { WorkspaceAccessError } from "@/lib/workspaces/access"
 import { selectedContext } from "@/lib/workspaces/context"
@@ -19,6 +20,7 @@ export async function GET(): Promise<Response> {
 
   try {
     const { workspace } = await selectedContext(user.id)
+    await requireAskLevel(user.id, workspace.id, "read")
     return json(200, await listChatSources(user.id, workspace.id))
   } catch (thrown) {
     if (thrown instanceof WorkspaceAccessError) return notFound()

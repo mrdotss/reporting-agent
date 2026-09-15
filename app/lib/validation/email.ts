@@ -19,19 +19,22 @@ import { z } from "zod"
 export const EMAIL_MAX_LENGTH = 254
 
 /**
- * The rejection message. States the accepted **format and length** as
- * Requirement 7.11 demands, and carries nothing drawn from the value that
- * violated it — an email is personal data, and a validation message is a thing
- * that ends up in a log line.
+ * The rejection message: what an acceptable address looks like, and nothing
+ * drawn from the value that violated it — an email is personal data, and a
+ * validation message is a thing that ends up in a log line.
  *
  * One message for both the format failure and the length failure, on purpose:
  * they are the same answer to the visitor ("this is not an address we can
  * store"), and a length-specific message on a 300-character submission tells an
  * enumerator which of the two gates they hit.
+ *
+ * The length bound is enforced and **not advertised** (roles-and-ask-access
+ * Req 8). The sign-up form used to state "at most 254 characters" beside the
+ * field, and a maximum printed next to an empty input reads as a requirement to
+ * meet — it was reported as the form demanding 254 characters.
  */
 export const EMAIL_POLICY_MESSAGE =
-  `Enter an email address in the form name@example.com, ` +
-  `at most ${EMAIL_MAX_LENGTH} characters.`
+  "Enter a valid email address, like name@example.com."
 
 /**
  * Trim surrounding whitespace and lower-case (Requirement 7.3).

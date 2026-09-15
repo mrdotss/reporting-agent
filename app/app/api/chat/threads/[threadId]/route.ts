@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { requireAskLevel } from "@/lib/chat/access"
 import { updateThreadSchema } from "@/lib/chat/input"
 import { listChatSources } from "@/lib/chat/sources"
 import {
@@ -16,12 +17,15 @@ import {
   readThread,
   updateThread,
 } from "@/lib/chat/store"
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 
 /**
  * `GET /api/chat/threads/[threadId]` — a conversation and its messages.
  * `PATCH /api/chat/threads/[threadId]` — rename it, or change what it is grounded in.
  *
  * A thread outside the user's workspaces is a 404, the same as one that does not exist.
+ * Reading needs the read level and changing needs chat (roles-and-ask-access Req 6), and a
+ * refusal is the same 404.
  */
 export const runtime = "nodejs"
 
@@ -55,6 +59,7 @@ export async function PATCH(request: Request, context: ThreadRouteContext): Prom
 
   try {
     const thread = await readThread(user.id, threadId)
+    await requireAskLevel(user.id, thread.workspaceId, "chat")
     let attachments = parsed.data.attachments
     if (attachments !== undefined) {
       const sources = await listChatSources(user.id, thread.workspaceId)
@@ -71,7 +76,9 @@ export async function PATCH(request: Request, context: ThreadRouteContext): Prom
     const updated = await updateThread(thread, { title: parsed.data.title, attachments })
     return json(200, { thread: updated })
   } catch (thrown) {
-    if (thrown instanceof ChatThreadNotFoundError) return notFound()
+    if (thrown instanceof ChatThreadNotFoundError || thrown instanceof WorkspaceAccessError) {
+      return notFound()
+    }
     console.error(`[api/chat/threads/:id] PATCH failed: ${describe(thrown)}`)
     return internalError()
   }

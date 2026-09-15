@@ -11,6 +11,7 @@ import {
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
 import { MissingRuntimeConfigError } from "@/lib/aws/agentcore"
+import { requireAskLevel } from "@/lib/chat/access"
 import { livePullSchema } from "@/lib/chat/input"
 import { toLiveMetricPullView } from "@/lib/db/views"
 import {
@@ -54,6 +55,7 @@ export async function GET(): Promise<Response> {
 
   try {
     const { workspace } = await selectedContext(user.id)
+    await requireAskLevel(user.id, workspace.id, "read")
     const pulls = await listLivePulls(user.id, workspace.id)
     return json(200, { pulls: pulls.map(toLiveMetricPullView) })
   } catch (thrown) {
@@ -77,6 +79,10 @@ export async function POST(request: Request): Promise<Response> {
   if (problem !== null) return unprocessable(problem, "WINDOW_INVALID")
 
   try {
+    // Collecting is asking: the chat level, in the workspace Ask is open in
+    // (roles-and-ask-access Req 6). The pull's own edit check on the connector follows.
+    const { workspace } = await selectedContext(user.id)
+    await requireAskLevel(user.id, workspace.id, "chat")
     const connector = await getConnectedSubscription(user.id, connectedSubscriptionId)
     if (!connector.scopeVerified) {
       return unprocessable(
@@ -138,6 +144,7 @@ export async function POST(request: Request): Promise<Response> {
           pull: view,
         })
   } catch (thrown) {
+    if (thrown instanceof WorkspaceAccessError) return notFound()
     if (thrown instanceof SubscriptionNotFoundError) return notFound()
     if (thrown instanceof LivePullConnectorNotFoundError) return notFound()
     if (thrown instanceof SubscriptionSecretUnreadableError) {

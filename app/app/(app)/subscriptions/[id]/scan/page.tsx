@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils"
 import { requireSession } from "@/lib/auth/guard"
 import { type MessageId, messageText } from "@/lib/messages/catalog"
 import { groupScanTypes, type ScanGroup } from "@/lib/scans/grouping"
-import { readLatestScan } from "@/lib/scans/store"
+import { readLatestScan, readSubscriptionForScan } from "@/lib/scans/store"
 import { getConnectedSubscription } from "@/lib/subscriptions/store"
 import {
   countsAreReported,
@@ -80,6 +80,14 @@ export default async function ScanPage({ params }: ScanPageProps) {
   if (subscription === null) notFound()
 
   const scan = await readLatestScan(user.id, id)
+  // The Scan control is for members who may scan (`connect`: Owner and Admin); everyone
+  // else reads the counts (roles-and-ask-access Req 5). Asked through the scan route's
+  // own access check, so it is the connector's workspace that decides, not the selected
+  // one.
+  const canScan = await readSubscriptionForScan(user.id, id).then(
+    () => true,
+    () => false
+  )
   const language = "en" as const
   // Typed as `MessageId`, not `string`: the catalogue's keys are a literal union, so a
   // mistyped id is a compile error rather than a runtime throw on the one render that
@@ -141,7 +149,7 @@ export default async function ScanPage({ params }: ScanPageProps) {
           {/* Beside the title, where every other page in this product puts its one
               primary action. It used to sit inside the figure strip below, which made
               a row of counts also a toolbar. */}
-          <RescanButton subscriptionId={id} language={language} />
+          {canScan ? <RescanButton subscriptionId={id} language={language} /> : null}
         </div>
       </div>
 

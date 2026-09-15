@@ -37,7 +37,8 @@ export function ProjectManager({ projects }: { projects: Project[] }) {
     [busy, setBusy] = useState(false),
     [error, setError] = useState("")
   if (!workspace) return null
-  const manage = can(workspace.role, "manage")
+  // Customers are editors' work too (roles-and-ask-access Req 4).
+  const manage = can(workspace.role, "edit")
   async function action(body: Record<string, unknown>) {
     setBusy(true)
     setError("")

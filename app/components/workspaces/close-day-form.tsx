@@ -16,11 +16,32 @@ import { workspaceMutation } from "@/components/workspaces/workspace-context"
 export function CloseDayForm({
   workspaceId,
   closeDay,
-}: Readonly<{ workspaceId: string; closeDay: number }>) {
+  canEdit,
+}: Readonly<{
+  workspaceId: string
+  closeDay: number
+  /** Only the owner moves the close day (roles-and-ask-access Req 3); an admin sees it. */
+  canEdit: boolean
+}>) {
   const router = useRouter()
   const [value, setValue] = useState(String(closeDay))
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState("")
+
+  if (!canEdit) {
+    return (
+      <div className="flex max-w-md flex-col gap-1.5">
+        <p className="text-sm">
+          Reports are due on day{" "}
+          <span className="font-mono font-medium tabular-nums">{closeDay}</span> of each
+          month.
+        </p>
+        <p className="text-meta text-muted-foreground">
+          Only the workspace owner can change the close day.
+        </p>
+      </div>
+    )
+  }
 
   const parsed = Number(value)
   const valid = Number.isInteger(parsed) && parsed >= 1 && parsed <= 28

@@ -38,6 +38,7 @@ const PULL: LiveMetricPull = {
 const { state } = vi.hoisted(() => ({
   state: {
     user: undefined as { id: string; email: string } | undefined,
+    askLevel: "chat" as "chat" | "read" | "none",
     scopeVerified: true,
     secretExpiresAt: "2099-01-01T00:00:00.000Z",
     connectorMissing: false,
@@ -50,6 +51,27 @@ const { state } = vi.hoisted(() => ({
 
 vi.mock("@/lib/auth/guard", () => ({
   requireSessionForApi: async () => state.user ?? null,
+}))
+
+vi.mock("@/lib/chat/access", async () => {
+  const { WorkspaceAccessError } = await import("@/lib/workspaces/access")
+  return {
+    requireAskLevel: async (_user: string, _workspace: string, need: "read" | "chat") => {
+      if (state.askLevel === "none" || (need === "chat" && state.askLevel !== "chat")) {
+        throw new WorkspaceAccessError()
+      }
+      return state.askLevel
+    },
+  }
+})
+
+vi.mock("@/lib/workspaces/context", () => ({
+  selectedContext: async () => ({
+    workspace: { id: "ws_1", name: "Delivery", role: "editor", closeDay: 15 },
+    workspaces: [],
+    projects: [],
+    project: undefined,
+  }),
 }))
 
 vi.mock("@/lib/subscriptions/store", async (importOriginal) => {
@@ -132,6 +154,7 @@ beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] })
   vi.setSystemTime(new Date("2026-09-15T09:00:00Z"))
   state.user = { id: "user_1", email: "consultant@example.test" }
+  state.askLevel = "chat"
   state.scopeVerified = true
   state.secretExpiresAt = "2099-01-01T00:00:00.000Z"
   state.connectorMissing = false
@@ -159,6 +182,12 @@ describe("refusals before anything runs", () => {
     const response = await post(body({ window }))
     expect(response.status).toBe(422)
     expect(((await response.json()) as { error: { message: string } }).error.message).toMatch(message)
+    expect(state.created).toHaveLength(0)
+  })
+
+  test("404 where Ask is read-only, before the connector is read", async () => {
+    state.askLevel = "read"
+    expect((await post(body())).status).toBe(404)
     expect(state.created).toHaveLength(0)
   })
 

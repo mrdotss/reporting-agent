@@ -59,7 +59,8 @@ vi.mock("next/navigation", () => ({
   }),
 }))
 
-import NewSubscriptionPage from "./page"
+// The page's body, rendered after `/subscriptions/new` has checked who may connect.
+import { ConnectSubscriptionView } from "@/components/subscriptions/connect-page"
 
 // --- Fixtures ---------------------------------------------------------------
 
@@ -140,7 +141,7 @@ afterEach(() => {
 // --- Navigation helpers -----------------------------------------------------
 
 function renderWizard(): void {
-  render(<NewSubscriptionPage />)
+  render(<ConnectSubscriptionView nowIso={new Date().toISOString()} />)
 
   // The flow opens on the source picker now (task 2.4): an Azure subscription, an
   // AWS account and an on-premises estate do not share a form, so choosing between

@@ -17,6 +17,10 @@ import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/c
 /**
  * What the conversation is grounded in, and the rules that make its answers checkable
  * (ask-chat Req 2, 3, 8).
+ *
+ * Without `onAdd` and `onRemove` — a member who can only read Ask here
+ * (roles-and-ask-access Req 6) — the panel shows the same attachments without the controls
+ * that change them.
  */
 
 const COUNT = new Intl.NumberFormat("en-US")
@@ -33,25 +37,28 @@ export function ContextPanel({
   runs: readonly AttachableRun[]
   connectors: readonly AttachableConnector[]
   live: readonly AttachableLive[]
-  onAdd: () => void
-  onRemove: (kind: AttachmentKind, id: string) => void
+  onAdd?: () => void
+  onRemove?: (kind: AttachmentKind, id: string) => void
 }>) {
   const empty = runs.length === 0 && connectors.length === 0 && live.length === 0
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
-      <div className="flex items-center justify-between">
+      <div className="flex min-h-7 items-center justify-between">
         <span className="text-micro uppercase text-muted-foreground">Grounded in</span>
-        <Button variant="ghost" size="sm" onClick={onAdd}>
-          <PlusIcon aria-hidden="true" />
-          Add
-        </Button>
+        {onAdd ? (
+          <Button variant="ghost" size="sm" onClick={onAdd}>
+            <PlusIcon aria-hidden="true" />
+            Add
+          </Button>
+        ) : null}
       </div>
 
       {empty ? (
         <p className="text-meta text-muted-foreground">
-          Nothing attached. Attach a verified report, a scanned connector or live metrics and
-          answers can cite their figures.
+          {onAdd
+            ? "Nothing attached. Attach a verified report, a scanned connector or live metrics and answers can cite their figures."
+            : "Nothing is attached to this conversation."}
         </p>
       ) : (
         <ul className="flex flex-col gap-2.5">
@@ -68,14 +75,16 @@ export function ContextPanel({
                     {run.presetName ? ` · ${run.presetName}` : ""}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => onRemove("run", run.runId)}
-                  aria-label={`Detach ${run.customerName} ${run.periodLabel}`}
-                >
-                  <XIcon aria-hidden="true" />
-                </Button>
+                {onRemove ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRemove("run", run.runId)}
+                    aria-label={`Detach ${run.customerName} ${run.periodLabel}`}
+                  >
+                    <XIcon aria-hidden="true" />
+                  </Button>
+                ) : null}
               </div>
               <dl className="grid grid-cols-3 gap-1.5">
                 <Fact label="figures" value={COUNT.format(run.figureCount)} />
@@ -103,14 +112,16 @@ export function ContextPanel({
                     {pull.windowLabel} · {pull.connectorLabel}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => onRemove("live", pull.id)}
-                  aria-label={`Detach live metrics for ${pull.resourceNames.join(", ")}`}
-                >
-                  <XIcon aria-hidden="true" />
-                </Button>
+                {onRemove ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRemove("live", pull.id)}
+                    aria-label={`Detach live metrics for ${pull.resourceNames.join(", ")}`}
+                  >
+                    <XIcon aria-hidden="true" />
+                  </Button>
+                ) : null}
               </div>
               <dl className="grid grid-cols-2 gap-1.5">
                 <Fact label="machines" value={pull.resourceCount === null ? "—" : COUNT.format(pull.resourceCount)} />
@@ -134,14 +145,16 @@ export function ContextPanel({
                     {connector.customerName ?? "No customer"} · inventory
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  onClick={() => onRemove("connector", connector.id)}
-                  aria-label={`Detach ${connector.label}`}
-                >
-                  <XIcon aria-hidden="true" />
-                </Button>
+                {onRemove ? (
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => onRemove("connector", connector.id)}
+                    aria-label={`Detach ${connector.label}`}
+                  >
+                    <XIcon aria-hidden="true" />
+                  </Button>
+                ) : null}
               </div>
               <p className="text-xs text-muted-foreground">
                 {connector.scan === null
@@ -176,7 +189,8 @@ export function ContextPanel({
       </ul>
 
       <p className="text-xs text-muted-foreground">
-        Answers run on Amazon Bedrock AgentCore. Conversations are shared with this workspace.
+        Answers run on Amazon Bedrock AgentCore. Conversations are shared with the people who
+        can use Ask in this workspace.
       </p>
     </div>
   )

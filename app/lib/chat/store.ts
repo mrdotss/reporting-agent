@@ -17,8 +17,9 @@ import type {
   ChatProposalState,
   ChatThreadView,
 } from "@/lib/chat/views"
+import { requireAskLevel } from "@/lib/chat/access"
 import { CHAT_TITLE_MAX } from "@/lib/chat/views"
-import { requireWorkspace, WorkspaceAccessError } from "@/lib/workspaces/access"
+import { WorkspaceAccessError } from "@/lib/workspaces/access"
 
 /**
  * Chat history in DynamoDB (ask-chat Req 7), one table, two item kinds.
@@ -34,9 +35,10 @@ import { requireWorkspace, WorkspaceAccessError } from "@/lib/workspaces/access"
  *
  * ## Access is decided in Postgres, not here
  *
- * A thread is visible to every member of its workspace and to no one else. DynamoDB holds
- * no membership, so every read that starts from an id resolves the thread first and then
- * asks `requireWorkspace`. A thread in a workspace the user is not a member of raises
+ * A thread is visible to the members of its workspace who may use Ask there, and to no one
+ * else (roles-and-ask-access Req 6). DynamoDB holds no membership, so every read that
+ * starts from an id resolves the thread first and then asks `requireAskLevel`, and starting
+ * a thread needs the chat level. A thread in a workspace the user cannot use Ask in raises
  * {@link ChatThreadNotFoundError} — the same answer as an id that does not exist, so a
  * probe learns nothing from the difference.
  */
@@ -134,7 +136,7 @@ function toMessageView(item: Record<string, unknown>): ChatMessageView {
 
 async function requireMembership(userId: string, workspaceId: string): Promise<void> {
   try {
-    await requireWorkspace(userId, workspaceId)
+    await requireAskLevel(userId, workspaceId, "read")
   } catch (thrown) {
     if (thrown instanceof WorkspaceAccessError) throw new ChatThreadNotFoundError()
     throw thrown
@@ -147,7 +149,7 @@ export async function createThread(
   attachments: ChatAttachments,
   now: Date = new Date()
 ): Promise<ChatThreadView> {
-  await requireWorkspace(userId, workspaceId)
+  await requireAskLevel(userId, workspaceId, "chat")
 
   const id = newId(now)
   const at = now.toISOString()
@@ -183,7 +185,7 @@ export async function listThreads(
   workspaceId: string,
   limit: number = THREAD_LIST_LIMIT
 ): Promise<ChatThreadView[]> {
-  await requireWorkspace(userId, workspaceId)
+  await requireAskLevel(userId, workspaceId, "read")
 
   const result = await getDynamoClient().send(
     new QueryCommand({

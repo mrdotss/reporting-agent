@@ -6,8 +6,11 @@ import { UserMenu } from "@/components/app-shell/user-menu"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import { PendingInvitationResume } from "@/components/workspaces/pending-invitation-resume"
 import { WorkspaceProvider } from "@/components/workspaces/workspace-context"
+import { isPlatformAdmin } from "@/lib/admin/platform"
 import { requireSession } from "@/lib/auth/guard"
+import { readAskLevel } from "@/lib/chat/access"
 import { loadAttention } from "@/lib/close/attention"
 import { loadClose } from "@/lib/close/load"
 import { monthName } from "@/lib/close/period"
@@ -51,7 +54,14 @@ export default async function AppLayout({
     cookies(),
   ])
   const { period, board } = await loadClose(user.id, workspace)
-  const attention = await loadAttention(user.id, workspace.id, board)
+  const [attention, askLevel] = await Promise.all([
+    loadAttention(user.id, workspace.id, board),
+    readAskLevel(user.id, workspace.id),
+  ])
+  // Ask is in the navigation only where it is open (roles-and-ask-access Req 6), and the
+  // Admin link only for a platform admin (Req 7).
+  const askAvailable = askLevel !== "none"
+  const platformAdmin = isPlatformAdmin(user.email)
 
   const customers = board.rows.map((row) => ({
     id: row.project.id,
@@ -90,6 +100,8 @@ export default async function AppLayout({
             connectorsNeedAttention={attention.some((item) =>
               item.key.startsWith("connector:")
             )}
+            askAvailable={askAvailable}
+            platformAdmin={platformAdmin}
             userMenu={<UserMenu email={user.email} />}
           />
 
@@ -100,6 +112,8 @@ export default async function AppLayout({
               workspaceId={workspace.id}
               customers={customers}
               canRequest={canRequest}
+              askAvailable={askAvailable}
+              settingsAvailable={can(workspace.role, "edit")}
             />
             <div
               id="app-content"
@@ -115,6 +129,7 @@ export default async function AppLayout({
           </SidebarInset>
         </SidebarProvider>
         <Toaster position="bottom-right" />
+        <PendingInvitationResume />
       </TooltipProvider>
     </WorkspaceProvider>
   )

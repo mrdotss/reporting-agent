@@ -8,6 +8,7 @@ import {
   unauthorized,
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { requireAskLevel } from "@/lib/chat/access"
 import { createThreadSchema } from "@/lib/chat/input"
 import { listChatSources } from "@/lib/chat/sources"
 import { createThread, listThreads } from "@/lib/chat/store"
@@ -17,7 +18,8 @@ import { selectedContext } from "@/lib/workspaces/context"
 /**
  * `GET /api/chat/threads` and `POST /api/chat/threads` (ask-chat Req 7).
  *
- * Conversations belong to the **selected workspace** and every member sees them. A new
+ * Conversations belong to the **selected workspace**, and the members who may use Ask there
+ * see them; starting one needs the chat level (roles-and-ask-access Req 6). A new
  * conversation's attachments are narrowed to what the workspace can attach right now —
  * an id for a report that is not verified, or a connector that is not the workspace's,
  * is dropped rather than stored.
@@ -50,6 +52,7 @@ export async function POST(request: Request): Promise<Response> {
 
   try {
     const { workspace } = await selectedContext(user.id)
+    await requireAskLevel(user.id, workspace.id, "chat")
     const sources = await listChatSources(user.id, workspace.id)
     const runIds = new Set(sources.runs.map((run) => run.runId))
     const connectorIds = new Set(sources.connectors.map((connector) => connector.id))

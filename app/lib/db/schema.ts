@@ -1195,6 +1195,25 @@ export const liveMetricPulls = pgTable(
 )
 
 /**
+ * Accounts a platform admin has given Ask (roles-and-ask-access Req 6, 7).
+ *
+ * One row per account, written only through `lib/admin/platform.ts`, and the row *is* the
+ * grant: removing Ask deletes it. A granted account uses Ask in the workspaces it owns and
+ * stops seeing Ask in a platform admin's workspace it belongs to. Who counts as a platform
+ * admin is configuration (`RPT_PLATFORM_ADMIN_EMAILS`), never a row here.
+ *
+ * `granted_by` is the admin's user id, kept for the record rather than as a foreign key, so
+ * removing an admin's account does not quietly remove the grants they made.
+ */
+export const askAccess = pgTable("ask_access", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  grantedBy: text("granted_by").notNull(),
+  grantedAt: instant("granted_at").notNull().defaultNow(),
+})
+
+/**
  * One row per (template version, section) — the resources that section's rule
  * matched at PUBLISH time, against the scan the consultant was looking at while
  * authoring it (task 3.10, Requirement 9.5).

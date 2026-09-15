@@ -46,8 +46,21 @@ const { state } = vi.hoisted(() => ({
     enqueued: [] as unknown[],
     presetScope: undefined as unknown,
     editDenied: false,
+    askLevel: "chat" as "chat" | "read" | "none",
   },
 }))
+
+vi.mock("@/lib/chat/access", async () => {
+  const { WorkspaceAccessError } = await import("@/lib/workspaces/access")
+  return {
+    requireAskLevel: async (_user: string, _workspace: string, need: "read" | "chat") => {
+      if (state.askLevel === "none" || (need === "chat" && state.askLevel !== "chat")) {
+        throw new WorkspaceAccessError()
+      }
+      return state.askLevel
+    },
+  }
+})
 
 vi.mock("@/lib/auth/guard", () => ({
   requireSessionForApi: async () => state.user ?? null,
@@ -131,6 +144,7 @@ beforeEach(() => {
   state.enqueued = []
   state.presetScope = undefined
   state.editDenied = false
+  state.askLevel = "chat"
 })
 
 describe("GET", () => {
@@ -187,6 +201,12 @@ describe("POST request", () => {
   test("401 without a session", async () => {
     state.user = undefined
     expect((await post({ action: "request", templateId: "tpl_1" })).status).toBe(401)
+  })
+
+  test("a member who can only read Ask here cannot request it", async () => {
+    state.askLevel = "read"
+    expect((await post({ action: "request", templateId: "tpl_1" })).status).toBe(404)
+    expect(state.enqueued).toHaveLength(0)
   })
 })
 

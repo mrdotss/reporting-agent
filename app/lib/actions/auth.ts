@@ -96,16 +96,24 @@ import {
 // --- Returned state ---------------------------------------------------------
 
 /**
- * A rejection, as a form renders it: one message, no field identification
- * (Requirement 7.5).
+ * A rejection, as a form renders it: one message (Requirement 7.5).
  *
  * Deliberately not a per-field error map. The login form's whole job is to
  * present one outcome for three internal paths, and a shape with an `email` slot
- * and a `password` slot is a shape that invites filling one of them in.
+ * and a `password` slot is a shape that invites filling one of them in — so a
+ * sign-in refusal never carries {@link AuthActionError.field}.
  */
 export type AuthActionError = {
   readonly status: "error"
   readonly message: string
+  /**
+   * Registration only: the field a **policy** rejection is about, so the form
+   * can put the message beside that input (roles-and-ask-access Req 8). The
+   * policy is public — the form's hints state it — so naming the field discloses
+   * nothing. Absent from every sign-in refusal and from "that email address is
+   * not available", which must not say why.
+   */
+  readonly field?: "email" | "password"
 }
 
 /**
@@ -124,6 +132,14 @@ export type AuthActionState = AuthActionError | undefined
  */
 function errorState(message: string): AuthActionError {
   return Object.freeze({ status: "error" as const, message })
+}
+
+/** A registration policy rejection, placed on the field it is about. */
+function fieldRejection(
+  message: string,
+  field: NonNullable<AuthActionError["field"]>
+): AuthActionError {
+  return Object.freeze({ status: "error" as const, message, field })
 }
 
 // --- Messages ---------------------------------------------------------------
@@ -191,8 +207,8 @@ const CURRENT_PASSWORD_REJECTED = errorState(CURRENT_PASSWORD_REJECTED_MESSAGE)
  *
  * Two keys rather than one transform, because the two values have genuinely
  * different destinations and both have to be validated. Both carry
- * {@link EMAIL_POLICY_MESSAGE}, so whichever issue lands first states the
- * accepted format and length.
+ * {@link EMAIL_POLICY_MESSAGE}, so whichever issue lands first gives the same
+ * answer, and both are reported on the email field.
  */
 const registerInputSchema = z.object({
   displayEmail: z.string({ error: EMAIL_POLICY_MESSAGE }).trim(),
@@ -406,9 +422,15 @@ export async function registerAction(
     password: formData.get("password"),
   })
 
-  // Requirements 1.4, 7.11 — the accepted email format and length, or the
-  // accepted password range, stated by the schema that rejected it.
-  if (!parsed.success) return errorState(firstIssueMessage(parsed.error))
+  // Requirements 1.4, 7.11 — what to change, stated by the schema that rejected
+  // it, on the field it rejected (roles-and-ask-access Req 8).
+  if (!parsed.success) {
+    const rejected = parsed.error.issues.at(0)?.path.at(0)
+    return fieldRejection(
+      firstIssueMessage(parsed.error),
+      rejected === "password" ? "password" : "email"
+    )
+  }
 
   const { displayEmail, email, password } = parsed.data
 

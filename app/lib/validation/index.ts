@@ -30,6 +30,8 @@ export {
   PASSWORD_MAX,
   PASSWORD_MIN,
   PASSWORD_POLICY_MESSAGE,
+  PASSWORD_TOO_LONG_MESSAGE,
+  PASSWORD_TOO_SHORT_MESSAGE,
   isPasswordWithinPolicy,
   passwordCodePointLength,
   passwordSchema,

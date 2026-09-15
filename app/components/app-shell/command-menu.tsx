@@ -54,11 +54,20 @@ export function CommandMenu({
   workspaceId,
   customers,
   canRequest,
+  askAvailable,
+  settingsAvailable,
 }: Readonly<{
   workspaceId: string
   customers: readonly SidebarCustomer[]
   canRequest: boolean
+  /** Ask is listed only where it is open to this member (roles-and-ask-access Req 6). */
+  askAvailable: boolean
+  /** Workspace settings are listed from Editor up (roles-and-ask-access Req 1). */
+  settingsAvailable: boolean
 }>) {
+  const pages = PAGES.filter(({ href }) =>
+    href === "/ask" ? askAvailable : href === "/workspace-settings" ? settingsAvailable : true
+  )
   const [open, setOpen] = useState(false)
   const router = useRouter()
   const { resolvedTheme, setTheme } = useTheme()
@@ -110,7 +119,7 @@ export function CommandMenu({
         <CommandList>
           <CommandEmpty>Nothing matches that.</CommandEmpty>
           <CommandGroup heading="Go to">
-            {PAGES.map(({ href, label, icon: Icon }) => (
+            {pages.map(({ href, label, icon: Icon }) => (
               <CommandItem key={href} onSelect={() => run(() => router.push(href))}>
                 <Icon aria-hidden="true" />
                 {label}

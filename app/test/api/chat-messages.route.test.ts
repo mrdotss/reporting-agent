@@ -28,6 +28,7 @@ const THREAD: ChatThreadView = {
 const { state } = vi.hoisted(() => ({
   state: {
     user: undefined as { id: string; email: string } | undefined,
+    askLevel: "chat" as "chat" | "read" | "none",
     threadMissing: false,
     allow: true,
     attachedRuns: 1,
@@ -39,6 +40,18 @@ const { state } = vi.hoisted(() => ({
 vi.mock("@/lib/auth/guard", () => ({
   requireSessionForApi: async () => state.user ?? null,
 }))
+
+vi.mock("@/lib/chat/access", async () => {
+  const { WorkspaceAccessError } = await import("@/lib/workspaces/access")
+  return {
+    requireAskLevel: async (_user: string, _workspace: string, need: "read" | "chat") => {
+      if (state.askLevel === "none" || (need === "chat" && state.askLevel !== "chat")) {
+        throw new WorkspaceAccessError()
+      }
+      return state.askLevel
+    },
+  }
+})
 
 vi.mock("@/lib/chat/rate-limit", () => ({
   chatLimiter: () => ({ allow: () => state.allow }),
@@ -135,6 +148,7 @@ async function events(response: Response): Promise<Record<string, unknown>[]> {
 
 beforeEach(() => {
   state.user = { id: "user_1", email: "consultant@example.test" }
+  state.askLevel = "chat"
   state.threadMissing = false
   state.allow = true
   state.attachedRuns = 1
@@ -151,6 +165,12 @@ describe("refusals before anything is stored", () => {
   test("404 for a thread outside the user's workspaces", async () => {
     state.threadMissing = true
     expect((await call({ prompt: "hi" })).status).toBe(404)
+  })
+
+  test("404 for a member who can only read Ask here, and nothing is stored", async () => {
+    state.askLevel = "read"
+    expect((await call({ prompt: "hi" })).status).toBe(404)
+    expect(state.appended).toHaveLength(0)
   })
 
   test("400 for a blank question or an extra key", async () => {

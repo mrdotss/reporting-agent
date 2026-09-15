@@ -27,6 +27,14 @@ type Invite = {
   acceptedAt: Date | null
   revokedAt: Date | null
 }
+/** The roles the owner can give. Owner is only ever reached by a transfer. */
+const ASSIGNABLE_ROLES = ["admin", "editor", "viewer"] as const
+
+/**
+ * The team: who is in this workspace, who has been asked, and — for the owner — the
+ * controls to change either (roles-and-ask-access Req 2). An admin sees the same lists
+ * read-only; the server refuses every change from anyone but the owner.
+ */
 export function TeamManager({
   members,
   invitations,
@@ -40,12 +48,13 @@ export function TeamManager({
 }) {
   const workspace = useWorkspace(),
     router = useRouter()
-  const [role, setRole] = useState<"admin" | "editor" | "viewer">("editor"),
+  const [role, setRole] = useState<(typeof ASSIGNABLE_ROLES)[number]>("editor"),
     [link, setLink] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [confirm, setConfirm] = useState<Member | null>(null)
   if (!workspace) return null
+  const isOwner = workspace.role === "owner"
   async function action(body: Record<string, unknown>) {
     setBusy(true)
     setError("")
@@ -74,7 +83,7 @@ export function TeamManager({
         </p>
         <h1 className="text-title">Team</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Roles apply across every customer project in{" "}
+          Roles apply across every customer in{" "}
           {workspace.workspaceId ? "this workspace" : "your workspace"}.
         </p>
       </div>
@@ -127,10 +136,7 @@ export function TeamManager({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {(workspace.role === "owner"
-                            ? ["admin", "editor", "viewer"]
-                            : ["editor", "viewer"]
-                          ).map((r) => (
+                          {ASSIGNABLE_ROLES.map((r) => (
                             <SelectItem value={r} key={r}>
                               {r}
                             </SelectItem>
@@ -151,15 +157,13 @@ export function TeamManager({
                       >
                         Remove
                       </Button>
-                      {workspace.role === "owner" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => setConfirm(m)}
-                        >
-                          Make owner
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setConfirm(m)}
+                      >
+                        Make owner
+                      </Button>
                     </div>
                   )}
               </div>
@@ -228,68 +232,84 @@ export function TeamManager({
         </div>
         <Card>
           <CardContent className="space-y-4 pt-6">
-            <h2 className="text-section">Invite a teammate</h2>
-            <p className="text-sm text-muted-foreground">
-              Anyone with this link can join after signing in. Share it only
-              with the intended teammate. It can be used once and expires in
-              seven days.
-            </p>
-            <label className="text-sm font-medium" htmlFor="invite-role">
-              Access level
-            </label>
-            <Select value={role} onValueChange={(v) => v && setRole(v)}>
-              <SelectTrigger id="invite-role" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {workspace.role === "owner" && (
-                  <SelectItem value="admin">Admin</SelectItem>
-                )}
-                <SelectItem value="editor">Editor</SelectItem>
-                <SelectItem value="viewer">Viewer</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
-              disabled={busy}
-              onClick={() => void action({ action: "invite", role })}
-            >
-              Create invitation link
-            </Button>
-            {link && (
-              <div className="rounded-lg border bg-muted p-3">
-                <label htmlFor="invite-link" className="text-xs">
-                  Invitation link — copy before leaving
+            {isOwner ? (
+              <>
+                <h2 className="text-section">Invite a teammate</h2>
+                <p className="text-sm text-muted-foreground">
+                  Anyone with this link can join after signing in. Share it only
+                  with the intended teammate. It can be used once and expires in
+                  seven days.
+                </p>
+                <label className="text-sm font-medium" htmlFor="invite-role">
+                  Access level
                 </label>
-                <input
-                  id="invite-link"
-                  readOnly
-                  value={link}
-                  className="my-2 w-full rounded-md border bg-card p-2 text-xs"
-                />
+                <Select value={role} onValueChange={(v) => v && setRole(v)}>
+                  <SelectTrigger id="invite-role" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="editor">Editor</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(link)
-                    } catch {
-                      setError("Select the link and copy it manually.")
-                    }
-                  }}
+                  disabled={busy}
+                  onClick={() => void action({ action: "invite", role })}
                 >
-                  Copy link
+                  Create invitation link
                 </Button>
-              </div>
+                {link && (
+                  <div className="rounded-lg border bg-muted p-3">
+                    <label htmlFor="invite-link" className="text-xs">
+                      Invitation link — copy before leaving
+                    </label>
+                    <input
+                      id="invite-link"
+                      readOnly
+                      value={link}
+                      className="my-2 w-full rounded-md border bg-card p-2 text-xs"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(link)
+                        } catch {
+                          setError("Select the link and copy it manually.")
+                        }
+                      }}
+                    >
+                      Copy link
+                    </Button>
+                  </div>
+                )}
+              </>
+            ) : (
+              <>
+                <h2 className="text-section">Changing the team</h2>
+                <p className="text-sm text-muted-foreground">
+                  Only the workspace owner can invite people, change roles or remove
+                  members.
+                </p>
+              </>
             )}
             <div className="border-t pt-4 text-xs text-muted-foreground">
               <p>
-                <strong>Admin:</strong> manages connections, projects, and team.
+                <strong>Owner:</strong> everything, including the team and the close
+                day.
               </p>
               <p className="mt-2">
-                <strong>Editor:</strong> edits profiles and requests reports.
+                <strong>Admin:</strong> connectors, customers, presets and reports.
               </p>
               <p className="mt-2">
-                <strong>Viewer:</strong> reads and downloads reports.
+                <strong>Editor:</strong> customers, presets and reports; views
+                connectors.
+              </p>
+              <p className="mt-2">
+                <strong>Viewer:</strong> reads the dashboard, reports, presets and
+                connectors.
               </p>
             </div>
           </CardContent>

@@ -988,6 +988,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
     const { created } = auditMigrations(readMigrationFiles())
 
     expect([...created.tables.keys()].sort()).toEqual([
+      "ask_access",
       "brands",
       "connected_subscriptions",
       "live_metric_pulls",

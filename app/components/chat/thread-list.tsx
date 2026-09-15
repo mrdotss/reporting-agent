@@ -46,7 +46,8 @@ export function ThreadList({
   threads: readonly ChatThreadView[]
   activeId: string | null
   onSelect: (id: string) => void
-  onNew: () => void
+  /** Absent for a member who can only read Ask here (roles-and-ask-access Req 6). */
+  onNew?: () => void
   unavailable: boolean
 }>) {
   const [query, setQuery] = useState("")
@@ -65,11 +66,13 @@ export function ThreadList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2">
+      <div className="flex min-h-11 items-center justify-between gap-2 px-3 pt-3 pb-2">
         <span className="text-micro uppercase text-muted-foreground">Conversations</span>
-        <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New conversation">
-          <NotePencilIcon aria-hidden="true" />
-        </Button>
+        {onNew ? (
+          <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New conversation">
+            <NotePencilIcon aria-hidden="true" />
+          </Button>
+        ) : null}
       </div>
 
       <label className="mx-3 mb-2 flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2.5 text-muted-foreground focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
