@@ -111,6 +111,7 @@ __all__ = [
     "COMMAND_GENERATE_REPORT",
     "COMMAND_HANDLERS",
     "COMMAND_LIST_INVENTORY",
+    "COMMAND_LIST_RESOURCES",
     "COMMAND_PREFLIGHT",
     "COMMAND_RENDER_PREVIEW",
     "COMMAND_VERIFY_REPORT",
@@ -136,6 +137,7 @@ __all__ = [
     "emit",
     "handle_generate_report",
     "handle_list_inventory",
+    "handle_list_resources",
     "handle_preflight",
     "invoke",
     "main",
@@ -156,6 +158,11 @@ COMMAND_PREFLIGHT: Final[str] = "preflight"
 COMMAND_VERIFY_REPORT: Final[str] = "verify_report"
 COMMAND_RENDER_PREVIEW: Final[str] = "render_preview"
 COMMAND_LIST_INVENTORY: Final[str] = "list_inventory"
+
+COMMAND_LIST_RESOURCES: Final[str] = "list_resources"
+"""The machines a connector can see, for the Ask page's live-metrics picker (ask-chat
+Req 8.1). Deterministic, like `list_inventory`, and separate from it because that listing
+structurally excludes resource identifiers (Req 9.5) while a picker needs them."""
 
 COMMAND_CHAT: Final[str] = "chat"
 """**The one model-facing command** (ask-chat Req 1.1, amending Req 14.2 and 14.13).
@@ -181,6 +188,7 @@ COMMANDS: Final[frozenset[str]] = frozenset(
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
         COMMAND_LIST_INVENTORY,
+        COMMAND_LIST_RESOURCES,
         COMMAND_CHAT,
     }
 )
@@ -1120,6 +1128,80 @@ async def handle_list_inventory(
     )
 
 
+LIST_RESOURCES_LIMIT: Final[int] = 500
+"""The most machines one listing returns. A picker past this is unusable, and the
+outcome says when the bound truncated it rather than silently dropping rows."""
+
+LIST_RESOURCES_DEFAULT_TYPES: Final[tuple[str, ...]] = ("Microsoft.Compute/virtualMachines",)
+
+
+async def handle_list_resources(
+    invocation: Invocation, steps: StepTracker
+) -> AsyncIterator[Event]:
+    """List the machines a connector can see, for the live-metrics picker (ask-chat Req 8.1).
+
+    One Resource Graph pass through the same `InventoryCollector` a report run uses, with
+    no archive and no fact projection. The outcome is written **only on success**, as
+    `list_inventory`'s is: an empty `resources` list is a claim that the subscription holds
+    no machine, not what a failed listing means.
+    """
+    from reporting_agent.azure.clients import build_inventory_port
+    from reporting_agent.azure.credential import InvocationCredential
+    from reporting_agent.azure.inventory import InventoryCollector
+
+    context = invocation.context
+    subscription_id = context.get("subscription_id")
+    if not isinstance(subscription_id, str) or not subscription_id.strip():
+        raise ValueError(
+            "`context.subscription_id` is required by `list_resources`: there is no scope "
+            "to enumerate without one, and no safe default for it."
+        )
+
+    raw_types = invocation.payload.get("resource_types")
+    resource_types = (
+        tuple(str(value) for value in raw_types if isinstance(value, str) and value.strip())
+        if isinstance(raw_types, list) and raw_types
+        else LIST_RESOURCES_DEFAULT_TYPES
+    )
+
+    credential = InvocationCredential(
+        tenant_id=context.get("tenant_id"),  # type: ignore[arg-type]
+        client_id=context.get("client_id"),  # type: ignore[arg-type]
+        client_secret=context.get("client_secret"),  # type: ignore[arg-type]
+    )
+    port, close_port = build_inventory_port(credential=credential)
+    try:
+        step = steps.start(
+            TOOL_COLLECT_INVENTORY,
+            label="Machines",
+            status="Listing the machines this connector can see",
+        )
+        yield step
+        result = await InventoryCollector(port).discover(
+            subscription_id=subscription_id.strip(),
+            resource_types=resource_types,
+            fidelity_tier=str(context.get("fidelity_tier") or "baseline"),
+        )
+        records = sorted(result["resources"], key=lambda record: record["name"].casefold())
+        invocation.outcome["resources"] = [
+            {
+                "resource_id": record["resource_id"],
+                "name": record["name"],
+                "resource_type": record["resource_type"],
+                "location": record["location"],
+                "resource_group": record["resource_group"],
+                "sku_name": record["sku_name"],
+                "power_state": record["power_state"],
+            }
+            for record in records[:LIST_RESOURCES_LIMIT]
+        ]
+        invocation.outcome["resources_truncated"] = len(records) > LIST_RESOURCES_LIMIT
+        yield steps.end(step["id"])
+    finally:
+        close_port()
+        credential.close()
+
+
 async def handle_chat(invocation: Invocation, steps: StepTracker) -> AsyncIterator[Event]:
     """Answer one question over grounding the app authorized (ask-chat Req 1).
 
@@ -1178,6 +1260,7 @@ COMMAND_HANDLERS: Final[dict[str, CommandHandler]] = {
     COMMAND_VERIFY_REPORT: handle_verify_report,
     COMMAND_RENDER_PREVIEW: handle_render_preview,
     COMMAND_LIST_INVENTORY: handle_list_inventory,
+    COMMAND_LIST_RESOURCES: handle_list_resources,
     COMMAND_CHAT: handle_chat,
 }
 

@@ -8,14 +8,15 @@ import { parseAnswer, type AnswerSegment, type ChatCitation } from "@/lib/chat/v
 import { cn } from "@/lib/utils"
 
 /**
- * An answer's text, with its figures as chips onto their provenance (ask-chat Req 3).
+ * An answer's text, with its figures as chips onto their provenance (ask-chat Req 3, 8).
  *
  * Built from {@link parseAnswer}'s segments as React nodes. There is no HTML injection
  * anywhere on this path: text a model wrote renders as text, whatever it contains.
  *
- * - A **figure** is a green chip. Hovering or focusing it shows where the string came
- *   from — the report, period and snapshot path, the scan, or the list price's SKU,
- *   region and source.
+ * - A **figure** is a chip. Green when it was read from a verified report, a saved scan or
+ *   a list price; **grey with "Live"** when it came from a live metrics pull, which was
+ *   collected on request and never verified. Hovering or focusing it shows where it came
+ *   from.
  * - An **estimate** is reasoning over figures: an amber dotted underline and a label, so
  *   it is never mistaken for a number a report proves.
  */
@@ -85,14 +86,24 @@ export function FigureChip({
   text,
   citation,
 }: Readonly<{ text: string; citation: ChatCitation | undefined }>) {
+  const live = citation?.source === "live"
   const chip = (
     <span
       data-slot="figure-chip"
+      data-source={citation?.source}
       className={cn(
-        "mx-px inline-flex items-baseline rounded-[5px] bg-(--status-verified-soft) px-1.5 font-mono text-[0.84em] font-medium text-(--status-verified) tabular-nums",
+        "mx-px inline-flex items-baseline gap-1 rounded-[5px] px-1.5 font-mono text-[0.84em] font-medium tabular-nums",
+        live
+          ? "bg-muted text-foreground ring-1 ring-border ring-inset"
+          : "bg-(--status-verified-soft) text-(--status-verified)",
         citation !== undefined && "cursor-help outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
       )}
     >
+      {live ? (
+        <span className="font-sans text-[0.72em] font-semibold tracking-wide text-muted-foreground uppercase">
+          Live
+        </span>
+      ) : null}
       {text}
     </span>
   )
@@ -114,6 +125,10 @@ export function CitationDetail({ citation }: Readonly<{ citation: ChatCitation }
   if (citation.source === "report") {
     lines.push([citation.customer_name, citation.period_display].filter(Boolean).join(" · "))
     if (citation.snapshot_path) lines.push(`snapshot › ${citation.snapshot_path}`)
+  } else if (citation.source === "live") {
+    lines.push("Live metrics · not verified")
+    lines.push([citation.connector_label, citation.period_display].filter(Boolean).join(" · "))
+    if (citation.collected_at) lines.push(`collected ${citation.collected_at.slice(0, 16).replace("T", " ")} UTC`)
   } else if (citation.source === "scan") {
     lines.push(`Saved scan${citation.collected_at ? ` · ${citation.collected_at.slice(0, 10)}` : ""}`)
   } else if (citation.source === "price") {

@@ -407,6 +407,11 @@ def resolve_run_plan(
         resource_groups=_text_list(scope_map.get("resource_groups")),
         tag_filters=_text_map(scope_map.get("tag_filters")),
     )
+    # ask-chat live metrics — an explicit machine list. Set only when the payload names
+    # one, so a report run's scope (and its snapshot's recorded scope) is unchanged.
+    resource_ids = _text_list(scope_map.get("resource_ids"))
+    if resource_ids:
+        scope["resource_ids"] = resource_ids
 
     ceiling = context.get("fidelity_tier")
     workspace = context.get("log_analytics_workspace_id")

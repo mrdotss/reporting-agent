@@ -1692,7 +1692,7 @@ def _scope_to_plain_data(
     would change the digest for a scope that is semantically identical (Req 34.8).
     Tag filters need no sorting: they are an object, and JCS orders its keys.
     """
-    return {
+    recorded: dict[str, PlainData] = {
         "resource_types": sorted(scope["resource_types"]),
         "resource_groups": sorted(scope["resource_groups"]),
         "tag_filters": dict(scope["tag_filters"]),
@@ -1701,6 +1701,12 @@ def _scope_to_plain_data(
             for resource_type, names in metrics_by_resource_type.items()
         },
     }
+    # Recorded only when requested, so every snapshot without a machine list serializes
+    # to exactly the bytes — and the content hash — it did before this key existed.
+    resource_ids = scope.get("resource_ids")
+    if resource_ids:
+        recorded["resource_ids"] = sorted(resource_ids)
+    return recorded
 
 
 def _gaps_to_plain_data(gaps: Iterable[GapRecord]) -> list[PlainData]:

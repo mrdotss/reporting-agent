@@ -490,11 +490,16 @@ class AzureProvider:
 
         groups = tuple(scope.get("resource_groups") or ())
         filters = dict(scope.get("tag_filters") or {})
+        # An explicit machine list (ask-chat live metrics). Resource ids are
+        # case-insensitive in Azure and Resource Graph lowercases parts of them, so the
+        # comparison is casefolded; an absent or empty list means "every resource".
+        wanted_ids = {str(value).casefold() for value in scope.get("resource_ids") or ()}
         resources: list[ResourceRecord] = [
             resource
             for resource in result["resources"]
             if _matches_resource_groups(resource, groups)
             and _matches_tag_filters(resource, filters)
+            and (not wanted_ids or resource["resource_id"].casefold() in wanted_ids)
         ]
         if len(resources) != len(result["resources"]):
             logger.info(

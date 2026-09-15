@@ -53,10 +53,12 @@ export async function POST(request: Request): Promise<Response> {
     const sources = await listChatSources(user.id, workspace.id)
     const runIds = new Set(sources.runs.map((run) => run.runId))
     const connectorIds = new Set(sources.connectors.map((connector) => connector.id))
+    const liveIds = new Set(sources.live.map((pull) => pull.id))
 
     const thread = await createThread(user.id, workspace.id, {
       runIds: parsed.data.attachments.runIds.filter((id) => runIds.has(id)),
       connectorIds: parsed.data.attachments.connectorIds.filter((id) => connectorIds.has(id)),
+      liveIds: parsed.data.attachments.liveIds.filter((id) => liveIds.has(id)),
     })
     return json(201, { thread })
   } catch (thrown) {

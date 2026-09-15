@@ -89,10 +89,10 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
     const previous = await listMessages(thread)
     firstTurn = previous.length === 0
     turn = await buildChatTurn({ userId: user.id, thread, prompt, previous })
-    if (turn.attachedRuns + turn.attachedScans === 0) {
+    if (turn.attachedRuns + turn.attachedScans + turn.attachedLive === 0) {
       return unprocessable(
-        "Attach a verified report or a scanned connector before asking. An answer here " +
-          "can only cite what is attached.",
+        "Attach a verified report, a scanned connector or live metrics before asking. An " +
+          "answer here can only cite what is attached.",
         "NO_READABLE_ATTACHMENTS"
       )
     }

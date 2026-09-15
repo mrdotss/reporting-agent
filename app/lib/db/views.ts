@@ -930,3 +930,52 @@ export function toScanView(row: SubscriptionScan): ScanView {
   }
 }
 
+// --- LiveMetricPullView ------------------------------------------------------
+
+/**
+ * The browser-safe shape of a `live_metric_pulls` row (ask-chat Req 8).
+ *
+ * Drops `user_id` and the workspace/project ids for the reason {@link ScanView} drops
+ * `user_id`. Keeps the picked machines' ids and names: the attach dialog lists them, and a
+ * resource id is the customer's own estate shown to a member of the customer's workspace.
+ * No credential or subscription GUID is on this table.
+ */
+export type LiveMetricPullView = {
+  id: string
+  connectedSubscriptionId: string
+  resourceIds: string[]
+  resourceNames: string[]
+  periodStart: string
+  periodEnd: string
+  timezone: string
+  status: ScanStatus
+  resourceCount: number | null
+  gapCount: number | null
+  errorCode: string | null
+  errorMessage: string | null
+  completedAt: string | null
+  createdAt: string
+}
+
+/** Project a `live_metric_pulls` row to the shape the browser may see. */
+export function toLiveMetricPullView(
+  row: import("@/lib/db/schema").LiveMetricPull
+): LiveMetricPullView {
+  return {
+    id: row.id,
+    connectedSubscriptionId: row.connectedSubscriptionId,
+    resourceIds: [...row.resourceIds],
+    resourceNames: [...row.resourceNames],
+    periodStart: row.periodStart,
+    periodEnd: row.periodEnd,
+    timezone: row.timezone,
+    status: row.status,
+    resourceCount: row.resourceCount,
+    gapCount: row.gapCount,
+    errorCode: row.errorCode,
+    errorMessage: row.errorMessage,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  }
+}
+

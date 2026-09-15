@@ -5,6 +5,7 @@ import { desc, inArray } from "drizzle-orm"
 import {
   COMMAND_CHAT,
   type ChatCommand,
+  type ChatLiveAttachment,
   type ChatRequestTarget,
   type ChatRunAttachment,
   type ChatScanAttachment,
@@ -14,6 +15,8 @@ import { monthName } from "@/lib/close/period"
 import { getDb } from "@/lib/db"
 import { reportVerifications } from "@/lib/db/schema"
 import { toTemplateView, type ScanView, type TemplateView } from "@/lib/db/views"
+import { listLivePulls } from "@/lib/live-metrics/execute"
+import { windowLabel } from "@/lib/live-metrics/window"
 import { resolveRunExtrasBatch } from "@/lib/runs/detail"
 import { listOwnedRuns } from "@/lib/runs/state"
 import { readLatestScan } from "@/lib/scans/store"
@@ -23,19 +26,21 @@ import { listProjects } from "@/lib/workspaces/store"
 
 /**
  * What a conversation may read, decided in Postgres at the moment it is needed
- * (ask-chat Req 2, 6).
+ * (ask-chat Req 2, 6, 8).
  *
  * The runtime trusts the payload it is sent, so this module is where trust is earned:
  *
  * - a **report** is attachable only when it is a completed run in the workspace whose
  *   **latest** verification passed — the attempt id sent is that latest attempt's;
  * - a **connector** contributes only its latest *complete* saved scan, projected to counts;
+ * - a **live metrics pull** is attachable once it completed, in this workspace; its figures
+ *   are cited as live and unverified;
  * - a **request target** is a connector with a customer in this workspace, under an opaque
  *   id the runtime can echo but not invent.
  *
- * {@link buildChatTurn} re-reads all three on every message, so a report whose verification
- * was superseded, or a connector removed, stops being read on the next turn rather than
- * living on in a thread's stored attachment list.
+ * {@link buildChatTurn} re-reads all of them on every message, so a report whose
+ * verification was superseded, or a connector removed, stops being read on the next turn
+ * rather than living on in a thread's stored attachment list.
  */
 
 export const ATTACHABLE_RUN_LIMIT = 100
@@ -75,9 +80,25 @@ export type AttachableConnector = {
   } | null
 }
 
+export type AttachableLive = {
+  readonly id: string
+  readonly ownerId: string
+  readonly connectorId: string
+  readonly connectorLabel: string
+  readonly customerName: string | null
+  readonly resourceNames: readonly string[]
+  readonly windowLabel: string
+  readonly periodStart: string
+  readonly periodEnd: string
+  readonly resourceCount: number | null
+  readonly gapCount: number | null
+  readonly collectedAt: string
+}
+
 export type ChatSources = {
   readonly runs: readonly AttachableRun[]
   readonly connectors: readonly AttachableConnector[]
+  readonly live: readonly AttachableLive[]
 }
 
 /** The runtime's view of a proposal target, kept server-side and resolved at `done`. */
@@ -101,7 +122,8 @@ export async function listChatSources(userId: string, workspaceId: string): Prom
     listAttachableRuns(userId, workspaceId),
     listAttachableConnectors(userId, workspaceId),
   ])
-  return { runs, connectors }
+  const live = await listAttachableLive(userId, workspaceId, connectors)
+  return { runs, connectors, live }
 }
 
 export async function listAttachableRuns(
@@ -197,6 +219,33 @@ export async function listAttachableConnectors(
   )
 }
 
+/** The workspace's completed live metrics pulls, newest first, labelled by connector. */
+export async function listAttachableLive(
+  userId: string,
+  workspaceId: string,
+  connectors: readonly AttachableConnector[]
+): Promise<AttachableLive[]> {
+  const pulls = await listLivePulls(userId, workspaceId)
+  const connectorOf = new Map(connectors.map((connector) => [connector.id, connector]))
+  return pulls.map((pull) => {
+    const connector = connectorOf.get(pull.connectedSubscriptionId)
+    return {
+      id: pull.id,
+      ownerId: pull.userId,
+      connectorId: pull.connectedSubscriptionId,
+      connectorLabel: connector?.label ?? "Removed connector",
+      customerName: connector?.customerName ?? null,
+      resourceNames: [...pull.resourceNames],
+      windowLabel: windowLabel({ start: pull.periodStart, end: pull.periodEnd }),
+      periodStart: pull.periodStart,
+      periodEnd: pull.periodEnd,
+      resourceCount: pull.resourceCount,
+      gapCount: pull.gapCount,
+      collectedAt: (pull.completedAt ?? pull.createdAt).toISOString(),
+    }
+  })
+}
+
 function completeScan(scan: ScanView | null): AttachableConnector["scan"] {
   if (scan === null || scan.status !== "complete" || scan.completedAt === null) return null
   return {
@@ -234,6 +283,7 @@ export type ChatTurn = {
   readonly targets: ReadonlyMap<string, ProposalTarget>
   readonly attachedRuns: number
   readonly attachedScans: number
+  readonly attachedLive: number
 }
 
 /**
@@ -248,14 +298,15 @@ export async function buildChatTurn(a: {
   readonly prompt: string
   readonly previous: readonly ChatMessageView[]
 }): Promise<ChatTurn> {
-  const [runs, connectors, projects] = await Promise.all([
-    listAttachableRuns(a.userId, a.thread.workspaceId),
-    listAttachableConnectors(a.userId, a.thread.workspaceId),
+  const [sources, projects] = await Promise.all([
+    listChatSources(a.userId, a.thread.workspaceId),
     listProjects(a.userId, a.thread.workspaceId),
   ])
+  const { runs, connectors, live } = sources
 
   const wantedRuns = new Set(a.thread.attachments.runIds)
   const wantedConnectors = new Set(a.thread.attachments.connectorIds)
+  const wantedLive = new Set(a.thread.attachments.liveIds ?? [])
 
   const runAttachments: ChatRunAttachment[] = runs
     .filter((run) => wantedRuns.has(run.runId))
@@ -286,6 +337,16 @@ export async function buildChatTurn(a: {
         ]
       : []
   )
+
+  const liveAttachments: ChatLiveAttachment[] = live
+    .filter((pull) => wantedLive.has(pull.id))
+    .map((pull) => ({
+      pull_id: pull.id,
+      owner_actor_id: pull.ownerId,
+      connector_label: pull.connectorLabel,
+      window_display: pull.windowLabel,
+      collected_at: pull.collectedAt,
+    }))
 
   const activeProjects = new Map(
     projects.filter((project) => !project.archivedAt).map((project) => [project.id, project])
@@ -325,11 +386,12 @@ export async function buildChatTurn(a: {
       command: COMMAND_CHAT,
       prompt: a.prompt,
       history,
-      attachments: { runs: runAttachments, scans: scanAttachments },
+      attachments: { runs: runAttachments, scans: scanAttachments, live: liveAttachments },
       request_targets: requestTargets.slice(0, 50),
     },
     targets,
     attachedRuns: runAttachments.length,
     attachedScans: scanAttachments.length,
+    attachedLive: liveAttachments.length,
   }
 }

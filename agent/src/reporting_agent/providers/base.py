@@ -21,7 +21,7 @@ from __future__ import annotations
 import itertools
 from collections.abc import Iterable
 from decimal import Decimal
-from typing import Final, Protocol, TypedDict, runtime_checkable
+from typing import Final, NotRequired, Protocol, TypedDict, runtime_checkable
 
 __all__ = [
     "ADVISOR_CHILD_RESOURCE_TYPE",
@@ -329,6 +329,9 @@ class ScopeSpec(TypedDict):
     resource_types: list[str]
     resource_groups: list[str]
     tag_filters: dict[str, str]
+    resource_ids: NotRequired[list[str]]
+    """An explicit machine list (ask-chat live metrics). Absent on every report run, so
+    a report's scope — and the snapshot that records it — is exactly what it was."""
 
 
 class _CollectRequestExtras(TypedDict, total=False):

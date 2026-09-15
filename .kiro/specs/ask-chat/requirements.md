@@ -84,6 +84,24 @@ every figure.
    app SHALL enqueue through the existing run path with its permission, connector and
    provider checks.
 
+## Requirement 8 — Live metrics
+
+1. THE runtime SHALL accept a deterministic `list_resources` command that returns, on
+   `done`, each machine a connector can see — resource id, name, type, region, resource
+   group, size and power state — at most 500, with a flag when that bound truncated it.
+2. THE collection scope SHALL accept an optional `resource_ids` list, applied beside the
+   resource-group and tag filters; a snapshot SHALL record it only when requested, so every
+   snapshot without one is byte-identical to before.
+3. A live metrics pull SHALL collect picked machines (at most 20) over whole local days in
+   Asia/Jakarta, ending no later than today and starting within Azure Monitor's 93-day
+   retention, as a collection-only `generate_report`: a snapshot, no document, no
+   verification.
+4. THE app SHALL check every picked id against the connector's own listing, and SHALL
+   require edit access to create a pull, the same bar as requesting a report.
+5. A chat SHALL cite a pull's statistics as facts whose source is `live`, formatted by the
+   report formatter, rendered as grey "Live" chips, and described to the model as not
+   verified. The chat call SHALL still carry no credential and no tool list.
+
 ## Requirement 7 — History
 
 1. Conversations SHALL be stored in DynamoDB (`rpt-chat-history`) and visible to every member

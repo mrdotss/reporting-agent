@@ -16,11 +16,13 @@ from dataclasses import dataclass
 from typing import Any, Final
 
 __all__ = [
+    "MAX_ATTACHED_LIVE",
     "MAX_ATTACHED_RUNS",
     "MAX_ATTACHED_SCANS",
     "MAX_HISTORY_TURNS",
     "MAX_PROMPT_CHARS",
     "MAX_REQUEST_TARGETS",
+    "AttachedLive",
     "AttachedRun",
     "AttachedScan",
     "ChatPayloadError",
@@ -35,6 +37,7 @@ MAX_PROMPT_CHARS: Final[int] = 4000
 MAX_HISTORY_TURNS: Final[int] = 12
 MAX_ATTACHED_RUNS: Final[int] = 6
 MAX_ATTACHED_SCANS: Final[int] = 4
+MAX_ATTACHED_LIVE: Final[int] = 4
 MAX_REQUEST_TARGETS: Final[int] = 50
 MAX_LABEL_CHARS: Final[int] = 200
 
@@ -83,6 +86,21 @@ class AttachedScan:
 
 
 @dataclass(frozen=True, slots=True)
+class AttachedLive:
+    """A completed live metrics pull (ask-chat Req 8): a snapshot, never verified.
+
+    Its snapshot lives under the pulling user's prefix, named by `pull_id`, exactly as a
+    run's does under its owner's. The figures it yields are cited as live and unverified.
+    """
+
+    pull_id: str
+    owner_actor_id: str
+    connector_label: str
+    window_display: str
+    collected_at: str
+
+
+@dataclass(frozen=True, slots=True)
 class RequestTarget:
     """A customer and connector a report may be proposed for. The id is opaque."""
 
@@ -99,6 +117,7 @@ class ChatRequest:
     runs: tuple[AttachedRun, ...]
     scans: tuple[AttachedScan, ...]
     targets: tuple[RequestTarget, ...]
+    live: tuple[AttachedLive, ...] = ()
 
 
 def parse_chat_request(payload: Mapping[str, Any]) -> ChatRequest:
@@ -118,12 +137,15 @@ def parse_chat_request(payload: Mapping[str, Any]) -> ChatRequest:
 
     runs_raw = _sequence(attachments.get("runs", []), "attachments.runs")
     scans_raw = _sequence(attachments.get("scans", []), "attachments.scans")
+    live_raw = _sequence(attachments.get("live", []), "attachments.live")
     targets_raw = _sequence(payload.get("request_targets", []), "request_targets")
 
     if len(runs_raw) > MAX_ATTACHED_RUNS:
         raise ChatPayloadError(f"at most {MAX_ATTACHED_RUNS} reports can be attached.")
     if len(scans_raw) > MAX_ATTACHED_SCANS:
         raise ChatPayloadError(f"at most {MAX_ATTACHED_SCANS} connectors can be attached.")
+    if len(live_raw) > MAX_ATTACHED_LIVE:
+        raise ChatPayloadError(f"at most {MAX_ATTACHED_LIVE} live metrics pulls can be attached.")
     if len(targets_raw) > MAX_REQUEST_TARGETS:
         raise ChatPayloadError(f"at most {MAX_REQUEST_TARGETS} request targets are sent.")
 
@@ -133,6 +155,7 @@ def parse_chat_request(payload: Mapping[str, Any]) -> ChatRequest:
         runs=tuple(_run(item) for item in runs_raw),
         scans=tuple(_scan(item) for item in scans_raw),
         targets=tuple(_target(item) for item in targets_raw),
+        live=tuple(_live(item) for item in live_raw),
     )
 
 
@@ -170,6 +193,17 @@ def _scan(item: object) -> AttachedScan:
         provider=_text(record.get("provider"), "provider", 32),
         collected_at=_text(record.get("collected_at"), "collected_at", 64),
         inventory=inventory,
+    )
+
+
+def _live(item: object) -> AttachedLive:
+    record = _mapping(item, "attachments.live[]")
+    return AttachedLive(
+        pull_id=_identifier(record.get("pull_id"), "pull_id"),
+        owner_actor_id=_identifier(record.get("owner_actor_id"), "owner_actor_id"),
+        connector_label=_text(record.get("connector_label"), "connector_label", MAX_LABEL_CHARS),
+        window_display=_text(record.get("window_display"), "window_display", MAX_LABEL_CHARS),
+        collected_at=_text(record.get("collected_at"), "collected_at", 64),
     )
 
 
@@ -228,9 +262,9 @@ _INDONESIAN_WORDS: Final[frozenset[str]] = frozenset(
 def detect_language(text: str) -> str:
     """`id` when the text reads as Indonesian, otherwise `en`.
 
-    Used only for this runtime's own fixed sentences — the refusal — because the model is
-    instructed to follow the user's language itself. A heuristic is enough for a sentence
-    we wrote: the cost of misjudging it is a refusal in the other language.
+    The runtime states the reply language to the model from this answer (see
+    `narrate/chat.system_prompt`) and writes its own refusal in it. A heuristic is enough:
+    the cost of misjudging it is an answer in the other language, never a wrong figure.
     """
     words = re.findall(r"[a-z]+", text.lower())
     if not words:

@@ -97,6 +97,7 @@ vi.mock("@/lib/chat/sources", () => ({
     ]),
     attachedRuns: state.attachedRuns,
     attachedScans: 0,
+    attachedLive: 0,
   }),
 }))
 

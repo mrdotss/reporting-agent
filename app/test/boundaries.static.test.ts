@@ -716,6 +716,10 @@ describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
     // bundle a cache that can never hit or fail at build, and the second of those is
     // the failure worth having.
     path.join("lib", "subscriptions", "inventory-cache.ts"),
+    // Same reasoning as `inventory.ts` (ask-chat Req 8.1): it reaches the runtime through
+    // `lib/aws/agentcore.ts` with the connector's decrypted client secret, and it keeps a
+    // module-level listing cache that is one server process's memory.
+    path.join("lib", "subscriptions", "resources.ts"),
   ]
 
   const PURE_HERE = [
