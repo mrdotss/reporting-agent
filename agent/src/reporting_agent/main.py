@@ -1152,7 +1152,7 @@ def _chat_dependencies() -> Any:
     from reporting_agent.chat.session import ChatDependencies
     from reporting_agent.narrate.chat import bedrock_chat_model
     from reporting_agent.pricing.azure_retail import AzureRetailPrices
-    from reporting_agent.storage.s3 import S3ObjectStore
+    from reporting_agent.report_pipeline import _s3_store
 
     global _CHAT_PRICES
     model = bedrock_chat_model(
@@ -1164,7 +1164,9 @@ def _chat_dependencies() -> Any:
     if _CHAT_PRICES is None:
         _CHAT_PRICES = AzureRetailPrices(ca_bundle=CONFIG.ca_bundle)
     return ChatDependencies(
-        store=S3ObjectStore(CONFIG.artifact_bucket, region=CONFIG.aws_region),
+        # The report pipeline's factory, so the store-construction guard still counts
+        # one tested seam per store rather than a fourth untested one.
+        store=_s3_store(CONFIG.artifact_bucket, CONFIG.aws_region),
         model=model,
         prices=_CHAT_PRICES,
     )
