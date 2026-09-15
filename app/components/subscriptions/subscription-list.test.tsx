@@ -76,8 +76,13 @@ function expiringIn(days: number): ConnectedSubscriptionView {
   })
 }
 
-function renderList(subscriptions: readonly ConnectedSubscriptionView[]): void {
-  render(<SubscriptionList subscriptions={subscriptions} now={NOW} />)
+function renderList(
+  subscriptions: readonly ConnectedSubscriptionView[],
+  canConnect = true
+): void {
+  render(
+    <SubscriptionList subscriptions={subscriptions} now={NOW} canConnect={canConnect} />
+  )
 }
 
 function banner(): Element | null {
@@ -323,6 +328,25 @@ describe("Requirement 10.2 — only the browser-safe projection is rendered", ()
 
     expect(screen.queryByText("Enhanced fidelity")).toBeNull()
     expect(screen.queryByText("Scope verified")).toBeNull()
+  })
+})
+
+describe("Without connect permission (roles-and-ask-access Req 5)", () => {
+  test("a connector is listed without Scan or Rotate", () => {
+    renderList([view()], false)
+
+    expect(row()).not.toBeNull()
+    expect(screen.queryByRole("button", { name: /^rotate$/i })).toBeNull()
+    expect(screen.queryByRole("button", { name: /^scan$/i })).toBeNull()
+  })
+
+  test("the empty state says who can connect instead of linking to it", () => {
+    renderList([], false)
+
+    expect(
+      screen.queryByRole("link", { name: /connect a subscription/i })
+    ).toBeNull()
+    expect(screen.getByText(/owner or admin can connect one/i)).toBeTruthy()
   })
 })
 

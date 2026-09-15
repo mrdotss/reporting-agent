@@ -9,10 +9,15 @@ describe("workspace role boundaries", () => {
       expect(can(r, "manage")).toBe(false)
     }
   )
-  test("only owners can manage admins", () => {
-    expect(canManageMember("admin", "admin", "editor")).toBe(false)
-    expect(canManageMember("admin", "editor", "admin")).toBe(false)
-    expect(canManageMember("owner", "admin", "editor")).toBe(true)
+  test("only the owner changes the team", () => {
+    for (const target of ["admin", "editor", "viewer"] as const) {
+      expect(canManageMember("owner", target)).toBe(true)
+      expect(canManageMember("admin", target)).toBe(false)
+      expect(canManageMember("editor", target)).toBe(false)
+      expect(canManageMember("viewer", target)).toBe(false)
+    }
+    expect(canManageMember("owner", "viewer", "admin")).toBe(true)
+    expect(canManageMember("admin", "viewer", "editor")).toBe(false)
   })
   test.each(ROLES)("%s cannot directly remove/appoint an owner", (r) => {
     expect(canManageMember(r, "owner")).toBe(false)
@@ -21,5 +26,8 @@ describe("workspace role boundaries", () => {
   test("viewer cannot write and editor can author", () => {
     expect(can("viewer", "edit")).toBe(false)
     expect(can("editor", "edit")).toBe(true)
+  })
+  test("only the owner holds the owner's powers", () => {
+    expect(ROLES.filter((r) => can(r, "own"))).toEqual(["owner"])
   })
 })

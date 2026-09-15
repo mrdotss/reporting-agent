@@ -10,25 +10,28 @@ vi.mock("@/lib/db", () => ({
 }))
 import { loadClose } from "@/lib/close/load"
 import {
+  acceptInvitation,
   changeProject,
+  createInvitation,
   createWorkspace,
   listWorkspaces,
   setCloseDay,
 } from "@/lib/workspaces/store"
 import { WorkspaceAccessError } from "@/lib/workspaces/access"
 
-let owner: string, outsider: string
+let owner: string, admin: string, outsider: string
 let scope: { workspaceId: string; projectId: string }
 
 beforeAll(async () => {
   if (!db.enabled) return
-  ;[owner, outsider] = [randomUUID(), randomUUID()]
-  for (const id of [owner, outsider])
+  ;[owner, admin, outsider] = [randomUUID(), randomUUID(), randomUUID()]
+  for (const id of [owner, admin, outsider])
     await db.query(
       "insert into users(id,email,email_normalized,password_hash) values($1,$2,$2,'unusable')",
       [id, `${id}@example.test`]
     )
   scope = await createWorkspace(owner, "Close board")
+  await acceptInvitation(admin, await createInvitation(owner, scope.workspaceId, "admin"))
 })
 
 test.skipIf(!db.enabled)("a new workspace closes on the 15th by default", async () => {
@@ -38,8 +41,12 @@ test.skipIf(!db.enabled)("a new workspace closes on the 15th by default", async 
   expect(workspace?.closeDay).toBe(15)
 })
 
-test.skipIf(!db.enabled)("only a manager can move the close day, and only within 1..28", async () => {
+test.skipIf(!db.enabled)("only the owner can move the close day, and only within 1..28", async () => {
   await expect(setCloseDay(outsider, scope.workspaceId, 10)).rejects.toBeInstanceOf(
+    WorkspaceAccessError
+  )
+  // roles-and-ask-access Req 3: an admin sees the close day and cannot move it.
+  await expect(setCloseDay(admin, scope.workspaceId, 10)).rejects.toBeInstanceOf(
     WorkspaceAccessError
   )
   await setCloseDay(owner, scope.workspaceId, 20)

@@ -208,3 +208,48 @@ test("ownership cannot be removed; transfer changes both roles atomically", asyn
     ])
   )
 })
+test("only the owner changes the team; editors look after customers, viewers cannot", async () => {
+  // roles-and-ask-access Req 2 and 4.
+  const w = await createWorkspace(owner, "Team rules")
+  const [admin, member] = [randomUUID(), randomUUID()]
+  for (const id of [admin, member])
+    await db.query(
+      "insert into users(id,email,email_normalized,password_hash) values($1,$2,$2,'unusable')",
+      [id, `${id}@example.test`]
+    )
+  for (const [id, role] of [
+    [admin, "admin"],
+    [member, "viewer"],
+    [editor, "editor"],
+    [viewer, "viewer"],
+  ] as const)
+    await acceptInvitation(id, await createInvitation(owner, w.workspaceId, role))
+
+  await expect(
+    createInvitation(admin, w.workspaceId, "viewer")
+  ).rejects.toBeInstanceOf(WorkspaceAccessError)
+  await expect(
+    changeMember(admin, w.workspaceId, member, "editor")
+  ).rejects.toBeInstanceOf(WorkspaceAccessError)
+  await expect(
+    changeMember(admin, w.workspaceId, member, null)
+  ).rejects.toBeInstanceOf(WorkspaceAccessError)
+  const pending = await createInvitation(owner, w.workspaceId, "editor")
+  const invitation = await db.query(
+    "select id from workspace_invitations where token_hash=$1",
+    [createHash("sha256").update(pending).digest("hex")]
+  )
+  await expect(
+    revokeInvitation(admin, w.workspaceId, invitation.rows[0].id)
+  ).rejects.toBeInstanceOf(WorkspaceAccessError)
+
+  const customer = await changeProject(editor, w.workspaceId, {
+    name: "Editor's customer",
+  })
+  await changeProject(editor, w.workspaceId, { id: customer, archived: true })
+  await expect(
+    changeProject(viewer, w.workspaceId, { name: "Not allowed" })
+  ).rejects.toBeInstanceOf(WorkspaceAccessError)
+
+  await changeMember(owner, w.workspaceId, member, "editor")
+})

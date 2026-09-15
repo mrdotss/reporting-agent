@@ -1,5 +1,4 @@
 import { PageBody } from "@/components/app-shell/page-body"
-import { selectedFilter } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { PlusIcon } from "@phosphor-icons/react/ssr"
@@ -13,6 +12,8 @@ import { buttonVariants } from "@/components/ui/button"
 import { requireSession } from "@/lib/auth/guard"
 import { readLatestScan } from "@/lib/scans/store"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
+import { selectedContext } from "@/lib/workspaces/context"
+import { can } from "@/lib/workspaces/policy"
 
 /**
  * `/subscriptions` — the connectors, and what the selected one can see.
@@ -20,6 +21,9 @@ import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
  * The selection is in the URL (`?c=<id>`) so the inventory beside the list is a server
  * render of the latest scan, and a link can land on one connector. With no selection the
  * first connector is shown, so the right-hand side is never an empty column.
+ *
+ * Every member sees the connectors; only Owners and Admins get the controls that change
+ * or scan one (roles-and-ask-access Req 5).
  */
 
 export const metadata: Metadata = {
@@ -35,7 +39,9 @@ export default async function SubscriptionsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }>) {
   const user = await requireSession()
-  const projectScope = await selectedFilter(user.id)
+  const { workspace, project } = await selectedContext(user.id)
+  const projectScope = { workspaceId: workspace.id, projectId: project?.id }
+  const canConnect = can(workspace.role, "connect")
   const params = await searchParams
 
   const subscriptions = await listConnectedSubscriptions(user.id, projectScope)
@@ -59,7 +65,7 @@ export default async function SubscriptionsPage({
           </p>
         </div>
 
-        {subscriptions.length === 0 ? null : (
+        {subscriptions.length === 0 || !canConnect ? null : (
           <Link
             data-slot="button"
             href="/subscriptions/new"
@@ -72,18 +78,19 @@ export default async function SubscriptionsPage({
       </header>
 
       {subscriptions.length === 0 || selected === undefined ? (
-        <SubscriptionList subscriptions={subscriptions} now={now} />
+        <SubscriptionList subscriptions={subscriptions} now={now} canConnect={canConnect} />
       ) : (
         <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
           <SubscriptionList
             subscriptions={subscriptions}
             now={now}
             selectedId={selected.id}
+            canConnect={canConnect}
           />
           <ConnectorInventory
             subscription={selected}
             scan={scan}
-            canScan={canScanConnector(selected, now)}
+            canScan={canConnect && canScanConnector(selected, now)}
           />
         </div>
       )}

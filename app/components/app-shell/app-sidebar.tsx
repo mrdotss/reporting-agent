@@ -291,7 +291,7 @@ export function AppSidebar({
 
         <SidebarFooter>
           <SidebarMenu>
-            {can(workspace.role, "manage") && (
+            {can(workspace.role, "edit") && (
               <SidebarMenuItem>
                 <SidebarMenuButton
                   isActive={isCurrent(pathname, "/workspace-settings")}

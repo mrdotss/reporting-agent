@@ -172,9 +172,20 @@ type SubscriptionListProps = Readonly<{
   now: Date
   /** The connector whose inventory the page is showing, if any. */
   selectedId?: string
+  /**
+   * Whether this member may connect, rotate and scan (`connect`: Owner and Admin). Editors
+   * and Viewers see the connectors without those controls (roles-and-ask-access Req 5);
+   * the routes refuse them either way.
+   */
+  canConnect: boolean
 }>
 
-export function SubscriptionList({ subscriptions, now, selectedId }: SubscriptionListProps) {
+export function SubscriptionList({
+  subscriptions,
+  now,
+  selectedId,
+  canConnect,
+}: SubscriptionListProps) {
   const nowIso = now.toISOString()
 
   if (subscriptions.length === 0) {
@@ -194,10 +205,16 @@ export function SubscriptionList({ subscriptions, now, selectedId }: Subscriptio
           </p>
         </div>
 
-        <Link data-slot="button" href="/subscriptions/new" className={buttonVariants()}>
-          <PlusIcon aria-hidden="true" />
-          Connect a subscription
-        </Link>
+        {canConnect ? (
+          <Link data-slot="button" href="/subscriptions/new" className={buttonVariants()}>
+            <PlusIcon aria-hidden="true" />
+            Connect a subscription
+          </Link>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            A workspace owner or admin can connect one.
+          </p>
+        )}
       </div>
     )
   }
@@ -260,21 +277,23 @@ export function SubscriptionList({ subscriptions, now, selectedId }: Subscriptio
 
                 <ExpiryMeter view={view} state={state} now={now} />
 
-                <span className="relative z-10 flex items-center gap-2">
-                  {canScanConnector(view, now) ? (
-                    <RescanButton subscriptionId={view.id} language="en" />
-                  ) : null}
-                  <RotateSecretDialog
-                    subscriptionId={view.id}
-                    displayName={view.displayName}
-                    emphasis={
-                      state.kind === "expired" || state.kind === "disabled"
-                        ? "expired"
-                        : "neutral"
-                    }
-                    nowIso={nowIso}
-                  />
-                </span>
+                {canConnect ? (
+                  <span className="relative z-10 flex items-center gap-2">
+                    {canScanConnector(view, now) ? (
+                      <RescanButton subscriptionId={view.id} language="en" />
+                    ) : null}
+                    <RotateSecretDialog
+                      subscriptionId={view.id}
+                      displayName={view.displayName}
+                      emphasis={
+                        state.kind === "expired" || state.kind === "disabled"
+                          ? "expired"
+                          : "neutral"
+                      }
+                      nowIso={nowIso}
+                    />
+                  </span>
+                ) : null}
               </div>
 
               {state.kind === "active" ? null : (

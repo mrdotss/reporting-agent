@@ -8,7 +8,7 @@ import { TeamManager } from "@/components/workspaces/team-manager"
 import { requireSession } from "@/lib/auth/guard"
 import { getPool } from "@/lib/db"
 import { selectedContext } from "@/lib/workspaces/context"
-import { can } from "@/lib/workspaces/policy"
+import { can, type Permission } from "@/lib/workspaces/policy"
 import { teamDetails } from "@/lib/workspaces/store"
 import { cn } from "@/lib/utils"
 
@@ -23,18 +23,25 @@ export const metadata: Metadata = {
  * The tab is in the URL (`?tab=`), not in client state: each tab reads different rows on
  * the server, a link can land on one, and the sidebar's "New workspace" flow sends a
  * consultant straight to Customers.
+ *
+ * Each tab is shown to the roles allowed to see it (roles-and-ask-access Req 1):
+ * Customers from Editor up, Members and Close from Admin up. Below the owner those two are
+ * read-only — only the owner changes the team or the close day — and a Viewer has no
+ * settings at all. A tab asked for in the URL that the role cannot see falls back to
+ * Customers.
  */
 
 const TABS = [
-  { key: "customers", label: "Customers" },
-  { key: "members", label: "Members" },
-  { key: "close", label: "Close" },
-] as const
+  { key: "customers", label: "Customers", permission: "edit" },
+  { key: "members", label: "Members", permission: "manage" },
+  { key: "close", label: "Close", permission: "manage" },
+] as const satisfies readonly { key: string; label: string; permission: Permission }[]
 
-type TabKey = (typeof TABS)[number]["key"]
+type Tab = (typeof TABS)[number]
+type TabKey = Tab["key"]
 
-function readTab(raw: string | string[] | undefined): TabKey {
-  return TABS.some((tab) => tab.key === raw) ? (raw as TabKey) : "customers"
+function readTab(raw: string | string[] | undefined, visible: readonly Tab[]): TabKey {
+  return visible.find((tab) => tab.key === raw)?.key ?? "customers"
 }
 
 export default async function SettingsPage({
@@ -44,9 +51,10 @@ export default async function SettingsPage({
 }>) {
   const user = await requireSession()
   const { workspace } = await selectedContext(user.id)
-  if (!can(workspace.role, "manage")) notFound()
+  if (!can(workspace.role, "edit")) notFound()
 
-  const tab = readTab((await searchParams).tab)
+  const visible = TABS.filter((tab) => can(workspace.role, tab.permission))
+  const tab = readTab((await searchParams).tab, visible)
 
   return (
     <div className="flex flex-col gap-6">
@@ -57,7 +65,7 @@ export default async function SettingsPage({
 
       <nav aria-label="Workspace sections">
         <ul className="inline-flex gap-0.5 rounded-[9px] bg-muted p-[3px]">
-          {TABS.map(({ key, label }) => (
+          {visible.map(({ key, label }) => (
             <li key={key}>
               <Link
                 href={`/workspace-settings?tab=${key}`}
@@ -94,7 +102,11 @@ export default async function SettingsPage({
               workspace.
             </p>
           </div>
-          <CloseDayForm workspaceId={workspace.id} closeDay={workspace.closeDay} />
+          <CloseDayForm
+            workspaceId={workspace.id}
+            closeDay={workspace.closeDay}
+            canEdit={can(workspace.role, "own")}
+          />
         </section>
       )}
     </div>

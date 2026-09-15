@@ -3,7 +3,7 @@ import "server-only"
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 import type { PoolClient } from "pg"
 import { getPool } from "@/lib/db"
-import { canManageMember, type WorkspaceRole } from "./policy"
+import { canManageMember, PERMISSION_ROLES, type WorkspaceRole } from "./policy"
 import { requireWorkspace, WorkspaceAccessError } from "./access"
 
 export type WorkspaceView = {
@@ -46,8 +46,16 @@ async function audit(
     [randomUUID(), workspaceId, actorId, action, targetId]
   )
 }
-/** Lock the workspace first, serializing membership changes with invite acceptance. */
-async function manager(db: PoolClient, userId: string, workspaceId: string) {
+/**
+ * Lock the workspace first, serializing membership changes with invite acceptance, then
+ * require the caller to hold one of `roles` in it (roles-and-ask-access Req 1).
+ */
+async function lockRole(
+  db: PoolClient,
+  userId: string,
+  workspaceId: string,
+  roles: readonly WorkspaceRole[]
+) {
   await db.query("select id from workspaces where id=$1 for update", [
     workspaceId,
   ])
@@ -55,7 +63,7 @@ async function manager(db: PoolClient, userId: string, workspaceId: string) {
     "select role from workspace_members where workspace_id=$1 and user_id=$2",
     [workspaceId, userId]
   )
-  if (!rows[0] || !["owner", "admin"].includes(rows[0].role))
+  if (!rows[0] || !roles.includes(rows[0].role))
     throw new WorkspaceAccessError()
   return rows[0].role
 }
@@ -128,7 +136,8 @@ export async function changeProject(
   }
 ) {
   return transaction(async (db) => {
-    await manager(db, userId, workspaceId)
+    // Customers are editors' work too (roles-and-ask-access Req 4).
+    await lockRole(db, userId, workspaceId, PERMISSION_ROLES.edit)
     const id = input.id ?? randomUUID()
     if (input.id) {
       const r = await db.query(
@@ -157,14 +166,14 @@ export async function changeProject(
     return id
   })
 }
-/** Moves the day each period's reports are due. Owners and admins only. */
+/** Moves the day each period's reports are due. The owner only (roles-and-ask-access Req 3). */
 export async function setCloseDay(
   userId: string,
   workspaceId: string,
   closeDay: number
 ) {
   return transaction(async (db) => {
-    await manager(db, userId, workspaceId)
+    await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
     await db.query("update workspaces set close_day=$2 where id=$1", [
       workspaceId,
       closeDay,
@@ -178,7 +187,7 @@ export async function createInvitation(
   role: Exclude<WorkspaceRole, "owner">
 ) {
   return transaction(async (db) => {
-    const actor = await manager(db, userId, workspaceId)
+    const actor = await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
     if (!canManageMember(actor, role, role)) throw new WorkspaceAccessError()
     const token = randomBytes(32).toString("base64url"),
       id = randomUUID()
@@ -232,7 +241,7 @@ export async function revokeInvitation(
   id: string
 ) {
   await transaction(async (db) => {
-    const actor = await manager(db, userId, workspaceId)
+    const actor = await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
     const r = await db.query<{ role: WorkspaceRole }>(
       "select role from workspace_invitations where id=$1 and workspace_id=$2",
       [id, workspaceId]
@@ -253,7 +262,7 @@ export async function changeMember(
   role: WorkspaceRole | null
 ) {
   await transaction(async (db) => {
-    const actor = await manager(db, userId, workspaceId)
+    const actor = await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
     if (targetId === userId) throw new WorkspaceAccessError()
     const r = await db.query<{ role: WorkspaceRole }>(
       "select role from workspace_members where workspace_id=$1 and user_id=$2",
@@ -289,11 +298,8 @@ export async function transferOwnership(
   targetId: string
 ) {
   await transaction(async (db) => {
-    if (
-      (await manager(db, userId, workspaceId)) !== "owner" ||
-      targetId === userId
-    )
-      throw new WorkspaceAccessError()
+    await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
+    if (targetId === userId) throw new WorkspaceAccessError()
     const r = await db.query(
       "select id from workspace_members where workspace_id=$1 and user_id=$2",
       [workspaceId, targetId]
