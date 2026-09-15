@@ -216,6 +216,11 @@ _INDONESIAN_WORDS: Final[frozenset[str]] = frozenset(
         "pada", "mana", "laporan", "biaya", "harga", "bulan", "tolong", "buatkan", "sudah",
         "belum", "paling", "lebih", "pelanggan", "penggunaan", "dong", "adalah", "ada",
         "akan", "juga", "karena", "jika", "kalau", "berikan", "jelaskan", "bandingkan",
+        # Imperatives and pronouns: a refused prompt is often an instruction rather than
+        # a question, and it carries few of the question words above.
+        "abaikan", "tampilkan", "tunjukkan", "sebutkan", "buat", "semua", "seluruh",
+        "sebelumnya", "secara", "lengkap", "kamu", "anda", "aku", "kalian", "saja",
+        "tentang", "bagaimanakah", "sekarang", "harus", "jangan", "dalam",
     }
 )
 
