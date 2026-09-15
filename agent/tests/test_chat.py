@@ -191,6 +191,27 @@ def test_identifiers_dates_and_small_counts_survive() -> None:
     assert text == "vm-app-prod-02 on 2026-08-31 had 3 disks on Standard_D4s_v5."
 
 
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "CPU for September 8–14, 2026 stayed low.",
+        "CPU for 8–14 Sept 2026 stayed low.",
+        "CPU from September 1 to 7, 2026 was flat.",
+        "Pulled 1 to 7 Sep 2026, then again in Agustus 2026.",
+    ],
+)
+def test_a_written_date_keeps_its_year(sentence: str) -> None:
+    answer = _filter()
+    assert _run_filter(answer, sentence) == sentence
+    assert answer.withheld == 0
+
+
+def test_a_year_without_a_month_is_still_withheld() -> None:
+    answer = _filter()
+    assert _run_filter(answer, "It wrote 2026 files in May.") == "It wrote — files in May."
+    assert answer.withheld == 1
+
+
 def test_an_estimate_keeps_its_arithmetic_and_is_labelled() -> None:
     text = _run_filter(_filter("USD 0.228 per 1 Hour"), "<est>About {{f1}} × 730 = 166.44 a month.</est>")
     assert text == "⟦est⟧About ⟦fig:f1⟧USD 0.228 per 1 Hour⟦/fig⟧ × 730 = 166.44 a month.⟦/est⟧"
@@ -374,8 +395,16 @@ def test_price_facts_name_their_source() -> None:
     (fact,) = price_facts(
         [RetailPrice("Standard_D4s_v5", "eastus", "Linux", "0.228", "1 Hour", "USD", "2026-01-01")]
     )
-    assert fact.formatted == "USD 0.228 per 1 Hour"
+    assert fact.formatted == "USD 0.228 per hour"
+    assert fact.ref["unit_of_measure"] == "1 Hour"
     assert fact.ref["price_source"] == "Azure Retail Prices"
+
+
+def test_a_billing_unit_other_than_one_hour_is_kept_as_written() -> None:
+    (fact,) = price_facts(
+        [RetailPrice("Standard_D4s_v5", "eastus", "Linux", "0.05", "1 GB/Month", "USD", "2026-01-01")]
+    )
+    assert fact.formatted == "USD 0.05 per 1 GB/Month"
 
 
 # --- the model call -------------------------------------------------------------------

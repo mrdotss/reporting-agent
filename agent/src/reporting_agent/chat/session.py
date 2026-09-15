@@ -219,25 +219,38 @@ async def run_chat(
 
 
 def price_facts(prices: Sequence[RetailPrice]) -> list[Fact]:
-    return [
-        Fact(
-            SOURCE_PRICE,
-            f"{price.sku} in {price.region} · {price.operating_system} · list price",
-            f"{price.currency} {_trim_price(price.retail_price)} per {price.unit_of_measure}".strip(),
-            {
-                "sku": price.sku,
-                "region": price.region,
-                "operating_system": price.operating_system,
-                "currency": price.currency,
-                "unit_of_measure": price.unit_of_measure,
-                "effective_start": price.effective_start,
-                "price_source": "Azure Retail Prices",
-            },
-            value=price.retail_price if "e" not in price.retail_price.lower() else None,
-            unit=f"{price.currency} per {price.unit_of_measure}",
-        )
-        for price in prices
-    ]
+    return [_price_fact(price) for price in prices]
+
+
+def _price_fact(price: RetailPrice) -> Fact:
+    # A price is written into sentences, so it names its unit the way a sentence does —
+    # `USD 0.0428 per hour`, not `per 1 Hour`. The citation keeps the API's own unit.
+    per = _unit_phrase(price.unit_of_measure)
+    return Fact(
+        SOURCE_PRICE,
+        f"{price.sku} in {price.region} · {price.operating_system} · list price",
+        f"{price.currency} {_trim_price(price.retail_price)} per {per}".strip(),
+        {
+            "sku": price.sku,
+            "region": price.region,
+            "operating_system": price.operating_system,
+            "currency": price.currency,
+            "unit_of_measure": price.unit_of_measure,
+            "effective_start": price.effective_start,
+            "price_source": "Azure Retail Prices",
+        },
+        value=price.retail_price if "e" not in price.retail_price.lower() else None,
+        unit=f"{price.currency} per {per}",
+    )
+
+
+def _unit_phrase(unit_of_measure: str) -> str:
+    """`1 Hour` → `hour`.
+
+    Any other billing unit — `1 GB/Month`, `100 Hours` — is kept as the API wrote it.
+    """
+    count, _, name = unit_of_measure.strip().partition(" ")
+    return name.lower() if count == "1" and name.isalpha() else unit_of_measure.strip()
 
 
 def _price_pairs(sizes: Sequence[VmSize]) -> list[VmPricePair]:
