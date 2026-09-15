@@ -1,8 +1,12 @@
-"""What a chat answer is allowed to cite: facts, read from artifacts (ask-chat Req 2, 8).
+"""What a chat answer is allowed to cite: facts, read from artifacts (ask-chat Req 2, 8, 9).
 
 A **fact** is a label and the exact string an artifact already holds. The model is
 shown facts with ids and writes the ids; `stream_filter.py` puts the strings back. So a
 figure in an answer is always a string this runtime read, never one a model produced.
+
+A fact also carries its decimal `value` and `unit` where it has one, and — for a per-resource
+statistic — the key of the matching daily series in its snapshot. Those are what a chart is
+built from (`chat/charts.py`): the model names facts, and the runtime draws their values.
 
 Four sources:
 
@@ -21,10 +25,11 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final
 
 from reporting_agent.artifacts import reports_key, verification_key
+from reporting_agent.chat.charts import SeriesKey, series_index_from_snapshot
 from reporting_agent.chat.payload import AttachedLive, AttachedRun, AttachedScan
 from reporting_agent.collect.snapshot import snapshot_key
 from reporting_agent.storage.base import ObjectNotFoundError, ObjectStore
@@ -37,6 +42,7 @@ __all__ = [
     "RunGrounding",
     "RunUnavailableError",
     "VmSize",
+    "format_statistic",
     "ledger_facts",
     "live_statistic_facts",
     "load_live_grounding",
@@ -67,6 +73,11 @@ class Fact:
     label: str
     formatted: str
     ref: Mapping[str, str]
+    value: str | None = None
+    """The decimal string the figure was formatted from, when it is a number."""
+    unit: str | None = None
+    series_key: SeriesKey | None = None
+    """The daily series this statistic has in its snapshot, when it has one."""
 
     def citation(self, fact_id: str) -> dict[str, str]:
         return {
@@ -90,6 +101,7 @@ class RunGrounding:
     run: AttachedRun
     facts: tuple[Fact, ...]
     vm_sizes: tuple[VmSize, ...]
+    series: Mapping[SeriesKey, Sequence[tuple[str, str]]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +109,7 @@ class LiveGrounding:
     live: AttachedLive
     facts: tuple[Fact, ...]
     vm_sizes: tuple[VmSize, ...]
+    series: Mapping[SeriesKey, Sequence[tuple[str, str]]] = field(default_factory=dict)
 
 
 class RunUnavailableError(Exception):
@@ -148,6 +161,7 @@ async def load_run_grounding(store: ObjectStore, run: AttachedRun) -> RunGroundi
     facts = list(ledger_facts(ledger, run))
 
     sizes: tuple[VmSize, ...] = ()
+    series: dict[SeriesKey, list[tuple[str, str]]] = {}
     try:
         snapshot = await store.get_json(snapshot_key(run.owner_actor_id, run.run_id))
     except ObjectNotFoundError:
@@ -155,8 +169,9 @@ async def load_run_grounding(store: ObjectStore, run: AttachedRun) -> RunGroundi
     if isinstance(snapshot, Mapping):
         sizes, size_facts = snapshot_vm_sizes(snapshot, _run_ref(run))
         facts.extend(size_facts)
+        series = series_index_from_snapshot(snapshot, run.run_id)
 
-    return RunGrounding(run=run, facts=tuple(facts), vm_sizes=sizes)
+    return RunGrounding(run=run, facts=tuple(facts), vm_sizes=sizes, series=series)
 
 
 async def load_live_grounding(store: ObjectStore, live: AttachedLive) -> LiveGrounding:
@@ -169,10 +184,15 @@ async def load_live_grounding(store: ObjectStore, live: AttachedLive) -> LiveGro
         raise LiveUnavailableError(live, "the pull's snapshot is not readable")
 
     ref = _live_ref(live)
-    facts = list(live_statistic_facts(snapshot, ref))
+    facts = list(live_statistic_facts(snapshot, ref, source_id=live.pull_id))
     sizes, size_facts = snapshot_vm_sizes(snapshot, ref, source=SOURCE_LIVE)
     facts.extend(size_facts)
-    return LiveGrounding(live=live, facts=tuple(facts), vm_sizes=sizes)
+    return LiveGrounding(
+        live=live,
+        facts=tuple(facts),
+        vm_sizes=sizes,
+        series=series_index_from_snapshot(snapshot, live.pull_id),
+    )
 
 
 def ledger_facts(ledger: object, run: AttachedRun) -> Iterator[Fact]:
@@ -204,10 +224,21 @@ def ledger_facts(ledger: object, run: AttachedRun) -> Iterator[Fact]:
         unit = entry.get("unit")
         if isinstance(unit, str) and unit:
             ref["unit"] = unit
-        yield Fact(SOURCE_REPORT, _figure_label(entry, str(path)), formatted, ref)
+        value = entry.get("value")
+        yield Fact(
+            SOURCE_REPORT,
+            _figure_label(entry, str(path)),
+            formatted,
+            ref,
+            value=value if isinstance(value, str) and _DECIMAL.match(value) else None,
+            unit=unit if isinstance(unit, str) and unit else None,
+            series_key=_ledger_series_key(entry, run.run_id),
+        )
 
 
-def live_statistic_facts(snapshot: Mapping[str, Any], ref: Mapping[str, str]) -> Iterator[Fact]:
+def live_statistic_facts(
+    snapshot: Mapping[str, Any], ref: Mapping[str, str], *, source_id: str = ""
+) -> Iterator[Fact]:
     """One fact per machine statistic in a live pull's snapshot.
 
     Formatted with the report's own formatter, so `8.06%` in a live answer reads exactly as
@@ -221,6 +252,7 @@ def live_statistic_facts(snapshot: Mapping[str, Any], ref: Mapping[str, str]) ->
         if not isinstance(resource, Mapping):
             continue
         name = resource.get("name")
+        resource_id = resource.get("resource_id")
         statistics = resource.get("statistics")
         if not isinstance(name, str) or not isinstance(statistics, Sequence):
             continue
@@ -231,19 +263,32 @@ def live_statistic_facts(snapshot: Mapping[str, Any], ref: Mapping[str, str]) ->
             kind = statistic.get("statistic")
             value = statistic.get("value")
             unit = statistic.get("unit")
-            if not all(isinstance(item, str) for item in (metric, kind, value, unit)):
+            if not (
+                isinstance(metric, str)
+                and isinstance(kind, str)
+                and isinstance(value, str)
+                and isinstance(unit, str)
+            ):
                 continue
             label_path = f"resources/{index}/statistics/{position}"
-            formatted = _format_live(str(value), str(unit), label_path)
-            parts = [name, str(metric), str(kind)]
+            formatted = format_statistic(value, unit)
+            parts = [name, metric, kind]
             instance = statistic.get("instance")
-            if isinstance(instance, str) and instance:
-                parts.append(instance)
+            instance_text = instance if isinstance(instance, str) else ""
+            if instance_text:
+                parts.append(instance_text)
             yield Fact(
                 SOURCE_LIVE,
                 " · ".join(parts),
                 formatted,
-                {**ref, "snapshot_path": label_path, "unit": str(unit)},
+                {**ref, "snapshot_path": label_path, "unit": unit},
+                value=value if _DECIMAL.match(value) else None,
+                unit=unit,
+                series_key=(
+                    (source_id, resource_id.casefold(), metric, kind, instance_text)
+                    if source_id and isinstance(resource_id, str)
+                    else None
+                ),
             )
 
 
@@ -275,7 +320,9 @@ def snapshot_vm_sizes(
         facts.append(Fact(source, f"{name} · VM size", sku_name, size_ref))
         vcpus = sku.get("vcpus_available") if isinstance(sku, Mapping) else None
         if isinstance(vcpus, str) and vcpus.isdigit():
-            facts.append(Fact(source, f"{name} · vCPUs", f"{vcpus} vCPU", size_ref))
+            facts.append(
+                Fact(source, f"{name} · vCPUs", f"{vcpus} vCPU", size_ref, value=vcpus, unit="vcpu")
+            )
     return tuple(sizes), facts
 
 
@@ -287,11 +334,11 @@ def scan_facts(scan: AttachedScan) -> Iterator[Fact]:
 
     total = _count(inventory.get("resourceCount"))
     if total is not None:
-        yield Fact(SOURCE_SCAN, f"{label} · resources", total, dict(ref))
+        yield Fact(SOURCE_SCAN, f"{label} · resources", total, dict(ref), value=total, unit="count")
     for name, count in _counts(inventory.get("typeCounts")):
-        yield Fact(SOURCE_SCAN, f"{label} · resources of type {name}", count, dict(ref))
+        yield Fact(SOURCE_SCAN, f"{label} · resources of type {name}", count, dict(ref), value=count, unit="count")
     for name, count in _counts(inventory.get("regionCounts")):
-        yield Fact(SOURCE_SCAN, f"{label} · resources in region {name}", count, dict(ref))
+        yield Fact(SOURCE_SCAN, f"{label} · resources in region {name}", count, dict(ref), value=count, unit="count")
 
 
 def select_facts(facts: Sequence[Fact], *, query: str, cap: int = MAX_FACTS) -> list[Fact]:
@@ -321,6 +368,29 @@ def number_facts(facts: Iterable[Fact]) -> dict[str, Fact]:
     return {f"f{position}": fact for position, fact in enumerate(facts, start=1)}
 
 
+def format_statistic(value: str, unit: str, *, path: str = "chat") -> str:
+    """A decimal string as a report prints it, or `<value> <unit>` for an undeclared unit."""
+    match = _DECIMAL.match(value)
+    if match is None:
+        return f"{value} {unit}".strip()
+    from reporting_agent.compile.format import format_figure
+    from reporting_agent.errors import CompileFailedError
+
+    try:
+        return format_figure(value, unit=unit, catalog_scale=len(match.group(1) or ""), path=path)
+    except CompileFailedError:
+        return f"{value} {unit}".strip()
+
+
+def _ledger_series_key(entry: Mapping[str, Any], source_id: str) -> SeriesKey | None:
+    resource_id = entry.get("resource_id")
+    metric = entry.get("metric")
+    statistic = entry.get("statistic")
+    if not (isinstance(resource_id, str) and isinstance(metric, str) and isinstance(statistic, str)):
+        return None
+    return (source_id, resource_id.casefold(), metric, statistic, "")
+
+
 def _run_ref(run: AttachedRun) -> dict[str, str]:
     return {
         "run_id": run.run_id,
@@ -336,21 +406,6 @@ def _live_ref(live: AttachedLive) -> dict[str, str]:
         "period_display": live.window_display,
         "collected_at": live.collected_at,
     }
-
-
-def _format_live(value: str, unit: str, path: str) -> str:
-    match = _DECIMAL.match(value)
-    if match is None:
-        return f"{value} {unit}".strip()
-    from reporting_agent.compile.format import format_figure
-    from reporting_agent.errors import CompileFailedError
-
-    try:
-        return format_figure(
-            value, unit=unit, catalog_scale=len(match.group(1) or ""), path=path
-        )
-    except CompileFailedError:
-        return f"{value} {unit}".strip()
 
 
 def _figure_label(entry: Mapping[str, Any], path: str) -> str:

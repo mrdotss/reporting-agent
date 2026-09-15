@@ -259,24 +259,37 @@ fails closed: `error` then `done`. The guardrail answers a blocked prompt with t
 `RPT_CHAT_REFUSED`, which the runtime replaces with its own refusal sentence.
 
 **Events.** `tool` steps `read_grounding`, `lookup_prices`, `compose_answer`; `delta`
-(`block_id: "answer"`) for the text; no new event type. Delta text carries two markers the UI
+(`block_id: "answer"`) for the text; no new event type. Delta text carries three markers the UI
 renders and nothing else may produce:
 
 - `⟦fig:f3⟧8.06%⟦/fig⟧` — a verified fact, its string exactly as read;
-- `⟦est⟧…⟦/est⟧` — reasoning or arithmetic over facts, never a figure.
+- `⟦est⟧…⟦/est⟧` — reasoning or arithmetic over facts, never a figure;
+- `⟦chart:c1⟧` — alone in its paragraph, where chart `c1` from `done.charts` is drawn.
 
 A numeral the model typed outside an estimate that is not a fact string, identifier, date or
 small count arrives as `—`.
+
+**Charts** (ask-chat Req 9). The model may write `<chart kind="daily" facts="f3" title="…"/>`
+for one fact whose snapshot holds a daily series, or `<chart kind="compare" facts="f3,f4,f5"/>`
+for 2–12 facts that share a unit — at most three per answer. The runtime builds each chart
+from the facts' own decimal values and the snapshot's `day_buckets`, never from a number the
+model typed, and drops a directive it cannot build without leaving a marker. A chart is
+`verified`, `live` or `mixed` by the sources of its facts; a refused answer carries none.
 
 ```jsonc
 { "type": "done", "run_id": null, "status": "completed",
   "language": "en",
   "citations": { "f3": { "fact_id": "f3", "source": "report", "label": "vm-mcp-prod-01 · Percentage CPU · avg",
                          "formatted": "8.06%", "run_id": "…", "snapshot_path": "…" } },
+  "charts": [ { "id": "c1", "kind": "daily", "title": "Daily average CPU — vm-mcp-prod-01",   // only when any
+                "unit": "percent", "source": "verified", "series_label": "vm-mcp-prod-01 · Percentage CPU · avg",
+                "points": [ { "day": "2026-08-01", "value": "7.91", "formatted": "7.91%" } /* … */ ] } ],
+              // a comparison carries "bars": [ { "fact_id": "f3", "label": "vm-mcp-prod-01", "value": "8.06", "formatted": "8.06%" } ]
   "proposal": { "target_id": "t1", "period": "2026-09" },   // only for an offered target
   "withheld_figures": 0,
   "refused": true,                                           // only when refused
   "unavailable_runs": [ { "run_id": "…", "reason": "…" } ],  // only when any
+  "unavailable_live": [ { "pull_id": "…", "reason": "…" } ], // only when any
   "prices_unavailable": [ "Standard_D4s_v5 (southeastasia)" ] }
 ```
 

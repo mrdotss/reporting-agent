@@ -73,6 +73,13 @@ FIGURES
 
 PRICING
 - Price facts are Azure Retail Prices list prices in USD for pay-as-you-go consumption. Always call them list-price estimates. They are not the customer's bill and exclude discounts, reservations, savings plans, licences and taxes. If no price fact exists, say list prices are unavailable.
+- Cite a price by its fact reference, exactly like any other figure — write {{f7}}, never "USD 0.0428 per hour". A retyped price is removed from the answer.
+
+CHARTS
+- When the user asks for a chart, graph, trend or visual, or a comparison across three or more machines reads better as a picture, add a chart line on its own line. You never write the chart's numbers; the runtime draws them from the facts you name.
+- Daily trend of one statistic: <chart kind="daily" facts="f3" title="Daily average CPU — cpn-app"/> — name exactly one per-machine statistic fact.
+- Comparison of one metric across machines or sizes: <chart kind="compare" facts="f1,f4,f7" title="Average CPU by machine"/> — name two to twelve facts with the same unit.
+- At most three charts per answer. A chart line that names facts which do not fit is dropped, so keep a sentence of explanation beside it.
 
 LANGUAGE
 - Reply in the language named on the last line of these instructions, whatever language the data, names or earlier turns are in. Keep fact references and tags unchanged.
@@ -137,6 +144,7 @@ def build_grounding(
     targets: Sequence[RequestTarget],
     unavailable: Sequence[str] = (),
     live: Sequence[AttachedLive] = (),
+    daily_series: frozenset[str] = frozenset(),
 ) -> str:
     lines = [f'<grounding nonce="{nonce}">']
     _section(
@@ -167,9 +175,10 @@ def build_grounding(
     )
     _section(
         lines,
-        "facts (id | source | label | value):",
+        "facts (id | source | label | value | `daily` when a daily chart can be drawn for it):",
         [
             f"{fact_id} | {fact.source} | {_safe(fact.label)} | {_safe(fact.formatted)}"
+            + (" | daily" if fact_id in daily_series else "")
             for fact_id, fact in facts.items()
         ],
     )

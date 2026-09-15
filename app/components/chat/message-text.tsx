@@ -3,12 +3,19 @@
 import { Fragment } from "react"
 import { LightbulbIcon } from "@phosphor-icons/react"
 
+import { AnswerChart, AnswerChartPending } from "@/components/chat/answer-chart"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { parseAnswer, type AnswerSegment, type ChatCitation } from "@/lib/chat/views"
+import {
+  parseAnswer,
+  type AnswerSegment,
+  type ChatChart,
+  type ChatCitation,
+} from "@/lib/chat/views"
 import { cn } from "@/lib/utils"
 
 /**
- * An answer's text, with its figures as chips onto their provenance (ask-chat Req 3, 8).
+ * An answer's text, with its figures as chips onto their provenance and its charts between
+ * paragraphs (ask-chat Req 3, 8, 9).
  *
  * Built from {@link parseAnswer}'s segments as React nodes. There is no HTML injection
  * anywhere on this path: text a model wrote renders as text, whatever it contains.
@@ -19,31 +26,50 @@ import { cn } from "@/lib/utils"
  *   from.
  * - An **estimate** is reasoning over figures: an amber dotted underline and a label, so
  *   it is never mistaken for a number a report proves.
+ * - A **chart** marker (`⟦chart:c1⟧`, always its own paragraph) renders the chart the
+ *   runtime built; while the answer is still streaming its data has not arrived, so a
+ *   placeholder holds its place.
  */
+
+const CHART_BLOCK = /^⟦chart:(c\d{1,2})⟧$/
 
 export function MessageText({
   text,
   citations,
+  charts = [],
   streaming = false,
 }: Readonly<{
   text: string
   citations: Readonly<Record<string, ChatCitation>>
+  charts?: readonly ChatChart[]
   streaming?: boolean
 }>) {
-  const paragraphs = text.split(/\n{2,}/)
+  const paragraphs = text
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0)
+
   return (
     <div data-slot="message-text" className="flex flex-col gap-2.5 text-[0.9375rem] leading-relaxed">
-      {paragraphs.map((paragraph, index) => (
-        <p key={index} className="max-w-[68ch] whitespace-pre-wrap">
-          <Segments segments={parseAnswer(paragraph)} citations={citations} />
-          {streaming && index === paragraphs.length - 1 ? (
-            <span
-              aria-hidden="true"
-              className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-[1px] bg-primary motion-reduce:animate-none"
-            />
-          ) : null}
-        </p>
-      ))}
+      {paragraphs.map((paragraph, index) => {
+        const chartId = CHART_BLOCK.exec(paragraph)?.[1]
+        if (chartId !== undefined) {
+          const chart = charts.find((candidate) => candidate.id === chartId)
+          if (chart !== undefined) return <AnswerChart key={index} chart={chart} />
+          return streaming ? <AnswerChartPending key={index} /> : null
+        }
+        return (
+          <p key={index} className="max-w-[68ch] whitespace-pre-wrap">
+            <Segments segments={parseAnswer(paragraph)} citations={citations} />
+            {streaming && index === paragraphs.length - 1 ? (
+              <span
+                aria-hidden="true"
+                className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-[1px] bg-primary motion-reduce:animate-none"
+              />
+            ) : null}
+          </p>
+        )
+      })}
     </div>
   )
 }

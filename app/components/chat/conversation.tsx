@@ -214,7 +214,7 @@ function AssistantMessage({
             {message.text}
           </p>
         ) : (
-          <MessageText text={message.text} citations={message.citations} />
+          <MessageText text={message.text} citations={message.citations} charts={message.charts} />
         )}
 
         {message.unavailableRuns ? (

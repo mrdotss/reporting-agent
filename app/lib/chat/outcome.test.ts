@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 
-import { assistantMessageFrom, citationsFrom, proposalFrom } from "@/lib/chat/outcome"
+import { assistantMessageFrom, chartsFrom, citationsFrom, proposalFrom } from "@/lib/chat/outcome"
 import { SlidingWindowLimiter } from "@/lib/chat/rate-limit"
 import type { ProposalTarget } from "@/lib/chat/sources"
 
@@ -87,6 +87,65 @@ describe("assistantMessageFrom", () => {
     })
     expect(message).toMatchObject({ failed: true, text: "The assistant could not be reached.", citations: {} })
     expect(message.proposal).toBeUndefined()
+  })
+})
+
+describe("chartsFrom — the runtime's charts, trusted by shape only", () => {
+  const compare = {
+    id: "c1",
+    kind: "compare",
+    title: "Average CPU by machine",
+    unit: "percent",
+    source: "live",
+    bars: [
+      { fact_id: "f1", label: "cpn-app", value: "0.21", formatted: "0.21%" },
+      { fact_id: "f2", label: "cpn-mcp", value: "25.79", formatted: "25.79%" },
+    ],
+  }
+  const daily = {
+    id: "c2",
+    kind: "daily",
+    title: "Daily CPU",
+    unit: "percent",
+    source: "verified",
+    series_label: "cpn-app · Percentage CPU · avg",
+    points: [
+      { day: "2026-09-08", value: "0.21", formatted: "0.21%" },
+      { day: "2026-09-09", value: "0.30", formatted: "0.30%" },
+    ],
+  }
+
+  test("keeps well-formed comparison and daily charts", () => {
+    expect(chartsFrom([compare, daily])).toEqual([compare, daily])
+  })
+
+  test.each([
+    ["an unknown kind", { ...compare, kind: "pie" }],
+    ["an unknown source", { ...compare, source: "guessed" }],
+    ["a bar whose value is not a decimal", { ...compare, bars: [compare.bars[0], { ...compare.bars[1], value: "lots" }] }],
+    ["a single bar", { ...compare, bars: [compare.bars[0]] }],
+    ["a daily chart with one point", { ...daily, points: [daily.points[0]] }],
+    ["a malformed day", { ...daily, points: [daily.points[0], { ...daily.points[1], day: "Sept 9" }] }],
+    ["a malformed id", { ...compare, id: "<script>" }],
+  ])("drops %s", (_name, chart) => {
+    expect(chartsFrom([chart])).toEqual([])
+  })
+
+  test("keeps at most three charts and ignores anything not an array", () => {
+    expect(chartsFrom([compare, daily, compare, daily])).toHaveLength(3)
+    expect(chartsFrom({ charts: [compare] })).toEqual([])
+  })
+
+  test("a completed turn stores its charts", () => {
+    const message = assistantMessageFrom({
+      authorId: "user_1",
+      text: "Trend:\n\n⟦chart:c2⟧",
+      steps: [],
+      outcome: { citations: {}, charts: [daily] },
+      failure: undefined,
+      targets: TARGETS,
+    })
+    expect(message.charts).toEqual([daily])
   })
 })
 
