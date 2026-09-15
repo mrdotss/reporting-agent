@@ -64,6 +64,65 @@ export const COMMAND_RENDER_PREVIEW = "render_preview"
  */
 export const COMMAND_LIST_INVENTORY = "list_inventory"
 
+/**
+ * `chat` — the one command that carries a `prompt` (ask-chat Req 1.1).
+ *
+ * Every other command is deterministic and the runtime ignores a prompt beside it. Chat
+ * is asked for by name, carries only what `lib/chat/sources.ts` authorized for the asking
+ * user's workspace, and its context is {@link ChatInvokeContext}: no credential at all.
+ */
+export const COMMAND_CHAT = "chat"
+
+/**
+ * The context a **chat** invocation carries: the asking user, and nothing else.
+ *
+ * Chat reads verified artifacts and saved scans. It issues no Azure request and writes no
+ * run state, so it has no use for a credential, a subscription or a progress token — and
+ * the cheapest way to guarantee a path cannot leak one is for it never to receive one.
+ */
+export interface ChatInvokeContext {
+  actor_id: string
+}
+
+/** One attached verified report, as the runtime's `chat` payload names it. */
+export interface ChatRunAttachment {
+  readonly run_id: string
+  /** The run's `user_id`: its artifacts live under the owner's prefix, not the asker's. */
+  readonly owner_actor_id: string
+  readonly verification_attempt_id: string
+  readonly customer_name: string
+  readonly period_display: string
+  readonly provider: string
+}
+
+/** One attached connector scan, projected — counts only, no identifier of the customer's. */
+export interface ChatScanAttachment {
+  readonly scan_id: string
+  readonly connector_label: string
+  readonly provider: string
+  readonly collected_at: string
+  readonly inventory: Readonly<Record<string, unknown>>
+}
+
+/** A customer and connector pair a report may be proposed for, under an opaque id. */
+export interface ChatRequestTarget {
+  readonly target_id: string
+  readonly customer_name: string
+  readonly connector_label: string
+  readonly provider: string
+}
+
+export interface ChatCommand {
+  readonly command: typeof COMMAND_CHAT
+  readonly prompt: string
+  readonly history: readonly { readonly role: "user" | "assistant"; readonly text: string }[]
+  readonly attachments: {
+    readonly runs: readonly ChatRunAttachment[]
+    readonly scans: readonly ChatScanAttachment[]
+  }
+  readonly request_targets: readonly ChatRequestTarget[]
+}
+
 /** The default report timezone (Requirement 41.5). The customer is UTC+07:00. */
 export const DEFAULT_TIMEZONE = "Asia/Jakarta"
 
@@ -414,8 +473,8 @@ export function resolveRuntimeArn(): string {
  * spread **before** `context`, so no command field can shadow it.
  */
 export function buildInvokePayload(
-  command: InvokeCommand,
-  context: AgentInvokeContext | PreviewInvokeContext
+  command: InvokeCommand | ChatCommand,
+  context: AgentInvokeContext | PreviewInvokeContext | ChatInvokeContext
 ): Uint8Array {
   return new TextEncoder().encode(JSON.stringify({ ...command, context }))
 }
@@ -437,11 +496,19 @@ export function buildInvokePayload(
  * argument would put the customer's client secret and this run's
  * `progress_token` into the app's log stream.
  */
-export async function invokeAgentRuntime(a: {
-  sessionId: string
-  context: AgentInvokeContext | PreviewInvokeContext
-  command: InvokeCommand
-}): Promise<AsyncIterable<Uint8Array>> {
+export async function invokeAgentRuntime(
+  a:
+    | {
+        sessionId: string
+        context: AgentInvokeContext | PreviewInvokeContext
+        command: InvokeCommand
+      }
+    | {
+        sessionId: string
+        context: ChatInvokeContext
+        command: ChatCommand
+      }
+): Promise<AsyncIterable<Uint8Array>> {
   // Before the client, so an unconfigured deployment makes no SDK call at all
   // (Requirement 41.2) — not even a credential resolution.
   const agentRuntimeArn = resolveRuntimeArn()
