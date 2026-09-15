@@ -263,7 +263,7 @@ def test_the_model_sees_fenced_grounding_and_a_guarded_prompt(
     assert text.startswith('<grounding nonce="')
     assert text.count("<grounding") == 1 and text.count("</grounding") == 1
     assert "f1 | report | vm-mcp-prod-01 · Percentage CPU · avg | 8.06%" in text
-    assert "USD 0.228 per 1 Hour" in text
+    assert "USD 0.228 per hour" in text
     assert "t1 | Satu Data Labs | satu-prod | azure" in text
     assert "Standard_D4s_v5" in text
 

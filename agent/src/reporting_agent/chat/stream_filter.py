@@ -79,6 +79,22 @@ _BOUNDARY: Final[re.Pattern[str]] = re.compile(r"(?<=[.!?:;])\s+|\n")
 _MARKED_FIG: Final[re.Pattern[str]] = re.compile(r"⟦fig:f\d+⟧(.*?)⟦/fig⟧", re.S)
 _MARKED_CHART: Final[re.Pattern[str]] = re.compile(r"(⟦chart:c\d+⟧)")
 
+# A date as a person writes it: `September 8 to 14, 2026`, `Sept 15, 2026`, `8 Sept 2026`.
+# The delivery gate's own vocabulary (`verify/masking.py`, stage 4) takes `August 2026` and
+# nothing looser, but a chat answer writes the looser forms — the live window it is handed is
+# labelled with an abbreviated month and a day range. The chat widens the vocabulary here,
+# for chat alone, and anchors it to a month name for the gate's reason: a bare four-digit
+# number stays a measurement until something says it is a date.
+_MONTH_NAME: Final[str] = (
+    "january|february|march|april|may|june|july|august|september|october|november|december"
+    "|januari|februari|maret|mei|juni|juli|agustus|oktober|desember"
+    "|jan|feb|mar|apr|jun|jul|aug|agu|agt|sept|sep|oct|okt|nov|dec|des"
+)
+_WRITTEN_DATE: Final[re.Pattern[str]] = re.compile(
+    rf"(?<![A-Za-z])(?i:{_MONTH_NAME})\s+"
+    r"(?:\d{1,2}(?:\s*(?:[–-]|to)\s*\d{1,2})?,?\s+)?(?:19|20)\d{2}(?!\d)"
+)
+
 
 def fig_open(fact_id: str) -> str:
     return f"⟦fig:{fact_id}⟧"
@@ -236,10 +252,13 @@ class AnswerFilter:
         if not any(character.isdigit() for character in text):
             return text
         masked = mask_paragraph(text, ledger_strings=self._formatted, allowlist=())
+        dates = [match.span() for match in _WRITTEN_DATE.finditer(text)]
         out: list[str] = []
         position = 0
         for match in _NUMBER.finditer(text):
             if not any(character.isdigit() for character in masked[match.start() : match.end()]):
+                continue
+            if any(start <= match.start() and match.end() <= end for start, end in dates):
                 continue
             token = match.group(0)
             if token.isdigit() and int(token) <= SMALL_COUNT_LIMIT:
