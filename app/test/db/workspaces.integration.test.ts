@@ -17,6 +17,7 @@ import {
   transferOwnership,
   revokeInvitation,
   listWorkspaces,
+  renameWorkspace,
 } from "@/lib/workspaces/store"
 import {
   requireProject,
@@ -252,4 +253,36 @@ test("only the owner changes the team; editors look after customers, viewers can
   ).rejects.toBeInstanceOf(WorkspaceAccessError)
 
   await changeMember(owner, w.workspaceId, member, "editor")
+})
+test("only the owner renames a workspace, the default one included", async () => {
+  // roles-and-ask-access Req 10. Every account is given a default workspace, and its owner
+  // is the one who names it.
+  const personal = (await listWorkspaces(outsider)).find((w) => w.role === "owner")
+  expect(personal).toBeDefined()
+  await renameWorkspace(outsider, personal!.id, "  Outsider Consulting  ")
+  expect(
+    (await listWorkspaces(outsider)).find((w) => w.id === personal!.id)?.name
+  ).toBe("Outsider Consulting")
+  const audited = await db.query(
+    "select id from workspace_audit where workspace_id=$1 and action='workspace.renamed'",
+    [personal!.id]
+  )
+  expect(audited.rows).toHaveLength(1)
+
+  const admin = randomUUID()
+  await db.query(
+    "insert into users(id,email,email_normalized,password_hash) values($1,$2,$2,'unusable')",
+    [admin, `${admin}@example.test`]
+  )
+  await acceptInvitation(
+    admin,
+    await createInvitation(owner, scope.workspaceId, "admin")
+  )
+  for (const actor of [admin, editor, viewer, outsider])
+    await expect(
+      renameWorkspace(actor, scope.workspaceId, "Taken over")
+    ).rejects.toBeInstanceOf(WorkspaceAccessError)
+  expect(
+    (await listWorkspaces(owner)).find((w) => w.id === scope.workspaceId)?.name
+  ).toBe("Customer delivery")
 })

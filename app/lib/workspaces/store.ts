@@ -181,6 +181,25 @@ export async function setCloseDay(
     await audit(db, workspaceId, userId, "workspace.close_day", workspaceId)
   })
 }
+/**
+ * Renames a workspace, including the default one every account is given as "My
+ * workspace". The owner only (roles-and-ask-access Req 10); the route has already trimmed
+ * and bounded the name, and it is trimmed again here for any other caller.
+ */
+export async function renameWorkspace(
+  userId: string,
+  workspaceId: string,
+  name: string
+) {
+  return transaction(async (db) => {
+    await lockRole(db, userId, workspaceId, PERMISSION_ROLES.own)
+    await db.query("update workspaces set name=$2 where id=$1", [
+      workspaceId,
+      name.trim(),
+    ])
+    await audit(db, workspaceId, userId, "workspace.renamed", workspaceId)
+  })
+}
 export async function createInvitation(
   userId: string,
   workspaceId: string,

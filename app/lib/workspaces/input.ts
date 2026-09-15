@@ -12,6 +12,13 @@ export const workspaceActionSchema = z.discriminatedUnion("action", [
     .strict(),
   z
     .object({
+      action: z.literal("rename_workspace"),
+      workspaceId: z.string().min(1).max(200),
+      name: z.string().trim().min(1).max(120),
+    })
+    .strict(),
+  z
+    .object({
       action: z.literal("select"),
       workspaceId: z.string().min(1).max(200),
       projectId: z.string().min(1).max(200).optional(),

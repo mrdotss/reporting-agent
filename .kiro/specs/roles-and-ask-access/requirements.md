@@ -93,3 +93,9 @@ Roles are held per workspace. Every account owns its own workspace, so every rul
    - after signing in;
    - after creating an account instead, once the app returns them to finish.
 3. An invitation that cannot be accepted SHALL say so, and SHALL NOT be resumed again.
+
+## Requirement 10 — Workspace name
+
+1. The Owner SHALL rename a workspace, including the default workspace every account is given. The name SHALL be trimmed and 1–120 characters long.
+2. No other role SHALL rename a workspace. The server SHALL refuse them, and Workspace settings SHALL offer the control to the Owner only.
+3. A rename SHALL be recorded in the workspace's audit log, and every member SHALL see the new name.
