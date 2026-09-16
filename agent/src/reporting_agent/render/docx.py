@@ -214,7 +214,12 @@ def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> N
     Sizing alone cannot save a table whose columns cannot *all* fit — see
     `tablefit.fits_page`, which is what keeps one from being built.
     """
-    allocation = allocate(column_demands(node), header_demands(node))
+    # The character budget was calibrated on A4 with 20 mm side margins. Scale
+    # it to the actual container before allocating slack to long header words.
+    allocation = allocate(
+        column_demands(node), header_demands(node),
+        width_budget=WIDTH_BUDGET_CHARS * text_width / (11906 - 2 * 1134),
+    )
     total = sum(allocation)
     if not total:
         return

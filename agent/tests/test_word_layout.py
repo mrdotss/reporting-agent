@@ -113,3 +113,13 @@ def test_small_layout_keeps_two_columns():
     assert len(layout.columns) == 2
     assert len(layout.rows) == 1
     assert layout.autofit is False
+
+
+def test_long_header_cannot_spend_full_page_budget_in_a_half_page_table():
+    from reporting_agent.render.tablefit import allocate
+
+    widths = allocate((6, 6), (40, 6), width_budget=32)
+    # Both six-character values retain their full space; the long header wraps.
+    assert min(widths) >= 6
+    assert sum(widths) <= 28  # four characters reserved for column padding
+    assert widths[1] / sum(widths) >= 6 / 28
