@@ -46,10 +46,11 @@ from dataclasses import dataclass, field
 from typing import Final
 
 from docx.document import Document as DocxDocument
-from docx.enum.text import WD_BREAK
+from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Inches, Twips
+from docx.shared import Emu, Inches, Pt, Twips
 from docx.table import Table as DocxTable
 from docx.table import _Cell as DocxCell
 from docx.text.paragraph import Paragraph as DocxParagraph
@@ -90,12 +91,20 @@ from reporting_agent.render.anchors import (
 from reporting_agent.render.charts import (
     CHART_ALT_TEXT_PREFIX,
     SIDECAR_SUFFIX,
+    companion_table,
 )
 from reporting_agent.render.echarts import render_chart
-from reporting_agent.render.tablefit import allocate, column_demands, header_demands
+from reporting_agent.render.tablefit import (
+    WIDTH_BUDGET_CHARS,
+    allocate,
+    column_demands,
+    header_demands,
+    width_score,
+)
 from reporting_agent.render.themes import (
     FIGURE_CHARACTER_STYLE,
     PREVIEW_NOTICE_STYLE,
+    THEME_SPECS,
     load_theme,
     missing_styles,
 )
@@ -205,7 +214,12 @@ def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> N
     Sizing alone cannot save a table whose columns cannot *all* fit — see
     `tablefit.fits_page`, which is what keeps one from being built.
     """
-    allocation = allocate(column_demands(node), header_demands(node))
+    # The character budget was calibrated on A4 with 20 mm side margins. Scale
+    # it to the actual container before allocating slack to long header words.
+    allocation = allocate(
+        column_demands(node), header_demands(node),
+        width_budget=WIDTH_BUDGET_CHARS * text_width / (11906 - 2 * 1134),
+    )
     total = sum(allocation)
     if not total:
         return
@@ -216,12 +230,43 @@ def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> N
     table._tbl.tblPr.append(layout)
 
     widths = [Twips(int(text_width * share / total)) for share in allocation]
+    # Keep the grid and preferred table width in the same unit.
+    preferred = table._tbl.tblPr.find(qn("w:tblW"))
+    if preferred is not None:
+        preferred.set(qn("w:type"), "dxa")
+        preferred.set(qn("w:w"), str(text_width))
     for ordinal, width in enumerate(widths):
         table.columns[ordinal].width = width
     for row in table.rows:
         for ordinal, cell in enumerate(row.cells):
             if ordinal < len(widths):
                 cell.width = widths[ordinal]
+
+
+def _polish_data_table(table: DocxTable, design: DesignSettings) -> None:
+    """Apply page-safe table typography without changing values or their anchors.
+
+    Do not keep whole tables together: daily-series tables must flow across pages.
+    Word can still split a row that is taller than a complete page.
+    """
+    spec = THEME_SPECS[design.preset]
+    leading = {"compact": 1.0, "normal": 1.1, "relaxed": 1.2}[design.density]
+    for index, row in enumerate(table.rows):
+        properties = row._tr.get_or_add_trPr()
+        if properties.find(qn("w:cantSplit")) is None:
+            properties.append(OxmlElement("w:cantSplit"))
+        for cell in row.cells:
+            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            for paragraph in cell.paragraphs:
+                formatting = paragraph.paragraph_format
+                formatting.space_before = Pt(0)
+                formatting.space_after = Pt(0)
+                formatting.line_spacing = leading
+                formatting.keep_with_next = index == 0
+                for run in paragraph.runs:
+                    # The Figure character style is essential to verification, but its
+                    # body size must not override the table's smaller type scale.
+                    run.font.size = Pt(spec.small_pt)
 
 
 @dataclass(slots=True)
@@ -251,7 +296,14 @@ class _Emitter:
         constant would overflow the moment either changed.
         """
         section = self.document.sections[0]
-        return int(section.page_width - section.left_margin - section.right_margin)
+        return Emu(section.page_width - section.left_margin - section.right_margin).twips
+
+    def available_width(self, container: DocxCell | None) -> int:
+        """Content width in twips, including the layout cell padding when nested."""
+        if container is None:
+            return self.text_width
+        # Layout Table declares 100 twips of padding on each horizontal edge.
+        return max(1, Emu(container.width).twips - 200)
 
     # --- styles ---------------------------------------------------------------
 
@@ -429,7 +481,11 @@ class _Emitter:
 
         picture_paragraph = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
         run = picture_paragraph.add_run()
-        run.add_picture(io.BytesIO(artifacts.image_png), width=Inches(_CHART_WIDTH_INCHES))
+        run.add_picture(
+            io.BytesIO(artifacts.image_png),
+            width=min(Inches(_CHART_WIDTH_INCHES), Twips(self.available_width(container))),
+        )
+        picture_paragraph.paragraph_format.keep_with_next = True
         _set_picture_alt_text(picture_paragraph, artifacts.identity)
 
         # The chart's own name, under the image.
@@ -443,11 +499,13 @@ class _Emitter:
         if chart_title:
             title_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
             title_para.add_run(chart_title)
+            title_para.paragraph_format.keep_with_next = True
 
         # Req 17.12 — present the period_label identically to how the chart image renders it.
         if node.period_label:
             period_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
             period_para.add_run(node.period_label)
+            period_para.paragraph_format.keep_with_next = True
 
         self.chart_hashes[artifacts.identity] = artifacts.data_hash
         self.chart_sidecars[f"{artifacts.identity}{SIDECAR_SUFFIX}"] = artifacts.sidecar_json
@@ -517,7 +575,8 @@ class _Emitter:
 
         # After every row, because the demand is measured from the cells the table
         # actually carries rather than from its declaration.
-        _apply_column_widths(table, node, text_width=self.text_width)
+        _apply_column_widths(table, node, text_width=self.available_width(container))
+        _polish_data_table(table, self.design)
 
         if node.caption:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
@@ -576,6 +635,11 @@ class _Emitter:
                     self.write_figure_run(paragraph, cell.figure)
                 else:
                     self.write_text_fact_run(paragraph, cell.fact)
+                    # Keep the verification style, but use readable prose typography
+                    # for names and identifiers rather than oversized monospace.
+                    paragraph.runs[-1].font.name = THEME_SPECS[self.design.preset].face.body
+                if isinstance(cell, FigureCell):
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
                 # Req 21.3, 6.9 — the anchor triple, completed here because only the
                 # renderer knows the emitted grid, and built in **one** place for both
                 # kinds so a change to its shape cannot reach one and miss the other.
@@ -634,13 +698,30 @@ class _Emitter:
             )
 
         style = self.style(LAYOUT_TABLE_STYLE, at=at)
-        table = self._new_table(None, rows=1, cols=len(node.columns), style=style)
+        # A wide data table must not be squeezed into a decorative column: breaking
+        # inside a verified number can make the converted PDF fail verification. Stack
+        # the columns in reading order when their data needs a full-width page. Keep
+        # the original table shape and anchors (including chart companion tables).
+        column_budget = WIDTH_BUDGET_CHARS / len(node.columns) - 2
+        stack = any(
+            width_score(
+                companion_table(child, self.design.table_style_name, messages=self.messages)
+                if isinstance(child, Chart) else child
+            ) > column_budget
+            for column in node.columns for child in column.blocks
+            if isinstance(child, Table | Chart)
+        )
+        table = self._new_table(
+            None, rows=len(node.columns) if stack else 1,
+            cols=1 if stack else len(node.columns), style=style,
+        )
+        table.autofit = False
 
         # Req 21.2 — no caption, no header row, no row key. The verifier's table pass
         # enumerates captioned tables, so this table is excluded by construction.
         write_layout_table(table)
 
-        cells = table.rows[0].cells
+        cells = [row.cells[0] for row in table.rows] if stack else table.rows[0].cells
         for ordinal, column in enumerate(node.columns):
             if not isinstance(column, LayoutColumn):  # pragma: no cover - AST validates
                 raise RenderFailedError(f"{at} column {ordinal} is not a LayoutColumn")

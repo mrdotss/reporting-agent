@@ -28,13 +28,13 @@ from reporting_agent.compile.ast import FigureCell, Table, TextCell, TextFactCel
 
 __all__ = [
     "COLUMN_OVERHEAD_CHARS",
-    "allocate",
-    "header_demands",
     "MAX_COLUMN_CHARS",
     "MIN_COLUMN_CHARS",
     "WIDTH_BUDGET_CHARS",
+    "allocate",
     "column_demands",
     "fits_page",
+    "header_demands",
     "width_score",
 ]
 
@@ -158,7 +158,8 @@ def _water_fill(demands: Sequence[float], budget: float) -> list[float]:
 
 
 def allocate(
-    demands: Sequence[int], headers: Sequence[int] | None = None
+    demands: Sequence[int], headers: Sequence[int] | None = None,
+    *, width_budget: float = WIDTH_BUDGET_CHARS,
 ) -> tuple[float, ...]:
     """Divide the page between columns, in the same character units as the demands.
 
@@ -189,9 +190,10 @@ def allocate(
     never lower one, and a table with no slack sets its headers exactly as it did before.
 
     Returns character-unit widths summing to at most the page budget, which the caller
-    scales into whatever the section actually measures.
+    scales into whatever the section actually measures. Nested layouts pass their
+    smaller width budget so long headers cannot spend full-page space inside a cell.
     """
-    budget = float(WIDTH_BUDGET_CHARS - COLUMN_OVERHEAD_CHARS * len(demands))
+    budget = float(width_budget - COLUMN_OVERHEAD_CHARS * len(demands))
     if budget <= 0 or not demands:
         return tuple(float(d) for d in demands)
 
