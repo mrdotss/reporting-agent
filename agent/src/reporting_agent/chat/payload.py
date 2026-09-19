@@ -118,6 +118,8 @@ class ChatRequest:
     scans: tuple[AttachedScan, ...]
     targets: tuple[RequestTarget, ...]
     live: tuple[AttachedLive, ...] = ()
+    model: str | None = None
+    """A name from `narrate.chat.CHAT_MODEL_CHOICES`, or `None` for the configured model."""
 
 
 def parse_chat_request(payload: Mapping[str, Any]) -> ChatRequest:
@@ -149,8 +151,15 @@ def parse_chat_request(payload: Mapping[str, Any]) -> ChatRequest:
     if len(targets_raw) > MAX_REQUEST_TARGETS:
         raise ChatPayloadError(f"at most {MAX_REQUEST_TARGETS} request targets are sent.")
 
+    from reporting_agent.narrate.chat import CHAT_MODEL_CHOICES
+
+    model = payload.get("model")
+    if model is not None and model not in CHAT_MODEL_CHOICES:
+        raise ChatPayloadError(f"`model` must be one of {sorted(CHAT_MODEL_CHOICES)} or absent.")
+
     return ChatRequest(
         prompt=prompt,
+        model=model,
         history=history,
         runs=tuple(_run(item) for item in runs_raw),
         scans=tuple(_scan(item) for item in scans_raw),

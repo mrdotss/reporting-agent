@@ -7,6 +7,7 @@ import {
 
 import type { RunScope } from "@/lib/db/schema"
 import { requireEnv } from "@/lib/env"
+import type { ChatModelId } from "@/lib/chat/models"
 
 /**
  * `InvokeAgentRuntime` — the app's only path to the agent (Requirement 41).
@@ -138,6 +139,8 @@ export interface ChatCommand {
     readonly live: readonly ChatLiveAttachment[]
   }
   readonly request_targets: readonly ChatRequestTarget[]
+  /** A name from `lib/chat/models.ts`; the runtime maps it through its own allow-list. */
+  readonly model?: ChatModelId
 }
 
 /** The default report timezone (Requirement 41.5). The customer is UTC+07:00. */

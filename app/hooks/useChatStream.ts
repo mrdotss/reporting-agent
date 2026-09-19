@@ -68,7 +68,7 @@ export function useChatStream(options: {
 
   useEffect(() => () => abort.current?.abort(), [])
 
-  const send = useCallback(async (threadId: string, question: string): Promise<SendResult> => {
+  const send = useCallback(async (threadId: string, question: string, model?: string): Promise<SendResult> => {
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
@@ -78,7 +78,7 @@ export function useChatStream(options: {
       const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: question }),
+        body: JSON.stringify(model === undefined ? { prompt: question } : { prompt: question, model }),
         signal: controller.signal,
       })
 

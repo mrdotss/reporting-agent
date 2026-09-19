@@ -34,6 +34,8 @@ from reporting_agent.chat.payload import (
 from reporting_agent.chat.stream_filter import plain_text
 
 __all__ = [
+    "CHAT_MODEL_CHOICES",
+    "FAST_CHAT_CHOICES",
     "GUARDRAIL_INTERVENED",
     "MAX_OUTPUT_TOKENS",
     "SYSTEM_PROMPT",
@@ -51,6 +53,20 @@ __all__ = [
 MAX_OUTPUT_TOKENS: Final[int] = 4000
 TEMPERATURE: Final[float] = 0.2
 GUARDRAIL_INTERVENED: Final[str] = "guardrail_intervened"
+
+CHAT_MODEL_CHOICES: Final[dict[str, str]] = {
+    "kimi-k3": "us.moonshotai.kimi-k3",
+    "kimi-k2.5": "moonshotai.kimi-k2.5",
+}
+"""The models a person may pick for an Ask answer, by the name the app sends.
+
+An allow-list, not a pass-through: the payload names a choice and never a model id, so the
+browser cannot point the runtime at an arbitrary model. With no choice the configured chat
+model answers. Every choice runs behind the same guardrail and the same figure check."""
+
+FAST_CHAT_CHOICES: Final[frozenset[str]] = frozenset({"kimi-k2.5"})
+"""Choices that answer without a reasoning phase, so there is no wait for an intent
+sentence to fill and none is written."""
 MAX_VALUE_CHARS: Final[int] = 160
 
 SYSTEM_PROMPT: Final[str] = """You are the Ask assistant inside a cloud utilization reporting product used by infrastructure consultants.

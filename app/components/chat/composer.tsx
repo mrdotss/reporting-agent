@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   ArrowUpIcon,
   FileTextIcon,
@@ -13,8 +13,12 @@ import {
 import type { AttachmentKind } from "@/components/chat/context-panel"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModelId, type ChatModelId } from "@/lib/chat/models"
 import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/chat/sources"
 import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
+
+const MODEL_KEY = "rpt.ask.model"
 
 /**
  * Where a question is written, beside what it will be answered from.
@@ -35,14 +39,35 @@ export function Composer({
   connectors: readonly AttachableConnector[]
   live: readonly AttachableLive[]
   busy: boolean
-  onSend: (question: string) => Promise<boolean>
+  onSend: (question: string, model: ChatModelId) => Promise<boolean>
   onAttach: () => void
   onRemove: (kind: AttachmentKind, id: string) => void
 }>) {
   const [draft, setDraft] = useState("")
+  const [model, setModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL)
   const [notice, setNotice] = useState("")
   const input = useRef<HTMLTextAreaElement>(null)
   const nothingAttached = runs.length === 0 && connectors.length === 0 && live.length === 0
+
+  // The last pick is a per-browser convenience; without storage the default simply stands.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(MODEL_KEY)
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restoring a stored preference after hydration
+      if (isChatModelId(saved)) setModel(saved)
+    } catch {
+      // Storage unavailable: keep the default.
+    }
+  }, [])
+
+  function chooseModel(value: ChatModelId) {
+    setModel(value)
+    try {
+      window.localStorage.setItem(MODEL_KEY, value)
+    } catch {
+      // Storage unavailable: the pick still applies to this page.
+    }
+  }
 
   async function submit() {
     const question = draft.trim()
@@ -53,7 +78,7 @@ export function Composer({
     }
     setNotice("")
     setDraft("")
-    const sent = await onSend(question)
+    const sent = await onSend(question, model)
     if (!sent) setDraft(question)
     input.current?.focus()
   }
@@ -131,10 +156,28 @@ export function Composer({
           <span className="hidden text-xs text-muted-foreground sm:inline">
             <Kbd>Enter</Kbd> to send · <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line
           </span>
+          <Select value={model} onValueChange={(value) => isChatModelId(value) && chooseModel(value)}>
+            <SelectTrigger
+              size="sm"
+              aria-label="Model"
+              className="ml-auto h-8 border-transparent bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted"
+            >
+              <SelectValue>{(value) => CHAT_MODELS.find((entry) => entry.id === value)?.label ?? ""}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="end">
+              {CHAT_MODELS.map((entry) => (
+                <SelectItem key={entry.id} value={entry.id}>
+                  <span className="flex flex-col gap-0.5">
+                    <span>{entry.label}</span>
+                    <span className="text-xs font-normal text-muted-foreground">{entry.detail}</span>
+                  </span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Button
             type="submit"
             size="icon-sm"
-            className="ml-auto"
             disabled={busy || draft.trim().length === 0}
             aria-label="Send question"
           >

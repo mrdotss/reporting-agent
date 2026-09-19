@@ -1214,16 +1214,22 @@ async def handle_chat(invocation: Invocation, steps: StepTracker) -> AsyncIterat
     from reporting_agent.chat.payload import parse_chat_request
     from reporting_agent.chat.session import run_chat
 
+    from reporting_agent.narrate.chat import FAST_CHAT_CHOICES
+
     request = parse_chat_request(invocation.payload)
     dependencies = _chat_dependencies()
+    model = dependencies.model
+    if request.model is not None and dependencies.choose is not None:
+        model = dependencies.choose(request.model)
+        invocation.outcome["model"] = request.model
     async for event in run_chat(
         request,
         steps=steps,
         outcome=invocation.outcome,
         store=dependencies.store,
-        model=dependencies.model,
+        model=model,
         prices=dependencies.prices,
-        intent=dependencies.intent,
+        intent=None if request.model in FAST_CHAT_CHOICES else dependencies.intent,
     ):
         yield event
 
@@ -1234,7 +1240,7 @@ _CHAT_PRICES: Any = None
 
 def _chat_dependencies() -> Any:
     from reporting_agent.chat.session import ChatDependencies
-    from reporting_agent.narrate.chat import bedrock_chat_model
+    from reporting_agent.narrate.chat import CHAT_MODEL_CHOICES, bedrock_chat_model
     from reporting_agent.narrate.intent import bedrock_intent_writer
     from reporting_agent.pricing.azure_retail import AzureRetailPrices
     from reporting_agent.report_pipeline import _s3_store
@@ -1254,6 +1260,12 @@ def _chat_dependencies() -> Any:
         store=_s3_store(CONFIG.artifact_bucket, CONFIG.aws_region),
         model=model,
         prices=_CHAT_PRICES,
+        choose=lambda choice: bedrock_chat_model(
+            model_id=CHAT_MODEL_CHOICES[choice],
+            guardrail_id=CONFIG.chat_guardrail_id,
+            guardrail_version=CONFIG.chat_guardrail_version,
+            region=CONFIG.aws_region,
+        ),
         intent=bedrock_intent_writer(
             model_id=CONFIG.intent_model_id,
             guardrail_id=CONFIG.chat_guardrail_id,

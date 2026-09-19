@@ -33,6 +33,7 @@ const { state } = vi.hoisted(() => ({
     allow: true,
     attachedRuns: 1,
     events: [] as unknown[],
+    sentModel: undefined as string | undefined,
     appended: [] as { message: ChatMessageView; title?: string }[],
   },
 }))
@@ -115,7 +116,8 @@ vi.mock("@/lib/chat/sources", () => ({
 }))
 
 vi.mock("@/lib/chat/stream", () => ({
-  streamChatTurn: async function* () {
+  streamChatTurn: async function* (a: { command: { model?: string } }) {
+    state.sentModel = a.command.model
     for (const event of state.events) yield event
   },
 }))
@@ -266,6 +268,21 @@ describe("a completed turn", () => {
       text: "cpn-mcp was busiest.",
     })
     expect(JSON.stringify(answer)).not.toContain("so it is the busiest")
+  })
+
+  test("sends the picked model to the runtime and stores it on the answer", async () => {
+    state.events = [
+      { type: "delta", text: "Done." },
+      { type: "done", status: "completed", outcome: { model: "kimi-k2.5" } },
+    ]
+    await events(await call({ prompt: "Which VM was busiest?", model: "kimi-k2.5" }))
+    expect(state.sentModel).toBe("kimi-k2.5")
+    expect(state.appended[1].message.model).toBe("kimi-k2.5")
+  })
+
+  test("refuses a model outside the two choices", async () => {
+    const response = await call({ prompt: "hi", model: "anthropic.claude-sonnet-4-5" })
+    expect(response.status).toBe(400)
   })
 
   test("a refused turn keeps neither the intent nor the time", async () => {
