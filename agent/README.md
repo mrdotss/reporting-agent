@@ -480,6 +480,21 @@ instance-metadata posture rather than failing anything. It is the one field whos
 loss the crash-loop symptom will *not* tell you about, which is why it is easy to
 leave out and was left out of this recipe for the first twenty-odd deploys.
 
+**Your AWS CLI has to know that field.** AWS CLI 2.31.35 does not model
+`metadataConfiguration`: `get-agent-runtime` silently leaves it out, so it reads as
+missing when it is set, and `update-agent-runtime` rejects `--metadata-configuration` as
+unknown. Check before a deploy:
+
+```bash
+aws bedrock-agentcore-control update-agent-runtime --generate-cli-skeleton input \
+  | grep -q metadataConfiguration && echo ok || echo "this CLI cannot replay requireMMDSV2"
+```
+
+If it cannot, upgrade the CLI or replay the object through boto3 — the agent's own
+`.venv` (boto3 1.43) models it. Versions updated through the older CLI still carried
+`requireMMDSV2: true` when checked through boto3 on 2026-09-19, so the service kept it
+when the request left it out; that is observed behaviour, not a contract to rely on.
+
 Do **not** assemble that snapshot with a `--query` projection. Reading only the
 fields you remember to name is precisely how the ones you forgot get deleted — dump
 the whole object. Then *verify* the result rather than trusting the call:
