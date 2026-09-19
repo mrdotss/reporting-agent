@@ -16,6 +16,7 @@ import { MessageText } from "@/components/chat/message-text"
 import { ProposalCard } from "@/components/chat/proposal-card"
 import { Button } from "@/components/ui/button"
 import type { LiveTurn } from "@/hooks/useChatStream"
+import { chatModelLabel } from "@/lib/chat/models"
 import {
   answerPlainText,
   type ChatMessageView,
@@ -265,6 +266,12 @@ function AssistantMessage({
 
         {message.failed || message.refused ? null : (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {chatModelLabel(message.model) ? (
+              <>
+                <span>{chatModelLabel(message.model)}</span>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
             {message.thoughtSeconds !== undefined ? (
               <>
                 <span>Thought for {formatSeconds(message.thoughtSeconds)}</span>

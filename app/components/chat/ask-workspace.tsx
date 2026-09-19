@@ -193,7 +193,7 @@ export function AskWorkspace({
     })
   }
 
-  async function ask(question: string): Promise<boolean> {
+  async function ask(question: string, model?: string): Promise<boolean> {
     setError("")
     let current = thread
     if (current === null) {
@@ -214,7 +214,7 @@ export function AskWorkspace({
     }
 
     accepted.current = false
-    const result = await send(current.id, question)
+    const result = await send(current.id, question, model)
     if (result.ok) {
       setMessages((previous) => [
         ...previous.filter((message) => message.id !== result.message.id),

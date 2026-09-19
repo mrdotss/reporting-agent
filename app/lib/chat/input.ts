@@ -1,5 +1,6 @@
 import { z } from "zod"
 
+import { CHAT_MODEL_IDS } from "@/lib/chat/models"
 import { CHAT_PROMPT_MAX, CHAT_TITLE_MAX } from "@/lib/chat/views"
 import { MAX_LIVE_RESOURCES } from "@/lib/live-metrics/window"
 
@@ -38,6 +39,8 @@ export const sendMessageSchema = z
       .trim()
       .min(1, { error: "Write a question first." })
       .max(CHAT_PROMPT_MAX, { error: `A question can be at most ${CHAT_PROMPT_MAX} characters.` }),
+    /** Absent: the runtime's configured model answers. */
+    model: z.enum(CHAT_MODEL_IDS, { error: "Pick one of the listed models." }).optional(),
   })
   .strict()
 

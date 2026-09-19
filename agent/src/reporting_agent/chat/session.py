@@ -102,6 +102,9 @@ class ChatDependencies:
     model: ChatModel
     prices: PriceLookup | None
     intent: IntentWriter | None = None
+    choose: Callable[[str], ChatModel] | None = None
+    """Builds the model for a choice in `CHAT_MODEL_CHOICES`; `None` answers every turn
+    with `model`."""
 
 
 async def run_chat(

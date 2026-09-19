@@ -42,6 +42,11 @@ Browser ──▶ app/     Next.js 16 on our own server (systemd, behind Caddy)
 | Ask's "what I'm about to do" sentence | `us.moonshotai.kimi-k3` | `RPT_INTENT_MODEL_ID` on the agent runtime (unset: no sentence) |
 | Ask conversation titles | `moonshotai.kimi-k2.5` | `RPT_TITLE_MODEL_ID` in the app's environment |
 
+In Ask, people pick the answer model beside the send button: **Kimi K3** (thinks first,
+the default) or **Kimi K2.5** (answers straight away). Only those two: the runtime maps the
+choice through its own allow-list (`CHAT_MODEL_CHOICES` in `agent/…/narrate/chat.py`, mirrored
+in `app/lib/chat/models.ts`), and the browser never sends a model id.
+
 Kimi K3 is offered only through an inference profile, so its id carries the `us.` prefix.
 It rejects a `temperature` setting, so the agent leaves it out for that model
 (`inference_config` in `agent/src/reporting_agent/narrate/summary.py`). It also reasons

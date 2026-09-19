@@ -234,3 +234,58 @@ def test_no_sentence_means_no_intent_event(monkeypatch: pytest.MonkeyPatch) -> N
     events = _with_intent(monkeypatch, ThinkingModel(pause=0.1), _writer(None))
     assert "intent" not in [event["type"] for event in events]
     assert "8.06" in _answer(events)
+
+
+# --------------------------------------------------------------------------- #
+# The model a person picks
+# --------------------------------------------------------------------------- #
+
+
+def test_a_model_choice_is_one_of_the_allow_list_or_nothing() -> None:
+    from reporting_agent.chat.payload import ChatPayloadError, parse_chat_request
+
+    assert parse_chat_request(_payload()).model is None
+    assert parse_chat_request(_payload(model="kimi-k2.5")).model == "kimi-k2.5"
+    for bad in ("anthropic.claude-sonnet-4-5", "us.moonshotai.kimi-k3", 3):
+        with pytest.raises(ChatPayloadError):
+            parse_chat_request(_payload(model=bad))
+
+
+def test_the_chosen_model_answers_and_a_fast_one_gets_no_intent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from reporting_agent import main
+    from reporting_agent.chat.session import ChatDependencies
+    from reporting_agent.redaction import discard_secrets
+
+    default, chosen = ThinkingModel(), ThinkingModel()
+    picked: list[str] = []
+
+    def choose(choice: str) -> Any:
+        picked.append(choice)
+        return chosen
+
+    writer_calls: list[str] = []
+
+    async def writer(*, prompt: str, context: Sequence[str], language: str) -> str | None:
+        del context, language
+        writer_calls.append(prompt)
+        return "I'll check."
+
+    store = _seeded_store()
+    monkeypatch.setattr(
+        main,
+        "_chat_dependencies",
+        lambda: ChatDependencies(
+            store=store, model=default, prices=FakePrices(), intent=writer, choose=choose
+        ),
+    )
+    discard_secrets()
+
+    async def drain() -> list[dict[str, Any]]:
+        return [event async for event in main.invoke(_payload(model="kimi-k2.5"))]
+
+    events = asyncio.run(asyncio.wait_for(drain(), 60))
+    assert picked == ["kimi-k2.5"]
+    assert writer_calls == []
+    assert _done(events)["model"] == "kimi-k2.5"

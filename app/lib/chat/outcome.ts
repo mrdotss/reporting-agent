@@ -1,3 +1,4 @@
+import { isChatModelId } from "@/lib/chat/models"
 import type { ProposalTarget } from "@/lib/chat/sources"
 import type { NewChatMessage } from "@/lib/chat/store"
 import type {
@@ -156,6 +157,7 @@ export function assistantMessageFrom(a: {
     unavailableRuns: unavailableCount > 0 ? unavailableCount : undefined,
     pricesUnavailable: Array.isArray(outcome.prices_unavailable) ? true : undefined,
     intent: !refused && a.intent ? a.intent : undefined,
+    model: isChatModelId(outcome.model) ? outcome.model : undefined,
     thoughtSeconds:
       !refused && typeof thought === "number" && Number.isFinite(thought) && thought >= 0
         ? Math.round(thought)

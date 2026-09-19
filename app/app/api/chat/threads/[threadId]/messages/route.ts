@@ -66,6 +66,7 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
   const parsed = sendMessageSchema.safeParse(body)
   if (!parsed.success) return invalidInput(parsed.error)
   const prompt = parsed.data.prompt
+  const model = parsed.data.model
 
   let thread
   try {
@@ -142,7 +143,7 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
         for await (const event of streamChatTurn({
           sessionId: sessionIdForThread(userMessage.thread.id),
           actorId: user.id,
-          command: chatTurn.command,
+          command: model === undefined ? chatTurn.command : { ...chatTurn.command, model },
         })) {
           if (event.type === "tool") {
             const step = { name: event.name, label: event.label, status: event.status }

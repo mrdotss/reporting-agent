@@ -140,6 +140,8 @@ export type ChatMessageView = {
   readonly intent?: string
   /** How long the answer model reasoned before it wrote. The reasoning itself is not kept. */
   readonly thoughtSeconds?: number
+  /** The model the person picked for this answer, from `lib/chat/models.ts`. */
+  readonly model?: string
 }
 
 // --- The stream the messages route writes to the browser ---------------------
