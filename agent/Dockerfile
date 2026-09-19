@@ -12,6 +12,16 @@
 # The image carries LibreOffice, the fonts the four themes name, and a LibreOffice
 # user profile warmed at BUILD time. The PDF is converted from the produced .docx
 # rather than rendered independently, so Word and PDF cannot disagree (Req 23.1).
+#
+# The runtime runs on AgentCore platform version V2, which starts every instance by
+# restoring ONE snapshot of this process. Whatever random state a library held when the
+# snapshot was taken, every restored instance holds too. AWS therefore requires a
+# container agent's cryptographic libraries to be snapshot-safe builds that reseed after
+# a restore — and that is why the base is Amazon Linux 2023, which ships one
+# (`openssl-snapsafe-libs`), rather than Debian, which does not. Every TLS connection the
+# agent opens (Bedrock, S3, Azure, the progress callback) goes through Python's `ssl`,
+# which links the system libcrypto, so replacing that one library covers them all. The
+# build asserts it below. agent/README.md has the rest of the V2 contract.
 
 # Python is pinned, not ranged: one snapshot has to hash identically across two
 # operating-system processes, and a minor-version difference is a difference in
@@ -23,7 +33,43 @@ COPY chart-renderer/package.json chart-renderer/package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts
 COPY chart-renderer/*.mjs ./
 
-FROM --platform=linux/arm64 public.ecr.aws/docker/library/python:${PYTHON_VERSION}-slim-bookworm
+# --- LibreOffice, from The Document Foundation ---------------------------------
+#
+# Amazon Linux 2023 packages no LibreOffice, so it comes from TDF's own RPM build. The
+# archive URL rather than /stable/, because /stable/ drops a release as soon as the next
+# one ships and a rebuild of this commit must still find its file. The checksum is pinned
+# here, not fetched: it was taken from a download whose GPG signature verified against
+# TDF's code-signing key (C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3), so a changed file
+# fails the build instead of being installed. Only the RPMs a headless .docx -> .pdf
+# conversion needs leave this stage — no Calc, Impress, Draw, Base, Java or GUI plugins.
+FROM --platform=linux/arm64 public.ecr.aws/amazonlinux/amazonlinux:2023 AS libreoffice
+ARG LO_RELEASE=26.2.6.3
+ARG LO_SERIES=26.2
+ARG LO_SHA256=010998b6aa6337e1f036e37657684a4d6cfa8e0f4ddc85a58e9a46950302baf8
+RUN dnf install -y tar gzip \
+ && curl -fsSL -o /tmp/lo.tar.gz \
+      "https://downloadarchive.documentfoundation.org/libreoffice/old/${LO_RELEASE}/rpm/aarch64/LibreOffice_${LO_RELEASE}_Linux_aarch64_rpm.tar.gz" \
+ && echo "${LO_SHA256}  /tmp/lo.tar.gz" | sha256sum -c - \
+ && mkdir -p /tmp/lo /rpms \
+ && tar xzf /tmp/lo.tar.gz -C /tmp/lo --strip-components=1 \
+ && cd /tmp/lo/RPMS \
+ && for package in \
+      "libreoffice${LO_SERIES}-ure" \
+      "libreoffice${LO_SERIES}" \
+      "libreoffice${LO_SERIES}-en-US" \
+      "libreoffice${LO_SERIES}-writer" \
+      "libobasis${LO_SERIES}-core" \
+      "libobasis${LO_SERIES}-en-US" \
+      "libobasis${LO_SERIES}-writer" \
+      "libobasis${LO_SERIES}-images" \
+      "libobasis${LO_SERIES}-ooofonts"; do \
+      cp "$package"-[0-9]*.rpm /rpms/; \
+    done \
+ && ls /rpms
+
+FROM --platform=linux/arm64 public.ecr.aws/amazonlinux/amazonlinux:2023
+ARG PYTHON_VERSION
+ARG LO_SERIES=26.2
 
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PORT=8080
 
@@ -37,48 +83,96 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PIP_NO_CACHE_DIR=1 PORT=8080
 # LO_PROFILE is the profile warmed below and used as-is at run time (Req 23.5).
 ENV LANG=C.UTF-8 LO_PROFILE=/opt/libreoffice-profile
 
-WORKDIR /app
-COPY --from=chart_engine /usr/local/bin/node /usr/local/bin/node
-COPY --from=chart_engine /chart-renderer ./chart-renderer
-
-# --- LibreOffice and the theme fonts (Req 23.2) -------------------------------
+# --- The system: snapshot-safe OpenSSL, Python, LibreOffice, fonts (Req 23.2) ---
 #
 # Ahead of the pip layers on purpose: this is the largest and least frequently
 # changed layer in the image, so a dependency bump must not reinstall it.
 #
-# `libreoffice-writer` + `libreoffice-core` and no more of that suite — no Calc, no
-# Impress, no JRE. docx -> pdf needs the Writer import filter and the PDF export filter;
-# --no-install-recommends is what keeps the rest out.
+# `openssl-snapsafe-libs` REPLACES `openssl-libs` (the two conflict, hence
+# --allowerasing): same libcrypto.so.3 and libssl.so.3, plus reseeding after a snapshot
+# restore. See the header, and the assertion further down that proves Python links it.
 #
-# The two font packages are not optional decoration: every face named in
-# render/themes.py's THEME_SPECS comes from them (Liberation Sans/Serif,
-# DejaVu Sans/Sans Mono). A theme naming a font the container lacks renders through
-# LibreOffice's substitution, which changes line breaking and therefore pagination —
-# so the delivered PDF would paginate differently from the one that was reviewed. They
-# serve WeasyPrint for the same reason and out of the same packages, so the styled PDF
-# and the converted one are set in the same faces.
+# Python is the distribution's 3.12 in a virtual environment at /opt/venv, so `python`
+# and `pip` below and in CMD are that interpreter and nothing else on the system is.
 #
-# The four cairo/pango/gdk-pixbuf libraries are WeasyPrint's. It is pure Python but binds
-# them through cffi, and an import without them fails with a ctypes message about
-# `libpango-1.0-0` that reads like a missing wheel and is not. Together they are ~40MB
-# against Chromium's 300-400, which is the trade that made an HTML->PDF path affordable
-# on an image with a cold-start budget at all.
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      libreoffice-writer \
-      libreoffice-core \
-      fonts-dejavu-core \
-      fonts-liberation2 \
-      libcairo2 \
-      libpango-1.0-0 \
-      libpangoft2-1.0-0 \
-      libgdk-pixbuf-2.0-0 \
- && rm -rf /var/lib/apt/lists/*
+# LibreOffice's RPMs declare no system dependencies, so the libraries its headless
+# Writer and PDF export load are named here: the X11 client libraries (loaded even
+# headless), cairo, fontconfig, freetype, harfbuzz, cups, dbus, avahi, and NSS. The GTK,
+# Qt, GStreamer and Java libraries its plugins would want are deliberately absent —
+# a headless conversion never loads those plugins.
+#
+# The six font packages are not optional decoration: every face named in
+# render/themes.py's THEME_SPECS comes from them (Liberation Sans/Serif/Mono,
+# DejaVu Sans/Serif/Sans Mono). A theme naming a font the container lacks renders
+# through LibreOffice's substitution, which changes line breaking and therefore
+# pagination — so the delivered PDF would paginate differently from the one that was
+# reviewed. They serve WeasyPrint for the same reason, so the styled PDF and the
+# converted one are set in the same faces.
+#
+# cairo, pango and gdk-pixbuf2 are also WeasyPrint's. It is pure Python but binds them
+# through cffi, and an import without them fails with a ctypes message about
+# `libpango-1.0-0` that reads like a missing wheel and is not.
+#
+# install_weak_deps=False is dnf's --no-install-recommends: without it the fonts and
+# libraries drag in documentation and optional tools the image never uses.
+RUN --mount=type=bind,from=libreoffice,source=/rpms,target=/tmp/lo-rpms \
+    dnf install -y --allowerasing --setopt=install_weak_deps=False \
+      openssl-snapsafe-libs \
+      "python${PYTHON_VERSION}" \
+      "python${PYTHON_VERSION}-pip" \
+      dejavu-sans-fonts \
+      dejavu-serif-fonts \
+      dejavu-sans-mono-fonts \
+      liberation-sans-fonts \
+      liberation-serif-fonts \
+      liberation-mono-fonts \
+      cairo \
+      pango \
+      gdk-pixbuf2 \
+      fontconfig \
+      freetype \
+      harfbuzz \
+      libX11 \
+      libX11-xcb \
+      libxcb \
+      libXext \
+      libXinerama \
+      libXrandr \
+      libXrender \
+      libICE \
+      libSM \
+      cups-libs \
+      dbus-libs \
+      avahi-libs \
+      nss \
+      nspr \
+      nss-util \
+      libstdc++ \
+      /tmp/lo-rpms/*.rpm \
+ && dnf clean all \
+ && rm -rf /var/cache/dnf \
+ && ln -s "/opt/libreoffice${LO_SERIES}/program/soffice" /usr/local/bin/soffice \
+ && "python${PYTHON_VERSION}" -m venv /opt/venv
+
+ENV PATH=/opt/venv/bin:$PATH
+
+WORKDIR /app
+COPY --from=chart_engine /usr/local/bin/node /usr/local/bin/node
+COPY --from=chart_engine /chart-renderer ./chart-renderer
 
 # The committed, fully pinned, hashed closure — the runtime closure only, so
 # pytest and hypothesis never ship. --require-hashes is what makes two builds of
 # one commit resolve identical versions (Req 17.8).
+#
+# pip itself first, pinned by hash. Amazon Linux's python3.12 seeds the venv with pip
+# 23.2.1, which does not match `PyJWT[crypto]` (msal's requirement) to the lock's `pyjwt`
+# pin: it resolves a different pyjwt and then refuses it as unpinned. 25.0.1 is the pip
+# the previous (Debian) image installed this lock with.
 COPY requirements.lock ./
-RUN pip install --no-cache-dir --require-hashes -r requirements.lock
+RUN echo "pip==25.0.1 --hash=sha256:c46efd13b6aa8279f33f2864459c8ce587ea6a1a59ee20de055868d8f7688f7f" > /tmp/pip.lock \
+ && pip install --no-cache-dir --require-hashes -r /tmp/pip.lock \
+ && rm /tmp/pip.lock \
+ && pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # src/reporting_agent/ lands next to the entrypoint, which is exactly what
 # pyproject's pythonpath = ["src"] reproduces for the test suite. One import
@@ -249,6 +343,27 @@ RUN set -eu; \
     test -n "$(ls -A "$LO_PROFILE")" \
       || { echo "$LO_PROFILE is empty: the warm-up conversion did not populate it" >&2; exit 1; }; \
     echo "image assertions ok: aarch64, soffice present, profile warmed"
+
+# Fail the BUILD if the process's TLS could reuse random state across restored instances.
+#
+# On platform V2 this is a security property, not a performance one: with a plain OpenSSL
+# every instance restored from the snapshot resumes the same DRBG state, so their TLS key
+# shares can repeat. Asserted three ways, because each alone can pass wrongly — the package
+# is installed, the stock library it replaces is gone, and the libcrypto that Python's own
+# `_ssl` module resolves at load time is the file that package owns.
+RUN set -eu; \
+    rpm -q openssl-snapsafe-libs >/dev/null \
+      || { echo "openssl-snapsafe-libs is not installed: not safe on AgentCore V2" >&2; exit 1; }; \
+    if rpm -q openssl-libs >/dev/null 2>&1; then \
+      echo "stock openssl-libs is still installed beside the snapsafe build" >&2; exit 1; \
+    fi; \
+    libcrypto="$(ldd "$(python -c 'import _ssl; print(_ssl.__file__)')" | awk '/libcrypto/{print $3}')"; \
+    owner="$(rpm -qf "$(readlink -f "$libcrypto")")"; \
+    case "$owner" in \
+      openssl-snapsafe-libs-*) ;; \
+      *) echo "python's _ssl links $libcrypto from $owner, not openssl-snapsafe-libs" >&2; exit 1 ;; \
+    esac; \
+    python -c "import ssl; print('snapsafe ok:', ssl.OPENSSL_VERSION)"
 
 # Fail the BUILD if WeasyPrint cannot render (Req 23.11).
 #

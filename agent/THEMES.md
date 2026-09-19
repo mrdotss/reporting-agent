@@ -67,7 +67,7 @@ for some metrics.
 
 ## Fonts
 
-Every face named in a spec is installed in the image by `fonts-liberation2` and
-`fonts-dejavu-core`. A theme naming a font the container lacks renders through LibreOffice's
+Every face named in a spec is installed in the image by the `liberation-*-fonts` and
+`dejavu-*-fonts` packages (sans, serif and mono of each). A theme naming a font the container lacks renders through LibreOffice's
 substitution, which changes line breaking and therefore pagination — so the Dockerfile's font
 list and `THEME_SPECS` are one decision recorded in two files.

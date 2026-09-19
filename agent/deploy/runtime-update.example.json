@@ -24,6 +24,10 @@
     "idleRuntimeSessionTimeout": 900,
     "maxLifetime": 28800
   },
+  "platformVersion": "V2",
+  "metadataConfiguration": {
+    "requireMMDSV2": true
+  },
   "environmentVariables": {
     "AWS_REGION": "us-east-1",
     "RPT_ARTIFACT_BUCKET": "<ARTIFACT_BUCKET>",
