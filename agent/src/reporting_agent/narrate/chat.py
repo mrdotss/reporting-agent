@@ -47,7 +47,8 @@ __all__ = [
     "system_prompt",
 ]
 
-MAX_OUTPUT_TOKENS: Final[int] = 1500
+# The answer plus a reasoning model's thinking, which counts against the same budget.
+MAX_OUTPUT_TOKENS: Final[int] = 4000
 TEMPERATURE: Final[float] = 0.2
 GUARDRAIL_INTERVENED: Final[str] = "guardrail_intervened"
 MAX_VALUE_CHARS: Final[int] = 160
@@ -247,11 +248,15 @@ class BedrockChatModel:
     async def stream(
         self, *, system: str, messages: Sequence[Mapping[str, Any]]
     ) -> AsyncIterator[tuple[str, str]]:
+        from reporting_agent.narrate.summary import inference_config
+
         request = {
             "modelId": self._model_id,
             "system": [{"text": system}],
             "messages": list(messages),
-            "inferenceConfig": {"maxTokens": MAX_OUTPUT_TOKENS, "temperature": TEMPERATURE},
+            "inferenceConfig": inference_config(
+                self._model_id, max_tokens=MAX_OUTPUT_TOKENS, temperature=TEMPERATURE
+            ),
             "guardrailConfig": self._guardrail,
         }
         response = await asyncio.to_thread(lambda: self._client.converse_stream(**request))

@@ -133,6 +133,8 @@ async def review(
 
     import asyncio
 
+    from reporting_agent.narrate.summary import inference_config
+
     try:
         response = await asyncio.wait_for(
             asyncio.to_thread(
@@ -140,7 +142,9 @@ async def review(
                 modelId=model_id,
                 system=[{"text": REVIEW_SYSTEM_PROMPT}],
                 messages=_messages(prose, figures),
-                inferenceConfig={"maxTokens": 700, "temperature": 0.0},
+                # Room for a reasoning model's thinking as well as the observations: at
+                # 700, Kimi K3 ran out mid-list.
+                inferenceConfig=inference_config(model_id, max_tokens=3500, temperature=0.0),
             ),
             timeout=timeout_s,
         )

@@ -59,15 +59,39 @@ __all__ = [
     "ProseGenerator",
     "build_messages",
     "generate",
+    "inference_config",
     "prose_generator",
 ]
 
 logger = logging.getLogger(__name__)
 
-MAX_OUTPUT_TOKENS: Final[int] = 800
-"""Enough for four paragraphs of narrative. A cap rather than a target: the compiler decides
-how many paragraphs the block holds, and a longer answer is truncated by the compiler's own
-`MAX_PROSE_PARAGRAPHS` rather than by this number."""
+MAX_OUTPUT_TOKENS: Final[int] = 4000
+"""Four paragraphs of narrative, plus the reasoning a model like Kimi K3 does before it
+writes: that reasoning counts against the same budget, and at 800 it spent the whole of it
+on an executive summary before writing a word, and at 3000 it used 2,389. A cap rather
+than a target: the compiler
+decides how many paragraphs the block holds, and a longer answer is truncated by the
+compiler's own `MAX_PROSE_PARAGRAPHS` rather than by this number."""
+
+NO_TEMPERATURE_MODELS: Final[tuple[str, ...]] = ("moonshotai.kimi-k3",)
+"""Models that refuse `inferenceConfig.temperature` with a ValidationException.
+
+Kimi K3 fixes its own sampling and reasons before it answers. It is reached through a
+cross-region inference profile — `us.moonshotai.kimi-k3` or `global.moonshotai.kimi-k3` —
+so the match is on the model's name inside the id, not on the whole id."""
+
+
+def inference_config(model_id: str, *, max_tokens: int, temperature: float) -> dict[str, Any]:
+    """The `inferenceConfig` of one Converse call, for this model.
+
+    `temperature` is sent to every model that accepts it and left out for the ones in
+    `NO_TEMPERATURE_MODELS`: a request carrying it is refused whole, so keeping it
+    would cost every narrative, review and chat answer on those models.
+    """
+    config: dict[str, Any] = {"maxTokens": max_tokens}
+    if not any(name in model_id for name in NO_TEMPERATURE_MODELS):
+        config["temperature"] = temperature
+    return config
 
 SYSTEM_PROMPT: Final[str] = (
     "You write the executive summary of an infrastructure utilization report.\n"
@@ -362,13 +386,27 @@ def generate(
             modelId=model_id,
             system=[{"text": _system_prompt_for(language, request.kind)}],
             messages=build_messages(request),
-            inferenceConfig={"maxTokens": MAX_OUTPUT_TOKENS, "temperature": 0.2},
+            inferenceConfig=inference_config(
+                model_id, max_tokens=MAX_OUTPUT_TOKENS, temperature=0.2
+            ),
         )
     except Exception as exc:
         logger.warning(
             "the executive summary's model call failed (%s); the block renders its "
             "compiler-placed figures with no narrative and the run continues",
             type(exc).__name__,
+        )
+        return ""
+
+    # A narrative the model did not finish is not prose to ship. A reasoning model spends
+    # part of its token budget thinking before it answers, so running out mid-sentence is a
+    # real outcome — and a paragraph cut off in a customer's document costs more than the
+    # paragraph. Treated like an unreachable model: the block renders its figures alone.
+    if isinstance(response, Mapping) and response.get("stopReason") == "max_tokens":
+        logger.warning(
+            "the narrator reached its %d-token budget before finishing; this block renders "
+            "its compiler-placed figures with no prose and the run continues",
+            MAX_OUTPUT_TOKENS,
         )
         return ""
 
