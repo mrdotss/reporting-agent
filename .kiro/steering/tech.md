@@ -61,6 +61,13 @@ conversation titles — a direct Converse call, **not** the reporting runtime).
 Python **Strands** agent on **Bedrock AgentCore Runtime**, packaged as an
 **arm64** container.
 
+Narration, the prose review and Ask answers call **Kimi K3** through its US inference
+profile (`RPT_PROSE_MODEL_ID=us.moonshotai.kimi-k3`; `RPT_CHAT_MODEL_ID` overrides Ask
+only). Kimi K3 rejects `temperature`, so the agent leaves it out for that model
+(`narrate/summary.py::inference_config`), and it reasons before answering: the reasoning
+counts against `maxTokens`, so the caps leave room for it, and a narrative that still
+reaches the cap is dropped rather than shipped cut off.
+
 - `strands-agents` — agent + tool definitions.
 - `bedrock-agentcore` — runtime entrypoint / SSE streaming.
 - `azure-identity` — `ClientSecretCredential` (one instance, reused; see

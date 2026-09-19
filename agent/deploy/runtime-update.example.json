@@ -27,7 +27,7 @@
   "environmentVariables": {
     "AWS_REGION": "us-east-1",
     "RPT_ARTIFACT_BUCKET": "<ARTIFACT_BUCKET>",
-    "RPT_PROSE_MODEL_ID": "zai.glm-5",
+    "RPT_PROSE_MODEL_ID": "us.moonshotai.kimi-k3",
     "RPT_CA_BUNDLE": "/etc/ssl/private-ca/root.pem"
   },
   "agentRuntimeId": "<RUNTIME_ID>"
