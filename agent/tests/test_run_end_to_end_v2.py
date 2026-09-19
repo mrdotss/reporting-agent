@@ -611,12 +611,14 @@ class TestEventOrdering:
         assert types_of(events).count(TERMINAL_EVENT_TYPE) == 1
 
     def test_no_new_event_type_emitted(self, walked: tuple[V2Walk, list[Event]]) -> None:
-        """No event type outside the 10 declared types (Req 42.8)."""
+        """No event type outside the report pipeline's own set (Req 42.8). The two types
+        added for chat, `intent` and `thinking`, must never appear in a report run."""
+        from reporting_agent.events import EMITTED_BY_REPORT_PIPELINE
+
         _, events = walked
-        assert len(EVENT_TYPES) == 10, f"expected 10 declared types, got {len(EVENT_TYPES)}"
         for event in events:
-            assert event["type"] in EVENT_TYPES, (
-                f"undeclared event type: {event['type']}"
+            assert event["type"] in EMITTED_BY_REPORT_PIPELINE, (
+                f"a report run emitted {event['type']}"
             )
 
 
@@ -833,10 +835,11 @@ class TestGateCount:
             f"expected 12 gates, got {len(REQUIRED_GATES)}: {sorted(REQUIRED_GATES)}"
         )
 
-    def test_event_types_has_ten_members(self) -> None:
-        """The declared event vocabulary is exactly 10 types."""
-        assert len(EVENT_TYPES) == 10, (
-            f"expected 10 event types, got {len(EVENT_TYPES)}: {list(EVENT_TYPES)}"
+    def test_event_types_has_twelve_members(self) -> None:
+        """The declared vocabulary is the foundation's ten plus chat's `intent` and
+        `thinking`."""
+        assert len(EVENT_TYPES) == 12, (
+            f"expected 12 event types, got {len(EVENT_TYPES)}: {list(EVENT_TYPES)}"
         )
 
 

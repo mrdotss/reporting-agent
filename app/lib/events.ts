@@ -33,10 +33,12 @@ export const EVENT_TYPES = [
   "report_file",
   "error",
   "done",
+  "intent",
+  "thinking",
 ] as const
 // --- END EVENT TYPES ---
 
-/** One of the ten declared event types. */
+/** One of the declared event types. `intent` and `thinking` are emitted by `chat` only. */
 export type EventType = (typeof EVENT_TYPES)[number]
 
 /** The terminal event, and the only one permitted to be last. */

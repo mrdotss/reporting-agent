@@ -76,6 +76,16 @@ describe("assistantMessageFrom", () => {
     expect(message.pricesUnavailable).toBe(true)
   })
 
+  test("keeps the intent and a whole number of seconds thought, and ignores a bad time", () => {
+    const base = { authorId: "user_1", text: "Done.", steps: [], failure: undefined, targets: TARGETS }
+    expect(
+      assistantMessageFrom({ ...base, intent: "I'll check.", outcome: { thought_seconds: 6.4 } })
+    ).toMatchObject({ intent: "I'll check.", thoughtSeconds: 6 })
+    for (const thought of [-1, "6", Number.NaN, null]) {
+      expect(assistantMessageFrom({ ...base, outcome: { thought_seconds: thought } }).thoughtSeconds).toBeUndefined()
+    }
+  })
+
   test("a turn with no outcome is stored as failed, with no citation or proposal", () => {
     const message = assistantMessageFrom({
       authorId: "user_1",

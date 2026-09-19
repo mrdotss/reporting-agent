@@ -21,6 +21,14 @@ export type LiveTurn = {
   readonly question: string
   readonly steps: readonly (ChatStep & { readonly done: boolean })[]
   readonly text: string
+  /** What the assistant said it is about to do, before the answer starts. */
+  readonly intent: string
+  /** The answer model's reasoning so far, numbers masked by the runtime. */
+  readonly thinking: string
+  /** When the reasoning started, as `Date.now()`, for the running timer. */
+  readonly thinkingSince?: number
+  /** Seconds it reasoned, fixed when the answer's first words arrive. */
+  readonly thoughtSeconds?: number
 }
 
 export type SendResult =
@@ -64,7 +72,7 @@ export function useChatStream(options: {
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
-    setLive({ question, steps: [], text: "" })
+    setLive({ question, steps: [], text: "", intent: "", thinking: "" })
 
     try {
       const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}/messages`, {
@@ -117,7 +125,33 @@ export function useChatStream(options: {
               )
               break
             case "delta":
-              setLive((turn) => (turn === null ? turn : { ...turn, text: turn.text + event.text }))
+              setLive((turn) =>
+                turn === null
+                  ? turn
+                  : {
+                      ...turn,
+                      text: turn.text + event.text,
+                      thoughtSeconds:
+                        turn.thoughtSeconds ??
+                        (turn.thinkingSince === undefined
+                          ? undefined
+                          : Math.round((Date.now() - turn.thinkingSince) / 1000)),
+                    }
+              )
+              break
+            case "intent":
+              setLive((turn) => (turn === null || turn.text ? turn : { ...turn, intent: event.text }))
+              break
+            case "thinking":
+              setLive((turn) =>
+                turn === null
+                  ? turn
+                  : {
+                      ...turn,
+                      thinking: turn.thinking + event.text,
+                      thinkingSince: turn.thinkingSince ?? Date.now(),
+                    }
+              )
               break
             case "message":
               result = { ok: true, message: event.message, thread: event.thread }

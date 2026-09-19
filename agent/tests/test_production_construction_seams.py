@@ -265,18 +265,24 @@ SILENT_SEAMS: Mapping[str, Callable[[], Any]] = {
 
 def test_no_new_boto3_bedrock_runtime_construction_site_outside_narrate() -> None:
     """The only places ``boto3.client("bedrock-runtime", ...)`` should appear are
-    ``narrate/summary.py`` and ``narrate/chat.py``.  A third site would be another
-    silent-failure seam.
+    ``narrate/summary.py``, ``narrate/chat.py`` and ``narrate/intent.py``.  Another site
+    would be another silent-failure seam.
 
     ``narrate/chat.py`` is the opposite of a silent seam: ``bedrock_chat_model`` fails
     closed with ``ChatNotConfiguredError`` and has no broad except around construction
-    (ask-chat Req 5.3), which ``test_chat.py`` pins."""
+    (ask-chat Req 5.3), which ``test_chat.py`` pins.
+
+    ``narrate/intent.py`` fails quietly by design, and that is safe only because of what it
+    writes: one courtesy sentence ahead of the answer, never the answer or a figure. A
+    missing sentence leaves the answer exactly as it would have been, which
+    ``test_chat_intent_thinking.py`` pins."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "reporting_agent"
     known = {
         source_root / "narrate" / "summary.py",
         source_root / "narrate" / "chat.py",
+        source_root / "narrate" / "intent.py",
     }
 
     sites: set[str] = set()

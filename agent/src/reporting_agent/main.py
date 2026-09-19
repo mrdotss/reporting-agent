@@ -77,6 +77,7 @@ from reporting_agent.errors import (
     ErrorCode,
 )
 from reporting_agent.events import (
+    EMITTED_BY_CHAT,
     EMITTED_BY_FOUNDATION,
     EMITTED_BY_REPORT_PIPELINE,
     EVENT_TYPES,
@@ -355,7 +356,7 @@ def emit(event: object) -> Event:
             f"{', '.join(EVENT_TYPES)}"
         )
 
-    if kind not in EMITTED_BY_REPORT_PIPELINE:  # pragma: no cover - equals EVENT_TYPES
+    if kind not in EMITTED_BY_REPORT_PIPELINE | EMITTED_BY_CHAT:  # pragma: no cover - their union is EVENT_TYPES
         raise EmissionError(
             f"{kind!r} is declared but has no emitter in this runtime (Req 14.11)."
         )
@@ -1222,6 +1223,7 @@ async def handle_chat(invocation: Invocation, steps: StepTracker) -> AsyncIterat
         store=dependencies.store,
         model=dependencies.model,
         prices=dependencies.prices,
+        intent=dependencies.intent,
     ):
         yield event
 
@@ -1233,6 +1235,7 @@ _CHAT_PRICES: Any = None
 def _chat_dependencies() -> Any:
     from reporting_agent.chat.session import ChatDependencies
     from reporting_agent.narrate.chat import bedrock_chat_model
+    from reporting_agent.narrate.intent import bedrock_intent_writer
     from reporting_agent.pricing.azure_retail import AzureRetailPrices
     from reporting_agent.report_pipeline import _s3_store
 
@@ -1251,6 +1254,12 @@ def _chat_dependencies() -> Any:
         store=_s3_store(CONFIG.artifact_bucket, CONFIG.aws_region),
         model=model,
         prices=_CHAT_PRICES,
+        intent=bedrock_intent_writer(
+            model_id=CONFIG.intent_model_id,
+            guardrail_id=CONFIG.chat_guardrail_id,
+            guardrail_version=CONFIG.chat_guardrail_version,
+            region=CONFIG.aws_region,
+        ),
     )
 
 
@@ -1423,7 +1432,7 @@ def _screen(event: object) -> str:
     kind = event.get("type")
     if not is_declared_event_type(kind):
         raise EmissionError(f"{kind!r} is not a declared event type (Req 14.15).")
-    if kind not in EMITTED_BY_REPORT_PIPELINE:  # pragma: no cover - the two sets are equal
+    if kind not in EMITTED_BY_REPORT_PIPELINE | EMITTED_BY_CHAT:  # pragma: no cover - their union is EVENT_TYPES
         raise EmissionError(f"{kind!r} has no emitter in this runtime (Req 14.11).")
     return str(kind)
 

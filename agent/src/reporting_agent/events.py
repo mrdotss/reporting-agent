@@ -7,8 +7,8 @@ from between the sentinel comments in both files and compares the two sets
 than inside an `Enum` or a class: the guard needs neither a Python parser nor a
 TypeScript parser, so the guard itself cannot drift from what it guards.
 
-**The full vocabulary is declared; a subset is emitted.** This spec drives six of the
-ten types. `delta`, `chart`, `verification` and `report_file` belong to the specs that
+**The full vocabulary is declared; a subset is emitted.** The foundation drove six of
+the first ten types. `delta`, `chart`, `verification` and `report_file` belong to the specs that
 add prose, charts and the compile/render/verify pipeline — those specs add *emitters*,
 not vocabulary, so the mirror never has to be renegotiated (Req 14.11 with 40.13), and
 a client that meets an unhandled type ignores it and keeps reading (Req 40.6).
@@ -31,6 +31,8 @@ EVENT_TYPES: Final[tuple[str, ...]] = (
     "report_file",
     "error",
     "done",
+    "intent",
+    "thinking",
 )
 # --- END EVENT TYPES ---
 
@@ -97,6 +99,14 @@ EMITTED_BY_REPORT_PIPELINE: Final[frozenset[str]] = frozenset(
     }
 )
 
+# Every type the `chat` command emits. `intent` and `thinking` are chat's alone: the one
+# sentence a fast model writes about what the assistant is about to do, and the answer
+# model's masked reasoning, both sent so a question is not a silent spinner. The document
+# pipeline never emits either, which is why the vocabulary is now the union of the two.
+EMITTED_BY_CHAT: Final[frozenset[str]] = frozenset(
+    {"tool", "delta", "intent", "thinking", "heartbeat", "error", "done"}
+)
+
 PROGRESS_UNIT_BLOCKS: Final[str] = "blocks"
 
 
@@ -114,4 +124,5 @@ assert TERMINAL_EVENT_TYPE in EMITTED_BY_FOUNDATION, TERMINAL_EVENT_TYPE
 assert HEARTBEAT_EVENT_TYPE in EMITTED_BY_FOUNDATION, HEARTBEAT_EVENT_TYPE
 assert HEARTBEAT_EVENT_TYPE != TERMINAL_EVENT_TYPE
 assert EMITTED_BY_FOUNDATION < EMITTED_BY_REPORT_PIPELINE, EMITTED_BY_REPORT_PIPELINE
-assert EMITTED_BY_REPORT_PIPELINE == frozenset(EVENT_TYPES), EMITTED_BY_REPORT_PIPELINE
+assert EMITTED_BY_REPORT_PIPELINE | EMITTED_BY_CHAT == frozenset(EVENT_TYPES), EVENT_TYPES
+assert EMITTED_BY_CHAT <= frozenset(EVENT_TYPES), EMITTED_BY_CHAT

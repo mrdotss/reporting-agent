@@ -50,6 +50,7 @@ OPTIONAL_ENV_VARS: Final[tuple[str, ...]] = (
     "RPT_CHAT_MODEL_ID",
     "RPT_CHAT_GUARDRAIL_ID",
     "RPT_CHAT_GUARDRAIL_VERSION",
+    "RPT_INTENT_MODEL_ID",
 )
 """Variables a deployment **may** set, declared so `agent/.env.example` can document
 them without `_require` refusing a container that leaves them blank.
@@ -125,6 +126,7 @@ class Config:
         "chat_guardrail_id",
         "chat_guardrail_version",
         "chat_model_id",
+        "intent_model_id",
         "prose_model_id",
     )
 
@@ -175,6 +177,12 @@ class Config:
     chat_guardrail_version: str
     """`RPT_CHAT_GUARDRAIL_VERSION` — the pinned version of that guardrail."""
 
+    intent_model_id: str
+    """`RPT_INTENT_MODEL_ID` — a fast model that writes the one sentence Ask shows while the
+    answer model is still thinking, or `""` for no such sentence. Optional, and it should be
+    a model that answers without a reasoning phase, or the sentence arrives too late to help.
+    """
+
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> Config:
         """Read every required variable and return a frozen `Config`.
@@ -197,4 +205,5 @@ class Config:
             chat_model_id=(source.get("RPT_CHAT_MODEL_ID") or "").strip(),
             chat_guardrail_id=(source.get("RPT_CHAT_GUARDRAIL_ID") or "").strip(),
             chat_guardrail_version=(source.get("RPT_CHAT_GUARDRAIL_VERSION") or "").strip(),
+            intent_model_id=(source.get("RPT_INTENT_MODEL_ID") or "").strip(),
         )

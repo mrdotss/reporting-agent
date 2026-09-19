@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
+  BrainIcon,
   CaretDownIcon,
   CheckIcon,
   CircleNotchIcon,
@@ -115,10 +116,18 @@ export function Conversation({
           <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3">
             <Avatar />
             <div className="flex min-w-0 flex-col gap-2.5">
+              {live.intent ? <Intent text={live.intent} /> : null}
               <Steps steps={live.steps} working />
+              {live.thinking ? (
+                <Thinking
+                  text={live.thinking}
+                  since={live.thinkingSince}
+                  thoughtSeconds={live.text ? live.thoughtSeconds : undefined}
+                />
+              ) : null}
               {live.text ? (
                 <MessageText text={live.text} citations={{}} streaming />
-              ) : live.steps.length === 0 ? (
+              ) : live.steps.length === 0 && !live.intent ? (
                 <p className="text-sm text-muted-foreground">Starting…</p>
               ) : null}
             </div>
@@ -229,6 +238,7 @@ function AssistantMessage({
     <div className="grid grid-cols-[1.75rem_minmax(0,1fr)] gap-3">
       <Avatar />
       <div className="flex min-w-0 flex-col gap-2.5">
+        {message.intent ? <Intent text={message.intent} /> : null}
         {message.steps.length > 0 ? <Steps steps={message.steps.map((step) => ({ ...step, done: true }))} /> : null}
 
         {message.failed ? (
@@ -255,6 +265,12 @@ function AssistantMessage({
 
         {message.failed || message.refused ? null : (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            {message.thoughtSeconds !== undefined ? (
+              <>
+                <span>Thought for {formatSeconds(message.thoughtSeconds)}</span>
+                <span aria-hidden="true">·</span>
+              </>
+            ) : null}
             <span>{facts === 0 ? "No figures cited" : `${facts} ${facts === 1 ? "figure" : "figures"} cited`}</span>
             <span aria-hidden="true">·</span>
             <span>{TIME.format(new Date(message.createdAt))}</span>
@@ -312,6 +328,67 @@ function Steps({
           </li>
         ))}
       </ol>
+    </details>
+  )
+}
+
+/** What the assistant set out to do, in its own words, ahead of the answer. */
+function Intent({ text }: Readonly<{ text: string }>) {
+  return <p className="text-[0.9375rem] leading-relaxed text-muted-foreground">{text}</p>
+}
+
+function formatSeconds(seconds: number): string {
+  return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`
+}
+
+/**
+ * The answer model's reasoning while it works. Open and ticking until the answer starts,
+ * then folded to "Thought for Ns". The runtime has already masked every number in it, and
+ * the note says so: the checked figures are the ones in the answer.
+ */
+function Thinking({
+  text,
+  since,
+  thoughtSeconds,
+}: Readonly<{ text: string; since: number | undefined; thoughtSeconds: number | undefined }>) {
+  const done = thoughtSeconds !== undefined
+  const [now, setNow] = useState(() => Date.now())
+  const notes = useRef<HTMLParagraphElement>(null)
+
+  useEffect(() => {
+    if (done) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [done])
+
+  useEffect(() => {
+    const element = notes.current
+    if (element && !done) element.scrollTop = element.scrollHeight
+  }, [text, done])
+
+  const elapsed = done ? thoughtSeconds : since === undefined ? 0 : Math.max(0, Math.round((now - since) / 1000))
+
+  return (
+    <details open={!done} className="group rounded-xl border border-border">
+      <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 px-3 text-xs text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden">
+        <BrainIcon
+          aria-hidden="true"
+          className={done ? "size-3.5" : "size-3.5 animate-pulse text-(--status-inflight) motion-reduce:animate-none"}
+        />
+        {done ? `Thought for ${formatSeconds(elapsed)}` : `Thinking… ${formatSeconds(elapsed)}`}
+        <CaretDownIcon aria-hidden="true" className="ml-auto size-3.5 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="flex flex-col gap-1.5 px-3 pb-2.5">
+        <p
+          ref={notes}
+          className="max-h-40 overflow-y-auto text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground"
+        >
+          {text}
+        </p>
+        <p className="text-[0.6875rem] text-muted-foreground">
+          Working notes. Numbers are hidden here; the answer shows the checked figures.
+        </p>
+      </div>
     </details>
   )
 }

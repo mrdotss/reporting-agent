@@ -101,9 +101,9 @@ def run(*events: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def test_this_spec_adds_emitters_and_no_event_type() -> None:
-    """Req 42.1. `lib/events.ts` needs no edit and the cross-language mirror guard stays
-    untouched, which is the whole reason the foundation declared ten and emitted six."""
-    assert EMITTED_BY_REPORT_PIPELINE == frozenset(EVENT_TYPES)
+    """Req 42.1. The document pipeline added emitters for the ten the foundation declared,
+    and no type. The two types added since, `intent` and `thinking`, are chat's alone."""
+    assert EMITTED_BY_REPORT_PIPELINE == frozenset(EVENT_TYPES) - {"intent", "thinking"}
     assert EMITTED_BY_FOUNDATION < EMITTED_BY_REPORT_PIPELINE
     assert EMITTED_BY_REPORT_PIPELINE - EMITTED_BY_FOUNDATION == {
         "delta",

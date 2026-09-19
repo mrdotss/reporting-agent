@@ -128,7 +128,8 @@ class ChatModel(Protocol):
     def stream(
         self, *, system: str, messages: Sequence[Mapping[str, Any]]
     ) -> AsyncIterator[tuple[str, str]]:
-        """Yield `("text", chunk)` for answer text and `("stop", reason)` once at the end."""
+        """Yield `("text", chunk)` for answer text, `("reasoning", chunk)` for a reasoning
+        model's thinking, and `("stop", reason)` once at the end."""
         ...
 
 
@@ -272,6 +273,9 @@ class BedrockChatModel:
             delta = block.get("delta") if isinstance(block, Mapping) else None
             if isinstance(delta, Mapping) and isinstance(delta.get("text"), str):
                 yield ("text", delta["text"])
+            reasoning = delta.get("reasoningContent") if isinstance(delta, Mapping) else None
+            if isinstance(reasoning, Mapping) and isinstance(reasoning.get("text"), str):
+                yield ("reasoning", reasoning["text"])
             stop = event.get("messageStop")
             if isinstance(stop, Mapping):
                 yield ("stop", str(stop.get("stopReason", "")))

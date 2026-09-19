@@ -12,14 +12,25 @@ turn's result rides on `done` through the invocation outcome:
   daily buckets, never from numbers the model wrote;
 - `proposal` — a report request the user may confirm, when one survived the allow-list;
 - `refused`, `unavailable_runs`, `unavailable_live`, `prices_unavailable`,
-  `withheld_figures` — what the UI should say about what was not used.
+  `withheld_figures` — what the UI should say about what was not used;
+- `thought_seconds` — how long the answer model reasoned before it wrote.
 
-No new event type: `tool` for the three steps, `delta` for the answer text.
+`tool` for the three steps and `delta` for the answer text, plus two events that exist so
+a question is not a silent spinner while the answer model reasons:
+
+- `intent` — one sentence from a fast second model saying what the assistant is about to
+  do (`narrate/intent.py`). It runs in parallel with everything else and is sent only if
+  it is ready before the first `delta`; after that it would be noise.
+- `thinking` — the answer model's reasoning as it streams, with every number masked and
+  its markup removed (`chat/thinking.py`). It is never checked, so it is never the answer.
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import secrets
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Final
@@ -42,6 +53,7 @@ from reporting_agent.chat.grounding import (
 )
 from reporting_agent.chat.payload import ChatRequest, detect_language
 from reporting_agent.chat.stream_filter import AnswerFilter
+from reporting_agent.chat.thinking import ThinkingMask
 from reporting_agent.narrate.chat import (
     GUARDRAIL_INTERVENED,
     ChatModel,
@@ -78,6 +90,10 @@ TOOL_COMPOSE_ANSWER: Final[str] = "compose_answer"
 ANSWER_BLOCK_ID: Final[str] = "answer"
 
 PriceLookup = Callable[[Sequence[VmPricePair]], Awaitable[PriceLookupResult]]
+IntentWriter = Callable[..., Awaitable[str | None]]
+"""Called as `writer(prompt=…, context=[…], language=…)`; `None` means no sentence."""
+
+MAX_PREVIOUS_QUESTION_CHARS: Final[int] = 300
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +101,7 @@ class ChatDependencies:
     store: ObjectStore
     model: ChatModel
     prices: PriceLookup | None
+    intent: IntentWriter | None = None
 
 
 async def run_chat(
@@ -95,9 +112,90 @@ async def run_chat(
     store: ObjectStore,
     model: ChatModel,
     prices: PriceLookup | None,
+    intent: IntentWriter | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     language = detect_language(request.prompt)
     outcome["language"] = language
+    turn = _turn(
+        request,
+        language=language,
+        steps=steps,
+        outcome=outcome,
+        store=store,
+        model=model,
+        prices=prices,
+    )
+    if intent is None:
+        async for event in turn:
+            yield event
+        return
+    pending = asyncio.ensure_future(
+        intent(prompt=request.prompt, context=_intent_context(request), language=language)
+    )
+    async for event in _with_intent(turn, pending):
+        yield event
+
+
+async def _with_intent(
+    events: AsyncIterator[dict[str, Any]], pending: asyncio.Future[str | None]
+) -> AsyncIterator[dict[str, Any]]:
+    """`events`, with the intent sentence let in as soon as it is ready — unless the
+    answer has already started, when it is dropped rather than shown out of order."""
+    iterator = aiter(events)
+    upcoming: asyncio.Future[dict[str, Any]] = asyncio.ensure_future(anext(iterator))
+    waiting: asyncio.Future[str | None] | None = pending
+    try:
+        while True:
+            watched: set[asyncio.Future[Any]] = {upcoming}
+            if waiting is not None:
+                watched.add(waiting)
+            done, _ = await asyncio.wait(watched, return_when=asyncio.FIRST_COMPLETED)
+            if waiting is not None and waiting in done:
+                sentence = None if waiting.exception() else waiting.result()
+                waiting = None
+                if sentence:
+                    yield {"type": "intent", "text": sentence}
+            if upcoming in done:
+                try:
+                    event = upcoming.result()
+                except StopAsyncIteration:
+                    return
+                if event.get("type") == "delta" and waiting is not None:
+                    waiting.cancel()
+                    waiting = None
+                yield event
+                upcoming = asyncio.ensure_future(anext(iterator))
+    finally:
+        pending.cancel()
+        if not upcoming.done():
+            upcoming.cancel()
+            with contextlib.suppress(asyncio.CancelledError, StopAsyncIteration):
+                await upcoming
+        with contextlib.suppress(RuntimeError):
+            await iterator.aclose()  # type: ignore[attr-defined]
+
+
+def _intent_context(request: ChatRequest) -> list[str]:
+    """What is attached, by name, for the intent sentence. Digits are removed later."""
+    lines = [f"{run.customer_name} report, {run.period_display}" for run in request.runs]
+    lines += [f"{live.connector_label} live metrics, {live.window_display}" for live in request.live]
+    lines += [f"{scan.connector_label} inventory scan" for scan in request.scans]
+    previous = next((turn.text for turn in reversed(request.history) if turn.role == "user"), "")
+    if previous:
+        lines.append(f"The user's previous question: {previous[:MAX_PREVIOUS_QUESTION_CHARS]}")
+    return lines
+
+
+async def _turn(
+    request: ChatRequest,
+    *,
+    language: str,
+    steps: StepTracker,
+    outcome: dict[str, Any],
+    store: ObjectStore,
+    model: ChatModel,
+    prices: PriceLookup | None,
+) -> AsyncIterator[dict[str, Any]]:
 
     groundings: list[RunGrounding] = []
     live_groundings: list[LiveGrounding] = []
@@ -193,14 +291,30 @@ async def run_chat(
     )
     messages = build_messages(history=request.history, prompt=request.prompt, grounding=grounding)
 
+    thinking = ThinkingMask()
+    thinking_since: float | None = None
     async for kind, value in model.stream(system=system_prompt(language), messages=messages):
         if kind == "stop":
             if value == GUARDRAIL_INTERVENED:
                 answer.mark_refused()
             continue
+        if kind == "reasoning":
+            if thinking_since is None:
+                thinking_since = time.monotonic()
+            masked = thinking.feed(value)
+            if masked:
+                yield {"type": "thinking", "text": masked}
+            continue
+        if thinking_since is not None and "thought_seconds" not in outcome:
+            outcome["thought_seconds"] = round(time.monotonic() - thinking_since)
+            masked = thinking.finish()
+            if masked:
+                yield {"type": "thinking", "text": masked}
         text = answer.feed(value)
         if text:
             yield _delta(text)
+    if thinking_since is not None and "thought_seconds" not in outcome:
+        outcome["thought_seconds"] = round(time.monotonic() - thinking_since)
 
     tail = answer.finish()
     if answer.refused:
