@@ -481,4 +481,4 @@ def test_the_bedrock_stream_is_guarded_and_carries_no_tools() -> None:
     assert asyncio.run(collect()) == [("text", "Hello "), ("text", "there."), ("stop", "end_turn")]
     assert "toolConfig" not in client.kwargs
     assert client.kwargs["guardrailConfig"]["guardrailIdentifier"] == "gr-1"
-    assert client.kwargs["guardrailConfig"]["streamProcessingMode"] == "sync"
+    assert client.kwargs["guardrailConfig"]["streamProcessingMode"] == "async"
