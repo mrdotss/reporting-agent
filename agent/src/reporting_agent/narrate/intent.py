@@ -26,7 +26,9 @@ from reporting_agent.narrate.chat import GUARDRAIL_INTERVENED
 
 __all__ = ["INTENT_MAX_CHARS", "BedrockIntentWriter", "clean_intent", "undigit"]
 
-INTENT_MAX_TOKENS: Final[int] = 120
+INTENT_MAX_TOKENS: Final[int] = 1500
+"""Room for a reasoning model's short thinking as well as the sentence: Kimi K3 spends
+about a hundred and fifty tokens on it."""
 INTENT_MAX_CHARS: Final[int] = 240
 """A sentence, not a paragraph: anything longer is cut at the last word that fits."""
 
