@@ -133,6 +133,7 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
       send({ type: "user_message", message: userMessage.message })
 
       let text = ""
+      let intent: string | undefined
       const steps: ChatStep[] = []
       let outcome: Record<string, unknown> | undefined
       let failure: string | undefined
@@ -150,6 +151,12 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
           } else if (event.type === "delta") {
             text += event.text
             send({ type: "delta", text: event.text })
+          } else if (event.type === "intent") {
+            intent = event.text
+            send({ type: "intent", text: event.text })
+          } else if (event.type === "thinking") {
+            // Relayed and never stored: the reasoning is unchecked, so it stays off the record.
+            send({ type: "thinking", text: event.text })
           } else if (event.type === "error") {
             failure = UNANSWERED
           } else if (event.status === "completed") {
@@ -170,6 +177,7 @@ export async function POST(request: Request, context: MessagesRouteContext): Pro
         authorId: user.id,
         text,
         steps,
+        intent,
         outcome,
         failure,
         targets: chatTurn.targets,

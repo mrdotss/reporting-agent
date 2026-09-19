@@ -96,7 +96,7 @@ def test_the_review_sends_kimi_k3_no_temperature() -> None:
     assert "temperature" not in model.calls[0]["inferenceConfig"]
 
 
-def test_ask_sends_kimi_k3_no_temperature_and_streams_only_its_answer() -> None:
+def test_ask_sends_kimi_k3_no_temperature_and_keeps_its_reasoning_apart() -> None:
     class StreamingClient:
         def __init__(self) -> None:
             self.request: dict[str, Any] = {}
@@ -125,5 +125,9 @@ def test_ask_sends_kimi_k3_no_temperature_and_streams_only_its_answer() -> None:
             )
         ]
 
-    assert asyncio.run(collect()) == [("text", "cpn-mcp is the busiest."), ("stop", "end_turn")]
+    assert asyncio.run(collect()) == [
+        ("reasoning", "Thinking."),
+        ("text", "cpn-mcp is the busiest."),
+        ("stop", "end_turn"),
+    ]
     assert "temperature" not in client.request["inferenceConfig"]

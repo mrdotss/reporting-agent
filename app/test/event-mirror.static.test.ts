@@ -94,18 +94,21 @@ function declaredEventTypes(absolutePath: string): readonly string[] {
   return found
 }
 
-/** The ten types, as a fact about the requirement rather than about the files. */
-const EXPECTED_COUNT = 10
+/**
+ * The declared types, as a fact about the requirement rather than about the files: the ten
+ * the foundation declared, plus `intent` and `thinking`, which only `chat` emits.
+ */
+const EXPECTED_COUNT = 12
 
 describe("Requirements 40.7, 40.13 — the event vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the ten declared types", () => {
+  test("the TypeScript declaration is the twelve declared types", () => {
     const declared = declaredEventTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_COUNT)
   })
 
-  test("the Python declaration is the ten declared types", () => {
+  test("the Python declaration is the twelve declared types", () => {
     const declared = declaredEventTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])

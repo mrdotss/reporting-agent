@@ -1071,7 +1071,10 @@ def test_the_narrate_package_exists_and_holds_exactly_two_call_sites() -> None:
     modules = {path.name for path in _source_modules(narrate)}
 
     # ask-chat Req 5 — `chat.py` is the third call site: the one model-facing command.
-    assert modules == {"__init__.py", "summary.py", "review.py", "chat.py"}, sorted(modules)
+    # `intent.py` is the fourth: the one sentence Ask shows while the answer model thinks.
+    assert modules == {"__init__.py", "summary.py", "review.py", "chat.py", "intent.py"}, sorted(
+        modules
+    )
     assert _bedrock_offenders(_source_modules(narrate)), (
         "narrate/ must actually reach a model, or rule 6 is a rule about nothing"
     )

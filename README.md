@@ -39,12 +39,16 @@ Browser ──▶ app/     Next.js 16 on our own server (systemd, behind Caddy)
 | Used for | Bedrock model id | Configured by |
 |---|---|---|
 | Report narration, prose review, Ask answers | `us.moonshotai.kimi-k3` | `RPT_PROSE_MODEL_ID` on the agent runtime (`RPT_CHAT_MODEL_ID` overrides Ask only) |
+| Ask's "what I'm about to do" sentence | `moonshotai.kimi-k2.5` | `RPT_INTENT_MODEL_ID` on the agent runtime (unset: no sentence) |
 | Ask conversation titles | `moonshotai.kimi-k2.5` | `RPT_TITLE_MODEL_ID` in the app's environment |
 
 Kimi K3 is offered only through an inference profile, so its id carries the `us.` prefix.
 It rejects a `temperature` setting, so the agent leaves it out for that model
 (`inference_config` in `agent/src/reporting_agent/narrate/summary.py`). It also reasons
-before answering; that reasoning is never shown to anyone or stored.
+before answering. Ask shows that reasoning live in a "Thinking" panel with every number
+masked (`agent/src/reporting_agent/chat/thinking.py`), and never stores it; the saved answer
+keeps only how long it thought. While it thinks, the faster Kimi K2.5 writes one sentence on
+what the assistant is about to do, digit-free and behind the same guardrail.
 
 ## Run it locally
 

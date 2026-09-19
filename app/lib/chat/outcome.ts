@@ -118,6 +118,8 @@ export function assistantMessageFrom(a: {
   readonly authorId: string
   readonly text: string
   readonly steps: readonly ChatStep[]
+  /** The sentence shown while the answer was worked out; kept only on an answer that stands. */
+  readonly intent?: string
   readonly outcome: Record<string, unknown> | undefined
   readonly failure: string | undefined
   readonly targets: ReadonlyMap<string, ProposalTarget>
@@ -140,6 +142,8 @@ export function assistantMessageFrom(a: {
   const unavailableCount =
     (Array.isArray(unavailable) ? unavailable.length : 0) +
     (Array.isArray(unavailableLive) ? unavailableLive.length : 0)
+  const refused = outcome.refused === true
+  const thought = outcome.thought_seconds
   return {
     role: "assistant",
     text: a.text,
@@ -148,8 +152,13 @@ export function assistantMessageFrom(a: {
     steps: a.steps,
     charts: charts.length > 0 ? charts : undefined,
     proposal: proposalFrom(outcome.proposal, a.targets),
-    refused: outcome.refused === true ? true : undefined,
+    refused: refused ? true : undefined,
     unavailableRuns: unavailableCount > 0 ? unavailableCount : undefined,
     pricesUnavailable: Array.isArray(outcome.prices_unavailable) ? true : undefined,
+    intent: !refused && a.intent ? a.intent : undefined,
+    thoughtSeconds:
+      !refused && typeof thought === "number" && Number.isFinite(thought) && thought >= 0
+        ? Math.round(thought)
+        : undefined,
   }
 }

@@ -136,6 +136,10 @@ export type ChatMessageView = {
   readonly failed?: boolean
   readonly unavailableRuns?: number
   readonly pricesUnavailable?: boolean
+  /** The sentence shown while the answer was being worked out: what the assistant set out to do. */
+  readonly intent?: string
+  /** How long the answer model reasoned before it wrote. The reasoning itself is not kept. */
+  readonly thoughtSeconds?: number
 }
 
 // --- The stream the messages route writes to the browser ---------------------
@@ -144,6 +148,8 @@ export type ChatStreamEvent =
   | { readonly type: "user_message"; readonly message: ChatMessageView }
   | { readonly type: "step"; readonly step: ChatStep; readonly phase: "start" | "end" }
   | { readonly type: "delta"; readonly text: string }
+  | { readonly type: "intent"; readonly text: string }
+  | { readonly type: "thinking"; readonly text: string }
   | { readonly type: "message"; readonly message: ChatMessageView; readonly thread: ChatThreadView }
   | { readonly type: "error"; readonly message: string }
 

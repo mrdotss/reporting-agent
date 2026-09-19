@@ -20,7 +20,9 @@ import { redactForBrowser } from "@/lib/aws/redact"
  * (ask-chat Req 1).
  *
  * The runtime's `chat` command speaks the declared vocabulary: `tool` steps, `delta` text,
- * `error`, and `done` carrying the turn's outcome. Every frame passes through
+ * `error`, and `done` carrying the turn's outcome — plus, while the answer model reasons,
+ * `intent` (one sentence on what it is about to do) and `thinking` (its reasoning, with
+ * every number already masked by the runtime). Every frame passes through
  * {@link redactForBrowser} before anything reads it, although a chat invocation carries no
  * credential to redact — the redaction is the rule for every stream that reaches a browser,
  * and a rule with an exemption is the rule that later gets widened.
@@ -40,6 +42,8 @@ export type RuntimeChatEvent =
       readonly status: string
     }
   | { readonly type: "delta"; readonly text: string }
+  | { readonly type: "intent"; readonly text: string }
+  | { readonly type: "thinking"; readonly text: string }
   | { readonly type: "error"; readonly code: string; readonly message: string }
   | { readonly type: "done"; readonly status: string; readonly outcome: Record<string, unknown> }
 
@@ -130,6 +134,9 @@ function toChatEvent(payload: unknown): RuntimeChatEvent | undefined {
       return undefined
     case "delta":
       return typeof record.text === "string" ? { type: "delta", text: record.text } : undefined
+    case "intent":
+    case "thinking":
+      return typeof record.text === "string" ? { type: record.type, text: record.text } : undefined
     case "error":
       return {
         type: "error",
