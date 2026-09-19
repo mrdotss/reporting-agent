@@ -42,7 +42,7 @@ PLATFORM_FLAG: Final[str] = "--platform linux/arm64"
 def _logical_lines(path: Path) -> list[str]:
     """The file with line continuations joined and comments dropped.
 
-    So an assertion can look for `apt-get install ... libreoffice-writer` without caring
+    So an assertion can look for `dnf install ... openssl-snapsafe-libs` without caring
     how the instruction is wrapped, and cannot be satisfied by a line that is commented
     out — which is the one false pass that would matter here.
     """
@@ -71,40 +71,100 @@ def dockerfile_body(instructions: list[str]) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def _system_install(dockerfile_body: str) -> str:
+    """The one `dnf install` that builds the runtime's system: the line naming
+    `openssl-snapsafe-libs`, which the LibreOffice download stage's own install does not."""
+    install = [
+        line
+        for line in dockerfile_body.splitlines()
+        if "dnf install" in line and "openssl-snapsafe-libs" in line
+    ]
+    assert len(install) == 1, install
+    return install[0]
+
+
 @pytest.mark.parametrize(
     "package",
     [
-        "libreoffice-writer",
-        "libreoffice-core",
-        "fonts-dejavu-core",
-        "fonts-liberation2",
+        # V2 restores every instance from one snapshot; a stock OpenSSL would resume the
+        # same random state in each of them (see the Dockerfile header).
+        "openssl-snapsafe-libs",
+        "dejavu-sans-fonts",
+        "dejavu-serif-fonts",
+        "dejavu-sans-mono-fonts",
+        "liberation-sans-fonts",
+        "liberation-serif-fonts",
+        "liberation-mono-fonts",
         # WeasyPrint's cffi bindings. It is pure Python and imports without them, then
         # fails at the first render with a ctypes message naming `libpango-1.0-0` that
         # reads like a missing wheel — so their absence would surface as a failed customer
         # run rather than a failed build.
-        "libcairo2",
-        "libpango-1.0-0",
-        "libpangoft2-1.0-0",
-        "libgdk-pixbuf-2.0-0",
+        "cairo",
+        "pango",
+        "gdk-pixbuf2",
+        # LibreOffice's own RPMs, handed over from the download stage.
+        "/tmp/lo-rpms/*.rpm",
     ],
 )
-def test_the_image_installs_the_required_system_package(
-    package: str, dockerfile_body: str
+def test_the_image_installs_the_required_system_package(package: str, dockerfile_body: str) -> None:
+    """Req 23.2 — LibreOffice, the fonts the four themes reference, WeasyPrint's rendering
+    libraries and the snapshot-safe OpenSSL, all as arm64 builds."""
+    assert re.search(
+        rf"(?<![\w-]){re.escape(package)}(?![\w-])", _system_install(dockerfile_body)
+    ), package
+
+
+def test_the_snapsafe_openssl_replaces_the_stock_one(dockerfile_body: str) -> None:
+    """The two packages conflict. Without --allowerasing dnf refuses the install; with a
+    plain `openssl` package named as well, the stock library could come back."""
+    install = _system_install(dockerfile_body)
+    assert "--allowerasing" in install
+    assert not re.search(r"(?<![\w-])openssl-libs(?![\w-])", install)
+
+
+def test_the_build_asserts_python_links_the_snapsafe_openssl(dockerfile_body: str) -> None:
+    """The install alone is not the property. What matters is the libcrypto that Python's
+    `_ssl` resolves at load time, so the build checks the file's owning package."""
+    assert "rpm -q openssl-snapsafe-libs" in dockerfile_body
+    assert "import _ssl" in dockerfile_body
+    assert "rpm -qf" in dockerfile_body
+
+
+@pytest.mark.parametrize("rpm", ["-ure", "-writer", "-core", "-images", "-ooofonts"])
+def test_the_image_takes_the_libreoffice_rpms_a_conversion_needs(
+    rpm: str, dockerfile_body: str
 ) -> None:
-    """Req 23.2 — LibreOffice, the fonts the four themes reference, and WeasyPrint's
-    rendering libraries, all as arm64 builds."""
-    install = [line for line in dockerfile_body.splitlines() if "apt-get install" in line]
-    assert install, "no apt-get install instruction at all"
-    assert any(package in line for line in install), package
+    assert f'${{LO_SERIES}}{rpm}"' in dockerfile_body, rpm
 
 
-def test_the_install_takes_no_recommends_and_cleans_the_apt_lists(
+@pytest.mark.parametrize(
+    "unwanted",
+    ["-calc", "-impress", "-draw", "-base", "-math", "-gnome-integration", "-kde-integration"],
+)
+def test_the_image_takes_no_other_libreoffice_application(
+    unwanted: str, dockerfile_body: str
+) -> None:
+    """A docx -> pdf conversion needs the Writer import filter and the PDF export filter."""
+    assert f"${{LO_SERIES}}{unwanted}" not in dockerfile_body, unwanted
+
+
+def test_the_libreoffice_download_is_pinned_by_checksum(dockerfile_body: str) -> None:
+    """The archive URL, because /stable/ drops a release once the next ships; and a pinned
+    SHA-256 checked before anything is unpacked, so a changed file fails the build."""
+    assert "downloadarchive.documentfoundation.org/libreoffice/old/" in dockerfile_body
+    assert re.search(r"ARG LO_SHA256=[0-9a-f]{64}\b", dockerfile_body)
+    assert "sha256sum -c" in dockerfile_body
+
+
+def test_the_install_takes_no_weak_deps_and_cleans_the_dnf_cache(
     dockerfile_body: str,
 ) -> None:
-    """Without `--no-install-recommends` the Writer install pulls most of the suite; without
-    the cleanup the apt lists stay in the layer for nothing."""
-    assert "--no-install-recommends" in dockerfile_body
-    assert "rm -rf /var/lib/apt/lists" in dockerfile_body
+    """dnf's --no-install-recommends; without the cleanup the metadata stays in the layer
+    for nothing."""
+    install = _system_install(dockerfile_body)
+    assert "--setopt=install_weak_deps=False" in install
+    assert "dnf clean all" in install
+    assert "rm -rf /var/cache/dnf" in install
 
 
 def test_the_build_asserts_cell_boundaries_reach_the_extractor(
@@ -198,19 +258,19 @@ def test_the_image_installs_no_java_runtime(dockerfile_body: str) -> None:
 def test_every_font_a_theme_names_is_installed_by_a_named_package(
     dockerfile_body: str,
 ) -> None:
-    """The check that keeps `THEME_SPECS` and the apt line one decision.
+    """The check that keeps `THEME_SPECS` and the dnf line one decision.
 
     A theme naming a font the container lacks renders through LibreOffice's substitution,
     which changes line breaking and therefore pagination — so the delivered PDF would
     paginate differently from the one that was reviewed, silently.
     """
     supplied_by = {
-        "Liberation Sans": "fonts-liberation2",
-        "Liberation Serif": "fonts-liberation2",
-        "Liberation Mono": "fonts-liberation2",
-        "DejaVu Sans": "fonts-dejavu-core",
-        "DejaVu Serif": "fonts-dejavu-core",
-        "DejaVu Sans Mono": "fonts-dejavu-core",
+        "Liberation Sans": "liberation-sans-fonts",
+        "Liberation Serif": "liberation-serif-fonts",
+        "Liberation Mono": "liberation-mono-fonts",
+        "DejaVu Sans": "dejavu-sans-fonts",
+        "DejaVu Serif": "dejavu-serif-fonts",
+        "DejaVu Sans Mono": "dejavu-sans-mono-fonts",
     }
 
     named: set[str] = set()
@@ -223,7 +283,7 @@ def test_every_font_a_theme_names_is_installed_by_a_named_package(
         f"them; add the package to the Dockerfile and the mapping here"
     )
     for font in sorted(named):
-        assert supplied_by[font] in dockerfile_body, (font, supplied_by[font])
+        assert supplied_by[font] in _system_install(dockerfile_body), (font, supplied_by[font])
 
 
 # --------------------------------------------------------------------------- #
@@ -245,7 +305,7 @@ def test_the_profile_is_warmed_with_a_real_headless_conversion(
     dockerfile_body: str,
 ) -> None:
     """Req 23.5 — warmed at build time, with `--norestore` and the profile named."""
-    warm = [line for line in dockerfile_body.splitlines() if "soffice" in line]
+    warm = [line for line in dockerfile_body.splitlines() if "soffice --headless" in line]
     assert warm, "no soffice invocation in the build"
     line = warm[0]
     assert "--headless" in line
@@ -351,18 +411,22 @@ def test_the_profile_is_warmed_after_the_theme_guard(instructions: list[str]) ->
         for index, line in enumerate(instructions)
         if "render.themes --assert-build" in line
     )
-    warm_index = next(index for index, line in enumerate(instructions) if "soffice" in line)
+    warm_index = next(
+        index for index, line in enumerate(instructions) if "soffice --headless" in line
+    )
     assert guard_index < warm_index, instructions
 
 
-def test_the_apt_layer_precedes_the_dependency_layer(instructions: list[str]) -> None:
+def test_the_system_layer_precedes_the_dependency_layer(instructions: list[str]) -> None:
     """LibreOffice is the largest and least frequently changed layer in the image, so a
     dependency bump must not reinstall it."""
-    apt_index = next(
-        index for index, line in enumerate(instructions) if "apt-get install" in line
+    system_index = next(
+        index
+        for index, line in enumerate(instructions)
+        if "dnf install" in line and "openssl-snapsafe-libs" in line
     )
     pip_index = next(index for index, line in enumerate(instructions) if "pip install" in line)
-    assert apt_index < pip_index, instructions
+    assert system_index < pip_index, instructions
 
 
 # --------------------------------------------------------------------------- #
@@ -518,4 +582,4 @@ def test_the_readme_no_longer_claims_libreoffice_is_absent() -> None:
     reader the image cannot convert a PDF sends them looking in the wrong place."""
     text = README.read_text()
     assert "LibreOffice, the theme fonts and a pre-warmed LibreOffice profile are **not**" not in text
-    assert "libreoffice-writer" in text
+    assert "libreoffice26.2-writer" in text

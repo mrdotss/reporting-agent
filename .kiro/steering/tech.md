@@ -59,7 +59,11 @@ conversation titles — a direct Converse call, **not** the reporting runtime).
 
 ## Agent runtime (`agent/`)
 Python **Strands** agent on **Bedrock AgentCore Runtime**, packaged as an
-**arm64** container.
+**arm64** container on **Amazon Linux 2023** and run on AgentCore **platform version V2**,
+which restores every instance from one snapshot. So the image uses the snapshot-safe
+OpenSSL (`openssl-snapsafe-libs`), LibreOffice comes from The Document Foundation's RPMs
+with a pinned checksum, and no module may compute random values, ids, time or process
+identity at import (`agent/tests/test_snapshot_safe_startup.py`).
 
 Narration, the prose review and Ask answers call **Kimi K3** through its US inference
 profile (`RPT_PROSE_MODEL_ID=us.moonshotai.kimi-k3`; `RPT_CHAT_MODEL_ID` overrides Ask

@@ -82,9 +82,11 @@ starts, so restart it after editing them.
 2. Build the image: `aws codebuild start-build --project-name reporting-agent-build --source-version <sha>`.
 3. Take the new `reporting-agent` image digest from ECR.
 4. Call `update-agent-runtime` with that digest, passing back every other setting and
-   environment variable. The call replaces the whole configuration; see
+   environment variable, including `platformVersion: "V2"`. The call replaces the whole
+   configuration; use boto3 with botocore 1.43.98 or later, because older SDKs and AWS CLI
+   2.31.35 cannot send every field. See
    [`agent/README.md`](agent/README.md#deploying-to-agentcore-runtime).
-5. Wait for `READY`, then smoke-test a chat turn.
+5. Wait for `READY` (a few minutes on V2), then smoke-test a chat turn.
 
 A profile change is not a deploy. Logos, confidentiality notices and number formatting are
 pinned in each saved profile version, so re-save a profile for runs to pick up a change.

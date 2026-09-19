@@ -355,6 +355,7 @@ Four assertions, each failing the build rather than a deployed run:
 | `python -m reporting_agent.compile.ast --assert-build` | an AST in which a quantity can appear without provenance |
 | `python -m reporting_agent.render.themes --assert-build` | a theme missing a referenced style, carrying content, or unopenable |
 | `uname -m` is `aarch64`, `soffice` on `PATH`, `$LO_PROFILE` non-empty | an x86 image, absent LibreOffice, or a profile that was never warmed |
+| `openssl-snapsafe-libs` installed, stock `openssl-libs` gone, Python's `_ssl` links it | TLS that could reuse random state across instances restored from one V2 snapshot |
 
 The first three run in the suite as well (`tests/test_dependency_pins.py`,
 `tests/test_ast_guard.py`, `tests/test_themes.py`). They are repeated at build time
@@ -363,9 +364,17 @@ not stop a bad image from being published.
 
 ### LibreOffice, the fonts, and the pre-warmed profile
 
-The image installs `libreoffice-writer` and `libreoffice-core` — no Calc, no Impress,
-no JRE — plus `fonts-dejavu-core` and `fonts-liberation2`, which supply every face the
-four themes name. A theme naming a font the container lacks renders through
+The image is Amazon Linux 2023 (see *Platform version V2* below for why). Amazon Linux
+packages no LibreOffice, so it comes from The Document Foundation's own RPM build,
+downloaded from their archive and checked against a pinned SHA-256 before it is
+unpacked. Only the Writer RPMs are installed (`libreoffice26.2-writer`,
+`libobasis26.2-writer`, the core, URE, images and fonts packages) — no Calc, no Impress,
+no JRE, no GUI plugins. To move to another release, change `LO_RELEASE`, `LO_SERIES` and
+`LO_SHA256` together, taking the checksum from a download whose `.asc` signature
+verifies against TDF's key `C2839ECAD9408FBE9531C3E9F434A1EFAFEEAEA3`.
+
+The `dejavu-*-fonts` and `liberation-*-fonts` packages supply every face the four
+themes name. A theme naming a font the container lacks renders through
 LibreOffice's substitution, which changes line breaking and therefore pagination, so
 the font list and `render/themes.py`'s `THEME_SPECS` are one decision in two files.
 
@@ -534,6 +543,35 @@ straight into `Bucket=` — `storage/s3.py` and the app's `lib/aws/s3.ts` alike 
 value like `my-bucket/my-prefix` fails every S3 call with `InvalidBucketName`. Keys are
 already namespaced `<actor_id>/snapshots/…` and `<actor_id>/reports/…`, so a prefix earns
 nothing the key layout does not already provide.
+
+### Platform version V2
+
+The runtime runs on AgentCore **platform version V2** (`platformVersion: "V2"`). V2
+starts the process once, snapshots it, and restores that snapshot for every new
+instance, so cold starts no longer grow with this image's size (LibreOffice makes it
+large) and idle memory is not billed. It changes three things:
+
+- **The image has to be snapshot-safe.** A restored instance resumes whatever random
+  state its libraries held at snapshot time. AWS requires a container agent's
+  cryptographic libraries to reseed after a restore, so the image is Amazon Linux 2023
+  with `openssl-snapsafe-libs`, which replaces the stock OpenSSL; Debian ships no such
+  build. Every TLS connection goes through Python's `ssl`, which links that library,
+  and the build fails if it does not. `cryptography` is imported by `azure.identity` and
+  carries its own OpenSSL, but the client-secret sign-in never draws randomness from it;
+  Node and LibreOffice start fresh per request, so they seed after the restore.
+- **Nothing computed at import may differ per instance.** Random values, ids, the
+  current time, a `time.monotonic()` reference (it does not advance across a restore),
+  the PID and hostname (PID 1 and `localhost` everywhere) — compute them in the handler.
+  `tests/test_snapshot_safe_startup.py` fails on any such call made at import.
+- **Updates are slower and stricter.** An update runs for several minutes while the new
+  snapshot is prepared; the container must answer `/ping` healthy within 120 seconds of
+  starting; the environment variables may total at most 2.5 KB.
+
+`platformVersion` is one more field the full-replace update has to carry, and the SDK
+must model it: botocore **1.43.98** or later does, the agent `.venv`'s 1.43.71 and AWS
+CLI 2.31.35 do not. An update that omits it keeps the current platform version, but
+replay it anyway, as with every other field. To fall back, update to the previous image
+with `platformVersion: "V1"`. CloudFormation and the CDK cannot set it yet.
 
 ### A private certificate authority in front of the app
 
