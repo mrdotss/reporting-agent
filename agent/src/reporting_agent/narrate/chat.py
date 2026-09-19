@@ -242,7 +242,11 @@ class BedrockChatModel:
         self._guardrail = {
             "guardrailIdentifier": guardrail_id,
             "guardrailVersion": guardrail_version,
-            "streamProcessingMode": "sync",
+            # `async`: the guardrail's only policy is the prompt-attack filter on the INPUT,
+            # which runs before the model does in either mode. `sync` held every output chunk
+            # back to check it against output policies there are none of, so the thinking and
+            # the answer arrived in one burst at the end instead of as they were written.
+            "streamProcessingMode": "async",
             "trace": "enabled",
         }
 
