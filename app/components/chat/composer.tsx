@@ -13,8 +13,8 @@ import {
 import type { AttachmentKind } from "@/components/chat/context-panel"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { CHAT_MODELS, DEFAULT_CHAT_MODEL, isChatModelId, type ChatModelId } from "@/lib/chat/models"
+import { ModelPicker } from "@/components/chat/models-picker"
+import { DEFAULT_CHAT_MODEL, isChatModelId, type ChatModelId } from "@/lib/chat/models"
 import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/chat/sources"
 import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
 
@@ -89,7 +89,7 @@ export function Composer({
         event.preventDefault()
         void submit()
       }}
-      className="mx-auto w-full max-w-3xl px-4 pt-2 pb-4"
+      className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4"
     >
       <div className="rounded-2xl border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
         {nothingAttached ? null : (
@@ -156,33 +156,17 @@ export function Composer({
           <span className="hidden text-xs text-muted-foreground sm:inline">
             <Kbd>Enter</Kbd> to send · <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line
           </span>
-          <Select value={model} onValueChange={(value) => isChatModelId(value) && chooseModel(value)}>
-            <SelectTrigger
-              size="sm"
-              aria-label="Model"
-              className="ml-auto h-8 border-transparent bg-transparent px-2 text-xs text-muted-foreground hover:bg-muted"
+          <div className="ml-auto flex items-center gap-1">
+            <ModelPicker value={model} onChange={chooseModel} disabled={busy} />
+            <Button
+              type="submit"
+              size="icon-sm"
+              disabled={busy || draft.trim().length === 0}
+              aria-label="Send question"
             >
-              <SelectValue>{(value) => CHAT_MODELS.find((entry) => entry.id === value)?.label ?? ""}</SelectValue>
-            </SelectTrigger>
-            <SelectContent align="end">
-              {CHAT_MODELS.map((entry) => (
-                <SelectItem key={entry.id} value={entry.id}>
-                  <span className="flex flex-col gap-0.5">
-                    <span>{entry.label}</span>
-                    <span className="text-xs font-normal text-muted-foreground">{entry.detail}</span>
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            type="submit"
-            size="icon-sm"
-            disabled={busy || draft.trim().length === 0}
-            aria-label="Send question"
-          >
-            <ArrowUpIcon aria-hidden="true" />
-          </Button>
+              <ArrowUpIcon aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       </div>
       {notice ? (

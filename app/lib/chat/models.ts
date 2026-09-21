@@ -7,8 +7,18 @@
  */
 
 export const CHAT_MODELS = [
-  { id: "kimi-k3", label: "Kimi K3", detail: "Thinks it through first. Most careful." },
-  { id: "kimi-k2.5", label: "Kimi K2.5", detail: "Answers straight away. Fastest." },
+  {
+    id: "kimi-k3",
+    label: "Kimi K3",
+    short: "K3",
+    detail: "Thinks it through first. Most careful.",
+  },
+  {
+    id: "kimi-k2.5",
+    label: "Kimi K2.5",
+    short: "K2.5",
+    detail: "Answers straight away. Fastest.",
+  },
 ] as const
 
 export type ChatModelId = (typeof CHAT_MODELS)[number]["id"]

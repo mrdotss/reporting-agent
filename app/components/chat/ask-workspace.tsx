@@ -137,6 +137,24 @@ export function AskWorkspace({
     showInUrl(body.thread.id)
   }
 
+  /** Delete a conversation the signed-in person started. `true` when it is gone. */
+  async function removeThread(id: string): Promise<boolean> {
+    setError("")
+    const response = await fetch(`/api/chat/threads/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    })
+    if (!response.ok) {
+      const body = (await response.json().catch(() => null)) as
+        | { error?: { message?: string } }
+        | null
+      setError(body?.error?.message ?? "That conversation couldn’t be deleted.")
+      return false
+    }
+    setThreads((previous) => previous.filter((candidate) => candidate.id !== id))
+    if (thread?.id === id) startNew()
+    return true
+  }
+
   function startNew() {
     setThread(null)
     setMessages([])
@@ -263,7 +281,9 @@ export function AskWorkspace({
       threads={threads}
       activeId={thread?.id ?? null}
       onSelect={(id) => void openThread(id)}
+      currentUserId={currentUserId}
       onNew={canChat ? startNew : undefined}
+      onDelete={canChat ? removeThread : undefined}
       unavailable={historyUnavailable}
     />
   )
@@ -334,7 +354,7 @@ export function AskWorkspace({
         />
 
         {error ? (
-          <p role="alert" className="mx-auto w-full max-w-3xl px-5 text-xs text-destructive">
+          <p role="alert" className="mx-auto w-full max-w-4xl px-5 text-xs text-destructive">
             {error}
           </p>
         ) : null}

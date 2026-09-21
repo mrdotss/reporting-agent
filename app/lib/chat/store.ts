@@ -4,6 +4,7 @@ import { randomBytes } from "node:crypto"
 import {
   GetCommand,
   PutCommand,
+  BatchWriteCommand,
   QueryCommand,
   TransactWriteCommand,
   UpdateCommand,
@@ -60,6 +61,8 @@ export class ChatProposalClosedError extends Error {
 export const DEFAULT_THREAD_TITLE = "New conversation"
 export const THREAD_LIST_LIMIT = 50
 const MESSAGE_READ_LIMIT = 400
+const BATCH_WRITE_LIMIT = 25
+const BATCH_WRITE_ATTEMPTS = 4
 
 const THREAD_PREFIX = "THREAD#"
 const META_SK = "META"
@@ -354,6 +357,69 @@ export async function updateThread(
     title: change.title?.slice(0, CHAT_TITLE_MAX) ?? thread.title,
     attachments: change.attachments ?? thread.attachments,
     updatedAt: at,
+  }
+}
+
+export class ChatThreadNotYoursError extends Error {
+  constructor() {
+    super("only the person who started a conversation can delete it")
+    this.name = "ChatThreadNotYoursError"
+  }
+}
+
+/**
+ * Delete a conversation and every message in it.
+ *
+ * **Only its author may.** A conversation is shared with everyone who can use Ask in the
+ * workspace, so deleting is not a personal tidy-up: it removes the thread for all of them.
+ * The author is the one person who cannot be surprised by that.
+ *
+ * The messages go first and the thread's own item last, so an interrupted delete leaves a
+ * thread with fewer messages rather than orphaned messages with no thread to authorize
+ * reading them.
+ */
+export async function deleteThread(userId: string, threadId: string): Promise<void> {
+  const thread = await readThread(userId, threadId)
+  await requireAskLevel(userId, thread.workspaceId, "chat")
+  if (thread.createdBy !== userId) throw new ChatThreadNotYoursError()
+
+  const table = chatHistoryTable()
+  let cursor: Record<string, unknown> | undefined
+  do {
+    const result = await getDynamoClient().send(
+      new QueryCommand({
+        TableName: table,
+        KeyConditionExpression: "PK = :thread AND begins_with(SK, :message)",
+        ExpressionAttributeValues: {
+          ":thread": THREAD_PREFIX + threadId,
+          ":message": MESSAGE_PREFIX,
+        },
+        ProjectionExpression: "PK, SK",
+        ExclusiveStartKey: cursor,
+      })
+    )
+    const keys = (result.Items ?? []).map((item) => ({ PK: item.PK, SK: item.SK }))
+    for (let from = 0; from < keys.length; from += BATCH_WRITE_LIMIT) {
+      await deleteKeys(table, keys.slice(from, from + BATCH_WRITE_LIMIT))
+    }
+    cursor = result.LastEvaluatedKey
+  } while (cursor !== undefined)
+
+  await deleteKeys(table, [{ PK: THREAD_PREFIX + threadId, SK: META_SK }])
+}
+
+/** One batch, retrying whatever DynamoDB hands back unprocessed. */
+async function deleteKeys(table: string, keys: readonly Record<string, unknown>[]): Promise<void> {
+  let pending = keys.map((Key) => ({ DeleteRequest: { Key } }))
+  for (let attempt = 0; attempt < BATCH_WRITE_ATTEMPTS && pending.length > 0; attempt += 1) {
+    const result = await getDynamoClient().send(
+      new BatchWriteCommand({ RequestItems: { [table]: pending } })
+    )
+    const unprocessed = result.UnprocessedItems?.[table] ?? []
+    pending = unprocessed as typeof pending
+  }
+  if (pending.length > 0) {
+    throw new Error(`the table left ${pending.length} item(s) of the conversation undeleted`)
   }
 }
 

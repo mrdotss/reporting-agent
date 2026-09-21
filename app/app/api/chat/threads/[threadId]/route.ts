@@ -13,6 +13,8 @@ import { updateThreadSchema } from "@/lib/chat/input"
 import { listChatSources } from "@/lib/chat/sources"
 import {
   ChatThreadNotFoundError,
+  ChatThreadNotYoursError,
+  deleteThread,
   listMessages,
   readThread,
   updateThread,
@@ -22,6 +24,7 @@ import { WorkspaceAccessError } from "@/lib/workspaces/access"
 /**
  * `GET /api/chat/threads/[threadId]` — a conversation and its messages.
  * `PATCH /api/chat/threads/[threadId]` — rename it, or change what it is grounded in.
+ * `DELETE /api/chat/threads/[threadId]` — delete it and its messages, author only.
  *
  * A thread outside the user's workspaces is a 404, the same as one that does not exist.
  * Reading needs the read level and changing needs chat (roles-and-ask-access Req 6), and a
@@ -80,6 +83,34 @@ export async function PATCH(request: Request, context: ThreadRouteContext): Prom
       return notFound()
     }
     console.error(`[api/chat/threads/:id] PATCH failed: ${describe(thrown)}`)
+    return internalError()
+  }
+}
+
+export async function DELETE(
+  _request: Request,
+  context: ThreadRouteContext
+): Promise<Response> {
+  const user = await requireSessionForApi()
+  if (user === null) return unauthorized()
+  const { threadId } = await context.params
+
+  try {
+    await deleteThread(user.id, threadId)
+    return json(200, { deleted: threadId })
+  } catch (thrown) {
+    if (thrown instanceof ChatThreadNotFoundError || thrown instanceof WorkspaceAccessError) {
+      return notFound()
+    }
+    if (thrown instanceof ChatThreadNotYoursError) {
+      return json(403, {
+        error: {
+          message: "Only the person who started a conversation can delete it.",
+          code: "NOT_THREAD_AUTHOR",
+        },
+      })
+    }
+    console.error(`[api/chat/threads/:id] DELETE failed: ${describe(thrown)}`)
     return internalError()
   }
 }

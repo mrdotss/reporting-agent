@@ -1,9 +1,17 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { MagnifyingGlassIcon, NotePencilIcon } from "@phosphor-icons/react"
+import { MagnifyingGlassIcon, NotePencilIcon, TrashIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import type { ChatThreadView } from "@/lib/chat/views"
 import { cn } from "@/lib/utils"
 
@@ -39,18 +47,25 @@ function shortTime(iso: string, now: Date): string {
 export function ThreadList({
   threads,
   activeId,
+  currentUserId,
   onSelect,
   onNew,
+  onDelete,
   unavailable,
 }: Readonly<{
   threads: readonly ChatThreadView[]
   activeId: string | null
+  currentUserId: string
   onSelect: (id: string) => void
   /** Absent for a member who can only read Ask here (roles-and-ask-access Req 6). */
   onNew?: () => void
+  /** Absent for a reader. Only a conversation's author is offered it at all. */
+  onDelete?: (id: string) => Promise<boolean>
   unavailable: boolean
 }>) {
   const [query, setQuery] = useState("")
+  const [doomed, setDoomed] = useState<ChatThreadView | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const now = useMemo(() => new Date(), [])
 
   const groups = useMemo(() => {
@@ -106,35 +121,85 @@ export function ThreadList({
               </span>
               {items.map((thread) => {
                 const active = thread.id === activeId
+                const mine = onDelete !== undefined && thread.createdBy === currentUserId
                 return (
-                  <button
+                  <div
                     key={thread.id}
-                    type="button"
-                    onClick={() => onSelect(thread.id)}
-                    aria-current={active ? "true" : undefined}
                     className={cn(
-                      "flex w-full flex-col gap-0.5 rounded-lg px-2 py-2 text-left outline-none transition-colors focus-visible:ring-3 focus-visible:ring-ring/30",
+                      "group/thread relative flex items-center rounded-lg transition-colors",
                       active
                         ? "bg-primary/[0.07] shadow-[inset_2px_0_0_var(--primary)]"
                         : "hover:bg-muted"
                     )}
                   >
-                    <span className="truncate text-sm font-medium">{thread.title}</span>
-                    <span className="flex gap-1.5 truncate text-xs text-muted-foreground">
-                      <span>
-                        {thread.attachments.runIds.length + thread.attachments.connectorIds.length}{" "}
-                        attached
+                    <button
+                      type="button"
+                      onClick={() => onSelect(thread.id)}
+                      aria-current={active ? "true" : undefined}
+                      className={cn(
+                        "flex min-w-0 flex-1 flex-col gap-0.5 rounded-lg px-2 py-2 text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+                        mine && "pr-8"
+                      )}
+                    >
+                      <span className="truncate text-sm font-medium">{thread.title}</span>
+                      <span className="flex gap-1.5 truncate text-xs text-muted-foreground">
+                        <span>
+                          {thread.attachments.runIds.length +
+                            thread.attachments.connectorIds.length}{" "}
+                          attached
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span>{shortTime(thread.updatedAt, now)}</span>
                       </span>
-                      <span aria-hidden="true">·</span>
-                      <span>{shortTime(thread.updatedAt, now)}</span>
-                    </span>
-                  </button>
+                    </button>
+                    {mine ? (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`Delete ${thread.title}`}
+                        onClick={() => setDoomed(thread)}
+                        className="absolute right-1 text-muted-foreground opacity-0 transition-opacity group-hover/thread:opacity-100 focus-visible:opacity-100 hover:text-destructive"
+                      >
+                        <TrashIcon aria-hidden="true" />
+                      </Button>
+                    ) : null}
+                  </div>
                 )
               })}
             </div>
           ))
         )}
       </nav>
+
+      <Dialog open={doomed !== null} onOpenChange={(open) => !open && setDoomed(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Delete this conversation?</DialogTitle>
+            <DialogDescription>
+              “{doomed?.title}” and its answers go for everyone who can use Ask in this
+              workspace. This can&rsquo;t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDoomed(null)} disabled={deleting}>
+              Keep it
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleting}
+              onClick={async () => {
+                if (doomed === null || onDelete === undefined) return
+                setDeleting(true)
+                const gone = await onDelete(doomed.id)
+                setDeleting(false)
+                if (gone) setDoomed(null)
+              }}
+            >
+              {deleting ? "Deleting…" : "Delete"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
