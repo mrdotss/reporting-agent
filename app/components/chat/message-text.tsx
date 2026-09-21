@@ -1,10 +1,11 @@
 "use client"
 
-import { Fragment } from "react"
+import { Fragment, useMemo } from "react"
 import { LightbulbIcon } from "@phosphor-icons/react"
 
 import { AnswerChart, AnswerChartPending } from "@/components/chat/answer-chart"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { parseInline, parseMarkdown, type MarkdownAlign } from "@/lib/chat/markdown"
 import {
   parseAnswer,
   type AnswerSegment,
@@ -29,9 +30,11 @@ import { cn } from "@/lib/utils"
  * - A **chart** marker (`⟦chart:c1⟧`, always its own paragraph) renders the chart the
  *   runtime built; while the answer is still streaming its data has not arrived, so a
  *   placeholder holds its place.
+ *
+ * The answer's Markdown — headings, tables, lists, emphasis, code — is parsed into blocks
+ * first (`lib/chat/markdown.ts`), because models write it and it used to reach the page as
+ * literal pipes and asterisks. Figures keep working inside a table cell or a bold run.
  */
-
-const CHART_BLOCK = /^⟦chart:(c\d{1,2})⟧$/
 
 export function MessageText({
   text,
@@ -44,33 +47,164 @@ export function MessageText({
   charts?: readonly ChatChart[]
   streaming?: boolean
 }>) {
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph.length > 0)
+  const blocks = useMemo(() => parseMarkdown(text), [text])
 
   return (
-    <div data-slot="message-text" className="flex flex-col gap-2.5 text-[0.9375rem] leading-relaxed">
-      {paragraphs.map((paragraph, index) => {
-        const chartId = CHART_BLOCK.exec(paragraph)?.[1]
-        if (chartId !== undefined) {
-          const chart = charts.find((candidate) => candidate.id === chartId)
-          if (chart !== undefined) return <AnswerChart key={index} chart={chart} />
-          return streaming ? <AnswerChartPending key={index} /> : null
+    <div data-slot="message-text" className="flex flex-col gap-3 text-[0.9375rem] leading-relaxed">
+      {blocks.map((block, index) => {
+        const caret =
+          streaming && index === blocks.length - 1 ? <Caret key="caret" /> : null
+
+        switch (block.kind) {
+          case "chart": {
+            const chart = charts.find((candidate) => candidate.id === block.id)
+            if (chart !== undefined) return <AnswerChart key={index} chart={chart} />
+            return streaming ? <AnswerChartPending key={index} /> : null
+          }
+          case "heading": {
+            const size =
+              block.level <= 2 ? "text-base" : block.level === 3 ? "text-[0.9375rem]" : "text-sm"
+            return (
+              <p key={index} className={cn("font-semibold text-foreground", size)}>
+                <Inline text={block.text} citations={citations} />
+                {caret}
+              </p>
+            )
+          }
+          case "list":
+            return (
+              <ol
+                key={index}
+                className={cn(
+                  "flex list-outside flex-col gap-1 pl-5",
+                  block.ordered ? "list-decimal" : "list-disc"
+                )}
+              >
+                {block.items.map((item, position) => (
+                  <li key={position} className="marker:text-muted-foreground">
+                    <Inline text={item} citations={citations} />
+                    {position === block.items.length - 1 ? caret : null}
+                  </li>
+                ))}
+              </ol>
+            )
+          case "table":
+            return (
+              <div key={index} className="-mx-1 overflow-x-auto px-1">
+                <table className="w-full min-w-fit border-collapse text-meta">
+                  <thead>
+                    <tr className="border-b border-border">
+                      {block.header.map((cell, column) => (
+                        <th
+                          key={column}
+                          scope="col"
+                          className={cn(
+                            "px-2.5 py-1.5 font-medium whitespace-nowrap text-muted-foreground",
+                            alignmentClass(block.align[column])
+                          )}
+                        >
+                          <Inline text={cell} citations={citations} />
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, position) => (
+                      <tr key={position} className="border-b border-border/60 last:border-0">
+                        {row.map((cell, column) => (
+                          <td
+                            key={column}
+                            className={cn(
+                              "px-2.5 py-1.5 align-top tabular-nums",
+                              alignmentClass(block.align[column])
+                            )}
+                          >
+                            <Inline text={cell} citations={citations} />
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          case "quote":
+            return (
+              <p
+                key={index}
+                className="border-l-2 border-border pl-3 whitespace-pre-wrap text-muted-foreground"
+              >
+                <Inline text={block.text} citations={citations} />
+                {caret}
+              </p>
+            )
+          case "code":
+            return (
+              <pre
+                key={index}
+                className="overflow-x-auto rounded-lg bg-muted px-3 py-2 font-mono text-meta"
+              >
+                {block.text}
+              </pre>
+            )
+          case "rule":
+            return <hr key={index} className="border-border" />
+          default:
+            return (
+              <p key={index} className="max-w-[78ch] whitespace-pre-wrap">
+                <Inline text={block.text} citations={citations} />
+                {caret}
+              </p>
+            )
         }
-        return (
-          <p key={index} className="max-w-[68ch] whitespace-pre-wrap">
-            <Segments segments={parseAnswer(paragraph)} citations={citations} />
-            {streaming && index === paragraphs.length - 1 ? (
-              <span
-                aria-hidden="true"
-                className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-[1px] bg-primary motion-reduce:animate-none"
-              />
-            ) : null}
-          </p>
-        )
       })}
     </div>
+  )
+}
+
+function alignmentClass(align: MarkdownAlign | undefined): string {
+  return align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"
+}
+
+function Caret() {
+  return (
+    <span
+      aria-hidden="true"
+      className="ml-0.5 inline-block h-4 w-1.5 translate-y-0.5 animate-pulse rounded-[1px] bg-primary motion-reduce:animate-none"
+    />
+  )
+}
+
+/** One run of an answer: its figure chips and estimates, with Markdown emphasis inside. */
+function Inline({
+  text,
+  citations,
+}: Readonly<{ text: string; citations: Readonly<Record<string, ChatCitation>> }>) {
+  return <Segments segments={parseAnswer(text)} citations={citations} />
+}
+
+function Emphasis({ text }: Readonly<{ text: string }>) {
+  return (
+    <>
+      {parseInline(text).map((span, index) => {
+        if (span.kind === "strong") {
+          return (
+            <strong key={index} className="font-semibold">
+              {span.text}
+            </strong>
+          )
+        }
+        if (span.kind === "emphasis") return <em key={index}>{span.text}</em>
+        if (span.kind === "code") {
+          return (
+            <code key={index} className="rounded bg-muted px-1 py-0.5 font-mono text-[0.85em]">
+              {span.text}
+            </code>
+          )
+        }
+        return <Fragment key={index}>{span.text}</Fragment>
+      })}
+    </>
   )
 }
 
@@ -84,7 +218,7 @@ function Segments({
   return (
     <>
       {segments.map((segment, index) => {
-        if (segment.kind === "text") return <Fragment key={index}>{segment.text}</Fragment>
+        if (segment.kind === "text") return <Emphasis key={index} text={segment.text} />
         if (segment.kind === "figure") {
           return (
             <FigureChip key={index} text={segment.text} citation={citations[segment.factId]} />

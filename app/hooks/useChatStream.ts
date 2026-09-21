@@ -15,7 +15,18 @@ import type {
  * `EventSource` only speaks GET, and a question is a POST, so this reads the response body
  * with a stream reader and splits SSE frames itself. The route stores the answer whether
  * or not this hook is still listening, so unmounting aborts the read and loses nothing.
+ *
+ * **The answer is revealed evenly, not as it lands.** The runtime forwards whatever the
+ * model's stream hands it, which arrives in uneven bursts — several sentences at once, then
+ * a pause — and that reads as stuttering. Received text is buffered and released a few
+ * characters per frame, fast enough to keep up with the model and never ahead of it. When
+ * the turn ends the rest is released at once, so nothing is ever left unshown.
  */
+
+/** Characters per frame, chosen from how far behind the reveal is. */
+function revealStep(backlog: number): number {
+  return Math.max(1, Math.ceil(backlog / 12))
+}
 
 export type LiveTurn = {
   readonly question: string
@@ -61,17 +72,66 @@ export function useChatStream(options: {
   const [live, setLive] = useState<LiveTurn | null>(null)
   const abort = useRef<AbortController | null>(null)
   const onUserMessage = useRef(options.onUserMessage)
+  const received = useRef("")
+  const shown = useRef(0)
+  const frame = useRef<number | null>(null)
+
+  const stopReveal = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    frame.current = null
+  }, [])
+
+  /** Release a few more characters, and keep going while any are held back. */
+  const reveal = useCallback(() => {
+    frame.current = null
+    const backlog = received.current.length - shown.current
+    if (backlog <= 0) return
+    shown.current += revealStep(backlog)
+    const text = received.current.slice(0, shown.current)
+    setLive((turn) =>
+      turn === null
+        ? turn
+        : {
+            ...turn,
+            text,
+            thoughtSeconds:
+              turn.thoughtSeconds ??
+              (turn.thinkingSince === undefined
+                ? undefined
+                : Math.round((Date.now() - turn.thinkingSince) / 1000)),
+          }
+    )
+    if (shown.current < received.current.length) frame.current = requestAnimationFrame(reveal)
+  }, [])
+
+  /** Show everything received so far, immediately. */
+  const revealAll = useCallback(() => {
+    stopReveal()
+    if (shown.current >= received.current.length) return
+    shown.current = received.current.length
+    const text = received.current
+    setLive((turn) => (turn === null ? turn : { ...turn, text }))
+  }, [stopReveal])
 
   useEffect(() => {
     onUserMessage.current = options.onUserMessage
   }, [options.onUserMessage])
 
-  useEffect(() => () => abort.current?.abort(), [])
+  useEffect(
+    () => () => {
+      abort.current?.abort()
+      stopReveal()
+    },
+    [stopReveal]
+  )
 
   const send = useCallback(async (threadId: string, question: string, model?: string): Promise<SendResult> => {
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
+    received.current = ""
+    shown.current = 0
+    stopReveal()
     setLive({ question, steps: [], text: "", intent: "", thinking: "" })
 
     try {
@@ -125,19 +185,8 @@ export function useChatStream(options: {
               )
               break
             case "delta":
-              setLive((turn) =>
-                turn === null
-                  ? turn
-                  : {
-                      ...turn,
-                      text: turn.text + event.text,
-                      thoughtSeconds:
-                        turn.thoughtSeconds ??
-                        (turn.thinkingSince === undefined
-                          ? undefined
-                          : Math.round((Date.now() - turn.thinkingSince) / 1000)),
-                    }
-              )
+              received.current += event.text
+              if (frame.current === null) frame.current = requestAnimationFrame(reveal)
               break
             case "intent":
               setLive((turn) => (turn === null || turn.text ? turn : { ...turn, intent: event.text }))
@@ -154,6 +203,7 @@ export function useChatStream(options: {
               )
               break
             case "message":
+              revealAll()
               result = { ok: true, message: event.message, thread: event.thread }
               break
             case "error":
@@ -170,9 +220,10 @@ export function useChatStream(options: {
       return { ok: false, error: "The question could not be sent. Check your connection." }
     } finally {
       if (abort.current === controller) abort.current = null
+      stopReveal()
       setLive(null)
     }
-  }, [])
+  }, [reveal, revealAll, stopReveal])
 
   return { live, send }
 }
