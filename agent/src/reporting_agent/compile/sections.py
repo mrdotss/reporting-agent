@@ -41,9 +41,11 @@ from reporting_agent.compile.snapshot_view import SnapshotView
 from reporting_agent.errors import CompileFailedError
 
 __all__ = [
+    "AUTHOR_ROWS_PAYLOAD_KEY",
     "GROUP_ORDER",
     "AuthoredMatch",
     "SectionDrift",
+    "apply_author_rows",
     "compute_section_drift",
     "expand_sections",
     "historical_trend_keys",
@@ -364,6 +366,13 @@ def _expand_one_section(
             if expansion.block == "heading":
                 _resolve_heading_text(expansion, entry, config, messages)
             _thread_metric_config(expansion, entry, section, config)
+            # An author-filled section's typed rows — the incidents a consultant entered on
+            # the run form, placed on the section by `apply_author_rows` — print ahead of
+            # its table's blank rows.
+            if entry.author_filled and expansion.block == BLANK_ROWS_BLOCK:
+                supplied = section.get(SUPPLIED_ROWS_KEY)
+                if supplied:
+                    config[SUPPLIED_ROWS_KEY] = supplied
             configs = _historical_configs(expansion, entry, section) if expansion.block == "historical_trend" else [config]
             for metric_index, metric_config in enumerate(configs):
                 suffix = "" if metric_index == 0 else f"__metric_{metric_index}"
@@ -614,6 +623,93 @@ def historical_trend_keys(
                 if isinstance(metric, str) and isinstance(statistic, str) and isinstance(lookback, int) and not isinstance(lookback, bool):
                     keys.add((metric, statistic, lookback))
     return keys
+
+
+AUTHOR_ROWS_PAYLOAD_KEY: Final[str] = "author_rows"
+"""The payload key the app sends typed rows under, by section type — `lib/runs/invoke.ts`."""
+
+SUPPLIED_ROWS_KEY: Final[str] = "supplied_rows"
+BLANK_ROWS_BLOCK: Final[str] = "blank_rows_table"
+MAX_AUTHOR_ROWS: Final[int] = 50
+MAX_AUTHOR_CELL_CHARS: Final[int] = 2000
+
+
+def apply_author_rows(
+    definition: Mapping[str, object],
+    author_rows: object,
+    *,
+    catalogue: LoadedSectionCatalogue,
+) -> Mapping[str, object]:
+    """The definition this run compiles and verifies, with its typed rows placed.
+
+    `author_rows` maps an **author-filled** section type — today `incident_report` — to the
+    rows a consultant typed on the run form for that run, one string per column of the
+    section's table. Each goes onto every section of that type as `supplied_rows`, which
+    :func:`expand_sections` hands to the table; they print ahead of its blank rows.
+
+    Returned as a new definition rather than applied to the pinned one in place, and used
+    for **both** the compile and the verification: the verifier renders the definition to
+    learn what text is the template's own, so rows the compile printed and the verifier
+    never saw would read as unproven numbers in a correct report — a date typed into an
+    incident, for one.
+
+    Anything malformed is refused rather than trimmed: the app validates these before they
+    are stored, so a bad shape here is a contract break, not a typing mistake.
+    """
+    if author_rows is None:
+        return definition
+    if not isinstance(author_rows, Mapping):
+        raise CompileFailedError(f"{AUTHOR_ROWS_PAYLOAD_KEY} must be an object")
+    sections = definition.get("sections")
+    if not author_rows or not isinstance(sections, list):
+        return definition
+
+    placed: dict[str, list[list[str]]] = {}
+    for section_type, rows in author_rows.items():
+        entry = catalogue.by_key(section_type) if isinstance(section_type, str) else None
+        if entry is None or not entry.author_filled:
+            raise CompileFailedError(
+                f"{AUTHOR_ROWS_PAYLOAD_KEY} names {section_type!r}, which is not an "
+                f"author-filled section"
+            )
+        columns = next(
+            (
+                dict(expansion.config).get("columns")
+                for expansion in entry.expands_to
+                if expansion.block == BLANK_ROWS_BLOCK
+            ),
+            None,
+        )
+        width = len(columns) if isinstance(columns, (list, tuple)) else 0
+        if not isinstance(rows, list) or len(rows) > MAX_AUTHOR_ROWS:
+            raise CompileFailedError(
+                f"{AUTHOR_ROWS_PAYLOAD_KEY}.{section_type} must be a list of at most "
+                f"{MAX_AUTHOR_ROWS} rows"
+            )
+        for row in rows:
+            if (
+                not isinstance(row, list)
+                or len(row) != width
+                or not all(
+                    isinstance(cell, str) and len(cell) <= MAX_AUTHOR_CELL_CHARS for cell in row
+                )
+            ):
+                raise CompileFailedError(
+                    f"every row in {AUTHOR_ROWS_PAYLOAD_KEY}.{section_type} must be "
+                    f"{width} strings of at most {MAX_AUTHOR_CELL_CHARS} characters, one "
+                    f"per column of its table"
+                )
+        placed[section_type] = [list(row) for row in rows]
+
+    return {
+        **definition,
+        "sections": [
+            {**section, SUPPLIED_ROWS_KEY: placed[section["type"]]}
+            if isinstance(section, Mapping) and section.get("type") in placed and placed[section["type"]]
+            else section
+            for section in sections
+        ],
+    }
 
 
 def expand_sections(

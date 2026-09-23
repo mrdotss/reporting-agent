@@ -110,6 +110,7 @@ function claimed(id: string): ClaimedRun {
     customerName: null,
     revisionHistoryRow: null,
     reuseSnapshotRunId: null,
+    incidentRows: null,
   }
 }
 

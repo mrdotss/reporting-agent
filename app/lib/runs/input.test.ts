@@ -1,9 +1,12 @@
 import { describe, expect, test } from "vitest"
 
 import {
+  buildRunCreateBody,
+  incidentCells,
   isSupportedTimeZone,
   localDateIn,
   localDaySpan,
+  MAX_INCIDENTS,
   runCreateInputSchema,
   runIdParamSchema,
 } from "@/lib/runs/input"
@@ -160,5 +163,66 @@ describe("Requirement 7.7 — runIdParamSchema", () => {
     expect(runIdParamSchema.safeParse({ runId: "run_01HQZZ" }).success).toBe(
       true
     )
+  })
+})
+
+describe("incidents this period", () => {
+  const BODY = { connectedSubscriptionId: "sub-row-1", templateId: "tpl-row-1" }
+  const INCIDENT = {
+    case: "Disk full",
+    date: "12 Aug 2026",
+    description: "/var filled",
+    solution: "Cleared logs",
+  }
+
+  test("are optional, and accepted with any field blank but not all of them", () => {
+    expect(runCreateInputSchema.parse(BODY).incidents).toBeUndefined()
+    expect(
+      runCreateInputSchema.parse({ ...BODY, incidents: [{ ...INCIDENT, solution: "" }] }).incidents
+    ).toHaveLength(1)
+    expect(
+      runCreateInputSchema.safeParse({
+        ...BODY,
+        incidents: [{ case: " ", date: "", description: "", solution: "" }],
+      }).success
+    ).toBe(false)
+  })
+
+  test("are bounded in number, and closed in shape", () => {
+    const many = Array.from({ length: MAX_INCIDENTS + 1 }, () => INCIDENT)
+    expect(runCreateInputSchema.safeParse({ ...BODY, incidents: many }).success).toBe(false)
+    expect(
+      runCreateInputSchema.safeParse({ ...BODY, incidents: [{ ...INCIDENT, severity: "high" }] })
+        .success
+    ).toBe(false)
+  })
+
+  test("the body drops untouched entries and trims the rest", () => {
+    const body = buildRunCreateBody({
+      connectedSubscriptionId: "sub",
+      templateId: "tpl",
+      timezone: "Asia/Jakarta",
+      frontMatter: null,
+      incidents: [
+        { case: "  Disk full ", date: "12 Aug", description: "", solution: "" },
+        { case: "", date: "  ", description: "", solution: "" },
+      ],
+    })
+    expect(body["incidents"]).toEqual([
+      { case: "Disk full", date: "12 Aug", description: "", solution: "" },
+    ])
+    expect(
+      "incidents" in
+        buildRunCreateBody({
+          connectedSubscriptionId: "sub",
+          templateId: "tpl",
+          timezone: "Asia/Jakarta",
+          frontMatter: null,
+        })
+    ).toBe(false)
+  })
+
+  test("reach the runtime in the table's column order: Case, Date, Solution, Description", () => {
+    expect(incidentCells(INCIDENT)).toEqual(["Disk full", "12 Aug 2026", "Cleared logs", "/var filled"])
   })
 })

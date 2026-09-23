@@ -115,6 +115,7 @@ from reporting_agent.compile.historical import (
     Selection,
 )
 from reporting_agent.compile.messages import Messages
+from reporting_agent.compile.sections import AUTHOR_ROWS_PAYLOAD_KEY, apply_author_rows
 from reporting_agent.errors import (
     AgentError,
     CompileFailedError,
@@ -243,6 +244,13 @@ async def run_generate_report(
         if definition.get("schema_version") == 3
         else None
     )
+
+    # The incidents typed on the run form, placed on the definition this run compiles
+    # **and** verifies — see `compile/sections.apply_author_rows` for why both.
+    if section_catalogue is not None:
+        definition = apply_author_rows(
+            definition, payload.get(AUTHOR_ROWS_PAYLOAD_KEY), catalogue=section_catalogue
+        )
 
     # How many calendar months of history this run measures for itself.
     #
@@ -2094,6 +2102,11 @@ async def run_verify_report(
         if definition.get("schema_version") == 3
         else None
     )
+    # The same rows the report was produced with, sent again with the command.
+    if verify_catalogue is not None:
+        definition = apply_author_rows(
+            definition, payload.get(AUTHOR_ROWS_PAYLOAD_KEY), catalogue=verify_catalogue
+        )
     recompiled = compile_document(
         definition, view=view, prose=_StoredProse(prose), catalog_scales=None,
         historical=hist_source,

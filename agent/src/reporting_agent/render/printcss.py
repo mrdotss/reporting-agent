@@ -563,6 +563,18 @@ hr.rpt-break {{ border: 0; margin: 0; break-after: page; }}
    where it would on any other page. The emitter wraps the cover only when it has an
    image, so a cover without one lays out as it always did. */
 @page cover {{ margin: 0; }}
+
+/* An incident row's blank cell: a form field, drawn as the ruled line the cell always had
+   rather than as a browser text box. */
+input.rpt-fill {{
+  width: 100%;
+  border: 0;
+  border-bottom: 0.5pt dotted var(--rule);
+  background: transparent;
+  font: inherit;
+  color: var(--ink);
+  padding: 0;
+}}
 .rpt-cover {{ page: cover; padding: {PAGE_MARGIN}; }}
 """
     css += f"\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td {{ padding: {padding}pt 5pt; }}"

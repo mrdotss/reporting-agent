@@ -273,6 +273,13 @@ export type ClaimedRun = {
     readonly note: string
     readonly author: string
   } | null
+  /** Incidents this period, as typed on the run form; `null` for none. */
+  readonly incidentRows: readonly {
+    readonly case: string
+    readonly date: string
+    readonly description: string
+    readonly solution: string
+  }[] | null
 }
 
 /**
@@ -326,6 +333,12 @@ export async function claimQueuedRuns(
       author: string
     } | null
     reuse_snapshot_run_id: string | null
+    incident_rows: {
+      case: string
+      date: string
+      description: string
+      solution: string
+    }[] | null
   }>(sql`
     UPDATE report_runs
        SET status = 'claimed',
@@ -341,7 +354,8 @@ export async function claimQueuedRuns(
         LIMIT ${CLAIM_LIMIT})
     RETURNING id, user_id, connected_subscription_id,
               period_start, period_end, timezone, scope, template_version_id,
-              customer_name, revision_history_row, reuse_snapshot_run_id
+              customer_name, revision_history_row, reuse_snapshot_run_id,
+              incident_rows
   `)
 
   return result.rows.map((row) => ({
@@ -356,6 +370,7 @@ export async function claimQueuedRuns(
     customerName: row.customer_name,
     revisionHistoryRow: row.revision_history_row,
     reuseSnapshotRunId: row.reuse_snapshot_run_id,
+    incidentRows: row.incident_rows ?? null,
   }))
 }
 

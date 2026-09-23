@@ -120,6 +120,7 @@ function row(over: Partial<ReportRun> = {}): ReportRun {
     customerName: null,
     revisionHistoryRow: null,
     reuseSnapshotRunId: null,
+    incidentRows: null,
     ...over,
   }
 }

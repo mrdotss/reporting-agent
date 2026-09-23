@@ -102,7 +102,7 @@ def _blank_row(cursor: BlockCursor, row_idx: int, column_count: int) -> Row:
         cells=(
             ordinal_cell,
             *(
-                EmptyCell(path=row_cursor.child("cells", col_idx + 1).path)
+                EmptyCell(path=row_cursor.child("cells", col_idx + 1).path, fill_in=True)
                 for col_idx in range(column_count)
             ),
         ),

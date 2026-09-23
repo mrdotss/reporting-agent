@@ -134,7 +134,9 @@ describe("the migration applies", () => {
     // migration is the only place that drop is actually executed, so this list is the
     // check that it runs cleanly rather than erroring on a dependent object.
     expect(result.rows.map(({ tablename }) => tablename)).toEqual([
+      "ask_access",
       "connected_subscriptions",
+      "live_metric_pulls",
       "login_attempts",
       "projects",
       "report_profile_authored_matches",

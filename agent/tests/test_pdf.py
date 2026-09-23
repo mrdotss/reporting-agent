@@ -225,6 +225,11 @@ def test_the_export_writes_every_bookmark_as_a_named_destination() -> None:
     )
 
 
+def test_the_export_writes_the_incident_rows_as_form_fields() -> None:
+    """The incident report's blank rows are content controls, exported as PDF fields."""
+    assert '"ExportFormFields":{"type":"boolean","value":"true"}' in P.PDF_EXPORT_FILTER
+
+
 def test_the_invocation_uses_the_pre_warmed_profile_as_is(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

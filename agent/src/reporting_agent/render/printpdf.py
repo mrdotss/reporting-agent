@@ -125,7 +125,9 @@ def print_pdf_bytes(document_html: str) -> bytes:
         ) from error
 
     try:
-        return weasyprint.HTML(string=document_html).write_pdf()
+        # `pdf_forms`: the incident report's blank rows are inputs (`render/html.py`), and
+        # this is what makes WeasyPrint write them as PDF form fields rather than drawings.
+        return weasyprint.HTML(string=document_html).write_pdf(pdf_forms=True)
     except Exception as error:
         raise RenderFailedError(
             f"the styled PDF could not be rendered: {type(error).__name__}: {error}"
@@ -160,6 +162,7 @@ def render_print_pdf(
         messages=messages,
         chart_vectors=chart_vectors,
         chart_tables=None,
+        form_fields=True,
     ).html
     front_matter = emit_front_matter_html(front_matter_sections)
     page = print_document_html(

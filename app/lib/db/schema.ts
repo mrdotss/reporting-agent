@@ -663,6 +663,16 @@ export const reportRuns = pgTable(
     }>(),
 
     /**
+     * Incidents this period, as typed on the run form — printed into the report's
+     * Incident Report table ahead of its blank rows. Null for none, which is most runs
+     * and every run written before this column existed. Per run rather than per preset:
+     * a month's incidents are that month's.
+     */
+    incidentRows: jsonb("incident_rows").$type<
+      { case: string; date: string; description: string; solution: string }[]
+    >(),
+
+    /**
      * A completed run of this user's whose snapshot this run reuses instead of
      * collecting. Null means collect — which is every run written before this column
      * existed, and every run whose author chose to measure again.

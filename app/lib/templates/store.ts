@@ -795,6 +795,8 @@ export async function readLatestVersionForView(
       schemaVersionText: sql<
         string | null
       >`${reportTemplateVersions.definition}->>'schema_version'`,
+      // A boolean, also computed in SQL, for the same reason.
+      hasIncidentReport: sql<boolean>`coalesce(jsonb_path_exists(${reportTemplateVersions.definition}, '$.sections[*] ? (@.type == "incident_report")'), false)`,
     })
     .from(reportTemplateVersions)
     .where(eq(reportTemplateVersions.templateId, templateId))
@@ -812,6 +814,7 @@ export async function readLatestVersionForView(
       row.schemaVersionText !== null && Number.isInteger(parsed)
         ? parsed
         : MIN_SCHEMA_VERSION,
+    hasIncidentReport: row.hasIncidentReport === true,
   }
 }
 

@@ -10,6 +10,7 @@ import { PlayIcon } from "@phosphor-icons/react"
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { IncidentsFieldset } from "@/components/reports/incidents-fieldset"
 import { Identifier } from "@/components/identifier"
 import {
   Select,
@@ -29,6 +30,7 @@ import {
   MAX_REVISION_AUTHOR_LENGTH,
   MAX_REVISION_LENGTH,
   MAX_REVISION_NOTE_LENGTH,
+  type Incident,
 } from "@/lib/runs/input"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 import { SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
@@ -201,6 +203,7 @@ export function RunForm({
    * schema_version 3 (task 4.4); nothing that identifies the customer is
    * asked at run time.
    */
+  const [incidents, setIncidents] = useState<Incident[]>([])
   const [revision, setRevision] = useState("")
   const [revisionNote, setRevisionNote] = useState("")
   const [revisionAuthor, setRevisionAuthor] = useState("")
@@ -329,6 +332,7 @@ export function RunForm({
                 : null,
               reuseSnapshotRunId:
                 reuse && reusable ? reusable.runId : null,
+              incidents: selectedTemplate?.hasIncidentReport ? incidents : [],
             })}
           ),
         })
@@ -358,10 +362,12 @@ export function RunForm({
     },
     [
       connectedSubscriptionId,
+      incidents,
       requiresFrontMatter,
       reusable,
       reuse,
       router,
+      selectedTemplate?.hasIncidentReport,
       submitting,
       templateId,
       timezone,
@@ -666,6 +672,11 @@ export function RunForm({
           )}
         </fieldset>
       )}
+
+      {/* Only for a preset whose report has an Incident Report table to print into. */}
+      {selectedTemplate?.hasIncidentReport ? (
+        <IncidentsFieldset incidents={incidents} onChange={setIncidents} />
+      ) : null}
 
       {/*
         The reuse offer, shown only when there is one to make.
