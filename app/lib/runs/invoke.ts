@@ -11,6 +11,7 @@ import { requireEnv } from "@/lib/env"
 import { deriveProgressToken } from "@/lib/runs/progress-token"
 import type { ClaimedRun } from "@/lib/runs/claim"
 import { failClaimedRun, readRunStatus } from "@/lib/runs/claim"
+import { incidentCells } from "@/lib/runs/input"
 import { readSnapshotSources } from "@/lib/runs/snapshot-sources"
 import { fetchHistoricalCandidates } from "@/lib/runs/historical"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
@@ -520,6 +521,12 @@ export async function startRunInvocation(
                 ...(run.reuseSnapshotRunId === null
                   ? {}
                   : { snapshot_run_id: run.reuseSnapshotRunId }),
+                // Incidents this period, one string per column of the incident report
+                // table, keyed by the author-filled section they print into. Omitted when
+                // there are none, and the table then prints its blank rows as before.
+                ...(run.incidentRows && run.incidentRows.length > 0
+                  ? { author_rows: { incident_report: run.incidentRows.map(incidentCells) } }
+                  : {}),
                 // Gated on the same condition as the two fields above, not sent
                 // unconditionally: a v1-pinned run has no front matter to receive a
                 // formatted period into, and sending it anyway would give a v1

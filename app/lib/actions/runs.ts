@@ -725,6 +725,9 @@ export async function enqueueRun(
         // the column's own note: two August reports carrying identical numbers should be
         // explainable from the row.
         reuseSnapshotRunId: input.reuseSnapshotRunId ?? null,
+        // Incidents this period, for the report's Incident Report table. Stored as typed;
+        // a template with no incident section ignores them at the runtime.
+        incidentRows: input.incidents && input.incidents.length > 0 ? input.incidents : null,
         // Requirement 37.3 — the hash, and no column carrying the token. The tick
         // recomputes the token from this run's id when it invokes.
         progressTokenHash: progressTokenHash(deriveProgressToken(runId)),

@@ -71,6 +71,47 @@ export const revisionHistoryRowSchema = z
 
 export type RevisionHistoryRow = z.output<typeof revisionHistoryRowSchema>
 
+// --- Incidents this period ----------------------------------------------------
+
+/** The most incidents one report's form accepts. A month with more is a different report. */
+export const MAX_INCIDENTS = 20
+export const MAX_INCIDENT_CASE_LENGTH = 200
+export const MAX_INCIDENT_DATE_LENGTH = 40
+export const MAX_INCIDENT_TEXT_LENGTH = 1000
+
+/**
+ * One incident, as typed on the run form, for the report's Incident Report table.
+ *
+ * Plain text in every field — the date included, because what a consultant writes
+ * ("12–13 Aug", "12 Aug 2026 09:40 WIB") is theirs to phrase. It prints verbatim, and it
+ * is presentation rather than a figure: the verifier derives the template's fixed text
+ * from the same rows, so a date typed here is not a number the report has to prove.
+ *
+ * At least one field must say something; an all-blank entry is the form's job to drop.
+ */
+export const incidentSchema = z
+  .object({
+    case: z.string().trim().max(MAX_INCIDENT_CASE_LENGTH),
+    date: z.string().trim().max(MAX_INCIDENT_DATE_LENGTH),
+    description: z.string().trim().max(MAX_INCIDENT_TEXT_LENGTH),
+    solution: z.string().trim().max(MAX_INCIDENT_TEXT_LENGTH),
+  })
+  .strict()
+  .refine((incident) => Object.values(incident).some((value) => value.length > 0), {
+    error: "An incident needs at least one field filled in.",
+  })
+
+export type Incident = z.output<typeof incidentSchema>
+
+/**
+ * The incident report table's columns, in the order the section catalogue declares them
+ * (`agent/…/catalog/sections.v1.json`, `incident_report`): Case, Date, Solution,
+ * Description. The runtime receives each incident as one string per column, in this order.
+ */
+export function incidentCells(incident: Incident): [string, string, string, string] {
+  return [incident.case, incident.date, incident.solution, incident.description]
+}
+
 // --- The period -------------------------------------------------------------
 
 /**
@@ -181,6 +222,16 @@ export const runCreateInputSchema = z
      * a collection problem.
      */
     reuseSnapshotRunId: z.string().uuid().optional(),
+
+    /**
+     * Incidents this period, printed into the report's Incident Report table ahead of
+     * its blank rows. Optional and usually absent; a template with no incident section
+     * ignores them at the runtime.
+     */
+    incidents: z
+      .array(incidentSchema)
+      .max(MAX_INCIDENTS, { error: `At most ${MAX_INCIDENTS} incidents can be added to one report.` })
+      .optional(),
   })
   .strict()
 
@@ -236,7 +287,17 @@ export function buildRunCreateBody(fields: {
    * present-and-empty would have to mean something the enqueue does not read.
    */
   readonly reuseSnapshotRunId?: string | null
+  /** Incidents this period; blank entries are dropped, and none at all sends nothing. */
+  readonly incidents?: readonly Incident[]
 }): Record<string, unknown> {
+  const incidents = (fields.incidents ?? [])
+    .map((incident) => ({
+      case: incident.case.trim(),
+      date: incident.date.trim(),
+      description: incident.description.trim(),
+      solution: incident.solution.trim(),
+    }))
+    .filter((incident) => Object.values(incident).some((value) => value.length > 0))
   const base = {
     connectedSubscriptionId: fields.connectedSubscriptionId,
     templateId: fields.templateId,
@@ -244,6 +305,7 @@ export function buildRunCreateBody(fields: {
     ...(fields.reuseSnapshotRunId
       ? { reuseSnapshotRunId: fields.reuseSnapshotRunId }
       : {}),
+    ...(incidents.length > 0 ? { incidents } : {}),
   }
 
   if (fields.frontMatter === null) return base

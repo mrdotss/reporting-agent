@@ -529,6 +529,11 @@ export type TemplateView = {
    * would have to be recomputed here the day a v3 lands.
    */
   schemaVersion: number
+  /**
+   * Whether the pinned version includes the incident report section, so the run form
+   * offers "Incidents this period" only where there is a table for them to print in.
+   */
+  hasIncidentReport: boolean
   createdAt: string
   updatedAt: string
   /** The source this preset is written for, set when it was created and locked. */
@@ -562,6 +567,7 @@ export type TemplateViewCurrentVersion = Pick<
   "version" | "definitionSha256"
 > & {
   readonly schemaVersion: number
+  readonly hasIncidentReport: boolean
 }
 
 /**
@@ -588,7 +594,26 @@ export function templateViewCurrentVersion(
     version: row.version,
     definitionSha256: row.definitionSha256,
     schemaVersion: declaredSchemaVersion(row.definition),
+    hasIncidentReport: declaresIncidentReport(row.definition),
   }
+}
+
+/** The section type whose table the run form's incident entries print into. */
+export const INCIDENT_REPORT_SECTION = "incident_report"
+
+/** Whether a definition carries the incident report section. */
+export function declaresIncidentReport(definition: unknown): boolean {
+  if (definition === null || typeof definition !== "object") return false
+  const sections = (definition as { sections?: unknown }).sections
+  return (
+    Array.isArray(sections) &&
+    sections.some(
+      (section) =>
+        section !== null &&
+        typeof section === "object" &&
+        (section as { type?: unknown }).type === INCIDENT_REPORT_SECTION
+    )
+  )
 }
 
 /**
@@ -616,6 +641,7 @@ export function toTemplateView(
     currentVersionSha256: currentVersion?.definitionSha256 ?? null,
     hasDraft: row.draftDefinition !== null,
     schemaVersion: currentVersion?.schemaVersion ?? MIN_SCHEMA_VERSION,
+    hasIncidentReport: currentVersion?.hasIncidentReport ?? false,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     provider: row.provider,

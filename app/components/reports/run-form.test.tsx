@@ -86,6 +86,7 @@ function subscription(
 function template(over: Partial<TemplateView> = {}): TemplateView {
   return {
     provider: "azure",
+    hasIncidentReport: false,
     id: "tmpl-v1",
     name: "Monthly utilization",
     description: "CPU, memory, disk and network.",
@@ -515,5 +516,47 @@ describe("presets narrow to the selected connector's source", () => {
 
     expect(screen.getByText(/No Amazon Web Services preset yet/)).toBeInTheDocument()
     expect(screen.queryByText("Azure monthly")).toBeNull()
+  })
+})
+
+describe("RunForm — incidents this period", () => {
+  const WITH_INCIDENTS = template({ id: "tmpl-v3", schemaVersion: 3, hasIncidentReport: true })
+
+  test("offered only for a preset whose report has an incident table", () => {
+    renderForm([template({ id: "tmpl-v3", schemaVersion: 3, hasIncidentReport: false })])
+    expect(screen.queryByText("Incidents this period")).toBeNull()
+    cleanup()
+
+    renderForm([WITH_INCIDENTS])
+    expect(screen.getByText("Incidents this period")).toBeInTheDocument()
+  })
+
+  test("a filled incident travels, and an untouched one does not", async () => {
+    renderForm([WITH_INCIDENTS])
+
+    fireEvent.click(screen.getByRole("button", { name: "Add incident" }))
+    fireEvent.click(screen.getByRole("button", { name: "Add incident" }))
+    fireEvent.change(screen.getAllByLabelText("Case")[0]!, { target: { value: " Disk full " } })
+    fireEvent.change(screen.getAllByLabelText("Date")[0]!, { target: { value: "12 Aug 2026" } })
+    fireEvent.change(screen.getAllByLabelText("What happened")[0]!, { target: { value: "/var filled" } })
+
+    fireEvent.click(submitButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+
+    expect(bodies[0]!["incidents"]).toEqual([
+      { case: "Disk full", date: "12 Aug 2026", description: "/var filled", solution: "" },
+    ])
+  })
+
+  test("a removed incident is gone, and none at all sends no key", async () => {
+    renderForm([WITH_INCIDENTS])
+
+    fireEvent.click(screen.getByRole("button", { name: "Add incident" }))
+    fireEvent.change(screen.getByLabelText("Case"), { target: { value: "Temporary" } })
+    fireEvent.click(screen.getByRole("button", { name: "Remove incident 1" }))
+
+    fireEvent.click(submitButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect("incidents" in bodies[0]!).toBe(false)
   })
 })

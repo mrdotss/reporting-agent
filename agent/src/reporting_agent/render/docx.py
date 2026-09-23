@@ -288,6 +288,8 @@ class _Emitter:
     chart_sidecars: dict[str, bytes] = field(default_factory=dict)
     chart_tables: dict[str, object] = field(default_factory=dict)
     chart_vectors: dict[str, str] = field(default_factory=dict)
+    fill_ins: int = 0
+    """How many fill-in boxes have been written — each needs its own content-control id."""
     headings_bookmarked: int = 0
     """How many top-level contents headings have been bookmarked so far — the ordinal of
     the last one, and so the name of its contents entry's link target."""
@@ -683,9 +685,14 @@ class _Emitter:
             elif isinstance(cell, TextCell):
                 self._set_cell_text(docx_cell, cell.text, style=notice_style)
             elif isinstance(cell, EmptyCell):
-                # Deliberately nothing. Distinct from "0", and the distinction is the
-                # product: a metric a resource does not emit is a recorded gap, and a zero
-                # would read as measured idleness.
+                # A blank left for a reader — the incident report's padding rows — is a
+                # fill-in box, which the conversion turns into a PDF text field.
+                if cell.fill_in:
+                    self.fill_ins += 1
+                    _fill_in_control(docx_cell, label=column.header, ordinal=self.fill_ins)
+                # Otherwise deliberately nothing. Distinct from "0", and the distinction is
+                # the product: a metric a resource does not emit is a recorded gap, and a
+                # zero would read as measured idleness.
                 continue
             else:
                 raise RenderFailedError(
@@ -1076,3 +1083,31 @@ def _bookmark(paragraph: object, name: str, ordinal: int) -> None:
 
 
 _BOOKMARK_ID_BASE: Final[int] = 10_000
+
+
+def _fill_in_control(cell: object, *, label: str, ordinal: int) -> None:
+    """A plain-text content control in an empty cell: a box a reader types into in Word.
+
+    The converter exports it as a PDF text field — which is what makes the incident rows
+    fillable in any PDF reader without a PDF editor — but only while it shows a
+    **placeholder**, and not for a blank one, so the placeholder is a single space: nothing
+    visible, and nothing the verifier's text extraction reads (a cell's text is stripped).
+    `w:alias` names the box after its column, which Word shows as the control's title.
+    """
+    from xml.sax.saxutils import quoteattr
+
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+
+    identifier = _FILL_IN_ID_BASE + ordinal
+    control = parse_xml(
+        f"<w:sdt {nsdecls('w')}>"
+        f"<w:sdtPr><w:id w:val=\"{identifier}\"/><w:alias w:val={quoteattr(label)}/>"
+        f"<w:tag w:val=\"rpt-fill-{ordinal}\"/><w:showingPlcHdr/><w:text/></w:sdtPr>"
+        f"<w:sdtContent><w:r><w:t xml:space=\"preserve\"> </w:t></w:r></w:sdtContent>"
+        f"</w:sdt>"
+    )
+    cell.paragraphs[0]._p.append(control)  # type: ignore[attr-defined]
+
+
+_FILL_IN_ID_BASE: Final[int] = 20_000

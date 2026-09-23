@@ -1224,6 +1224,45 @@ describe("the v2 front-matter values enqueueRun stored reach the invoke payload"
     expect(run.id).toBeTruthy()
   })
 
+  test("incidents typed at enqueue reach the command as the incident table's rows", async () => {
+    const { run } = await enqueueRun(userId, {
+      connectedSubscriptionId: subscriptionId,
+      templateId,
+      timezone: "Asia/Jakarta",
+      incidents: [
+        {
+          case: "Disk full on CPN-App",
+          date: "12 Aug 2026",
+          description: "/var filled",
+          solution: "Cleared logs, added an alert",
+        },
+      ],
+    })
+
+    const stored = await db.query(`SELECT incident_rows FROM report_runs WHERE id = $1`, [run.id])
+    expect(stored.rows[0].incident_rows).toHaveLength(1)
+
+    await runTick()
+
+    expect(agentcore.calls).toHaveLength(1)
+    const sent = agentcore.calls[0]!.command as Record<string, unknown>
+    // One string per column, in the catalogue's order: Case, Date, Solution, Description.
+    expect(sent["author_rows"]).toEqual({
+      incident_report: [
+        ["Disk full on CPN-App", "12 Aug 2026", "Cleared logs, added an alert", "/var filled"],
+      ],
+    })
+  })
+
+  test("a run with no incidents sends no author rows", async () => {
+    await enqueue()
+    await runTick()
+
+    expect(agentcore.calls).toHaveLength(1)
+    const sent = agentcore.calls[0]!.command as Record<string, unknown>
+    expect("author_rows" in sent).toBe(false)
+  })
+
   test("a v1 run's command carries none of the three keys", async () => {
     // The other half of the same agreement (Requirement 13.9's reasoning, one layer
     // up): a v1 template has no front matter, so a run pinning it must not be made

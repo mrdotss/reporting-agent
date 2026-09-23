@@ -346,6 +346,12 @@ export type InvokeCommand =
       snapshot_run_id?: string
       /** Worker-only, independently resolved from persisted project-scoped runs. */
       snapshot_source_actors?: Readonly<Record<string, string>>
+      /**
+       * Rows typed on the run form for an author-filled section, keyed by section type —
+       * today only `incident_report` — one string per column of its table, in the
+       * catalogue's column order. The runtime prints them ahead of the table's blank rows.
+       */
+      author_rows?: Readonly<Record<string, readonly (readonly string[])[]>>
       /** The revision-history row for the document-control page (Requirement 13.7). */
       revision_history_row?: {
         readonly revision: string

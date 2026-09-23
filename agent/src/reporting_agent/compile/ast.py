@@ -635,6 +635,13 @@ class EmptyCell:
     """
 
     path: FigurePath
+    fill_in: bool = False
+    """A blank left for a reader to fill in, rather than a gap in the data.
+
+    Set only by `blank_rows_table` — the incident report's padding rows. The renderers turn
+    such a cell into a form field: a content control in the `.docx`, which its conversion
+    exports as a PDF text field, and an input in the designed PDF. It still carries no
+    value, no ledger entry and no anchor."""
 
 
 @dataclass(frozen=True, slots=True)

@@ -164,6 +164,10 @@ NOTICE_ROW_CLASS: Final[str] = _CLS_NOTICE
 """The explicit no-data row. Styled in mist neutrals rather than `--destructive`: an empty
 result is information, not an error."""
 
+FILL_IN_CLASS: Final[str] = "rpt-fill"
+"""An incident row's blank cell in the designed PDF: an input WeasyPrint writes as a form
+field. Not in `EMITTED_CLASS_NAMES`: that set is the app preview's, which never emits it."""
+
 EMPTY_CELL_TEXT: Final[str] = ""
 """An `EmptyCell` emits an empty cell.
 
@@ -225,6 +229,10 @@ class _Emitter:
     messages: Messages
     chart_vectors: dict[str, str] = field(default_factory=dict)
     chart_tables: dict[str, object] = field(default_factory=dict)
+    form_fields: bool = False
+    """Whether a fill-in cell becomes an `<input>` — for the designed PDF, where WeasyPrint
+    writes it as a PDF form field. The app's preview leaves it an empty cell."""
+    fill_ins: int = 0
     parts: list[str] = field(default_factory=list)
     figure_count: int = 0
     table_count: int = 0
@@ -488,6 +496,15 @@ class _Emitter:
                 cells.append(f"<td{attribute}>{self.text_fact(cell.fact)}</td>")
             elif isinstance(cell, TextCell):
                 cells.append(f"<td{attribute}>{html.escape(cell.text)}</td>")
+            elif isinstance(cell, EmptyCell) and cell.fill_in and self.form_fields:
+                # The incident report's blank rows, fillable in any PDF reader.
+                self.fill_ins += 1
+                label = html.escape(column.header, quote=True)
+                cells.append(
+                    f'<td{attribute}><input class="{FILL_IN_CLASS}" type="text" '
+                    f'name="rpt-fill-{self.fill_ins}" title="{label}" aria-label="{label}" />'
+                    f"</td>"
+                )
             elif isinstance(cell, EmptyCell):
                 cells.append(f"<td{attribute}>{EMPTY_CELL_TEXT}</td>")
             else:
@@ -882,6 +899,7 @@ def emit_html(
     messages: Messages,
     chart_vectors: Mapping[str, str] | None = None,
     chart_tables: Mapping[str, object] | None = None,
+    form_fields: bool = False,
 ) -> HtmlOutcome:
     """Emit `document` as an HTML fragment (Req 24.1).
 
@@ -912,6 +930,7 @@ def emit_html(
         messages=messages,
         chart_vectors=dict(chart_vectors or {}),
         chart_tables=dict(chart_tables or {}),
+        form_fields=form_fields,
         heading_numbers=document_heading_numbers(document),
     )
     for block in document.blocks:

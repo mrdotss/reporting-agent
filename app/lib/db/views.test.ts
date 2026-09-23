@@ -621,6 +621,7 @@ function reportRunRow(overrides: Partial<ReportRun> = {}): ReportRun {
     customerName: null,
     revisionHistoryRow: null,
     reuseSnapshotRunId: null,
+    incidentRows: null,
     ...overrides,
   }
 }
@@ -1321,6 +1322,7 @@ const TEMPLATE_CURRENT_VERSION: TemplateViewCurrentVersion = {
   version: 3,
   definitionSha256: TEMPLATE_VERSION_SHA,
   schemaVersion: 2,
+  hasIncidentReport: false,
 }
 
 /**
@@ -1344,6 +1346,10 @@ const TEMPLATE_VIEW_KEYS = [
   "description",
   "draftRevision",
   "hasDraft",
+  // Reviewed and admitted: whether the pinned version has an incident report section,
+  // so the run form knows to offer incident entries. A yes/no about the template's own
+  // outline, derived in SQL like `schemaVersion` — the definition itself is not projected.
+  "hasIncidentReport",
   "id",
   "name",
   "projectId",
@@ -1392,6 +1398,7 @@ describe("toTemplateView — Requirement 43.9", () => {
       currentVersionSha256: TEMPLATE_VERSION_SHA,
       hasDraft: false,
       schemaVersion: 2,
+      hasIncidentReport: false,
       createdAt: "2026-05-01T00:00:00.000Z",
 
       updatedAt: "2026-05-02T00:00:00.000Z",
@@ -1406,6 +1413,7 @@ describe("toTemplateView — Requirement 43.9", () => {
     // call rather than one that quietly short-circuits.
     const view = toTemplateView(reportTemplateRow(), {
       version: 1,
+      hasIncidentReport: false,
       definitionSha256: TEMPLATE_VERSION_SHA,
       schemaVersion: 1,
     })

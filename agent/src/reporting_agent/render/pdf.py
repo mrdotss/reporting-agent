@@ -132,14 +132,18 @@ def assert_lang_in_effect() -> None:
 
 PDF_EXPORT_FILTER: Final[str] = (
     'pdf:writer_pdf_Export:{"ExportBookmarksToPDFDestination":'
-    '{"type":"boolean","value":"true"}}'
+    '{"type":"boolean","value":"true"},'
+    '"ExportFormFields":{"type":"boolean","value":"true"}}'
 )
-"""Writer's PDF export, with every Word bookmark written as a named destination.
+"""Writer's PDF export, with two options set and nothing else changed.
 
-The default export writes none, and the table of contents needs them: each heading carries
-a bookmark its contents entry links to, and `render/toc.py` reads a heading's page from
-the destination rather than by searching page text for the heading's words. Nothing else
-changes — the same filter `pdf` selects for a Writer document, one option set.
+* **Every Word bookmark as a named destination.** The default writes none, and the table
+  of contents needs them: each heading carries a bookmark its contents entry links to,
+  and `render/toc.py` reads a heading's page from the destination rather than by
+  searching page text for the heading's words.
+* **Form fields.** The incident report's blank rows are content controls in the `.docx`
+  (`render/docx.py::_fill_in_control`); with this they become PDF text fields a reader can
+  type into in a browser or Acrobat Reader. Without it they are exported as plain text.
 """
 
 

@@ -1408,6 +1408,42 @@ export const MESSAGE_CATALOG = {
     en: "Fill in the revision, note and author before requesting this report.",
     id: "Isi revisi, catatan, dan penulis sebelum meminta laporan ini.",
   },
+  "ui.run_form.incidents_heading": {
+    en: "Incidents this period",
+    id: "Insiden periode ini",
+  },
+  "ui.run_form.incidents_hint": {
+    en: "Optional. Each one prints in the report's Incident Report table, ahead of its blank rows — which stay fillable in the Word file and both PDFs.",
+    id: "Opsional. Setiap insiden dicetak di tabel Laporan Insiden, sebelum baris kosongnya — yang tetap dapat diisi di file Word dan kedua PDF.",
+  },
+  "ui.run_form.incident_case_label": {
+    en: "Case",
+    id: "Kasus",
+  },
+  "ui.run_form.incident_date_label": {
+    en: "Date",
+    id: "Tanggal",
+  },
+  "ui.run_form.incident_description_label": {
+    en: "What happened",
+    id: "Yang terjadi",
+  },
+  "ui.run_form.incident_solution_label": {
+    en: "Solution",
+    id: "Solusi",
+  },
+  "ui.run_form.incident_add": {
+    en: "Add incident",
+    id: "Tambah insiden",
+  },
+  "ui.run_form.incident_remove": {
+    en: "Remove incident {number}",
+    id: "Hapus insiden {number}",
+  },
+  "ui.run_form.incident_number": {
+    en: "Incident {number}",
+    id: "Insiden {number}",
+  },
   "ui.run_form.reuse_label": {
     en: "Reuse the measurements already collected for this period",
     id: "Gunakan kembali pengukuran yang sudah dikumpulkan untuk periode ini",
