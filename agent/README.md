@@ -209,7 +209,11 @@ the derived allowlist. Anything still carrying a digit is a blocking
 `unmatched_prose_token`. Two narrowings admit a value only where it was proven, never
 document-wide:
 
-- a **table of contents** page number, in the paragraph whose comparison produced it
+- a **table of contents** page number, in the paragraph whose comparison produced it.
+  Each entry links to a bookmark on its heading, and its number is compared with the page
+  that bookmark landed on in the PDF — not with the first page mentioning the heading's
+  words, which misnumbered repeated headings ("Inbound" per security group) and headings a
+  table printed earlier
 - a **text fact**, inside the table its anchor names
 
 That second one shipped broken. `ledger_strings_of` read only figures and derived

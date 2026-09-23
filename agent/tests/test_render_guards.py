@@ -556,8 +556,17 @@ class TestHistoricalTrendDocxRender:
         # should be present
         assert full_text.strip(), "historical_trend must emit at least one paragraph"
 
-    def test_plotted_path_renders_figures_in_figure_style(self) -> None:
-        """When prior runs are available, their values are figures in Figure style."""
+    def test_plotted_path_renders_figures_in_figure_style(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When prior runs are available, their values are figures in Figure style.
+
+        In the companion table, which prints them — switched on here, since the `.docx`
+        no longer prints it by default (`render/charts.COMPANION_TABLE_IN_DOCX`)."""
+        import reporting_agent.render.charts as charts_module
+
+        monkeypatch.setattr(charts_module, "COMPANION_TABLE_IN_DOCX", True)
+        monkeypatch.setattr(D, "COMPANION_TABLE_IN_DOCX", True)
         ledger, outcome, _, _ = _compile_and_render_historical_trend_with_points()
         figure_runs = runs_with_style(outcome.docx_bytes, FIGURE_CHARACTER_STYLE)
         expected = [f.formatted for f in ledger.entries.values()]

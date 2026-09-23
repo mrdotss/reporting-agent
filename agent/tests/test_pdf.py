@@ -212,7 +212,17 @@ def test_the_invocation_carries_headless_and_norestore() -> None:
     assert "--headless" in command
     assert "--norestore" in command  # Req 23.4
     assert "--convert-to" in command
-    assert command[command.index("--convert-to") + 1] == "pdf"
+    assert command[command.index("--convert-to") + 1] == P.PDF_EXPORT_FILTER
+
+
+def test_the_export_writes_every_bookmark_as_a_named_destination() -> None:
+    """The contents entries link to heading bookmarks, and `render/toc.py` reads each
+    heading's page from its destination — so the export must write them. Writer's own
+    PDF filter, with that one option: the output is still `<name>.pdf`."""
+    assert P.PDF_EXPORT_FILTER.startswith("pdf:writer_pdf_Export:")
+    assert '"ExportBookmarksToPDFDestination":{"type":"boolean","value":"true"}' in (
+        P.PDF_EXPORT_FILTER
+    )
 
 
 def test_the_invocation_uses_the_pre_warmed_profile_as_is(
@@ -256,7 +266,7 @@ def test_the_command_builder_is_the_single_source_of_the_flags() -> None:
         "--norestore",
         "-env:UserInstallation=file:///opt/p",
         "--convert-to",
-        "pdf",
+        P.PDF_EXPORT_FILTER,
         "--outdir",
         "/tmp/a",
         "/tmp/a/report.docx",

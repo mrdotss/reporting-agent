@@ -87,9 +87,12 @@ __all__ = [
     "TOC_LABEL_ID",
     "apply_toc_page_numbers",
     "heading_anchor",
+    "heading_bookmark",
+    "named_destination_pages",
     "section_numbers",
     "should_emit_toc",
     "toc_entries_from_document",
+    "toc_heading_text",
 ]
 
 # --- the candidate set (Req 14.1) ----------------------------------------------------
@@ -198,6 +201,73 @@ def heading_anchor(ordinal: int) -> str:
     return f"rpt-heading-{ordinal}"
 
 
+def heading_bookmark(ordinal: int) -> str:
+    """The Word bookmark on a heading, and the link target of its contents entry.
+
+    The same ordinal as :func:`heading_anchor`, so the `.docx` and the reading copy agree
+    about which heading is the third. Two jobs, one name: the contents entry is a
+    hyperlink to it, so it is clickable in Word and in the converted PDF, and LibreOffice
+    exports it as a **named destination** on the page the heading actually landed on —
+    which is how pass 2 reads a heading's page without searching text for it.
+
+    No leading underscore, although Word hides bookmarks that start with one: LibreOffice
+    escapes the underscore in the destination's name (`#5F`), and a name that survives the
+    round trip unchanged is worth more than one hidden from Word's bookmark list.
+    """
+    return f"RptToc{ordinal}"
+
+
+def toc_heading_text(block: object) -> str | None:
+    """A top-level block's contents entry text, or `None` when it has none.
+
+    The one predicate both walks use — the contents builder and the `.docx` emitter that
+    bookmarks the headings — so they count the same headings in the same order and the
+    third entry links to the third bookmark. Two copies of this test would be two chances
+    for the counts to drift apart, and a drift sends every later link to the wrong page.
+    """
+    from reporting_agent.compile.ast import Figure, Paragraph, Text
+
+    if not isinstance(block, Paragraph) or block.style not in TOC_HEADING_STYLES:
+        return None
+    parts: list[str] = []
+    for inline in block.inlines:
+        if isinstance(inline, Text):
+            parts.append(inline.text)
+        elif isinstance(inline, Figure):
+            parts.append(inline.formatted or "")
+    text = "".join(parts).strip()
+    return text or None
+
+
+def named_destination_pages(pdf_bytes: bytes) -> dict[str, int]:
+    """Every named destination in a PDF, with the 1-based page it points at.
+
+    The converter writes one per Word bookmark (see `render/pdf.py`), placed where the
+    bookmarked heading was laid out. Reading them is exact where searching page text for a
+    heading is not: a heading that repeats ("Inbound", once per security group) or that a
+    table printed earlier (a machine's name in the inventory) sends a text search to the
+    wrong page.
+    """
+    import io
+
+    from pypdf import PdfReader
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        destinations = reader.named_destinations
+    except Exception:
+        # An unreadable PDF names no destination; each entry then falls back to text.
+        return {}
+    pages: dict[str, int] = {}
+    for name, destination in destinations.items():
+        try:
+            pages[str(name).lstrip("/")] = reader.get_destination_page_number(destination) + 1
+        except Exception:
+            # One broken destination does not void the rest.
+            continue
+    return pages
+
+
 def section_numbers(levels: Sequence[int]) -> tuple[str, ...]:
     """Hierarchical section numbers for a sequence of heading levels.
 
@@ -253,7 +323,6 @@ def toc_entries_from_document(document: object) -> tuple[tuple[str, int], ...]:
     ``level`` is 1, 2 or 3 corresponding to ``Heading 1``, ``Heading 2``, ``Heading 3``.
     """
     from reporting_agent.compile.ast import Document as CompiledDocument
-    from reporting_agent.compile.ast import Figure, Paragraph, Text
 
     if not isinstance(document, CompiledDocument):
         return ()
@@ -262,17 +331,9 @@ def toc_entries_from_document(document: object) -> tuple[tuple[str, int], ...]:
     entries: list[tuple[str, int]] = []
 
     for block in document.blocks:
-        if isinstance(block, Paragraph) and block.style in TOC_HEADING_STYLES:
-            text_parts: list[str] = []
-            for inline in block.inlines:
-                if isinstance(inline, Text):
-                    text_parts.append(inline.text)
-                elif isinstance(inline, Figure):
-                    text_parts.append(inline.formatted or "")
-            heading_text = "".join(text_parts).strip()
-            if heading_text:
-                level = _LEVEL_MAP[block.style]
-                entries.append((heading_text, level))
+        heading_text = toc_heading_text(block)
+        if heading_text is not None:
+            entries.append((heading_text, _LEVEL_MAP[block.style]))  # type: ignore[attr-defined]
 
     return tuple(entries)
 
@@ -300,8 +361,18 @@ def apply_toc_page_numbers(
     Raises :class:`~reporting_agent.errors.RenderFailedError` if the approach is ``none``
     (the caller should check :func:`should_emit_toc` first).
 
-    Uses the same mechanics as ``toc_harness._prepend_toc`` and the same heading-finding
-    logic as ``toc_harness._observed_pages``, brought into production for real delivery.
+    ## How a heading's page is measured
+
+    From the **bookmark** the `.docx` emitter put on the heading and the contents entry
+    links to (:func:`heading_bookmark`): the conversion exports each bookmark as a named
+    destination on the page where it was laid out, and :func:`named_destination_pages`
+    reads them back. This replaced a search of the page text for the heading's words,
+    which returned the first page carrying those words anywhere — so "Inbound", repeated
+    once per security group, and a machine's name, printed in the inventory table long
+    before its own section, were numbered with a page they merely appeared on.
+
+    `headings` remains for an entry that carries no link target, which falls back to that
+    text search: a document emitted before the entries were links.
     """
     import io
 
@@ -319,21 +390,30 @@ def apply_toc_page_numbers(
     # --- Pass 1: convert the document with empty page-number positions ---------------
     pass1_pdf = convert_to_pdf(docx_bytes)
 
-    import tempfile
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
-        tmp.write(pass1_pdf.pdf_bytes)
-        tmp.flush()
-        pages = pdf_page_texts(tmp.name)
+    # Where each heading landed, read from the bookmark destinations the conversion wrote.
+    # Exact, and indifferent to a heading's words appearing anywhere else in the document.
+    destinations = named_destination_pages(pass1_pdf.pdf_bytes)
 
-    # Identify TOC pages (where multiple headings appear with numbers or without).
-    toc_page_indices = _identify_toc_pages(pages, headings)
+    # The text measurement, only for an entry that carries no link target — a document
+    # emitted before the entries were links. Computed once, and only if needed.
+    text_measured: dict[str, int] | None = None
 
-    # Measure where each heading actually landed (first character page).
-    measured: dict[str, int] = {}
-    for heading in headings:
-        page = _find_heading_page(pages, heading, toc_page_indices)
-        if page is not None:
-            measured[heading] = page
+    def measured_by_text() -> dict[str, int]:
+        nonlocal text_measured
+        if text_measured is None:
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+                tmp.write(pass1_pdf.pdf_bytes)
+                tmp.flush()
+                pages = pdf_page_texts(tmp.name)
+            toc_page_indices = _identify_toc_pages(pages, headings)
+            text_measured = {}
+            for heading in headings:
+                page = _find_heading_page(pages, heading, toc_page_indices)
+                if page is not None:
+                    text_measured[heading] = page
+        return text_measured
 
     # --- Pass 2: re-emit the TOC section with measured page numbers ------------------
     from docx import Document as open_docx_cls
@@ -346,9 +426,8 @@ def apply_toc_page_numbers(
     w_ppr = qn("w:pPr")
     w_pstyle = qn("w:pStyle")
     w_val = qn("w:val")
-    w_t = qn("w:t")
-    w_r = qn("w:r")
-    w_tab = qn("w:tab")
+    w_hyperlink = qn("w:hyperlink")
+    w_anchor = qn("w:anchor")
 
     # The **styleId** of the TOC entry style, resolved from the document's own styles.
     # `TOC_ENTRY_STYLE` is a display *name* ("Toc Entry") — the value `w:pStyle/@w:val`
@@ -364,52 +443,24 @@ def apply_toc_page_numbers(
                 toc_entry_style_id = resolved
             break
 
-    # Find TOC entry paragraphs (styled TOC_ENTRY_STYLE) and fill page numbers.
     for p_element in body.iter(w_p):
         ppr = p_element.find(w_ppr)
         if ppr is None:
             continue
         pstyle = ppr.find(w_pstyle)
-        if pstyle is None:
-            continue
-        style_val = pstyle.get(w_val, "")
-        if style_val != toc_entry_style_id:
+        if pstyle is None or pstyle.get(w_val, "") != toc_entry_style_id:
             continue
 
-        # Read the heading text from this entry (the runs before the tab).
-        entry_text_parts: list[str] = []
-        for r_el in p_element.findall(w_r):
-            # Stop at the tab run.
-            if r_el.find(w_tab) is not None:
-                break
-            for t_el in r_el.findall(w_t):
-                if t_el.text:
-                    entry_text_parts.append(t_el.text)
-        entry_text = "".join(entry_text_parts).strip()
+        # The entry's runs sit inside its hyperlink where it has one.
+        hyperlink = p_element.find(w_hyperlink)
+        holder = hyperlink if hyperlink is not None else p_element
+        anchor = hyperlink.get(w_anchor) if hyperlink is not None else None
 
-        if entry_text in measured:
-            # Find the last run (after the tab) and set the page number.
-            runs = p_element.findall(w_r)
-            # The pattern from _prepend_toc: text run, tab run, then optionally a
-            # number run. We need to add a number run after the tab.
-            # Find the tab run.
-            tab_found = False
-            for r_el in runs:
-                if r_el.find(w_tab) is not None:
-                    tab_found = True
-                    continue
-                if tab_found:
-                    # There's already a run after the tab — update it.
-                    for t_el in r_el.findall(w_t):
-                        t_el.text = str(measured[entry_text])
-                    break
-            else:
-                if tab_found:
-                    # No run after tab — create one.
-                    from lxml import etree
-                    new_run = etree.SubElement(p_element, w_r)
-                    new_t = etree.SubElement(new_run, w_t)
-                    new_t.text = str(measured[entry_text])
+        page = destinations.get(anchor) if anchor else None
+        if page is None:
+            page = measured_by_text().get(_entry_text(holder))
+        if page is not None:
+            _write_page_number(holder, page)
 
     buffer = io.BytesIO()
     document.save(buffer)
@@ -419,6 +470,43 @@ def apply_toc_page_numbers(
     pass2_pdf = convert_to_pdf(final_docx_bytes)
 
     return final_docx_bytes, pass2_pdf.pdf_bytes
+
+
+def _entry_text(holder: object) -> str:
+    """A contents entry's heading text: its runs up to the tab."""
+    from docx.oxml.ns import qn
+
+    parts: list[str] = []
+    for run in holder.findall(qn("w:r")):  # type: ignore[attr-defined]
+        if run.find(qn("w:tab")) is not None:
+            break
+        for text in run.findall(qn("w:t")):
+            if text.text:
+                parts.append(text.text)
+    return "".join(parts).strip()
+
+
+def _write_page_number(holder: object, page: int) -> None:
+    """Put `page` in the run after the entry's tab, creating that run if there is none.
+
+    Written inside the hyperlink when the entry has one, so the number is part of the link
+    and clicking either the heading or its page goes to the same place.
+    """
+    from docx.oxml.ns import qn
+    from lxml import etree
+
+    tab_found = False
+    for run in holder.findall(qn("w:r")):  # type: ignore[attr-defined]
+        if run.find(qn("w:tab")) is not None:
+            tab_found = True
+            continue
+        if tab_found:
+            for text in run.findall(qn("w:t")):
+                text.text = str(page)
+            return
+    if tab_found:
+        run = etree.SubElement(holder, qn("w:r"))
+        etree.SubElement(run, qn("w:t")).text = str(page)
 
 
 def _identify_toc_pages(

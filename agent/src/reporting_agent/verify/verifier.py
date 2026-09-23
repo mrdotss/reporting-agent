@@ -293,6 +293,9 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
         pages_read=inputs.pdf_pages,
         expected_sha256=inputs.pdf_sha256,
         number_format=_number_format(inputs.definition),
+        # Points that live only in a chart image: the `.docx` prints no table of them any
+        # more, so its conversion has no text of them to find. The chart gate proved them.
+        omitted=charts.drawn,
     )
     findings.extend(fidelity.findings)
     counts["pdf_entries_checked"] = fidelity.entries_checked
@@ -370,6 +373,7 @@ def _evaluate_gates(inputs: VerifyInputs, drift: DriftOutcome) -> VerificationRe
     unrendered, resolved = _completeness(
         inputs.ledger, paragraphs=paragraphs, tables=tables,
         text_fact_pass=text_fact_result,
+        charts=charts,
     )
     findings.extend(unrendered)
     counts["ledger_entries_checked"] = len(inputs.ledger.entry_paths())
@@ -429,6 +433,7 @@ def _completeness(
     paragraphs: Sequence[object],
     tables: anchors_pass.AnchorPass,
     text_fact_pass: facts_pass.TextFactPass,
+    charts: charts_pass.ChartPass | None = None,
 ) -> tuple[list[Finding], int]:
     """Every ledger entry, checked for its appearance in the document (Req 29.2).
 
@@ -452,10 +457,22 @@ def _completeness(
     findings: list[Finding] = []
     resolved = 0
 
+    drawn_verified = charts.drawn_verified if charts is not None else frozenset()
+    drawn_faulted = charts.drawn_faulted if charts is not None else frozenset()
+
     # --- figures (the original path) ---
     for path, figure in ledger.entries.items():
         key = str(path)
         anchor = anchors.get(path)
+
+        # A point plotted only in a chart image, with no table printing it: rendered when
+        # the chart's hash proved the image was drawn from the ledger, and already a
+        # finding on the chart when it did not (Req 29.8 — one defect, one finding).
+        if key in drawn_verified:
+            resolved += 1
+            continue
+        if key in drawn_faulted:
+            continue
 
         if anchor is not None and anchor.kind in (ANCHOR_TABLE, ANCHOR_CHART):
             if key in tables.matched:

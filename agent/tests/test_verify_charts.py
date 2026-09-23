@@ -58,6 +58,20 @@ DEFAULT_DESIGN: Final[dict[str, object]] = {
 }
 
 
+@pytest.fixture(scope="module", autouse=True)
+def printed_companion_tables():
+    """Every test here is about a document that **prints** each chart's companion table —
+    one from before `render/charts.COMPANION_TABLE_IN_DOCX` stopped printing it, which is
+    still held to both gates. The default, with no table, is `test_verify_charts_tableless`."""
+    import reporting_agent.render.charts as charts_module
+    import reporting_agent.render.docx as docx_module
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(charts_module, "COMPANION_TABLE_IN_DOCX", True)
+        patch.setattr(docx_module, "COMPANION_TABLE_IN_DOCX", True)
+        yield
+
+
 @pytest.fixture(scope="module")
 def rendered():
     """One compiled and rendered chart document, shared — rendering draws a real PNG."""

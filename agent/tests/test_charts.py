@@ -242,6 +242,31 @@ def synthetic_chart(
 # --------------------------------------------------------------------------- #
 
 
+@pytest.fixture
+def printed_companion_tables(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Print each chart's companion table, as the `.docx` did before
+    `render/charts.COMPANION_TABLE_IN_DOCX`. The machinery is kept, and a document from
+    before the switch still carries the table, so it is still tested here."""
+    import reporting_agent.render.charts as charts_module
+    import reporting_agent.render.docx as docx_module
+
+    monkeypatch.setattr(charts_module, "COMPANION_TABLE_IN_DOCX", True)
+    monkeypatch.setattr(docx_module, "COMPANION_TABLE_IN_DOCX", True)
+
+
+def test_a_chart_prints_its_image_and_no_daily_table_by_default() -> None:
+    """The `.docx` matches the designed PDF: the chart, not a table of every point."""
+    _, outcome = render(
+        [df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})]
+    )
+    names = package(outcome.docx_bytes).namelist()
+    assert len([name for name in names if name.startswith("word/media/")]) == 1
+    assert document_xml(outcome.docx_bytes).count("<w:tbl>") == 0
+    # Still built and handed on: the designed PDF names its omitted figures from it.
+    assert len(outcome.chart_tables) == 1
+
+
+@pytest.mark.usefixtures("printed_companion_tables")
 def test_a_chart_emits_exactly_one_image_and_one_companion_table() -> None:
     _, outcome = render(
         [df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})]
@@ -334,6 +359,7 @@ def test_every_plotted_value_is_a_figure_from_the_ledger() -> None:
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.usefixtures("printed_companion_tables")
 def test_the_image_and_its_table_carry_the_same_identity() -> None:
     """The pairing key. Two different identities on the two halves of one chart would leave
     every chart unpairable — and because both derive from the same AST path, the mismatch
@@ -351,6 +377,7 @@ def test_the_image_and_its_table_carry_the_same_identity() -> None:
     assert outcome.table_identities == (identity,)
 
 
+@pytest.mark.usefixtures("printed_companion_tables")
 def test_the_companion_table_follows_its_image_with_only_its_own_captions_between() -> None:
     """Req 22.2's body-order clause. The verifier pairs by identity, but a reader relies on
     the adjacency: the table explains the picture above it.
@@ -404,6 +431,7 @@ def test_the_identity_is_derived_from_the_ast_path_alone() -> None:
     assert first.table_identities == second.table_identities
 
 
+@pytest.mark.usefixtures("printed_companion_tables")
 def test_a_chart_figure_records_a_chart_kind_anchor() -> None:
     """So the verifier can tell a companion-table cell from an ordinary data-table cell."""
     compiled, _ = render([df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})])

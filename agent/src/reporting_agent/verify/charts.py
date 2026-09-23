@@ -5,7 +5,10 @@ anchored pass cannot resolve a cell inside it, and the PDF gate cannot find a `f
 string in it. So without this module, "every number in the document is traceable" is simply
 false for the one element a reader is most likely to trust at a glance.
 
-Two gates, and **both are required** (Req 30.5):
+Two gates, and **both are required** (Req 30.5) wherever the document prints the table.
+Since `render/charts.COMPANION_TABLE_IN_DOCX` stopped printing it, a chart has the hash
+gate alone — and with no table there are no printed numbers for the table gate to prove.
+Its plotted points then count as rendered only through a chart whose hash matched:
 
 * The **companion table** goes through the anchored-equality pass, which proves the numbers
   printed beside the image are the ledger's.
@@ -81,6 +84,19 @@ class ChartPass:
     hashes_matched: int
     verified: frozenset[str]
     blocking_identities: frozenset[str]
+    drawn_verified: frozenset[str] = frozenset()
+    """Figure paths plotted by a chart with **no** companion table whose hash matched.
+
+    Rendered, for completeness: the image was drawn from exactly these ledger figures,
+    and it is the only place the document carries them."""
+    drawn_faulted: frozenset[str] = frozenset()
+    """The same, for a chart whose hash did not match. Already a finding on the chart;
+    completeness does not report each point again (Req 29.8)."""
+
+    @property
+    def drawn(self) -> frozenset[str]:
+        """Every point that lives only in a chart image — the PDF has no text for them."""
+        return self.drawn_verified | self.drawn_faulted
 
 
 def chart_nodes(node: object) -> Iterator[Chart]:
@@ -147,10 +163,14 @@ def check_charts(
     if messages is None:
         messages = load_messages()
 
+    from reporting_agent.render.charts import COMPANION_TABLE_IN_DOCX, plotted_figure_paths
+
     identities = {grid.identity for grid in grids}
     findings: list[Finding] = []
     verified: set[str] = set()
     blocking: set[str] = set()
+    drawn_verified: set[str] = set()
+    drawn_faulted: set[str] = set()
     charts_checked = 0
     hashes_matched = 0
 
@@ -158,9 +178,14 @@ def check_charts(
         charts_checked += 1
         identity = node.anchor_id
         path = str(node.path)
-        table_clean = identity in identities and identity not in table_pass.blocking_identities
+        # A document from before the tables were dropped still carries them and is still
+        # held to both gates. Without one, by design, the hash gate is the proof.
+        tableless = identity not in identities and not COMPANION_TABLE_IN_DOCX
+        table_clean = tableless or (
+            identity in identities and identity not in table_pass.blocking_identities
+        )
 
-        if identity not in identities:
+        if identity not in identities and not tableless:
             blocking.add(identity)
             findings.append(
                 record_finding(
@@ -195,12 +220,18 @@ def check_charts(
         if table_clean and observed == recomputed:
             verified.add(identity)
 
+        if tableless:
+            points = plotted_figure_paths(node, messages=messages)
+            (drawn_verified if observed == recomputed else drawn_faulted).update(points)
+
     return ChartPass(
         findings=tuple(sorted(findings, key=_sort_key)),
         charts_checked=charts_checked,
         hashes_matched=hashes_matched,
         verified=frozenset(verified),
         blocking_identities=frozenset(blocking),
+        drawn_verified=frozenset(drawn_verified),
+        drawn_faulted=frozenset(drawn_faulted),
     )
 
 
