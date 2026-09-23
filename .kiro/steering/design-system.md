@@ -435,8 +435,9 @@ calls it for every `annotate(...)` that renders a figure's `formatted` string.
   `tight_layout`.
 - **Cap the printed tick labels.** A month ticked at every point is 31 rotated
   labels in six inches, which reads as a diagonal band rather than as a scale. Keep
-  every k-th, evenly stepped; the companion table carries every point's x value
-  regardless, so nothing is lost by not printing them all.
+  every k-th, evenly stepped. No document prints a table of every point any more
+  (`render/charts.COMPANION_TABLE_IN_DOCX`): the values stay in the snapshot and the
+  ledger, and the chart's data hash proves the image was drawn from them.
 - **Deltas use glyph + magnitude, not hue.** `▲`/`▼` (Phosphor arrows) plus the
   signed value in mono. **Colour must not encode good/bad for utilization** — CPU
   rising is not "bad", and disk free space falling is not the same kind of "down"

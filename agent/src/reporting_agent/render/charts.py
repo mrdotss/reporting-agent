@@ -87,7 +87,9 @@ __all__ = [
     "SIDECAR_SUFFIX",
     "ChartArtifacts",
     "chart_data_hash",
+    "COMPANION_TABLE_IN_DOCX",
     "companion_table",
+    "plotted_figure_paths",
     "label_indices",
     "plotted_series",
     "render_chart",
@@ -200,6 +202,32 @@ def plotted_series(node: Chart, *, messages: Messages) -> tuple[Series, ...]:
         points=aggregated_points,
     )
     return (*plotted, aggregate)
+
+
+COMPANION_TABLE_IN_DOCX: Final[bool] = False
+"""Whether the `.docx` prints each chart's companion table under the image. It does not.
+
+Req 22.1 put one there so a reader could check every plotted point — and a month of daily
+points is 31 rows per machine, so three machines turned a readable page into several pages
+of a table nobody reads. The designed PDF already left it out (criterion 23.12); the Word
+file and its conversion now match it: the chart, its title, its period, and the statistic
+summary the section prints beside it.
+
+**The points are still proven.** The table is built all the same — the designed PDF names
+its figures as the ones it omits — and the verifier holds the chart to its data hash
+instead: the image is drawn from, and hashed over, exactly the ledger's figures, so a
+point counts as rendered only through a chart whose hash matched. The daily values remain
+in the snapshot and the ledger. What went is a second printing of them.
+"""
+
+
+def plotted_figure_paths(node: Chart, *, messages: Messages) -> frozenset[str]:
+    """The ledger paths of every point the chart plots — the set its data hash covers."""
+    return frozenset(
+        str(figure.path)
+        for _series, figures in _figures_in(node, messages=messages)
+        for figure in figures
+    )
 
 
 def _figures_in(node: Chart, *, messages: Messages) -> tuple[tuple[Series, tuple[Figure, ...]], ...]:

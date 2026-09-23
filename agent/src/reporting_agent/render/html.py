@@ -652,6 +652,7 @@ _CLS_GRID: Final[str] = FRONT_MATTER_CLASS_NAMES[4]
 _CLS_SIGNATURE: Final[str] = FRONT_MATTER_CLASS_NAMES[5]
 _CLS_FM_NOTE: Final[str] = FRONT_MATTER_CLASS_NAMES[6]
 _CLS_FM_LOGO: Final[str] = FRONT_MATTER_CLASS_NAMES[7]
+_CLS_COVER: Final[str] = FRONT_MATTER_CLASS_NAMES[1]
 
 
 def _inline_svg(vector: str) -> str:
@@ -715,6 +716,15 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
     )
 
     parts: list[str] = []
+
+    # A cover with a background image is a full-bleed page: the image has to reach the
+    # sheet's edges, and a page background in WeasyPrint is sized to the area inside the
+    # margins and then tiled into them — the strips of repeated image at the cover's
+    # edges. So only then does the cover get its own margin-free page.
+    cover_open = any(isinstance(section, FrontMatterBackground) for section in sections)
+    if cover_open:
+        parts.append(f'<section class="{_CLS_COVER}">')
+
     for section in sections:
         if isinstance(section, FrontMatterHeading):
             parts.append(
@@ -852,6 +862,16 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
                 f"no front matter emission is declared for {type(section).__name__}"
             )
 
+        # The cover is everything before the front matter's first page break. Where it has
+        # a full-bleed image, that part is wrapped so the print stylesheet can put it on a
+        # page with no margins — see `.rpt-cover` in `render/printcss.py`.
+        if cover_open and isinstance(section, FrontMatterPageBreak):
+            cover_open = False
+            break_markup = parts.pop()
+            parts.append(f"</section>{break_markup}")
+
+    if cover_open:
+        parts.append("</section>")
     return f'<div class="{_CLS_FRONT_MATTER}">{"".join(parts)}</div>'
 
 

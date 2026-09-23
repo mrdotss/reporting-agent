@@ -25,6 +25,7 @@ import io
 import json
 from typing import Any, Final
 
+import pytest
 from docx import Document as open_docx
 from docx.oxml.ns import qn
 
@@ -236,14 +237,23 @@ declare(
 )
 
 
-def test_a_chart_with_no_companion_table_fails() -> None:
+def test_a_chart_with_no_companion_table_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """The image survives; the numbers beside it do not.
+
+    Where the table is printed at all. `render/charts.COMPANION_TABLE_IN_DOCX` stopped
+    printing it, and a chart then answers to its hash alone; a document that does print it
+    — every one from before that switch — must still have it, and this is that case.
 
     Req 30.5 requires **both** chart gates, and this is why the hash gate alone is not
     enough: the sidecar still matches the ledger exactly, so the picture is provably drawn
     from the right numbers — and there is no longer anything in the document a reader or a
     verifier can check it against.
     """
+    import reporting_agent.render.charts as charts_module
+    import reporting_agent.render.docx as docx_module
+
+    monkeypatch.setattr(charts_module, "COMPANION_TABLE_IN_DOCX", True)
+    monkeypatch.setattr(docx_module, "COMPANION_TABLE_IN_DOCX", True)
     run = negative(definition_used=WITH_CHART, docx=_drop_last_table)
     result = check("test_a_chart_with_no_companion_table_fails", run)
 

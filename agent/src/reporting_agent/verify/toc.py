@@ -33,7 +33,7 @@ from __future__ import annotations
 import re
 import tempfile
 from collections.abc import Mapping, Sequence
-from typing import Final
+from typing import Final, NamedTuple
 
 from reporting_agent.errors import VerificationFailedError
 from reporting_agent.render.toc import ADOPTED_APPROACH, TOC_APPROACH_NONE
@@ -98,6 +98,13 @@ def check_toc(
             entries_checked=0,
             proven_toc_numerals={},
         )
+
+    # Contents entries that link to their heading's bookmark are checked against the page
+    # that bookmark landed on, read from the PDF's named destinations. Only a document
+    # whose entries carry no link falls through to the text search below.
+    linked = _linked_entries(document)
+    if linked:
+        return _check_linked(linked, pdf_bytes)
 
     # Write pdf_bytes to a temp file so pdf_page_texts can read it (it takes a path).
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
@@ -190,6 +197,127 @@ def check_toc(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+
+class _LinkedEntry(NamedTuple):
+    """One contents entry that links to its heading, as the `.docx` carries it."""
+
+    ordinal: int
+    """The paragraph's ordinal as :func:`verify.tokens.paragraph_texts` numbers it."""
+    bookmark: str
+    heading: str
+    printed: str
+    """The page number the entry prints, or `""` where it prints none."""
+
+
+def _linked_entries(document: object) -> tuple[_LinkedEntry, ...]:
+    """Every contents entry whose text sits in a hyperlink to a bookmark, in order.
+
+    Paragraph ordinals are counted exactly as `paragraph_texts` counts them — every `w:p`
+    of the body, in document order, from 1 — so a proven numeral is admitted in the one
+    paragraph that printed it and nowhere else (criterion 14.12).
+    """
+    from docx.oxml.ns import qn
+
+    from reporting_agent.render.themes import TOC_ENTRY_STYLE
+
+    entry_style_ids = {
+        style.style_id
+        for style in document.styles  # type: ignore[attr-defined]
+        if getattr(style, "name", None) == TOC_ENTRY_STYLE
+        and isinstance(getattr(style, "style_id", None), str)
+    }
+    if not entry_style_ids:
+        return ()
+
+    w_p, w_ppr, w_pstyle, w_val = qn("w:p"), qn("w:pPr"), qn("w:pStyle"), qn("w:val")
+    w_hyperlink, w_anchor, w_r, w_t, w_tab = (
+        qn("w:hyperlink"),
+        qn("w:anchor"),
+        qn("w:r"),
+        qn("w:t"),
+        qn("w:tab"),
+    )
+
+    entries: list[_LinkedEntry] = []
+    body = document.element.body  # type: ignore[attr-defined]
+    for ordinal, p_element in enumerate(body.iter(w_p), start=1):
+        ppr = p_element.find(w_ppr)
+        pstyle = ppr.find(w_pstyle) if ppr is not None else None
+        if pstyle is None or pstyle.get(w_val, "") not in entry_style_ids:
+            continue
+        link = p_element.find(w_hyperlink)
+        bookmark = link.get(w_anchor) if link is not None else None
+        if not bookmark:
+            continue
+        before: list[str] = []
+        after: list[str] = []
+        past_tab = False
+        for run in link.findall(w_r):
+            if run.find(w_tab) is not None:
+                past_tab = True
+                continue
+            texts = [text.text or "" for text in run.findall(w_t)]
+            (after if past_tab else before).extend(texts)
+        entries.append(
+            _LinkedEntry(
+                ordinal=ordinal,
+                bookmark=bookmark,
+                heading="".join(before).strip(),
+                printed="".join(after).strip(),
+            )
+        )
+    return tuple(entries)
+
+
+def _check_linked(entries: Sequence[_LinkedEntry], pdf_bytes: bytes) -> TocPass:
+    """Each linked entry's printed page, against the page its bookmark landed on."""
+    from reporting_agent.render.toc import named_destination_pages
+
+    destinations = named_destination_pages(pdf_bytes)
+    findings: list[Finding] = []
+    proven: dict[int, frozenset[str]] = {}
+    checked = 0
+
+    for entry in entries:
+        if not entry.printed.isdigit():
+            # No number printed: nothing was claimed, so nothing is checked — the same
+            # treatment the text path gives an entry it could not read a number from.
+            continue
+        checked += 1
+        named = int(entry.printed)
+        observed = destinations.get(entry.bookmark)
+        if observed is None:
+            findings.append(
+                record_finding(
+                    FINDING_TOC_PAGE_MISMATCH,
+                    (
+                        f"the table of contents names page {named} for heading "
+                        f"{entry.heading!r} but its bookmark {entry.bookmark!r} is not a "
+                        f"destination in the PDF"
+                    ),
+                    heading_text=entry.heading,
+                    page_named=named,
+                    page_observed=0,
+                )
+            )
+        elif observed != named:
+            findings.append(
+                record_finding(
+                    FINDING_TOC_PAGE_MISMATCH,
+                    (
+                        f"the table of contents names page {named} for heading "
+                        f"{entry.heading!r} but it appears on page {observed}"
+                    ),
+                    heading_text=entry.heading,
+                    page_named=named,
+                    page_observed=observed,
+                )
+            )
+        else:
+            proven[entry.ordinal] = frozenset({entry.printed})
+
+    return TocPass(findings=tuple(findings), entries_checked=checked, proven_toc_numerals=proven)
 
 
 def _heading_style_ids(document: object) -> frozenset[str]:

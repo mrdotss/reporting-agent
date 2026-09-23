@@ -28,7 +28,7 @@ from __future__ import annotations
 import re
 from typing import Final
 
-__all__ = ["PAGE_SIZES", "stylesheet"]
+__all__ = ["PAGE_MARGIN", "PAGE_SIZES", "stylesheet"]
 
 PAGE_SIZES: Final[dict[str, str]] = {"A4": "A4", "Letter": "Letter"}
 """The `@page size` for each page size the definition admits, named as CSS names them.
@@ -37,6 +37,11 @@ Deliberately a mapping rather than a pass-through: `design.page_size` is validat
 the definition's vocabulary, and a value CSS does not recognise would silently fall back to
 the initial page size rather than failing, so an unrecognised one must not reach `size:`.
 """
+
+
+PAGE_MARGIN: Final[str] = "17mm 16mm 14mm 16mm"
+"""Every page's margin — and the padding of a full-bleed cover, which has none, so its
+text lands where it would on any other page. One value, so the two cannot drift."""
 
 
 def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", density: str = "normal", table_style: str | None = None) -> str:
@@ -77,7 +82,7 @@ def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", de
    Nothing else is furniture. */
 @page {{
   size: {size};
-  margin: 17mm 16mm 14mm 16mm;
+  margin: {PAGE_MARGIN};
 
   @top-left {{
     content: string(running-head);
@@ -551,6 +556,14 @@ caption {{
 .rpt-chart .rpt-series-set {{ display: none; }}
 
 hr.rpt-break {{ border: 0; margin: 0; break-after: page; }}
+
+/* A cover with a full-bleed image. Its own page with no margin, so the page's background
+   is sized to the whole sheet rather than to the area inside the margins — WeasyPrint
+   tiled it into them — and padded by exactly those margins, so the cover's text sits
+   where it would on any other page. The emitter wraps the cover only when it has an
+   image, so a cover without one lays out as it always did. */
+@page cover {{ margin: 0; }}
+.rpt-cover {{ page: cover; padding: {PAGE_MARGIN}; }}
 """
     css += f"\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td {{ padding: {padding}pt 5pt; }}"
     if table_style == "bordered":

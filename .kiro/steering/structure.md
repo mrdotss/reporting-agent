@@ -80,7 +80,8 @@ agent/
       charts.py                   # static chart images; frozen rc params
       chartstyle.py               # sizes, palettes, the per-preset ink
       tablefit.py                 # column widths from content, not from a guess
-      toc.py                      # the two-pass contents; page numbers are measured
+      toc.py                      # the two-pass contents: entries link to heading
+                                  # bookmarks; pages read from the PDF's named destinations
       anchors.py                  # w:tblCaption ids + Figure character-style wrapping
     verify/
       tokens.py                   # numeric-token extraction from the rendered document

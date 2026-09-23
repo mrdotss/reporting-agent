@@ -52,6 +52,7 @@ from reporting_agent.compile.blocks.base import DesignSettings
 from reporting_agent.compile.figures import ANCHOR_TABLE, FigureLedger, TableAnchor
 from reporting_agent.compile.snapshot_view import SnapshotValue, build_snapshot_view
 from reporting_agent.compile.messages import load_messages
+from reporting_agent.render.charts import COMPANION_TABLE_IN_DOCX
 from reporting_agent.render.docx import render_document
 import messages_factory as mf
 
@@ -534,7 +535,14 @@ def test_a_real_render_verifies_and_every_identity_is_unique_and_path_derived(
 
     identities = [grid.identity for grid in grids]
     assert len(identities) == len(set(identities))
-    assert set(identities) == set(compiled.ledger.table_identities())
+    # Every registered data table is printed; a chart's companion table is printed only
+    # where `COMPANION_TABLE_IN_DOCX` says so — see `render/charts.py`.
+    printed = {
+        identity
+        for identity, path in compiled.ledger.table_identities().items()
+        if COMPANION_TABLE_IN_DOCX or identity != chart_id(path)
+    }
+    assert set(identities) == printed
     for identity, path in compiled.ledger.table_identities().items():
         assert identity in (table_id(path), chart_id(path))
 

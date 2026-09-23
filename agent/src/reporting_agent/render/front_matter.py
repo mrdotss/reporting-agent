@@ -950,13 +950,18 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
         # Text plus a tab, whether or not a number follows, so pass 1 lays out to exactly
         # the height pass 2 will — `render/toc.py::apply_toc_page_numbers` measures the
         # converted PDF and re-emits with the numbers it found.
+        from reporting_agent.render.toc import heading_bookmark
+
         document.add_paragraph(section.label, style=section.label_style)
-        for entry in section.entries:
+        for ordinal, entry in enumerate(section.entries, start=1):
             paragraph = document.add_paragraph(style=section.entry_style)
             # The text alone. The section number is deliberately not printed here: see
             # `render/toc.py::section_numbers`.
-            paragraph.add_run(entry.text)
-            paragraph.add_run().add_tab()
+            #
+            # Inside a hyperlink to the heading's bookmark, so the entry is clickable in
+            # Word and in the converted PDF, and so pass 2 can read the page the heading
+            # landed on from the bookmark rather than from a search for its words.
+            _add_contents_link(paragraph, entry.text, bookmark=heading_bookmark(ordinal))
 
     elif isinstance(section, FrontMatterPageBreak):
         _add_page_break(document)
@@ -1497,7 +1502,7 @@ def _emit_toc(
     Followed by a page break so content starts on a fresh page.
     """
     from reporting_agent.render.themes import TOC_ENTRY_STYLE
-    from reporting_agent.render.toc import TOC_LABEL_ID
+    from reporting_agent.render.toc import TOC_LABEL_ID, heading_bookmark
 
     # Section heading — styled Title so it doesn't appear in its own TOC.
     toc_label = messages.text(TOC_LABEL_ID)
@@ -1505,10 +1510,29 @@ def _emit_toc(
 
     # One entry per heading, at levels 1-3. The text + tab is emitted whether or not
     # a number follows, so pass 1 lays out to exactly the height pass 2 will.
-    for heading_text, _level in heading_entries:
+    for ordinal, (heading_text, _level) in enumerate(heading_entries, start=1):
         paragraph = document.add_paragraph(style=TOC_ENTRY_STYLE)
-        paragraph.add_run(heading_text)
-        paragraph.add_run().add_tab()
+        _add_contents_link(paragraph, heading_text, bookmark=heading_bookmark(ordinal))
 
     # Page break after the TOC section.
     _add_page_break(document)
+
+
+def _add_contents_link(paragraph: object, text: str, *, bookmark: str) -> None:
+    """One contents entry: its text and a tab, inside a link to the heading's bookmark.
+
+    The page number, written later by pass 2, goes inside the same link. `w:history` is
+    what Word sets on an internal link it creates itself.
+    """
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("w:anchor"), bookmark)
+    link.set(qn("w:history"), "1")
+    text_run = paragraph.add_run(text)  # type: ignore[attr-defined]
+    tab_run = paragraph.add_run()  # type: ignore[attr-defined]
+    tab_run.add_tab()
+    link.append(text_run._r)
+    link.append(tab_run._r)
+    paragraph._p.append(link)  # type: ignore[attr-defined]

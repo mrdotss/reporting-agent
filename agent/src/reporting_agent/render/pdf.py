@@ -130,6 +130,19 @@ def assert_lang_in_effect() -> None:
         )
 
 
+PDF_EXPORT_FILTER: Final[str] = (
+    'pdf:writer_pdf_Export:{"ExportBookmarksToPDFDestination":'
+    '{"type":"boolean","value":"true"}}'
+)
+"""Writer's PDF export, with every Word bookmark written as a named destination.
+
+The default export writes none, and the table of contents needs them: each heading carries
+a bookmark its contents entry links to, and `render/toc.py` reads a heading's page from
+the destination rather than by searching page text for the heading's words. Nothing else
+changes — the same filter `pdf` selects for a Writer document, one option set.
+"""
+
+
 def soffice_command(source: Path, outdir: Path, *, profile: Path) -> list[str]:
     """The exact argument list every conversion uses.
 
@@ -148,7 +161,7 @@ def soffice_command(source: Path, outdir: Path, *, profile: Path) -> list[str]:
         # environment.
         f"-env:UserInstallation=file://{profile}",
         "--convert-to",
-        "pdf",
+        PDF_EXPORT_FILTER,
         "--outdir",
         str(outdir),
         str(source),

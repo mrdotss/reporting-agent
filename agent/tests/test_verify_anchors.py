@@ -14,6 +14,7 @@ import io
 from collections.abc import Sequence
 from typing import Final
 
+import pytest
 from docx import Document as open_docx
 from docx.oxml.ns import qn
 
@@ -202,13 +203,23 @@ def test_the_counts_distinguish_a_pass_that_checked_nothing() -> None:
     assert outcome.tables_resolved == 0
 
 
-def test_every_anchor_the_renderer_records_carries_a_resolvable_column_key() -> None:
+def test_every_anchor_the_renderer_records_carries_a_resolvable_column_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """The defect this pass exposed: an anchor's column key is the **header text**.
+
+    About a printed companion table, so the table is switched on — the `.docx` no longer
+    prints one by default (`render/charts.COMPANION_TABLE_IN_DOCX`).
 
     A chart's companion table declares `Column(key="value", header="Value")`, so recording
     `Column.key` would record a string that appears nowhere in the emitted grid — and every
     chart figure in an otherwise correct document would fail as `table_column_unresolved`.
     """
+    import reporting_agent.render.charts as charts_module
+    import reporting_agent.render.docx as docx_module
+
+    monkeypatch.setattr(charts_module, "COMPANION_TABLE_IN_DOCX", True)
+    monkeypatch.setattr(docx_module, "COMPANION_TABLE_IN_DOCX", True)
     compiled, payload = render(
         [df.block("ts", "timeseries_chart", {"metrics": [df.CPU_AVG]})]
     )

@@ -130,8 +130,14 @@ def check_pdf(
     pages_read: int,
     expected_sha256: str,
     number_format: NumberFormat = DEFAULT_NUMBER_FORMAT,
+    omitted: frozenset[str] = frozenset(),
 ) -> PdfPass:
     """Locate every ledger `formatted` string in the converted PDF's text.
+
+    `omitted` names the figures the `.docx` carries only as points in a chart image —
+    no table prints them since `render/charts.COMPANION_TABLE_IN_DOCX` — so its conversion
+    has no text of them to find. The chart gate proved them; see `check_styled_pdf` for the
+    same exemption on the reading copy.
 
     `text` and `pages_read` arrive from `verify/tokens.read_pdf_text`, already normalized —
     the extraction is the Token_Extractor's job (Req 33.5) and doing it again here would be a
@@ -167,6 +173,8 @@ def check_pdf(
     findings: list[Finding] = []
     located = 0
     for path, figure in entries.items():
+        if str(path) in omitted:
+            continue
         if is_located(
             normalize(figure.formatted), text, decimal=decimal, grouping=grouping
         ):
@@ -187,7 +195,7 @@ def check_pdf(
 
     return PdfPass(
         findings=tuple(findings),
-        entries_checked=len(entries),
+        entries_checked=sum(1 for path in entries if str(path) not in omitted),
         entries_located=located,
         pages_read=pages_read,
         pdf_sha256=digest,

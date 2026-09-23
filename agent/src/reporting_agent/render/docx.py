@@ -90,6 +90,7 @@ from reporting_agent.render.anchors import (
 )
 from reporting_agent.render.charts import (
     CHART_ALT_TEXT_PREFIX,
+    COMPANION_TABLE_IN_DOCX,
     SIDECAR_SUFFIX,
     companion_table,
 )
@@ -108,6 +109,7 @@ from reporting_agent.render.themes import (
     load_theme,
     missing_styles,
 )
+from reporting_agent.render.toc import heading_bookmark, toc_heading_text
 
 __all__ = [
     "FIXED_TIMESTAMP",
@@ -286,6 +288,9 @@ class _Emitter:
     chart_sidecars: dict[str, bytes] = field(default_factory=dict)
     chart_tables: dict[str, object] = field(default_factory=dict)
     chart_vectors: dict[str, str] = field(default_factory=dict)
+    headings_bookmarked: int = 0
+    """How many top-level contents headings have been bookmarked so far — the ordinal of
+    the last one, and so the name of its contents entry's link target."""
 
     @property
     def text_width(self) -> int:
@@ -433,6 +438,13 @@ class _Emitter:
         paragraph = self._new_paragraph(container, style)
         self.write_inlines(paragraph, node.inlines, at=f"paragraph {node.path!r}")
 
+        # A heading the table of contents lists gets the bookmark its entry links to.
+        # Top-level only, under the predicate the contents builder uses, so the two count
+        # the same headings in the same order and the third entry reaches the third one.
+        if container is None and toc_heading_text(node) is not None:
+            self.headings_bookmarked += 1
+            _bookmark(paragraph, heading_bookmark(self.headings_bookmarked), self.headings_bookmarked)
+
     def emit_page_break(self, node: PageBreak, *, container: DocxCell | None) -> None:
         if container is not None:
             # A page break inside a layout cell would break the column, not the page. The
@@ -447,7 +459,11 @@ class _Emitter:
         paragraph.add_run().add_break(WD_BREAK.PAGE)
 
     def emit_chart(self, node: Chart, *, container: DocxCell | None) -> None:
-        """One image, then its companion table, with nothing between them (Req 22.2).
+        """One image, its title and period — and no longer its companion table.
+
+        The table is built and recorded but not printed: see
+        `render/charts.COMPANION_TABLE_IN_DOCX` for why, and for what proves the points
+        instead. What follows describes the table where that switch prints it.
 
         Both carry the same `cht:<path>` identity — the image in its alternative text, the
         table in its `w:tblCaption` — so the verifier pairs them by identity rather than by
@@ -499,25 +515,33 @@ class _Emitter:
         if chart_title:
             title_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
             title_para.add_run(chart_title)
-            title_para.paragraph_format.keep_with_next = True
+            # Kept with what follows only while a table follows: with none, the next block
+            # is unrelated and binding to it would only push this page's end around.
+            title_para.paragraph_format.keep_with_next = (
+                COMPANION_TABLE_IN_DOCX or bool(node.period_label)
+            )
 
         # Req 17.12 — present the period_label identically to how the chart image renders it.
         if node.period_label:
             period_para = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
             period_para.add_run(node.period_label)
-            period_para.paragraph_format.keep_with_next = True
+            period_para.paragraph_format.keep_with_next = COMPANION_TABLE_IN_DOCX
 
         self.chart_hashes[artifacts.identity] = artifacts.data_hash
         self.chart_sidecars[f"{artifacts.identity}{SIDECAR_SUFFIX}"] = artifacts.sidecar_json
         self.chart_vectors[artifacts.identity] = artifacts.image_svg
+        # Recorded whether or not it is printed: the designed PDF names the figures it
+        # omits from these tables, and the verifier's exemptions are read off them.
         self.chart_tables[artifacts.identity] = artifacts.table
 
-        self.emit_table(
-            artifacts.table,
-            container=container,
-            identity=artifacts.identity,
-            anchor_kind=ANCHOR_CHART,
-        )
+        # The daily table is no longer printed — see `render/charts.COMPANION_TABLE_IN_DOCX`.
+        if COMPANION_TABLE_IN_DOCX:
+            self.emit_table(
+                artifacts.table,
+                container=container,
+                identity=artifacts.identity,
+                anchor_kind=ANCHOR_CHART,
+            )
 
     # --- tables ---------------------------------------------------------------
 
@@ -1028,3 +1052,27 @@ def _apply_appearance(document, design):
     for style in document.styles:
         if style.type == 1:
             style.paragraph_format.line_spacing = spec.line_spacing * factor
+
+
+def _bookmark(paragraph: object, name: str, ordinal: int) -> None:
+    """Wrap a paragraph's content in a Word bookmark named `name`.
+
+    `w:id` only has to be unique within the document; the ordinal is, and it keeps the ids
+    clear of any Word adds itself, which start at zero.
+    """
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+
+    element = paragraph._p  # type: ignore[attr-defined]
+    identifier = str(_BOOKMARK_ID_BASE + ordinal)
+    start = OxmlElement("w:bookmarkStart")
+    start.set(qn("w:id"), identifier)
+    start.set(qn("w:name"), name)
+    end = OxmlElement("w:bookmarkEnd")
+    end.set(qn("w:id"), identifier)
+    # After the paragraph's properties, which must stay its first child.
+    element.insert(1 if element.pPr is not None else 0, start)
+    element.append(end)
+
+
+_BOOKMARK_ID_BASE: Final[int] = 10_000
