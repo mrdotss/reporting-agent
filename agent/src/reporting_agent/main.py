@@ -723,6 +723,9 @@ def parse_invocation(payload: object, request_context: object = None) -> Invocat
     # token authorizes writes to the run state machine, so a leak lets someone mark a run
     # `completed`.
     register_secrets((context_map.get("client_secret"), context_map.get("progress_token")))
+    # An AWS connector's external id is not a credential, but it is what keeps another
+    # tenant of this service from assuming the customer's role, so it never reaches a log.
+    register_secrets((context_map.get("external_id"),))
 
     raw_command = payload_map.get("command")
     command = raw_command if isinstance(raw_command, str) and raw_command in COMMANDS else None
@@ -828,6 +831,8 @@ def describe_invocation(invocation: Invocation) -> dict[str, Any]:
         "tenant_id": presence_marker(_optional_text(context.get("tenant_id"))),
         "client_id": presence_marker(_optional_text(context.get("client_id"))),
         "client_secret": presence_marker(_optional_text(context.get("client_secret"))),
+        "provider": context.get("provider") or "azure",
+        "external_id": presence_marker(_optional_text(context.get("external_id"))),
         "progress_token": presence_marker(_optional_text(context.get("progress_token"))),
         "progress_url": _optional_text(context.get("progress_url")),
         "rejected": None if invocation.rejection is None else invocation.rejection.code,
@@ -865,6 +870,11 @@ async def handle_preflight(
     in `azure-identity` (and, with a workspace id, `azure-monitor-query`), and an
     invocation that is not a preflight has no business paying for either.
     """
+    if is_aws(invocation.context):
+        async for event in _aws_preflight(invocation, steps):
+            yield event
+        return
+
     from reporting_agent.azure.preflight import (  # see the docstring
         FIDELITY_BASELINE,
         build_preflight_service,
@@ -1050,6 +1060,11 @@ async def handle_list_inventory(
     is built — `build_inventory_port` rather than `build_azure_ports` — because this command
     touches no other service.
     """
+    if is_aws(invocation.context):
+        async for event in _aws_list_inventory(invocation, steps):
+            yield event
+        return
+
     from reporting_agent.azure.clients import build_inventory_port
     from reporting_agent.azure.credential import InvocationCredential
     from reporting_agent.azure.inventory import (
@@ -1126,6 +1141,102 @@ async def handle_list_inventory(
             }
             for name in INVENTORY_DIMENSIONS
         },
+    )
+
+
+def is_aws(context: Mapping[str, Any]) -> bool:
+    """Whether this invocation's connector is an AWS account. Absent means Azure, which is
+    every connector created before AWS existed."""
+    return context.get("provider") == "aws"
+
+
+async def _aws_session(invocation: Invocation) -> Any:
+    """The customer's reader role, assumed for this invocation only."""
+    from reporting_agent.aws.session import assume_reader_role
+
+    context = invocation.context
+    return await asyncio.to_thread(
+        assume_reader_role,
+        role_arn=context.get("role_arn"),  # type: ignore[arg-type]
+        external_id=context.get("external_id"),  # type: ignore[arg-type]
+        account_id=context.get("subscription_id"),  # type: ignore[arg-type]
+        actor_id=invocation.actor_id or "",
+        region=CONFIG.aws_region,
+    )
+
+
+def _aws_preflight_service(invocation: Invocation, session: Any) -> Any:
+    from reporting_agent.aws.preflight import AwsPreflight
+    from reporting_agent.aws.session import client_factory
+
+    return AwsPreflight(
+        clients=client_factory(session),
+        account_id=str(invocation.context.get("subscription_id")),
+        role_arn=str(invocation.context.get("role_arn")),
+        home_region=CONFIG.aws_region,
+    )
+
+
+async def _aws_preflight(invocation: Invocation, steps: StepTracker) -> AsyncIterator[Event]:
+    """The AWS preflight — see `aws/preflight.py`. Seeds the refusing answer first, as the
+    Azure one does, so every path out leaves a `done` the app can read."""
+    from reporting_agent.aws.preflight import FIDELITY_BASELINE
+
+    invocation.outcome["scope_verified"] = False
+    invocation.outcome["fidelity_tier"] = FIDELITY_BASELINE
+    invocation.outcome["metrics_history_since"] = None
+    invocation.outcome["regions"] = []
+
+    permissions = steps.start(
+        TOOL_PREFLIGHT_PERMISSIONS, label="Permissions", status="Assuming the reader role and checking its grant"
+    )
+    yield permissions
+    preflight = _aws_preflight_service(invocation, await _aws_session(invocation))
+    invocation.outcome["scope_verified"] = await preflight.assert_account_read()
+    yield steps.end(permissions["id"])
+
+    regions_step = steps.start(TOOL_PREFLIGHT_FIDELITY, label="Regions", status="Listing the account's enabled regions")
+    yield regions_step
+    regions = await preflight.enabled_regions()
+    invocation.outcome["regions"] = regions
+    yield steps.end(regions_step["id"])
+
+    fidelity = steps.start(
+        TOOL_PREFLIGHT_FIDELITY, label="Fidelity", status="Looking for the CloudWatch agent's memory metric"
+    )
+    yield fidelity
+    invocation.outcome["fidelity_tier"] = await preflight.probe_fidelity(regions)
+    yield steps.end(fidelity["id"])
+
+    logger.info(
+        "aws preflight completed: scope_verified=%r fidelity_tier=%r regions=%d",
+        invocation.outcome["scope_verified"],
+        invocation.outcome["fidelity_tier"],
+        len(regions),
+    )
+
+
+async def _aws_list_inventory(invocation: Invocation, steps: StepTracker) -> AsyncIterator[Event]:
+    """The AWS scan — see `aws/inventory.py`. Written to the outcome only on success, as the
+    Azure listing is: an empty answer would claim an empty account."""
+    from reporting_agent.aws.inventory import AwsInventory, summarize
+    from reporting_agent.aws.session import client_factory
+
+    step = steps.start(
+        TOOL_COLLECT_INVENTORY, label="Inventory", status="Listing each region's resources, types and tags"
+    )
+    yield step
+    session = await _aws_session(invocation)
+    regions = await _aws_preflight_service(invocation, session).enabled_regions()
+    outcome = summarize(await AwsInventory(client_factory(session)).scan(regions))
+    invocation.outcome.update(outcome)
+    yield steps.end(step["id"])
+
+    logger.info(
+        "aws list_inventory completed: regions=%d resources=%d refused=%d",
+        len(regions),
+        outcome["resource_count"],
+        sum(1 for probe in outcome["region_probes"] if probe["verdict"] == "refused"),
     )
 
 
