@@ -6,4 +6,6 @@ __pycache__/
 venv/
 .ruff_cache/
 *.egg-info/
+# setuptools output from building a wheel locally; the image copies src/ directly.
+build/
 chart-renderer/node_modules/
