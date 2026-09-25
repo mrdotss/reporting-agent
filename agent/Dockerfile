@@ -290,6 +290,19 @@ RUN python -m reporting_agent.catalog.evidence --assert-build
 # point, so .dockerignore needs no second re-inclusion.
 RUN python -m reporting_agent.compile.literals --assert-build
 
+# Fail the BUILD if the vendored agent skills did not make it into the image. They are
+# Markdown under `src/reporting_agent/skills/vendor/`, and a `.dockerignore` pattern that
+# matched nested `.md` files would drop them silently: Ask would answer with no provider
+# guidance, and the narrators would lose their writing rules, with nothing failing.
+RUN python -c "\
+from reporting_agent.skills.catalogue import load_skills; \
+from reporting_agent.skills.style import writing_rules; \
+skills = load_skills(); \
+assert len(skills) >= 40, f'only {len(skills)} skills in the image'; \
+assert all(skill.topics or skill.inline for skill in skills); \
+writing_rules(); \
+print(f'skills ok: {len(skills)} skills and the writing rules')"
+
 # --- Pre-warm the LibreOffice user profile (Req 23.5) -------------------------
 #
 # A cold profile makes the first conversion of a container's life slow and

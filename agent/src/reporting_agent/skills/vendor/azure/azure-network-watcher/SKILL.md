@@ -1,0 +1,85 @@
+---
+name: azure-network-watcher
+description: Expert knowledge for Azure Network Watcher development including troubleshooting, decision making, limits & quotas, security, configuration, and integrations & coding patterns. Use when configuring VNet flow logs, Traffic Analytics, packet capture, Connection Monitor migrations, or VPN monitoring, and other Azure Network Watcher related development tasks. Not for Azure Monitor (use azure-monitor), Azure Networking (use azure-networking), Azure Virtual Network (use azure-virtual-network), Azure Firewall (use azure-firewall).
+compatibility: Requires network access. Uses mcp_microsoftdocs:microsoft_docs_fetch or fetch_webpage to retrieve documentation.
+metadata:
+  generated_at: "2026-09-20"
+  generator: "docs2skills/1.0.0"
+---
+# Azure Network Watcher Skill
+
+This skill provides expert guidance for Azure Network Watcher. Covers troubleshooting, decision making, limits & quotas, security, configuration, and integrations & coding patterns. It combines local quick-reference content with remote documentation fetching capabilities.
+
+## How to Use This Skill
+
+> **IMPORTANT for Agent**: Use the **Category Index** below to locate relevant sections. For categories with line ranges (e.g., `L35-L120`), use `read_file` with the specified lines. For categories with file links (e.g., `[security.md](security.md)`), use `read_file` on the linked reference file
+
+> **IMPORTANT for Agent**: If `metadata.generated_at` is more than 3 months old, suggest the user pull the latest version from the repository. If `mcp_microsoftdocs` tools are not available, suggest the user install it: [Installation Guide](https://github.com/MicrosoftDocs/mcp/blob/main/README.md)
+
+This skill requires **network access** to fetch documentation content:
+- **Preferred**: Use `mcp_microsoftdocs:microsoft_docs_fetch` with query string `from=learn-agent-skill`. Returns Markdown.
+- **Fallback**: Use `fetch_webpage` with query string `from=learn-agent-skill&accept=text/markdown`. Returns Markdown.
+
+## Category Index
+
+| Category | Lines | Description |
+|----------|-------|-------------|
+| Troubleshooting | L34-L44 | Diagnosing and fixing outbound connectivity, NSG/admin rule issues, and VPN gateway/on-prem VPN problems, plus automating VPN monitoring with Azure Network Watcher. |
+| Decision Making | L45-L51 | Guidance for migrating network monitoring: moving from classic Connection Monitor and Network Performance Monitor tests, and switching NSG flow logs to VNet flow logs. |
+| Limits & Quotas | L52-L56 | How to configure and run Network Watcher packet capture, storage and filtering options, and the key limits/quotas (size, duration, concurrency) that apply to captures |
+| Security | L57-L64 | Securing Network Watcher: RBAC setup, hardening deployments and data access, Zero Trust segmentation with Traffic Analytics, and protecting VNet flow logs using managed identities. |
+| Configuration | L65-L79 | Configuring and deploying Network Watcher/virtual network flow logs, agents, filters, schemas, and Azure Policy/Bicep/ARM templates for monitoring and Traffic Analytics. |
+| Integrations & Coding Patterns | L80-L85 | Using Network Watcher programmatically: triggering packet captures from Functions alerts, querying Traffic Analytics with KQL, and provisioning VNet flow logs via Terraform. |
+
+### Troubleshooting
+| Topic | URL |
+|-------|-----|
+| Diagnose outbound connection issues with Network Watcher | https://learn.microsoft.com/en-us/azure/network-watcher/connection-troubleshoot-manage |
+| Troubleshoot NSG and admin rules with NSG diagnostics | https://learn.microsoft.com/en-us/azure/network-watcher/diagnose-network-security-rules |
+| Resolve common Azure Network Watcher issues | https://learn.microsoft.com/en-us/azure/network-watcher/frequently-asked-questions |
+| Diagnose on-premises VPN connectivity to Azure with Network Watcher | https://learn.microsoft.com/en-us/azure/network-watcher/network-watcher-diagnose-on-premises-connectivity |
+| Automate VPN connectivity monitoring with Azure Automation and Network Watcher | https://learn.microsoft.com/en-us/azure/network-watcher/network-watcher-monitor-with-azure-automation |
+| Troubleshoot VPN gateways and connections with Azure CLI | https://learn.microsoft.com/en-us/azure/network-watcher/vpn-troubleshoot-cli |
+| Troubleshoot VPN gateways and connections with PowerShell | https://learn.microsoft.com/en-us/azure/network-watcher/vpn-troubleshoot-powershell |
+
+### Decision Making
+| Topic | URL |
+|-------|-----|
+| Migrate from Connection Monitor classic to new Connection Monitor | https://learn.microsoft.com/en-us/azure/network-watcher/migrate-to-connection-monitor-from-connection-monitor-classic |
+| Migrate tests from Network Performance Monitor to Connection Monitor | https://learn.microsoft.com/en-us/azure/network-watcher/migrate-to-connection-monitor-from-network-performance-monitor |
+| Migrate from NSG flow logs to VNet flow logs | https://learn.microsoft.com/en-us/azure/network-watcher/nsg-flow-logs-migrate |
+
+### Limits & Quotas
+| Topic | URL |
+|-------|-----|
+| Use Network Watcher packet capture and understand its limits | https://learn.microsoft.com/en-us/azure/network-watcher/packet-capture-overview |
+
+### Security
+| Topic | URL |
+|-------|-----|
+| Configure RBAC permissions for Azure Network Watcher | https://learn.microsoft.com/en-us/azure/network-watcher/rbac-permissions |
+| Secure Azure Network Watcher deployment and data access | https://learn.microsoft.com/en-us/azure/network-watcher/secure-network-watcher |
+| Apply Zero Trust segmentation using Traffic Analytics | https://learn.microsoft.com/en-us/azure/network-watcher/traffic-analytics-zero-trust |
+| Secure VNet flow logs with managed identities | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-managed-identity |
+
+### Configuration
+| Topic | URL |
+|-------|-----|
+| Install and manage Azure Monitor Agent on Arc servers | https://learn.microsoft.com/en-us/azure/network-watcher/connection-monitor-install-azure-monitor-agent |
+| Understand Connection Monitor Log Analytics data schemas | https://learn.microsoft.com/en-us/azure/network-watcher/connection-monitor-schema |
+| Configure and manage Network Watcher Agent VM extension | https://learn.microsoft.com/en-us/azure/network-watcher/network-watcher-agent-manage |
+| Configure and manage Azure NSG flow logs | https://learn.microsoft.com/en-us/azure/network-watcher/nsg-flow-logs-manage |
+| Govern Traffic Analytics with Azure Policy | https://learn.microsoft.com/en-us/azure/network-watcher/traffic-analytics-policy-portal |
+| Understand Traffic Analytics schema and aggregation | https://learn.microsoft.com/en-us/azure/network-watcher/traffic-analytics-schema |
+| Deploy Network Watcher flow logs with Bicep | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-bicep |
+| Configure filtering for Azure VNet flow logs | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-filtering |
+| Configure and manage Azure virtual network flow logs | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-manage |
+| Enforce VNet flow logs with Azure Policy | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-policy |
+| Deploy Network Watcher flow logs via ARM template | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-template |
+
+### Integrations & Coding Patterns
+| Topic | URL |
+|-------|-----|
+| Trigger Network Watcher packet captures from Azure Functions alerts | https://learn.microsoft.com/en-us/azure/network-watcher/packet-capture-alert-triggered |
+| Analyze Traffic Analytics data with KQL queries | https://learn.microsoft.com/en-us/azure/network-watcher/traffic-analytics-queries |
+| Provision Azure VNet flow logs with Terraform | https://learn.microsoft.com/en-us/azure/network-watcher/vnet-flow-logs-terraform |

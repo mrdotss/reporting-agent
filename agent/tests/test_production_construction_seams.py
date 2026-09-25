@@ -265,8 +265,8 @@ SILENT_SEAMS: Mapping[str, Callable[[], Any]] = {
 
 def test_no_new_boto3_bedrock_runtime_construction_site_outside_narrate() -> None:
     """The only places ``boto3.client("bedrock-runtime", ...)`` should appear are
-    ``narrate/summary.py``, ``narrate/chat.py`` and ``narrate/intent.py``.  Another site
-    would be another silent-failure seam.
+    ``narrate/summary.py``, ``narrate/chat.py``, ``narrate/intent.py`` and
+    ``narrate/skills.py``.  Another site would be another silent-failure seam.
 
     ``narrate/chat.py`` is the opposite of a silent seam: ``bedrock_chat_model`` fails
     closed with ``ChatNotConfiguredError`` and has no broad except around construction
@@ -275,7 +275,9 @@ def test_no_new_boto3_bedrock_runtime_construction_site_outside_narrate() -> Non
     ``narrate/intent.py`` fails quietly by design, and that is safe only because of what it
     writes: one courtesy sentence ahead of the answer, never the answer or a figure. A
     missing sentence leaves the answer exactly as it would have been, which
-    ``test_chat_intent_thinking.py`` pins."""
+    ``test_chat_intent_thinking.py`` pins. ``narrate/skills.py`` fails quietly on the same
+    terms: a failed choice is no skill, and the answer is the one it would have been without
+    one, which ``test_skills.py`` pins."""
     from pathlib import Path
 
     source_root = Path(__file__).resolve().parents[1] / "src" / "reporting_agent"
@@ -283,6 +285,7 @@ def test_no_new_boto3_bedrock_runtime_construction_site_outside_narrate() -> Non
         source_root / "narrate" / "summary.py",
         source_root / "narrate" / "chat.py",
         source_root / "narrate" / "intent.py",
+        source_root / "narrate" / "skills.py",
     }
 
     sites: set[str] = set()
@@ -316,6 +319,10 @@ def test_no_new_httpx_asyncclient_construction_outside_progress() -> None:
     known = {
         source_root / "progress.py",
         source_root / "azure" / "preflight.py",
+        # Reads one allowlisted documentation page for Ask; a failure is no page, never a
+        # failed answer. Its call sites — allowlist, redirects, size caps, failures — are
+        # tested through a mock transport in `test_skills.py`.
+        source_root / "skills" / "fetch.py",
     }
 
     sites: set[str] = set()
