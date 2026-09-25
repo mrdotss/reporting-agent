@@ -301,11 +301,21 @@ export function AskWorkspace({
   return (
     <div
       data-slot="ask-workspace"
-      className="grid h-[calc(100dvh-8.5rem)] min-h-[32rem] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
+      className="grid h-[calc(100dvh-8.5rem)] min-h-[32rem] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[17rem_minmax(0,1fr)]"
     >
-      <aside aria-label="Conversations" className="hidden min-h-0 flex-col border-r border-border lg:flex">
-        {threadList}
-      </aside>
+      {/* One side column: the conversations above, what this one is grounded in below, so
+          the answer and the composer get the rest of the width. */}
+      <div className="hidden min-h-0 flex-col border-r border-border lg:flex">
+        <aside aria-label="Conversations" className="flex min-h-0 flex-1 flex-col">
+          {threadList}
+        </aside>
+        <aside
+          aria-label="Grounded in"
+          className="flex max-h-[50%] min-h-0 shrink-0 flex-col overflow-y-auto border-t border-border"
+        >
+          {context}
+        </aside>
+      </div>
 
       <section aria-labelledby="ask-title" className="flex min-h-0 min-w-0 flex-col">
         <header className="flex items-center gap-2 border-b border-border px-4 py-2.5">
@@ -327,7 +337,7 @@ export function AskWorkspace({
               {scopeLine}
             </p>
           </div>
-          <Button variant="ghost" size="sm" className="xl:hidden" onClick={() => setContextOpen(true)}>
+          <Button variant="ghost" size="sm" className="lg:hidden" onClick={() => setContextOpen(true)}>
             <SidebarSimpleIcon aria-hidden="true" />
             <span className="hidden sm:inline">Grounded in</span>
           </Button>
@@ -354,7 +364,7 @@ export function AskWorkspace({
         />
 
         {error ? (
-          <p role="alert" className="mx-auto w-full max-w-4xl px-5 text-xs text-destructive">
+          <p role="alert" className="mx-auto w-full max-w-5xl px-5 text-xs text-destructive">
             {error}
           </p>
         ) : null}
@@ -379,10 +389,6 @@ export function AskWorkspace({
           </p>
         )}
       </section>
-
-      <aside aria-label="Grounded in" className="hidden min-h-0 flex-col border-l border-border xl:flex">
-        {context}
-      </aside>
 
       <Sheet open={threadsOpen} onOpenChange={(open) => setThreadsOpen(open)}>
         <SheetContent side="left" className="gap-0 p-0">

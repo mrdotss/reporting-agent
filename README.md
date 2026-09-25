@@ -55,6 +55,19 @@ masked (`agent/src/reporting_agent/chat/thinking.py`), and never stores it; the 
 keeps only how long it thought. While it thinks, a second, short Kimi K3 call writes one sentence on
 what the assistant is about to do, digit-free and behind the same guardrail.
 
+### Skills
+
+The runtime carries vendored agent skills (`agent/src/reporting_agent/skills/vendor/`, refreshed
+with `python agent/dev/vendor_skills.py` at pinned commits, licences alongside):
+
+- **no-ai-slop** (MIT): its word and pattern lists are added to every narration prompt and to Ask,
+  below the figure rules. The model still never types a number.
+- **Azure** (Microsoft Agent Skills, CC-BY-4.0) and **AWS** (agent toolkit, Apache-2.0), about 50
+  curated skills: **Ask only**. The attachments decide the cloud; a fast model picks at most two
+  skills and two pages, read only from learn.microsoft.com or docs.aws.amazon.com. Each skill and
+  page is a step in the answer's timeline and listed under the answer. Product knowledge stays out
+  of reports, whose narrative may carry no number the compiler did not place.
+
 ## Run it locally
 
 ```bash

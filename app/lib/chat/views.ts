@@ -142,6 +142,16 @@ export type ChatMessageView = {
   readonly thoughtSeconds?: number
   /** The model the person picked for this answer, from `lib/chat/models.ts`. */
   readonly model?: string
+  /** Provider skills and documentation pages the answer drew on, beyond the attachments. */
+  readonly knowledge?: readonly ChatKnowledgeSource[]
+}
+
+/** One skill or documentation page an answer drew on. `url` only on a page actually read. */
+export type ChatKnowledgeSource = {
+  readonly skill: string
+  readonly provider: "azure" | "aws"
+  readonly title: string
+  readonly url?: string
 }
 
 // --- The stream the messages route writes to the browser ---------------------

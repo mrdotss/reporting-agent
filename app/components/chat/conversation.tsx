@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
+  BookOpenTextIcon,
   BrainIcon,
   CaretDownIcon,
   CheckIcon,
@@ -19,6 +20,7 @@ import type { LiveTurn } from "@/hooks/useChatStream"
 import { chatModelLabel } from "@/lib/chat/models"
 import {
   answerPlainText,
+  type ChatKnowledgeSource,
   type ChatMessageView,
   type ChatProposal,
   type ChatStep,
@@ -70,7 +72,7 @@ export function Conversation({
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto" aria-live="polite" aria-busy={live !== null}>
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 px-4 py-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-4 py-6">
         {empty ? (
           <EmptyConversation
             canChat={canChat}
@@ -258,6 +260,8 @@ function AssistantMessage({
             {message.unavailableRuns === 1 ? "it" : "them"}.
           </Note>
         ) : null}
+        {message.knowledge ? <KnowledgeSources sources={message.knowledge} /> : null}
+
         {message.pricesUnavailable ? (
           <Note>Some list prices couldn&rsquo;t be looked up, so costs for those sizes aren&rsquo;t included.</Note>
         ) : null}
@@ -336,6 +340,40 @@ function Steps({
         ))}
       </ol>
     </details>
+  )
+}
+
+/**
+ * The provider guidance an answer drew on: each documentation page as a link to it, and a
+ * skill with no page read by name. Guidance, not figures — the green chips remain the only
+ * numbers the answer proves.
+ */
+function KnowledgeSources({ sources }: Readonly<{ sources: readonly ChatKnowledgeSource[] }>) {
+  return (
+    <div data-slot="knowledge-sources" className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs text-muted-foreground">
+      <span className="inline-flex items-center gap-1 font-medium">
+        <BookOpenTextIcon aria-hidden="true" className="size-3.5 translate-y-0.5" />
+        Guidance from
+      </span>
+      {sources.map((source, index) => (
+        <span key={`${source.skill}-${index}`} className="min-w-0">
+          {source.url ? (
+            <a
+              href={source.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline decoration-border underline-offset-2 hover:text-foreground hover:decoration-foreground"
+            >
+              {source.title}
+            </a>
+          ) : (
+            <span>{source.title}</span>
+          )}
+          <span className="ml-1 uppercase tracking-wide">{source.provider === "aws" ? "AWS" : "Azure"}</span>
+          {index < sources.length - 1 ? <span aria-hidden="true"> ·</span> : null}
+        </span>
+      ))}
+    </div>
   )
 }
 

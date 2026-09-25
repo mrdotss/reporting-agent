@@ -1,0 +1,428 @@
+{
+  "aws": {
+    "commit": "4602726431d1929342fcc50f45d63bfa5ca450f9",
+    "licence": "Apache-2.0",
+    "repository": "aws/agent-toolkit-for-aws",
+    "skills": {
+      "amazon-aurora-mysql": [
+        "SKILL.md",
+        "references/commitment-pricing-basics.md",
+        "references/commitment-pricing-instructions.md",
+        "references/commitment-pricing-mechanics.md",
+        "references/commitment-pricing-scenarios.md",
+        "references/commitment-pricing-skipped-cluster.md",
+        "references/commitment-pricing-worked-examples.md",
+        "references/create-instructions.md",
+        "references/io-optimized-data-collection.md",
+        "references/io-optimized-instructions.md",
+        "references/io-optimized-pricing-tables.md",
+        "references/io-optimized-pricing.md",
+        "references/io-optimized-worked-examples.md",
+        "references/serverless-advisory-concepts.md",
+        "references/serverless-advisory-formulas-and-examples.md",
+        "references/serverless-advisory-instructions.md",
+        "references/serverless-advisory-migration.md",
+        "references/serverless-advisory-worked-examples.md",
+        "references/shared-foundation-security-considerations.md",
+        "references/upgrade-planning-documentation-links.md",
+        "references/upgrade-planning-instructions.md",
+        "references/upgrade-planning-lts-recommendation.md",
+        "references/upgrade-planning-mode-b-discovery.md",
+        "references/upgrade-planning-mode-b-prechecks-checklists.md",
+        "references/upgrade-planning-post-checklist.md",
+        "references/upgrade-planning-post-upgrade-detail.md",
+        "references/upgrade-planning-post-upgrade-validation.md",
+        "references/upgrade-planning-pre-checklist.md",
+        "references/upgrade-planning-prechecks-mysql.md",
+        "references/upgrade-planning-query-load-mysql.md"
+      ],
+      "amazon-aurora-postgresql": [
+        "SKILL.md",
+        "references/commitment-pricing-basics.md",
+        "references/commitment-pricing-instructions.md",
+        "references/commitment-pricing-mechanics.md",
+        "references/commitment-pricing-scenarios.md",
+        "references/commitment-pricing-skipped-cluster.md",
+        "references/commitment-pricing-worked-examples.md",
+        "references/create-instructions.md",
+        "references/express-create-comparison.md",
+        "references/express-create-connect-iam.md",
+        "references/express-create-constraints.md",
+        "references/express-create-documentation-links.md",
+        "references/express-create-feature-overview.md",
+        "references/express-create-instructions.md",
+        "references/express-create-migration-pgdump.md",
+        "references/express-create-migration.md",
+        "references/express-create-use-cases.md",
+        "references/io-optimized-data-collection.md",
+        "references/io-optimized-instructions.md",
+        "references/io-optimized-pricing-tables.md",
+        "references/io-optimized-pricing.md",
+        "references/io-optimized-worked-examples.md",
+        "references/serverless-advisory-concepts.md",
+        "references/serverless-advisory-formulas-and-examples.md",
+        "references/serverless-advisory-instructions.md",
+        "references/serverless-advisory-migration.md",
+        "references/serverless-advisory-worked-examples.md",
+        "references/shared-foundation-security-considerations.md",
+        "references/upgrade-planning-documentation-links.md",
+        "references/upgrade-planning-instructions.md",
+        "references/upgrade-planning-lts-recommendation.md",
+        "references/upgrade-planning-mode-b-discovery.md",
+        "references/upgrade-planning-mode-b-prechecks-checklists.md",
+        "references/upgrade-planning-post-checklist.md",
+        "references/upgrade-planning-post-upgrade-detail.md",
+        "references/upgrade-planning-post-upgrade-validation.md",
+        "references/upgrade-planning-pre-checklist.md",
+        "references/upgrade-planning-prechecks-postgresql.md",
+        "references/upgrade-planning-query-load-postgresql.md"
+      ],
+      "aws-billing-and-cost-management": [
+        "SKILL.md",
+        "references/budgets.md",
+        "references/cost-audit.md",
+        "references/cost-explorer.md",
+        "references/cost-optimization-hub.md",
+        "references/cur-athena.md",
+        "references/deterministic-calculations.md",
+        "references/ebs-optimization.md",
+        "references/ec2-rightsizing.md",
+        "references/free-tier.md",
+        "references/lambda-optimization.md",
+        "references/pricing-lookup.md",
+        "references/rds-optimization.md",
+        "references/reserved-instances.md",
+        "references/savings-plans.md",
+        "references/service-optimization.md"
+      ],
+      "aws-compute": [
+        "SKILL.md",
+        "references/ami-management.md",
+        "references/auto-scaling.md",
+        "references/instance-selection.md",
+        "references/provisioning.md",
+        "references/systems-manager.md",
+        "references/troubleshooting.md"
+      ],
+      "aws-containers": [
+        "SKILL.md",
+        "references/action-logs.md",
+        "references/beanstalk-configuration.md",
+        "references/beanstalk-platforms.md",
+        "references/beanstalk.md",
+        "references/ecr.md",
+        "references/ecs-managing-compute.md",
+        "references/ecs-workloads.md",
+        "references/ecs.md",
+        "references/eks-auto-mode.md",
+        "references/eks-capabilities.md",
+        "references/eks-control-plane.md",
+        "references/eks-load-balancer-controller.md",
+        "references/eks-managing-compute.md",
+        "references/eks-networking.md",
+        "references/eks.md"
+      ],
+      "aws-database": [
+        "SKILL.md",
+        "assets/aurora-dsql.md",
+        "assets/aurora-mysql.md",
+        "assets/aurora-postgresql.md",
+        "assets/documentdb.md",
+        "assets/dynamodb.md",
+        "assets/elasticache.md",
+        "assets/keyspaces.md",
+        "assets/memorydb.md",
+        "assets/neptune.md",
+        "assets/odb-aws.md",
+        "assets/rds-db2.md",
+        "assets/rds-mariadb.md",
+        "assets/rds-mysql.md",
+        "assets/rds-oracle.md",
+        "assets/rds-postgresql.md",
+        "assets/rds-sqlserver.md",
+        "assets/timestream.md",
+        "references/handoff.md",
+        "references/report-issue.md",
+        "references/select.md"
+      ],
+      "aws-iam": [
+        "SKILL.md",
+        "references/aws-iam-policy-generation.md",
+        "references/aws-iam-role-management.md",
+        "references/common-pitfalls.md",
+        "references/service-authorization.md"
+      ],
+      "aws-networking": [
+        "SKILL.md"
+      ],
+      "aws-observability": [
+        "SKILL.md",
+        "references/cloudwatch-omni/agent-evaluation.md",
+        "references/cloudwatch-omni/alerts.md",
+        "references/cloudwatch-omni/concepts.md",
+        "references/cloudwatch-omni/context-graph.md",
+        "references/cloudwatch-omni/dashboards.md",
+        "references/cloudwatch-omni/programmatic-access.md",
+        "references/cloudwatch-omni/query/promql-metrics.md",
+        "references/cloudwatch-omni/query/sql-logs-traces.md",
+        "references/cloudwatch-omni/query/views.md",
+        "references/cloudwatch/alarms.md",
+        "references/cloudwatch/application-signals-cicd-metadata.md",
+        "references/cloudwatch/application-signals-onboarding.md",
+        "references/cloudwatch/appsignals-guides/ec2-dotnet.md",
+        "references/cloudwatch/appsignals-guides/ec2-java.md",
+        "references/cloudwatch/appsignals-guides/ec2-nodejs.md",
+        "references/cloudwatch/appsignals-guides/ec2-python.md",
+        "references/cloudwatch/appsignals-guides/ecs-dotnet.md",
+        "references/cloudwatch/appsignals-guides/ecs-java.md",
+        "references/cloudwatch/appsignals-guides/ecs-nodejs.md",
+        "references/cloudwatch/appsignals-guides/ecs-python.md",
+        "references/cloudwatch/appsignals-guides/eks-dotnet.md",
+        "references/cloudwatch/appsignals-guides/eks-java.md",
+        "references/cloudwatch/appsignals-guides/eks-nodejs.md",
+        "references/cloudwatch/appsignals-guides/eks-python.md",
+        "references/cloudwatch/appsignals-guides/lambda-dotnet.md",
+        "references/cloudwatch/appsignals-guides/lambda-java.md",
+        "references/cloudwatch/appsignals-guides/lambda-nodejs.md",
+        "references/cloudwatch/appsignals-guides/lambda-python.md",
+        "references/cloudwatch/cloudtrail.md",
+        "references/cloudwatch/dashboards.md",
+        "references/cloudwatch/dynamic-instrumentation.md",
+        "references/cloudwatch/dynamic-instrumentation/breakpoint-creation.md",
+        "references/cloudwatch/dynamic-instrumentation/call-tree-and-directions.md",
+        "references/cloudwatch/dynamic-instrumentation/snapshot-parsing.md",
+        "references/cloudwatch/log-insights.md",
+        "references/cloudwatch/metrics.md",
+        "references/cloudwatch/synthetics.md",
+        "references/cloudwatch/tracing.md",
+        "references/cloudwatch/troubleshooting.md"
+      ],
+      "aws-security": [
+        "SKILL.md",
+        "references/detective-configuration.md",
+        "references/detective-investigations.md",
+        "references/detective.md",
+        "references/guardduty-configuration.md",
+        "references/guardduty-findings.md",
+        "references/guardduty.md",
+        "references/inspector-configuration.md",
+        "references/inspector-findings.md",
+        "references/inspector.md",
+        "references/macie-configuration.md",
+        "references/macie-findings.md",
+        "references/macie.md",
+        "references/organization-policies.md",
+        "references/security-hub-configuration.md",
+        "references/security-hub-cspm-configuration.md",
+        "references/security-hub-cspm-findings.md",
+        "references/security-hub-cspm.md",
+        "references/security-hub-findings.md",
+        "references/security-hub.md",
+        "references/security-lake-configuration.md",
+        "references/security-lake-sources.md",
+        "references/security-lake.md",
+        "references/services-overview.md"
+      ],
+      "aws-serverless": [
+        "SKILL.md",
+        "references/api-gateway.md",
+        "references/architecture.md",
+        "references/concurrency.md",
+        "references/deployment.md",
+        "references/event-sources.md",
+        "references/lambda.md",
+        "references/orchestration.md",
+        "references/production.md",
+        "references/troubleshooting.md"
+      ],
+      "aws-storage": [
+        "SKILL.md",
+        "references/data-movement-and-protection-knowledge.md",
+        "references/ebs-knowledge.md",
+        "references/efs-knowledge.md",
+        "references/fsx-lustre-knowledge.md",
+        "references/fsx-ontap-knowledge.md",
+        "references/fsx-openzfs-knowledge.md",
+        "references/fsx-windows-knowledge.md",
+        "references/s3-express-knowledge.md",
+        "references/s3-files-knowledge.md",
+        "references/s3-general-purpose-knowledge.md",
+        "references/s3-tables-knowledge.md",
+        "references/s3-vectors-knowledge.md"
+      ],
+      "aws-well-architected-review": [
+        "SKILL.md",
+        "assets/report-template.md",
+        "references/discovery-procedure.md",
+        "references/evaluation-procedure.md",
+        "references/lens-guidance.md",
+        "references/phase-live-inventory.md",
+        "references/review-modes.md",
+        "references/risk-assessment.md",
+        "references/security-considerations.md"
+      ],
+      "launching-ec2-instance-with-best-practices": [
+        "SKILL.md",
+        "references/launch-ec2-instance-with-best-practices.md"
+      ],
+      "rds-oss": [
+        "SKILL.md",
+        "references/bluegreen-advisor-workflow.md",
+        "references/bluegreen-ddl-mysql.md",
+        "references/bluegreen-ddl-postgresql.md",
+        "references/commitment-basics.md",
+        "references/commitment-pricing-workflow.md",
+        "references/commitment-scenarios.md",
+        "references/proxy-advisor-workflow.md",
+        "references/proxy-pinning-mysql.md",
+        "references/proxy-pinning-postgresql.md",
+        "references/upgrade-post-checklist.md",
+        "references/upgrade-pre-checklist.md",
+        "references/upgrade-prechecks-mysql.md",
+        "references/upgrade-prechecks-postgresql.md",
+        "references/upgrade-query-load-mysql.md",
+        "references/upgrade-query-load-postgresql.md",
+        "references/upgrade-workflow.md",
+        "references/verify-dependencies.md"
+      ],
+      "securing-s3-buckets": [
+        "SKILL.md",
+        "references/audit-checklist.md",
+        "references/encryption.md",
+        "references/iam-permissions.md",
+        "references/remediation.md",
+        "references/workflows.md"
+      ],
+      "setting-up-cloudwatch-alarm-notifications": [
+        "SKILL.md",
+        "references/setup-cloudwatch-alarm-notifications.md"
+      ]
+    }
+  },
+  "azure": {
+    "commit": "1e593dd0d55091fb66568c9194b29d8155453977",
+    "licence": "CC-BY-4.0",
+    "repository": "MicrosoftDocs/Agent-Skills",
+    "skills": {
+      "azure-advisor": [
+        "SKILL.md"
+      ],
+      "azure-app-service": [
+        "SKILL.md"
+      ],
+      "azure-application-gateway": [
+        "SKILL.md"
+      ],
+      "azure-backup": [
+        "SKILL.md"
+      ],
+      "azure-bastion": [
+        "SKILL.md"
+      ],
+      "azure-blob-storage": [
+        "SKILL.md"
+      ],
+      "azure-cache-redis": [
+        "SKILL.md"
+      ],
+      "azure-container-apps": [
+        "SKILL.md"
+      ],
+      "azure-cosmos-db": [
+        "SKILL.md",
+        "configuration.md",
+        "deployment.md",
+        "integrations.md"
+      ],
+      "azure-cost-management": [
+        "SKILL.md"
+      ],
+      "azure-database-mysql": [
+        "SKILL.md"
+      ],
+      "azure-database-postgresql": [
+        "SKILL.md"
+      ],
+      "azure-defender-for-cloud": [
+        "SKILL.md"
+      ],
+      "azure-dns": [
+        "SKILL.md"
+      ],
+      "azure-files": [
+        "SKILL.md"
+      ],
+      "azure-firewall": [
+        "SKILL.md"
+      ],
+      "azure-functions": [
+        "SKILL.md"
+      ],
+      "azure-key-vault": [
+        "SKILL.md"
+      ],
+      "azure-kubernetes-service": [
+        "SKILL.md"
+      ],
+      "azure-load-balancer": [
+        "SKILL.md"
+      ],
+      "azure-monitor": [
+        "SKILL.md",
+        "configuration.md",
+        "deployment.md",
+        "integrations.md"
+      ],
+      "azure-nat-gateway": [
+        "SKILL.md"
+      ],
+      "azure-network-watcher": [
+        "SKILL.md"
+      ],
+      "azure-networking": [
+        "SKILL.md"
+      ],
+      "azure-quotas": [
+        "SKILL.md"
+      ],
+      "azure-reliability": [
+        "SKILL.md"
+      ],
+      "azure-site-recovery": [
+        "SKILL.md"
+      ],
+      "azure-sql-database": [
+        "SKILL.md"
+      ],
+      "azure-virtual-machines": [
+        "SKILL.md",
+        "configuration.md",
+        "deployment.md",
+        "integrations.md"
+      ],
+      "azure-virtual-network": [
+        "SKILL.md"
+      ],
+      "azure-vm-scalesets": [
+        "SKILL.md"
+      ],
+      "azure-vpn-gateway": [
+        "SKILL.md"
+      ],
+      "azure-well-architected": [
+        "SKILL.md"
+      ]
+    }
+  },
+  "style": {
+    "commit": "000650b156983f5159695b441477f4e63b25dc85",
+    "licence": "MIT",
+    "repository": "petergyang/no-ai-slop",
+    "skills": {
+      "no-ai-slop": [
+        "SKILL.md",
+        "eval.md"
+      ]
+    }
+  }
+}

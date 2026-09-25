@@ -1072,9 +1072,15 @@ def test_the_narrate_package_exists_and_holds_exactly_two_call_sites() -> None:
 
     # ask-chat Req 5 — `chat.py` is the third call site: the one model-facing command.
     # `intent.py` is the fourth: the one sentence Ask shows while the answer model thinks.
-    assert modules == {"__init__.py", "summary.py", "review.py", "chat.py", "intent.py"}, sorted(
-        modules
-    )
+    # `skills.py` is the fifth: choosing which provider skills and pages an Ask question needs.
+    assert modules == {
+        "__init__.py",
+        "summary.py",
+        "review.py",
+        "chat.py",
+        "intent.py",
+        "skills.py",
+    }, sorted(modules)
     assert _bedrock_offenders(_source_modules(narrate)), (
         "narrate/ must actually reach a model, or rule 6 is a rule about nothing"
     )
@@ -2728,6 +2734,9 @@ GUARDED_PACKAGES: tuple[str, ...] = (
     "pricing",
     "providers",
     "render",
+    # The vendored agent skills and their loader: swept by rule 1 (no Azure SDK) and rule 6
+    # (no Bedrock client — the router's model call lives in `narrate/skills.py`).
+    "skills",
     "storage",
     "verify",
 )

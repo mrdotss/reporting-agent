@@ -33,6 +33,7 @@ from reporting_agent.narrate.summary import (
     build_messages,
     generate,
 )
+from reporting_agent.skills.style import writing_rules
 from reporting_agent.verify.findings import FINDING_PROSE_REVIEW_FINDING, SEVERITY_ADVISORY
 
 MODEL: Final[str] = "anthropic.claude-fake-v1"
@@ -103,7 +104,8 @@ def test_the_call_carries_no_tool_list() -> None:
     assert "toolConfig" not in model.calls[0]
     assert "tools" not in model.calls[0]
     assert model.calls[0]["modelId"] == MODEL
-    assert model.calls[0]["system"] == [{"text": SYSTEM_PROMPT}]
+    # The instruction, then the no-ai-slop writing rules — subordinate, so they come after.
+    assert model.calls[0]["system"] == [{"text": f"{SYSTEM_PROMPT}\n\n{writing_rules()}"}]
 
 
 def test_the_system_prompt_is_not_treated_as_enforcement() -> None:
