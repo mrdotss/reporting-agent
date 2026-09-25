@@ -39,8 +39,9 @@ export function connectorContext(credentials: ResolvedConnectorCredentials): Con
     }
   }
 
+  // No `provider` key: absent is Azure to the runtime, so an Azure context stays the
+  // closed twelve fields it was before AWS existed.
   return {
-    provider: "azure",
     subscription_id: credentials.subscriptionId,
     tenant_id: credentials.tenantId,
     client_id: credentials.clientId,

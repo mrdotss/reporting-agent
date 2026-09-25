@@ -349,17 +349,16 @@ export const FRONT_MATTER_KEYS = ["cover", "document_control", "toc"] as const
 export const FRONT_MATTER_FORBIDDEN_BLOCK_TYPES = ["cover"] as const
 
 /**
- * Requirement 3.4 — the closed set of providers. Only `azure` is accepted until
- * a catalogue and collector exist for the others; `aws` and `onprem` are declared
- * but rejected by the validator.
+ * Requirement 3.4 — the closed set of providers. `azure` and `aws` have a section
+ * catalogue and a collector; `onprem` is declared but rejected by the validator.
  */
 export const PROVIDERS = ["azure", "aws", "onprem"] as const
 
 /**
- * The single provider this reader has a section catalogue for. Everything else in
+ * The providers this reader has a section catalogue for. Everything else in
  * `PROVIDERS` is rejected until a catalogue is shipped.
  */
-export const SUPPORTED_PROVIDERS = ["azure"] as const
+export const SUPPORTED_PROVIDERS = ["azure", "aws"] as const
 
 /**
  * Requirement 7.8 — the closed presentation set for a section entry.
@@ -407,6 +406,24 @@ export const HISTORICAL_LOOKBACK_MAX = 24
  */
 export const LIVE_METRICS_TREND_MONTHS = 3
 
+type CatalogueSection = {
+  readonly key: string
+  readonly repeatable: boolean
+  readonly position: string
+}
+
+/** Every provider's section list in `catalog/sections.v1.json`, keyed by provider. */
+const SECTIONS_BY_PROVIDER: Readonly<Record<string, readonly CatalogueSection[]>> =
+  Object.fromEntries(
+    Object.entries(
+      (
+        rawSectionsCatalogue as {
+          providers: Record<string, { sections: CatalogueSection[] }>
+        }
+      ).providers
+    ).map(([provider, data]) => [provider, data.sections])
+  )
+
 /**
  * Section catalogue keys by provider, derived from `catalog/sections.v1.json` at
  * build time. Used by the validator to reject an unknown `type`. One file, both
@@ -414,64 +431,48 @@ export const LIVE_METRICS_TREND_MONTHS = 3
  */
 export const SECTION_KEYS_BY_PROVIDER: Readonly<
   Record<string, readonly string[]>
-> = {
-  azure: (
-    rawSectionsCatalogue as {
-      providers: { azure: { sections: { key: string }[] } }
-    }
-  ).providers.azure.sections.map((s) => s.key),
-}
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    sections.map((s) => s.key),
+  ])
+)
 
 /**
  * Non-repeatable section keys by provider (for duplicate-type rejection).
  */
 export const NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Readonly<
   Record<string, ReadonlySet<string>>
-> = {
-  azure: new Set(
-    (
-      rawSectionsCatalogue as {
-        providers: {
-          azure: { sections: { key: string; repeatable: boolean }[] }
-        }
-      }
-    ).providers.azure.sections
-      .filter((s) => !s.repeatable)
-      .map((s) => s.key)
-  ),
-}
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    new Set(sections.filter((s) => !s.repeatable).map((s) => s.key)),
+  ])
+)
 
 /**
  * Fixed-position section keys by provider, in declared order.
  */
 export const FIXED_SECTION_KEYS_BY_PROVIDER: Readonly<
   Record<string, readonly string[]>
-> = {
-  azure: (
-    rawSectionsCatalogue as {
-      providers: {
-        azure: { sections: { key: string; position: string }[] }
-      }
-    }
-  ).providers.azure.sections
-    .filter((s) => s.position === "fixed")
-    .map((s) => s.key),
-}
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    sections.filter((s) => s.position === "fixed").map((s) => s.key),
+  ])
+)
 
 /**
  * Always-position section key by provider (at most one).
  */
 export const ALWAYS_SECTION_KEY_BY_PROVIDER: Readonly<
   Record<string, string | undefined>
-> = {
-  azure: (
-    rawSectionsCatalogue as {
-      providers: {
-        azure: { sections: { key: string; position: string }[] }
-      }
-    }
-  ).providers.azure.sections.find((s) => s.position === "always")?.key,
-}
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    sections.find((s) => s.position === "always")?.key,
+  ])
+)
 // --- END SCHEMA VERSIONS ---
 
 /** A `schema_version` this reader has a key set for. */

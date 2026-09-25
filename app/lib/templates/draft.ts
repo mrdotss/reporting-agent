@@ -94,8 +94,8 @@ export function EMPTY_DRAFT_V3(
 ): TemplateDefinition {
   return {
     schema_version: 3,
-    // The preset's own source. Only `azure` has a catalogue and a create path today, so
-    // the definition type still names it; the value is the preset row's, not a default.
+    // The preset's own source — `azure` or `aws`, each with its own section catalogue.
+    // The value is the preset row's, not a default.
     provider: provider as "azure",
     identity: { name, description: "", report_title: name, language: "en" },
     sections: [],

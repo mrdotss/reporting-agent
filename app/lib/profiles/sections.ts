@@ -62,6 +62,9 @@ export type SectionCatalogue = {
     readonly azure: {
       readonly sections: readonly SectionEntry[]
     }
+    readonly aws?: {
+      readonly sections: readonly SectionEntry[]
+    }
   }
 }
 
@@ -81,10 +84,22 @@ export const AZURE_SECTIONS: readonly SectionEntry[] =
   SECTION_CATALOGUE.providers.azure.sections
 
 /**
- * Lookup a section entry by key. Returns undefined for unknown keys.
+ * One provider's sections, in catalogue-declared order. A preset's sections are one
+ * provider's catalogue, so the wizard offers exactly these for it; a provider with no
+ * catalogue offers none.
  */
-export function sectionByKey(key: string): SectionEntry | undefined {
-  return AZURE_SECTIONS.find((s) => s.key === key)
+export function sectionsFor(provider: string): readonly SectionEntry[] {
+  if (provider === "aws") return SECTION_CATALOGUE.providers.aws?.sections ?? []
+  if (provider === "azure") return AZURE_SECTIONS
+  return []
+}
+
+/**
+ * Lookup a section entry by key, in one provider's catalogue (Azure when unnamed).
+ * Returns undefined for unknown keys.
+ */
+export function sectionByKey(key: string, provider = "azure"): SectionEntry | undefined {
+  return sectionsFor(provider).find((s) => s.key === key)
 }
 
 /**

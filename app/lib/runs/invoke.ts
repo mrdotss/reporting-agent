@@ -1,5 +1,6 @@
 import "server-only"
 
+import { connectorContext } from "@/lib/subscriptions/context"
 import {
   COMMAND_GENERATE_REPORT,
   MissingRuntimeConfigError,
@@ -20,7 +21,7 @@ import {
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
   getSubscriptionForRun,
-  resolveSubscriptionCredentials,
+  resolveConnectorCredentials,
 } from "@/lib/subscriptions/store"
 import { declaredLanguage, declaredSchemaVersion } from "@/lib/templates/definition"
 
@@ -350,7 +351,8 @@ export async function startRunInvocation(
   // 2 — the credentials, decrypted at invoke time (Requirement 41.3).
   let credentials
   try {
-    credentials = await resolveSubscriptionCredentials(
+    // Either cloud: an AWS connector sends its role and external id instead of a secret.
+    credentials = await resolveConnectorCredentials(
       run.userId,
       run.connectedSubscriptionId,
       run.id
@@ -392,14 +394,9 @@ export async function startRunInvocation(
     // prefix the runtime writes under the prefix download authorization compares
     // against.
     actor_id: run.userId,
-    subscription_id: credentials.subscriptionId,
-    tenant_id: credentials.tenantId,
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
+    ...connectorContext(credentials),
     timezone: run.timezone,
     display_name: view.displayName,
-    fidelity_tier: credentials.fidelityTier,
-    log_analytics_workspace_id: credentials.logAnalyticsWorkspaceId,
     run_id: run.id,
     progress_url: progressUrlFor(run.id),
     // Requirement 37.3 — recomputed from the run's id, never read from a column.

@@ -35,7 +35,7 @@ describe("connectorContext", () => {
       fidelityTier: "enhanced",
       logAnalyticsWorkspaceId: null,
     })
-    expect(context.provider).toBe("azure")
+    expect(context).not.toHaveProperty("provider")
     expect(context.client_secret).toBe("fixture-secret")
     expect(context).not.toHaveProperty("role_arn")
     expect(context).not.toHaveProperty("external_id")
