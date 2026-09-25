@@ -5,6 +5,7 @@ import type {
   ChatChart,
   ChatChartSource,
   ChatCitation,
+  ChatKnowledgeSource,
   ChatProposal,
   ChatStep,
 } from "@/lib/chat/views"
@@ -158,9 +159,42 @@ export function assistantMessageFrom(a: {
     pricesUnavailable: Array.isArray(outcome.prices_unavailable) ? true : undefined,
     intent: !refused && a.intent ? a.intent : undefined,
     model: isChatModelId(outcome.model) ? outcome.model : undefined,
+    knowledge: knowledgeFrom(outcome.knowledge),
     thoughtSeconds:
       !refused && typeof thought === "number" && Number.isFinite(thought) && thought >= 0
         ? Math.round(thought)
         : undefined,
   }
+}
+
+/** The hosts a knowledge link may point at — the runtime fetches from these alone. */
+const KNOWLEDGE_HOSTS = new Set(["learn.microsoft.com", "docs.aws.amazon.com"])
+
+/**
+ * The runtime's knowledge sources, trusted by shape only.
+ *
+ * A link is kept only when it is https on one of the two documentation hosts: it is
+ * rendered as a clickable link, and the runtime's own allowlist is not a reason for this
+ * side to render whatever arrives.
+ */
+export function knowledgeFrom(raw: unknown): ChatKnowledgeSource[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const sources: ChatKnowledgeSource[] = []
+  for (const entry of raw.slice(0, 12)) {
+    if (entry === null || typeof entry !== "object") continue
+    const { skill, provider, title, url } = entry as Record<string, unknown>
+    if (typeof skill !== "string" || typeof title !== "string") continue
+    if (provider !== "azure" && provider !== "aws") continue
+    let link: string | undefined
+    if (typeof url === "string") {
+      try {
+        const parsed = new URL(url)
+        if (parsed.protocol === "https:" && KNOWLEDGE_HOSTS.has(parsed.hostname)) link = parsed.toString()
+      } catch {
+        link = undefined
+      }
+    }
+    sources.push({ skill: skill.slice(0, 80), provider, title: title.slice(0, 200), ...(link ? { url: link } : {}) })
+  }
+  return sources.length > 0 ? sources : undefined
 }

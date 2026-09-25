@@ -89,7 +89,7 @@ export function Composer({
         event.preventDefault()
         void submit()
       }}
-      className="mx-auto w-full max-w-4xl px-4 pt-2 pb-4"
+      className="mx-auto w-full max-w-5xl px-4 pt-2 pb-4"
     >
       <div className="rounded-2xl border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
         {nothingAttached ? null : (

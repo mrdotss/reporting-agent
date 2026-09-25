@@ -1,6 +1,12 @@
 import { describe, expect, test } from "vitest"
 
-import { assistantMessageFrom, chartsFrom, citationsFrom, proposalFrom } from "@/lib/chat/outcome"
+import {
+  assistantMessageFrom,
+  chartsFrom,
+  citationsFrom,
+  knowledgeFrom,
+  proposalFrom,
+} from "@/lib/chat/outcome"
 import { SlidingWindowLimiter } from "@/lib/chat/rate-limit"
 import type { ProposalTarget } from "@/lib/chat/sources"
 
@@ -167,5 +173,55 @@ describe("SlidingWindowLimiter", () => {
     expect(limiter.allow("u", 20)).toBe(false)
     expect(limiter.allow("other", 20)).toBe(true)
     expect(limiter.allow("u", 1001)).toBe(true)
+  })
+})
+
+describe("knowledgeFrom — provider guidance an answer drew on, trusted by shape only", () => {
+  test("keeps skills and the documentation pages read", () => {
+    expect(
+      knowledgeFrom([
+        {
+          skill: "azure-advisor",
+          provider: "azure",
+          title: "Optimize VM spend",
+          url: "https://learn.microsoft.com/en-us/azure/advisor/advisor-cost-recommendations",
+        },
+        { skill: "aws-compute", provider: "aws", title: "Amazon EC2 Compute" },
+      ])
+    ).toEqual([
+      {
+        skill: "azure-advisor",
+        provider: "azure",
+        title: "Optimize VM spend",
+        url: "https://learn.microsoft.com/en-us/azure/advisor/advisor-cost-recommendations",
+      },
+      { skill: "aws-compute", provider: "aws", title: "Amazon EC2 Compute" },
+    ])
+  })
+
+  test("drops a link that is not https on one of the two documentation hosts", () => {
+    const sources = knowledgeFrom([
+      { skill: "a", provider: "azure", title: "t", url: "javascript:alert(1)" },
+      { skill: "b", provider: "azure", title: "t", url: "https://evil.example/x" },
+      { skill: "c", provider: "aws", title: "t", url: "http://docs.aws.amazon.com/x" },
+    ])
+    expect(sources?.every((source) => source.url === undefined)).toBe(true)
+  })
+
+  test("drops malformed entries and an unknown provider; nothing left is undefined", () => {
+    expect(knowledgeFrom([{ skill: "a", provider: "gcp", title: "t" }, null, "x", { title: "t" }])).toBeUndefined()
+    expect(knowledgeFrom("not a list")).toBeUndefined()
+  })
+
+  test("reaches the stored answer", () => {
+    const message = assistantMessageFrom({
+      authorId: "user_1",
+      text: "Resize it.",
+      steps: [],
+      outcome: { knowledge: [{ skill: "azure-advisor", provider: "azure", title: "Advisor" }] },
+      failure: undefined,
+      targets: TARGETS,
+    })
+    expect(message.knowledge).toEqual([{ skill: "azure-advisor", provider: "azure", title: "Advisor" }])
   })
 })
