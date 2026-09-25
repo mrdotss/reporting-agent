@@ -55,6 +55,7 @@ from reporting_agent.storage.base import JSON_CONTENT_TYPE, ObjectStore
 
 __all__ = [
     "ARCHIVE_KINDS",
+    "ARCHIVE_KIND_CLOUDWATCH",
     "ARCHIVE_KIND_FACTS",
     "ARCHIVE_KIND_INVENTORY",
     "ARCHIVE_KIND_METRICS",
@@ -88,11 +89,16 @@ that never lacked it is the only honest version of that."""
 ARCHIVE_KIND_METRICS: Final[str] = "metrics"
 ARCHIVE_KIND_INVENTORY: Final[str] = "inventory"
 ARCHIVE_KIND_FACTS: Final[str] = "facts"
+ARCHIVE_KIND_CLOUDWATCH: Final[str] = "cloudwatch"
+"""One CloudWatch `GetMetricData` call, every page merged, with the queries that name what
+each result series is (`aws/metrics.py`). Declared rather than defaulted: every object of
+this kind is new, so it carries its `kind` from the first one written."""
 
 ARCHIVE_KINDS: Final[tuple[str, ...]] = (
     ARCHIVE_KIND_METRICS,
     ARCHIVE_KIND_INVENTORY,
     ARCHIVE_KIND_FACTS,
+    ARCHIVE_KIND_CLOUDWATCH,
 )
 """The object kinds the archive holds, and the closed set :func:`archive_kind_of` returns
 a member of."""
@@ -368,6 +374,70 @@ class ArchiveWriter:
                 for resource_id in resource_ids
             )
             return ArchiveWriteResult(wrote=False, key=key, gaps=gaps)
+
+        with self._lock:
+            self._written += 1
+        return ArchiveWriteResult(wrote=True, key=key)
+
+    async def write_document(
+        self,
+        *,
+        actor_id: str,
+        run_id: str,
+        location: str,
+        resource_type: str,
+        resource_ids: Sequence[str],
+        document: Mapping[str, object],
+    ) -> ArchiveWriteResult:
+        """Write one **self-describing** document — it carries its own `kind` and every
+        field a replay needs — under the metrics key scheme.
+
+        For a provider whose response is not an Azure metrics body (a CloudWatch call is the
+        first), so the document's shape is the provider's to declare rather than something
+        :meth:`write` would have to be taught. The same sequence, the same object count and
+        the same never-raises contract as :meth:`write`.
+        """
+        if not resource_ids:
+            raise ValueError("resource_ids must be non-empty")
+        if "kind" not in document:
+            raise ValueError("a self-describing archive document must declare its kind")
+        if not self.records:
+            return ArchiveWriteResult(wrote=False, gaps=(), key="")
+
+        key = archive_key(
+            actor_id=actor_id,
+            run_id=run_id,
+            sequence=self._next_sequence(),
+            location=location,
+            resource_type=resource_type.replace(":", "_"),
+        )
+        try:
+            body_bytes = gzip.compress(json.dumps(document, default=_json_default).encode("utf-8"))
+            await self.store.put_bytes(key, body_bytes, content_type=JSON_CONTENT_TYPE, tags=_TAGS)
+        except Exception as exc:
+            self._incomplete = True
+            logger.warning(
+                "archive write failed for key %r (%d resource(s)); folding the response anyway "
+                "and marking this run's raw archive incomplete: %s",
+                key,
+                len(resource_ids),
+                exc,
+            )
+            return ArchiveWriteResult(
+                wrote=False,
+                key=key,
+                gaps=tuple(
+                    record_gap(
+                        GAP_TYPE_ARCHIVE_WRITE_FAILED,
+                        resource_id,
+                        None,
+                        f"the raw archive write for key {key!r} failed: {exc}; this "
+                        f"resource's metrics were still folded, but this run's raw archive "
+                        f"is incomplete and cannot be fully replayed.",
+                    )
+                    for resource_id in resource_ids
+                ),
+            )
 
         with self._lock:
             self._written += 1

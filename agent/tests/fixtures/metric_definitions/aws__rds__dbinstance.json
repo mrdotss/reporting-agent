@@ -1,0 +1,308 @@
+{
+  "provenance": {
+    "resource_type": "AWS::RDS::DBInstance",
+    "region": "us-east-1",
+    "captured_at": "2026-09-25T10:00:00Z",
+    "capture_method": "live_capture",
+    "derived_from": [
+      "CloudWatch ListMetrics for namespace AWS/RDS, dimension DBInstanceIdentifier, RecentlyActive=PT3H, filtered to one resource's own series: which metric names exist.",
+      "CloudWatch GetMetricStatistics, one hour of the trailing day per metric: the unit CloudWatch reports for it. A metric with no datapoint in that day records a null unit."
+    ],
+    "aggregation_basis": "CloudWatch serves the Sum, SampleCount, Minimum and Maximum statistics for every metric (GetMetricData's `Stat`), so each metric's supported set is those four, written in the catalog's aggregation names: Total, Count, Minimum, Maximum.",
+    "namespace": "AWS/RDS",
+    "dimension": "DBInstanceIdentifier",
+    "masked": "The account id and the resource's own id are replaced with placeholders."
+  },
+  "body": {
+    "value": [
+      {
+        "name": {
+          "value": "BurstBalance"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CPUUtilization"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CheckpointLag"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "DatabaseConnections"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "DiskQueueDepth"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSByteBalance%"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSIOBalance%"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "FreeStorageSpace"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "FreeableMemory"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "MaximumUsedTransactionIDs"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkReceiveThroughput"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkTransmitThroughput"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "OldestLogicalReplicationSlotLag"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "OldestReplicationSlotLag"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "ReadIOPS"
+        },
+        "unit": "Count/Second",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "ReadLatency"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "ReadThroughput"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "ReplicationSlotDiskUsage"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "SwapUsage"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "TransactionLogsDiskUsage"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "TransactionLogsGeneration"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "WriteIOPS"
+        },
+        "unit": "Count/Second",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "WriteLatency"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "WriteThroughput"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      }
+    ]
+  }
+}

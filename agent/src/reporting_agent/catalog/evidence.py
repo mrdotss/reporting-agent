@@ -81,6 +81,9 @@ UNIT_MAPPING: Final[Mapping[str, str]] = {
     "Bytes": "bytes",
     "BytesPerSecond": "bytes",
     "CountPerSecond": "count_per_second",
+    # CloudWatch's spelling of the same rate, as `GetMetricStatistics` reports it for
+    # `ReadIOPS` and `WriteIOPS`.
+    "Count/Second": "count_per_second",
 }
 """Each reported unit name, associated with exactly one term of `DECLARED_UNITS` (Req 2.9).
 
@@ -213,7 +216,9 @@ def evidence_filename(resource_type: str) -> str:
     **inside** the segments themselves (`Microsoft.Compute`, `flexibleServers`), so
     substituting one of those would let two distinct types collide on one filename.
     """
-    return resource_type.lower().replace("/", "__") + ".json"
+    # An AWS type's `::` separators take the same `__`: `AWS::EC2::Instance` ->
+    # `aws__ec2__instance.json`, and a colon never reaches a file name.
+    return resource_type.lower().replace("::", "__").replace("/", "__") + ".json"
 
 
 def load_fixture(resource_type: str, *, directory: Path | None = None) -> dict[str, Any]:

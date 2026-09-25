@@ -13,7 +13,8 @@ this aggregation produce this snapshot, every time.
 
 ## The same code, not equivalent code
 
-This module folds through `azure/metrics.py`'s `fold_resource_metrics`, finalizes through
+This module folds through `azure/metrics.py`'s `fold_resource_metrics` (and an AWS run's
+CloudWatch objects through `aws/metrics.py`'s `fold_cloudwatch_document`), finalizes through
 `collect/finalize.py`'s `finalize_resource`, and canonicalizes and hashes through
 `collect/snapshot.py`'s `build_snapshot`. Not reimplementations of them — them. A second
 implementation would make a mismatch mean "the two agree less than they should", and the
@@ -53,6 +54,7 @@ from decimal import Decimal
 from typing import Final, cast
 from zoneinfo import ZoneInfo
 
+from reporting_agent.aws.metrics import fold_cloudwatch_document
 from reporting_agent.azure.metrics import fold_batch_response, fold_fallback_response
 from reporting_agent.catalog.loader import (
     DerivedEntry,
@@ -64,6 +66,7 @@ from reporting_agent.catalog.loader import (
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
 from reporting_agent.collect.accumulate import DerivedSourceRef
 from reporting_agent.collect.archive import (
+    ARCHIVE_KIND_CLOUDWATCH,
     ARCHIVE_KIND_FACTS,
     ARCHIVE_KIND_INVENTORY,
     ARCHIVE_KIND_METRICS,
@@ -503,6 +506,10 @@ def _fold_object(
 
     if kind in (ARCHIVE_KIND_FACTS, ARCHIVE_KIND_INVENTORY):
         return _fold_fact_object(document, kind=kind, plan=plan, facts=facts)
+    if kind == ARCHIVE_KIND_CLOUDWATCH:
+        # An AWS run's metrics, through the collector's own CloudWatch fold (`aws/metrics.py`)
+        # — the same function, for the reason this module folds Azure through Azure's.
+        return fold_cloudwatch_document(document, accumulators, day_fold)
     if kind != ARCHIVE_KIND_METRICS:
         return []
 
@@ -1130,6 +1137,10 @@ def _scope_from(
     resource_ids = requested.get("resource_ids")
     if isinstance(resource_ids, list) and resource_ids:
         scope["resource_ids"] = [str(value) for value in resource_ids]
+    # Present only on an AWS snapshot whose run named its regions.
+    regions = requested.get("regions")
+    if isinstance(regions, list) and regions:
+        scope["regions"] = [str(value) for value in regions]
     return cast("ScopeSpec", scope)
 
 

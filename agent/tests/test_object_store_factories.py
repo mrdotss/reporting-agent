@@ -77,12 +77,19 @@ def _provider_store() -> object:
     return _default_object_store()
 
 
+def _aws_provider_store() -> object:
+    from reporting_agent.aws.provider import _default_object_store
+
+    return _default_object_store()
+
+
 #: Every seam at which application code names `S3ObjectStore`. Kept as a table so adding
 #: a fourth is one line, and so the enumeration guard below can assert the table is whole.
 FACTORIES: Mapping[str, Callable[[], object]] = {
     "report_pipeline._s3_store": _report_pipeline_store,
     "collect.pipeline._s3_store": _collect_pipeline_store,
     "azure.provider._default_object_store": _provider_store,
+    "aws.provider._default_object_store": _aws_provider_store,
 }
 
 

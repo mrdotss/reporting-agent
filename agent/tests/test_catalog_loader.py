@@ -29,7 +29,8 @@ from reporting_agent.errors import CatalogUnusableError, ErrorCode
 
 RESOURCE_TYPE = "Microsoft.Compute/virtualMachines"
 
-CATALOG_VERSION = "1.1.0"
+CATALOG_VERSION = "1.2.0"
+"""1.2.0 added the three AWS types, leaving every Azure entry as it was."""
 """The shipped catalog's version, asserted as a literal here on purpose.
 
 Req 1.3 requires the version to compare **greater** than the `1.0.0` the single-type
@@ -357,7 +358,22 @@ def test_the_shipped_catalog_declares_exactly_the_seven_named_resource_types() -
     have, so the assertion names them too rather than counting them."""
     catalog = load_catalog()
 
-    assert set(catalog.resource_type_names) == set(SEVEN_RESOURCE_TYPES)
+    # The Azure half. AWS's types share the file and are asserted below, by name too.
+    assert {
+        name for name in catalog.resource_type_names if not name.startswith("AWS::")
+    } == set(SEVEN_RESOURCE_TYPES)
+
+
+AWS_RESOURCE_TYPES = ("AWS::EC2::Instance", "AWS::EC2::Volume", "AWS::RDS::DBInstance")
+
+
+def test_the_shipped_catalog_declares_exactly_the_three_aws_resource_types() -> None:
+    """The AWS connector's collectable types, named for the same reason the seven are."""
+    catalog = load_catalog()
+
+    assert {
+        name for name in catalog.resource_type_names if name.startswith("AWS::")
+    } == set(AWS_RESOURCE_TYPES)
 
 
 def test_every_declared_resource_type_carries_a_namespace_and_at_least_one_metric() -> None:

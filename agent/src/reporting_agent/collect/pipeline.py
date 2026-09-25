@@ -412,6 +412,11 @@ def resolve_run_plan(
     resource_ids = _text_list(scope_map.get("resource_ids"))
     if resource_ids:
         scope["resource_ids"] = resource_ids
+    # AWS — the regions a run covers. Set only when named, like `resource_ids`, so an
+    # Azure run's scope and its snapshot are byte-for-byte what they were.
+    regions = _text_list(scope_map.get("regions"))
+    if regions:
+        scope["regions"] = sorted(set(regions))
 
     ceiling = context.get("fidelity_tier")
     workspace = context.get("log_analytics_workspace_id")
@@ -1309,9 +1314,13 @@ async def run_collection(
             yield event
         return
 
-    built = registry.build(
-        registry.AZURE_PROVIDER_ID, context, object_store=store, catalog=loaded
+    # The connector's cloud. Absent is Azure, which every connector was before AWS.
+    provider_id = (
+        registry.AWS_PROVIDER_ID
+        if context.get("provider") == registry.AWS_PROVIDER_ID
+        else registry.AZURE_PROVIDER_ID
     )
+    built = registry.build(provider_id, context, object_store=store, catalog=loaded)
     try:
         async for event in _drive(
             plan=plan,

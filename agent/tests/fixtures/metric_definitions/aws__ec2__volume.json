@@ -1,0 +1,116 @@
+{
+  "provenance": {
+    "resource_type": "AWS::EC2::Volume",
+    "region": "us-east-1",
+    "captured_at": "2026-09-25T10:00:00Z",
+    "capture_method": "live_capture",
+    "derived_from": [
+      "CloudWatch ListMetrics for namespace AWS/EBS, dimension VolumeId, RecentlyActive=PT3H, filtered to one resource's own series: which metric names exist.",
+      "CloudWatch GetMetricStatistics, one hour of the trailing day per metric: the unit CloudWatch reports for it. A metric with no datapoint in that day records a null unit."
+    ],
+    "aggregation_basis": "CloudWatch serves the Sum, SampleCount, Minimum and Maximum statistics for every metric (GetMetricData's `Stat`), so each metric's supported set is those four, written in the catalog's aggregation names: Total, Count, Minimum, Maximum.",
+    "namespace": "AWS/EBS",
+    "dimension": "VolumeId",
+    "masked": "The account id and the resource's own id are replaced with placeholders."
+  },
+  "body": {
+    "value": [
+      {
+        "name": {
+          "value": "VolumeIdleTime"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeQueueLength"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeReadBytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeReadOps"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeTotalReadTime"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeTotalWriteTime"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeWriteBytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "VolumeWriteOps"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      }
+    ]
+  }
+}

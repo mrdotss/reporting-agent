@@ -216,6 +216,8 @@ def test_the_facts_kind_joins_the_archive_vocabulary() -> None:
         ARCHIVE_KIND_METRICS,
         ARCHIVE_KIND_INVENTORY,
         ARCHIVE_KIND_FACTS,
+        # An AWS run's CloudWatch calls (`aws/metrics.py`).
+        "cloudwatch",
     )
 
 
