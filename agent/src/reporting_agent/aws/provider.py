@@ -24,26 +24,37 @@ import asyncio
 import logging
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any, Final
 
+from reporting_agent.aws.facts import AWS_FACT_SOURCE, fact_items, instance_types_needed
 from reporting_agent.aws.metrics import DIMENSION_BY_TYPE, CloudWatchCollector
-from reporting_agent.catalog.loader import LoadedCatalog, load_catalog
+from reporting_agent.catalog.loader import (
+    FactDeclaration,
+    LoadedCatalog,
+    ResourceTypeFacts,
+    load_catalog,
+)
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.buckets import BASE_GRAIN, FALLBACK_GRAIN, resolve_timezone
 from reporting_agent.collect.dayfold import DayFold
+from reporting_agent.collect.factfold import FACT_KIND_FACTS, fold_fact_response
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
     GAP_TYPE_DEALLOCATED,
     GAP_TYPE_REGION_UNREACHABLE,
     record_gap,
 )
+from reporting_agent.collect.snapshot import rfc3339_utc
 from reporting_agent.providers.base import (
     AWS_STOPPED_STATE_CODES,
     Capabilities,
     CollectRequest,
     CollectResult,
     DiscoverResult,
+    FactRequest,
+    FactResult,
     GapRecord,
     LocationRouting,
     PlainData,
@@ -122,7 +133,7 @@ def _record(
     )
 
 
-def _instances(ec2: Any, *, account: str, region: str, tier: str) -> list[ResourceRecord]:
+def _instances(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
     records = []
     for reservation in _paged(ec2, "describe_instances", "Reservations"):
         for instance in reservation.get("Instances", []):
@@ -131,9 +142,11 @@ def _instances(ec2: Any, *, account: str, region: str, tier: str) -> list[Resour
                 continue
             tags = _tags(instance.get("Tags"))
             instance_id = instance["InstanceId"]
+            resource_id = f"arn:aws:ec2:{region}:{account}:instance/{instance_id}"
+            raw[resource_id] = {**instance, "_kind": "instance", "_region": region}
             records.append(
                 _record(
-                    resource_id=f"arn:aws:ec2:{region}:{account}:instance/{instance_id}",
+                    resource_id=resource_id,
                     name=tags.get("Name") or instance_id,
                     resource_type=TYPE_INSTANCE,
                     region=region,
@@ -146,14 +159,16 @@ def _instances(ec2: Any, *, account: str, region: str, tier: str) -> list[Resour
     return records
 
 
-def _volumes(ec2: Any, *, account: str, region: str, tier: str) -> list[ResourceRecord]:
+def _volumes(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
     records = []
     for volume in _paged(ec2, "describe_volumes", "Volumes"):
         tags = _tags(volume.get("Tags"))
         volume_id = volume["VolumeId"]
+        resource_id = f"arn:aws:ec2:{region}:{account}:volume/{volume_id}"
+        raw[resource_id] = {**volume, "_kind": "volume", "_region": region}
         records.append(
             _record(
-                resource_id=f"arn:aws:ec2:{region}:{account}:volume/{volume_id}",
+                resource_id=resource_id,
                 name=tags.get("Name") or volume_id,
                 resource_type=TYPE_VOLUME,
                 region=region,
@@ -166,8 +181,11 @@ def _volumes(ec2: Any, *, account: str, region: str, tier: str) -> list[Resource
     return records
 
 
-def _databases(rds: Any, *, account: str, region: str, tier: str) -> list[ResourceRecord]:
+def _databases(rds: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
     del account  # RDS returns its own ARN
+    databases = _paged(rds, "describe_db_instances", "DBInstances")
+    for db in databases:
+        raw[db["DBInstanceArn"]] = {**db, "_kind": "database", "_region": region}
     return [
         _record(
             resource_id=db["DBInstanceArn"],
@@ -179,7 +197,7 @@ def _databases(rds: Any, *, account: str, region: str, tier: str) -> list[Resour
             state=f"rds:{db.get('DBInstanceStatus', '')}",
             tier=tier,
         )
-        for db in _paged(rds, "describe_db_instances", "DBInstances")
+        for db in databases
     ]
 
 
@@ -188,6 +206,41 @@ _READERS: Final[tuple[tuple[str, str, Callable[..., list[ResourceRecord]]], ...]
     (TYPE_VOLUME, "ec2", _volumes),
     (TYPE_RDS_INSTANCE, "rds", _databases),
 )
+
+
+def _aws_declaration(declaration: FactDeclaration) -> FactDeclaration:
+    """The declaration narrowed to the `aws` source, the one source this pass answers for."""
+    return FactDeclaration(
+        resource_types=tuple(
+            ResourceTypeFacts(
+                resource_type=declared.resource_type,
+                facts=tuple(entry for entry in declared.facts if entry.source == AWS_FACT_SOURCE),
+            )
+            for declared in declaration.resource_types
+        )
+    )
+
+
+def _unique_names(resources: list[ResourceRecord]) -> list[ResourceRecord]:
+    """Names that identify one resource each. **Pure.**
+
+    An Azure name is unique within its resource group; an AWS `Name` tag is free text, and two
+    instances launched from one template commonly share it. A report addresses a row by the
+    resource's name, so a repeated name gains the resource's own id — `web (i-0abc…)` — and
+    a name nobody else holds is left exactly as it was.
+    """
+    counts: dict[tuple[str, str], int] = {}
+    for resource in resources:
+        key = (resource["resource_type"], resource["name"])
+        counts[key] = counts.get(key, 0) + 1
+    unique: list[ResourceRecord] = []
+    for resource in resources:
+        if counts[(resource["resource_type"], resource["name"])] > 1:
+            own_id = resource["resource_id"].rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+            if own_id != resource["name"]:
+                resource = ResourceRecord(**{**resource, "name": f"{resource['name']} ({own_id})"})
+        unique.append(resource)
+    return unique
 
 
 def _in_scope(resource: ResourceRecord, scope: ScopeSpec) -> bool:
@@ -214,7 +267,11 @@ class AwsProvider:
     home_region: str
     fidelity_tier: str = FIDELITY_BASELINE
     concurrency: int = 4
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC), repr=False)
+    """Each fact response's receipt instant; a seam, because it enters the snapshot's digest."""
     _archive: ArchiveWriter | None = field(default=None, repr=False)
+    _raw: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
+    """Discovery's describe item per resource id, kept for the fact pass."""
 
     @property
     def archive(self) -> ArchiveWriter:
@@ -244,7 +301,7 @@ class AwsProvider:
             try:
                 client = self.clients(service, region)
                 records = await asyncio.to_thread(
-                    reader, client, account=self.account_id, region=region, tier=self.fidelity_tier
+                    reader, client, account=self.account_id, region=region, tier=self.fidelity_tier, raw=self._raw
                 )
             except (ClientError, BotoCoreError) as exc:
                 code = exc.response.get("Error", {}).get("Code", "") if isinstance(exc, ClientError) else type(exc).__name__
@@ -265,11 +322,71 @@ class AwsProvider:
             *(read(region, service, reader) for region in regions for t, service, reader in _READERS if t in wanted)
         )
 
-        resources = sort_inventory(resource for resource in found if _in_scope(resource, scope))
+        resources = sort_inventory(_unique_names([resource for resource in found if _in_scope(resource, scope)]))
         for resource in resources:
             if resource["power_state_raw"] in AWS_STOPPED_STATE_CODES:
                 gaps.append(record_gap(GAP_TYPE_DEALLOCATED, resource["resource_id"], None, resource["power_state_raw"]))
         result = DiscoverResult(resources=resources, gaps=gaps)
+        assert_plain_data(result)
+        return result
+
+    # --- facts ----------------------------------------------------------------------
+
+    async def collect_facts(self, request: FactRequest) -> FactResult:
+        """What each resource is, from discovery's own describe items (`aws/facts.py`).
+
+        One archived object for the whole run, written before it is folded, so the replay
+        re-derives exactly these facts through the same fold. `DescribeInstanceTypes` is
+        the one extra call, once per region, for vCPUs and memory; a region that refuses it
+        leaves those two keys to `fact_unavailable` and nothing else.
+        """
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        resources = request["resources"]
+        types_by_id = {resource["resource_id"]: resource["resource_type"] for resource in resources}
+        resource_ids = sorted(types_by_id)
+        if not resource_ids:
+            return FactResult(facts=[], gaps=[])
+
+        instance_types: dict[str, dict[str, Any]] = {}
+
+        async def describe_types(region: str, names: set[str]) -> None:
+            try:
+                ec2 = self.clients("ec2", region)
+                answer = await asyncio.to_thread(ec2.describe_instance_types, InstanceTypes=sorted(names))
+            except (ClientError, BotoCoreError) as exc:
+                logger.warning("aws facts: DescribeInstanceTypes in %s failed (%s)", region, type(exc).__name__)
+                return
+            for spec in answer.get("InstanceTypes", []):
+                instance_types[str(spec.get("InstanceType"))] = spec
+
+        needed = instance_types_needed({rid: self._raw[rid] for rid in resource_ids if rid in self._raw})
+        await asyncio.gather(*(describe_types(region, names) for region, names in sorted(needed.items())))
+
+        body = {"value": fact_items(resource_ids, self._raw, instance_types)}
+        declaration = _aws_declaration(self.catalog.facts)
+        received_at = rfc3339_utc(self.clock())
+        written = await self.archive.write_facts(
+            actor_id=self.actor_id,
+            run_id=self.run_id,
+            source=AWS_FACT_SOURCE,
+            request_target="describe",
+            fact_keys=sorted({entry.key for entry in declaration.entries}),
+            received_at=received_at,
+            catalog_version=self.catalog.catalog_version,
+            resource_ids=resource_ids,
+            raw_body=body,
+        )
+        facts, fold_gaps = fold_fact_response(
+            body,
+            kind=FACT_KIND_FACTS,
+            source=AWS_FACT_SOURCE,
+            resource_ids=resource_ids,
+            declaration=declaration,
+            resource_types=types_by_id,
+            received_at=received_at,
+        )
+        result = FactResult(facts=list(facts), gaps=[*written.gaps, *fold_gaps])
         assert_plain_data(result)
         return result
 

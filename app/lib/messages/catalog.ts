@@ -378,6 +378,10 @@ export const MESSAGE_CATALOG = {
     en: "This resource's SKU could not be resolved, so no capacity was available for a derived figure.",
     id: "SKU sumber daya ini tidak dapat ditentukan, sehingga tidak ada kapasitas untuk angka turunan.",
   },
+  "doc.inventory.account_id": {
+    en: "Account ID",
+    id: "ID Akun",
+  },
   "doc.methodology.estimated_labelled": {
     en: "Estimated statistics in this report are labelled wherever they appear:",
     id: "Statistik hasil estimasi dalam laporan ini diberi label di setiap kemunculannya:",
@@ -454,6 +458,10 @@ export const MESSAGE_CATALOG = {
     en: "App Service and Storage",
     id: "App Service dan Penyimpanan",
   },
+  "doc.section.aws_account": {
+    en: "AWS Account Overview",
+    id: "Gambaran Umum Akun AWS",
+  },
   "doc.section.azure_subscription": {
     en: "Azure Subscription Overview",
     id: "Gambaran Umum Langganan Azure",
@@ -470,9 +478,37 @@ export const MESSAGE_CATALOG = {
     en: "Database Utilization",
     id: "Utilisasi Basis Data",
   },
+  "doc.section.ebs_activity": {
+    en: "EBS Volume Activity",
+    id: "Aktivitas Volume EBS",
+  },
+  "doc.section.ebs_volumes": {
+    en: "EBS Volumes",
+    id: "Volume EBS",
+  },
+  "doc.section.ec2_instances": {
+    en: "EC2 Instances",
+    id: "Instans EC2",
+  },
+  "doc.section.ec2_instances.inventory": {
+    en: "Inventory",
+    id: "Inventaris",
+  },
+  "doc.section.ec2_instances.network": {
+    en: "Network Configuration",
+    id: "Konfigurasi Jaringan",
+  },
+  "doc.section.ec2_utilization": {
+    en: "EC2 Instance Utilization",
+    id: "Utilisasi Instans EC2",
+  },
   "doc.section.fleet_summary": {
     en: "Fleet Summary",
     id: "Ringkasan Armada",
+  },
+  "doc.section.historical_ec2_utilization": {
+    en: "Historical Utilization Trend",
+    id: "Tren Utilisasi Historis",
   },
   "doc.section.historical_vm_utilization": {
     en: "Historical Utilization Trend",
@@ -502,9 +538,21 @@ export const MESSAGE_CATALOG = {
     en: "Public IP Addresses",
     id: "Alamat IP Publik",
   },
+  "doc.section.rds_instances": {
+    en: "RDS Databases",
+    id: "Basis Data RDS",
+  },
+  "doc.section.rds_utilization": {
+    en: "RDS Database Utilization",
+    id: "Utilisasi Basis Data RDS",
+  },
   "doc.section.recommendations": {
     en: "Recommendations",
     id: "Rekomendasi",
+  },
+  "doc.section.regions": {
+    en: "Regions",
+    id: "Wilayah",
   },
   "doc.section.reservations": {
     en: "Reserved Instances",

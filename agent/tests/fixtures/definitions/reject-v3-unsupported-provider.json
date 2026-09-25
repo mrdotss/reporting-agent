@@ -4,7 +4,7 @@
     "name": "Test v3",
     "language": "en"
   },
-  "provider": "aws",
+  "provider": "onprem",
   "sections": [
     {
       "id": "sec_vm",

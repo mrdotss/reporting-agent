@@ -933,7 +933,7 @@
       "file": "reject-v3-unsupported-provider.json",
       "mode": "run",
       "verdict": "reject",
-      "definition_sha256": "313606a7110de40e198bfc9e0e8a3323e6fc91216f25042e39a6c61e6b490f85",
+      "definition_sha256": "e7bcd198d73e782b176cb5d23f8fb5ff24b6b5e4def3a52c6bae52f8159923c1",
       "offenders": [
         {
           "block_id": null,

@@ -476,10 +476,10 @@ FRONT_MATTER_KEYS: Final[tuple[str, ...]] = ("cover", "document_control", "toc")
 # definition carrying one to keep compiling.
 FRONT_MATTER_FORBIDDEN_BLOCK_TYPES: Final[tuple[str, ...]] = ("cover",)
 
-# Req 3.4 — the closed set of providers. Only `azure` is accepted until a catalogue
-# and collector exist for the others.
+# Req 3.4 — the closed set of providers. `azure` and `aws` have a section catalogue
+# and a collector; `onprem` is declared and rejected until it has both.
 PROVIDERS: Final[tuple[str, ...]] = ("azure", "aws", "onprem")
-SUPPORTED_PROVIDERS: Final[tuple[str, ...]] = ("azure",)
+SUPPORTED_PROVIDERS: Final[tuple[str, ...]] = ("azure", "aws")
 
 # Req 7.8 — the closed presentation set for a section entry.
 SECTION_PRESENTATIONS: Final[tuple[str, ...]] = (

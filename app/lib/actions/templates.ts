@@ -209,7 +209,8 @@ export async function publishTemplateVersion(
   const catalogIssues = validateMetricSelectionAgainstCatalog(
     definition as Parameters<typeof validateMetricSelectionAgainstCatalog>[0],
     METRIC_CATALOG,
-    (sectionType) => sectionByKey(sectionType)?.needs_resource_types ?? []
+    (sectionType) =>
+      sectionByKey(sectionType, definitionProvider(definition))?.needs_resource_types ?? []
   )
   if (catalogIssues.length > 0) throw new TemplateInvalidError(catalogIssues)
 
@@ -333,4 +334,13 @@ function coverOf(definition: unknown): {
  */
 export function pinNumberFormat(definition: unknown): unknown {
   return currentDisplayFormat(definition)
+}
+
+/** A definition's provider, `azure` when it names none (every definition before v3 did not). */
+function definitionProvider(definition: unknown): string {
+  const provider =
+    typeof definition === "object" && definition !== null
+      ? (definition as Record<string, unknown>).provider
+      : undefined
+  return typeof provider === "string" && provider.length > 0 ? provider : "azure"
 }

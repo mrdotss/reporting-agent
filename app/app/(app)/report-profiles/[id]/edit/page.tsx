@@ -8,7 +8,7 @@ import { WizardShell } from "@/components/templates/wizard-shell"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView, templateViewCurrentVersion } from "@/lib/db/views"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
-import { AZURE_SECTIONS } from "@/lib/profiles/sections"
+import { sectionsFor } from "@/lib/profiles/sections"
 import { COLLECTED_FACT_SOURCES } from "@/lib/profiles/facts"
 import { toSchemaVersion2 } from "@/lib/templates/migrate"
 import { readLatestScan } from "@/lib/scans/store"
@@ -76,8 +76,11 @@ export default async function EditTemplatePage({ params }: PageProps) {
   // when a report is run — so this is a default for *describing* what is connected, never
   // a constraint on what the profile may declare.
   const subscriptions = await listConnectedSubscriptions(user.id, { workspaceId: loaded.template.workspaceId ?? undefined, projectId: loaded.template.projectId ?? undefined })
+  // Of the preset's own cloud: an Azure scan says nothing about which AWS sections apply.
   const previewSubscription =
-    subscriptions.find((entry) => entry.status === "active") ?? null
+    subscriptions.find(
+      (entry) => entry.status === "active" && entry.provider === loaded.template.provider
+    ) ?? null
 
   // The most recent scan for that subscription. `null` (no subscription, or no scan
   // yet) means every section renders offerable.
@@ -99,7 +102,7 @@ export default async function EditTemplatePage({ params }: PageProps) {
       )}
       initialDefinition={loaded.initialDefinition}
       catalog={METRIC_CATALOG}
-      sectionCatalogue={AZURE_SECTIONS}
+      sectionCatalogue={sectionsFor(loaded.template.provider)}
       scanTypeCounts={scanTypeCounts}
       collectedFactSources={COLLECTED_FACT_SOURCES}
       // On the same reasoning as `scanTypeCounts` above: the depth of the connection this

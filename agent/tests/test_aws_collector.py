@@ -229,6 +229,16 @@ class FakeEc2:
     def describe_regions(self, **_: Any) -> dict[str, Any]:
         return {"Regions": [{"RegionName": "us-east-1"}, {"RegionName": "ap-southeast-3"}]}
 
+    def describe_instance_types(self, **kwargs: Any) -> dict[str, Any]:
+        specs = {"t3.micro": (2, 1024), "t3.small": (2, 2048)}
+        return {
+            "InstanceTypes": [
+                {"InstanceType": name, "VCpuInfo": {"DefaultVCpus": specs[name][0]}, "MemoryInfo": {"SizeInMiB": specs[name][1]}}
+                for name in kwargs["InstanceTypes"]
+                if name in specs
+            ]
+        }
+
     def get_paginator(self, operation: str) -> Pages:
         if self.refuse:
             raise denied("UnauthorizedOperation")
@@ -237,13 +247,23 @@ class FakeEc2:
             if self.region == "us-east-1":
                 instances = [
                     {"InstanceId": "i-0123456789abcdef0", "InstanceType": "t3.micro", "State": {"Name": "running"},
-                     "Tags": [{"Key": "Name", "Value": "web"}, {"Key": "Environment", "Value": "prod"}]},
+                     "Tags": [{"Key": "Name", "Value": "web"}, {"Key": "Environment", "Value": "prod"}],
+                     "PlatformDetails": "Linux/UNIX", "PrivateIpAddress": "10.0.0.4", "VpcId": "vpc-0example",
+                     "SubnetId": "subnet-0example", "Placement": {"AvailabilityZone": "us-east-1a"},
+                     "SecurityGroups": [{"GroupName": "web-sg"}, {"GroupName": "admin-sg"}],
+                     "LaunchTime": datetime(2026, 8, 19, 3, 0, tzinfo=UTC)},
                     {"InstanceId": "i-0fedcba9876543210", "InstanceType": "t3.small", "State": {"Name": "stopped"}},
                     {"InstanceId": "i-0000000000000dead", "InstanceType": "t3.small", "State": {"Name": "terminated"}},
                 ]
             return Pages("Reservations", [{"Instances": instances}])
         if operation == "describe_volumes":
-            volumes = [{"VolumeId": "vol-0123456789abcdef0", "VolumeType": "gp3"}] if self.region == "us-east-1" else []
+            volumes = (
+                [{"VolumeId": "vol-0123456789abcdef0", "VolumeType": "gp3", "Size": 8, "Iops": 3000,
+                  "Encrypted": False, "State": "in-use", "AvailabilityZone": "us-east-1a",
+                  "Attachments": [{"InstanceId": "i-0123456789abcdef0"}]}]
+                if self.region == "us-east-1"
+                else []
+            )
             return Pages("Volumes", volumes)
         raise AssertionError(operation)
 
@@ -255,7 +275,10 @@ class FakeRds:
     def get_paginator(self, operation: str) -> Pages:
         databases = (
             [{"DBInstanceArn": DATABASE, "DBInstanceIdentifier": "orders", "DBInstanceClass": "db.t4g.micro",
-              "DBInstanceStatus": "available", "TagList": [{"Key": "Environment", "Value": "prod"}]}]
+              "DBInstanceStatus": "available", "TagList": [{"Key": "Environment", "Value": "prod"}],
+              "Engine": "postgres", "EngineVersion": "16.10", "MultiAZ": False, "StorageType": "gp3",
+              "AllocatedStorage": 20, "BackupRetentionPeriod": 0, "AvailabilityZone": "ap-southeast-3a",
+              "PubliclyAccessible": True}]
             if self.region == "ap-southeast-3"
             else []
         )
@@ -414,8 +437,21 @@ def test_a_collection_replays_to_the_same_digest() -> None:
 
     keys = sorted(key for key in store.keys() if "/raw/" in key)
     archived = [(index, asyncio.run(store.get_bytes(key))) for index, key in enumerate(keys)]
-    assert all(json.loads(gzip.decompress(body))["kind"] == ARCHIVE_KIND_CLOUDWATCH for _, body in archived)
-    assert all(ACCOUNT in json.dumps(json.loads(gzip.decompress(body))["grouping_key"]) for _, body in archived)
+    kinds = sorted(json.loads(gzip.decompress(body))["kind"] for _, body in archived)
+    # Every CloudWatch call, and one facts object for the whole run.
+    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 1
+
+    facts = {
+        resource["resource_id"]: {fact["key"]: fact["value"] for fact in resource.get("facts") or []}
+        for resource in document["resources"]
+    }
+    assert facts[INSTANCE] == {
+        "availability_zone": "us-east-1a", "instance_type": "t3.micro", "launch_date": "2026-08-19",
+        "memory": "1 GiB", "platform": "Linux/UNIX", "private_ip": "10.0.0.4", "public_ip": "none",
+        "security_groups": "admin-sg, web-sg", "subnet": "subnet-0example", "vcpus": "2", "vpc": "vpc-0example",
+    }
+    assert facts[VOLUME]["size"] == "8 GiB" and facts[VOLUME]["attached_to"] == "i-0123456789abcdef0"
+    assert facts[DATABASE]["backup_retention_days"] == "0" and facts[DATABASE]["publicly_accessible"] == "yes"
 
     result = replay(archived, plan=plan_from_snapshot(document, catalog=catalog, objects_named=len(archived)))
     assert result.outcome["possible"] is True
@@ -423,9 +459,32 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     assert result.findings == ()
 
     # A tampered value is caught.
-    index, body = archived[0]
+    slot = next(
+        position
+        for position, (_, body) in enumerate(archived)
+        if json.loads(gzip.decompress(body))["kind"] == ARCHIVE_KIND_CLOUDWATCH
+    )
+    index, body = archived[slot]
     tampered = json.loads(gzip.decompress(body))
     tampered["results"][0]["values"][0] = str(Decimal(tampered["results"][0]["values"][0]) + 1)
-    archived[0] = (index, gzip.compress(json.dumps(tampered).encode()))
+    archived[slot] = (index, gzip.compress(json.dumps(tampered).encode()))
     mismatch = replay(archived, plan=plan_from_snapshot(document, catalog=catalog, objects_named=len(archived)))
     assert mismatch.outcome["recomputed_sha256"] != outcome.snapshot_id
+
+
+def test_a_repeated_name_gains_the_resource_id() -> None:
+    from reporting_agent.aws.provider import _unique_names
+
+    def record(resource_id: str, name: str, resource_type: str = "AWS::EC2::Instance") -> dict[str, Any]:
+        return {"resource_id": resource_id, "name": name, "resource_type": resource_type, "location": "us-east-1",
+                "resource_group": "", "tags": {}, "sku_name": "", "power_state_raw": "", "power_state": "unknown",
+                "fidelity_tier": "baseline"}
+
+    named = _unique_names([
+        record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-01", "web"),
+        record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-02", "web"),
+        record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-03", "db"),
+        # The same name on another type is not a repeat: its table is a different one.
+        record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:volume/vol-01", "web", "AWS::EC2::Volume"),
+    ])  # type: ignore[arg-type]
+    assert [r["name"] for r in named] == ["web (i-01)", "web (i-02)", "db", "web"]

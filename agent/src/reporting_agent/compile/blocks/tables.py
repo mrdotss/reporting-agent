@@ -407,6 +407,9 @@ _FACT_INITIALISMS: Final[Mapping[str, str]] = {
     "cpu": "CPU",
     "vm": "VM",
     "dns": "DNS",
+    "vpc": "VPC",
+    "vcpus": "vCPUs",
+    "az": "AZ",
 }
 """Words a plain `.capitalize()` gets wrong. Everything else title-cases correctly."""
 
@@ -1404,7 +1407,11 @@ def _subscription_pairs_table(
                 cells=(
                     text_cell(
                         row_cursor.child("cells", 0),
-                        messages.text("doc.inventory.subscription_id"),
+                        messages.text(
+                            "doc.inventory.account_id"
+                            if context.view.is_aws
+                            else "doc.inventory.subscription_id"
+                        ),
                     ),
                     text_cell(row_cursor.child("cells", 1), subscription_id),
                 ),
@@ -1416,6 +1423,9 @@ def _subscription_pairs_table(
         ("resource_groups", "doc.inventory.resource_groups", ("resource_group",)),
         ("regions", "doc.inventory.regions", ("location",)),
     ):
+        # An AWS account has no resource groups; its regions row is the grouping.
+        if key == "resource_groups" and context.view.is_aws:
+            continue
         value = context.view.cardinality(*tokens)
         if value is None:
             continue
