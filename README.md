@@ -87,7 +87,19 @@ A run on an AWS connector collects EC2 instances, EBS volumes and RDS instances 
 CloudWatch's `GetMetricData`, per region. CloudWatch's `Sum`, `SampleCount`, `Minimum` and
 `Maximum` fold into the same accumulators Azure's `Total`, `Count`, `Minimum` and `Maximum`
 do, and each call is archived so the verifier replays AWS figures exactly as it replays
-Azure's. The AWS report sections are next.
+Azure's.
+
+An AWS preset uses its own section catalogue (`providers.aws` in `sections.v1.json`):
+- account and region summaries;
+- EC2 instances, with their network configuration;
+- EBS volumes and RDS databases;
+- EC2, RDS and EBS utilization, with the EC2 historical trend;
+- incidents, and coverage and verification.
+
+Instance, volume and database details are facts read from the same describe calls as the
+inventory, archived once per run and replayed like every other fact. A run covers every
+region the account has enabled. VPC, Elastic IP, security-group, AWS Backup and Compute
+Optimizer sections are not built yet.
 
 ## Run it locally
 

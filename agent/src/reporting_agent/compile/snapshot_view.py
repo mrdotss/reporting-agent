@@ -610,6 +610,12 @@ class SnapshotView:
 
     # --- lookups ---
 
+    @property
+    def is_aws(self) -> bool:
+        """Whether this snapshot is an AWS account's: its resources carry CloudFormation's
+        `AWS::` types. Read off the snapshot itself, so a replay decides it identically."""
+        return any(resource.resource_type.startswith("AWS::") for resource in self.resources)
+
     def resource(self, resource_id: str) -> ResourceView | None:
         """One resource by id, or `None`. Exact comparison: a snapshot resource id is
         the id Azure returned, and the compile stage matches what the collector
@@ -1396,7 +1402,9 @@ def _build_resource(raw: Mapping[str, object], index: int, at: str) -> ResourceV
         name=_require_str(raw, "name", at),
         resource_type=_require_str(raw, "resource_type", at),
         location=_require_str(raw, "location", at),
-        resource_group=_require_str(raw, "resource_group", at),
+        # Required to be a string, and empty only for a cloud with no such container: an
+        # AWS resource sits in an account and a region, never a resource group.
+        resource_group=_require_resource_group(raw, at),
         tags=MappingProxyType(tags),
         power_state_raw=_optional_str(raw, "power_state_raw") or "",
         power_state=_require_str(raw, "power_state", at),
@@ -1513,6 +1521,14 @@ def _require_str(source: Mapping[str, object], key: str, at: str = "") -> str:
     if not isinstance(value, str) or not value:
         raise CompileFailedError(f"{at}/{key} is missing or is not a non-empty string")
     return value
+
+
+def _require_resource_group(source: Mapping[str, object], at: str) -> str:
+    value = source.get("resource_group")
+    resource_type = source.get("resource_type")
+    if isinstance(value, str) and (value or (isinstance(resource_type, str) and resource_type.startswith("AWS::"))):
+        return value
+    raise CompileFailedError(f"{at}/resource_group is missing or is not a non-empty string")
 
 
 def _optional_str(source: Mapping[str, object], key: str) -> str | None:

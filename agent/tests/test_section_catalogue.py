@@ -53,7 +53,8 @@ class TestShippedCatalogue:
     """The shipped catalogue loads and declares the expected entries."""
 
     def test_loads_successfully(self, sections: LoadedSectionCatalogue):
-        assert sections.catalogue_version == "1.0.0"
+        # 1.1.0 added the AWS catalogue beside Azure's.
+        assert sections.catalogue_version == "1.1.0"
 
     def test_sixteen_entries(self, sections: LoadedSectionCatalogue):
         assert len(sections.entries) == 16
@@ -347,7 +348,7 @@ class TestCrossHalfAgreement:
 
     def test_raw_json_is_valid(self, raw_sections: dict):
         """The raw JSON file parses to what both halves read."""
-        assert raw_sections["catalogue_version"] == "1.0.0"
+        assert raw_sections["catalogue_version"] == "1.1.0"
         sections = raw_sections["providers"]["azure"]["sections"]
         assert len(sections) == 16
 

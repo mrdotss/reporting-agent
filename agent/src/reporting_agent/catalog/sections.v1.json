@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.0.0",
+  "catalogue_version": "1.1.0",
   "providers": {
     "azure": {
       "sections": [
@@ -1235,6 +1235,693 @@
             {
               "block": "resource_narrative",
               "per": "resource"
+            }
+          ]
+        }
+      ]
+    },
+    "aws": {
+      "sections": [
+        {
+          "key": "aws_account",
+          "number": 1,
+          "title_id": "doc.section.aws_account",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "inventory_summary",
+              "per": "section",
+              "config": {
+                "group_by": "subscription"
+              }
+            }
+          ]
+        },
+        {
+          "key": "regions",
+          "number": 2,
+          "title_id": "doc.section.regions",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "inventory_summary",
+              "per": "section",
+              "config": {
+                "group_by": "region"
+              }
+            }
+          ]
+        },
+        {
+          "key": "ec2_instances",
+          "number": 3,
+          "title_id": "doc.section.ec2_instances",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2,
+                "title_id": "doc.section.ec2_instances.inventory"
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "instance_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "platform"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "vcpus"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "memory"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "power_state"
+                  }
+                ],
+                "subsection": "3.1"
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2,
+                "title_id": "doc.section.ec2_instances.network"
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "vpc"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "subnet"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "private_ip"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "public_ip"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "security_groups"
+                  }
+                ],
+                "subsection": "3.2"
+              }
+            }
+          ]
+        },
+        {
+          "key": "ebs_volumes",
+          "number": 4,
+          "title_id": "doc.section.ebs_volumes",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Volume"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "volume_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "size"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "iops"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "encrypted"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "attached_to"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "volume_state"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "key": "rds_instances",
+          "number": 5,
+          "title_id": "doc.section.rds_instances",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::RDS::DBInstance"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "engine"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "engine_version"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "instance_class"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "multi_az"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "allocated_storage"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "backup_retention_days"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "publicly_accessible"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "key": "ec2_utilization",
+          "number": 6,
+          "title_id": "doc.section.ec2_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              {
+                "metric": "CPUUtilization",
+                "statistic": "avg"
+              },
+              {
+                "metric": "CPUUtilization",
+                "statistic": "max"
+              }
+            ],
+            "capacity_planning": [
+              {
+                "metric": "CPUUtilization",
+                "statistic": "avg"
+              },
+              {
+                "metric": "CPUUtilization",
+                "statistic": "max"
+              },
+              {
+                "metric": "CPUUtilization",
+                "statistic": "p95"
+              },
+              {
+                "metric": "NetworkIn",
+                "statistic": "avg"
+              },
+              {
+                "metric": "NetworkOut",
+                "statistic": "avg"
+              },
+              {
+                "metric": "EBSReadBytes",
+                "statistic": "avg"
+              },
+              {
+                "metric": "EBSWriteBytes",
+                "statistic": "avg"
+              }
+            ],
+            "everything": "*"
+          },
+          "order_by": {
+            "metric": "CPUUtilization",
+            "statistic": "max"
+          },
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "instance_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "platform"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "private_ip"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "power_state"
+                  }
+                ]
+              },
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ],
+              "config": {}
+            },
+            {
+              "block": "metric_summary",
+              "per": "resource",
+              "config": {
+                "orientation": "statistic_major",
+                "show_samples": false
+              },
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "resource_narrative",
+              "per": "resource"
+            },
+            {
+              "block": "top_n_table",
+              "per": "section",
+              "config": {
+                "caption_id": "doc.section.fleet_summary"
+              }
+            }
+          ]
+        },
+        {
+          "key": "historical_ec2_utilization",
+          "number": 7,
+          "title_id": "doc.section.historical_ec2_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              {
+                "metric": "CPUUtilization",
+                "statistic": "avg"
+              },
+              {
+                "metric": "CPUUtilization",
+                "statistic": "max"
+              }
+            ],
+            "everything": "*"
+          },
+          "optional": true,
+          "draws_from_prior_verified_runs": true,
+          "trend_metric": {
+            "metric": "CPUUtilization",
+            "statistic": "max"
+          },
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "resource"
+            },
+            {
+              "block": "historical_trend",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            },
+            {
+              "block": "trend_narrative",
+              "per": "resource",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "rds_utilization",
+          "number": 8,
+          "title_id": "doc.section.rds_utilization",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::RDS::DBInstance"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              {
+                "metric": "CPUUtilization",
+                "statistic": "avg"
+              },
+              {
+                "metric": "CPUUtilization",
+                "statistic": "max"
+              },
+              {
+                "metric": "FreeableMemory",
+                "statistic": "min"
+              },
+              {
+                "metric": "FreeStorageSpace",
+                "statistic": "min"
+              }
+            ],
+            "everything": "*"
+          },
+          "order_by": {
+            "metric": "CPUUtilization",
+            "statistic": "max"
+          },
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "metric_summary",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            },
+            {
+              "block": "top_n_table",
+              "per": "section",
+              "config": {
+                "caption_id": "doc.section.fleet_summary"
+              }
+            }
+          ]
+        },
+        {
+          "key": "ebs_activity",
+          "number": 9,
+          "title_id": "doc.section.ebs_activity",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Volume"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "presets": {
+            "standard_utilization": [
+              {
+                "metric": "VolumeReadBytes",
+                "statistic": "avg"
+              },
+              {
+                "metric": "VolumeWriteBytes",
+                "statistic": "avg"
+              }
+            ],
+            "everything": "*"
+          },
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "metric_summary",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "table_only"
+              ]
+            },
+            {
+              "block": "timeseries_chart",
+              "per": "section",
+              "when_presentation": [
+                "chart_and_table",
+                "chart_only"
+              ]
+            }
+          ]
+        },
+        {
+          "key": "incident_report",
+          "number": 10,
+          "title_id": "doc.section.incident_report",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "author_filled": true,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "blank_rows_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  "Case",
+                  "Date",
+                  "Solution",
+                  "Description"
+                ],
+                "rows": 5
+              }
+            }
+          ]
+        },
+        {
+          "key": "coverage_and_verification",
+          "number": 11,
+          "title_id": "doc.section.coverage_and_verification",
+          "group": "closing",
+          "position": "always",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "gaps_and_coverage",
+              "per": "section"
+            },
+            {
+              "block": "verification_record",
+              "per": "section"
             }
           ]
         }

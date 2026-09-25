@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
@@ -77,6 +78,7 @@ __all__ = [
     "DEFAULT_FACTS_PATH",
     "DEFAULT_SECTIONS_PATH",
     "FIXED_SECTION_ORDER",
+    "FIXED_SECTION_ORDER_BY_PROVIDER",
     "MAX_FACT_KEY_LENGTH",
     "MAX_SCALE",
     "MIN_FACT_KEY_LENGTH",
@@ -170,7 +172,7 @@ satisfies a decimal grammar and is an operating-system version, while `10.0.0.4`
 version with a grouping separator."""
 
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws"}
 )
 """Req 4.2's five sources, recorded from the request that produced the fact rather than
 derived from its key — so a fact's provenance is an observation about where it came from
@@ -231,6 +233,14 @@ FIXED_SECTION_ORDER: Final[tuple[str, ...]] = (
     "incident_report",
     "recommendations",
 )
+
+FIXED_SECTION_ORDER_BY_PROVIDER: Final[Mapping[str, tuple[str, ...]]] = {
+    "azure": FIXED_SECTION_ORDER,
+    # AWS has no backup or recommendation section yet, so its one fixed closing section is
+    # the incident report every provider shares.
+    "aws": ("incident_report",),
+}
+"""Each provider's fixed-position sections, in their declared order."""
 """The declared order for position:'fixed' entries. A catalogue declaring them
 out of this order fails validation."""
 
@@ -1195,9 +1205,11 @@ def _validate_one_fact(
                     f"a non-projectable fact must not declare a `projection`, got "
                     f"{projection!r}"
                 )
-            # ARM read-only facts need not assert a configuration state when absent.
+            # ARM and AWS describe facts need not assert a configuration state when absent.
             # The fold already records an unspecified absence as fact_unavailable.
-            if absent_gap_type not in DECLARED_ABSENT_GAP_TYPES and not (source == "arm" and absent_gap_type is None):
+            if absent_gap_type not in DECLARED_ABSENT_GAP_TYPES and not (
+                source in ("arm", "aws") and absent_gap_type is None
+            ):
                 reasons.append(
                     f"a non-projectable fact must declare an `absent_gap_type` drawn "
                     f"from {sorted(DECLARED_ABSENT_GAP_TYPES)}, got "
@@ -1909,8 +1921,12 @@ def load_section_catalogue(
     path: Path | str | None = None,
     *,
     loaded_catalog: LoadedCatalog | None = None,
+    provider: str = "azure",
 ) -> LoadedSectionCatalogue:
-    """Load, validate and freeze the Section_Catalogue.
+    """Load, validate and freeze one provider's Section_Catalogue.
+
+    `provider` is the definition's own (`azure` or `aws`): a preset's sections are one
+    provider's catalogue, so a report compiles against that provider's entries only.
 
     Validates:
     - `expands_to` block keys are in BLOCK_TYPES
@@ -1959,17 +1975,18 @@ def load_section_catalogue(
             f"the section catalogue at {resolved} declares no `providers` object"
         )
 
-    azure = providers.get("azure")
-    if not isinstance(azure, dict):
+    selected = providers.get(provider)
+    if not isinstance(selected, dict):
         raise CatalogUnusableError(
-            f"the section catalogue at {resolved} declares no `providers.azure` object"
+            f"the section catalogue at {resolved} declares no `providers.{provider}` object"
         )
 
-    raw_sections = azure.get("sections")
+    raw_sections = selected.get("sections")
     if not isinstance(raw_sections, list) or not raw_sections:
         raise CatalogUnusableError(
-            f"the section catalogue at {resolved} declares no `providers.azure.sections`"
+            f"the section catalogue at {resolved} declares no `providers.{provider}.sections`"
         )
+    fixed_order = FIXED_SECTION_ORDER_BY_PROVIDER.get(provider, ())
 
     # Collect all known resource types from the metric AND fact catalogs for
     # preset metric validation.
@@ -2039,15 +2056,15 @@ def load_section_catalogue(
         if position == "fixed":
             fixed_seen.append(key)
             expected_idx = len(fixed_seen) - 1
-            if expected_idx >= len(FIXED_SECTION_ORDER):
+            if expected_idx >= len(fixed_order):
                 raise CatalogUnusableError(
                     f"section catalogue entry {key!r}: more fixed entries than "
-                    f"FIXED_SECTION_ORDER declares ({len(FIXED_SECTION_ORDER)})"
+                    f"FIXED_SECTION_ORDER declares ({len(fixed_order)})"
                 )
-            if FIXED_SECTION_ORDER[expected_idx] != key:
+            if fixed_order[expected_idx] != key:
                 raise CatalogUnusableError(
                     f"section catalogue entry {key!r}: fixed entry at position "
-                    f"{expected_idx} must be {FIXED_SECTION_ORDER[expected_idx]!r}, "
+                    f"{expected_idx} must be {fixed_order[expected_idx]!r}, "
                     f"got {key!r}"
                 )
 
@@ -2248,8 +2265,8 @@ def load_section_catalogue(
         )
 
     # Final fixed-order validation: we must have seen all declared fixed entries
-    if len(fixed_seen) != len(FIXED_SECTION_ORDER):
-        missing = [k for k in FIXED_SECTION_ORDER if k not in fixed_seen]
+    if len(fixed_seen) != len(fixed_order):
+        missing = [k for k in fixed_order if k not in fixed_seen]
         raise CatalogUnusableError(
             f"section catalogue is missing fixed entries: {missing}"
         )

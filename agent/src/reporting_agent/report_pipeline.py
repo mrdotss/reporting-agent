@@ -240,7 +240,7 @@ async def run_generate_report(
     # further down and the compile's own `section_catalogue` argument. Independent loads
     # would be independent chances to disagree about what a section expands to.
     section_catalogue = (
-        load_section_catalogue(loaded_catalog=catalog)
+        load_section_catalogue(loaded_catalog=catalog, provider=definition_provider(definition))
         if definition.get("schema_version") == 3
         else None
     )
@@ -427,6 +427,13 @@ async def run_generate_report(
 # --------------------------------------------------------------------------- #
 
 
+
+def definition_provider(definition: Mapping[str, Any]) -> str:
+    """The provider a v3 definition's sections belong to. Absent is Azure: every
+    definition written before the field existed was one."""
+    provider = definition.get("provider")
+    return provider if isinstance(provider, str) and provider else "azure"
+
 def _assert_compilable(definition: Mapping[str, PlainData]) -> None:
     """Req 2.8 — `TEMPLATE_INVALID` before a metric is requested.
 
@@ -578,7 +585,9 @@ def _requested_metric_union_v3(
     """
     from reporting_agent.compile.scope import scope_rules_from_plain, union_scope
 
-    section_catalogue = load_section_catalogue(loaded_catalog=catalog)
+    section_catalogue = load_section_catalogue(
+        loaded_catalog=catalog, provider=definition_provider(definition)
+    )
 
     scopes: list[Any] = []
     metrics_by_type: dict[str, set[str]] = {}
@@ -2098,7 +2107,7 @@ async def run_verify_report(
     # Loaded on the same terms as the generate path: `None` below v3, so a v1/v2 definition
     # keeps taking the branch that needs no catalogue at all.
     verify_catalogue = (
-        load_section_catalogue()
+        load_section_catalogue(provider=definition_provider(definition))
         if definition.get("schema_version") == 3
         else None
     )

@@ -610,13 +610,181 @@
       ]
     },
     "AWS::EC2::Instance": {
-      "facts": []
+      "facts": [
+        {
+          "key": "instance_type",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "platform",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "availability_zone",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "private_ip",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "public_ip",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "vpc",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "subnet",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "security_groups",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "launch_date",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "vcpus",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "count"
+        },
+        {
+          "key": "memory",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
     },
     "AWS::EC2::Volume": {
-      "facts": []
+      "facts": [
+        {
+          "key": "volume_type",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "size",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "iops",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "count"
+        },
+        {
+          "key": "encrypted",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "attached_to",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "availability_zone",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "volume_state",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
     },
     "AWS::RDS::DBInstance": {
-      "facts": []
+      "facts": [
+        {
+          "key": "engine",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "engine_version",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "instance_class",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "multi_az",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "storage_type",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "allocated_storage",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "backup_retention_days",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "days"
+        },
+        {
+          "key": "availability_zone",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "publicly_accessible",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
     }
   }
 }
