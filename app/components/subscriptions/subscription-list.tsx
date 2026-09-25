@@ -66,7 +66,10 @@ export function canScanConnector(view: ConnectedSubscriptionView, now: Date): bo
   return view.scopeVerified && state.kind !== "expired" && state.kind !== "disabled"
 }
 
-function StateNotice({ state }: Readonly<{ state: SubscriptionState }>) {
+function StateNotice({
+  state,
+  provider,
+}: Readonly<{ state: SubscriptionState; provider: ConnectedSubscriptionView["provider"] }>) {
   if (state.kind === "expiring") {
     return <SecretExpiryBanner state={state} />
   }
@@ -89,6 +92,21 @@ function StateNotice({ state }: Readonly<{ state: SubscriptionState }>) {
                 "recorded expiry is still in the future. The recorded date was " +
                 "entered by hand; Azure's answer is the one that counts. Runs " +
                 "against this subscription are blocked."}
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (state.kind === "pending" && provider === "aws") {
+    return (
+      <div className="flex flex-col gap-2 rounded-lg bg-muted px-3 py-2">
+        <div className="flex items-start gap-2 text-sm text-muted-foreground">
+          <ShieldWarningIcon aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <p>
+            Waiting for the customer&apos;s read-only role. Once they have deployed
+            the setup template, open the setup page and verify it. Scans and runs
+            are blocked until the role&apos;s permissions are proved.
           </p>
         </div>
       </div>
@@ -124,7 +142,7 @@ function ExpiryMeter({
   state,
   now,
 }: Readonly<{ view: ConnectedSubscriptionView; state: SubscriptionState; now: Date }>) {
-  const expiresMs = Date.parse(view.secretExpiresAt)
+  const expiresMs = view.secretExpiresAt === null ? Number.NaN : Date.parse(view.secretExpiresAt)
   const days = Number.isNaN(expiresMs)
     ? 0
     : Math.max(0, Math.floor((expiresMs - now.getTime()) / DAY_MS))
@@ -160,7 +178,7 @@ function ExpiryMeter({
           {dead ? "expired" : `${days} ${days === 1 ? "day" : "days"} left`}
         </span>
         {/* The stored instant as its UTC calendar date, zone named. */}
-        <span className="truncate">secret · {view.secretExpiresAt.slice(0, 10)} UTC</span>
+        <span className="truncate">secret · {view.secretExpiresAt?.slice(0, 10) ?? "none"} UTC</span>
       </div>
     </div>
   )
@@ -265,40 +283,60 @@ export function SubscriptionList({
 
               <div className="grid items-center gap-x-4 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
                 <div className="flex flex-col gap-0.5 text-sm">
-                  <span className="text-xs text-muted-foreground">Subscription</span>
+                  <span className="text-xs text-muted-foreground">
+                    {view.provider === "aws" ? "Account" : "Subscription"}
+                  </span>
                   <span data-slot="masked-subscription-id">
                     <Identifier
                       value={view.maskedSubscriptionId}
                       kind="mask"
-                      label="Subscription"
+                      label={view.provider === "aws" ? "Account" : "Subscription"}
                     />
                   </span>
                 </div>
 
-                <ExpiryMeter view={view} state={state} now={now} />
+                {view.provider === "aws" ? (
+                  <p className="min-w-0 text-xs text-muted-foreground">
+                    Assumed role with an external ID. No secret is stored, so nothing expires.
+                  </p>
+                ) : (
+                  <ExpiryMeter view={view} state={state} now={now} />
+                )}
 
                 {canConnect ? (
                   <span className="relative z-10 flex items-center gap-2">
                     {canScanConnector(view, now) ? (
                       <RescanButton subscriptionId={view.id} language="en" />
                     ) : null}
-                    <RotateSecretDialog
-                      subscriptionId={view.id}
-                      displayName={view.displayName}
-                      emphasis={
-                        state.kind === "expired" || state.kind === "disabled"
-                          ? "expired"
-                          : "neutral"
-                      }
-                      nowIso={nowIso}
-                    />
+                    {view.provider === "aws" ? (
+                      <Link
+                        href={`/subscriptions/${encodeURIComponent(view.id)}/setup`}
+                        className={buttonVariants({
+                          variant: state.kind === "pending" ? "default" : "outline",
+                          size: "sm",
+                        })}
+                      >
+                        {state.kind === "pending" ? "Finish setup" : "Role setup"}
+                      </Link>
+                    ) : (
+                      <RotateSecretDialog
+                        subscriptionId={view.id}
+                        displayName={view.displayName}
+                        emphasis={
+                          state.kind === "expired" || state.kind === "disabled"
+                            ? "expired"
+                            : "neutral"
+                        }
+                        nowIso={nowIso}
+                      />
+                    )}
                   </span>
                 ) : null}
               </div>
 
               {state.kind === "active" ? null : (
                 <div className="relative z-10">
-                  <StateNotice state={state} />
+                  <StateNotice state={state} provider={view.provider} />
                 </div>
               )}
             </article>

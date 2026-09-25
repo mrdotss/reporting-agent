@@ -361,6 +361,7 @@ SDK_SCAN_PACKAGES: tuple[str, ...] = (
     "catalog",
     "chat",
     "pricing",
+    "aws",
 )
 """The packages the SDK rule now has to actually reach.
 
@@ -2722,6 +2723,9 @@ def test_the_handler_scan_permits_a_gap_or_a_raise(tmp_path: Path, source: str) 
 # harder to notice, because nothing about it looks wrong.
 
 GUARDED_PACKAGES: tuple[str, ...] = (
+    # The AWS connector: boto3 against the customer's account through an assumed role. Swept
+    # by rule 1 — an AWS reader has no business importing the Azure SDK.
+    "aws",
     "azure",
     "catalog",
     "chat",

@@ -365,21 +365,28 @@ export const connectedSubscriptions = pgTable(
 
     displayName: text("display_name").notNull(),
 
-    /** The customer's Azure subscription GUID. Masked in every projection. */
+    /**
+     * The customer's Azure subscription GUID, or their 12-digit AWS account id.
+     * Masked in every projection.
+     */
     subscriptionId: text("subscription_id").notNull(),
 
-    /** **Secret.** Server-resolved at invoke time, never sent to the browser. */
-    tenantId: text("tenant_id").notNull(),
+    /**
+     * **Secret.** Server-resolved at invoke time, never sent to the browser.
+     * Azure only: `connected_subscriptions_provider_fields_ck` requires it for Azure
+     * and forbids it for AWS, which authenticates as our own role instead.
+     */
+    tenantId: text("tenant_id"),
 
-    /** **Secret.** */
-    clientId: text("client_id").notNull(),
+    /** **Secret.** Azure only. */
+    clientId: text("client_id"),
 
     /**
      * **Secret.** The Crypto_Module's AES-256-GCM envelope and nothing else
      * (Requirement 9.2) — the plaintext client secret is never stored in this
      * column or any other.
      */
-    clientSecretEnc: text("client_secret_enc").notNull(),
+    clientSecretEnc: text("client_secret_enc"),
 
     /**
      * Defaults to false, and the preflight is its only writer of `true`
@@ -400,9 +407,28 @@ export const connectedSubscriptions = pgTable(
      * Azure service-principal secrets expire — 24 months at most, commonly 6 to
      * 12 (Requirement 13.1). NOT NULL because an unknown expiry is
      * indistinguishable from one that has passed, and a passed one produces a
-     * clean, fully-verified, empty report.
+     * clean, fully-verified, empty report. Required for Azure by the CHECK below; an
+     * AWS connector has no secret, so nothing of it expires.
      */
-    secretExpiresAt: instant("secret_expires_at").notNull(),
+    secretExpiresAt: instant("secret_expires_at"),
+
+    /**
+     * AWS only: `arn:aws:iam::<account>:role/reporting-agent/ReportingAgentReader`,
+     * derived from the account id when the connector is created. The runtime refuses any
+     * other role.
+     */
+    roleArn: text("role_arn"),
+
+    /**
+     * AWS only: `rpt-` and 32 hex characters, generated here and written into the
+     * customer's trust policy. Not a credential, but it is what stops another tenant of
+     * this service from pointing a connector at the customer's role, so it is unique, never
+     * chosen by a client, and redacted from logs like one.
+     */
+    externalId: text("external_id").unique("connected_subscriptions_external_id_uq"),
+
+    /** AWS only: the account's enabled regions, as the last preflight listed them. */
+    regions: text("regions").array(),
 
     status: subscriptionStatus("status").notNull().default("pending"),
 
@@ -467,6 +493,24 @@ export const connectedSubscriptions = pgTable(
     unique("connected_subscriptions_user_id_subscription_id_uq").on(
       table.userId,
       table.subscriptionId
+    ),
+
+    /**
+     * Each provider's fields are all present, and the other provider's are absent. An
+     * Azure row without its secret cannot run; an AWS row carrying one would be a secret
+     * nothing uses and nothing rotates.
+     */
+    check(
+      "connected_subscriptions_provider_fields_ck",
+      sql`(${table.provider} = 'azure'
+        and ${table.tenantId} is not null and ${table.clientId} is not null
+        and ${table.clientSecretEnc} is not null and ${table.secretExpiresAt} is not null
+        and ${table.roleArn} is null and ${table.externalId} is null)
+      or (${table.provider} = 'aws'
+        and ${table.roleArn} is not null and ${table.externalId} is not null
+        and ${table.tenantId} is null and ${table.clientId} is null
+        and ${table.clientSecretEnc} is null and ${table.secretExpiresAt} is null)
+      or ${table.provider} = 'onprem'`
     ),
   ]
 )

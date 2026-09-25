@@ -710,9 +710,17 @@ describe.skipIf(!db.enabled)("a connector and a preset must name the same source
     // provider's estate. The form never offers a mismatched pair; this is the refusal
     // for a request that arrives without the form.
     const templateId = await insertTemplate(ownerId, [{ ...BASE, provider: "azure" }])
-    await db.query(`UPDATE connected_subscriptions SET provider = 'aws' WHERE id = $1`, [
-      subscriptionId,
-    ])
+    // A whole AWS row, which the provider CHECK requires: a role and an external id, and
+    // none of Azure's credential columns.
+    await db.query(
+      `UPDATE connected_subscriptions
+          SET provider = 'aws', tenant_id = NULL, client_id = NULL, client_secret_enc = NULL,
+              secret_expires_at = NULL,
+              role_arn = 'arn:aws:iam::123456789012:role/reporting-agent/ReportingAgentReader',
+              external_id = 'rpt-00000000000000000000000000000001'
+        WHERE id = $1`,
+      [subscriptionId]
+    )
 
     const rejection = await rejectionFrom(
       enqueueRun(ownerId, {

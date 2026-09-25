@@ -4,7 +4,8 @@ import { useState, type ReactNode } from "react"
 import { ArrowLeftIcon } from "@phosphor-icons/react/ssr"
 
 import { ConnectWizard } from "@/components/subscriptions/connect-wizard"
-import { AzureMark } from "@/components/subscriptions/provider-mark"
+import { AwsConnectForm } from "@/components/subscriptions/aws-connect-form"
+import { AwsMark, AzureMark } from "@/components/subscriptions/provider-mark"
 import {
   SourcePicker,
   type SourceKind,
@@ -29,24 +30,29 @@ import { Button } from "@/components/ui/button"
 export function ConnectFlow({
   explainer,
   nowIso,
-}: Readonly<{ explainer: ReactNode; nowIso: string }>) {
+  awsAvailable = false,
+}: Readonly<{ explainer: ReactNode; nowIso: string; awsAvailable?: boolean }>) {
   const [source, setSource] = useState<SourceKind | null>(null)
 
   if (source === null) {
-    return <SourcePicker onSelect={setSource} />
+    return <SourcePicker onSelect={setSource} awsAvailable={awsAvailable} />
   }
+
+  const aws = source === "aws"
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div className="flex min-w-0 items-center gap-3">
-          {AzureMark}
+          {aws ? AwsMark : AzureMark}
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="font-heading text-sm font-medium tracking-tight">
-              Microsoft Azure
+              {aws ? "Amazon Web Services" : "Microsoft Azure"}
             </span>
             <span className="text-xs text-muted-foreground">
-              Service principal, Reader at subscription scope
+              {aws
+                ? "Read-only IAM role, assumed with an external ID"
+                : "Service principal, Reader at subscription scope"}
             </span>
           </div>
         </div>
@@ -57,7 +63,7 @@ export function ConnectFlow({
         </Button>
       </div>
 
-      <ConnectWizard explainer={explainer} nowIso={nowIso} />
+      {aws ? <AwsConnectForm /> : <ConnectWizard explainer={explainer} nowIso={nowIso} />}
     </div>
   )
 }

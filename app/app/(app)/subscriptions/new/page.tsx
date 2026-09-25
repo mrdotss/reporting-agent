@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 
 import { ConnectSubscriptionView } from "@/components/subscriptions/connect-page"
 import { requireSession } from "@/lib/auth/guard"
+import { awsConnectorPrincipal } from "@/lib/subscriptions/aws-principal"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
 
@@ -29,5 +30,10 @@ export default async function NewSubscriptionPage() {
   const { workspace } = await selectedContext(user.id)
   if (!can(workspace.role, "connect")) notFound()
 
-  return <ConnectSubscriptionView nowIso={new Date().toISOString()} />
+  return (
+    <ConnectSubscriptionView
+      nowIso={new Date().toISOString()}
+      awsAvailable={awsConnectorPrincipal() !== null}
+    />
+  )
 }

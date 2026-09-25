@@ -39,7 +39,7 @@ export class ScanSubscriptionNotFoundError extends Error {
  */
 export type ScanSubscriptionState = {
   readonly scopeVerified: boolean
-  readonly secretExpiresAt: Date
+  readonly secretExpiresAt: Date | null
 }
 
 // --- Reads ------------------------------------------------------------------

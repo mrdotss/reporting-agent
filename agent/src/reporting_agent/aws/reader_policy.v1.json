@@ -1,0 +1,54 @@
+{
+  "policy_version": 1,
+  "role_path": "/reporting-agent/",
+  "role_name": "ReportingAgentReader",
+  "policy_name": "reporting-agent-read",
+  "max_session_seconds": 3600,
+  "statements": [
+    {
+      "sid": "Inventory",
+      "purpose": "Which resources exist, in which regions, with which settings.",
+      "actions": [
+        "ec2:DescribeRegions",
+        "ec2:DescribeInstances",
+        "ec2:DescribeInstanceTypes",
+        "ec2:DescribeVolumes",
+        "ec2:DescribeVpcs",
+        "ec2:DescribeSubnets",
+        "ec2:DescribeSecurityGroups",
+        "ec2:DescribeSecurityGroupRules",
+        "ec2:DescribeAddresses",
+        "ec2:DescribeNetworkInterfaces",
+        "rds:DescribeDBInstances",
+        "rds:DescribeDBClusters",
+        "tag:GetResources"
+      ]
+    },
+    {
+      "sid": "Metrics",
+      "purpose": "Utilisation figures.",
+      "actions": [
+        "cloudwatch:GetMetricData",
+        "cloudwatch:ListMetrics"
+      ]
+    },
+    {
+      "sid": "BackupsAndRecommendations",
+      "purpose": "Backup and rightsizing sections. Missing data becomes a gap, never a failure.",
+      "actions": [
+        "backup:ListProtectedResources",
+        "backup:ListRecoveryPointsByResource",
+        "compute-optimizer:GetEnrollmentStatus",
+        "compute-optimizer:GetEC2InstanceRecommendations"
+      ]
+    },
+    {
+      "sid": "CheckOwnPermissions",
+      "purpose": "Lets the preflight prove what this role may do, from this role's own policy.",
+      "actions": [
+        "iam:SimulatePrincipalPolicy"
+      ],
+      "self_only": true
+    }
+  ]
+}

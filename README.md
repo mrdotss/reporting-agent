@@ -24,6 +24,7 @@ Browser ──▶ app/     Next.js 16 on our own server (systemd, behind Caddy)
             agent/   Python on Bedrock AgentCore Runtime (arm64, in our VPC)
                      collect → compile → render → verify, narration, Ask answers
                        ├─▶ Azure     Resource Graph, Monitor, Log Analytics, Advisor
+                       ├─▶ AWS       a customer's read-only role, assumed with an external ID
                        ├─▶ S3        snapshots, raw archive, reports, verification records
                        └─▶ Bedrock   the models below; Ask runs behind a guardrail
 ```
@@ -67,6 +68,21 @@ with `python agent/dev/vendor_skills.py` at pinned commits, licences alongside):
   skills and two pages, read only from learn.microsoft.com or docs.aws.amazon.com. Each skill and
   page is a step in the answer's timeline and listed under the answer. Product knowledge stays out
   of reports, whose narrative may carry no number the compiler did not place.
+
+### AWS connections
+
+A customer grants AWS access by deploying a read-only IAM role, `ReportingAgentReader` at
+path `/reporting-agent/`, that trusts only the runtime's role and only with the
+connection's external ID. The setup page generates a CloudFormation template and a CLI
+script for it. No secret is stored and nothing expires. The actions the role grants live in
+[`agent/src/reporting_agent/aws/reader_policy.v1.json`](agent/src/reporting_agent/aws/reader_policy.v1.json),
+which both the templates and the runtime's preflight read. The preflight proves the grant
+with IAM's own policy simulation, including any organization SCP.
+
+AWS is offered only when the app's `RPT_AWS_CONNECTOR_PRINCIPAL_ARN` names the runtime's
+role, and the runtime's role policy allows `sts:AssumeRole` on
+`arn:aws:iam::*:role/reporting-agent/ReportingAgentReader`. Connecting and scanning work
+today; AWS reports are next.
 
 ## Run it locally
 

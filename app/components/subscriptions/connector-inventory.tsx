@@ -108,7 +108,11 @@ export function ConnectorInventory({
                 [scan.resourceCount, "Resources"],
                 [Object.keys(counts).length, "Types"],
                 [regions.length, "Regions"],
-                [groups.length, "Resource groups"],
+                // AWS has no resource groups; its fourth figure is the subnets, the one
+                // sub-record its scan counts.
+                subscription.provider === "aws"
+                  ? [childCounts["AWS::EC2::Subnet"] ?? 0, "Subnets"]
+                  : [groups.length, "Resource groups"],
               ] as const
             ).map(([value, label], index) => (
               <div

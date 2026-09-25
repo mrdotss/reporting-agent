@@ -195,6 +195,15 @@ export interface AgentInvokeContext {
   client_id: string
   /** **Secret.** Decrypted from `client_secret_enc` at invoke time. */
   client_secret: string
+  /**
+   * The connector's cloud. Absent means Azure, which every connector was before AWS; an
+   * AWS context sends empty Azure fields and the two below instead.
+   */
+  provider?: "azure" | "aws"
+  /** AWS only: the customer's reader role. */
+  role_arn?: string
+  /** AWS only: the external id that role's trust policy demands. Redacted in the runtime. */
+  external_id?: string
   /** IANA zone name; decides local-day bucketing, so it is not cosmetic. */
   timezone: string
   /** The customer label the consultant gave this connection. */

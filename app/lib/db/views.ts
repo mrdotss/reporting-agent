@@ -99,8 +99,11 @@ export type ConnectedSubscriptionView = {
   displayName: string
   maskedSubscriptionId: string
   scopeVerified: boolean
-  /** ISO 8601, UTC — see {@link toConnectedSubscriptionView}. */
-  secretExpiresAt: string
+  /**
+   * ISO 8601, UTC — see {@link toConnectedSubscriptionView}. `null` for an AWS connector,
+   * which holds no secret and so has nothing to expire.
+   */
+  secretExpiresAt: string | null
   fidelityTier: FidelityTier
   /**
    * The oldest exported platform metric this subscription's workspace holds, as ISO 8601
@@ -139,7 +142,7 @@ export function toConnectedSubscriptionView(
     displayName: row.displayName,
     maskedSubscriptionId: maskSubscriptionId(row.subscriptionId),
     scopeVerified: row.scopeVerified,
-    secretExpiresAt: row.secretExpiresAt.toISOString(),
+    secretExpiresAt: row.secretExpiresAt?.toISOString() ?? null,
     fidelityTier: row.fidelityTier,
     metricsHistorySince: row.metricsHistorySince?.toISOString() ?? null,
     status: row.status,

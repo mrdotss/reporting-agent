@@ -61,6 +61,11 @@ import {
   SubscriptionAlreadyConnectedError,
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
+  SubscriptionProviderUnsupportedError,
+  createAwsConnector,
+  readAwsConnectorSetup,
+  recordAwsPreflight,
+  resolveConnectorCredentials,
   type CreateConnectedSubscriptionInput,
 } from "@/lib/subscriptions/store"
 
@@ -465,6 +470,7 @@ describe("Requirements 9.7, 9.8 — every read is scoped to the owner", () => {
     // The unmasked id and the decrypted secret, which is what the invoke
     // payload's `context` needs and the only place either one exists.
     expect(resolved).toStrictEqual({
+      provider: "azure",
       subscriptionId: SUBSCRIPTION_ID,
       tenantId: OWNER_TENANT_ID,
       clientId: OWNER_CLIENT_ID,
@@ -801,5 +807,92 @@ describe("disableConnectedSubscription", () => {
     const after = await rowById(intruderSubscriptionId)
     expect(after).toStrictEqual(before)
     expect(after?.status).toBe("active")
+  })
+})
+
+// --- AWS connectors ----------------------------------------------------------
+
+/** AWS's documentation placeholder, never a real account. */
+const AWS_ACCOUNT = "123456789012"
+
+describe("AWS connectors", () => {
+  test("created pending, with a generated external id and the fixed role", async () => {
+    const view = await createAwsConnector({ userId: ownerId, displayName: "Contoso AWS", accountId: AWS_ACCOUNT })
+
+    expect(view.provider).toBe("aws")
+    expect(view.status).toBe("pending")
+    expect(view.scopeVerified).toBe(false)
+    expect(view.secretExpiresAt).toBeNull()
+    expect(JSON.stringify(view)).not.toContain("rpt-")
+    expect(JSON.stringify(view)).not.toContain(AWS_ACCOUNT)
+
+    const setup = await readAwsConnectorSetup(ownerId, view.id)
+    expect(setup.accountId).toBe(AWS_ACCOUNT)
+    expect(setup.roleArn).toBe(`arn:aws:iam::${AWS_ACCOUNT}:role/reporting-agent/ReportingAgentReader`)
+    expect(setup.externalId).toMatch(/^rpt-[0-9a-f]{32}$/)
+
+    const row = await db.query<{ tenant_id: string | null; client_secret_enc: string | null }>(
+      `SELECT tenant_id, client_secret_enc FROM connected_subscriptions WHERE id = $1`,
+      [view.id]
+    )
+    expect(row.rows[0]).toEqual({ tenant_id: null, client_secret_enc: null })
+  })
+
+  test("every connector gets its own external id", async () => {
+    const first = await createAwsConnector({ userId: ownerId, displayName: "One", accountId: AWS_ACCOUNT })
+    const second = await createAwsConnector({ userId: intruderId, displayName: "Two", accountId: AWS_ACCOUNT })
+    const a = await readAwsConnectorSetup(ownerId, first.id)
+    const b = await readAwsConnectorSetup(intruderId, second.id)
+    expect(a.externalId).not.toBe(b.externalId)
+  })
+
+  test("a passing preflight activates it and records the regions; a refusal puts it back", async () => {
+    const view = await createAwsConnector({ userId: ownerId, displayName: "Contoso AWS", accountId: AWS_ACCOUNT })
+
+    const active = await recordAwsPreflight(ownerId, view.id, {
+      scopeVerified: true,
+      fidelityTier: "baseline",
+      regions: ["ap-southeast-3", "us-east-1"],
+    })
+    expect(active.status).toBe("active")
+
+    const credentials = await resolveConnectorCredentials(ownerId, view.id)
+    expect(credentials).toMatchObject({ provider: "aws", subscriptionId: AWS_ACCOUNT })
+    expect(credentials.provider === "aws" && credentials.regions).toEqual(["ap-southeast-3", "us-east-1"])
+
+    const refused = await recordAwsPreflight(ownerId, view.id, { scopeVerified: false })
+    expect(refused.status).toBe("pending")
+    // The regions it last proved are kept.
+    expect((await readAwsConnectorSetup(ownerId, view.id)).regions).toEqual(["ap-southeast-3", "us-east-1"])
+  })
+
+  test("Azure-only paths refuse an AWS connector", async () => {
+    const view = await createAwsConnector({ userId: ownerId, displayName: "Contoso AWS", accountId: AWS_ACCOUNT })
+    await expect(resolveSubscriptionCredentials(ownerId, view.id)).rejects.toBeInstanceOf(
+      SubscriptionProviderUnsupportedError
+    )
+    await expect(resolveSubscriptionIdentity(ownerId, view.id)).rejects.toBeInstanceOf(
+      SubscriptionProviderUnsupportedError
+    )
+  })
+
+  test("another user cannot read the setup or verify it", async () => {
+    const view = await createAwsConnector({ userId: ownerId, displayName: "Contoso AWS", accountId: AWS_ACCOUNT })
+    await expect(readAwsConnectorSetup(intruderId, view.id)).rejects.toBeInstanceOf(SubscriptionNotFoundError)
+    await expect(recordAwsPreflight(intruderId, view.id, { scopeVerified: true })).rejects.toBeInstanceOf(
+      SubscriptionNotFoundError
+    )
+  })
+
+  test("the table refuses an AWS row carrying an Azure secret, and an Azure row without one", async () => {
+    const view = await createAwsConnector({ userId: ownerId, displayName: "Contoso AWS", accountId: AWS_ACCOUNT })
+    await expect(
+      db.query(`UPDATE connected_subscriptions SET tenant_id = 'x' WHERE id = $1`, [view.id])
+    ).rejects.toThrow(/connected_subscriptions_provider_fields_ck/)
+
+    const azure = await createConnectedSubscription(createInput())
+    await expect(
+      db.query(`UPDATE connected_subscriptions SET client_secret_enc = NULL WHERE id = $1`, [azure.id])
+    ).rejects.toThrow(/connected_subscriptions_provider_fields_ck/)
   })
 })

@@ -52,7 +52,10 @@ const JOURNEY = [
   },
 ]
 
-export function ConnectSubscriptionView({ nowIso }: Readonly<{ nowIso: string }>) {
+export function ConnectSubscriptionView({
+  nowIso,
+  awsAvailable = false,
+}: Readonly<{ nowIso: string; awsAvailable?: boolean }>) {
   return (
     <PageBody kind="reading">
       <header className="flex flex-col gap-3">
@@ -75,7 +78,11 @@ export function ConnectSubscriptionView({ nowIso }: Readonly<{ nowIso: string }>
       <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1.7fr)_minmax(260px,1fr)]">
         <Card className="min-w-0">
           <CardContent>
-            <ConnectFlow explainer={<ReaderRoleExplainer />} nowIso={nowIso} />
+            <ConnectFlow
+              explainer={<ReaderRoleExplainer />}
+              nowIso={nowIso}
+              awsAvailable={awsAvailable}
+            />
           </CardContent>
         </Card>
 
