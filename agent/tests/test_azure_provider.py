@@ -428,8 +428,9 @@ def test_build_provider_assembles_the_real_sdk_clients_without_reaching_azure() 
     # test, and what it has to prove is that the provider reports *the catalog it was
     # built over*. A literal would make it fail every time the catalog gains a resource
     # type, which is a catalog assertion wearing a wiring test's name.
+    # Azure's half of the catalog: the AWS types in the same file are `aws/provider.py`'s.
     assert provider.capabilities()["resource_types"] == sorted(
-        load_catalog().resource_type_names
+        name for name in load_catalog().resource_type_names if not name.startswith("AWS::")
     )
     assert RESOURCE_TYPE in provider.capabilities()["resource_types"]
     provider.close()  # closes every client, then the credential; never raises
@@ -484,11 +485,14 @@ def test_capabilities_reports_the_catalog_the_provider_was_built_over() -> None:
 
     capabilities = harness.provider.capabilities()
 
-    assert capabilities["resource_types"] == sorted(catalog.resource_type_names)
+    azure_types = [name for name in catalog.resource_type_names if not name.startswith("AWS::")]
+    assert capabilities["resource_types"] == sorted(azure_types)
     # Every declared type, not only the virtual-machine one: the claim is that this map
     # mirrors the catalog, and asserting it for a single type would keep passing while
-    # six others were reported wrongly or not at all.
-    for resource_type in catalog.resource_type_names:
+    # six others were reported wrongly or not at all. The AWS types in the same file are
+    # `aws/provider.py`'s, and this provider must not claim them.
+    assert not set(capabilities["metrics"]) - set(azure_types)
+    for resource_type in azure_types:
         declared = catalog.for_resource_type(resource_type)
         assert declared is not None
         assert capabilities["metrics"][resource_type] == sorted(

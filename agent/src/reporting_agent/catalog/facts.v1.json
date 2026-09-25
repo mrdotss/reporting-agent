@@ -608,6 +608,15 @@
           "absent_gap_type": "advisor_not_available"
         }
       ]
+    },
+    "AWS::EC2::Instance": {
+      "facts": []
+    },
+    "AWS::EC2::Volume": {
+      "facts": []
+    },
+    "AWS::RDS::DBInstance": {
+      "facts": []
     }
   }
 }

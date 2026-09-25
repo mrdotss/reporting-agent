@@ -1,0 +1,284 @@
+{
+  "provenance": {
+    "resource_type": "AWS::EC2::Instance",
+    "region": "us-east-1",
+    "captured_at": "2026-09-25T10:00:00Z",
+    "capture_method": "live_capture",
+    "derived_from": [
+      "CloudWatch ListMetrics for namespace AWS/EC2, dimension InstanceId, RecentlyActive=PT3H, filtered to one resource's own series: which metric names exist.",
+      "CloudWatch GetMetricStatistics, one hour of the trailing day per metric: the unit CloudWatch reports for it. A metric with no datapoint in that day records a null unit."
+    ],
+    "aggregation_basis": "CloudWatch serves the Sum, SampleCount, Minimum and Maximum statistics for every metric (GetMetricData's `Stat`), so each metric's supported set is those four, written in the catalog's aggregation names: Total, Count, Minimum, Maximum.",
+    "namespace": "AWS/EC2",
+    "dimension": "InstanceId",
+    "masked": "The account id and the resource's own id are replaced with placeholders."
+  },
+  "body": {
+    "value": [
+      {
+        "name": {
+          "value": "CPUCreditBalance"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CPUCreditUsage"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CPUSurplusCreditBalance"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CPUSurplusCreditsCharged"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "CPUUtilization"
+        },
+        "unit": "Percent",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSByteBalance%"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSIOBalance%"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSReadBytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSReadOps"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSWriteBytes"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "EBSWriteOps"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "InstanceEBSIOPSExceededCheck"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "InstanceEBSThroughputExceededCheck"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "MetadataNoToken"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkIn"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkOut"
+        },
+        "unit": "Bytes",
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkPacketsIn"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "NetworkPacketsOut"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "StatusCheckFailed"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "StatusCheckFailed_AttachedEBS"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "StatusCheckFailed_Instance"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      },
+      {
+        "name": {
+          "value": "StatusCheckFailed_System"
+        },
+        "unit": null,
+        "supportedAggregationTypes": [
+          "Total",
+          "Count",
+          "Minimum",
+          "Maximum"
+        ]
+      }
+    ]
+  }
+}

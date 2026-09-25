@@ -42,8 +42,11 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 14
-"""Thirteen until `Microsoft.Advisor/recommendations` joined them.
+DECLARED_TYPE_COUNT = 17
+"""Fourteen until the three AWS types joined them, each with no fact yet: every metric type
+is a fact type (the test below), and AWS's facts arrive with its report sections.
+
+Thirteen until `Microsoft.Advisor/recommendations` joined them.
 
 A recommendation is its own row, and a row is a resource in this model — the same reason
 subnets and security rules are declared types. Advisor's three keys moved onto it and off

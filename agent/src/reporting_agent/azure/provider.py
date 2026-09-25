@@ -148,6 +148,7 @@ from reporting_agent.providers.base import (
     StatValue,
     assert_inventory_sorted,
     assert_plain_data,
+    is_aws_resource_type,
     is_excluded_from_averages,
     sort_inventory,
 )
@@ -1082,7 +1083,9 @@ class AzureProvider:
         collectable = [
             resource_type
             for resource_type in self.catalog.resource_types
+            # The catalog holds both clouds' types; AWS's are `aws/provider.py`'s to claim.
             if resource_type.has_valid_entries
+            and not is_aws_resource_type(resource_type.resource_type)
         ]
         return Capabilities(
             resource_types=sorted(

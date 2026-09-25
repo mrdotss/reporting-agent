@@ -27,6 +27,7 @@ from typing import Final
 from reporting_agent.providers.base import PlainData, Provider
 
 __all__ = [
+    "AWS_PROVIDER_ID",
     "AZURE_PROVIDER_ID",
     "ProviderFactory",
     "ProviderFactoryUnavailableError",
@@ -60,6 +61,8 @@ simply declares none.
 
 AZURE_PROVIDER_ID: Final[str] = "azure"
 _AZURE_FACTORY_TARGET: Final[str] = "reporting_agent.azure.provider:build_provider"
+AWS_PROVIDER_ID: Final[str] = "aws"
+_AWS_FACTORY_TARGET: Final[str] = "reporting_agent.aws.provider:build_provider"
 
 
 class UnknownProviderError(KeyError):
@@ -173,3 +176,4 @@ def _check_free(provider_id: str, *, replace: bool) -> None:
 
 
 register_lazy(AZURE_PROVIDER_ID, _AZURE_FACTORY_TARGET)
+register_lazy(AWS_PROVIDER_ID, _AWS_FACTORY_TARGET)

@@ -1706,6 +1706,10 @@ def _scope_to_plain_data(
     resource_ids = scope.get("resource_ids")
     if resource_ids:
         recorded["resource_ids"] = sorted(resource_ids)
+    # AWS only, and for the same reason: an Azure snapshot never carries the key.
+    regions = scope.get("regions")
+    if regions:
+        recorded["regions"] = sorted(regions)
     return recorded
 
 

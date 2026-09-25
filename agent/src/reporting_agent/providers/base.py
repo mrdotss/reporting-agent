@@ -25,6 +25,8 @@ from typing import Final, NotRequired, Protocol, TypedDict, runtime_checkable
 
 __all__ = [
     "ADVISOR_CHILD_RESOURCE_TYPE",
+    "AWS_RESOURCE_TYPE_PREFIX",
+    "AWS_STOPPED_STATE_CODES",
     "GUEST_COUNTER_STATUSES",
     "GUEST_STATUS_EMPTY",
     "GUEST_STATUS_FAILED",
@@ -60,6 +62,7 @@ __all__ = [
     "assert_inventory_sorted",
     "assert_plain_data",
     "find_non_plain",
+    "is_aws_resource_type",
     "is_plain_data",
     "is_sorted_by_resource_id",
     "sort_inventory",
@@ -189,6 +192,26 @@ not normalized first — because the requirement's own wording is "equals
 would let a third, unanticipated spelling of "stopped" slip through unrecorded."""
 
 
+AWS_RESOURCE_TYPE_PREFIX: Final[str] = "AWS::"
+"""AWS resource types use CloudFormation's names (`AWS::EC2::Instance`); no Azure type
+starts this way. One catalog holds both clouds' types, and this is how a provider keeps to
+its own."""
+
+
+def is_aws_resource_type(resource_type: str) -> bool:
+    return resource_type.startswith(AWS_RESOURCE_TYPE_PREFIX)
+
+
+AWS_STOPPED_STATE_CODES: Final[frozenset[str]] = frozenset(
+    {"ec2:stopped", "ec2:stopping", "rds:stopped", "rds:stopping"}
+)
+"""An AWS resource's raw state when it is not running, as `aws/provider.py` records it:
+the service name, a colon and the state exactly as the describe call returned it. The
+AWS counterpart of :data:`DEALLOCATED_POWER_STATE_CODES`, prefixed so no Azure code can
+ever match one, and matched by the same predicate below so the collector and the replay
+cannot disagree about it."""
+
+
 def is_excluded_from_averages(resource: ResourceRecord) -> bool:
     """Whether this resource's accumulators must fold nothing (Req 20.6, 20.13).
 
@@ -227,7 +250,7 @@ def is_excluded_from_averages(resource: ResourceRecord) -> bool:
     one again.
     """
     raw = resource.get("power_state_raw") or ""
-    if raw in DEALLOCATED_POWER_STATE_CODES:
+    if raw in DEALLOCATED_POWER_STATE_CODES or raw in AWS_STOPPED_STATE_CODES:
         return True
     resource_type = resource.get("resource_type") or ""
     is_vm = resource_type.casefold() == VIRTUAL_MACHINE_RESOURCE_TYPE.casefold()
@@ -330,6 +353,9 @@ class ScopeSpec(TypedDict):
     resource_groups: list[str]
     tag_filters: dict[str, str]
     resource_ids: NotRequired[list[str]]
+    regions: NotRequired[list[str]]
+    """AWS only: the regions a run covers — AWS's counterpart of `resource_groups`. Absent
+    means every region the account has enabled; Azure never sets it."""
     """An explicit machine list (ask-chat live metrics). Absent on every report run, so
     a report's scope — and the snapshot that records it — is exactly what it was."""
 

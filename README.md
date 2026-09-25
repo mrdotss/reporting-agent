@@ -81,8 +81,13 @@ with IAM's own policy simulation, including any organization SCP.
 
 AWS is offered only when the app's `RPT_AWS_CONNECTOR_PRINCIPAL_ARN` names the runtime's
 role, and the runtime's role policy allows `sts:AssumeRole` on
-`arn:aws:iam::*:role/reporting-agent/ReportingAgentReader`. Connecting and scanning work
-today; AWS reports are next.
+`arn:aws:iam::*:role/reporting-agent/ReportingAgentReader`.
+
+A run on an AWS connector collects EC2 instances, EBS volumes and RDS instances from
+CloudWatch's `GetMetricData`, per region. CloudWatch's `Sum`, `SampleCount`, `Minimum` and
+`Maximum` fold into the same accumulators Azure's `Total`, `Count`, `Minimum` and `Maximum`
+do, and each call is archived so the verifier replays AWS figures exactly as it replays
+Azure's. The AWS report sections are next.
 
 ## Run it locally
 

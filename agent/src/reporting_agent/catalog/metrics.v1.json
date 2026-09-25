@@ -1,5 +1,5 @@
 {
-  "catalog_version": "1.1.0",
+  "catalog_version": "1.2.0",
   "resource_types": {
     "Microsoft.Compute/virtualMachines": {
       "metric_namespace": "Microsoft.Compute/virtualMachines",
@@ -580,6 +580,184 @@
             "Total"
           ],
           "scale": 0
+        }
+      ]
+    },
+    "AWS::EC2::Instance": {
+      "metric_namespace": "AWS/EC2",
+      "sku_capabilities": [],
+      "metrics": [
+        {
+          "name": "CPUUtilization",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2,
+          "percentiles": [
+            "p50",
+            "p90",
+            "p95",
+            "p99"
+          ]
+        },
+        {
+          "name": "NetworkIn",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0,
+          "label": "Instance network bytes",
+          "interval_scoped": true
+        },
+        {
+          "name": "NetworkOut",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0,
+          "label": "Instance network bytes",
+          "interval_scoped": true
+        },
+        {
+          "name": "EBSReadBytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "EBSWriteBytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        }
+      ]
+    },
+    "AWS::EC2::Volume": {
+      "metric_namespace": "AWS/EBS",
+      "sku_capabilities": [],
+      "metrics": [
+        {
+          "name": "VolumeReadBytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "VolumeWriteBytes",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        }
+      ]
+    },
+    "AWS::RDS::DBInstance": {
+      "metric_namespace": "AWS/RDS",
+      "sku_capabilities": [],
+      "metrics": [
+        {
+          "name": "CPUUtilization",
+          "unit": "percent",
+          "unit_family": "percentage",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2,
+          "percentiles": [
+            "p50",
+            "p90",
+            "p95",
+            "p99"
+          ]
+        },
+        {
+          "name": "FreeableMemory",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "FreeStorageSpace",
+          "unit": "bytes",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 0
+        },
+        {
+          "name": "ReadIOPS",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
+        },
+        {
+          "name": "WriteIOPS",
+          "unit": "count_per_second",
+          "unit_family": "magnitude",
+          "aggregations": [
+            "Total",
+            "Count",
+            "Minimum",
+            "Maximum"
+          ],
+          "scale": 2
         }
       ]
     }
