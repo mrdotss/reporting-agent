@@ -98,7 +98,16 @@ const CONTEXT_FIELDS = [
   "progress_token",
 ] as const
 
-type DeclaredContextField = (typeof CONTEXT_FIELDS)[number]
+/**
+ * The connector's provider fields: optional, and absent from an Azure context, which is
+ * what every context was before AWS. An AWS context sends all three
+ * (`lib/subscriptions/context.ts`).
+ */
+const PROVIDER_FIELDS = ["provider", "role_arn", "external_id"] as const
+
+type DeclaredContextField =
+  | (typeof CONTEXT_FIELDS)[number]
+  | (typeof PROVIDER_FIELDS)[number]
 
 /**
  * `true` only when the two key sets are mutually assignable.
@@ -199,6 +208,11 @@ describe("Requirement 41.5 — the invoke context is closed at twelve fields", (
     expect(CONTEXT_IS_CLOSED).toBe(true)
     expect(CONTEXT_FIELDS).toHaveLength(12)
     expect(new Set(CONTEXT_FIELDS).size).toBe(12)
+  })
+
+  test("the provider fields are optional extras, never one of the twelve", () => {
+    const required: readonly string[] = CONTEXT_FIELDS
+    expect(PROVIDER_FIELDS.filter((field) => required.includes(field))).toEqual([])
   })
 
   test("a built context carries exactly those twelve keys", () => {

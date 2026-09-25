@@ -129,7 +129,7 @@ export type SubscriptionExpiryFields = Pick<
  * has passed, and a passed one produces a clean, fully-verified, empty report.
  */
 function expiryMs(view: SubscriptionExpiryFields): number {
-  return Date.parse(view.secretExpiresAt)
+  return view.secretExpiresAt === null ? Number.NaN : Date.parse(view.secretExpiresAt)
 }
 
 /**
@@ -180,7 +180,9 @@ export function resolveSubscriptionState(
   // 1 — Azure rejected this credential. Highest precedence.
   if (view.status === "disabled") return DISABLED
 
-  if (view.status === "active") {
+  // An AWS connector holds no secret, so nothing expires: `null` is only ever written for
+  // one (the table's CHECK constraint), never as an unknown Azure expiry.
+  if (view.status === "active" && view.secretExpiresAt !== null) {
     const expiresAt = expiryMs(view)
     const nowMs = now.getTime()
 

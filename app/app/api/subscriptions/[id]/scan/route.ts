@@ -24,7 +24,7 @@ import {
 } from "@/lib/scans/store"
 import {
   getConnectedSubscription,
-  resolveSubscriptionCredentials,
+  resolveConnectorCredentials,
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
 } from "@/lib/subscriptions/store"
@@ -88,7 +88,8 @@ export async function POST(
     }
 
     // Requirement 4.8 — refuse before invoking when the secret has expired.
-    if (sub.secretExpiresAt.getTime() <= Date.now()) {
+    // `null` is an AWS connector, which has no secret to expire.
+    if (sub.secretExpiresAt !== null && sub.secretExpiresAt.getTime() <= Date.now()) {
       return unprocessable(
         "This subscription's client secret has expired. Rotate the secret " +
           "before scanning.",
@@ -100,10 +101,7 @@ export async function POST(
 
     // Resolve credentials server-side. Never logged, never echoed.
     const subView = await getConnectedSubscription(user.id, subscriptionId)
-    const credentials = await resolveSubscriptionCredentials(
-      user.id,
-      subscriptionId
-    )
+    const credentials = await resolveConnectorCredentials(user.id, subscriptionId)
 
     // Execute the scan synchronously in this request. The scan invocation is
     // short-lived (~5–20s) — not a report run. The row carries `status` and the

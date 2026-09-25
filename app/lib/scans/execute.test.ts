@@ -106,6 +106,7 @@ import { executeScan, type ExecuteScanRequest } from "@/lib/scans/execute"
 // --- Fixtures ---------------------------------------------------------------
 
 const CREDENTIALS = {
+  provider: "azure" as const,
   subscriptionId: "sub-guid-001",
   tenantId: "tenant-001",
   clientId: "client-001",

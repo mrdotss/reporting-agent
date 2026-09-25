@@ -62,7 +62,7 @@ vi.mock("@/lib/subscriptions/store", async (importOriginal) => {
     getConnectedSubscription: async () => {
       return store.connectedSubscriptionView
     },
-    resolveSubscriptionCredentials: async () => {
+    resolveConnectorCredentials: async () => {
       return store.credentials
     },
     SubscriptionNotFoundError: original.SubscriptionNotFoundError,

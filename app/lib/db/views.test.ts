@@ -112,6 +112,11 @@ function connectedSubscriptionRow(
     secretExpiresAt: new Date("2027-01-15T08:30:00.000Z"),
     status: "active",
     logAnalyticsWorkspaceId: WORKSPACE_ID,
+    // AWS-only columns. The ARN carries the full account id and the external id guards
+    // the customer's trust policy, so neither is projected; `regions` is not needed there.
+    roleArn: null,
+    externalId: null,
+    regions: null,
     createdAt: new Date("2026-06-01T00:00:00.000Z"),
     // The reviewed decision this fixture's typing exists to force: `updated_at` is
     // the inventory cache's invalidation signal (Requirement 9.2) and is read
@@ -165,6 +170,10 @@ const FORBIDDEN_KEYS = [
   "logAnalyticsWorkspaceId",
   "user_id",
   "userId",
+  "role_arn",
+  "roleArn",
+  "external_id",
+  "externalId",
 ]
 
 /** Code points, so a surrogate pair counts once. */
@@ -336,7 +345,7 @@ describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => 
 
     expect(typeof view.secretExpiresAt).toBe("string")
     expect(view.secretExpiresAt).toBe("2027-01-15T08:30:00.000Z")
-    expect(new Date(view.secretExpiresAt).getTime()).toBe(
+    expect(new Date(view.secretExpiresAt ?? "").getTime()).toBe(
       new Date("2027-01-15T08:30:00.000Z").getTime()
     )
   })

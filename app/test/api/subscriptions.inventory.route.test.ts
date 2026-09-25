@@ -76,7 +76,7 @@ vi.mock("@/lib/subscriptions/store", async (importOriginal) => {
       if (store.stateThrows !== undefined) throw store.stateThrows
       return store.state
     },
-    resolveSubscriptionCredentials: async (userId: string, id: string) => {
+    resolveConnectorCredentials: async (userId: string, id: string) => {
       store.credentialsCalls.push({ userId, id })
       if (store.credentialsThrows !== undefined) throw store.credentialsThrows
       return store.credentials
@@ -124,6 +124,7 @@ const LATER_UPDATED_AT = "2026-07-15T09:35:00.000Z"
 const PLAINTEXT_SECRET = "azure-client-secret-ROUTE-DO-NOT-DISCLOSE-3d90bb"
 
 const CREDENTIALS: ResolvedAzureCredentials = {
+  provider: "azure",
   subscriptionId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
   tenantId: "11111111-2222-3333-4444-555555555555",
   clientId: "66666666-7777-8888-9999-aaaaaaaaaaaa",

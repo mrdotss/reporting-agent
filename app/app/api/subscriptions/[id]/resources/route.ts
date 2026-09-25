@@ -44,7 +44,13 @@ export async function GET(_request: Request, context: ResourcesRouteContext): Pr
         "SCOPE_UNVERIFIED"
       )
     }
-    if (Date.parse(connector.secretExpiresAt) <= Date.now()) {
+    if (connector.provider !== "azure") {
+      return unprocessable(
+        "This is available for Azure connectors only, for now.",
+        "PROVIDER_UNSUPPORTED"
+      )
+    }
+    if (connector.secretExpiresAt === null || Date.parse(connector.secretExpiresAt) <= Date.now()) {
       return unprocessable(
         "This connector's client secret has expired. Rotate it on Connectors first.",
         "SECRET_EXPIRED"

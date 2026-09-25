@@ -22,7 +22,8 @@ import type {
   InventoryDimension,
   InventoryDimensions,
 } from "@/lib/subscriptions/inventory-cache"
-import type { ResolvedAzureCredentials } from "@/lib/subscriptions/store"
+import { connectorContext } from "@/lib/subscriptions/context"
+import type { ResolvedConnectorCredentials } from "@/lib/subscriptions/store"
 
 /**
  * Asking the runtime for one subscription's distinct inventory dimensions
@@ -335,18 +336,13 @@ export function invocationFailureReason(
 function inventoryContext(
   actorId: string,
   displayName: string,
-  credentials: ResolvedAzureCredentials
+  credentials: ResolvedConnectorCredentials
 ): AgentInvokeContext {
   return {
     actor_id: actorId,
-    subscription_id: credentials.subscriptionId,
-    tenant_id: credentials.tenantId,
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
+    ...connectorContext(credentials),
     timezone: DEFAULT_TIMEZONE,
     display_name: displayName,
-    fidelity_tier: credentials.fidelityTier,
-    log_analytics_workspace_id: credentials.logAnalyticsWorkspaceId,
     run_id: "",
     progress_url: "",
     progress_token: "",
@@ -360,7 +356,7 @@ export type InventoryRequest = {
   readonly actorId: string
   readonly displayName: string
   /** **Secret.** Resolved server-side, decrypted at invoke time. */
-  readonly credentials: ResolvedAzureCredentials
+  readonly credentials: ResolvedConnectorCredentials
 }
 
 /**

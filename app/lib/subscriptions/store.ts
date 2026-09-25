@@ -2,7 +2,7 @@ import "server-only"
 import { creationScope } from "@/lib/workspaces/context"
 import { accessWhere, type ProjectScope } from "@/lib/workspaces/access"
 
-import { randomUUID } from "node:crypto"
+import { randomBytes, randomUUID } from "node:crypto"
 
 import { and, asc, eq, sql } from "drizzle-orm"
 import { z } from "zod"
@@ -15,6 +15,7 @@ import {
   type FidelityTier,
   type SubscriptionStatus,
 } from "@/lib/db/schema"
+import { readerRoleArn } from "@/lib/subscriptions/aws-artifacts"
 import {
   toConnectedSubscriptionView,
   type ConnectedSubscriptionView,
@@ -510,6 +511,7 @@ export async function readSubscriptionRowState(
  * never logged, never included in an event.
  */
 export type ResolvedAzureCredentials = {
+  readonly provider: "azure"
   /** The unmasked subscription GUID the run targets. */
   readonly subscriptionId: string
   readonly tenantId: string
@@ -521,32 +523,73 @@ export type ResolvedAzureCredentials = {
 }
 
 /**
- * Resolve the Azure credential for one of this user's subscriptions, decrypting
- * `client_secret_enc` **at call time** (Requirement 9.3).
- *
- * Scoped by `user_id` like every other read, so another user's id resolves as
- * {@link SubscriptionNotFoundError} rather than as a credential
- * (Requirement 9.8). A stored envelope that fails authentication raises
- * {@link SubscriptionSecretUnreadableError}, distinct from not-found, because the
- * two have different remedies: one is a row that is not yours, the other is a row
- * whose secret must be rotated.
- *
- * This function performs **no expiry check**. That is
- * `subscriptionRunBlocker(view, now)` in `lib/subscriptions/state.ts`, and it is
- * the caller's gate — the enqueue and the reaper both apply it before they get
- * here, and duplicating it would put a second definition of "expired" next to the
- * one that is supposed to be single.
+ * What the runtime needs to read an AWS account: which role to assume and the external id
+ * its trust policy demands. Neither is a credential — the runtime authenticates as its own
+ * role — but the external id is kept server-side all the same, for the reason its column
+ * note gives.
  */
-export async function resolveSubscriptionCredentials(
+export type ResolvedAwsCredentials = {
+  readonly provider: "aws"
+  /** The unmasked 12-digit account id. */
+  readonly subscriptionId: string
+  readonly roleArn: string
+  readonly externalId: string
+  readonly fidelityTier: FidelityTier
+  readonly regions: readonly string[]
+}
+
+export type ResolvedConnectorCredentials = ResolvedAzureCredentials | ResolvedAwsCredentials
+
+/**
+ * A connector whose provider the calling path does not read yet — an AWS account handed
+ * to a report run or a live pull before those paths exist for AWS.
+ */
+export class SubscriptionProviderUnsupportedError extends Error {
+  constructor(readonly provider: string) {
+    super(`This action is not available for ${provider.toUpperCase()} connectors yet.`)
+    this.name = "SubscriptionProviderUnsupportedError"
+  }
+}
+
+/**
+ * Resolve what the runtime needs for one of this user's connectors, of either provider.
+ *
+ * For Azure it decrypts `client_secret_enc` **at call time** (Requirement 9.3). Scoped by
+ * `user_id` like every other read, so another user's id resolves as
+ * {@link SubscriptionNotFoundError} rather than as a credential (Requirement 9.8). A stored
+ * envelope that fails authentication raises {@link SubscriptionSecretUnreadableError},
+ * distinct from not-found, because the two have different remedies.
+ *
+ * This function performs **no expiry check**. That is `subscriptionRunBlocker(view, now)`
+ * in `lib/subscriptions/state.ts`, and it is the caller's gate.
+ */
+export async function resolveConnectorCredentials(
   userId: string,
   id: string,
   runId?: string
-): Promise<ResolvedAzureCredentials> {
+): Promise<ResolvedConnectorCredentials> {
   const [row] = await getDb().select().from(connectedSubscriptions).where(and(
     eq(connectedSubscriptions.id, id),
     runId ? sql`exists (select 1 from report_runs r where r.id=${runId} and r.connected_subscription_id=${id} and r.user_id=${userId} and r.workspace_id=${connectedSubscriptions.workspaceId} and r.project_id=${connectedSubscriptions.projectId})` : accessWhere(connectedSubscriptions,userId),
   )).limit(1)
   if (row === undefined) throw new SubscriptionNotFoundError()
+
+  if (row.provider === "aws") {
+    // The CHECK constraint makes both present on an AWS row; this narrows the types.
+    if (row.roleArn === null || row.externalId === null) throw new SubscriptionNotFoundError()
+    return {
+      provider: "aws",
+      subscriptionId: row.subscriptionId,
+      roleArn: row.roleArn,
+      externalId: row.externalId,
+      fidelityTier: row.fidelityTier,
+      regions: row.regions ?? [],
+    }
+  }
+
+  if (row.provider !== "azure" || row.tenantId === null || row.clientId === null || row.clientSecretEnc === null) {
+    throw new SubscriptionProviderUnsupportedError(row.provider)
+  }
 
   let clientSecret: string
   try {
@@ -559,6 +602,7 @@ export async function resolveSubscriptionCredentials(
   }
 
   return {
+    provider: "azure",
     subscriptionId: row.subscriptionId,
     tenantId: row.tenantId,
     clientId: row.clientId,
@@ -566,6 +610,23 @@ export async function resolveSubscriptionCredentials(
     fidelityTier: row.fidelityTier,
     logAnalyticsWorkspaceId: row.logAnalyticsWorkspaceId,
   }
+}
+
+/**
+ * The Azure credential for one subscription, for the paths that read Azure only: report
+ * runs, live pulls and the machine picker. An AWS connector raises
+ * {@link SubscriptionProviderUnsupportedError}.
+ */
+export async function resolveSubscriptionCredentials(
+  userId: string,
+  id: string,
+  runId?: string
+): Promise<ResolvedAzureCredentials> {
+  const credentials = await resolveConnectorCredentials(userId, id, runId)
+  if (credentials.provider !== "azure") {
+    throw new SubscriptionProviderUnsupportedError(credentials.provider)
+  }
+  return credentials
 }
 
 // --- Identity resolution ----------------------------------------------------
@@ -613,6 +674,10 @@ export async function resolveSubscriptionIdentity(
 ): Promise<SubscriptionIdentity> {
   const row = await readOwnedRow(userId, id)
   if (row === undefined) throw new SubscriptionNotFoundError()
+  // Rotation is Azure's: an AWS connector has no secret to rotate.
+  if (row.provider !== "azure" || row.tenantId === null || row.clientId === null) {
+    throw new SubscriptionProviderUnsupportedError(row.provider)
+  }
 
   return {
     displayName: row.displayName,
@@ -685,6 +750,7 @@ export async function rotateClientSecret(
       .where(
         and(
           eq(connectedSubscriptions.id, id),
+          eq(connectedSubscriptions.provider, "azure"),
           accessWhere(connectedSubscriptions, userId, "connect")
         )
       )
@@ -700,6 +766,161 @@ export async function rotateClientSecret(
 }
 
 // --- Azure rejected the credential ------------------------------------------
+
+// --- AWS connectors ---------------------------------------------------------
+
+/**
+ * A new external id: `rpt-` and 32 hex characters from the platform's CSPRNG.
+ *
+ * Generated here and nowhere else. A client that could choose it could choose another
+ * customer's, and point a connector of its own at that customer's role.
+ */
+function newExternalId(): string {
+  return `rpt-${randomBytes(16).toString("hex")}`
+}
+
+export type CreateAwsConnectorInput = {
+  readonly workspaceId?: string
+  readonly projectId?: string
+  readonly userId: string
+  readonly displayName: string
+  /** The customer's 12-digit account id. */
+  readonly accountId: string
+}
+
+/**
+ * Save an AWS connector as `pending`, before its role exists.
+ *
+ * The opposite order to Azure's, and deliberately: the customer's role must name this
+ * connector's external id, so the id has to exist before they deploy anything — and they
+ * may deploy it days later, so the consultant needs somewhere to come back to. A pending
+ * connector cannot scan or run; only a passing preflight makes it `active`.
+ */
+export async function createAwsConnector(
+  input: CreateAwsConnectorInput
+): Promise<ConnectedSubscriptionView> {
+  const scope = await creationScope(input.userId, input, "connect")
+
+  try {
+    const [row] = await getDb()
+      .insert(connectedSubscriptions)
+      .values({
+        id: randomUUID(),
+        userId: input.userId,
+        ...scope,
+        provider: "aws",
+        displayName: input.displayName,
+        subscriptionId: input.accountId,
+        roleArn: readerRoleArn(input.accountId),
+        externalId: newExternalId(),
+        scopeVerified: false,
+        status: "pending",
+        fidelityTier: "baseline",
+      })
+      .returning()
+
+    if (row === undefined) throw new Error("[subscriptions] the insert returned no row")
+    return toConnectedSubscriptionView(row)
+  } catch (thrown) {
+    if (isSubscriptionPairTaken(thrown)) throw new SubscriptionAlreadyConnectedError()
+    throw redactedWriteError("connecting an AWS account", thrown)
+  }
+}
+
+/**
+ * What the setup page shows for an AWS connector: the account, the role and the external id
+ * the customer's template must carry. Needs `connect` access, as creating it did.
+ */
+export type AwsConnectorSetup = {
+  readonly id: string
+  readonly displayName: string
+  readonly accountId: string
+  readonly roleArn: string
+  readonly externalId: string
+  readonly status: SubscriptionStatus
+  readonly scopeVerified: boolean
+  readonly regions: readonly string[]
+}
+
+export async function readAwsConnectorSetup(
+  userId: string,
+  id: string
+): Promise<AwsConnectorSetup> {
+  const [row] = await getDb()
+    .select()
+    .from(connectedSubscriptions)
+    .where(
+      and(
+        eq(connectedSubscriptions.id, id),
+        eq(connectedSubscriptions.provider, "aws"),
+        accessWhere(connectedSubscriptions, userId, "connect")
+      )
+    )
+    .limit(1)
+
+  if (row === undefined || row.roleArn === null || row.externalId === null) {
+    throw new SubscriptionNotFoundError()
+  }
+
+  return {
+    id: row.id,
+    displayName: row.displayName,
+    accountId: row.subscriptionId,
+    roleArn: row.roleArn,
+    externalId: row.externalId,
+    status: row.status,
+    scopeVerified: row.scopeVerified,
+    regions: row.regions ?? [],
+  }
+}
+
+export type AwsPreflightRecord = {
+  readonly scopeVerified: boolean
+  readonly fidelityTier?: FidelityTier
+  readonly regions?: readonly string[]
+}
+
+/**
+ * Write an AWS preflight's answer. A pass makes the connector `active`; a refusal leaves
+ * it — or puts it back — `pending`, and keeps the regions and tier it last proved.
+ */
+export async function recordAwsPreflight(
+  userId: string,
+  id: string,
+  record: AwsPreflightRecord
+): Promise<ConnectedSubscriptionView> {
+  let rows: ConnectedSubscription[]
+
+  try {
+    rows = await getDb()
+      .update(connectedSubscriptions)
+      .set({
+        scopeVerified: record.scopeVerified,
+        status: statusFor(record.scopeVerified),
+        updatedAt: new Date(),
+        ...(record.scopeVerified && record.fidelityTier !== undefined
+          ? { fidelityTier: record.fidelityTier }
+          : {}),
+        ...(record.scopeVerified && record.regions !== undefined
+          ? { regions: [...record.regions] }
+          : {}),
+      })
+      .where(
+        and(
+          eq(connectedSubscriptions.id, id),
+          eq(connectedSubscriptions.provider, "aws"),
+          accessWhere(connectedSubscriptions, userId, "connect")
+        )
+      )
+      .returning()
+  } catch (thrown) {
+    throw redactedWriteError("recording an AWS preflight", thrown)
+  }
+
+  const [row] = rows
+  if (row === undefined) throw new SubscriptionNotFoundError()
+  return toConnectedSubscriptionView(row)
+}
 
 /**
  * Set `status = 'disabled'` because Azure rejected the credential as expired

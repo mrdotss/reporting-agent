@@ -69,7 +69,12 @@ const SOURCES: readonly Source[] = [
 
 export function SourcePicker({
   onSelect,
-}: Readonly<{ onSelect: (kind: SourceKind) => void }>) {
+  awsAvailable = false,
+}: Readonly<{ onSelect: (kind: SourceKind) => void; awsAvailable?: boolean }>) {
+  const sources = SOURCES.map((source) =>
+    source.kind === "aws" ? { ...source, available: awsAvailable } : source
+  )
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -89,7 +94,7 @@ export function SourcePicker({
         two are visibly a roadmap.
       */}
       <ul className="flex flex-col gap-2.5">
-        {SOURCES.map((source) => (
+        {sources.map((source) => (
           <li key={source.kind}>
             <button
               type="button"

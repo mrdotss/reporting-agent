@@ -720,11 +720,20 @@ describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
     // `lib/aws/agentcore.ts` with the connector's decrypted client secret, and it keeps a
     // module-level listing cache that is one server process's memory.
     path.join("lib", "subscriptions", "resources.ts"),
+    // Builds the connector half of an invoke context — Azure's decrypted client secret
+    // included — so it is the same kind of module as `preflight.ts`.
+    path.join("lib", "subscriptions", "context.ts"),
+    // Reads the deployment's configuration. Nothing secret, but the value is a fact about
+    // our deployment, and a client component has no business naming it.
+    path.join("lib", "subscriptions", "aws-principal.ts"),
   ]
 
   const PURE_HERE = [
     path.join("lib", "subscriptions", "state.ts"),
     path.join("lib", "subscriptions", "azure-artifacts.ts"),
+    // The AWS counterpart of `azure-artifacts.ts`: an account id, an external id and our
+    // principal in, two strings out.
+    path.join("lib", "subscriptions", "aws-artifacts.ts"),
     path.join("lib", "subscriptions", "input.ts"),
   ]
 

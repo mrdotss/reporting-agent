@@ -51,7 +51,8 @@ import { getDb } from "@/lib/db"
 import { subscriptionScans } from "@/lib/db/schema"
 import { toScanView, type ScanView } from "@/lib/db/views"
 import { newSessionId } from "@/lib/session-id"
-import type { ResolvedAzureCredentials } from "@/lib/subscriptions/store"
+import { connectorContext } from "@/lib/subscriptions/context"
+import type { ResolvedConnectorCredentials } from "@/lib/subscriptions/store"
 
 // --- Timeout ----------------------------------------------------------------
 
@@ -95,7 +96,7 @@ export type ExecuteScanRequest = {
   readonly scanId: string
   readonly actorId: string
   readonly displayName: string
-  readonly credentials: ResolvedAzureCredentials
+  readonly credentials: ResolvedConnectorCredentials
 }
 
 /**
@@ -171,18 +172,13 @@ export async function executeScan(request: ExecuteScanRequest): Promise<ScanView
 function scanContext(
   actorId: string,
   displayName: string,
-  credentials: ResolvedAzureCredentials
+  credentials: ResolvedConnectorCredentials
 ): AgentInvokeContext {
   return {
     actor_id: actorId,
-    subscription_id: credentials.subscriptionId,
-    tenant_id: credentials.tenantId,
-    client_id: credentials.clientId,
-    client_secret: credentials.clientSecret,
+    ...connectorContext(credentials),
     timezone: DEFAULT_TIMEZONE,
     display_name: displayName,
-    fidelity_tier: credentials.fidelityTier,
-    log_analytics_workspace_id: credentials.logAnalyticsWorkspaceId,
     // No report run — these fields are empty/placeholder.
     run_id: "",
     progress_url: "",

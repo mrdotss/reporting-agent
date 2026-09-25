@@ -169,6 +169,13 @@
       "when": 1790161946505,
       "tag": "0023_add_run_incident_rows",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790321997302,
+      "tag": "0024_add_aws_connector",
+      "breakpoints": true
     }
   ]
 }

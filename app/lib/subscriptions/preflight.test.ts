@@ -205,6 +205,7 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
       // `null` where the runtime said nothing about exported history: a real answer —
       // "live metrics only" — and the fail-closed direction the tier takes too.
       metricsHistorySince: null,
+      regions: [],
     })
   })
 
@@ -224,6 +225,7 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
       scopeVerified: true,
       fidelityTier: "baseline",
       metricsHistorySince: "2026-02-14T03:11:00Z",
+      regions: [],
     })
   })
 
@@ -244,6 +246,7 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
       scopeVerified: true,
       fidelityTier: "baseline",
       metricsHistorySince: null,
+      regions: [],
     })
   })
 
@@ -257,6 +260,7 @@ describe("Requirements 12.3, 12.12, 12.13 — outcomeFromDone", () => {
       scopeVerified: true,
       fidelityTier: "baseline",
       metricsHistorySince: null,
+      regions: [],
     })
   })
 
@@ -423,6 +427,7 @@ describe("Requirement 12.12 — reading the answer off the stream", () => {
       // `null` where the runtime said nothing about exported history, which is the
       // common case and a real answer rather than a missing field.
       metricsHistorySince: null,
+      regions: [],
     })
   })
 
@@ -467,6 +472,7 @@ describe("Requirement 12.12 — reading the answer off the stream", () => {
       scopeVerified: true,
       fidelityTier: "baseline",
       metricsHistorySince: null,
+      regions: [],
     })
   })
 
@@ -646,5 +652,27 @@ describe("Requirement 12.12 — the 30-second cap", () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe("AWS — the enabled regions ride on the accepted shape", () => {
+  test("a verified AWS done carries its regions", () => {
+    expect(
+      outcomeFromDone(
+        {
+          type: "done",
+          status: "completed",
+          scope_verified: true,
+          fidelity_tier: "baseline",
+          regions: ["ap-southeast-3", "us-east-1"],
+        },
+        undefined
+      )
+    ).toEqual({
+      scopeVerified: true,
+      fidelityTier: "baseline",
+      metricsHistorySince: null,
+      regions: ["ap-southeast-3", "us-east-1"],
+    })
   })
 })

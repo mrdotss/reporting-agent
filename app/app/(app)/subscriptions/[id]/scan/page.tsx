@@ -178,10 +178,13 @@ export default async function ScanPage({ params }: ScanPageProps) {
           label={t("ui.scan.regions_label")}
           value={reported ? regions.length : null}
         />
-        <Figure
-          label={t("ui.scan.groups_label")}
-          value={reported ? groups.length : null}
-        />
+        {/* AWS has no resource groups; its regions are the grouping, counted above. */}
+        {subscription.provider === "aws" ? null : (
+          <Figure
+            label={t("ui.scan.groups_label")}
+            value={reported ? groups.length : null}
+          />
+        )}
       </section>
 
       {grouped.length > 0 && (

@@ -427,3 +427,24 @@ export const rotateSecretInputSchema = z
   .strict()
 
 export type RotateSecretInput = z.output<typeof rotateSecretInputSchema>
+
+// --- AWS --------------------------------------------------------------------
+
+/**
+ * `POST /api/subscriptions/aws` — a name and the customer's account id, nothing else.
+ *
+ * There is no external id field and no role field: the store generates the one and derives
+ * the other, so a client cannot choose either.
+ */
+export const awsConnectorCreateInputSchema = z
+  .object({
+    ...scopeInput,
+    displayName: displayNameSchema,
+    accountId: z
+      .string()
+      .trim()
+      .regex(/^\d{12}$/, "An AWS account id is 12 digits."),
+  })
+  .strict()
+
+export type AwsConnectorCreateInput = z.output<typeof awsConnectorCreateInputSchema>

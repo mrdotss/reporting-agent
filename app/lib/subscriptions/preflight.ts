@@ -17,6 +17,8 @@ import {
   invokeAgentRuntime,
   type AgentInvokeContext,
 } from "@/lib/aws/agentcore"
+import { connectorContext } from "@/lib/subscriptions/context"
+import type { ResolvedAwsCredentials } from "@/lib/subscriptions/store"
 import {
   runErrorCode,
   type FidelityTier,
@@ -128,6 +130,8 @@ export type PreflightOutcome =
        * reads it as "live metrics only" and bounds Lookback at Azure's 93-day retention.
        */
       readonly metricsHistorySince: string | null
+      /** AWS only: the account's enabled regions. Empty for Azure. */
+      readonly regions: readonly string[]
     }
   | {
       readonly scopeVerified: false
@@ -261,6 +265,8 @@ const doneEventSchema = z.object({
    * missing field.
    */
   metrics_history_since: z.string().nullable().optional(),
+  /** AWS only: the account's enabled regions, which the runtime lists after the grant. */
+  regions: z.array(z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d$/)).max(64).optional(),
 })
 
 const errorEventSchema = z.object({
@@ -308,6 +314,7 @@ export function outcomeFromDone(
         typeof done.metrics_history_since === "string"
           ? done.metrics_history_since
           : null,
+      regions: done.regions ?? [],
     }
   }
 
@@ -381,6 +388,40 @@ export async function runPreflight(
   submission: PreflightSubmission,
   options: { readonly timeoutMs?: number } = {}
 ): Promise<PreflightOutcome> {
+  return await runPreflightWith(preflightContext(submission), options)
+}
+
+/**
+ * The AWS preflight for a saved, pending connector: assume its role, prove the grant
+ * through IAM's own policy simulation, list the enabled regions. The same 30-second cap and
+ * the same fail-closed reading of the stream as Azure's.
+ */
+export async function runAwsPreflight(
+  request: {
+    readonly actorId: string
+    readonly displayName: string
+    readonly credentials: ResolvedAwsCredentials
+  },
+  options: { readonly timeoutMs?: number } = {}
+): Promise<PreflightOutcome> {
+  return await runPreflightWith(
+    {
+      actor_id: request.actorId,
+      ...connectorContext(request.credentials),
+      timezone: DEFAULT_TIMEZONE,
+      display_name: request.displayName,
+      run_id: "",
+      progress_url: "",
+      progress_token: "",
+    },
+    options
+  )
+}
+
+async function runPreflightWith(
+  context: AgentInvokeContext,
+  options: { readonly timeoutMs?: number }
+): Promise<PreflightOutcome> {
   const timeoutMs = options.timeoutMs ?? PREFLIGHT_TIMEOUT_MS
   const startedAt = Date.now()
   const deadline = startedAt + timeoutMs
@@ -391,7 +432,7 @@ export async function runPreflight(
   const invocation = settle(
     invokeAgentRuntime({
       sessionId: newSessionId(),
-      context: preflightContext(submission),
+      context,
       command: { command: COMMAND_PREFLIGHT },
     })
   )

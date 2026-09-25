@@ -322,9 +322,23 @@ describe("Requirement 9.1 — nullability on connected_subscriptions", () => {
       [db.schemaName]
     )
 
+    //
+    // AWS added seven more of the first kind, each absent for exactly one provider and
+    // required for the other by `connected_subscriptions_provider_fields_ck`, so none
+    // of them can be "not filled in yet" either: `tenant_id`, `client_id`,
+    // `client_secret_enc` and `secret_expires_at` do not exist for an AWS account, which
+    // authenticates as our own role; `role_arn`, `external_id` and `regions` do not exist
+    // for an Azure subscription.
     expect(result.rows.map(({ column_name }) => column_name)).toEqual([
+      "client_id",
+      "client_secret_enc",
+      "external_id",
       "log_analytics_workspace_id",
       "metrics_history_since",
+      "regions",
+      "role_arn",
+      "secret_expires_at",
+      "tenant_id",
     ])
   })
 
@@ -389,6 +403,9 @@ describe("the declared constraints and indexes exist", () => {
     const names = result.rows.map(({ conname }) => conname)
 
     expect(names).toEqual([
+      // An AWS connector's external id: never shared, so one customer's trust policy
+      // cannot be claimed by a second connector.
+      "connected_subscriptions_external_id_uq",
       "connected_subscriptions_workspace_subscription_uq",
       "projects_id_workspace_uq",
       "report_profile_authored_matches_version_section_uq",

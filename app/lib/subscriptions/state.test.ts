@@ -123,6 +123,17 @@ describe("resolveSubscriptionState reads only the injected now", () => {
     expect(resolveSubscriptionState(row, NOW).kind).toBe("expired")
     expect(subscriptionRunBlocker(row, NOW)).toBe("AUTH_EXPIRED")
   })
+
+  test("an AWS connector has no secret, so a verified one never expires", () => {
+    // `null` is only ever an AWS row (the table's CHECK constraint), never an unknown
+    // Azure expiry, so it is not the fail-closed case above.
+    const active = view({ status: "active", secretExpiresAt: null })
+    expect(resolveSubscriptionState(active, NOW).kind).toBe("active")
+    expect(subscriptionRunBlocker(active, NOW)).toBeNull()
+
+    const pending = view({ status: "pending", secretExpiresAt: null })
+    expect(resolveSubscriptionState(pending, NOW).kind).toBe("pending")
+  })
 })
 
 describe("wholeDaysUntil floors", () => {

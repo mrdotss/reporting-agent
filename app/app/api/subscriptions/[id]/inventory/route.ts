@@ -26,7 +26,7 @@ import {
 } from "@/lib/subscriptions/inventory"
 import {
   readSubscriptionRowState,
-  resolveSubscriptionCredentials,
+  resolveConnectorCredentials,
   SubscriptionNotFoundError,
   SubscriptionSecretUnreadableError,
 } from "@/lib/subscriptions/store"
@@ -186,7 +186,7 @@ export async function GET(
 
     // Resolved only on a miss, and decrypted at this instant rather than held
     // anywhere. A cache hit therefore never touches the stored envelope.
-    const credentials = await resolveSubscriptionCredentials(
+    const credentials = await resolveConnectorCredentials(
       user.id,
       subscriptionRowId
     )

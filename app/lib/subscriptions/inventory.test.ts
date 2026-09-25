@@ -92,6 +92,7 @@ import {
 const PLAINTEXT_SECRET = "azure-client-secret-INVENTORY-DO-NOT-DISCLOSE-71ac3f"
 
 const CREDENTIALS: ResolvedAzureCredentials = {
+  provider: "azure",
   subscriptionId: "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
   tenantId: "11111111-2222-3333-4444-555555555555",
   clientId: "66666666-7777-8888-9999-aaaaaaaaaaaa",
