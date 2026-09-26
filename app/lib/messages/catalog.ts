@@ -342,6 +342,10 @@ export const MESSAGE_CATALOG = {
     en: "No sample was folded for this metric on this resource in this period.",
     id: "Tidak ada sampel yang terhimpun untuk metrik ini pada sumber daya ini di periode ini.",
   },
+  "doc.gap.optimizer_not_available": {
+    en: "AWS Compute Optimizer has no finding on record for this resource: it is not enabled for the account, or has not analysed the resource yet.",
+    id: "AWS Compute Optimizer tidak memiliki temuan tercatat untuk sumber daya ini: layanan ini belum diaktifkan untuk akun tersebut, atau belum menganalisis sumber daya ini.",
+  },
   "doc.gap.percentile_unsupported_unit": {
     en: "This metric's unit family selects no sketch, so its average, minimum and maximum were collected without a percentile.",
     id: "Keluarga satuan metrik ini tidak memilih sketsa apa pun, sehingga rata-rata, minimum dan maksimumnya dikumpulkan tanpa persentil.",
@@ -470,6 +474,10 @@ export const MESSAGE_CATALOG = {
     en: "Backup Report",
     id: "Laporan Pencadangan",
   },
+  "doc.section.backups": {
+    en: "Backups",
+    id: "Pencadangan",
+  },
   "doc.section.coverage_and_verification": {
     en: "Coverage and Verification",
     id: "Cakupan dan Verifikasi",
@@ -501,6 +509,10 @@ export const MESSAGE_CATALOG = {
   "doc.section.ec2_utilization": {
     en: "EC2 Instance Utilization",
     id: "Utilisasi Instans EC2",
+  },
+  "doc.section.elastic_ips": {
+    en: "Elastic IP Addresses",
+    id: "Alamat Elastic IP",
   },
   "doc.section.fleet_summary": {
     en: "Fleet Summary",
@@ -566,6 +578,26 @@ export const MESSAGE_CATALOG = {
     en: "PostgreSQL Flexible Servers",
     id: "Server Fleksibel PostgreSQL",
   },
+  "doc.section.rightsizing": {
+    en: "Rightsizing Recommendations",
+    id: "Rekomendasi Penyesuaian Ukuran",
+  },
+  "doc.section.security_groups": {
+    en: "Security Groups in Use",
+    id: "Security Group yang Digunakan",
+  },
+  "doc.section.security_groups.inbound": {
+    en: "Inbound rules",
+    id: "Aturan masuk",
+  },
+  "doc.section.security_groups.no_rules": {
+    en: "No rules in this direction, so this group allows no traffic this way.",
+    id: "Tidak ada aturan pada arah ini, sehingga grup ini tidak mengizinkan lalu lintas ke arah ini.",
+  },
+  "doc.section.security_groups.outbound": {
+    en: "Outbound rules",
+    id: "Aturan keluar",
+  },
   "doc.section.virtual_machines": {
     en: "Virtual Machines",
     id: "Mesin Virtual",
@@ -589,6 +621,10 @@ export const MESSAGE_CATALOG = {
   "doc.section.vm_utilization": {
     en: "Virtual Machine Utilization",
     id: "Utilisasi Mesin Virtual",
+  },
+  "doc.section.vpcs": {
+    en: "VPCs and Subnets",
+    id: "VPC dan Subnet",
   },
   "doc.summary.avg": {
     en: "Average",
@@ -857,6 +893,10 @@ export const MESSAGE_CATALOG = {
   "ui.gap_label.no_samples": {
     en: "No samples in the window",
     id: "Tidak ada sampel dalam jendela",
+  },
+  "ui.gap_label.optimizer_not_available": {
+    en: "Compute Optimizer unavailable",
+    id: "Compute Optimizer tidak tersedia",
   },
   "ui.gap_label.percentile_unsupported_unit": {
     en: "Percentile unsupported for this unit",

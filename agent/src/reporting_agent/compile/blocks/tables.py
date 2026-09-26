@@ -410,6 +410,8 @@ _FACT_INITIALISMS: Final[Mapping[str, str]] = {
     "vpc": "VPC",
     "vcpus": "vCPUs",
     "az": "AZ",
+    "cidr": "CIDR",
+    "ips": "IPs",
 }
 """Words a plain `.capitalize()` gets wrong. Everything else title-cases correctly."""
 

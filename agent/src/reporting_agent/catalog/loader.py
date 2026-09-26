@@ -172,7 +172,7 @@ satisfies a decimal grammar and is an operating-system version, while `10.0.0.4`
 version with a grouping separator."""
 
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "compute_optimizer"}
 )
 """Req 4.2's five sources, recorded from the request that produced the fact rather than
 derived from its key — so a fact's provenance is an observation about where it came from
@@ -184,9 +184,10 @@ DECLARED_ABSENT_GAP_TYPES: Final[frozenset[str]] = frozenset(
         "no_reservations",
         "replication_not_enabled",
         "advisor_not_available",
+        "optimizer_not_available",
     }
 )
-"""The four gap types a **non-projectable** fact may name for its own absence (Req 5.1-5.3,
+"""The gap types a **non-projectable** fact may name for its own absence (Req 5.1-5.3,
 16.7).
 
 Mirrors four of `collect/log.py`'s five fact gap types **by value, not by import**, the
@@ -236,9 +237,10 @@ FIXED_SECTION_ORDER: Final[tuple[str, ...]] = (
 
 FIXED_SECTION_ORDER_BY_PROVIDER: Final[Mapping[str, tuple[str, ...]]] = {
     "azure": FIXED_SECTION_ORDER,
-    # AWS has no backup or recommendation section yet, so its one fixed closing section is
-    # the incident report every provider shares.
-    "aws": ("incident_report",),
+    # The same three closing sections as Azure's, in the same order: backups, incidents,
+    # then rightsizing — AWS Backup and Compute Optimizer standing where Azure Backup and
+    # Advisor do.
+    "aws": ("backups", "incident_report", "rightsizing"),
 }
 """Each provider's fixed-position sections, in their declared order."""
 """The declared order for position:'fixed' entries. A catalogue declaring them

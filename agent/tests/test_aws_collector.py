@@ -49,6 +49,12 @@ STOPPED = f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-0fedcba9876543210"
 VOLUME = f"arn:aws:ec2:us-east-1:{ACCOUNT}:volume/vol-0123456789abcdef0"
 DATABASE = f"arn:aws:rds:ap-southeast-3:{ACCOUNT}:db:orders"
 ALL = ("Total", "Count", "Minimum", "Maximum")
+VPC = f"arn:aws:ec2:us-east-1:{ACCOUNT}:vpc/vpc-0example"
+SUBNET = f"{VPC}/subnet/subnet-0example"
+EIP = f"arn:aws:ec2:us-east-1:{ACCOUNT}:elastic-ip/eipalloc-0example"
+GROUP = f"arn:aws:ec2:us-east-1:{ACCOUNT}:security-group/sg-0inuse"
+RULE_IN = f"{GROUP}/security-group-rule/sgr-0https"
+RULE_OUT = f"{GROUP}/security-group-rule/sgr-0egress"
 
 
 def denied(code: str = "AccessDenied") -> ClientError:
@@ -229,6 +235,13 @@ class FakeEc2:
     def describe_regions(self, **_: Any) -> dict[str, Any]:
         return {"Regions": [{"RegionName": "us-east-1"}, {"RegionName": "ap-southeast-3"}]}
 
+    def describe_addresses(self) -> dict[str, Any]:
+        if self.refuse:
+            raise denied("UnauthorizedOperation")
+        return {"Addresses": [{"AllocationId": "eipalloc-0example", "PublicIp": "203.0.113.10",
+                               "InstanceId": "i-0123456789abcdef0", "PrivateIpAddress": "10.0.0.4",
+                               "Domain": "vpc"}] if self.region == "us-east-1" else []}
+
     def describe_instance_types(self, **kwargs: Any) -> dict[str, Any]:
         specs = {"t3.micro": (2, 1024), "t3.small": (2, 2048)}
         return {
@@ -265,6 +278,30 @@ class FakeEc2:
                 else []
             )
             return Pages("Volumes", volumes)
+        east = self.region == "us-east-1"
+        if operation == "describe_vpcs":
+            return Pages("Vpcs", [{"VpcId": "vpc-0example", "CidrBlock": "10.0.0.0/16", "IsDefault": False,
+                                   "State": "available", "Tags": [{"Key": "Name", "Value": "main"}]}] if east else [])
+        if operation == "describe_subnets":
+            return Pages("Subnets", [{"SubnetId": "subnet-0example", "VpcId": "vpc-0example", "CidrBlock": "10.0.1.0/24",
+                                      "AvailabilityZone": "us-east-1a", "AvailableIpAddressCount": 250,
+                                      "MapPublicIpOnLaunch": False}] if east else [])
+        if operation == "describe_network_interfaces":
+            return Pages("NetworkInterfaces", [{"Groups": [{"GroupId": "sg-0inuse"}]}] if east else [])
+        if operation == "describe_security_groups":
+            return Pages("SecurityGroups", [
+                {"GroupId": "sg-0inuse", "GroupName": "web-sg", "VpcId": "vpc-0example", "Description": "web tier"},
+                {"GroupId": "sg-0unused", "GroupName": "leftover", "VpcId": "vpc-0example", "Description": "unused"},
+            ] if east else [])
+        if operation == "describe_security_group_rules":
+            return Pages("SecurityGroupRules", [
+                {"SecurityGroupRuleId": "sgr-0https", "GroupId": "sg-0inuse", "IsEgress": False, "IpProtocol": "tcp",
+                 "FromPort": 443, "ToPort": 443, "CidrIpv4": "0.0.0.0/0", "Description": "public https"},
+                {"SecurityGroupRuleId": "sgr-0egress", "GroupId": "sg-0inuse", "IsEgress": True, "IpProtocol": "-1",
+                 "FromPort": -1, "ToPort": -1, "CidrIpv4": "0.0.0.0/0"},
+                {"SecurityGroupRuleId": "sgr-0other", "GroupId": "sg-0unused", "IsEgress": False, "IpProtocol": "tcp",
+                 "FromPort": 22, "ToPort": 22, "CidrIpv4": "10.0.0.0/8"},
+            ] if east else [])
         raise AssertionError(operation)
 
 
@@ -307,7 +344,35 @@ class FakeCloudWatch:
         return {"MetricDataResults": results[len(results) // 2 :]}
 
 
-def fake_clients(refused: set[str] = frozenset()) -> Any:
+class FakeBackup:
+    def __init__(self, region: str) -> None:
+        self.region = region
+
+    def get_paginator(self, operation: str) -> Pages:
+        assert operation == "list_protected_resources"
+        protected = (
+            [{"ResourceArn": DATABASE, "ResourceType": "RDS", "LastBackupTime": datetime(2026, 9, 1, 2, tzinfo=UTC),
+              "LastBackupVaultArn": f"arn:aws:backup:ap-southeast-3:{ACCOUNT}:backup-vault:Default"}]
+            if self.region == "ap-southeast-3"
+            else []
+        )
+        return Pages("Results", protected)
+
+
+class FakeOptimizer:
+    def __init__(self, enrolled: bool) -> None:
+        self.enrolled = enrolled
+
+    def get_ec2_instance_recommendations(self, **_: Any) -> dict[str, Any]:
+        if not self.enrolled:
+            raise ClientError({"Error": {"Code": "OptInRequiredException", "Message": "not registered"}}, "Get")
+        return {"instanceRecommendations": [
+            {"instanceArn": INSTANCE, "finding": "Overprovisioned", "currentInstanceType": "t3.micro",
+             "recommendationOptions": [{"instanceType": "t4g.nano", "rank": 1}, {"instanceType": "t3.nano", "rank": 2}]}
+        ]}
+
+
+def fake_clients(refused: set[str] = frozenset(), *, enrolled: bool = False) -> Any:
     cloudwatch = FakeCloudWatch()
 
     def clients(service: str, region: str) -> Any:
@@ -317,6 +382,10 @@ def fake_clients(refused: set[str] = frozenset()) -> Any:
             return FakeRds(region)
         if service == "cloudwatch":
             return cloudwatch
+        if service == "backup":
+            return FakeBackup(region)
+        if service == "compute-optimizer":
+            return FakeOptimizer(enrolled)
         raise AssertionError(service)
 
     clients.cloudwatch = cloudwatch  # type: ignore[attr-defined]
@@ -339,7 +408,7 @@ def test_discovery_reads_every_region_and_records_stopped_resources() -> None:
     aws = provider(InMemoryObjectStore(), fake_clients())
     result = asyncio.run(aws.discover({"subscription_id": ACCOUNT, "resource_types": [], "resource_groups": [], "tag_filters": {}}))
     ids = [resource["resource_id"] for resource in result["resources"]]
-    assert ids == sorted([INSTANCE, STOPPED, VOLUME, DATABASE])
+    assert ids == sorted([INSTANCE, STOPPED, VOLUME, DATABASE, VPC, SUBNET, EIP, GROUP, RULE_IN, RULE_OUT])
     by_id = {resource["resource_id"]: resource for resource in result["resources"]}
     assert by_id[INSTANCE]["name"] == "web"
     assert by_id[INSTANCE]["sku_name"] == "t3.micro"
@@ -438,8 +507,8 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     keys = sorted(key for key in store.keys() if "/raw/" in key)
     archived = [(index, asyncio.run(store.get_bytes(key))) for index, key in enumerate(keys)]
     kinds = sorted(json.loads(gzip.decompress(body))["kind"] for _, body in archived)
-    # Every CloudWatch call, and one facts object for the whole run.
-    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 1
+    # Every CloudWatch call, and one facts object per source: describe, AWS Backup, Compute Optimizer.
+    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 3
 
     facts = {
         resource["resource_id"]: {fact["key"]: fact["value"] for fact in resource.get("facts") or []}
@@ -452,6 +521,23 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     }
     assert facts[VOLUME]["size"] == "8 GiB" and facts[VOLUME]["attached_to"] == "i-0123456789abcdef0"
     assert facts[DATABASE]["backup_retention_days"] == "0" and facts[DATABASE]["publicly_accessible"] == "yes"
+    # AWS Backup protects the database only; Compute Optimizer is not enrolled.
+    assert facts[DATABASE]["last_backup"] == "2026-09-01" and facts[DATABASE]["backup_vault"] == "Default"
+    assert "last_backup" not in facts[INSTANCE] and "rightsizing_finding" not in facts[INSTANCE]
+    gap_pairs = {(gap["gap_type"], gap["resource_id"], gap["metric"]) for gap in outcome.gaps}
+    assert ("backup_not_configured", INSTANCE, "last_backup") in gap_pairs
+    assert ("optimizer_not_available", INSTANCE, "rightsizing_finding") in gap_pairs
+    assert ("backup_not_configured", DATABASE, "last_backup") not in gap_pairs
+    # The network: a VPC and its subnet, an address, the one group in use and its rules.
+    assert facts[VPC] == {"cidr": "10.0.0.0/16", "is_default": "no", "vpc_state": "available"}
+    assert facts[SUBNET]["available_ips"] == "250" and facts[SUBNET]["public_on_launch"] == "no"
+    assert facts[EIP] == {"public_ip": "203.0.113.10", "attached_to": "i-0123456789abcdef0",
+                          "private_ip": "10.0.0.4", "domain": "vpc"}
+    assert facts[GROUP]["inbound_rules"] == "1" and facts[GROUP]["outbound_rules"] == "1"
+    assert facts[RULE_IN] == {"direction": "inbound", "protocol": "tcp", "ports": "443",
+                              "peer": "0.0.0.0/0", "description": "public https"}
+    assert facts[RULE_OUT]["protocol"] == "all" and facts[RULE_OUT]["ports"] == "all"
+    assert not [rid for rid in facts if "sg-0unused" in rid]
 
     result = replay(archived, plan=plan_from_snapshot(document, catalog=catalog, objects_named=len(archived)))
     assert result.outcome["possible"] is True
@@ -484,7 +570,22 @@ def test_a_repeated_name_gains_the_resource_id() -> None:
         record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-01", "web"),
         record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-02", "web"),
         record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:instance/i-03", "db"),
-        # The same name on another type is not a repeat: its table is a different one.
+        # The same name on another type is a repeat too: the backups table lists both.
         record(f"arn:aws:ec2:us-east-1:{ACCOUNT}:volume/vol-01", "web", "AWS::EC2::Volume"),
     ])  # type: ignore[arg-type]
-    assert [r["name"] for r in named] == ["web (i-01)", "web (i-02)", "db", "web"]
+    assert [r["name"] for r in named] == ["web (i-01)", "web (i-02)", "db", "web (vol-01)"]
+
+
+def test_an_enrolled_account_carries_its_rightsizing_findings() -> None:
+    store = InMemoryObjectStore()
+    aws = provider(store, fake_clients(enrolled=True))
+    scope = {"subscription_id": ACCOUNT, "resource_types": ["AWS::EC2::Instance"], "resource_groups": [],
+             "tag_filters": {}, "regions": ["us-east-1"]}
+    discovered = asyncio.run(aws.discover(scope))  # type: ignore[arg-type]
+    result = asyncio.run(aws.collect_facts({"resources": discovered["resources"], "inventory_pages": [],
+                                            "subscription_id": ACCOUNT}))
+    by_key = {(fact["resource_id"], fact["key"]): fact["value"] for fact in result["facts"]}
+    assert by_key[(INSTANCE, "rightsizing_finding")] == "Overprovisioned"
+    assert by_key[(INSTANCE, "recommended_type")] == "t4g.nano"
+    # The stopped instance has no recommendation: an answer, recorded as that.
+    assert {(g["gap_type"], g["resource_id"]) for g in result["gaps"]} >= {("optimizer_not_available", STOPPED)}

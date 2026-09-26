@@ -24,7 +24,7 @@ Matching an identifier as a whole — leftmost-longest, non-overlapping — remo
 before any later stage can see the digits inside it.
 
 **Stages 3 and 4 remove the other things that look numeric and are not**: GUIDs,
-Azure resource ids, IP addresses and CIDR suffixes; then calendar dates and months,
+Azure resource ids, AWS ARNs, IP addresses and CIDR suffixes; then calendar dates and months,
 timestamps and ISO 8601 durations, so the grain `PT1H`, the window bound `2026-07-01`
 and the trend's month label `2026-06` are not read as measurements.
 
@@ -99,6 +99,10 @@ _STRUCTURED: Final[re.Pattern[str]] = re.compile(
     "|".join(
         (
             r"/subscriptions/\S+",  # an Azure resource id, to its first whitespace
+            # An AWS ARN, to its first whitespace — the account id inside it is an
+            # identifier, not a measurement. Stage 2 has already masked the ARN's lettered
+            # segments, and masking never writes whitespace, so this still spans the whole.
+            r"arn:aws[\w-]*:\S+",
             r"[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}",  # GUID
             r"(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(?:/\d{1,3})?",  # IPv6 (+CIDR)
             r"\d{1,3}(?:\.\d{1,3}){3}/\d{1,2}",  # IPv4 CIDR, before bare IPv4

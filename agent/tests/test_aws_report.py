@@ -112,8 +112,12 @@ def test_the_document_speaks_aws(walked: tuple[InMemoryObjectStore, list[dict[st
     tables = " ".join(cell.text for table in Document(BytesIO(store.get(key).body)).tables  # type: ignore[union-attr]
                       for row in table.rows for cell in row.cells)
     for title in ("AWS Account Overview", "EC2 Instances", "EBS Volumes", "RDS Databases",
-                  "EC2 Instance Utilization", "RDS Database Utilization", "EBS Volume Activity"):
+                  "EC2 Instance Utilization", "RDS Database Utilization", "EBS Volume Activity",
+                  "VPCs and Subnets", "Elastic IP Addresses", "Security Groups in Use", "Backups",
+                  "Rightsizing Recommendations"):
         assert title in text, title
     assert "Account ID" in tables and ACCOUNT in tables
     assert "Subscription ID" not in tables and "Resource groups" not in tables
     assert "t3.micro" in tables and "1 GiB" in tables and "admin-sg, web-sg" in tables
+    assert "10.0.0.0/16" in tables and "public https" in tables and "203.0.113.10" in tables
+    assert "leftover" not in tables  # an unused security group is not reported
