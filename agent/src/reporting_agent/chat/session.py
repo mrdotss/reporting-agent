@@ -70,6 +70,10 @@ from reporting_agent.narrate.chat import (
     refusal_text,
     system_prompt,
 )
+from reporting_agent.pricing.aws_prices import (
+    PROVIDER_AWS,
+    normalize_aws_pair,
+)
 from reporting_agent.pricing.azure_retail import (
     MAX_PAIRS,
     PriceLookupResult,
@@ -294,7 +298,7 @@ async def _answer(
         step = steps.start(
             TOOL_LOOKUP_PRICES,
             label="List prices",
-            status=f"Looking up Azure list prices for {_plural(len(pairs), 'VM size')}",
+            status=f"Looking up {_price_list_names(pairs)} list prices for {_plural(len(pairs), _size_noun(pairs))}",
         )
         yield step
         result = await prices(pairs)
@@ -436,7 +440,7 @@ def _price_fact(price: RetailPrice) -> Fact:
             "currency": price.currency,
             "unit_of_measure": price.unit_of_measure,
             "effective_start": price.effective_start,
-            "price_source": "Azure Retail Prices",
+            "price_source": price.source,
         },
         value=price.retail_price if "e" not in price.retail_price.lower() else None,
         unit=f"{price.currency} per {per}",
@@ -455,10 +459,24 @@ def _unit_phrase(unit_of_measure: str) -> str:
 def _price_pairs(sizes: Sequence[VmSize]) -> list[VmPricePair]:
     pairs: dict[VmPricePair, None] = {}
     for size in sizes:
-        pair = normalize_pair(size.sku, size.region)
+        pair = (
+            normalize_aws_pair(size.sku, size.region, engine=size.engine, multi_az=size.multi_az)
+            if size.provider == PROVIDER_AWS
+            else normalize_pair(size.sku, size.region)
+        )
         if pair is not None:
             pairs.setdefault(pair, None)
     return list(pairs)[:MAX_PAIRS]
+
+
+def _price_list_names(pairs: Sequence[VmPricePair]) -> str:
+    clouds = {"AWS" if pair.provider == PROVIDER_AWS else "Azure" for pair in pairs}
+    return " and ".join(sorted(clouds, key=lambda cloud: cloud != "Azure"))
+
+
+def _size_noun(pairs: Sequence[VmPricePair]) -> str:
+    """`VM size` while every pair is Azure, as the step always read; `size` once AWS joins."""
+    return "VM size" if all(pair.provider != PROVIDER_AWS for pair in pairs) else "size"
 
 
 def _trim_price(text: str) -> str:

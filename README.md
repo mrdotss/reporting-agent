@@ -104,6 +104,10 @@ archived once per run and replayed like every other fact; an account with no AWS
 plan or no Compute Optimizer enrollment gets that stated as a gap, not an error. A run
 covers every region the account has enabled.
 
+Ask prices an AWS report's EC2 instance types (Linux and Windows, license included) and
+RDS classes (by engine and Single- or Multi-AZ) from the AWS Price List, through the
+runtime's own role, which needs `pricing:GetProducts`.
+
 ## Run it locally
 
 ```bash
