@@ -23,9 +23,20 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Final
 
-__all__ = ["AWS_FACT_SOURCE", "MAX_TEXT", "fact_items", "instance_types_needed"]
+__all__ = [
+    "AWS_BACKUP_SOURCE",
+    "AWS_FACT_SOURCE",
+    "COMPUTE_OPTIMIZER_SOURCE",
+    "MAX_TEXT",
+    "backup_items",
+    "fact_items",
+    "instance_types_needed",
+    "optimizer_items",
+]
 
 AWS_FACT_SOURCE: Final[str] = "aws"
+AWS_BACKUP_SOURCE: Final[str] = "aws_backup"
+COMPUTE_OPTIMIZER_SOURCE: Final[str] = "compute_optimizer"
 MAX_TEXT: Final[int] = 240
 
 
@@ -125,6 +136,53 @@ def _database(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
     _put(item, "publicly_accessible", _yes_no(raw.get("PubliclyAccessible")))
 
 
+def _vpc(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+    _put(item, "cidr", raw.get("CidrBlock"))
+    _put(item, "is_default", _yes_no(raw.get("IsDefault")))
+    _put(item, "vpc_state", raw.get("State"))
+
+
+def _subnet(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+    _put(item, "cidr", raw.get("CidrBlock"))
+    _put(item, "availability_zone", raw.get("AvailabilityZone"))
+    if isinstance(raw.get("AvailableIpAddressCount"), int):
+        item["available_ips"] = str(raw["AvailableIpAddressCount"])
+    _put(item, "public_on_launch", _yes_no(raw.get("MapPublicIpOnLaunch")))
+
+
+def _address(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+    _put(item, "public_ip", raw.get("PublicIp"))
+    _put(item, "attached_to", raw.get("InstanceId") or raw.get("NetworkInterfaceId") or "not attached")
+    _put(item, "private_ip", raw.get("PrivateIpAddress") or "none")
+    _put(item, "domain", raw.get("Domain"))
+
+
+def _security_group(item: dict[str, Any], raw: Mapping[str, Any], rules: Sequence[Mapping[str, Any]]) -> None:
+    _put(item, "vpc", raw.get("VpcId"))
+    _put(item, "description", raw.get("Description"))
+    own = [rule for rule in rules if rule.get("GroupId") == raw.get("GroupId")]
+    item["inbound_rules"] = str(sum(1 for rule in own if not rule.get("IsEgress")))
+    item["outbound_rules"] = str(sum(1 for rule in own if rule.get("IsEgress")))
+
+
+def _ports(raw: Mapping[str, Any]) -> str:
+    low, high = raw.get("FromPort"), raw.get("ToPort")
+    if not isinstance(low, int) or not isinstance(high, int) or low == -1:
+        return "all"
+    return str(low) if low == high else f"{low}-{high}"
+
+
+def _rule(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+    item["direction"] = "outbound" if raw.get("IsEgress") else "inbound"
+    protocol = str(raw.get("IpProtocol") or "")
+    _put(item, "protocol", "all" if protocol == "-1" else protocol)
+    _put(item, "ports", _ports(raw))
+    referenced = (raw.get("ReferencedGroupInfo") or {}).get("GroupId")
+    peer = raw.get("CidrIpv4") or raw.get("CidrIpv6") or referenced or raw.get("PrefixListId")
+    _put(item, "peer", peer)
+    _put(item, "description", raw.get("Description") or "none")
+
+
 def fact_items(
     resource_ids: Sequence[str],
     raw: Mapping[str, Mapping[str, Any]],
@@ -135,6 +193,7 @@ def fact_items(
     `raw` is discovery's describe item per resource id, tagged with `_kind` and `_region`;
     `instance_types` is `DescribeInstanceTypes`' answer keyed by type name.
     """
+    rules = [record for record in raw.values() if record.get("_kind") == "security_group_rule"]
     items: list[dict[str, Any]] = []
     for resource_id in sorted(resource_ids):
         record = raw.get(resource_id)
@@ -148,5 +207,53 @@ def fact_items(
             _volume(item, record)
         elif kind == "database":
             _database(item, record)
+        elif kind == "vpc":
+            _vpc(item, record)
+        elif kind == "subnet":
+            _subnet(item, record)
+        elif kind == "eip":
+            _address(item, record)
+        elif kind == "security_group":
+            _security_group(item, record, rules)
+        elif kind == "security_group_rule":
+            _rule(item, record)
+        items.append(item)
+    return items
+
+
+def backup_items(protected: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """AWS Backup's protected resources as fact items. **Pure.**
+
+    A resource AWS Backup does not list is simply absent here, which the fold records as
+    `backup_not_configured` — an answer about the estate, not a failed request.
+    """
+    items = []
+    for entry in sorted(protected, key=lambda e: str(e.get("ResourceArn"))):
+        arn = entry.get("ResourceArn")
+        if not isinstance(arn, str) or not arn:
+            continue
+        item: dict[str, Any] = {"resource_id": arn}
+        _put(item, "last_backup", _date(entry.get("LastBackupTime")))
+        vault = entry.get("LastBackupVaultArn")
+        _put(item, "backup_vault", vault.rsplit(":", 1)[-1] if isinstance(vault, str) else None)
+        items.append(item)
+    return items
+
+
+def optimizer_items(recommendations: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Compute Optimizer's EC2 findings as fact items. **Pure.**
+
+    An instance with no recommendation — or every instance, in an account that has not
+    enrolled — is absent here and becomes `optimizer_not_available`.
+    """
+    items = []
+    for entry in sorted(recommendations, key=lambda e: str(e.get("instanceArn"))):
+        arn = entry.get("instanceArn")
+        if not isinstance(arn, str) or not arn:
+            continue
+        item: dict[str, Any] = {"resource_id": arn}
+        _put(item, "rightsizing_finding", entry.get("finding"))
+        options = sorted(entry.get("recommendationOptions") or [], key=lambda o: o.get("rank", 99))
+        _put(item, "recommended_type", options[0].get("instanceType") if options else None)
         items.append(item)
     return items

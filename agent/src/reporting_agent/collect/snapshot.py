@@ -849,7 +849,7 @@ satisfy an `^…$` pattern and land in a snapshot carrying whitespace the requir
 
 DECLARED_FACT_VALUE_KINDS: Final[frozenset[str]] = frozenset({"numeric", "text"})
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "compute_optimizer"}
 )
 """Req 4.2 and 4.11's vocabularies, mirrored from `catalog/loader.py` **by value**.
 

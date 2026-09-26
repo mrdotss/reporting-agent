@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.1.0",
+  "catalogue_version": "1.2.0",
   "providers": {
     "azure": {
       "sections": [
@@ -1299,8 +1299,97 @@
           ]
         },
         {
-          "key": "ec2_instances",
+          "key": "vpcs",
           "number": 3,
+          "title_id": "doc.section.vpcs",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::VPC"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "cidr"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "is_default"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "vpc_state"
+                  }
+                ]
+              }
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "_types": [
+                  "AWS::EC2::Subnet"
+                ],
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "cidr"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "availability_zone"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "available_ips"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "public_on_launch"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "key": "ec2_instances",
+          "number": 4,
           "title_id": "doc.section.ec2_instances",
           "group": "inventory",
           "position": "free",
@@ -1363,7 +1452,7 @@
                     "attribute": "power_state"
                   }
                 ],
-                "subsection": "3.1"
+                "subsection": "4.1"
               }
             },
             {
@@ -1404,14 +1493,212 @@
                     "fact_key": "security_groups"
                   }
                 ],
-                "subsection": "3.2"
+                "subsection": "4.2"
+              }
+            }
+          ]
+        },
+        {
+          "key": "elastic_ips",
+          "number": 5,
+          "title_id": "doc.section.elastic_ips",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::EIP"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "attached_to"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "private_ip"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "key": "security_groups",
+          "number": 6,
+          "title_id": "doc.section.security_groups",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::SecurityGroup"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 2
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "layout": "pairs",
+                "columns": [
+                  {
+                    "kind": "fact",
+                    "fact_key": "vpc"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "description"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "inbound_rules"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "outbound_rules"
+                  }
+                ]
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3,
+                "title_id": "doc.section.security_groups.inbound",
+                "repeats_per_resource": true
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "_types": [
+                  "AWS::EC2::SecurityGroupRule"
+                ],
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "protocol"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "ports"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "peer"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "description"
+                  }
+                ],
+                "filter_fact": "direction",
+                "filter_value": "inbound",
+                "empty_message_id": "doc.section.security_groups.no_rules"
+              }
+            },
+            {
+              "block": "heading",
+              "config": {
+                "level": 3,
+                "title_id": "doc.section.security_groups.outbound",
+                "repeats_per_resource": true
+              },
+              "per": "resource"
+            },
+            {
+              "block": "resource_table",
+              "per": "resource",
+              "config": {
+                "_scope": "children",
+                "_types": [
+                  "AWS::EC2::SecurityGroupRule"
+                ],
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "protocol"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "ports"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "peer"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "description"
+                  }
+                ],
+                "filter_fact": "direction",
+                "filter_value": "outbound",
+                "empty_message_id": "doc.section.security_groups.no_rules"
               }
             }
           ]
         },
         {
           "key": "ebs_volumes",
-          "number": 4,
+          "number": 7,
           "title_id": "doc.section.ebs_volumes",
           "group": "inventory",
           "position": "free",
@@ -1472,7 +1759,7 @@
         },
         {
           "key": "rds_instances",
-          "number": 5,
+          "number": 8,
           "title_id": "doc.section.rds_instances",
           "group": "inventory",
           "position": "free",
@@ -1537,7 +1824,7 @@
         },
         {
           "key": "ec2_utilization",
-          "number": 6,
+          "number": 9,
           "title_id": "doc.section.ec2_utilization",
           "group": "utilisation",
           "position": "free",
@@ -1678,7 +1965,7 @@
         },
         {
           "key": "historical_ec2_utilization",
-          "number": 7,
+          "number": 10,
           "title_id": "doc.section.historical_ec2_utilization",
           "group": "utilisation",
           "position": "free",
@@ -1742,7 +2029,7 @@
         },
         {
           "key": "rds_utilization",
-          "number": 8,
+          "number": 11,
           "title_id": "doc.section.rds_utilization",
           "group": "utilisation",
           "position": "free",
@@ -1812,7 +2099,7 @@
         },
         {
           "key": "ebs_activity",
-          "number": 9,
+          "number": 12,
           "title_id": "doc.section.ebs_activity",
           "group": "utilisation",
           "position": "free",
@@ -1862,8 +2149,59 @@
           ]
         },
         {
+          "key": "backups",
+          "number": 13,
+          "title_id": "doc.section.backups",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance",
+            "AWS::EC2::Volume",
+            "AWS::RDS::DBInstance"
+          ],
+          "needs_fact_sources": [
+            "aws_backup"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "last_backup"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "backup_vault"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
           "key": "incident_report",
-          "number": 10,
+          "number": 14,
           "title_id": "doc.section.incident_report",
           "group": "closing",
           "position": "fixed",
@@ -1897,8 +2235,57 @@
           ]
         },
         {
+          "key": "rightsizing",
+          "number": 15,
+          "title_id": "doc.section.rightsizing",
+          "group": "closing",
+          "position": "fixed",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance"
+          ],
+          "needs_fact_sources": [
+            "compute_optimizer"
+          ],
+          "metric_bearing": false,
+          "presets": {},
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "instance_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "rightsizing_finding"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "recommended_type"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
           "key": "coverage_and_verification",
-          "number": 11,
+          "number": 16,
           "title_id": "doc.section.coverage_and_verification",
           "group": "closing",
           "position": "always",

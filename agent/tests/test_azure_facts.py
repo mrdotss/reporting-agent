@@ -183,6 +183,8 @@ def test_the_mirrored_sources_and_gap_types_agree_with_the_catalog() -> None:
         REPLICATION_ABSENT_GAP_TYPE,
         RESERVATION_ABSENT_GAP_TYPE,
         ADVISOR_ABSENT_GAP_TYPE,
+        # AWS's, declared by `aws/facts.py`'s Compute Optimizer source rather than here.
+        "optimizer_not_available",
     } == DECLARED_ABSENT_GAP_TYPES
 
 
@@ -194,7 +196,13 @@ def test_the_three_absent_gap_types_partition_the_recovery_and_capacity_keys() -
     whole source would report `backup_not_configured` for `replication_health`, which a backup
     list cannot possibly know.
     """
-    backup = {e.key for e in narrowed_to_gap_type(CATALOG.facts, BACKUP_ABSENT_GAP_TYPE).entries}
+    # Azure's half: AWS Backup's keys share the gap type and live on AWS types, which no
+    # Azure run collects, and the fold matches the source as well as the type.
+    backup = {
+        e.key
+        for e in narrowed_to_gap_type(CATALOG.facts, BACKUP_ABSENT_GAP_TYPE).entries
+        if not e.resource_type.startswith("AWS::")
+    }
     replication = {
         e.key for e in narrowed_to_gap_type(CATALOG.facts, REPLICATION_ABSENT_GAP_TYPE).entries
     }

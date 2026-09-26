@@ -72,6 +72,7 @@ const GAP_TYPE_COPY_IDS: Readonly<
   metric_not_selected: { labelId: "ui.gap_label.metric_not_selected", noteId: "doc.gap.metric_not_selected" },
   no_reservations: { labelId: "ui.gap_label.no_reservations", noteId: "doc.gap.no_reservations" },
   no_samples: { labelId: "ui.gap_label.no_samples", noteId: "doc.gap.no_samples" },
+  optimizer_not_available: { labelId: "ui.gap_label.optimizer_not_available", noteId: "doc.gap.optimizer_not_available" },
   percentile_unsupported_unit: { labelId: "ui.gap_label.percentile_unsupported_unit", noteId: "doc.gap.percentile_unsupported_unit" },
   permission_denied: { labelId: "ui.gap_label.permission_denied", noteId: "doc.gap.permission_denied" },
   power_state_unknown: { labelId: "ui.gap_label.power_state_unknown", noteId: "doc.gap.power_state_unknown" },

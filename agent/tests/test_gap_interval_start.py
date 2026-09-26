@@ -266,15 +266,17 @@ def test_a_gap_carrying_an_interval_start_does_move_the_digest() -> None:
 # --- the four fact gap types, and `source` (Req 5.1-5.4, 5.10) ----------------------
 
 
-def test_the_declared_gap_type_partition_holds_exactly_twenty_five_values() -> None:
-    """The count is asserted in `collect/log.py` itself; this asserts *which* five were
-    added, because a count is satisfied by any five strings."""
-    assert len(DECLARED_GAP_TYPES) == 25
+def test_the_declared_gap_type_partition_holds_exactly_twenty_six_values() -> None:
+    """The count is asserted in `collect/log.py` itself; this asserts *which* fact gap types
+    exist, because a count is satisfied by any strings. The sixth, AWS Compute Optimizer's
+    absence, joined the five Azure's fact sources record."""
+    assert len(DECLARED_GAP_TYPES) == 26
     assert FACT_GAP_TYPES == {
         "backup_not_configured",
         "no_reservations",
         "replication_not_enabled",
         "advisor_not_available",
+        "optimizer_not_available",
         "fact_unavailable",
     }
     assert FACT_GAP_TYPES < DECLARED_GAP_TYPES

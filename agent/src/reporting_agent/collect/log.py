@@ -3,7 +3,7 @@
 **A gap is recorded, never zero-filled** (Req 29.3, 29.4). `deallocated`,
 `metric_not_emitted` and `permission_denied` are three completely different facts that
 a zero-filling collector would render identically as "0% CPU" — the partition of
-25 declared `gap_type` values below is the point, not an implementation detail, and it
+26 declared `gap_type` values below is the point, not an implementation detail, and it
 is fixed by the requirements glossary rather than inferred from whatever a caller
 happens to pass. This module is the single place that partition is declared and the
 single place a caller builds one entry, so a typo in a `gap_type` string fails at the
@@ -54,6 +54,7 @@ __all__ = [
     "GAP_TYPE_METRIC_NOT_SELECTED",
     "GAP_TYPE_NO_RESERVATIONS",
     "GAP_TYPE_NO_SAMPLES",
+    "GAP_TYPE_OPTIMIZER_NOT_AVAILABLE",
     "GAP_TYPE_PERCENTILE_UNSUPPORTED_UNIT",
     "GAP_TYPE_PERMISSION_DENIED",
     "GAP_TYPE_POWER_STATE_UNKNOWN",
@@ -131,6 +132,9 @@ GAP_TYPE_BACKUP_NOT_CONFIGURED: Final[str] = "backup_not_configured"
 GAP_TYPE_NO_RESERVATIONS: Final[str] = "no_reservations"
 GAP_TYPE_REPLICATION_NOT_ENABLED: Final[str] = "replication_not_enabled"
 GAP_TYPE_ADVISOR_NOT_AVAILABLE: Final[str] = "advisor_not_available"
+# AWS's counterpart: Compute Optimizer answered and has no finding for this resource — it is
+# not enabled for the account, or has not analysed the resource yet. An answer, not a failure.
+GAP_TYPE_OPTIMIZER_NOT_AVAILABLE: Final[str] = "optimizer_not_available"
 GAP_TYPE_FACT_UNAVAILABLE: Final[str] = "fact_unavailable"
 
 FACT_GAP_TYPES: Final[frozenset[str]] = frozenset(
@@ -139,10 +143,11 @@ FACT_GAP_TYPES: Final[frozenset[str]] = frozenset(
         GAP_TYPE_NO_RESERVATIONS,
         GAP_TYPE_REPLICATION_NOT_ENABLED,
         GAP_TYPE_ADVISOR_NOT_AVAILABLE,
+        GAP_TYPE_OPTIMIZER_NOT_AVAILABLE,
         GAP_TYPE_FACT_UNAVAILABLE,
     }
 )
-"""The five gap types a fact produces, and the set `record_gap` requires a `source` for.
+"""The six gap types a fact produces, and the set `record_gap` requires a `source` for.
 
 Req 5.10 asks that every gap of a type this spec adds record the source that was queried.
 Declared as a set and enforced at the one gate rather than left to the caller: the fold
@@ -176,12 +181,12 @@ DECLARED_GAP_TYPES: Final[frozenset[str]] = frozenset(
     }
 )
 
-assert len(DECLARED_GAP_TYPES) == 25
+assert len(DECLARED_GAP_TYPES) == 26
 assert FACT_GAP_TYPES < DECLARED_GAP_TYPES
 
 
 class GapTypeError(ValueError):
-    """`gap_type` is not one of the 25 declared values.
+    """`gap_type` is not one of the 26 declared values.
 
     Carries the offending value so a caller building a message does not have to
     re-parse `str(exc)`.

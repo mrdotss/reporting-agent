@@ -27,7 +27,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
-from reporting_agent.aws.facts import AWS_FACT_SOURCE, fact_items, instance_types_needed
+from reporting_agent.aws.facts import (
+    AWS_BACKUP_SOURCE,
+    AWS_FACT_SOURCE,
+    COMPUTE_OPTIMIZER_SOURCE,
+    backup_items,
+    fact_items,
+    instance_types_needed,
+    optimizer_items,
+)
 from reporting_agent.aws.metrics import DIMENSION_BY_TYPE, CloudWatchCollector
 from reporting_agent.catalog.loader import (
     FactDeclaration,
@@ -80,6 +88,23 @@ FIDELITY_ENHANCED: Final[str] = "enhanced"
 TYPE_INSTANCE: Final[str] = "AWS::EC2::Instance"
 TYPE_VOLUME: Final[str] = "AWS::EC2::Volume"
 TYPE_RDS_INSTANCE: Final[str] = "AWS::RDS::DBInstance"
+TYPE_VPC: Final[str] = "AWS::EC2::VPC"
+TYPE_SUBNET: Final[str] = "AWS::EC2::Subnet"
+TYPE_EIP: Final[str] = "AWS::EC2::EIP"
+TYPE_SECURITY_GROUP: Final[str] = "AWS::EC2::SecurityGroup"
+TYPE_SECURITY_GROUP_RULE: Final[str] = "AWS::EC2::SecurityGroupRule"
+
+CHILD_OF: Final[Mapping[str, str]] = {
+    TYPE_SUBNET: TYPE_VPC,
+    TYPE_SECURITY_GROUP_RULE: TYPE_SECURITY_GROUP,
+}
+"""A child type and its parent's, as `facts.v1.json` declares `child_of`.
+
+A child's id nests under its parent's ARN — `…:vpc/vpc-1/subnet/subnet-9`,
+`…:security-group/sg-1/security-group-rule/sgr-2` — because a report finds a parent's
+children by id containment, which is how Azure's ids already read. These ids name records
+in the snapshot; nothing ever sends one to AWS, where a subnet's own ARN does not nest.
+"""
 
 _STATE_NORMAL: Final[Mapping[str, str]] = {
     "ec2:pending": "starting",
@@ -201,20 +226,93 @@ def _databases(rds: Any, *, account: str, region: str, tier: str, raw: dict[str,
     ]
 
 
+def _vpcs(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
+    """Every VPC, and each one's subnets nested under it."""
+    records = []
+    by_vpc: dict[str, str] = {}
+    for vpc in _paged(ec2, "describe_vpcs", "Vpcs"):
+        tags = _tags(vpc.get("Tags"))
+        resource_id = f"arn:aws:ec2:{region}:{account}:vpc/{vpc['VpcId']}"
+        by_vpc[vpc["VpcId"]] = resource_id
+        raw[resource_id] = {**vpc, "_kind": "vpc", "_region": region}
+        records.append(_record(resource_id=resource_id, name=tags.get("Name") or vpc["VpcId"], resource_type=TYPE_VPC,
+                               region=region, tags=tags, sku="", state="", tier=tier))
+    for subnet in _paged(ec2, "describe_subnets", "Subnets"):
+        parent = by_vpc.get(subnet.get("VpcId", ""))
+        if parent is None:
+            continue
+        tags = _tags(subnet.get("Tags"))
+        resource_id = f"{parent}/subnet/{subnet['SubnetId']}"
+        raw[resource_id] = {**subnet, "_kind": "subnet", "_region": region}
+        records.append(_record(resource_id=resource_id, name=tags.get("Name") or subnet["SubnetId"],
+                               resource_type=TYPE_SUBNET, region=region, tags=tags, sku="", state="", tier=tier))
+    return records
+
+
+def _addresses(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
+    records = []
+    for address in ec2.describe_addresses().get("Addresses", []):
+        allocation = address.get("AllocationId") or address.get("PublicIp", "")
+        tags = _tags(address.get("Tags"))
+        resource_id = f"arn:aws:ec2:{region}:{account}:elastic-ip/{allocation}"
+        raw[resource_id] = {**address, "_kind": "eip", "_region": region}
+        records.append(_record(resource_id=resource_id, name=tags.get("Name") or address.get("PublicIp", allocation),
+                               resource_type=TYPE_EIP, region=region, tags=tags, sku="", state="", tier=tier))
+    return records
+
+
+def _security_groups(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
+    """The security groups attached to a network interface, and each one's rules.
+
+    Only groups **in use**: an account accumulates groups nothing references — left behind
+    by stacks, clusters and wizards — and a report listing every rule of every one of them
+    buries the ones that guard something. The scan still counts them all.
+    """
+    in_use = {
+        group["GroupId"]
+        for interface in _paged(ec2, "describe_network_interfaces", "NetworkInterfaces")
+        for group in interface.get("Groups", [])
+    }
+    records = []
+    by_group: dict[str, str] = {}
+    for group in _paged(ec2, "describe_security_groups", "SecurityGroups"):
+        if group["GroupId"] not in in_use:
+            continue
+        tags = _tags(group.get("Tags"))
+        resource_id = f"arn:aws:ec2:{region}:{account}:security-group/{group['GroupId']}"
+        by_group[group["GroupId"]] = resource_id
+        raw[resource_id] = {**group, "_kind": "security_group", "_region": region}
+        records.append(_record(resource_id=resource_id, name=group.get("GroupName") or group["GroupId"],
+                               resource_type=TYPE_SECURITY_GROUP, region=region, tags=tags, sku="", state="", tier=tier))
+    for rule in _paged(ec2, "describe_security_group_rules", "SecurityGroupRules"):
+        parent = by_group.get(rule.get("GroupId", ""))
+        if parent is None:
+            continue
+        resource_id = f"{parent}/security-group-rule/{rule['SecurityGroupRuleId']}"
+        raw[resource_id] = {**rule, "_kind": "security_group_rule", "_region": region}
+        records.append(_record(resource_id=resource_id, name=rule["SecurityGroupRuleId"],
+                               resource_type=TYPE_SECURITY_GROUP_RULE, region=region, tags=_tags(rule.get("Tags")),
+                               sku="", state="", tier=tier))
+    return records
+
+
 _READERS: Final[tuple[tuple[str, str, Callable[..., list[ResourceRecord]]], ...]] = (
     (TYPE_INSTANCE, "ec2", _instances),
     (TYPE_VOLUME, "ec2", _volumes),
     (TYPE_RDS_INSTANCE, "rds", _databases),
+    (TYPE_VPC, "ec2", _vpcs),
+    (TYPE_EIP, "ec2", _addresses),
+    (TYPE_SECURITY_GROUP, "ec2", _security_groups),
 )
 
 
-def _aws_declaration(declaration: FactDeclaration) -> FactDeclaration:
-    """The declaration narrowed to the `aws` source, the one source this pass answers for."""
+def _source_declaration(declaration: FactDeclaration, source: str) -> FactDeclaration:
+    """The declaration narrowed to one source, the only one a response answers for."""
     return FactDeclaration(
         resource_types=tuple(
             ResourceTypeFacts(
                 resource_type=declared.resource_type,
-                facts=tuple(entry for entry in declared.facts if entry.source == AWS_FACT_SOURCE),
+                facts=tuple(entry for entry in declared.facts if entry.source == source),
             )
             for declared in declaration.resource_types
         )
@@ -225,17 +323,18 @@ def _unique_names(resources: list[ResourceRecord]) -> list[ResourceRecord]:
     """Names that identify one resource each. **Pure.**
 
     An Azure name is unique within its resource group; an AWS `Name` tag is free text, and two
-    instances launched from one template commonly share it. A report addresses a row by the
-    resource's name, so a repeated name gains the resource's own id — `web (i-0abc…)` — and
-    a name nobody else holds is left exactly as it was.
+    instances launched from one template commonly share it — as does the volume the launch
+    tagged alongside them. A report addresses a row by the resource's name, and the backups
+    table lists instances, volumes and databases together, so a name repeated **anywhere**
+    gains the resource's own id — `web (i-0abc…)` — and a name nobody else holds is left
+    exactly as it was.
     """
-    counts: dict[tuple[str, str], int] = {}
+    counts: dict[str, int] = {}
     for resource in resources:
-        key = (resource["resource_type"], resource["name"])
-        counts[key] = counts.get(key, 0) + 1
+        counts[resource["name"]] = counts.get(resource["name"], 0) + 1
     unique: list[ResourceRecord] = []
     for resource in resources:
-        if counts[(resource["resource_type"], resource["name"])] > 1:
+        if counts[resource["name"]] > 1:
             own_id = resource["resource_id"].rsplit("/", 1)[-1].rsplit(":", 1)[-1]
             if own_id != resource["name"]:
                 resource = ResourceRecord(**{**resource, "name": f"{resource['name']} ({own_id})"})
@@ -245,6 +344,11 @@ def _unique_names(resources: list[ResourceRecord]) -> list[ResourceRecord]:
 
 def _in_scope(resource: ResourceRecord, scope: ScopeSpec) -> bool:
     types = scope.get("resource_types") or []
+    parent_type = CHILD_OF.get(resource["resource_type"])
+    if parent_type is not None:
+        # A subnet or a rule follows its parent: in scope when its parent's type is, and
+        # dropped below with a parent that did not survive the scope.
+        return not types or parent_type in types
     if types and resource["resource_type"] not in types:
         return False
     ids = scope.get("resource_ids") or []
@@ -322,7 +426,14 @@ class AwsProvider:
             *(read(region, service, reader) for region in regions for t, service, reader in _READERS if t in wanted)
         )
 
-        resources = sort_inventory(_unique_names([resource for resource in found if _in_scope(resource, scope)]))
+        kept = [resource for resource in found if _in_scope(resource, scope)]
+        parents = {resource["resource_id"] for resource in kept if resource["resource_type"] not in CHILD_OF}
+        kept = [
+            resource
+            for resource in kept
+            if resource["resource_type"] not in CHILD_OF or resource["resource_id"].rsplit("/", 2)[0] in parents
+        ]
+        resources = sort_inventory(_unique_names(kept))
         for resource in resources:
             if resource["power_state_raw"] in AWS_STOPPED_STATE_CODES:
                 gaps.append(record_gap(GAP_TYPE_DEALLOCATED, resource["resource_id"], None, resource["power_state_raw"]))
@@ -333,62 +444,133 @@ class AwsProvider:
     # --- facts ----------------------------------------------------------------------
 
     async def collect_facts(self, request: FactRequest) -> FactResult:
-        """What each resource is, from discovery's own describe items (`aws/facts.py`).
+        """What each resource is, in three passes, one per source (`aws/facts.py`).
 
-        One archived object for the whole run, written before it is folded, so the replay
-        re-derives exactly these facts through the same fold. `DescribeInstanceTypes` is
-        the one extra call, once per region, for vCPUs and memory; a region that refuses it
-        leaves those two keys to `fact_unavailable` and nothing else.
+        * **`aws`** — discovery's own describe items, plus `DescribeInstanceTypes` once per
+          region for vCPUs and memory.
+        * **`aws_backup`** — `ListProtectedResources` per region: the last backup and its
+          vault for each EC2 instance, EBS volume and RDS database AWS Backup protects.
+        * **`compute_optimizer`** — `GetEC2InstanceRecommendations` per region. An account
+          that has not enrolled answers `OptInRequiredException`, which is an answer — no
+          finding exists — rather than a failed request.
+
+        Each pass is archived before it is folded, with only its own source's keys, so the
+        replay narrows to exactly what that response could have answered.
         """
-        from botocore.exceptions import BotoCoreError, ClientError
-
         resources = request["resources"]
         types_by_id = {resource["resource_id"]: resource["resource_type"] for resource in resources}
         resource_ids = sorted(types_by_id)
         if not resource_ids:
             return FactResult(facts=[], gaps=[])
+        regions = sorted({resource["location"] for resource in resources})
 
         instance_types: dict[str, dict[str, Any]] = {}
 
         async def describe_types(region: str, names: set[str]) -> None:
-            try:
-                ec2 = self.clients("ec2", region)
-                answer = await asyncio.to_thread(ec2.describe_instance_types, InstanceTypes=sorted(names))
-            except (ClientError, BotoCoreError) as exc:
-                logger.warning("aws facts: DescribeInstanceTypes in %s failed (%s)", region, type(exc).__name__)
-                return
-            for spec in answer.get("InstanceTypes", []):
+            answer = await self._optional_call("ec2", region, "describe_instance_types", InstanceTypes=sorted(names))
+            for spec in (answer or {}).get("InstanceTypes", []):
                 instance_types[str(spec.get("InstanceType"))] = spec
 
         needed = instance_types_needed({rid: self._raw[rid] for rid in resource_ids if rid in self._raw})
         await asyncio.gather(*(describe_types(region, names) for region, names in sorted(needed.items())))
 
-        body = {"value": fact_items(resource_ids, self._raw, instance_types)}
-        declaration = _aws_declaration(self.catalog.facts)
-        received_at = rfc3339_utc(self.clock())
-        written = await self.archive.write_facts(
-            actor_id=self.actor_id,
-            run_id=self.run_id,
-            source=AWS_FACT_SOURCE,
-            request_target="describe",
-            fact_keys=sorted({entry.key for entry in declaration.entries}),
-            received_at=received_at,
-            catalog_version=self.catalog.catalog_version,
-            resource_ids=resource_ids,
-            raw_body=body,
-        )
-        facts, fold_gaps = fold_fact_response(
-            body,
-            kind=FACT_KIND_FACTS,
-            source=AWS_FACT_SOURCE,
-            resource_ids=resource_ids,
-            declaration=declaration,
-            resource_types=types_by_id,
-            received_at=received_at,
-        )
-        result = FactResult(facts=list(facts), gaps=[*written.gaps, *fold_gaps])
+        facts: list[Any] = []
+        gaps: list[GapRecord] = []
+
+        async def fold(source: str, covered: Sequence[str], body: PlainData) -> None:
+            declaration = _source_declaration(self.catalog.facts, source)
+            if not covered or not declaration.entries:
+                return
+            received_at = rfc3339_utc(self.clock())
+            written = await self.archive.write_facts(
+                actor_id=self.actor_id,
+                run_id=self.run_id,
+                source=source,
+                request_target=source,
+                fact_keys=sorted({entry.key for entry in declaration.entries}),
+                received_at=received_at,
+                catalog_version=self.catalog.catalog_version,
+                resource_ids=list(covered),
+                raw_body=body,
+            )
+            folded, fold_gaps = fold_fact_response(
+                body,
+                kind=FACT_KIND_FACTS,
+                source=source,
+                resource_ids=list(covered),
+                declaration=declaration,
+                resource_types=types_by_id,
+                received_at=received_at,
+            )
+            facts.extend(folded)
+            gaps.extend((*written.gaps, *fold_gaps))
+
+        await fold(AWS_FACT_SOURCE, resource_ids, {"value": fact_items(resource_ids, self._raw, instance_types)})
+
+        backed_up = [rid for rid in resource_ids if types_by_id[rid] in (TYPE_INSTANCE, TYPE_VOLUME, TYPE_RDS_INSTANCE)]
+        if backed_up:
+            answers = await asyncio.gather(
+                *(self._optional_call("backup", region, "list_protected_resources", paged="Results") for region in regions)
+            )
+            body: PlainData = (
+                None if any(answer is None for answer in answers)
+                else {"value": backup_items([entry for answer in answers for entry in answer["Results"]])}
+            )
+            await fold(AWS_BACKUP_SOURCE, backed_up, body)
+
+        instances = [rid for rid in resource_ids if types_by_id[rid] == TYPE_INSTANCE]
+        if instances:
+            answers = await asyncio.gather(
+                *(
+                    self._optional_call(
+                        "compute-optimizer", region, "get_ec2_instance_recommendations",
+                        not_enrolled_is_empty=True, list_key="instanceRecommendations",
+                    )
+                    for region in regions
+                )
+            )
+            body = (
+                None if any(answer is None for answer in answers)
+                else {"value": optimizer_items([entry for answer in answers for entry in answer["instanceRecommendations"]])}
+            )
+            await fold(COMPUTE_OPTIMIZER_SOURCE, instances, body)
+
+        result = FactResult(facts=facts, gaps=gaps)
         assert_plain_data(result)
         return result
+
+    async def _optional_call(
+        self,
+        service: str,
+        region: str,
+        operation: str,
+        *,
+        paged: str | None = None,
+        not_enrolled_is_empty: bool = False,
+        list_key: str = "",
+        **kwargs: Any,
+    ) -> dict[str, Any] | None:
+        """One call's answer, or `None` when it failed — which the fold records as
+        `fact_unavailable`, never as an absence."""
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        def call() -> dict[str, Any]:
+            client = self.clients(service, region)
+            if paged:
+                return {paged: _paged(client, operation, paged)}
+            return getattr(client, operation)(**kwargs)
+
+        try:
+            return await asyncio.to_thread(call)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            if not_enrolled_is_empty and code == "OptInRequiredException":
+                return {list_key: []}
+            logger.warning("aws facts: %s.%s in %s failed (%s)", service, operation, region, code)
+            return None
+        except BotoCoreError as exc:
+            logger.warning("aws facts: %s.%s in %s failed (%s)", service, operation, region, type(exc).__name__)
+            return None
 
     # --- collect --------------------------------------------------------------------
 

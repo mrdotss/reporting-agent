@@ -91,15 +91,18 @@ Azure's.
 
 An AWS preset uses its own section catalogue (`providers.aws` in `sections.v1.json`):
 - account and region summaries;
-- EC2 instances, with their network configuration;
+- VPCs with their subnets, EC2 instances with their network configuration, Elastic IPs;
+- the security groups attached to something, with inbound and outbound rules;
 - EBS volumes and RDS databases;
 - EC2, RDS and EBS utilization, with the EC2 historical trend;
-- incidents, and coverage and verification.
+- AWS Backup coverage, incidents and Compute Optimizer rightsizing;
+- coverage and verification.
 
-Instance, volume and database details are facts read from the same describe calls as the
-inventory, archived once per run and replayed like every other fact. A run covers every
-region the account has enabled. VPC, Elastic IP, security-group, AWS Backup and Compute
-Optimizer sections are not built yet.
+Resource details are facts from three sources: the same describe calls as the inventory,
+AWS Backup's protected resources, and Compute Optimizer's EC2 findings. Each source is
+archived once per run and replayed like every other fact; an account with no AWS Backup
+plan or no Compute Optimizer enrollment gets that stated as a gap, not an error. A run
+covers every region the account has enabled.
 
 ## Run it locally
 

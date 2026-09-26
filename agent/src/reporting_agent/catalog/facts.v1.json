@@ -677,6 +677,34 @@
           "value_kind": "text",
           "source": "aws",
           "projectable": false
+        },
+        {
+          "key": "last_backup",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "backup_vault",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "rightsizing_finding",
+          "value_kind": "text",
+          "source": "compute_optimizer",
+          "projectable": false,
+          "absent_gap_type": "optimizer_not_available"
+        },
+        {
+          "key": "recommended_type",
+          "value_kind": "text",
+          "source": "compute_optimizer",
+          "projectable": false,
+          "absent_gap_type": "optimizer_not_available"
         }
       ]
     },
@@ -724,6 +752,20 @@
           "value_kind": "text",
           "source": "aws",
           "projectable": false
+        },
+        {
+          "key": "last_backup",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "backup_vault",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
         }
       ]
     },
@@ -780,6 +822,165 @@
         },
         {
           "key": "publicly_accessible",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "last_backup",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "backup_vault",
+          "value_kind": "text",
+          "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        }
+      ]
+    },
+    "AWS::EC2::VPC": {
+      "facts": [
+        {
+          "key": "cidr",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "is_default",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "vpc_state",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
+    },
+    "AWS::EC2::Subnet": {
+      "child_of": "AWS::EC2::VPC",
+      "facts": [
+        {
+          "key": "cidr",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "availability_zone",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "available_ips",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "count"
+        },
+        {
+          "key": "public_on_launch",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
+    },
+    "AWS::EC2::EIP": {
+      "facts": [
+        {
+          "key": "public_ip",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "attached_to",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "private_ip",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "domain",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        }
+      ]
+    },
+    "AWS::EC2::SecurityGroup": {
+      "facts": [
+        {
+          "key": "vpc",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "description",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "inbound_rules",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "count"
+        },
+        {
+          "key": "outbound_rules",
+          "value_kind": "numeric",
+          "source": "aws",
+          "projectable": false,
+          "unit": "count"
+        }
+      ]
+    },
+    "AWS::EC2::SecurityGroupRule": {
+      "child_of": "AWS::EC2::SecurityGroup",
+      "facts": [
+        {
+          "key": "direction",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "protocol",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "ports",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "peer",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "description",
           "value_kind": "text",
           "source": "aws",
           "projectable": false

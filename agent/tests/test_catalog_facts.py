@@ -42,8 +42,11 @@ from reporting_agent.compile.format import UNIT_PRESENTATION
 from reporting_agent.errors import CatalogUnusableError
 
 VM_TYPE = "Microsoft.Compute/virtualMachines"
-DECLARED_TYPE_COUNT = 17
-"""Fourteen until the three AWS types joined them, each with no fact yet: every metric type
+DECLARED_TYPE_COUNT = 22
+"""Seventeen until AWS's network joined: VPCs and their subnets, Elastic IPs, and security
+groups and their rules.
+
+Fourteen until the three AWS types joined them, each with no fact yet: every metric type
 is a fact type (the test below), and AWS's facts arrive with its report sections.
 
 Thirteen until `Microsoft.Advisor/recommendations` joined them.
@@ -161,6 +164,8 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
         "Microsoft.Network/virtualNetworks/subnets",
         "Microsoft.Network/networkSecurityGroups/securityRules",
         "Microsoft.Advisor/recommendations",
+        "AWS::EC2::Subnet",
+        "AWS::EC2::SecurityGroupRule",
     }
     assert fact_only_first_class == {
         "Microsoft.Network/virtualNetworks",
@@ -171,6 +176,11 @@ def test_every_metric_type_also_appears_in_the_fact_declaration() -> None:
         # is declared for its facts alone — the subnet, private address, public address and
         # NSG that section 4.2 reports live on the interface and not on the machine.
         "Microsoft.Network/networkInterfaces",
+        # AWS's network: first-class, counted, and with no CloudWatch metric the catalog
+        # collects — declared for their facts alone, as Azure's are.
+        "AWS::EC2::VPC",
+        "AWS::EC2::EIP",
+        "AWS::EC2::SecurityGroup",
     }
 
 
@@ -1055,6 +1065,10 @@ def test_the_shipped_catalogs_declare_no_child_type_yet() -> None:
         "Microsoft.Network/virtualNetworks/subnets",
         "Microsoft.Network/networkSecurityGroups/securityRules",
         "Microsoft.Advisor/recommendations",
+        # AWS's two, the same shapes as the first two: a subnet under its VPC, a rule under
+        # its security group.
+        "AWS::EC2::Subnet",
+        "AWS::EC2::SecurityGroupRule",
     )
 
 
