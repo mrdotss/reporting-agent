@@ -94,6 +94,11 @@ class VmSize:
     sku: str
     region: str
     resource_name: str
+    provider: str = "azure"
+    engine: str = ""
+    """AWS RDS only: the database engine, as the snapshot's `engine` fact records it."""
+    multi_az: str = ""
+    """AWS RDS only: `yes` or `no`, the snapshot's `multi_az` fact."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -292,6 +297,13 @@ def live_statistic_facts(
             )
 
 
+_AWS_PRICED_TYPES: Final[Mapping[str, str]] = {
+    "AWS::EC2::Instance": "instance type",
+    "AWS::RDS::DBInstance": "database class",
+}
+"""The AWS types Ask prices, and how a size fact names each one's size."""
+
+
 def snapshot_vm_sizes(
     snapshot: Mapping[str, Any],
     ref: Mapping[str, str],
@@ -307,7 +319,9 @@ def snapshot_vm_sizes(
     for resource in resources:
         if not isinstance(resource, Mapping):
             continue
-        if str(resource.get("resource_type", "")).lower() != VIRTUAL_MACHINE_TYPE:
+        resource_type = str(resource.get("resource_type", ""))
+        aws = resource_type in _AWS_PRICED_TYPES
+        if resource_type.lower() != VIRTUAL_MACHINE_TYPE and not aws:
             continue
         sku = resource.get("sku")
         sku_name = sku.get("name") if isinstance(sku, Mapping) else None
@@ -315,9 +329,23 @@ def snapshot_vm_sizes(
         name = resource.get("name")
         if not (isinstance(sku_name, str) and isinstance(region, str) and isinstance(name, str)):
             continue
-        sizes.append(VmSize(sku=sku_name, region=region, resource_name=name))
+        resource_facts = {
+            str(fact.get("key")): str(fact.get("value"))
+            for fact in resource.get("facts") or []
+            if isinstance(fact, Mapping)
+        }
+        sizes.append(
+            VmSize(
+                sku=sku_name,
+                region=region,
+                resource_name=name,
+                provider="aws" if aws else "azure",
+                engine=resource_facts.get("engine", ""),
+                multi_az=resource_facts.get("multi_az", ""),
+            )
+        )
         size_ref = {**ref, "snapshot_path": f"resources › {name} › sku"}
-        facts.append(Fact(source, f"{name} · VM size", sku_name, size_ref))
+        facts.append(Fact(source, f"{name} · {_AWS_PRICED_TYPES.get(resource_type, 'VM size')}", sku_name, size_ref))
         vcpus = sku.get("vcpus_available") if isinstance(sku, Mapping) else None
         if isinstance(vcpus, str) and vcpus.isdigit():
             facts.append(

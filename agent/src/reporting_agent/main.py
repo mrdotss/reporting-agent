@@ -1356,6 +1356,7 @@ def _chat_dependencies() -> Any:
     from reporting_agent.narrate.chat import CHAT_MODEL_CHOICES, bedrock_chat_model
     from reporting_agent.narrate.intent import bedrock_intent_writer
     from reporting_agent.narrate.skills import bedrock_skill_router
+    from reporting_agent.pricing.aws_prices import AwsListPrices, CombinedPrices
     from reporting_agent.pricing.azure_retail import AzureRetailPrices
     from reporting_agent.report_pipeline import _s3_store
     from reporting_agent.skills.fetch import fetch_doc
@@ -1368,7 +1369,11 @@ def _chat_dependencies() -> Any:
         region=CONFIG.aws_region,
     )
     if _CHAT_PRICES is None:
-        _CHAT_PRICES = AzureRetailPrices(ca_bundle=CONFIG.ca_bundle)
+        # Each size to its own cloud's list: Azure Retail Prices, and the AWS Price List
+        # through the runtime's own role (list prices are public, never the customer's).
+        _CHAT_PRICES = CombinedPrices(
+            azure=AzureRetailPrices(ca_bundle=CONFIG.ca_bundle), aws=AwsListPrices()
+        )
     return ChatDependencies(
         # The report pipeline's factory, so the store-construction guard still counts
         # one tested seam per store rather than a fourth untested one.

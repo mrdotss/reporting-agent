@@ -62,6 +62,12 @@ Fetch = Callable[[str], Mapping[str, Any]]
 class VmPricePair:
     sku: str
     region: str
+    provider: str = "azure"
+    """`azure` or `aws`: which cloud's price list answers this pair (`pricing/aws_prices.py`)."""
+    engine: str = ""
+    """AWS RDS only: the Price List's engine name, `PostgreSQL`."""
+    deployment: str = ""
+    """AWS RDS only: `Single-AZ` or `Multi-AZ`."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +79,8 @@ class RetailPrice:
     unit_of_measure: str
     currency: str
     effective_start: str
+    source: str = "Azure Retail Prices"
+    """The price list the rate came from, as a citation names it."""
 
 
 @dataclass(frozen=True, slots=True)
