@@ -228,3 +228,16 @@ describe("every field is load-bearing", () => {
     )
   })
 })
+
+describe("AWS regions", () => {
+  test("no regions keeps the key a run had before regions could be chosen", () => {
+    expect(deriveDedupeKey({ ...BASE, regions: [] })).toBe(deriveDedupeKey(BASE))
+  })
+
+  test("different regions are different runs, in any order", () => {
+    const two = deriveDedupeKey({ ...BASE, regions: ["us-east-1", "ap-southeast-3"] })
+    expect(two).not.toBe(deriveDedupeKey(BASE))
+    expect(two).toBe(deriveDedupeKey({ ...BASE, regions: ["ap-southeast-3", "us-east-1"] }))
+    expect(two).not.toBe(deriveDedupeKey({ ...BASE, regions: ["us-east-1"] }))
+  })
+})

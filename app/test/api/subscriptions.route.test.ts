@@ -99,6 +99,7 @@ const NOW = new Date("2026-07-15T09:30:00.000Z")
 /** What the store returns and the only shape allowed to cross to a client. */
 const VIEW: ConnectedSubscriptionView = {
   provider: "azure",
+  regions: [],
   id: "sub-01HZX9",
   displayName: "Northwind production",
   maskedSubscriptionId: "************************************3301",
@@ -400,7 +401,8 @@ describe("Requirements 10.2, 12.5, 12.14 — POST /api/subscriptions", () => {
       // Reviewed and admitted: the source this connector reads, one of three fixed words.
 
       "provider",
-
+      // Reviewed and admitted: an AWS account's enabled region codes; empty here.
+      "regions",
       "scopeVerified",
       "secretExpiresAt",
       "status",

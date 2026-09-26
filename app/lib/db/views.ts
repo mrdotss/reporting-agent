@@ -118,6 +118,12 @@ export type ConnectedSubscriptionView = {
   status: SubscriptionStatus
   /** The source this connector reads; a run pairs it only with presets for the same one. */
   provider: ConnectedSubscription["provider"]
+  /**
+   * AWS only: the account's enabled regions, as its last passing Verify listed them — the
+   * run form's region choices. Empty for Azure. Region codes name no resource and carry no
+   * account id, so they are as browser-safe as the masked id beside them.
+   */
+  regions: readonly string[]
 }
 
 /**
@@ -147,6 +153,7 @@ export function toConnectedSubscriptionView(
     metricsHistorySince: row.metricsHistorySince?.toISOString() ?? null,
     status: row.status,
     provider: row.provider,
+    regions: row.regions ?? [],
   }
 }
 

@@ -275,7 +275,8 @@ describe("createConnectedSubscription", () => {
       // Reviewed and admitted: the source this connector reads, one of three fixed words.
 
       "provider",
-
+      // Reviewed and admitted: an AWS account's enabled region codes; empty for Azure.
+      "regions",
       "scopeVerified",
       "secretExpiresAt",
       "status",

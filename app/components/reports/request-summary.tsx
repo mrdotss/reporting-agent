@@ -19,6 +19,7 @@ export function RequestSummary({
   disabled,
   submitting,
   blockedReason,
+  regions,
 }: {
   connectionId: string
   templateId: string
@@ -27,6 +28,8 @@ export function RequestSummary({
   submitting: boolean
   /** Why the control is disabled, when it is. */
   blockedReason?: string
+  /** The AWS regions the run covers, as a line; absent when the connector offers no choice. */
+  regions?: string
 }) {
   const workspace = useWorkspace()
   const [summary, setSummary] = useState<Summary | null>(null),
@@ -83,6 +86,7 @@ export function RequestSummary({
             ["Profile version", String(summary.version)],
             ["Period", `${summary.periodStart} – ${summary.periodEnd}`],
             ["Timezone", summary.timezone],
+            ...(regions === undefined ? [] : [["Regions", regions]]),
             ["Theme", summary.theme],
             [
               "Sections",

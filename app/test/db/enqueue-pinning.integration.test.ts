@@ -753,3 +753,65 @@ describe.skipIf(!db.enabled)("a connector and a preset must name the same source
     expect(await runCount()).toBe(1)
   })
 })
+
+describe.skipIf(!db.enabled)("the AWS regions a run covers", () => {
+  async function makeAws(regions: readonly string[]): Promise<void> {
+    await db.query(
+      `UPDATE connected_subscriptions
+          SET provider = 'aws', tenant_id = NULL, client_id = NULL, client_secret_enc = NULL,
+              secret_expires_at = NULL,
+              role_arn = 'arn:aws:iam::123456789012:role/reporting-agent/ReportingAgentReader',
+              external_id = 'rpt-00000000000000000000000000000001',
+              regions = $2
+        WHERE id = $1`,
+      [subscriptionId, [...regions]]
+    )
+  }
+
+  test("chosen regions are recorded sorted on the scope, and change the dedupe key", async () => {
+    await makeAws(["ap-southeast-1", "ap-southeast-3", "us-east-1"])
+    const templateId = await insertTemplate(ownerId, [{ ...BASE, provider: "aws" }])
+    const request = { connectedSubscriptionId: subscriptionId, templateId, timezone: JAKARTA }
+
+    const all = await enqueueRun(ownerId, request)
+    const two = await enqueueRun(ownerId, { ...request, regions: ["us-east-1", "ap-southeast-3"] })
+
+    expect("regions" in all.run.scope).toBe(false)
+    expect(two.run.scope.regions).toEqual(["ap-southeast-3", "us-east-1"])
+    expect(two.run.id).not.toBe(all.run.id)
+    expect(await runCount()).toBe(2)
+  })
+
+  test("a region the account's Verify did not record is refused, and nothing is inserted", async () => {
+    await makeAws(["us-east-1"])
+    const templateId = await insertTemplate(ownerId, [{ ...BASE, provider: "aws" }])
+
+    const rejection = await rejectionFrom(
+      enqueueRun(ownerId, {
+        connectedSubscriptionId: subscriptionId,
+        templateId,
+        timezone: JAKARTA,
+        regions: ["us-east-1", "eu-west-1"],
+      })
+    )
+
+    expect(rejection).toEqual({ kind: "regions_unavailable", regions: ["eu-west-1"] })
+    expect(await runCount()).toBe(0)
+  })
+
+  test("an Azure connection has no regions to choose", async () => {
+    const templateId = await insertTemplate(ownerId, [BASE])
+
+    const rejection = await rejectionFrom(
+      enqueueRun(ownerId, {
+        connectedSubscriptionId: subscriptionId,
+        templateId,
+        timezone: JAKARTA,
+        regions: ["us-east-1"],
+      })
+    )
+
+    expect(rejection).toEqual({ kind: "regions_unavailable", regions: ["us-east-1"] })
+    expect(await runCount()).toBe(0)
+  })
+})

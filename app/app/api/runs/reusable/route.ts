@@ -3,6 +3,7 @@ import { NextResponse } from "next/server"
 import { findReusableSnapshot } from "@/lib/actions/runs"
 import { badRequest, unauthorized } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
+import { isAwsRegion } from "@/lib/runs/regions"
 
 /**
  * `GET /api/runs/reusable` — is there a snapshot this submission could reuse?
@@ -53,10 +54,19 @@ export async function GET(request: Request): Promise<Response> {
     )
   }
 
+  // AWS only: the regions the form chose, comma-separated; absent is every region. A
+  // value that is not a region code is dropped rather than matched, so it can only make
+  // the offer disappear, never widen it.
+  const regions = (url.searchParams.get("regions") ?? "")
+    .split(",")
+    .map((region) => region.trim())
+    .filter(isAwsRegion)
+
   const found = await findReusableSnapshot(user.id, {
     connectedSubscriptionId,
     templateId,
     timezone,
+    regions,
   })
 
   if (found === null) {

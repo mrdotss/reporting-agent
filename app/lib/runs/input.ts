@@ -1,6 +1,8 @@
 import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
 
+import { MAX_RUN_REGIONS, isAwsRegion, normalizeRegions } from "@/lib/runs/regions"
+
 /**
  * The named boundary schemas for the run routes (Requirements 7.7, 37.1).
  *
@@ -232,6 +234,17 @@ export const runCreateInputSchema = z
       .array(incidentSchema)
       .max(MAX_INCIDENTS, { error: `At most ${MAX_INCIDENTS} incidents can be added to one report.` })
       .optional(),
+
+    /**
+     * AWS only: the regions this run covers. Absent or empty is every region the account
+     * has enabled; the enqueue refuses a region the account's Verify did not record.
+     */
+    regions: z
+      .array(
+        z.string().trim().refine(isAwsRegion, { error: "Each region must be an AWS region code, like us-east-1." })
+      )
+      .max(MAX_RUN_REGIONS, { error: `Choose at most ${MAX_RUN_REGIONS} regions.` })
+      .optional(),
   })
   .strict()
 
@@ -289,7 +302,10 @@ export function buildRunCreateBody(fields: {
   readonly reuseSnapshotRunId?: string | null
   /** Incidents this period; blank entries are dropped, and none at all sends nothing. */
   readonly incidents?: readonly Incident[]
+  /** AWS only: the chosen regions; none sends nothing, which is every enabled region. */
+  readonly regions?: readonly string[]
 }): Record<string, unknown> {
+  const regions = normalizeRegions(fields.regions)
   const incidents = (fields.incidents ?? [])
     .map((incident) => ({
       case: incident.case.trim(),
@@ -306,6 +322,7 @@ export function buildRunCreateBody(fields: {
       ? { reuseSnapshotRunId: fields.reuseSnapshotRunId }
       : {}),
     ...(incidents.length > 0 ? { incidents } : {}),
+    ...(regions.length > 0 ? { regions } : {}),
   }
 
   if (fields.frontMatter === null) return base

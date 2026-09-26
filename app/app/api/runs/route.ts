@@ -133,6 +133,12 @@ export async function POST(request: Request): Promise<Response> {
           // from different sources cannot make one report. The fix is the other select.
           return unprocessable(thrown.message, "PROVIDER_MISMATCH")
 
+        case "regions_unavailable":
+          // 422: a region the account has not enabled, or regions on an Azure
+          // connection. The message names the regions; the fix is the checkboxes, or
+          // verifying the connection again to refresh its list.
+          return unprocessable(thrown.message, "REGIONS_UNAVAILABLE")
+
         case "front_matter_values_missing":
           // 422, and the same reasoning as `template_unversioned`: the request is
           // well-formed, the answer is that this profile cannot run yet, and the

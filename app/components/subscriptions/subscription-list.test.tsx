@@ -55,6 +55,7 @@ function view(
 ): ConnectedSubscriptionView {
   return {
     provider: "azure",
+    regions: [],
     id: "row-0001",
     displayName: "Northwind Traders",
     maskedSubscriptionId: MASKED_ID,
