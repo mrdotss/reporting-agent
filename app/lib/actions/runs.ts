@@ -25,6 +25,7 @@ import {
   type PeriodSpec,
 } from "@/lib/templates/period"
 import { findReusableSnapshotRun } from "@/lib/runs/state"
+import { normalizeRegions, unknownRegions, withRegions } from "@/lib/runs/regions"
 import { unionScope } from "@/lib/templates/scope-union"
 import { readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 
@@ -111,6 +112,11 @@ export type EnqueueRejection =
    * finished in the wizard needs step 7, not a different template.
    */
   | { readonly kind: "template_unversioned" }
+  /**
+   * AWS only — a chosen region the account's own Verify did not record as enabled, or a
+   * region chosen for an Azure connection, which has none to choose.
+   */
+  | { readonly kind: "regions_unavailable"; readonly regions: readonly string[] }
   | {
       readonly kind: "provider_mismatch"
       readonly connectorProvider: string
@@ -428,6 +434,8 @@ export async function findReusableSnapshot(
     readonly connectedSubscriptionId: string
     readonly templateId: string
     readonly timezone: string
+    /** AWS only: the regions the form chose; a reuse must have covered exactly these. */
+    readonly regions?: readonly string[]
   },
   now: Date = new Date()
 ): Promise<ReportRun | null> {
@@ -442,7 +450,9 @@ export async function findReusableSnapshot(
   const period = resolvePeriod(definition.period as PeriodSpec, now, input.timezone)
   if (!period.ok) return null
 
-  const scope = unionScope(definition)
+  // With the regions exactly as `enqueueRun` records them, so a snapshot collected over
+  // other regions is never offered: the stored scope has to match to the key.
+  const scope = withRegions(unionScope(definition), normalizeRegions(input.regions))
   const found = await findReusableSnapshotRun(userId, {
     connectedSubscriptionId: input.connectedSubscriptionId,
     periodStart: period.start,
@@ -497,6 +507,27 @@ export async function enqueueRun(
       "That subscription is not ready to run. Read at subscription scope must " +
         "be proved, and its client secret must be one Azure still accepts."
     )
+  }
+
+  // 1b — the regions, when the form narrowed them. Checked against what Verify recorded
+  //      rather than trusted: a region the account has not enabled would collect nothing
+  //      and deliver a report about an empty region as if it were the estate.
+  const regions = normalizeRegions(input.regions)
+  if (regions.length > 0) {
+    if (subscription.provider !== "aws") {
+      throw new EnqueueRejectedError(
+        { kind: "regions_unavailable", regions },
+        "Regions can be chosen for an AWS account only."
+      )
+    }
+    const unknown = unknownRegions(regions, subscription.regions ?? [])
+    if (unknown.length > 0) {
+      throw new EnqueueRejectedError(
+        { kind: "regions_unavailable", regions: unknown },
+        `Not enabled for this account: ${unknown.join(", ")}. If a region was enabled ` +
+          "since, verify the connection again to refresh its list."
+      )
+    }
   }
 
   // 2 — the blocker, from the one module that defines "expired" (Req 13.4, 37.9).
@@ -638,11 +669,14 @@ export async function enqueueRun(
   //     and spreading here is what keeps the derived value unable to be mutated
   //     by anything downstream of this line.
   const derived = unionScope(definition)
-  const scope: RunScope = {
-    resource_types: [...derived.resource_types],
-    resource_groups: [...derived.resource_groups],
-    tag_filters: { ...derived.tag_filters },
-  }
+  const scope: RunScope = withRegions(
+    {
+      resource_types: [...derived.resource_types],
+      resource_groups: [...derived.resource_groups],
+      tag_filters: { ...derived.tag_filters },
+    },
+    regions
+  )
 
   // 6 — the revision row, derived rather than typed at v3 and above.
   //
@@ -695,6 +729,7 @@ export async function enqueueRun(
     timezone: input.timezone,
     resourceTypes: scope.resource_types,
     resourceGroups: scope.resource_groups,
+    regions,
     enqueuedAtMs: now.getTime(),
   })
 

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { IncidentsFieldset } from "@/components/reports/incidents-fieldset"
+import { RegionsFieldset } from "@/components/reports/regions-fieldset"
 import { Identifier } from "@/components/identifier"
 import {
   Select,
@@ -185,6 +186,21 @@ export function RunForm({
   )
 
   const [templateId, setTemplateId] = useState(runnable[0]?.id ?? "")
+
+  /**
+   * The AWS regions this run covers: `null` for every enabled region, otherwise the ones
+   * ticked. Offered only when the connector has more than one region to choose between,
+   * and reset whenever the connector changes — another account's regions are not a choice.
+   */
+  const enabledRegions =
+    selectedProvider === "aws"
+      ? (subscriptions.find((entry) => entry.id === connectedSubscriptionId)?.regions ?? [])
+      : []
+  const offersRegions = enabledRegions.length > 1
+  const [pickedRegions, setPickedRegions] = useState<string[] | null>(null)
+  const regions = offersRegions && pickedRegions !== null ? pickedRegions : []
+  const regionsKey = regions.join(",")
+  const regionsIncomplete = offersRegions && pickedRegions !== null && pickedRegions.length === 0
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -256,6 +272,9 @@ export function RunForm({
       templateId,
       timezone,
     })
+    // A snapshot of every region is not a snapshot of two, so the offer is asked for the
+    // same choice the submission will carry.
+    if (regionsKey !== "") query.set("regions", regionsKey)
     fetch(`/api/runs/reusable?${query}`, { signal: controller.signal })
       .then((response) => (response.ok ? response.json() : { candidate: null }))
       .then((body: { candidate: ReusableCandidate | null }) => {
@@ -272,7 +291,7 @@ export function RunForm({
       })
 
     return () => controller.abort()
-  }, [connectedSubscriptionId, templateId, timezone])
+  }, [connectedSubscriptionId, regionsKey, templateId, timezone])
 
   const selectedTemplate = templates.find(
     (template) => template.id === templateId
@@ -333,6 +352,7 @@ export function RunForm({
               reuseSnapshotRunId:
                 reuse && reusable ? reusable.runId : null,
               incidents: selectedTemplate?.hasIncidentReport ? incidents : [],
+              regions,
             })}
           ),
         })
@@ -363,6 +383,7 @@ export function RunForm({
     [
       connectedSubscriptionId,
       incidents,
+      regions,
       requiresFrontMatter,
       reusable,
       reuse,
@@ -398,7 +419,8 @@ export function RunForm({
     // with a message the browser deliberately does not show (`internalError()` is
     // fixed text), so the refusal has to happen here, where it can say what is
     // missing.
-    (!requiresFrontMatter || frontMatterComplete)
+    (!requiresFrontMatter || frontMatterComplete) &&
+    !regionsIncomplete
 
   /**
    * Why the submit is refused, in one sentence, or `undefined` when it is not.
@@ -414,7 +436,9 @@ export function RunForm({
         ? (messageText("ui.run_form.no_template_versions_hint", "en") ?? undefined)
         : requiresFrontMatter && !frontMatterComplete
           ? (messageText("ui.run_form.front_matter_incomplete", "en") ?? undefined)
-          : undefined
+          : regionsIncomplete
+            ? (messageText("ui.run_form.regions_none_picked", "en") ?? undefined)
+            : undefined
 
   // Resolved once: it does not vary per option, and the literal guard wants message ids
   // reaching `messageText` on one line rather than wrapped across four inside a map.
@@ -442,6 +466,7 @@ export function RunForm({
           onValueChange={(value) => {
             if (!value) return
             setConnectedSubscriptionId(value)
+            setPickedRegions(null)
             // A preset for another source is no longer a valid choice; move to the
             // first runnable preset for this connector's source instead.
             const nextProvider = providerOf(value)
@@ -673,6 +698,15 @@ export function RunForm({
         </fieldset>
       )}
 
+      {/* Only for an AWS connector with more than one enabled region to choose between. */}
+      {offersRegions ? (
+        <RegionsFieldset
+          enabled={enabledRegions}
+          picked={pickedRegions}
+          onChange={setPickedRegions}
+        />
+      ) : null}
+
       {/* Only for a preset whose report has an Incident Report table to print into. */}
       {selectedTemplate?.hasIncidentReport ? (
         <IncidentsFieldset incidents={incidents} onChange={setIncidents} />
@@ -765,7 +799,7 @@ export function RunForm({
         {messageText("ui.run_form.duration_hint", "en")}
       </p>
       </div>
-      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason}/>}
+      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason} regions={offersRegions ? (pickedRegions === null ? (messageText("ui.request_summary.regions_all", "en", { count: String(enabledRegions.length) }) ?? undefined) : regions.join(", ")) : undefined}/>}
     </form>
   )
 }

@@ -222,6 +222,17 @@ describe("incidents this period", () => {
     ).toBe(false)
   })
 
+  test("regions: valid codes only, sent sorted and only when chosen", () => {
+    expect(runCreateInputSchema.safeParse({ ...BODY, regions: ["us-east-1"] }).success).toBe(true)
+    expect(runCreateInputSchema.safeParse({ ...BODY, regions: ["us-east-1; drop"] }).success).toBe(false)
+    const fields = { connectedSubscriptionId: "sub", templateId: "tpl", timezone: "Asia/Jakarta", frontMatter: null }
+    expect(buildRunCreateBody({ ...fields, regions: ["us-east-1", "ap-southeast-3", "us-east-1"] })["regions"]).toEqual([
+      "ap-southeast-3",
+      "us-east-1",
+    ])
+    expect("regions" in buildRunCreateBody({ ...fields, regions: [] })).toBe(false)
+  })
+
   test("reach the runtime in the table's column order: Case, Date, Solution, Description", () => {
     expect(incidentCells(INCIDENT)).toEqual(["Disk full", "12 Aug 2026", "Cleared logs", "/var filled"])
   })

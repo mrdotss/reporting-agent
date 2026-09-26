@@ -1504,6 +1504,38 @@ export const MESSAGE_CATALOG = {
     en: "Optional. Each one prints in the report's Incident Report table, ahead of its blank rows — which stay fillable in the Word file and both PDFs.",
     id: "Opsional. Setiap insiden dicetak di tabel Laporan Insiden, sebelum baris kosongnya — yang tetap dapat diisi di file Word dan kedua PDF.",
   },
+  "ui.run_form.regions_heading": {
+    en: "Regions",
+    id: "Region",
+  },
+  "ui.run_form.regions_all": {
+    en: "All enabled regions",
+    id: "Semua region yang aktif",
+  },
+  "ui.run_form.regions_all_detail": {
+    en: "The {count} regions this account's last Verify listed as enabled.",
+    id: "{count} region yang tercatat aktif pada Verifikasi terakhir akun ini.",
+  },
+  "ui.run_form.regions_some": {
+    en: "Only the regions I choose",
+    id: "Hanya region yang saya pilih",
+  },
+  "ui.run_form.regions_some_detail": {
+    en: "The report covers only the resources in these regions.",
+    id: "Laporan hanya mencakup sumber daya di region ini.",
+  },
+  "ui.run_form.regions_picked": {
+    en: "{picked} of {total} regions chosen.",
+    id: "{picked} dari {total} region dipilih.",
+  },
+  "ui.run_form.regions_none_picked": {
+    en: "Choose at least one region, or cover all enabled regions.",
+    id: "Pilih minimal satu region, atau cakup semua region yang aktif.",
+  },
+  "ui.request_summary.regions_all": {
+    en: "All enabled ({count})",
+    id: "Semua yang aktif ({count})",
+  },
   "ui.run_form.incident_case_label": {
     en: "Case",
     id: "Kasus",

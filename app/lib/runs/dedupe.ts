@@ -70,6 +70,8 @@ export type DedupeKeyInput = {
   readonly timezone: string
   readonly resourceTypes: readonly string[]
   readonly resourceGroups: readonly string[]
+  /** AWS only: the chosen regions. Empty adds nothing, so every existing key is unchanged. */
+  readonly regions?: readonly string[]
   /** The enqueue instant, in epoch milliseconds. */
   readonly enqueuedAtMs: number
 }
@@ -113,6 +115,11 @@ export function deriveDedupeKey(input: DedupeKeyInput): string {
     [...input.resourceGroups].sort().join(","),
     String(dedupeBucketSeconds(input.enqueuedAtMs)),
   ]
+  // Appended rather than slotted in, and only when set: a run over every region keeps
+  // exactly the key it had before regions could be chosen, while two runs of one period
+  // over different regions stay two runs.
+  const regions = [...(input.regions ?? [])].sort()
+  if (regions.length > 0) fields.push(`regions=${regions.join(",")}`)
 
   return createHash("sha256")
     .update(fields.join(UNIT_SEPARATOR), "utf8")

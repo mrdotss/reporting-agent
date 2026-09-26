@@ -109,9 +109,12 @@ const V2 = template({
 
 /** The captured **submission** bodies, in order. */
 let bodies: Record<string, unknown>[] = []
+/** The reuse lookups asked, as URLs, in order. */
+let lookups: string[] = []
 
 beforeEach(() => {
   bodies = []
+  lookups = []
 
   vi.stubGlobal(
     "fetch",
@@ -121,6 +124,7 @@ beforeEach(() => {
       // here rather than recorded: it carries no body, and counting it among `bodies`
       // made every assertion about what the form *submits* off by one.
       if (String(url).startsWith("/api/runs/reusable")) {
+        lookups.push(String(url))
         return {
           ok: true,
           json: async () => ({ candidate: null }),
@@ -558,5 +562,86 @@ describe("RunForm — incidents this period", () => {
     fireEvent.click(submitButton())
     await waitFor(() => expect(bodies).toHaveLength(1))
     expect("incidents" in bodies[0]!).toBe(false)
+  })
+})
+
+describe("RunForm — the regions an AWS run covers", () => {
+  const AWS_PRESET = template({ id: "tmpl-aws", name: "AWS monthly", provider: "aws" })
+  const ENABLED = ["ap-southeast-1", "ap-southeast-3", "us-east-1"]
+
+  function renderAws(regions: readonly string[] = ENABLED) {
+    return render(
+      <RunForm
+        subscriptions={[
+          subscription({ id: "sub-aws", displayName: "AWS production", provider: "aws", regions }),
+          subscription({ id: "sub-azure", displayName: "Contoso production", regions: [] }),
+        ]}
+        templates={[AWS_PRESET, template({ provider: "azure" })]}
+        nowIso={NOW_ISO}
+      />
+    )
+  }
+
+  test("every enabled region is the default, and sends no regions key", async () => {
+    renderAws()
+
+    expect(screen.getByRole("radio", { name: /All enabled regions/ })).toBeChecked()
+    expect(screen.getByText(/The 3 regions this account/)).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox")).toBeNull()
+
+    fireEvent.click(submitButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect("regions" in bodies[0]!).toBe(false)
+  })
+
+  test("the chosen regions travel sorted, and the reuse lookup asks for the same choice", async () => {
+    renderAws()
+
+    fireEvent.click(screen.getByRole("radio", { name: /Only the regions I choose/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /us-east-1/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /ap-southeast-3\s*·\s*Jakarta/ }))
+    expect(screen.getByText("2 of 3 regions chosen.")).toBeInTheDocument()
+
+    await waitFor(() =>
+      expect(lookups.at(-1)).toContain(`regions=${encodeURIComponent("ap-southeast-3,us-east-1")}`)
+    )
+
+    fireEvent.click(submitButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect(bodies[0]!["regions"]).toEqual(["ap-southeast-3", "us-east-1"])
+  })
+
+  test("choosing without ticking any is refused here, and says why", () => {
+    renderAws()
+
+    fireEvent.click(screen.getByRole("radio", { name: /Only the regions I choose/ }))
+
+    expect(submitButton()).toBeDisabled()
+    expect(
+      screen.getAllByText("Choose at least one region, or cover all enabled regions.").length
+    ).toBeGreaterThan(0)
+    fireEvent.click(submitButton())
+    expect(bodies).toHaveLength(0)
+  })
+
+  test("going back to every region sends none, even with regions ticked", async () => {
+    renderAws()
+
+    fireEvent.click(screen.getByRole("radio", { name: /Only the regions I choose/ }))
+    fireEvent.click(screen.getByRole("checkbox", { name: /us-east-1/ }))
+    fireEvent.click(screen.getByRole("radio", { name: /All enabled regions/ }))
+
+    fireEvent.click(submitButton())
+    await waitFor(() => expect(bodies).toHaveLength(1))
+    expect("regions" in bodies[0]!).toBe(false)
+  })
+
+  test("offered only for an AWS connector with more than one region", () => {
+    renderAws(["us-east-1"])
+    expect(screen.queryByText("Regions")).toBeNull()
+    cleanup()
+
+    renderForm([V1])
+    expect(screen.queryByText("Regions")).toBeNull()
   })
 })

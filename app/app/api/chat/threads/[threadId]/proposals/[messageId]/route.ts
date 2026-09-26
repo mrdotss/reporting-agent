@@ -137,6 +137,8 @@ export async function POST(request: Request, context: ProposalRouteContext): Pro
           return unprocessable(thrown.message, rejection.code)
         case "provider_mismatch":
           return unprocessable(thrown.message, "PROVIDER_MISMATCH")
+        case "regions_unavailable":
+          return unprocessable(thrown.message, "REGIONS_UNAVAILABLE")
         case "front_matter_values_missing":
           return unprocessable(thrown.message, "FRONT_MATTER_VALUES_MISSING")
       }

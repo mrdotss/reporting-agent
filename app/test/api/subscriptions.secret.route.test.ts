@@ -128,6 +128,7 @@ const IDENTITY: SubscriptionIdentity = {
 /** What the store returns, and the only shape allowed to cross to a client. */
 const VIEW: ConnectedSubscriptionView = {
   provider: "azure",
+  regions: [],
   id: SUBSCRIPTION_ROW_ID,
   displayName: "Northwind production",
   maskedSubscriptionId: "************************************3301",
@@ -403,7 +404,8 @@ describe("Requirements 13.7, 13.8 — the identity, the preflight, then the writ
       // Reviewed and admitted: the source this connector reads, one of three fixed words.
 
       "provider",
-
+      // Reviewed and admitted: an AWS account's enabled region codes; empty here.
+      "regions",
       "scopeVerified",
       "secretExpiresAt",
       "status",

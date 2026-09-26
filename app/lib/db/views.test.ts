@@ -70,7 +70,7 @@ const WORKSPACE_ID = "fixture-workspace-44444444-4444-4444-4444-444444444444"
  * the requirement is therefore unsatisfiable for reasons that have nothing to do
  * with a leak.
  *
- * So the masked portion here uses only `g h j q w Ю`, which appear in **no** key
+ * So the masked portion here uses only `Ф h Ж q Щ Ю`, which appear in **no** key
  * name and in none of the other fixture values, and the revealed final four are
  * digits. The forbidden set is then genuinely disjoint from everything the
  * document may legitimately contain, the assertion can run over the entire
@@ -78,7 +78,7 @@ const WORKSPACE_ID = "fixture-workspace-44444444-4444-4444-4444-444444444444"
  * through `maskedSubscriptionId`. `REALISTIC_SUBSCRIPTION_ID` below covers the
  * GUID case separately.
  */
-const SUBSCRIPTION_ID = "ghЖqЩЮghЖqЩЮghЖqЩЮghЖqЩЮghЖqЩЮgh6789"
+const SUBSCRIPTION_ID = "ФhЖqЩЮФhЖqЩЮФhЖqЩЮФhЖqЩЮФhЖqЩЮФh6789"
 
 /** A real Azure subscription GUID: 36 characters, 32 of them masked. */
 const REALISTIC_SUBSCRIPTION_ID = "3f2504e0-4f89-11d3-9a0c-0305e82c3301"
@@ -113,7 +113,8 @@ function connectedSubscriptionRow(
     status: "active",
     logAnalyticsWorkspaceId: WORKSPACE_ID,
     // AWS-only columns. The ARN carries the full account id and the external id guards
-    // the customer's trust policy, so neither is projected; `regions` is not needed there.
+    // the customer's trust policy, so neither is projected. `regions` is: the run form's
+    // region choices.
     roleArn: null,
     externalId: null,
     regions: null,
@@ -145,7 +146,9 @@ const CONNECTED_SUBSCRIPTION_VIEW_KEYS = [
   // No secret, and it names no resource; the run form pairs connectors and presets on it.
 
   "provider",
-
+  // Reviewed and admitted: an AWS account's enabled region codes (empty for Azure). No
+  // secret, no account id, and a region names no resource; the run form offers them.
+  "regions",
   "scopeVerified",
   "secretExpiresAt",
   "status",
@@ -318,7 +321,25 @@ describe("toConnectedSubscriptionView — Requirements 10.1, 10.2, 10.4", () => 
       status: "active",
 
       provider: "azure",
+      // An Azure row has no regions column value; the view says so with an empty list.
+      regions: [],
     })
+  })
+
+  test("carries an AWS account's enabled regions and never its role ARN or external id", () => {
+    const view = toConnectedSubscriptionView(
+      connectedSubscriptionRow({
+        provider: "aws",
+        roleArn: "arn:aws:iam::123456789012:role/reporting-agent/ReportingAgentReader",
+        externalId: "rpt-0123456789abcdef0123456789abcdef",
+        regions: ["ap-southeast-1", "us-east-1"],
+      })
+    )
+
+    expect(view.regions).toEqual(["ap-southeast-1", "us-east-1"])
+    const serialized = JSON.stringify(view)
+    expect(serialized).not.toContain("123456789012")
+    expect(serialized).not.toContain("rpt-0123456789abcdef")
   })
 
   test("serializes metricsHistorySince as an ISO 8601 instant, or null", () => {

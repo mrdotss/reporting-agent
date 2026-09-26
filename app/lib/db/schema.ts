@@ -532,6 +532,8 @@ export type RunScope = {
   tag_filters: Record<string, string>
   /** An explicit machine list — set by a live metrics pull, never by a report run. */
   resource_ids?: string[]
+  /** AWS only: the regions a run covers, set only when the run form narrowed them. */
+  regions?: string[]
 }
 
 /**
