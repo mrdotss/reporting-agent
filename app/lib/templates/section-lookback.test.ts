@@ -1,6 +1,9 @@
 import { describe, expect, test } from "vitest"
 
-import { collectDefinitionIssues } from "@/lib/templates/definition"
+import {
+  collectDefinitionIssues,
+  LOOKBACK_SECTION_TYPES,
+} from "@/lib/templates/definition"
 
 /**
  * `lookback` on a v3 section (task 7.3, Req 21.5).
@@ -155,5 +158,42 @@ describe("lookback is permitted-not-required for a section type that does not re
     })
     const issues = collectDefinitionIssues(definition)
     expect(pathsOf(issues)).not.toContain("sections.0.lookback")
+  })
+})
+
+describe("every provider's trend section needs a lookback", () => {
+  test("the types are the catalogue's historical_trend sections, one per provider", () => {
+    expect([...LOOKBACK_SECTION_TYPES].sort()).toEqual([
+      "historical_ec2_utilization",
+      "historical_vm_utilization",
+    ])
+  })
+
+  // The AWS preset that shipped without one saved cleanly and then failed at compile:
+  // "config.lookback must be an integer from 2 to 24 inclusive".
+  test("historical_ec2_utilization without lookback is rejected at authoring time", () => {
+    const aws = (lookback?: number) => ({
+      ...validV3Definition(),
+      provider: "aws",
+      sections: [
+        {
+          id: "sec_hist",
+          type: "historical_ec2_utilization",
+          selection: {
+            resource_types: ["AWS::EC2::Instance"],
+            resource_groups: [],
+            tag_filters: [],
+            top_n: null,
+            sort: null,
+          },
+          metrics: [{ metric: "CPUUtilization", statistic: "avg" }],
+          presentation: "chart_and_table",
+          ...(lookback === undefined ? {} : { lookback }),
+        },
+      ],
+    })
+
+    expect(pathsOf(collectDefinitionIssues(aws()))).toContain("sections.0.lookback")
+    expect(pathsOf(collectDefinitionIssues(aws(6)))).not.toContain("sections.0.lookback")
   })
 })
