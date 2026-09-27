@@ -54,6 +54,40 @@ const NAMESPACE_GROUPS: ReadonlyArray<readonly [string, ScanGroup]> = [
 ]
 
 /**
+ * AWS types, which name a service and a type (`AWS::EC2::Instance`) rather than a
+ * namespace. EC2 holds both machines and networking, so the network types are named and
+ * the rest of EC2 — instances, volumes — groups as compute, the way Azure's disks sit under
+ * `Microsoft.Compute`. Folded, like every comparison here.
+ */
+const AWS_NETWORK_TYPES: ReadonlySet<string> = new Set([
+  "aws::ec2::vpc",
+  "aws::ec2::subnet",
+  "aws::ec2::securitygroup",
+  "aws::ec2::securitygrouprule",
+  "aws::ec2::eip",
+  "aws::ec2::internetgateway",
+  "aws::ec2::natgateway",
+  "aws::ec2::routetable",
+  "aws::ec2::networkinterface",
+])
+
+const AWS_SERVICE_GROUPS: ReadonlyArray<readonly [string, ScanGroup]> = [
+  ["aws::ec2", "compute"],
+  ["aws::lambda", "compute"],
+  ["aws::rds", "data"],
+  ["aws::s3", "data"],
+  ["aws::dynamodb", "data"],
+]
+
+function awsGroupFor(folded: string): ScanGroup {
+  if (AWS_NETWORK_TYPES.has(folded)) return "networking"
+  for (const [service, group] of AWS_SERVICE_GROUPS) {
+    if (folded.startsWith(`${service}::`)) return group
+  }
+  return "not_reportable"
+}
+
+/**
  * The namespace of an Azure resource type — everything before the first `/`.
  *
  * Case-folded, because Resource Graph lower-cases `type` in its response body while the
@@ -71,6 +105,8 @@ export function groupFor(resourceType: string): ScanGroup {
   if (typeof resourceType !== "string" || resourceType.trim() === "") {
     return "not_reportable"
   }
+  const folded = resourceType.trim().toLowerCase()
+  if (folded.startsWith("aws::")) return awsGroupFor(folded)
   const namespace = namespaceOf(resourceType)
   for (const [prefix, group] of NAMESPACE_GROUPS) {
     if (namespace === prefix) return group

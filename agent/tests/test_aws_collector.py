@@ -589,3 +589,68 @@ def test_an_enrolled_account_carries_its_rightsizing_findings() -> None:
     assert by_key[(INSTANCE, "recommended_type")] == "t4g.nano"
     # The stopped instance has no recommendation: an answer, recorded as that.
     assert {(g["gap_type"], g["resource_id"]) for g in result["gaps"]} >= {("optimizer_not_available", STOPPED)}
+
+
+class FakeEc2WithDefaults(FakeEc2):
+    """Each region also has its default VPC and default subnet. Only us-east-1's holds a
+    network interface — something runs in it."""
+
+    def get_paginator(self, operation: str) -> Pages:
+        default = f"vpc-0default{self.region.replace('-', '')}"
+        if operation == "describe_vpcs":
+            vpcs = super().get_paginator(operation).items
+            return Pages("Vpcs", [*vpcs, {"VpcId": default, "CidrBlock": "172.31.0.0/16", "IsDefault": True,
+                                          "State": "available"}])
+        if operation == "describe_subnets":
+            subnets = super().get_paginator(operation).items
+            return Pages("Subnets", [*subnets, {"SubnetId": f"subnet-0dfl{self.region[-1]}", "VpcId": default,
+                                                "CidrBlock": "172.31.0.0/20", "DefaultForAz": True}])
+        if operation == "describe_network_interfaces" and self.region == "us-east-1":
+            return Pages("NetworkInterfaces", [{"Groups": [{"GroupId": "sg-0inuse"}], "VpcId": default}])
+        return super().get_paginator(operation)
+
+
+def test_an_unused_default_vpc_is_left_out_with_its_subnets() -> None:
+    base = fake_clients()
+    clients = lambda service, region: FakeEc2WithDefaults(region) if service == "ec2" else base(service, region)  # noqa: E731
+    aws = provider(InMemoryObjectStore(), clients)
+    scope = {"subscription_id": ACCOUNT, "resource_types": ["AWS::EC2::VPC", "AWS::EC2::Subnet"],
+             "resource_groups": [], "tag_filters": {}}
+    ids = [r["resource_id"] for r in asyncio.run(aws.discover(scope))["resources"]]  # type: ignore[arg-type]
+
+    used_default = f"arn:aws:ec2:us-east-1:{ACCOUNT}:vpc/vpc-0defaultuseast1"
+    assert VPC in ids and SUBNET in ids, "a VPC someone created is always kept"
+    assert used_default in ids and f"{used_default}/subnet/subnet-0dfl1" in ids, "a default VPC in use is kept"
+    assert not [rid for rid in ids if "ap-southeast-3" in rid], "the empty default VPC and its subnet are left out"
+
+
+def test_each_fact_source_is_asked_only_where_its_resources_are() -> None:
+    """Compute Optimizer has no endpoint in some regions. Asked there because an unrelated
+    resource lives there, one failed region voided the answer for every instance."""
+    asked: list[tuple[str, str]] = []
+    base = fake_clients()
+
+    class Unreachable:
+        def get_ec2_instance_recommendations(self, **_: Any) -> dict[str, Any]:
+            from botocore.exceptions import EndpointConnectionError
+
+            raise EndpointConnectionError(endpoint_url="https://compute-optimizer.ap-southeast-3.amazonaws.com")
+
+    def clients(service: str, region: str) -> Any:
+        if service in ("backup", "compute-optimizer"):
+            asked.append((service, region))
+            if service == "compute-optimizer" and region == "ap-southeast-3":
+                return Unreachable()
+        return base(service, region)
+
+    aws = provider(InMemoryObjectStore(), clients)
+    scope = {"subscription_id": ACCOUNT, "resource_types": ["AWS::EC2::Instance", "AWS::RDS::DBInstance"],
+             "resource_groups": [], "tag_filters": {}}
+    discovered = asyncio.run(aws.discover(scope))  # type: ignore[arg-type]
+    result = asyncio.run(aws.collect_facts({"resources": discovered["resources"], "inventory_pages": [],
+                                            "subscription_id": ACCOUNT}))
+
+    assert ("compute-optimizer", "ap-southeast-3") not in asked, "no instance lives there"
+    assert ("backup", "ap-southeast-3") in asked, "the database there is covered by AWS Backup"
+    optimizer = {(g["gap_type"], g["resource_id"]) for g in result["gaps"] if g.get("source") == "compute_optimizer"}
+    assert optimizer == {("optimizer_not_available", INSTANCE), ("optimizer_not_available", STOPPED)}
