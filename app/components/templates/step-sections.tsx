@@ -22,6 +22,7 @@ import {
 import {
   HISTORICAL_LOOKBACK_MAX,
   HISTORICAL_LOOKBACK_MIN,
+  sectionNeedsLookback,
   type MetricCatalogSnapshot,
   type MetricSelectionItem,
 } from "@/lib/templates/definition"
@@ -914,11 +915,12 @@ function SectionInspector({
         profile containing section 9 impossible to save: the validator asked for a
         depth and the UI offered no way to give one.
 
-        Rendered ONLY for the type that reads it. A number input on every section
-        would imply the other fourteen have a configurable depth, and
-        `compile/sections.py` threads it into `historical_trend`'s config alone.
+        Rendered ONLY for the types that read it — the trend sections, one per
+        provider (`LOOKBACK_SECTION_TYPES`). A number input on every section would
+        imply the others have a configurable depth, and `compile/sections.py`
+        threads it into `historical_trend`'s config alone.
       */}
-      {section.type === "historical_vm_utilization" && (
+      {sectionNeedsLookback(section.type) && (
         <div className="flex flex-col gap-1.5 rounded-lg border border-border px-3 py-2">
           <label
             htmlFor={`lookback-${section.id}`}
@@ -951,7 +953,7 @@ function SectionInspector({
             className="h-8 w-24 rounded-md border border-input bg-background px-2.5 font-mono text-sm tabular-nums focus-visible:ring-2 focus-visible:ring-ring/30 focus-visible:outline-none"
           />
           <p className="text-xs text-muted-foreground">
-            Each selected metric is shown per VM over the requested calendar months.
+            Each selected metric is shown per machine over the requested calendar months.
             Missing measurements remain gaps. Verified prior reports are used when
             no collected monthly series is available.
           </p>
@@ -966,8 +968,9 @@ function SectionInspector({
             subscription holds collects what is there and says the trend is short, which
             Requirement 19.6 already makes a non-error.
           */}
+          {/* Azure's exported-metrics depth; an AWS account has no such measurement. */}
           <AvailableHistory
-            since={metricsHistorySince}
+            since={section.type === "historical_vm_utilization" ? metricsHistorySince : undefined}
             requested={
               typeof section.lookback === "number" ? section.lookback : null
             }

@@ -410,6 +410,7 @@ type CatalogueSection = {
   readonly key: string
   readonly repeatable: boolean
   readonly position: string
+  readonly expands_to?: readonly { readonly block: string }[]
 }
 
 /** Every provider's section list in `catalog/sections.v1.json`, keyed by provider. */
@@ -437,6 +438,27 @@ export const SECTION_KEYS_BY_PROVIDER: Readonly<
     sections.map((s) => s.key),
   ])
 )
+
+/**
+ * The section types that need an author-set `lookback`: every one, in any provider's
+ * catalogue, that expands to a `historical_trend` block — the block whose config
+ * `compile/sections.py` threads it into, and which refuses to compile without it.
+ * Derived rather than named, so a provider's trend section (Azure's
+ * `historical_vm_utilization`, AWS's `historical_ec2_utilization`) cannot be added to
+ * the catalogue without the validator and the wizard asking for its depth.
+ */
+export const LOOKBACK_SECTION_TYPES: ReadonlySet<string> = new Set(
+  Object.values(SECTIONS_BY_PROVIDER).flatMap((sections) =>
+    sections
+      .filter((s) => (s.expands_to ?? []).some((b) => b.block === "historical_trend"))
+      .map((s) => s.key)
+  )
+)
+
+/** Whether a section of this type needs a `lookback`. */
+export function sectionNeedsLookback(type: unknown): boolean {
+  return typeof type === "string" && LOOKBACK_SECTION_TYPES.has(type)
+}
 
 /**
  * Non-repeatable section keys by provider (for duplicate-type rejection).
@@ -3162,8 +3184,7 @@ function validateSections(
     // --- lookback (task 7.3) ---
     //
     // Permitted-not-required in general — most section types never read it — and
-    // REQUIRED specifically when `type === "historical_vm_utilization"`, the one
-    // section type that needs it: `compile/sections.py`'s `_thread_metric_config`
+    // REQUIRED for the section types that draw a trend (`LOOKBACK_SECTION_TYPES`): `compile/sections.py`'s `_thread_metric_config`
     // threads it into `historical_trend`'s config, and that block fails to compile
     // without it. The same pattern `customer_name` already uses: named at the gate
     // where it is actually needed, not defaulted when absent. A profile selecting
@@ -3183,11 +3204,11 @@ function validateSections(
           `lookback must be an integer from ${HISTORICAL_LOOKBACK_MIN} to ${HISTORICAL_LOOKBACK_MAX} inclusive.`
         )
       }
-    } else if (type === "historical_vm_utilization") {
+    } else if (sectionNeedsLookback(type)) {
       addIssue(
         issues,
         [...entryPath, "lookback"],
-        `Section type "historical_vm_utilization" requires lookback (an integer from ` +
+        `Section type "${String(type)}" requires lookback (an integer from ` +
           `${HISTORICAL_LOOKBACK_MIN} to ${HISTORICAL_LOOKBACK_MAX} inclusive).`
       )
     }
