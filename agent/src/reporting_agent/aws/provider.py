@@ -227,10 +227,23 @@ def _databases(rds: Any, *, account: str, region: str, tier: str, raw: dict[str,
 
 
 def _vpcs(ec2: Any, *, account: str, region: str, tier: str, raw: dict[str, dict[str, Any]]) -> list[ResourceRecord]:
-    """Every VPC, and each one's subnets nested under it."""
+    """Every VPC, and each one's subnets nested under it — except an **unused default VPC**.
+
+    AWS creates a default VPC, with a default subnet per zone, in every region an account
+    enables, and most of them hold nothing. Listed, they fill the network section with one
+    empty VPC per region and push every other section down. So a default VPC is kept only
+    when a network interface lives in it — anything running there has one — the same
+    test the security groups use. A VPC someone created is always kept.
+    """
+    occupied = {
+        interface.get("VpcId", "")
+        for interface in _paged(ec2, "describe_network_interfaces", "NetworkInterfaces")
+    }
     records = []
     by_vpc: dict[str, str] = {}
     for vpc in _paged(ec2, "describe_vpcs", "Vpcs"):
+        if vpc.get("IsDefault") and vpc["VpcId"] not in occupied:
+            continue
         tags = _tags(vpc.get("Tags"))
         resource_id = f"arn:aws:ec2:{region}:{account}:vpc/{vpc['VpcId']}"
         by_vpc[vpc["VpcId"]] = resource_id
@@ -462,7 +475,6 @@ class AwsProvider:
         resource_ids = sorted(types_by_id)
         if not resource_ids:
             return FactResult(facts=[], gaps=[])
-        regions = sorted({resource["location"] for resource in resources})
 
         instance_types: dict[str, dict[str, Any]] = {}
 
@@ -507,10 +519,18 @@ class AwsProvider:
 
         await fold(AWS_FACT_SOURCE, resource_ids, {"value": fact_items(resource_ids, self._raw, instance_types)})
 
+        # Each source is asked only in the regions holding what it covers. Asked everywhere a
+        # resource is — an empty default VPC in a region the service has no endpoint in — one
+        # unreachable region voided the answer for every resource it covers.
+        location = {resource["resource_id"]: resource["location"] for resource in resources}
+
         backed_up = [rid for rid in resource_ids if types_by_id[rid] in (TYPE_INSTANCE, TYPE_VOLUME, TYPE_RDS_INSTANCE)]
         if backed_up:
             answers = await asyncio.gather(
-                *(self._optional_call("backup", region, "list_protected_resources", paged="Results") for region in regions)
+                *(
+                    self._optional_call("backup", region, "list_protected_resources", paged="Results")
+                    for region in sorted({location[rid] for rid in backed_up})
+                )
             )
             body: PlainData = (
                 None if any(answer is None for answer in answers)
@@ -526,7 +546,7 @@ class AwsProvider:
                         "compute-optimizer", region, "get_ec2_instance_recommendations",
                         not_enrolled_is_empty=True, list_key="instanceRecommendations",
                     )
-                    for region in regions
+                    for region in sorted({location[rid] for rid in instances})
                 )
             )
             body = (

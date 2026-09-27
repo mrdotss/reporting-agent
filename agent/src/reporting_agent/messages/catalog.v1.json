@@ -274,8 +274,8 @@
       "id": "Sebuah entri katalog gagal validasi dan dilewati; tidak ada statistik yang dihasilkan untuknya."
     },
     "doc.gap.deallocated": {
-      "en": "The virtual machine was deallocated, so it emitted no metric for this period. A stopped machine is expected to report nothing.",
-      "id": "Mesin virtual dalam keadaan deallocated, sehingga tidak mengirim metrik untuk periode ini. Mesin yang dimatikan memang tidak melaporkan apa pun."
+      "en": "The machine was stopped (deallocated, on Azure), so it emitted no metric for this period. A stopped machine is expected to report nothing.",
+      "id": "Mesin dalam keadaan berhenti (deallocated, di Azure), sehingga tidak mengirim metrik untuk periode ini. Mesin yang dimatikan memang tidak melaporkan apa pun."
     },
     "doc.gap.definitions_unavailable": {
       "en": "The metric definitions for this resource type and region could not be read.",
@@ -930,8 +930,8 @@
       "id": "Entri katalog tidak valid"
     },
     "ui.gap_label.deallocated": {
-      "en": "Virtual machine deallocated",
-      "id": "Mesin virtual dinonaktifkan"
+      "en": "Machine stopped",
+      "id": "Mesin dihentikan"
     },
     "ui.gap_label.definitions_unavailable": {
       "en": "Metric definitions unavailable",

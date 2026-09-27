@@ -8,6 +8,9 @@
 
 import { describe, expect, test } from "vitest"
 
+import rawFacts from "../../../agent/src/reporting_agent/catalog/facts.v1.json"
+import rawMetrics from "../../../agent/src/reporting_agent/catalog/metrics.v1.json"
+
 import {
   SCAN_GROUPS,
   groupFor,
@@ -59,6 +62,34 @@ describe("groupFor", () => {
     // without adding it here fails this test.
     const misfiled = DECLARED.filter((type) => groupFor(type) === "not_reportable")
     expect(misfiled).toEqual([])
+  })
+
+  test.each([
+    ["AWS::EC2::Instance", "compute"],
+    ["AWS::EC2::Volume", "compute"],
+    ["AWS::EC2::VPC", "networking"],
+    ["AWS::EC2::Subnet", "networking"],
+    ["AWS::EC2::SecurityGroup", "networking"],
+    ["AWS::EC2::SecurityGroupRule", "networking"],
+    ["AWS::EC2::EIP", "networking"],
+    ["AWS::RDS::DBInstance", "data"],
+    ["AWS::SageMaker::Endpoint", "not_reportable"],
+  ])("%s groups under %s", (resourceType, expected) => {
+    expect(groupFor(resourceType)).toBe(expected)
+  })
+
+  test("no type either shipped catalogue declares, for any provider, lands in not_reportable", () => {
+    // The hand-written list above is Azure's, which is how every AWS type once reached
+    // this screen as "Not reportable". This reads the catalogues themselves.
+    const declared = [
+      ...Object.keys((rawMetrics as { resource_types: object }).resource_types),
+      ...Object.keys((rawFacts as { resource_types: object }).resource_types),
+    ]
+    expect(declared.some((type) => type.startsWith("AWS::"))).toBe(true)
+    // Advisor's recommendations are a fact source about the subscription, keyed in the
+    // facts catalogue like a type, but never a resource a scan lists.
+    const listable = declared.filter((type) => type !== "Microsoft.Advisor/recommendations")
+    expect(listable.filter((type) => groupFor(type) === "not_reportable")).toEqual([])
   })
 
   test("grouping folds case, because Resource Graph lower-cases `type`", () => {

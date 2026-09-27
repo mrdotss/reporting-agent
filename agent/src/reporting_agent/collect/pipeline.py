@@ -1955,6 +1955,15 @@ def _metric_not_selected_gaps(
             # for that type" — a statement no template could act on, in a gap list whose
             # value is that every entry is actionable.
             continue
+        metrics = catalog.for_resource_type(resource_type)
+        if (metrics is None or not metrics.metrics) and catalog.facts.for_resource_type(resource_type):
+            # A **fact-only** type — declared in the fact catalog, with no metric in the
+            # metric one: a VPC, a security group, an Elastic IP, a public IP address. Like a
+            # child type it has nothing to select, so no template edit could answer "the
+            # template selected no metric", and saying it once per such resource buries the
+            # gaps someone can act on. A type **neither** catalog declares keeps the gap:
+            # nothing in the product describes it, and the gap is what says so.
+            continue
         gaps.append(
             record_gap(
                 GAP_TYPE_METRIC_NOT_SELECTED,

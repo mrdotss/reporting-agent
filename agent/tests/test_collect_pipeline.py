@@ -2735,3 +2735,22 @@ def test_exported_values_reach_the_snapshot_as_ordinary_statistics() -> None:
         if entry["metric"] == "Percentage CPU" and entry["statistic"] == "avg"
     ]
     assert values == ["31.20"]
+
+
+def test_a_fact_only_type_records_no_metric_not_selected_gap() -> None:
+    """A VPC, a security group, an Elastic IP: declared in the fact catalog, with no metric in
+    the metric one, so there is nothing a template could select. A type neither catalog
+    declares still records the gap — nothing else says why it carries no figures."""
+    catalog = load_catalog()
+    account = "123456789012"
+    vpc = f"arn:aws:ec2:us-east-1:{account}:vpc/vpc-0example"
+    eip = f"arn:aws:ec2:us-east-1:{account}:elastic-ip/eipalloc-0example"
+    queue = f"arn:aws:sqs:us-east-1:{account}:orders"
+
+    gaps = _metric_not_selected_gaps(
+        [_record(vpc, "AWS::EC2::VPC"), _record(eip, "AWS::EC2::EIP"), _record(queue, "AWS::SQS::Queue")],
+        {"AWS::EC2::Instance": ["CPUUtilization"]},
+        catalog=catalog,
+    )
+
+    assert [gap["resource_id"] for gap in gaps] == [queue]
