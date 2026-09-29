@@ -6,6 +6,11 @@ import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
+import { SendCard } from "@/components/delivery/send-card"
+import { latestDelivery, listContacts } from "@/lib/delivery/store"
+import { mailSettings } from "@/lib/mail/mailtrap"
+import { selectedContext } from "@/lib/workspaces/context"
+import { can } from "@/lib/workspaces/policy"
 import { GapList } from "@/components/reports/gap-list"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
 import { RunProgress } from "@/components/reports/run-progress"
@@ -114,6 +119,23 @@ export default async function RunPage({ params }: RunPageProps) {
   const delivered = run.status === "completed" && verified
   const terminal = run.status === "completed" || run.status === "failed"
 
+  // Review and send: only for a delivered report that belongs to a customer.
+  const { workspace, projects } = await selectedContext(user.id)
+  const sendScope =
+    delivered && run.workspaceId !== null && run.projectId !== null && run.workspaceId === workspace.id
+      ? { workspaceId: run.workspaceId, projectId: run.projectId }
+      : null
+  const [contacts, delivery] =
+    sendScope === null
+      ? [[], null]
+      : await Promise.all([listContacts(user.id, sendScope), latestDelivery(user.id, run.id)])
+  let mailReady = true
+  try {
+    mailSettings()
+  } catch {
+    mailReady = false
+  }
+
   return (
     <PageBody kind="wide">
       <Link
@@ -189,7 +211,22 @@ export default async function RunPage({ params }: RunPageProps) {
             }
           >
             {/* Requirement 39 — rendered for every terminal run, verified or not. */}
-            <VerificationPanel verification={verificationView} delivered={delivered} />
+            <div className="flex min-w-0 flex-col gap-5">
+              <VerificationPanel verification={verificationView} delivered={delivered} />
+              {sendScope === null ? null : (
+                <SendCard
+                  runId={run.id}
+                  workspaceId={sendScope.workspaceId}
+                  projectId={sendScope.projectId}
+                  customer={projects.find((entry) => entry.id === sendScope.projectId)?.name ?? "this customer"}
+                  contacts={contacts}
+                  delivery={delivery}
+                  canEdit={can(workspace.role, "edit")}
+                  canSend={can(workspace.role, "manage")}
+                  mailReady={mailReady}
+                />
+              )}
+            </div>
 
             {run.status === "completed" ? (
               <section

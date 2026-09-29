@@ -330,6 +330,12 @@ class RunFacts:
     period_start_year: str = ""
     period_start_month: str = ""
 
+    verify_url: str = ""
+    """Where anyone holding this report can check it is genuine — the app's public proof page
+    for this run, `<app>/v/<run id>`. Empty when the invocation named no app, and then no
+    line is printed. Derived from the run id and the app's address only, so a
+    re-verification renders the same string."""
+
     issued_on: str = ""
     """The date this report was published, already formatted for the document.
 
@@ -714,6 +720,16 @@ def front_matter_sections(
             sections.append(
                 FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
             )
+        # The proof link: where a reader checks the file in their hands is the one that was
+        # verified. On the cover, because the cover is what a customer forwards.
+        if run.verify_url:
+            sections.append(
+                FrontMatterPairs(
+                    ((messages.text("doc.front_matter.verify"), run.verify_url),),
+                    LAYOUT_TABLE_STYLE,
+                    COVER_META_STYLE,
+                )
+            )
         sections.append(FrontMatterPageBreak())
 
     # --- document control (Req 13.5, 13.6) -----------------------------------
@@ -737,6 +753,9 @@ def front_matter_sections(
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
     if doc_number:
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+    # With no cover to carry it, the proof link sits with the document's own name.
+    if run.verify_url and not front_matter.cover.enabled:
+        naming.append((messages.text("doc.front_matter.verify"), run.verify_url))
     sections.append(
         FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
     )

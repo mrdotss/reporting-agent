@@ -420,6 +420,7 @@ async def run_generate_report(
             # The snapshot's own instant, so the published date is a fact the run
             # recorded rather than the clock the render happened to run under.
             collected_at=str(sink.collection.document.get("collected_at") or ""),
+            verify_base_url=_verify_base_url(context),
         ),
         section_catalogue=section_catalogue,
         action_register=payload.get(ACTIONS_PAYLOAD_KEY),
@@ -1041,6 +1042,7 @@ def _resolve_run_facts(
     *,
     run_id: str,
     collected_at: str = "",
+    verify_base_url: str = "",
 ) -> object | None:
     """Build a `RunFacts` from the payload's per-run values.
 
@@ -1119,7 +1121,27 @@ def _resolve_run_facts(
         period_start_year=period_start_year,
         period_start_month=period_start_month,
         issued_on=_published_date(collected_at),
+        verify_url=f"{verify_base_url}/v/{run_id}" if verify_base_url and run_id else "",
     )
+
+
+def _verify_base_url(context: Mapping[str, PlainData]) -> str:
+    """The app's own address, from the progress callback URL both commands carry.
+
+    Not a payload field: `verify_report` is sent by an operator as well as by the app, and
+    a field one of them left out would render a cover without the proof link and fail the
+    re-verification of a report that printed one. `https` only — a proof page reached over
+    plain HTTP proves nothing.
+    """
+    from urllib.parse import urlsplit
+
+    raw = context.get("progress_url")
+    if not isinstance(raw, str) or not raw:
+        return ""
+    parts = urlsplit(raw)
+    if parts.scheme != "https" or not parts.netloc or "@" in parts.netloc:
+        return ""
+    return f"https://{parts.netloc}"
 
 
 def _published_date(collected_at: str) -> str:
@@ -2210,6 +2232,7 @@ async def run_verify_report(
             collected_at=str(snapshot.get("collected_at") or "")
             if isinstance(snapshot, Mapping)
             else "",
+            verify_base_url=_verify_base_url(context),
         ),
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)

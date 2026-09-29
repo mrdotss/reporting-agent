@@ -137,9 +137,11 @@ describe("the migration applies", () => {
       "action_items",
       "ask_access",
       "connected_subscriptions",
+      "customer_contacts",
       "live_metric_pulls",
       "login_attempts",
       "projects",
+      "report_deliveries",
       "report_profile_authored_matches",
       "report_runs",
       "report_template_versions",
@@ -411,7 +413,11 @@ describe("the declared constraints and indexes exist", () => {
       // cannot be claimed by a second connector.
       "connected_subscriptions_external_id_uq",
       "connected_subscriptions_workspace_subscription_uq",
+      // One contact per address per customer.
+      "customer_contacts_project_email_uq",
       "projects_id_workspace_uq",
+      // A customer link's token is stored hashed, and never twice.
+      "report_deliveries_link_token_hash_unique",
       "report_profile_authored_matches_version_section_uq",
       "report_runs_dedupe_key_unique",
       "report_template_versions_template_id_version_uq",

@@ -143,10 +143,12 @@ function note(cell: BoardCell, schedule: BoardRow["project"]["schedule"], now: D
   const run = cell.run
   const when = run ? ` · ${relativeInstant(run.createdAt, now)}` : ""
   switch (cell.state) {
-    case "delivered":
+    case "delivered": {
+      const sent = run?.sent ? (run.opened ? " · sent, opened" : " · sent, not opened yet") : ""
       return run?.figures != null
-        ? `${run.figures.toLocaleString("en-US")} figures${when}`
-        : `Delivered${when}`
+        ? `${run.figures.toLocaleString("en-US")} figures${sent}${when}`
+        : `Delivered${sent}${when}`
+    }
     case "running":
       return run
         ? `${RUN_STATUS_PRESENTATION[run.status].label}${when}`
