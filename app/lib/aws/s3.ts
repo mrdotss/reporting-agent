@@ -7,7 +7,7 @@ import {
   S3Client,
 } from "@aws-sdk/client-s3"
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 
 import { requireEnv } from "@/lib/env"
 
@@ -257,6 +257,33 @@ export async function getSnapshotJson(key: string): Promise<unknown> {
   }
 
   return JSON.parse(await response.Body.transformToString("utf-8")) as unknown
+}
+
+/**
+ * SHA-256 (hex) of one artifact's bytes, or `null` when there is no such object.
+ * Streamed, so a multi-megabyte PDF is hashed without being held whole in memory.
+ * The key must be well-formed, for the same reason as {@link getSnapshotJson}.
+ */
+export async function getObjectSha256(key: string): Promise<string | null> {
+  if (parseArtifactKey(key) === null) {
+    throw new ArtifactAccessError(
+      "The supplied object key is not a well-formed artifact key " +
+        "(<actor_id>/<snapshots|reports>/<runId>/<rest>), so no object was read."
+    )
+  }
+  let response
+  try {
+    response = await getS3Client().send(
+      new GetObjectCommand({ Bucket: requireEnv("RPT_ARTIFACT_BUCKET"), Key: key })
+    )
+  } catch (error) {
+    if (error instanceof Error && (error.name === "NoSuchKey" || error.name === "NotFound")) return null
+    throw error
+  }
+  if (response.Body === undefined) return null
+  const hash = createHash("sha256")
+  for await (const chunk of response.Body as AsyncIterable<Uint8Array>) hash.update(chunk)
+  return hash.digest("hex")
 }
 
 // --- Previews ---------------------------------------------------------------

@@ -64,7 +64,7 @@ export default async function ProofPage({ params }: Readonly<{ params: Promise<{
           <h2 id="check-title" className="text-section">
             Check your copy
           </h2>
-          <FileCheck pdfSha256={proof.pdfSha256} docxSha256={proof.docxSha256} />
+          <FileCheck pdfSha256={proof.pdfSha256} docxSha256={proof.docxSha256} styledPdfSha256={proof.styledPdfSha256} />
         </section>
       </div>
     </main>

@@ -8,7 +8,7 @@ import { Identifier } from "@/components/identifier"
 import { DownloadCard } from "@/components/reports/download-card"
 import { SendCard } from "@/components/delivery/send-card"
 import { latestDelivery, listContacts } from "@/lib/delivery/store"
-import { mailSettings } from "@/lib/mail/mailtrap"
+import { mailProblem } from "@/lib/mail/mailtrap"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
 import { GapList } from "@/components/reports/gap-list"
@@ -129,12 +129,7 @@ export default async function RunPage({ params }: RunPageProps) {
     sendScope === null
       ? [[], null]
       : await Promise.all([listContacts(user.id, sendScope), latestDelivery(user.id, run.id)])
-  let mailReady = true
-  try {
-    mailSettings()
-  } catch {
-    mailReady = false
-  }
+  const mailIssue = mailProblem()
 
   return (
     <PageBody kind="wide">
@@ -223,7 +218,7 @@ export default async function RunPage({ params }: RunPageProps) {
                   delivery={delivery}
                   canEdit={can(workspace.role, "edit")}
                   canSend={can(workspace.role, "manage")}
-                  mailReady={mailReady}
+                  mailIssue={mailIssue}
                 />
               )}
             </div>

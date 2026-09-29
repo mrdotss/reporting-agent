@@ -16,8 +16,8 @@ export const MAILTRAP_SEND_URL = "https://send.api.mailtrap.io/api/send"
 export const MAIL_CATEGORY = "report-delivery"
 
 export class MailNotConfiguredError extends Error {
-  constructor() {
-    super("Email is not set up on this server: RPT_MAILTRAP_TOKEN and RPT_MAIL_FROM are both needed.")
+  constructor(reason = "RPT_MAILTRAP_TOKEN and RPT_MAIL_FROM are both needed.") {
+    super(`Email is not set up on this server: ${reason}`)
     this.name = "MailNotConfiguredError"
   }
 }
@@ -44,11 +44,26 @@ export function parseSender(raw: string): MailAddress | null {
   return /^[^<>\s@]+@[^<>\s@]+$/.test(value) ? { email: value } : null
 }
 
+/**
+ * What keeps email off, naming the setting and never its value — or `null` when both are
+ * usable. The running service reads its settings once, at start, so a setting added to
+ * the settings file after that is reported here as missing.
+ */
+export function mailProblem(env: NodeJS.ProcessEnv = process.env): string | null {
+  const missing = ["RPT_MAILTRAP_TOKEN", "RPT_MAIL_FROM"].filter((key) => !env[key]?.trim())
+  if (missing.length > 0) {
+    return `${missing.join(" and ")} ${missing.length === 1 ? "is" : "are"} not set in the running service.`
+  }
+  if (parseSender(env.RPT_MAIL_FROM ?? "") === null) {
+    return "RPT_MAIL_FROM is not an email address. Write it as reports@example.com or Name <reports@example.com>."
+  }
+  return null
+}
+
 export function mailSettings(env: NodeJS.ProcessEnv = process.env): { token: string; from: MailAddress } {
-  const token = env.RPT_MAILTRAP_TOKEN?.trim()
-  const from = parseSender(env.RPT_MAIL_FROM ?? "")
-  if (!token || from === null) throw new MailNotConfiguredError()
-  return { token, from }
+  const problem = mailProblem(env)
+  if (problem !== null) throw new MailNotConfiguredError(problem)
+  return { token: env.RPT_MAILTRAP_TOKEN!.trim(), from: parseSender(env.RPT_MAIL_FROM!)! }
 }
 
 /**

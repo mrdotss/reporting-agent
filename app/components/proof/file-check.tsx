@@ -7,8 +7,20 @@ import { CheckCircleIcon, WarningCircleIcon } from "@phosphor-icons/react"
  * Check a file against the verified report's digests — in the browser. The file is hashed
  * with SHA-256 locally and never uploaded; only the answer is shown.
  */
-export function FileCheck({ pdfSha256, docxSha256 }: Readonly<{ pdfSha256: string; docxSha256: string }>) {
-  const [result, setResult] = useState<{ name: string; match: "pdf" | "docx" | null } | null>(null)
+type Match = "pdf" | "docx" | "styled"
+
+const MATCHED: Record<Match, string> = {
+  pdf: "the verified PDF",
+  docx: "the verified Word file",
+  styled: "the verified designed PDF",
+}
+
+export function FileCheck({
+  pdfSha256,
+  docxSha256,
+  styledPdfSha256,
+}: Readonly<{ pdfSha256: string; docxSha256: string; styledPdfSha256: string | null }>) {
+  const [result, setResult] = useState<{ name: string; match: Match | null } | null>(null)
   const [busy, setBusy] = useState(false)
 
   async function check(file: File) {
@@ -16,7 +28,9 @@ export function FileCheck({ pdfSha256, docxSha256 }: Readonly<{ pdfSha256: strin
     try {
       const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer())
       const hex = Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("")
-      setResult({ name: file.name, match: hex === pdfSha256 ? "pdf" : hex === docxSha256 ? "docx" : null })
+      const match: Match | null =
+        hex === pdfSha256 ? "pdf" : hex === docxSha256 ? "docx" : styledPdfSha256 !== null && hex === styledPdfSha256 ? "styled" : null
+      setResult({ name: file.name, match })
     } finally {
       setBusy(false)
     }
@@ -51,16 +65,15 @@ export function FileCheck({ pdfSha256, docxSha256 }: Readonly<{ pdfSha256: strin
         <p aria-live="polite" className="flex items-start gap-2 text-sm text-(--status-verified)">
           <CheckCircleIcon aria-hidden="true" weight="fill" className="mt-0.5 size-4 shrink-0" />
           <span>
-            <span className="font-medium">{result.name}</span> is the verified {result.match === "pdf" ? "PDF" : "Word file"},
-            unchanged.
+            <span className="font-medium">{result.name}</span> is {MATCHED[result.match]}, unchanged.
           </span>
         </p>
       ) : (
         <p aria-live="polite" className="flex items-start gap-2 text-sm text-(--status-attention)">
           <WarningCircleIcon aria-hidden="true" weight="fill" className="mt-0.5 size-4 shrink-0" />
           <span>
-            <span className="font-medium">{result.name}</span> does not match this report&rsquo;s verified PDF or Word file.
-            It may have been edited, or be a different report or the styled reading copy.
+            <span className="font-medium">{result.name}</span> does not match any file of this verified report. It may have
+            been edited, or belong to a different report.
           </span>
         </p>
       )}

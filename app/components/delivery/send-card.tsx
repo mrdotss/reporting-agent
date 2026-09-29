@@ -57,7 +57,7 @@ export function SendCard({
   delivery: initialDelivery,
   canEdit,
   canSend,
-  mailReady,
+  mailIssue,
 }: Readonly<{
   runId: string
   workspaceId: string
@@ -67,7 +67,8 @@ export function SendCard({
   delivery: DeliveryView | null
   canEdit: boolean
   canSend: boolean
-  mailReady: boolean
+  /** Why email is off on this server, naming the setting; `null` when it can send. */
+  mailIssue: string | null
 }>) {
   const [contacts, setContacts] = useState(initialContacts)
   const [delivery, setDelivery] = useState(initialDelivery)
@@ -181,8 +182,8 @@ export function SendCard({
         ) : null}
       </div>
 
-      {!mailReady ? (
-        <p className="text-xs text-muted-foreground">Email is not set up on this server yet, so nothing can be sent.</p>
+      {mailIssue !== null ? (
+        <p className="text-xs text-muted-foreground">Email is not set up on this server, so nothing can be sent. {mailIssue}</p>
       ) : !canSend ? (
         <p className="text-xs text-muted-foreground">Only an Owner or Admin can approve and send a report.</p>
       ) : confirming ? (

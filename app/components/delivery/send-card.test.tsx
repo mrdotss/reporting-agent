@@ -43,7 +43,7 @@ const props = {
   delivery: null,
   canEdit: true,
   canSend: true,
-  mailReady: true,
+  mailIssue: null,
 }
 
 describe("SendCard", () => {
@@ -64,8 +64,8 @@ describe("SendCard", () => {
     expect(screen.getByText("Only an Owner or Admin can approve and send a report.")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument()
     cleanup()
-    render(<SendCard {...props} mailReady={false} />)
-    expect(screen.getByText(/Email is not set up on this server/)).toBeInTheDocument()
+    render(<SendCard {...props} mailIssue="RPT_MAIL_FROM is not set in the running service." />)
+    expect(screen.getByText(/Email is not set up on this server/)).toHaveTextContent("RPT_MAIL_FROM is not set")
     expect(screen.queryByRole("button", { name: "Approve and send" })).toBeNull()
   })
 })

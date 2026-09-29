@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 
-import { MAILTRAP_SEND_URL, MailNotConfiguredError, parseSender, sendMail } from "@/lib/mail/mailtrap"
+import { MAILTRAP_SEND_URL, MailNotConfiguredError, mailProblem, parseSender, sendMail } from "@/lib/mail/mailtrap"
 
 const ENV = { RPT_MAILTRAP_TOKEN: "tok-fixture-123", RPT_MAIL_FROM: "FATechID Reports <reports@fatechid.com>" } as unknown as NodeJS.ProcessEnv
 const MESSAGE = { to: { email: "budi@customer.co.id", name: "Budi" }, subject: "S", text: "T", html: "<p>H</p>" }
@@ -52,5 +52,28 @@ describe("Mailtrap", () => {
 
   test("without a token or sender, nothing is sent", async () => {
     await expect(sendMail(MESSAGE, { env: {} as unknown as NodeJS.ProcessEnv })).rejects.toBeInstanceOf(MailNotConfiguredError)
+  })
+})
+
+describe("mailProblem", () => {
+  const env = (values: Record<string, string>) => values as unknown as NodeJS.ProcessEnv
+
+  test("names each missing setting, never a value", () => {
+    expect(mailProblem(env({}))).toBe("RPT_MAILTRAP_TOKEN and RPT_MAIL_FROM are not set in the running service.")
+    expect(mailProblem(env({ RPT_MAILTRAP_TOKEN: "secret-token" }))).toBe("RPT_MAIL_FROM is not set in the running service.")
+    expect(mailProblem(env({ RPT_MAIL_FROM: "reports@fatechid.com", RPT_MAILTRAP_TOKEN: "  " }))).toBe(
+      "RPT_MAILTRAP_TOKEN is not set in the running service."
+    )
+  })
+
+  test("a sender that is not an address is named as such", () => {
+    const problem = mailProblem(env({ RPT_MAILTRAP_TOKEN: "secret-token", RPT_MAIL_FROM: "FATechID Reports" }))
+    expect(problem).toMatch(/^RPT_MAIL_FROM is not an email address/)
+    expect(problem).not.toContain("FATechID Reports")
+    expect(problem).not.toContain("secret-token")
+  })
+
+  test("usable settings report no problem", () => {
+    expect(mailProblem(env({ RPT_MAILTRAP_TOKEN: "t", RPT_MAIL_FROM: "FATechID Reports <reports@fatechid.com>" }))).toBeNull()
   })
 })
