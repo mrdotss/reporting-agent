@@ -220,9 +220,19 @@ async function readSnapshot(
  */
 export async function loadRunGaps(run: ReportRun): Promise<readonly RunGap[]> {
   if (!isTerminalStatus(run.status)) return []
+  return (await readRunGapList(run)) ?? []
+}
 
+/**
+ * The gap list, or `null` when there is none to read — a run that did not complete, or
+ * a snapshot that could not be read or parsed.
+ *
+ * For a caller that must not read "no snapshot" as "no gaps": the data-depth coach
+ * would otherwise mark every item done for a run whose snapshot it never saw.
+ */
+export async function readRunGapList(run: ReportRun): Promise<readonly RunGap[] | null> {
   const snapshot = await readSnapshot(run)
-  if (snapshot === null) return []
+  if (snapshot === null) return null
 
   return snapshot.gaps
     .filter((gap): gap is NonNullable<typeof gap> => gap !== null)

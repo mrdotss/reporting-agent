@@ -4,6 +4,7 @@ import Link from "next/link"
 import { PlusIcon } from "@phosphor-icons/react/ssr"
 
 import { ConnectorInventory } from "@/components/subscriptions/connector-inventory"
+import { DepthCoach } from "@/components/subscriptions/depth-coach"
 import {
   SubscriptionList,
   canScanConnector,
@@ -11,6 +12,8 @@ import {
 import { buttonVariants } from "@/components/ui/button"
 import { requireSession } from "@/lib/auth/guard"
 import { readLatestScan } from "@/lib/scans/store"
+import { depthChecklist } from "@/lib/subscriptions/depth"
+import { readDepthEvidence } from "@/lib/subscriptions/depth-store"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
@@ -51,7 +54,13 @@ export default async function SubscriptionsPage({
   const selected =
     subscriptions.find((subscription) => subscription.id === requested) ??
     subscriptions[0]
-  const scan = selected === undefined ? null : await readLatestScan(user.id, selected.id)
+  const [scan, depth] =
+    selected === undefined
+      ? [null, null]
+      : await Promise.all([
+          readLatestScan(user.id, selected.id),
+          readDepthEvidence(user.id, selected.id),
+        ])
 
   return (
     <PageBody kind="wide">
@@ -87,11 +96,25 @@ export default async function SubscriptionsPage({
             selectedId={selected.id}
             canConnect={canConnect}
           />
-          <ConnectorInventory
-            subscription={selected}
-            scan={scan}
-            canScan={canConnect && canScanConnector(selected, now)}
-          />
+          <div className="flex min-w-0 flex-col gap-5">
+            <ConnectorInventory
+              subscription={selected}
+              scan={scan}
+              canScan={canConnect && canScanConnector(selected, now)}
+            />
+            {depth === null ? null : (
+              <DepthCoach
+                checklist={depthChecklist({
+                  provider: selected.provider,
+                  scopeVerified: selected.scopeVerified,
+                  metricsHistorySince: selected.metricsHistorySince,
+                  gaps: depth.gaps,
+                })}
+                runId={depth.runId}
+                periodStart={depth.periodStart}
+              />
+            )}
+          </div>
         </div>
       )}
     </PageBody>

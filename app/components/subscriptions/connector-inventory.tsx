@@ -74,7 +74,7 @@ export function ConnectorInventory({
     <section
       aria-labelledby="connector-inventory-title"
       data-slot="connector-inventory"
-      className="flex min-w-0 flex-col rounded-xl border border-border bg-card lg:sticky lg:top-20"
+      className="flex min-w-0 flex-col rounded-xl border border-border bg-card"
     >
       <div className="flex flex-wrap items-start justify-between gap-3 p-4 pb-3 md:px-5">
         <div className="flex min-w-0 flex-col gap-0.5">

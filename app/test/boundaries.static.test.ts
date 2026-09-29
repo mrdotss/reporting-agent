@@ -726,6 +726,9 @@ describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
     // Reads the deployment's configuration. Nothing secret, but the value is a fact about
     // our deployment, and a client component has no business naming it.
     path.join("lib", "subscriptions", "aws-principal.ts"),
+    // Reads a run row and its snapshot from S3 through `lib/runs/gaps.ts`; the snapshot
+    // key carries the actor id, and a client has no business reaching either.
+    path.join("lib", "subscriptions", "depth-store.ts"),
   ]
 
   const PURE_HERE = [
@@ -735,6 +738,8 @@ describe("Requirement 6.1 — lib/subscriptions is split, not swept", () => {
     // principal in, two strings out.
     path.join("lib", "subscriptions", "aws-artifacts.ts"),
     path.join("lib", "subscriptions", "input.ts"),
+    // The data-depth coach's rules: gaps and connector fields in, a checklist out.
+    path.join("lib", "subscriptions", "depth.ts"),
   ]
 
   const SERVER_ONLY_HERE = [...REACHED_BY_RULE, ...MARKED_BY_DECISION]
