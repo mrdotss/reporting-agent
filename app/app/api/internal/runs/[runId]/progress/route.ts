@@ -1,3 +1,4 @@
+import { syncActionRegister } from "@/lib/action-register/sync"
 import {
   invalidInput,
   json,
@@ -206,6 +207,13 @@ export async function POST(
         : "the row's status changed between the read and the write"
     )
     return notFound()
+  }
+
+  // A verified report is the only input the Action register is kept from. Its findings
+  // were written beside the report before this callback, so they are readable now.
+  // `syncActionRegister` never throws: the run is completed whatever it finds.
+  if (needsProof && written.status === "completed") {
+    await syncActionRegister(written, now)
   }
 
   return json(200, {

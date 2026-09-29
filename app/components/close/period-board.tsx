@@ -83,6 +83,9 @@ export function PeriodBoard({
                     row.project.connector,
                     row.project.preset,
                     row.project.schedule ? `Monthly ${row.project.schedule.cadence.replace(/^on the /, "")}` : null,
+                    row.project.openActions
+                      ? `${row.project.openActions} open ${row.project.openActions === 1 ? "action" : "actions"}`
+                      : null,
                   ]
                     .filter(Boolean)
                     .join(" · ") || "No connector yet"}

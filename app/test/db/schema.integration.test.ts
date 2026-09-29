@@ -134,6 +134,7 @@ describe("the migration applies", () => {
     // migration is the only place that drop is actually executed, so this list is the
     // check that it runs cleanly rather than erroring on a dependent object.
     expect(result.rows.map(({ tablename }) => tablename)).toEqual([
+      "action_items",
       "ask_access",
       "connected_subscriptions",
       "live_metric_pulls",
@@ -404,6 +405,8 @@ describe("the declared constraints and indexes exist", () => {
     const names = result.rows.map(({ conname }) => conname)
 
     expect(names).toEqual([
+      // One register item per finding on a connector.
+      "action_items_connector_finding_uq",
       // An AWS connector's external id: never shared, so one customer's trust policy
       // cannot be claimed by a second connector.
       "connected_subscriptions_external_id_uq",

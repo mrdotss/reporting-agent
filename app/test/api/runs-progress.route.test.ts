@@ -58,6 +58,15 @@ vi.mock("@/lib/runs/state", async (importOriginal) => {
       runs.reads.push(runId)
       return runs.row
     },
+    applyVerifiedCompletion: async (
+      runId: string,
+      expectedStatus: string,
+      values: RunStateWrite,
+      now: Date
+    ) => {
+      runs.writes.push({ runId, expectedStatus, values, now })
+      return runs.writeResult
+    },
     applyRunWriteIfStatus: async (
       runId: string,
       expectedStatus: string,
@@ -69,6 +78,13 @@ vi.mock("@/lib/runs/state", async (importOriginal) => {
     },
   }
 })
+
+const synced = vi.hoisted(() => ({ runs: [] as string[] }))
+vi.mock("@/lib/action-register/sync", () => ({
+  syncActionRegister: async (run: { id: string }) => {
+    synced.runs.push(run.id)
+  },
+}))
 
 const { POST } = await import("@/app/api/internal/runs/[runId]/progress/route")
 
@@ -449,6 +465,19 @@ describe("Requirement 38.12 — a terminal transition clears the in-flight count
     expect(write?.progressCurrent).toBeNull()
     expect(write?.progressTotal).toBeNull()
     expect(write?.progressLabel).toBeNull()
+  })
+
+  test("a verified completion syncs the Action register; an unverified one does not", async () => {
+    synced.runs = []
+    for (const status of ["verifying", "collecting"] as const) {
+      runs.row = row({ status })
+      runs.writeResult = { ...runs.row, status: "completed" } as typeof runs.writeResult
+      await POST(
+        callbackRequest({ run_id: RUN_ID, phase: "completed", snapshot_id: "b".repeat(64), resource_count: 1, gap_count: 0 }),
+        context
+      )
+    }
+    expect(synced.runs).toEqual([RUN_ID])
   })
 
   test("failed clears all three and records its code", async () => {

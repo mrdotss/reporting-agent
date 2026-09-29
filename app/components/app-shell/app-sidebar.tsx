@@ -8,6 +8,7 @@ import {
   ChatsCircleIcon,
   CheckIcon,
   FileTextIcon,
+  ListChecksIcon,
   GearSixIcon,
   PlugsIcon,
   PlusIcon,
@@ -97,6 +98,7 @@ export type AppSidebarProps = Readonly<{
 const THIS_PERIOD = [
   { href: "/dashboard", label: "Overview", icon: SquaresFourIcon },
   { href: "/reports", label: "Reports", icon: FileTextIcon },
+  { href: "/actions", label: "Actions", icon: ListChecksIcon },
   { href: "/ask", label: "Ask", icon: ChatsCircleIcon },
 ] as const
 
