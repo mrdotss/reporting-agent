@@ -27,6 +27,7 @@ __all__ = [
     "AWS_BACKUP_SOURCE",
     "AWS_FACT_SOURCE",
     "COMPUTE_OPTIMIZER_SOURCE",
+    "HOUSEKEEPING_CLEAR",
     "MAX_TEXT",
     "backup_items",
     "fact_items",
@@ -38,6 +39,13 @@ AWS_FACT_SOURCE: Final[str] = "aws"
 AWS_BACKUP_SOURCE: Final[str] = "aws_backup"
 COMPUTE_OPTIMIZER_SOURCE: Final[str] = "compute_optimizer"
 MAX_TEXT: Final[int] = 240
+
+HOUSEKEEPING_CLEAR: Final[str] = "none"
+"""The `housekeeping` value of a resource with nothing to tidy.
+
+Written rather than left out, because a declared key a resource lacks is recorded as
+`fact_unavailable` — and a healthy resource is not a gap. The Housekeeping table leaves this
+value out (`filter_not`)."""
 
 
 def _bounded(value: str) -> str:
@@ -99,6 +107,8 @@ def _instance(item: dict[str, Any], raw: Mapping[str, Any], types: Mapping[str, 
     groups = sorted(str(g.get("GroupName")) for g in raw.get("SecurityGroups") or [] if g.get("GroupName"))
     _put(item, "security_groups", ", ".join(groups) if groups else "none")
     _put(item, "launch_date", _date(raw.get("LaunchTime")))
+    stopped = (raw.get("State") or {}).get("Name") == "stopped"
+    item["housekeeping"] = "Stopped: its volumes and any Elastic IP still bill" if stopped else HOUSEKEEPING_CLEAR
     spec = types.get(str(raw.get("InstanceType")))
     if spec:
         vcpus = (spec.get("VCpuInfo") or {}).get("DefaultVCpus")
@@ -109,7 +119,7 @@ def _instance(item: dict[str, Any], raw: Mapping[str, Any], types: Mapping[str, 
             item["memory"] = _gib(Decimal(memory) / 1024)
 
 
-def _volume(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+def _volume(item: dict[str, Any], raw: Mapping[str, Any], states: Mapping[str, str]) -> None:
     _put(item, "volume_type", raw.get("VolumeType"))
     if isinstance(raw.get("Size"), int):
         item["size"] = _gib(Decimal(raw["Size"]))
@@ -120,6 +130,12 @@ def _volume(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
     _put(item, "attached_to", ", ".join(attached) if attached else "not attached")
     _put(item, "availability_zone", raw.get("AvailabilityZone"))
     _put(item, "volume_state", raw.get("State"))
+    if not attached:
+        item["housekeeping"] = "Not attached to any instance"
+    elif all(states.get(instance) == "stopped" for instance in attached):
+        item["housekeeping"] = "Attached only to a stopped instance"
+    else:
+        item["housekeeping"] = HOUSEKEEPING_CLEAR
 
 
 def _database(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
@@ -134,6 +150,10 @@ def _database(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
         item["backup_retention_days"] = str(raw["BackupRetentionPeriod"])
     _put(item, "availability_zone", raw.get("AvailabilityZone"))
     _put(item, "publicly_accessible", _yes_no(raw.get("PubliclyAccessible")))
+    stopped = raw.get("DBInstanceStatus") == "stopped"
+    item["housekeeping"] = (
+        "Stopped: storage still bills, and AWS starts it again after 7 days" if stopped else HOUSEKEEPING_CLEAR
+    )
 
 
 def _vpc(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
@@ -150,11 +170,17 @@ def _subnet(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
     _put(item, "public_on_launch", _yes_no(raw.get("MapPublicIpOnLaunch")))
 
 
-def _address(item: dict[str, Any], raw: Mapping[str, Any]) -> None:
+def _address(item: dict[str, Any], raw: Mapping[str, Any], states: Mapping[str, str]) -> None:
     _put(item, "public_ip", raw.get("PublicIp"))
     _put(item, "attached_to", raw.get("InstanceId") or raw.get("NetworkInterfaceId") or "not attached")
     _put(item, "private_ip", raw.get("PrivateIpAddress") or "none")
     _put(item, "domain", raw.get("Domain"))
+    if not (raw.get("AssociationId") or raw.get("InstanceId") or raw.get("NetworkInterfaceId")):
+        item["housekeeping"] = "Not attached: billed while idle"
+    elif raw.get("InstanceId") and states.get(str(raw["InstanceId"])) == "stopped":
+        item["housekeeping"] = "On a stopped instance: billed while idle"
+    else:
+        item["housekeeping"] = HOUSEKEEPING_CLEAR
 
 
 def _security_group(item: dict[str, Any], raw: Mapping[str, Any], rules: Sequence[Mapping[str, Any]]) -> None:
@@ -194,6 +220,13 @@ def fact_items(
     `instance_types` is `DescribeInstanceTypes`' answer keyed by type name.
     """
     rules = [record for record in raw.values() if record.get("_kind") == "security_group_rule"]
+    # Every instance discovery saw, by id, whatever the run's scope: a volume or an address
+    # is judged by the machine it serves even when that machine is outside the report.
+    states = {
+        str(record.get("InstanceId")): str((record.get("State") or {}).get("Name") or "")
+        for record in raw.values()
+        if record.get("_kind") == "instance"
+    }
     items: list[dict[str, Any]] = []
     for resource_id in sorted(resource_ids):
         record = raw.get(resource_id)
@@ -204,7 +237,7 @@ def fact_items(
         if kind == "instance":
             _instance(item, record, instance_types)
         elif kind == "volume":
-            _volume(item, record)
+            _volume(item, record, states)
         elif kind == "database":
             _database(item, record)
         elif kind == "vpc":
@@ -212,7 +245,7 @@ def fact_items(
         elif kind == "subnet":
             _subnet(item, record)
         elif kind == "eip":
-            _address(item, record)
+            _address(item, record, states)
         elif kind == "security_group":
             _security_group(item, record, rules)
         elif kind == "security_group_rule":

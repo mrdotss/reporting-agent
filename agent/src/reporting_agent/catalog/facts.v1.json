@@ -32,6 +32,13 @@
           "unit": "count"
         },
         {
+          "key": "housekeeping",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "case(type =~ 'microsoft.compute/virtualmachines', case(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/deallocated', 'Deallocated: its disks still bill', tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/stopped', 'Stopped but not deallocated: compute still bills', 'none'), type =~ 'microsoft.compute/disks', iff(tostring(properties.diskState) =~ 'Unattached', 'Not attached to any VM', 'none'), type =~ 'microsoft.network/publicipaddresses', iff(isempty(tostring(properties.ipConfiguration.id)) and isempty(tostring(properties.natGateway.id)), 'Not attached: billed while idle', 'none'), 'none')"
+        },
+        {
           "key": "last_backup_status",
           "value_kind": "text",
           "source": "recovery_services",
@@ -146,6 +153,13 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(properties.virtualMachine.id)), extract(@\"/virtualMachines/([^/]+)$\", 1, tostring(managedBy)))"
+        },
+        {
+          "key": "housekeeping",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "case(type =~ 'microsoft.compute/virtualmachines', case(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/deallocated', 'Deallocated: its disks still bill', tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/stopped', 'Stopped but not deallocated: compute still bills', 'none'), type =~ 'microsoft.compute/disks', iff(tostring(properties.diskState) =~ 'Unattached', 'Not attached to any VM', 'none'), type =~ 'microsoft.network/publicipaddresses', iff(isempty(tostring(properties.ipConfiguration.id)) and isempty(tostring(properties.natGateway.id)), 'Not attached: billed while idle', 'none'), 'none')"
         }
       ]
     },
@@ -476,6 +490,13 @@
           "source": "resource_graph",
           "projectable": true,
           "projection": "coalesce(extract(@\"/networkInterfaces/([^/]+)\", 1, tostring(properties.ipConfiguration.id)), tostring(properties.ipConfiguration.id))"
+        },
+        {
+          "key": "housekeeping",
+          "value_kind": "text",
+          "source": "resource_graph",
+          "projectable": true,
+          "projection": "case(type =~ 'microsoft.compute/virtualmachines', case(tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/deallocated', 'Deallocated: its disks still bill', tostring(properties.extended.instanceView.powerState.code) =~ 'PowerState/stopped', 'Stopped but not deallocated: compute still bills', 'none'), type =~ 'microsoft.compute/disks', iff(tostring(properties.diskState) =~ 'Unattached', 'Not attached to any VM', 'none'), type =~ 'microsoft.network/publicipaddresses', iff(isempty(tostring(properties.ipConfiguration.id)) and isempty(tostring(properties.natGateway.id)), 'Not attached: billed while idle', 'none'), 'none')"
         }
       ]
     },
@@ -679,6 +700,12 @@
           "projectable": false
         },
         {
+          "key": "housekeeping",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
           "key": "last_backup",
           "value_kind": "text",
           "source": "aws_backup",
@@ -754,6 +781,12 @@
           "projectable": false
         },
         {
+          "key": "housekeeping",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
           "key": "last_backup",
           "value_kind": "text",
           "source": "aws_backup",
@@ -822,6 +855,12 @@
         },
         {
           "key": "publicly_accessible",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "housekeeping",
           "value_kind": "text",
           "source": "aws",
           "projectable": false
@@ -916,6 +955,12 @@
         },
         {
           "key": "domain",
+          "value_kind": "text",
+          "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "housekeeping",
           "value_kind": "text",
           "source": "aws",
           "projectable": false

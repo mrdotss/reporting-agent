@@ -48,12 +48,12 @@ describe("section catalogue cross-language agreement (task 7.1, Req 22.4)", () =
     expect(SECTION_CATALOGUE_VERSION).toBe(RAW.catalogue_version)
   })
 
-  test("sixteen entries -- the same count agent/tests/test_section_catalogue.py pins", () => {
-    // Sixteen since `postgresql_flexible_inventory` landed. The agent half moved with
-    // the catalogue and this one did not, so the two disagreed about one shared file —
-    // which is the single thing this test exists to catch.
-    expect(AZURE_SECTIONS.length).toBe(16)
-    expect(RAW_ENTRIES.length).toBe(16)
+  test("seventeen entries -- the same count agent/tests/test_section_catalogue.py pins", () => {
+    // Sixteen since `postgresql_flexible_inventory` landed, seventeen with `housekeeping`.
+    // The agent half once moved with the catalogue and this one did not, so the two
+    // disagreed about one shared file — which is the single thing this test exists to catch.
+    expect(AZURE_SECTIONS.length).toBe(17)
+    expect(RAW_ENTRIES.length).toBe(17)
   })
 
   test("the entry set (by key) is identical between the raw parse and the typed view", () => {
@@ -63,8 +63,8 @@ describe("section catalogue cross-language agreement (task 7.1, Req 22.4)", () =
     expect(new Set(typedKeys).size).toBe(typedKeys.length)
   })
 
-  test("canonical numbers are 1..16 with no duplicate, in both the raw parse and the typed view", () => {
-    const expected = Array.from({ length: 16 }, (_, i) => i + 1)
+  test("canonical numbers are 1..17 with no duplicate, in both the raw parse and the typed view", () => {
+    const expected = Array.from({ length: 17 }, (_, i) => i + 1)
     expect(
       [...AZURE_SECTIONS.map((e) => e.number)].sort((a, b) => a - b)
     ).toEqual(expected)
