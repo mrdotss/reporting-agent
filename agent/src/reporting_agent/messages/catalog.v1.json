@@ -733,6 +733,10 @@
       "en": "\u2026and {count} more in the app.",
       "id": "\u2026dan {count} lainnya di aplikasi."
     },
+    "doc.front_matter.verify": {
+      "en": "Verify this report",
+      "id": "Verifikasi laporan ini"
+    },
     "doc.section.rightsizing": {
       "en": "Rightsizing Recommendations",
       "id": "Rekomendasi Penyesuaian Ukuran"

@@ -1270,6 +1270,67 @@ export const askAccess = pgTable("ask_access", {
 })
 
 /**
+ * Who receives a customer's reports: a name and an address per contact.
+ */
+export const customerContacts = pgTable(
+  "customer_contacts",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [unique("customer_contacts_project_email_uq").on(t.projectId, t.email), index("customer_contacts_project_idx").on(t.projectId)]
+)
+
+/**
+ * One approved send of a verified report to a customer's contacts (Review and send).
+ *
+ * The link the email carries is a random token; only its SHA-256 is stored, so the table
+ * cannot be used to open a customer's report. `recipients` records each address with the
+ * message id Mailtrap returned, or why it was refused. Opens are counted from visits to
+ * the link, not from a tracking pixel.
+ */
+export const reportDeliveries = pgTable(
+  "report_deliveries",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => reportRuns.id, { onDelete: "cascade" }),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    approvedBy: text("approved_by")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    approvedAt: instant("approved_at").notNull(),
+    status: text("status").notNull(),
+    recipients: jsonb("recipients")
+      .$type<{ name: string; email: string; messageId?: string; error?: string }[]>()
+      .notNull(),
+    linkTokenHash: text("link_token_hash").notNull().unique(),
+    linkExpiresAt: instant("link_expires_at").notNull(),
+    firstOpenedAt: instant("first_opened_at"),
+    openCount: integer("open_count").notNull().default(0),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("report_deliveries_run_idx").on(t.runId),
+    check("report_deliveries_status_ck", sql`${t.status} in ('sent', 'partial', 'failed')`),
+  ]
+)
+
+/**
  * The Action register: one row per finding on one connector — a Housekeeping finding, a
  * missing backup, a rightsizing recommendation, an Advisor recommendation — carried from
  * month to month with an owner and a status.
@@ -1458,6 +1519,8 @@ export type NewConnectedSubscription =
 export type ReportRun = typeof reportRuns.$inferSelect
 export type RunSchedule = typeof runSchedules.$inferSelect
 export type ActionItem = typeof actionItems.$inferSelect
+export type CustomerContact = typeof customerContacts.$inferSelect
+export type ReportDelivery = typeof reportDeliveries.$inferSelect
 export type LiveMetricPull = typeof liveMetricPulls.$inferSelect
 export type NewReportRun = typeof reportRuns.$inferInsert
 

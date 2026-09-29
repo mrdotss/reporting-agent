@@ -605,6 +605,22 @@ class TestEventOrdering:
         assert sorted(set(leaves) - {"report-styled.pdf"}) == ["report.docx", "report.pdf"], leaves
         assert all(pos > verification_at for pos in report_files)
 
+    def test_the_cover_carries_the_proof_link_and_still_verifies(self, walked: tuple[V2Walk, list[Event]]) -> None:
+        """The app's address comes from the progress URL, and the link is `<app>/v/<run id>`."""
+        from io import BytesIO
+
+        from docx import Document as DocxDocument
+
+        walk, events = walked
+        docx = walk.store.get(reports_key(ACTOR_ID, RUN_ID, "report.docx"))
+        text = " ".join(
+            cell.text for table in DocxDocument(BytesIO(docx.body)).tables for row in table.rows for cell in row.cells
+        )
+        assert f"https://app.test/v/{RUN_ID}" in text
+        assert "Verify this report" in text
+        verification = [e for e in events if e["type"] == "verification"]
+        assert verification and verification[-1]["status"] == "pass"
+
     def test_nothing_after_done(self, walked: tuple[V2Walk, list[Event]]) -> None:
         _, events = walked
         assert types_of(events)[-1] == TERMINAL_EVENT_TYPE

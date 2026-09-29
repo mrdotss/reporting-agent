@@ -24,6 +24,9 @@ export type BoardRun = Readonly<{
   createdAt: string
   /** Figures proven by verification, when the run completed. */
   figures: number | null
+  /** Sent to the customer's contacts (Review and send), and whether the link was opened. */
+  sent?: boolean
+  opened?: boolean
 }>
 
 export type BoardProject = Readonly<{

@@ -53,7 +53,9 @@ export async function loadClose(
               to_char(r.period_start, 'YYYY-MM') as month,
               r.status,
               to_char(r.created_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') as "createdAt",
-              (select max(v.figure_count) from report_verifications v where v.run_id = r.id) as figures
+              (select max(v.figure_count) from report_verifications v where v.run_id = r.id) as figures,
+              exists (select 1 from report_deliveries d where d.run_id = r.id and d.status in ('sent', 'partial')) as sent,
+              exists (select 1 from report_deliveries d where d.run_id = r.id and d.first_opened_at is not null) as opened
          from report_runs r
          join workspace_members m on m.workspace_id = r.workspace_id and m.user_id = $1
         where r.workspace_id = $2

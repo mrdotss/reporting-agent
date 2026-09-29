@@ -94,14 +94,26 @@ describe("Requirement 44.12 — one presigning path for reports, and it is gated
     }
   })
 
-  test("exactly one module outside lib/aws mints a report download", () => {
+  test("exactly two modules outside lib/aws mint a report download", () => {
+    // The signed-in download, and a customer's download through the link a sent report
+    // carries (Review and send). Each is gated below; a third would be ungated by default.
     const minting = callers("presignArtifact").filter(
       (relative) => relative !== PRESIGNER_MODULE
     )
 
     expect(minting).toEqual([
       path.join("app", "api", "artifact-url", "route.ts"),
+      path.join("app", "r", "[token]", "download", "route.ts"),
     ])
+  })
+
+  test("the customer's download reads the run's verification status and the key's actor before minting", () => {
+    const route = SOURCES.get(path.join("app", "r", "[token]", "download", "route.ts"))
+
+    expect(route).toBeDefined()
+    expect(route).toContain("readLatestVerificationStatus")
+    expect(route).toContain("keyBelongsToActor")
+    expect(route).toContain("deliveryArtifact")
   })
 
   test("that module reads the run's verification status before minting", () => {

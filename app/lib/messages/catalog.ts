@@ -678,6 +678,10 @@ export const MESSAGE_CATALOG = {
     en: "…and {count} more in the app.",
     id: "…dan {count} lainnya di aplikasi.",
   },
+  "doc.front_matter.verify": {
+    en: "Verify this report",
+    id: "Verifikasi laporan ini",
+  },
   "doc.section.rightsizing": {
     en: "Rightsizing Recommendations",
     id: "Rekomendasi Penyesuaian Ukuran",
