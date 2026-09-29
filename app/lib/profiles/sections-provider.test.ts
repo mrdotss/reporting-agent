@@ -34,6 +34,7 @@ describe("each provider's section catalogue", () => {
       "coverage_and_verification",
       "housekeeping",
       "at_a_glance",
+      "action_register",
     ])
     expect(sectionsFor("azure")).toBe(AZURE_SECTIONS)
     expect(sectionsFor("onprem")).toEqual([])

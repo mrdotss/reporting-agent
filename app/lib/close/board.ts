@@ -36,6 +36,8 @@ export type BoardProject = Readonly<{
   preset: string | null
   /** The customer's monthly schedule, when it has an enabled one. */
   schedule?: BoardSchedule | null
+  /** Open and accepted Action register items. */
+  openActions?: number
 }>
 
 export type BoardSchedule = Readonly<{

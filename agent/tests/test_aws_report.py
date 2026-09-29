@@ -158,3 +158,21 @@ def test_at_a_glance_opens_the_report_with_verified_counts_and_decisions(
     text = "\n".join(p.text for p in document.paragraphs)
     assert "Decisions for you" in text
     assert "Review the resources listed under Housekeeping." in text
+
+
+def test_the_action_register_prints_this_months_findings_and_stores_them_for_the_app(
+    walked: tuple[InMemoryObjectStore, list[dict[str, Any]], BaseException | None],
+) -> None:
+    from docx import Document
+
+    store, _, _ = walked
+    document = Document(BytesIO(store.get(next(k for k in store.keys() if k.endswith("/report.docx"))).body))  # type: ignore[union-attr]
+    table = next(t for t in document.tables if [c.text for c in t.rows[0].cells][1:] == ["Action", "Owner", "Status", "Since"])
+    rows = [[c.text for c in row.cells][1:] for row in table.rows[1:]]
+    # No register was sent, so every finding is new this report.
+    assert rows and all(row[2] == "New" and row[3] == "This report" for row in rows), rows
+    assert any("i-0fedcba9876543210" in row[0] and "Stopped" in row[0] for row in rows), rows
+
+    stored = json.loads(store.get(next(k for k in store.keys() if k.endswith("/actions.json"))).body)  # type: ignore[union-attr]
+    assert stored["rows"] == rows
+    assert {finding["kind"] for finding in stored["findings"]} >= {"housekeeping", "backup"}

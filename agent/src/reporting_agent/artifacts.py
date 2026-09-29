@@ -287,6 +287,7 @@ async def write_report_artifacts(
     ast: object,
     prose: object,
     historical: object | None = None,
+    actions: object | None = None,
     html: str,
     chart_images: Mapping[str, bytes] | None = None,
     chart_sidecars: Mapping[str, bytes] | None = None,
@@ -342,6 +343,12 @@ async def write_report_artifacts(
     if historical is not None:
         await write_json_artifact(
             store, reports_key(actor_id, run_id, "historical.json"), historical, actor_id=actor_id
+        )
+    if actions is not None:
+        # The findings the app syncs its Action register from, and the rows the report
+        # printed — pinned so a re-verification replays them (`compile/actions.py`).
+        await write_json_artifact(
+            store, reports_key(actor_id, run_id, "actions.json"), actions, actor_id=actor_id
         )
     await store.put_bytes(
         reports_key(actor_id, run_id, "document.html"),

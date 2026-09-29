@@ -1,4 +1,5 @@
 import "server-only"
+import { registerForConnector } from "@/lib/action-register/sync"
 
 import { connectorContext } from "@/lib/subscriptions/context"
 import {
@@ -470,6 +471,14 @@ export async function startRunInvocation(
   }
 
   // Only server-resolved source owners enter the authenticated worker payload.
+  // Supporting input: a register that cannot be read sends none, and the section prints
+  // every finding as new rather than the run failing.
+  let actionRegister: Awaited<ReturnType<typeof registerForConnector>> = []
+  try {
+    actionRegister = await registerForConnector(run.connectedSubscriptionId)
+  } catch {
+    actionRegister = []
+  }
   const snapshotSources = run.reuseSnapshotRunId !== null || (historicalCandidates?.length ?? 0) > 0
     ? await readSnapshotSources(run.userId, run.id, (historicalCandidates ?? []).map(candidate => candidate.id))
     : undefined
@@ -497,6 +506,9 @@ export async function startRunInvocation(
                 scope: run.scope,
                 historical_candidates: historicalCandidates,
                 ...(snapshotSources ? { snapshot_source_actors: snapshotSources } : {}),
+                // The Action register as it stood before this run, for the Actions
+                // section to compare against this run's own snapshot.
+                ...(actionRegister.length > 0 ? { action_register: actionRegister } : {}),
                 // The per-run front-matter values (Requirement 13.7), read off the
                 // claim rather than re-queried — `run` already holds what `enqueueRun`
                 // required present for this v2-pinned row. `customerName` /

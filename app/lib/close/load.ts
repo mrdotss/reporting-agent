@@ -34,6 +34,8 @@ export async function loadClose(
       `select p.id, p.name, p.archived_at is not null as archived,
               s.day_of_month as "scheduleDay", s.hour as "scheduleHour", s.timezone as "scheduleTimezone",
               s.last_attempt_month as "scheduleLastAttemptMonth", s.last_error as "scheduleLastError",
+              (select count(*)::int from action_items a
+                where a.project_id = p.id and a.status in ('open', 'accepted')) as "openActions",
               to_char(p.created_at at time zone $3, 'YYYY-MM') as "createdMonth",
               (select c.display_name from connected_subscriptions c
                 where c.project_id = p.id order by c.display_name limit 1) as connector,

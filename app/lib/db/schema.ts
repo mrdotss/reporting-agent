@@ -1270,6 +1270,52 @@ export const askAccess = pgTable("ask_access", {
 })
 
 /**
+ * The Action register: one row per finding on one connector — a Housekeeping finding, a
+ * missing backup, a rightsizing recommendation, an Advisor recommendation — carried from
+ * month to month with an owner and a status.
+ *
+ * Written by `lib/action-register/sync.ts` after each verified run, from the findings the
+ * runtime stored beside the report (`actions.json`), and edited by people for owner, status
+ * and note. `resolved` is set only by a sync, citing the run and snapshot that checked the
+ * finding clear; nobody ticks an item done by hand.
+ */
+export const actionItems = pgTable(
+  "action_items",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    connectedSubscriptionId: text("connected_subscription_id")
+      .notNull()
+      .references(() => connectedSubscriptions.id, { onDelete: "cascade" }),
+    findingKey: text("finding_key").notNull(),
+    kind: text("kind").notNull(),
+    resourceId: text("resource_id").notNull(),
+    title: text("title").notNull(),
+    owner: text("owner"),
+    status: text("status").notNull().default("open"),
+    note: text("note"),
+    firstSeenRunId: text("first_seen_run_id").notNull(),
+    firstSeenPeriod: text("first_seen_period").notNull(),
+    lastSeenRunId: text("last_seen_run_id").notNull(),
+    resolvedRunId: text("resolved_run_id"),
+    resolvedSnapshotId: text("resolved_snapshot_id"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("action_items_connector_finding_uq").on(t.connectedSubscriptionId, t.findingKey),
+    index("action_items_project_idx").on(t.projectId),
+    check("action_items_status_ck", sql`${t.status} in ('open', 'accepted', 'wont_do', 'resolved')`),
+    check("action_items_owner_ck", sql`${t.owner} is null or ${t.owner} in ('customer', 'msp')`),
+  ]
+)
+
+/**
  * A customer's monthly report, run on a timer (the Close Board's scheduled close).
  *
  * One row per customer, connector and preset. The cron tick enqueues a due row through
@@ -1411,6 +1457,7 @@ export type NewConnectedSubscription =
 
 export type ReportRun = typeof reportRuns.$inferSelect
 export type RunSchedule = typeof runSchedules.$inferSelect
+export type ActionItem = typeof actionItems.$inferSelect
 export type LiveMetricPull = typeof liveMetricPulls.$inferSelect
 export type NewReportRun = typeof reportRuns.$inferInsert
 

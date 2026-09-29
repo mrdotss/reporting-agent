@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.4.0",
+  "catalogue_version": "1.5.0",
   "providers": {
     "azure": {
       "sections": [
@@ -1323,6 +1323,43 @@
               "per": "section"
             }
           ]
+        },
+        {
+          "key": "action_register",
+          "number": 19,
+          "title_id": "doc.section.action_register",
+          "group": "closing",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "optional": true,
+          "author_filled": true,
+          "presets": {},
+          "notes": "The Action register: every finding this snapshot holds (housekeeping, missing backups, rightsizing, Advisor), with the owner and status the app's register gave it, and each item the register held that this snapshot no longer shows marked Resolved. The runtime computes the rows (compile/actions.py); they carry no figure.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "blank_rows_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  "Action",
+                  "Owner",
+                  "Status",
+                  "Since"
+                ],
+                "rows": 1
+              }
+            }
+          ]
         }
       ]
     },
@@ -2482,6 +2519,43 @@
             {
               "block": "at_a_glance",
               "per": "section"
+            }
+          ]
+        },
+        {
+          "key": "action_register",
+          "number": 19,
+          "title_id": "doc.section.action_register",
+          "group": "closing",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "optional": true,
+          "author_filled": true,
+          "presets": {},
+          "notes": "The Action register: every finding this snapshot holds (housekeeping, missing backups, rightsizing, Advisor), with the owner and status the app's register gave it, and each item the register held that this snapshot no longer shows marked Resolved. The runtime computes the rows (compile/actions.py); they carry no figure.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "blank_rows_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  "Action",
+                  "Owner",
+                  "Status",
+                  "Since"
+                ],
+                "rows": 1
+              }
             }
           ]
         }

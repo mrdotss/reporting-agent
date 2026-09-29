@@ -115,6 +115,18 @@ from reporting_agent.compile.historical import (
     Selection,
 )
 from reporting_agent.compile.messages import Messages
+from reporting_agent.compile.actions import (
+    ACTIONS_ARTIFACT,
+    ACTIONS_PAYLOAD_KEY,
+    ACTIONS_SECTION,
+    action_rows,
+    actions_bundle,
+    advisor_answered,
+    checked_keys,
+    findings_of,
+    resolved_keys,
+    section_present,
+)
 from reporting_agent.compile.sections import AUTHOR_ROWS_PAYLOAD_KEY, apply_author_rows
 from reporting_agent.errors import (
     AgentError,
@@ -410,6 +422,7 @@ async def run_generate_report(
             collected_at=str(sink.collection.document.get("collected_at") or ""),
         ),
         section_catalogue=section_catalogue,
+        action_register=payload.get(ACTIONS_PAYLOAD_KEY),
     ):
         yield event
 
@@ -1184,6 +1197,7 @@ async def _document_phases(
     front_matter: object | None = None,
     run_facts: object | None = None,
     section_catalogue: object | None = None,
+    action_register: object | None = None,
 ) -> AsyncIterator[Event]:
     from reporting_agent.compile.blocks import compile_document
     from reporting_agent.compile.blocks.base import DesignSettings
@@ -1208,6 +1222,26 @@ async def _document_phases(
     view = build_snapshot_view(
         collected.document, child_resource_types=_child_resource_types()
     )
+
+    # The Action register's rows, compared against this snapshot and placed on the definition
+    # this run compiles **and** verifies, like the incidents; persisted with the findings.
+    findings = findings_of(view)
+    checked = checked_keys(view)
+    answered = advisor_answered(view)
+    printed_actions: list[list[str]] | None = None
+    if section_catalogue is not None and section_present(definition):
+        register_keys = [
+            str(entry["key"]) for entry in (action_register if isinstance(action_register, list) else [])
+            if isinstance(entry, Mapping) and isinstance(entry.get("key"), str)
+        ]
+        printed_actions = action_rows(
+            findings, action_register, messages=messages,
+            resolved=resolved_keys(register_keys, findings, checked, advisor=answered),
+        )
+        definition = apply_author_rows(
+            definition, {ACTIONS_SECTION: printed_actions}, catalogue=section_catalogue  # type: ignore[arg-type]
+        )
+    actions_artifact = actions_bundle(findings, printed_actions, checked=checked, advisor=answered)
     block_count = _block_count(definition)
 
     # --- compiling ------------------------------------------------------------------
@@ -1380,6 +1414,7 @@ async def _document_phases(
         ast=ast_to_plain(compiled.document),
         prose=_prose_bundle(compiled),
         historical=_historical_bundle(historical_selections, snapshot_sources),
+        actions=actions_artifact,
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
@@ -2070,6 +2105,7 @@ async def run_verify_report(
     snapshot = await store.get_json(_snapshot_key(actor_id, run_id))
     prose = await _optional_json(store, f"{prefix}prose.json")
     historical_raw = await _optional_json(store, f"{prefix}historical.json")
+    actions_raw = await _optional_json(store, f"{prefix}{ACTIONS_ARTIFACT}")
     sources = snapshot_source_actors(historical_raw.get("snapshot_source_actors") if isinstance(historical_raw, Mapping) else None)
     store = SnapshotSourceStore(store, actor_id, run_id, sources)
 
@@ -2116,6 +2152,12 @@ async def run_verify_report(
         definition = apply_author_rows(
             definition, payload.get(AUTHOR_ROWS_PAYLOAD_KEY), catalogue=verify_catalogue
         )
+        # And the Action register's rows, replayed from `actions.json` rather than
+        # recomputed: the register the app sends today is not the one the report compared.
+        if isinstance(actions_raw, Mapping) and isinstance(actions_raw.get("rows"), list):
+            definition = apply_author_rows(
+                definition, {ACTIONS_SECTION: actions_raw["rows"]}, catalogue=verify_catalogue
+            )
     recompiled = compile_document(
         definition, view=view, prose=_StoredProse(prose), catalog_scales=None,
         historical=hist_source,

@@ -630,6 +630,54 @@ export const MESSAGE_CATALOG = {
     en: "Nothing needs a decision this month.",
     id: "Tidak ada yang memerlukan keputusan bulan ini.",
   },
+  "doc.section.action_register": {
+    en: "Actions",
+    id: "Tindakan",
+  },
+  "doc.actions.status.new": {
+    en: "New",
+    id: "Baru",
+  },
+  "doc.actions.status.open": {
+    en: "Open",
+    id: "Terbuka",
+  },
+  "doc.actions.status.accepted": {
+    en: "Accepted",
+    id: "Disetujui",
+  },
+  "doc.actions.status.wont_do": {
+    en: "Won't do",
+    id: "Tidak dikerjakan",
+  },
+  "doc.actions.status.resolved": {
+    en: "Resolved",
+    id: "Selesai",
+  },
+  "doc.actions.status.reopened": {
+    en: "Reopened",
+    id: "Dibuka kembali",
+  },
+  "doc.actions.owner.customer": {
+    en: "Customer",
+    id: "Pelanggan",
+  },
+  "doc.actions.owner.msp": {
+    en: "MSP",
+    id: "Penyedia layanan",
+  },
+  "doc.actions.since.this_report": {
+    en: "This report",
+    id: "Laporan ini",
+  },
+  "doc.actions.none": {
+    en: "No open actions.",
+    id: "Tidak ada tindakan terbuka.",
+  },
+  "doc.actions.more": {
+    en: "…and {count} more in the app.",
+    id: "…dan {count} lainnya di aplikasi.",
+  },
   "doc.section.rightsizing": {
     en: "Rightsizing Recommendations",
     id: "Rekomendasi Penyesuaian Ukuran",
