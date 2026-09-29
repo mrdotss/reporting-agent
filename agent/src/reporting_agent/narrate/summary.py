@@ -51,6 +51,8 @@ from reporting_agent.compile.blocks.base import (
 
 __all__ = [
     "MAX_OUTPUT_TOKENS",
+    "PROSE_MAX_ATTEMPTS",
+    "PROSE_READ_TIMEOUT_S",
     "SYSTEM_PROMPT",
     "SYSTEM_PROMPT_ID",
     "SYSTEM_PROMPT_TREND",
@@ -64,6 +66,19 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+PROSE_READ_TIMEOUT_S: Final[int] = 60
+"""How long one narration call may wait for the model's answer.
+
+The client default is the same 60 seconds, but paired with botocore's legacy retries it
+allowed **five** attempts: when Kimi K3 slowed to a 165-second peak on 29 Sep 2026, one
+executive summary sat through 5 × 60 seconds of read timeouts, the compiling phase passed
+its 300-second deadline, and the reaper failed a run whose figures were all there. A normal
+answer takes 5–10 seconds and the slowest seen in a healthy hour took 38."""
+
+PROSE_MAX_ATTEMPTS: Final[int] = 2
+"""One retry, for a throttle or a dropped connection. A model slow enough to time out once
+is rarely quick on the second try, and every attempt is spent inside the compiling phase."""
 
 MAX_OUTPUT_TOKENS: Final[int] = 4000
 """Four paragraphs of narrative, plus the reasoning a model like Kimi K3 does before it
@@ -491,8 +506,17 @@ def prose_generator(model_id: str, *, region: str | None = None, language: str =
         return None
     try:
         import boto3
+        from botocore.config import Config
 
-        client = boto3.client("bedrock-runtime", region_name=region)
+        client = boto3.client(
+            "bedrock-runtime",
+            region_name=region,
+            config=Config(
+                connect_timeout=5,
+                read_timeout=PROSE_READ_TIMEOUT_S,
+                retries={"mode": "standard", "total_max_attempts": PROSE_MAX_ATTEMPTS},
+            ),
+        )
     except Exception as exc:
         logger.warning(
             "no Bedrock client could be built for the prose model (%s); this run's "

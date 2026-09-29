@@ -35,6 +35,7 @@ does not describe it.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Final
@@ -417,8 +418,21 @@ def _phase_one(
     return (emitted, nodes_by_block, deferrals, factory_calls)
 
 
+PROSE_BUDGET_S: Final[float] = 120.0
+"""Seconds of narration one document may spend before later blocks stop asking.
+
+Narration runs inside the compiling phase, whose deadline is 300 seconds. Checked before
+each call, so the worst case is this budget plus one call's own bound (two attempts at
+`narrate/summary.py`'s 60-second read timeout): about 240 seconds, with the rest of the
+compile inside what is left."""
+
+
 def _phase_two(
-    context: BlockContext, deferrals: Sequence[Deferred]
+    context: BlockContext,
+    deferrals: Sequence[Deferred],
+    *,
+    clock: Callable[[], float] = time.monotonic,
+    budget_s: float = PROSE_BUDGET_S,
 ) -> dict[str, str | None]:
     """Ask the prose provider, once per deferred block that wants prose.
 
@@ -426,10 +440,26 @@ def _phase_two(
     model, so a run that failed because a narrator was unavailable would be the wrong trade in a
     product whose value is the figures. The failure is logged and the block assembles without
     prose.
+
+    A **slow** provider costs the same and no more. Once `budget_s` is spent, the blocks
+    still waiting render their figures without prose, rather than a sluggish model carrying
+    the compiling phase past its deadline and losing the whole report to the reaper.
     """
     answers: dict[str, str | None] = {}
+    started = clock()
+    over_budget = False
     for deferred in deferrals:
         if deferred.prose_request is None:
+            answers[deferred.block_id] = None
+            continue
+        if not over_budget and context.prose is not None and clock() - started >= budget_s:
+            over_budget = True
+            logger.warning(
+                "narration used its %d-second budget; the remaining blocks render their "
+                "figures without prose so the compiling phase stays inside its deadline",
+                int(budget_s),
+            )
+        if over_budget:
             answers[deferred.block_id] = None
             continue
         if context.prose is None:
