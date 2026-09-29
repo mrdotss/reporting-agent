@@ -40,7 +40,7 @@ export type SectionEntry = {
   readonly key: string
   readonly number: number
   readonly title_id: string
-  readonly group: "inventory" | "utilisation" | "closing"
+  readonly group: "summary" | "inventory" | "utilisation" | "closing"
   readonly position: "free" | "fixed" | "always"
   readonly repeatable: boolean
   readonly needs_resource_types: readonly string[]

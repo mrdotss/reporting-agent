@@ -146,6 +146,14 @@ The alternative — emitting a count as a text node — would put a number in th
 that the verifier's soundness pass finds and cannot match, and the report would be
 withheld. Counting is the one derivation the document format forces."""
 
+HOUSEKEEPING_FACT_KEY: Final[str] = "housekeeping"
+HOUSEKEEPING_CLEAR_VALUE: Final[str] = "none"
+"""The `housekeeping` fact's value for a resource with nothing to tidy — see `aws/facts.py`."""
+
+GLANCE_GAP_TYPES: Final[tuple[str, ...]] = ("backup_not_configured", "deallocated", "optimizer_not_available")
+"""The gap types At a glance counts by **resource**, each indexed even at zero."""
+
+
 SKU_CAPABILITIES: Final[tuple[tuple[str, str], ...]] = (
     ("vcpus_available", "count"),
     ("memory_bytes", "bytes"),
@@ -1188,8 +1196,32 @@ def build_snapshot_view(
                 type_counts.get(resource.resource_type, 0) + 1
             )
 
+    # The At a glance counts: how many **distinct** resources a finding or a gap names.
+    # A gap is recorded per fact or per metric — a resource with no backup carries two
+    # `backup_not_configured` gaps on AWS — so the per-type gap count above counts entries,
+    # and a headline reading "48 resources without a backup" for 24 would be wrong. These
+    # count resources, and are indexed at zero too, so a month with nothing to tidy still
+    # has a figure to print.
+    finding_resources = {
+        fact.resource_id
+        for fact in facts_by_pointer.values()
+        if fact.pointer.endswith("/value")
+        and fact.key == HOUSEKEEPING_FACT_KEY
+        and fact.value.strip().casefold() not in ("", HOUSEKEEPING_CLEAR_VALUE)
+    }
+    first_class_ids = {resource.resource_id for resource in first_class}
+    glance_gap_resources = {
+        gap_type: {gap.resource_id for gap in gaps if gap.gap_type == gap_type}
+        for gap_type in GLANCE_GAP_TYPES
+    }
+
     cardinalities: list[tuple[tuple[str, ...], int]] = [
         (("resources",), len(first_class)),
+        (("resources", "with_finding", HOUSEKEEPING_FACT_KEY), len(finding_resources & first_class_ids)),
+        *(
+            (("resources", "with_gap", gap_type), len(ids))
+            for gap_type, ids in glance_gap_resources.items()
+        ),
         (("gaps",), len(gaps)),
         (("statistics",), statistic_count),
         (("day_buckets",), day_bucket_count),

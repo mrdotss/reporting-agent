@@ -52,8 +52,9 @@ __all__ = [
 ]
 
 # The canonical group ordering.  Every section declares one of these.
-GROUP_ORDER: Final[tuple[str, ...]] = ("inventory", "utilisation", "closing")
-"""Document-order groups: inventory first, utilisation second, closing third."""
+GROUP_ORDER: Final[tuple[str, ...]] = ("summary", "inventory", "utilisation", "closing")
+"""Document-order groups: the summary first (At a glance), then inventory, utilisation and
+closing."""
 
 _GROUP_RANK: Final[dict[str, int]] = {g: i for i, g in enumerate(GROUP_ORDER)}
 

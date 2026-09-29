@@ -127,8 +127,11 @@ const QUOTED_STRING = /"([^"\n]*)"|'([^'\n]*)'/g
  * heading. It is a second narrative block rather than a mode of the first because the two
  * answer different questions in different places: `trend_narrative` says how an estate
  * moved across months and appears once, `resource_narrative` says what one machine did
- * inside the reported period and is expanded per resource. */
-const EXPECTED_TYPE_COUNT = 22
+ * inside the reported period and is expanded per resource.
+ *
+ * Grew to twenty-three with `at_a_glance`, the report's first page: headline counts
+ * derived from the snapshot and at most three rule-chosen decisions, with no model. */
+const EXPECTED_TYPE_COUNT = 23
 
 function read(absolutePath: string): string {
   expect(
@@ -342,14 +345,14 @@ function sameSet(a: readonly string[], b: readonly string[]): boolean {
 }
 
 describe("Requirements 2.5, 2.6 — the block-type vocabulary is mirrored", () => {
-  test("the TypeScript declaration is the twenty-one declared types", () => {
+  test("the TypeScript declaration is the twenty-three declared types", () => {
     const declared = declaredBlockTypes(TS_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])
     expect(declared.length).toBe(EXPECTED_TYPE_COUNT)
   })
 
-  test("the Python declaration is the twenty-one declared types", () => {
+  test("the Python declaration is the twenty-three declared types", () => {
     const declared = declaredBlockTypes(PY_DECLARATION)
 
     expect(declared).toEqual([...new Set(declared)])

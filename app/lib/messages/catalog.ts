@@ -586,6 +586,50 @@ export const MESSAGE_CATALOG = {
     en: "Nothing to tidy up: no stopped machine, unattached disk or idle public address was found.",
     id: "Tidak ada yang perlu dirapikan: tidak ditemukan mesin yang berhenti, disk yang tidak terpasang, atau alamat publik yang menganggur.",
   },
+  "doc.section.at_a_glance": {
+    en: "At a Glance",
+    id: "Sekilas",
+  },
+  "doc.glance.resources": {
+    en: "Resources in scope",
+    id: "Sumber daya dalam cakupan",
+  },
+  "doc.glance.housekeeping": {
+    en: "Resources to tidy up",
+    id: "Sumber daya yang perlu dirapikan",
+  },
+  "doc.glance.no_backup": {
+    en: "Resources without a backup",
+    id: "Sumber daya tanpa cadangan",
+  },
+  "doc.glance.stopped": {
+    en: "Stopped machines",
+    id: "Mesin yang berhenti",
+  },
+  "doc.glance.decisions": {
+    en: "Decisions for you",
+    id: "Keputusan untuk Anda",
+  },
+  "doc.glance.decision.housekeeping": {
+    en: "Review the resources listed under Housekeeping. Stopped machines, unattached disks and idle public addresses still cost money.",
+    id: "Tinjau sumber daya di bagian Kebersihan Sumber Daya. Mesin yang berhenti, disk yang tidak terpasang, dan alamat publik yang menganggur tetap dikenai biaya.",
+  },
+  "doc.glance.decision.backup": {
+    en: "Decide which of the resources without a backup need one. The backup section lists each of them.",
+    id: "Tentukan sumber daya tanpa cadangan mana yang membutuhkannya. Bagian cadangan mencantumkan masing-masing.",
+  },
+  "doc.glance.decision.rightsizing": {
+    en: "Review the rightsizing recommendations before next month's bill.",
+    id: "Tinjau rekomendasi penyesuaian ukuran sebelum tagihan bulan depan.",
+  },
+  "doc.glance.decision.optimizer": {
+    en: "Enroll AWS Compute Optimizer so next month's report can recommend instance sizes.",
+    id: "Aktifkan AWS Compute Optimizer agar laporan bulan depan dapat merekomendasikan ukuran instans.",
+  },
+  "doc.glance.decision.none": {
+    en: "Nothing needs a decision this month.",
+    id: "Tidak ada yang memerlukan keputusan bulan ini.",
+  },
   "doc.section.rightsizing": {
     en: "Rightsizing Recommendations",
     id: "Rekomendasi Penyesuaian Ukuran",

@@ -41,7 +41,7 @@ export type SectionCatalogueEntry = {
   readonly key: string
   readonly number: number
   readonly title_id: string
-  readonly group: "inventory" | "utilisation" | "closing"
+  readonly group: "summary" | "inventory" | "utilisation" | "closing"
   readonly position: "free" | "fixed" | "always"
   readonly repeatable: boolean
   readonly needs_resource_types: readonly string[]
@@ -84,6 +84,7 @@ type AuthoredSection = {
 // ---------------------------------------------------------------------------
 
 const GROUP_LABELS: Record<string, string> = {
+  summary: "Summary",
   inventory: "Inventory",
   utilisation: "Utilisation",
   closing: "Closing",
@@ -246,6 +247,7 @@ export function StepSections({
       string,
       { entry: SectionCatalogueEntry | undefined; section: AuthoredSection }[]
     > = {
+      summary: [],
       inventory: [],
       utilisation: [],
       closing: [],
@@ -424,7 +426,9 @@ export function StepSections({
       {/* Left: section list */}
       <div className="flex min-w-0 flex-col gap-3">
         <SectionList
-          groups={(["inventory", "utilisation", "closing"] as const).map((group) => ({
+          groups={(["summary", "inventory", "utilisation", "closing"] as const)
+            .filter((group) => group !== "summary" || grouped.summary!.length > 0)
+            .map((group) => ({
             key: group,
             label: GROUP_LABELS[group],
             items: grouped[group]!.map(({ entry, section }) => ({

@@ -125,6 +125,7 @@ BLOCK_TYPES: Final[tuple[str, ...]] = (
     "inventory_summary",
     "trend_narrative",
     "resource_narrative",
+    "at_a_glance",
 )
 # --- END BLOCK TYPES ---
 
@@ -156,6 +157,11 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     "executive_summary": {
         "required": [],
         "optional": [],
+        "enums": {},
+    },
+    "at_a_glance": {
+        "required": [],
+        "optional": ["caption"],
         "enums": {},
     },
     "kpi_row": {

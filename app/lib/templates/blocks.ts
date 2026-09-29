@@ -50,6 +50,7 @@ export const BLOCK_TYPES = [
   "inventory_summary",
   "trend_narrative",
   "resource_narrative",
+  "at_a_glance",
 ] as const
 // --- END BLOCK TYPES ---
 
@@ -122,6 +123,11 @@ export const BLOCK_CONFIG = {
   executive_summary: {
     required: [],
     optional: [],
+    enums: {},
+  },
+  at_a_glance: {
+    required: [],
+    optional: ["caption"],
     enums: {},
   },
 
