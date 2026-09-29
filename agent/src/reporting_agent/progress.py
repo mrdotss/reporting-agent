@@ -403,7 +403,7 @@ class ProgressReporter:
                 )
                 return
 
-            if not self._admit(phase):
+            if not self._admit(phase, completes=current is not None and total is not None and current >= total):
                 return
 
             body = self._build_body(phase, current=current, total=total, label=label)
@@ -522,8 +522,13 @@ class ProgressReporter:
 
     # --- the throttle ----------------------------------------------------------------
 
-    def _admit(self, phase: str) -> bool:
+    def _admit(self, phase: str, *, completes: bool = False) -> bool:
         """May this non-terminal callback be sent now (Req 38.15)?
+
+        An update that **completes** the phase's count (`current >= total`) is sent
+        whatever the throttle says. It is the one in-phase update nothing later repeats:
+        the next callback is a transition carrying no count, so dropping it left a
+        finished collection reading `0 / 55` on the run row for good.
 
         Decided **synchronously**, before the request is scheduled, so the limit bounds
         HTTP requests rather than tasks. `_last_sent_at` records the decision instant,
@@ -539,7 +544,7 @@ class ProgressReporter:
             return True
 
         last = self._last_sent_at.get(phase)
-        if last is not None and (now - last) < PROGRESS_THROTTLE_S:
+        if last is not None and (now - last) < PROGRESS_THROTTLE_S and not completes:
             return False
 
         self._last_sent_at[phase] = now

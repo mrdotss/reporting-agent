@@ -214,3 +214,30 @@ describe("step completion", () => {
     expect(items[1].getAttribute("data-step-id")).toBe("collecting")
   })
 })
+
+describe("a finished step keeps its count only when the count finished too", () => {
+  test("a stale 0 / 55 beside a completed step is not shown", () => {
+    // The runtime used to drop the final in-phase update, leaving the row at 0 / 55.
+    render(
+      <ActivityTimeline
+        steps={[step({ complete: true, progress: { done: 0, total: 55, unit: "resources", label: "Metrics" } })]}
+      />
+    )
+    expect(screen.queryByRole("progressbar")).toBeNull()
+    expect(document.querySelector('[data-slot="progress-count"]')).toBeNull()
+  })
+
+  test("a completed count stays", () => {
+    render(
+      <ActivityTimeline
+        steps={[step({ complete: true, progress: { done: 55, total: 55, unit: "resources", label: "Snapshot" } })]}
+      />
+    )
+    expect(document.querySelector('[data-slot="progress-count"]')?.textContent).toBe("55 / 55")
+  })
+
+  test("an unfinished step still shows its partial count", () => {
+    render(<ActivityTimeline steps={[step({ progress: { done: 0, total: 55, unit: "resources", label: "Metrics" } })]} />)
+    expect(screen.getByRole("progressbar")).toBeInTheDocument()
+  })
+})
