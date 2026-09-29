@@ -85,7 +85,15 @@ export function ActivityTimeline({
               </span>
             </div>
 
-            {step.progress === null ? null : (
+            {/*
+              A finished step keeps its count only when the count finished too. The
+              runtime used to drop the final in-phase update under its throttle, so a
+              collection that completed could be left reading "0 / 55" beside a check
+              mark; that stored count is stale, and the check mark already says the step
+              is done.
+            */}
+            {step.progress === null ||
+            (step.complete && step.progress.done < step.progress.total) ? null : (
               <div className="flex flex-col gap-1">
                 <div className="flex items-baseline gap-1.5 text-xs text-muted-foreground">
                   {/*

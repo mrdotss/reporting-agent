@@ -397,6 +397,12 @@ def test_the_throttle_admits_at_most_one_progress_callback_per_five_seconds() ->
     clock, transport, _ = _run_collecting_phase()
 
     in_phase = [call for call in transport.calls if call["body"]["phase"] == "collecting"]
+    # The update that completes the count is sent whatever the window says: it is the one
+    # nothing later repeats (see `ProgressReporter._admit`). The rule below is about every
+    # other in-phase refresh.
+    completing = [call for call in in_phase if call["body"]["current"] == call["body"]["total"]]
+    assert [call["body"]["current"] for call in completing] == [FOLDS]
+    in_phase = [call for call in in_phase if call not in completing]
     # One fold per simulated second, so a fold's `current` *is* its decision instant.
     decided_at = [call["body"]["current"] for call in in_phase]
 
@@ -483,3 +489,25 @@ def test_the_two_cadences_are_counted_off_one_shared_timeline() -> None:
         assert call["headers"][TOKEN_HEADER] == TOKEN
         assert TOKEN not in str(call["url"])
         assert TOKEN not in str(call["body"])
+
+
+def test_the_update_that_completes_the_count_is_never_throttled() -> None:
+    """A fast collection folds 55 resources in a second. Its final `55 / 55` used to fall
+    inside the window and be dropped, and the next callback — `compiling` — carries no
+    count, so the run row read `0 / 55` beside a finished step for good."""
+    clock = SimulatedClock()
+    transport = RecordingTransport(clock)
+    reporter = ProgressReporter(progress_url=URL, progress_token=TOKEN, run_id=RUN_ID, transport=transport, clock=clock)
+
+    async def scenario() -> None:
+        await reporter.report("collecting", current=0, total=55, label="Metrics")
+        await clock.advance(1)
+        await reporter.report("collecting", current=30, total=55, label="Metrics")
+        await reporter.report("collecting", current=55, total=55, label="Snapshot")
+        for _ in range(10):  # let the ordered deliveries run
+            await asyncio.sleep(0)
+        await reporter.aclose()
+
+    asyncio.run(scenario())
+    sent = [(call["body"]["current"], call["body"]["total"]) for call in transport.calls]
+    assert sent == [(0, 55), (55, 55)], sent

@@ -803,8 +803,12 @@ def test_the_throttle_suppresses_a_second_in_phase_report_and_nothing_else(
     wiring.run(monkeypatch)
     phases = [call["body"]["phase"] for call in wiring.transport.calls]
 
-    # The transition landed, once, despite the throttle.
-    assert phases.count("collecting") == 1
+    # The transition landed despite the throttle, and so did the update that completes
+    # the count — the one no later callback repeats. Every refresh between them was
+    # dropped.
+    collecting = wiring.bodies("collecting")
+    assert len(collecting) == 2, collecting
+    assert collecting[-1]["current"] == collecting[-1]["total"]
     # And so did the terminal call, which is the one whose loss costs a false TIMEOUT.
     assert phases.count("completed") == 1
 
