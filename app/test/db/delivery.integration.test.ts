@@ -19,6 +19,12 @@ vi.mock("@/lib/db", () => ({
   getPool: () => db.pool(),
 }))
 
+// The styled PDF's digest is hashed from S3; here it is the object's key, so the test
+// sees which file the proof page asked for.
+vi.mock("@/lib/aws/s3", () => ({
+  getObjectSha256: async (key: string) => (key.endsWith("/report-styled.pdf") ? `digest-of:${key}` : null),
+}))
+
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 
 import { enqueueRun } from "@/lib/actions/runs"
@@ -195,8 +201,9 @@ describe.skipIf(!db.enabled)("the public proof", () => {
     const proof = await readProof(runId)
     expect(proof).toMatchObject({ runId, figureCount: 402, snapshotSha256: HEX("a"), docxSha256: HEX("b"), pdfSha256: HEX("c") })
     expect(Object.keys(proof!).sort()).toEqual(
-      ["docxSha256", "figureCount", "pdfSha256", "periodEnd", "periodStart", "runId", "snapshotSha256", "timezone", "verifiedAt"].sort()
+      ["docxSha256", "figureCount", "pdfSha256", "periodEnd", "periodStart", "runId", "snapshotSha256", "styledPdfSha256", "timezone", "verifiedAt"].sort()
     )
+    expect(proof!.styledPdfSha256).toMatch(new RegExp(`^digest-of:[^/]+/reports/${runId}/report-styled\\.pdf$`))
     expect(await readProof(await verifiedRun({ completed: false }))).toBeNull()
     expect(await readProof(await verifiedRun({ verified: false }))).toBeNull()
     expect(await readProof("not-a-uuid")).toBeNull()
