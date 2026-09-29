@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.3.0",
+  "catalogue_version": "1.4.0",
   "providers": {
     "azure": {
       "sections": [
@@ -1296,6 +1296,33 @@
               }
             }
           ]
+        },
+        {
+          "key": "at_a_glance",
+          "number": 18,
+          "title_id": "doc.section.at_a_glance",
+          "group": "summary",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "A one-page summary for a reader who reads one page: headline counts derived from this run's snapshot, and at most three decisions chosen by fixed rules. Its own group, so it always comes first.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "at_a_glance",
+              "per": "section"
+            }
+          ]
         }
       ]
     },
@@ -2428,6 +2455,33 @@
                 "filter_not": "none",
                 "empty_message_id": "doc.section.housekeeping.clear"
               }
+            }
+          ]
+        },
+        {
+          "key": "at_a_glance",
+          "number": 18,
+          "title_id": "doc.section.at_a_glance",
+          "group": "summary",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "A one-page summary for a reader who reads one page: headline counts derived from this run's snapshot, and at most three decisions chosen by fixed rules. Its own group, so it always comes first.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "at_a_glance",
+              "per": "section"
             }
           ]
         }

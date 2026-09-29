@@ -136,3 +136,25 @@ def test_housekeeping_lists_only_what_needs_tidying(
     # The stopped instance is listed; the running one, its volume and its Elastic IP are not.
     assert len(rows) == 1 and "i-0fedcba9876543210" in rows[0][0], rows
     assert "Stopped: its volumes and any Elastic IP still bill" in rows[0]
+
+
+def test_at_a_glance_opens_the_report_with_verified_counts_and_decisions(
+    walked: tuple[InMemoryObjectStore, list[dict[str, Any]], BaseException | None],
+) -> None:
+    from docx import Document
+
+    store, _, _ = walked
+    document = Document(BytesIO(store.get(next(k for k in store.keys() if k.endswith("/report.docx"))).body))  # type: ignore[union-attr]
+    headings = [p.text for p in document.paragraphs if p.style.name.startswith("Heading 1")]
+    # Its own group, so it comes before every inventory section.
+    assert headings.index("At a Glance") < headings.index("AWS Account Overview"), headings
+
+    table = next(t for t in document.tables if any(c.text == "Resources to tidy up" for row in t.rows for c in row.cells))
+    values = {row.cells[0].text: row.cells[1].text for row in table.rows[1:]}
+    # The fake account: one stopped instance to tidy up; the instance, both volumes... the
+    # counts are distinct resources, so a resource with two backup gaps counts once.
+    assert values["Resources to tidy up"] == "1"
+    assert values["Stopped machines"] == "1"
+    text = "\n".join(p.text for p in document.paragraphs)
+    assert "Decisions for you" in text
+    assert "Review the resources listed under Housekeeping." in text

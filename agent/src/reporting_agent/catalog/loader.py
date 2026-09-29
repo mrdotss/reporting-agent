@@ -219,9 +219,10 @@ type SourceKind = Literal["metric", "sku_capability"]
 # --- section catalogue vocabulary (task 3.1) ----------------------------------
 
 DECLARED_SECTION_GROUPS: Final[frozenset[str]] = frozenset(
-    {"inventory", "utilisation", "closing"}
+    {"summary", "inventory", "utilisation", "closing"}
 )
-"""The three groups sections may declare — inventory, utilisation, closing."""
+"""The four groups sections may declare — summary (At a glance), inventory, utilisation,
+closing."""
 
 DECLARED_SECTION_POSITIONS: Final[frozenset[str]] = frozenset(
     {"free", "fixed", "always"}

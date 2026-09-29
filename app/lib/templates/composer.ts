@@ -147,6 +147,7 @@ export const BLOCK_TYPE_LABELS = {
   blank_rows_table: "Blank rows table",
   metric_summary: "Metric summary",
   inventory_summary: "Inventory summary",
+  at_a_glance: "At a glance",
 } as const satisfies Record<BlockType, string>
 
 /** The label for `type`, or the raw type for an undeclared one. */

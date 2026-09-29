@@ -54,16 +54,16 @@ class TestShippedCatalogue:
 
     def test_loads_successfully(self, sections: LoadedSectionCatalogue):
         # 1.1.0 added the AWS catalogue beside Azure's; 1.2.0 its network, backup and rightsizing
-        # sections; 1.3.0 Housekeeping, in both.
-        assert sections.catalogue_version == "1.3.0"
+        # sections; 1.3.0 Housekeeping, in both; 1.4.0 At a glance.
+        assert sections.catalogue_version == "1.4.0"
 
-    def test_seventeen_entries(self, sections: LoadedSectionCatalogue):
-        assert len(sections.entries) == 17
+    def test_eighteen_entries(self, sections: LoadedSectionCatalogue):
+        assert len(sections.entries) == 18
 
     def test_canonical_numbers_unique(self, sections: LoadedSectionCatalogue):
         numbers = sections.numbers
         assert len(numbers) == len(set(numbers))
-        assert numbers == tuple(range(1, 18))
+        assert numbers == tuple(range(1, 19))
 
     def test_keys_unique(self, sections: LoadedSectionCatalogue):
         keys = sections.keys
@@ -349,9 +349,9 @@ class TestCrossHalfAgreement:
 
     def test_raw_json_is_valid(self, raw_sections: dict):
         """The raw JSON file parses to what both halves read."""
-        assert raw_sections["catalogue_version"] == "1.3.0"
+        assert raw_sections["catalogue_version"] == "1.4.0"
         sections = raw_sections["providers"]["azure"]["sections"]
-        assert len(sections) == 17
+        assert len(sections) == 18
 
     def test_entry_set_agreement(self, sections: LoadedSectionCatalogue, raw_sections: dict):
         """Keys from the loader match keys in the raw JSON."""

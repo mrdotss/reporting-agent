@@ -21,6 +21,11 @@
       "type": "executive_summary"
     },
     {
+      "config": {},
+      "id": "b-glance",
+      "type": "at_a_glance"
+    },
+    {
       "config": {
         "metrics": [
           {

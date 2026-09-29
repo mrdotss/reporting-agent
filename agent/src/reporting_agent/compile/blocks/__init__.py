@@ -41,7 +41,7 @@ from typing import Final
 
 from reporting_agent.catalog.loader import LoadedSectionCatalogue
 from reporting_agent.compile.ast import Block, Document, compiling_against
-from reporting_agent.compile.blocks import charts, comparison, layout, narrative, record, tables
+from reporting_agent.compile.blocks import charts, comparison, glance, layout, narrative, record, tables
 from reporting_agent.compile.blocks.base import (
     BlockContext,
     BlockOutput,
@@ -109,6 +109,7 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
     "historical_trend": charts.compile_historical_trend,
     "trend_narrative": narrative.compile_trend_narrative,
     "resource_narrative": narrative.compile_resource_narrative,
+    "at_a_glance": glance.compile_at_a_glance,
     "blank_rows_table": compile_blank_rows_table,
 }
 """Every declared block type but `row`, which needs the child compiler and is dispatched
