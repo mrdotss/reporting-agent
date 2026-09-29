@@ -34,6 +34,17 @@ export type BoardProject = Readonly<{
   createdMonth: string
   connector: string | null
   preset: string | null
+  /** The customer's monthly schedule, when it has an enabled one. */
+  schedule?: BoardSchedule | null
+}>
+
+export type BoardSchedule = Readonly<{
+  /** "on the 1st at 02:00 WIB" */
+  cadence: string
+  /** "1 Oct, 02:00" — the next run, in WIB. */
+  next: string
+  /** Why the last scheduled run did not start, if it did not. */
+  lastError: string | null
 }>
 
 export type BoardCell = Readonly<{

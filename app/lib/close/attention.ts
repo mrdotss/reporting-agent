@@ -45,6 +45,17 @@ export async function loadAttention(
         body: "The latest run was not delivered, so no document went out.",
         action: { kind: "request", projectId: row.project.id, label: "Retry" },
       })
+    } else if (state === "due" && row.project.schedule?.lastError) {
+      items.push({
+        key: `customer:${row.project.id}`,
+        state: "undelivered",
+        title: row.project.name,
+        body: `The scheduled run didn’t start: ${row.project.schedule.lastError}`,
+        action: { kind: "request", projectId: row.project.id, label: "Request" },
+      })
+    } else if (state === "due" && row.project.schedule) {
+      // Nothing for the consultant to do: the schedule starts it.
+      continue
     } else if (state === "due") {
       items.push({
         key: `customer:${row.project.id}`,

@@ -1270,6 +1270,56 @@ export const askAccess = pgTable("ask_access", {
 })
 
 /**
+ * A customer's monthly report, run on a timer (the Close Board's scheduled close).
+ *
+ * One row per customer, connector and preset. The cron tick enqueues a due row through
+ * `enqueueRun` as `user_id` — the member who saved it — so a scheduled run passes every
+ * check a requested one does, and dedupes with it. `last_attempt_month` (`YYYY-MM` in the
+ * row's timezone) is claimed before the enqueue, which is what makes a schedule run once a
+ * month however many ticks see it due; `last_error` keeps why an attempt could not start,
+ * for the Close Board to show.
+ */
+export const runSchedules = pgTable(
+  "run_schedules",
+  {
+    id: text("id").primaryKey(),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => workspaces.id, { onDelete: "cascade" }),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    connectedSubscriptionId: text("connected_subscription_id")
+      .notNull()
+      .references(() => connectedSubscriptions.id, { onDelete: "cascade" }),
+    templateId: text("template_id")
+      .notNull()
+      .references(() => reportTemplates.id, { onDelete: "cascade" }),
+    /** AWS only: the regions each run covers; empty is every enabled region. */
+    regions: text("regions").array(),
+    dayOfMonth: integer("day_of_month").notNull(),
+    hour: integer("hour").notNull(),
+    timezone: text("timezone").notNull().default("Asia/Jakarta"),
+    enabled: boolean("enabled").notNull().default(true),
+    lastAttemptMonth: text("last_attempt_month"),
+    lastAttemptAt: instant("last_attempt_at"),
+    lastRunId: text("last_run_id"),
+    lastError: text("last_error"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+    updatedAt: instant("updated_at").notNull().defaultNow(),
+  },
+  (t) => [
+    unique("run_schedules_project_uq").on(t.projectId),
+    index("run_schedules_workspace_idx").on(t.workspaceId),
+    check("run_schedules_day_ck", sql`${t.dayOfMonth} between 1 and 28`),
+    check("run_schedules_hour_ck", sql`${t.hour} between 0 and 23`),
+  ]
+)
+
+/**
  * One row per (template version, section) — the resources that section's rule
  * matched at PUBLISH time, against the scan the consultant was looking at while
  * authoring it (task 3.10, Requirement 9.5).
@@ -1360,6 +1410,7 @@ export type NewConnectedSubscription =
   typeof connectedSubscriptions.$inferInsert
 
 export type ReportRun = typeof reportRuns.$inferSelect
+export type RunSchedule = typeof runSchedules.$inferSelect
 export type LiveMetricPull = typeof liveMetricPulls.$inferSelect
 export type NewReportRun = typeof reportRuns.$inferInsert
 

@@ -12,6 +12,7 @@ import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { IncidentsFieldset } from "@/components/reports/incidents-fieldset"
 import { RegionsFieldset } from "@/components/reports/regions-fieldset"
+import { SchedulePanel } from "@/components/schedules/schedule-panel"
 import { Identifier } from "@/components/identifier"
 import {
   Select,
@@ -33,6 +34,7 @@ import {
   MAX_REVISION_NOTE_LENGTH,
   type Incident,
 } from "@/lib/runs/input"
+import type { ScheduleView } from "@/lib/schedules/view"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 import { SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
 
@@ -133,6 +135,7 @@ export function RunForm({
   subscriptions,
   templates,
   nowIso,
+  schedule = null,
 }: Readonly<{
   subscriptions: readonly ConnectedSubscriptionView[]
   /**
@@ -155,6 +158,8 @@ export function RunForm({
    * produce a mismatch on the one screen whose job is to be precise about dates.
    */
   nowIso: string
+  /** This customer's monthly schedule, when it has one. */
+  schedule?: ScheduleView | null
 }>) {
   const workspace = useWorkspace()
   const projectScope = useCreationScope()
@@ -704,6 +709,30 @@ export function RunForm({
           enabled={enabledRegions}
           picked={pickedRegions}
           onChange={setPickedRegions}
+        />
+      ) : null}
+
+      {/*
+        A monthly schedule for this customer. Only inside a workspace — a schedule belongs
+        to a customer — and never for a preset that needs per-run front-matter values,
+        which a timer has nobody to ask for.
+      */}
+      {projectScope.workspaceId && projectScope.projectId ? (
+        <SchedulePanel
+          workspaceId={projectScope.workspaceId}
+          projectId={projectScope.projectId}
+          connectedSubscriptionId={connectedSubscriptionId}
+          templateId={templateId}
+          regions={regions}
+          schedule={schedule}
+          nameOfConnector={(id) => subscriptions.find((entry) => entry.id === id)?.displayName}
+          nameOfTemplate={(id) => templates.find((entry) => entry.id === id)?.name}
+          canSave={
+            connectedSubscriptionId !== "" &&
+            selectedTemplate?.currentVersion != null &&
+            !requiresFrontMatter &&
+            !regionsIncomplete
+          }
         />
       ) : null}
 

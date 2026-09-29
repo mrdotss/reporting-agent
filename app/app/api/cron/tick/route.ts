@@ -8,6 +8,7 @@ import {
   sweepExpiredRuns,
 } from "@/lib/runs/claim"
 import { startRunInvocation } from "@/lib/runs/invoke"
+import { startDueSchedules } from "@/lib/schedules/store"
 import { sessionIdForRun } from "@/lib/session-id"
 
 /**
@@ -121,6 +122,24 @@ export async function POST(request: Request): Promise<Response> {
       console.warn(
         `[api/cron/tick] failed run ${run.id} as TIMEOUT: its ` +
           `${run.expiredPhase} phase exceeded its deadline.`
+      )
+    }
+
+    // 1b — Monthly schedules. Enqueued before the claim so a scheduled run starts in this
+    //      same tick. Contained: a schedule that cannot be read must not stop the tick
+    //      from claiming the work already queued.
+    try {
+      for (const attempt of await startDueSchedules()) {
+        if ("error" in attempt) {
+          console.warn(`[api/cron/tick] schedule ${attempt.scheduleId} did not start: ${attempt.error}`)
+        } else if (!attempt.deduplicated) {
+          console.info(`[api/cron/tick] schedule ${attempt.scheduleId} enqueued run ${attempt.runId}.`)
+        }
+      }
+    } catch (thrown) {
+      console.error(
+        `[api/cron/tick] reading schedules raised ` +
+          `${thrown instanceof Error ? thrown.name : typeof thrown}; queued runs are still claimed.`
       )
     }
 

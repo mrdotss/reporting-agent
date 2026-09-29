@@ -144,6 +144,7 @@ describe("the migration applies", () => {
       "report_template_versions",
       "report_templates",
       "report_verifications",
+      "run_schedules",
       "sessions",
       "subscription_scans",
       "users",
@@ -413,6 +414,8 @@ describe("the declared constraints and indexes exist", () => {
       "report_template_versions_template_id_version_uq",
       "report_templates_user_id_seeded_starter_key_uq",
       "report_verifications_run_id_attempt_id_uq",
+      // One monthly schedule per customer.
+      "run_schedules_project_uq",
       "sessions_session_token_hash_unique",
       "users_email_normalized_unique",
       "workspace_invitations_token_hash_unique",
