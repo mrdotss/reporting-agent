@@ -999,6 +999,7 @@ describe("Requirements 9.4, 9.5 — the migration set is scannable", () => {
       "report_template_versions",
       "report_templates",
       "report_verifications",
+      "run_schedules",
       "sessions",
       "subscription_scans",
       "users",

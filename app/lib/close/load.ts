@@ -2,6 +2,9 @@ import "server-only"
 
 import { getPool } from "@/lib/db"
 
+import { formatSlot, nextScheduledRun } from "@/lib/schedules/due"
+import { scheduleCadence } from "@/lib/schedules/view"
+
 import { buildBoard, type Board, type BoardProject, type BoardRun } from "./board"
 import { closePeriod, trailingMonths, type ClosePeriod } from "./period"
 
@@ -27,8 +30,10 @@ export async function loadClose(
   const first = `${months[0]}-01`
 
   const [projects, runs] = await Promise.all([
-    getPool().query<BoardProject>(
+    getPool().query<BoardProject & ScheduleColumns>(
       `select p.id, p.name, p.archived_at is not null as archived,
+              s.day_of_month as "scheduleDay", s.hour as "scheduleHour", s.timezone as "scheduleTimezone",
+              s.last_attempt_month as "scheduleLastAttemptMonth", s.last_error as "scheduleLastError",
               to_char(p.created_at at time zone $3, 'YYYY-MM') as "createdMonth",
               (select c.display_name from connected_subscriptions c
                 where c.project_id = p.id order by c.display_name limit 1) as connector,
@@ -36,6 +41,7 @@ export async function loadClose(
                 where t.project_id = p.id order by t.name limit 1) as preset
          from projects p
          join workspace_members m on m.workspace_id = p.workspace_id and m.user_id = $1
+         left join run_schedules s on s.project_id = p.id and s.enabled
         where p.workspace_id = $2
         order by p.created_at, p.id`,
       [userId, workspace.id, CLOSE_TIMEZONE]
@@ -57,6 +63,37 @@ export async function loadClose(
 
   return {
     period,
-    board: buildBoard(projects.rows, runs.rows, months, period.month),
+    board: buildBoard(projects.rows.map((row) => withSchedule(row, now)), runs.rows, months, period.month),
+  }
+}
+
+type ScheduleColumns = {
+  scheduleDay: number | null
+  scheduleHour: number | null
+  scheduleTimezone: string | null
+  scheduleLastAttemptMonth: string | null
+  scheduleLastError: string | null
+}
+
+function withSchedule(row: BoardProject & ScheduleColumns, now: Date): BoardProject {
+  const {
+    scheduleDay,
+    scheduleHour,
+    scheduleTimezone,
+    scheduleLastAttemptMonth,
+    scheduleLastError,
+    ...project
+  } = row
+  if (scheduleDay === null || scheduleHour === null || scheduleTimezone === null) {
+    return { ...project, schedule: null }
+  }
+  const timing = { dayOfMonth: scheduleDay, hour: scheduleHour, timezone: scheduleTimezone }
+  return {
+    ...project,
+    schedule: {
+      cadence: scheduleCadence(scheduleDay, scheduleHour),
+      next: formatSlot(nextScheduledRun(timing, scheduleLastAttemptMonth, now)),
+      lastError: scheduleLastError,
+    },
   }
 }

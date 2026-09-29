@@ -75,6 +75,16 @@ vi.mock("@/lib/runs/invoke", () => ({
   },
 }))
 
+// Schedules are their own module with their own tests; here they start nothing, and a
+// throw from them must not stop the claim (see the last test in this file).
+const schedules = vi.hoisted(() => ({ throws: false }))
+vi.mock("@/lib/schedules/store", () => ({
+  startDueSchedules: async () => {
+    if (schedules.throws) throw new Error("schedules table unreachable")
+    return []
+  },
+}))
+
 const { POST } = await import("@/app/api/cron/tick/route")
 
 const { MissingRuntimeConfigError } = await import("@/lib/aws/agentcore")
@@ -142,6 +152,7 @@ beforeEach(() => {
   claim.sweepThrows = undefined
   invoke.calls = []
   invoke.outcomes = []
+  schedules.throws = false
 
   vi.spyOn(console, "warn").mockImplementation(() => {})
   vi.spyOn(console, "error").mockImplementation(() => {})
@@ -361,5 +372,16 @@ describe("a failed sweep or claim is a 500, not a partial report", () => {
 
     expect(response.status).toBe(500)
     expect(claim.claimCalls).toBe(0)
+  })
+})
+
+describe("monthly schedules", () => {
+  test("a schedule store that throws does not stop the claim", async () => {
+    schedules.throws = true
+    claim.claimed = [claimed("run-1")]
+
+    const body = (await (await POST(tick())).json()) as TickBody
+
+    expect(body).toMatchObject({ claimed: 1, invoked: 1 })
   })
 })

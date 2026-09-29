@@ -176,6 +176,13 @@
       "when": 1790321997302,
       "tag": "0024_add_aws_connector",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1790649517649,
+      "tag": "0025_add_run_schedules",
+      "breakpoints": true
     }
   ]
 }

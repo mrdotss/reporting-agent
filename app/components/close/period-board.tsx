@@ -79,7 +79,11 @@ export function PeriodBoard({
               >
                 <CustomerName row={row} />
                 <span className="block truncate text-xs text-muted-foreground">
-                  {[row.project.connector, row.project.preset]
+                  {[
+                    row.project.connector,
+                    row.project.preset,
+                    row.project.schedule ? `Monthly ${row.project.schedule.cadence.replace(/^on the /, "")}` : null,
+                  ]
                     .filter(Boolean)
                     .join(" · ") || "No connector yet"}
                 </span>
@@ -132,7 +136,7 @@ function CustomerName({ row }: Readonly<{ row: BoardRow }>) {
   )
 }
 
-function note(cell: BoardCell, now: Date = new Date()): string {
+function note(cell: BoardCell, schedule: BoardRow["project"]["schedule"], now: Date = new Date()): string {
   const run = cell.run
   const when = run ? ` · ${relativeInstant(run.createdAt, now)}` : ""
   switch (cell.state) {
@@ -149,7 +153,8 @@ function note(cell: BoardCell, now: Date = new Date()): string {
     case "undelivered":
       return "No document went out"
     case "due":
-      return "Nothing requested yet"
+      if (schedule?.lastError) return "Scheduled run didn’t start"
+      return schedule ? `Runs automatically ${schedule.next} WIB` : "Nothing requested yet"
     default:
       return ""
   }
@@ -192,7 +197,7 @@ function CurrentCell({
           <StatusMark state={state} />
           {CLOSE_STATE_LABEL[state]}
         </span>
-        <span className="truncate text-xs text-muted-foreground">{note(row.current)}</span>
+        <span className="truncate text-xs text-muted-foreground">{note(row.current, row.project.schedule)}</span>
       </div>
       {action}
     </div>

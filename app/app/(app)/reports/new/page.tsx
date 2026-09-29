@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/empty"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
+import { readSchedule } from "@/lib/schedules/store"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 import { selectedContext } from "@/lib/workspaces/context"
@@ -121,9 +122,10 @@ export default async function NewReportPage() {
 
   const scope = { workspaceId: workspace.id, projectId: project.id }
 
-  const [subscriptions, rows] = await Promise.all([
+  const [subscriptions, rows, schedule] = await Promise.all([
     listConnectedSubscriptions(user.id, scope),
     listTemplates(user.id, scope),
+    readSchedule(user.id, scope),
   ])
 
   const templates = await Promise.all(
@@ -149,6 +151,7 @@ export default async function NewReportPage() {
         subscriptions={subscriptions}
         templates={templates}
         nowIso={new Date().toISOString()}
+        schedule={schedule}
       />
     </PageBody>
   )
