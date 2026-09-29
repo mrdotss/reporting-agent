@@ -133,7 +133,7 @@ describe("Requirement 14.2 — the rendering budget matches the adopted TOC appr
       queued: 900,
       claimed: 300,
       collecting: 1800,
-      compiling: 300,
+      compiling: 600,
       rendering: 900,
       verifying: 600,
     })

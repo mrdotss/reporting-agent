@@ -185,7 +185,7 @@ export const AGENT_ERROR_CODES: ReadonlySet<RunErrorCode> = Object.freeze(
  * | `queued` | 900 | the reaper runs at most every 60 seconds, so this tolerates 14 consecutive missed ticks (Requirement 39.12) before a queued run is failed |
  * | `claimed` | 300 | claimed-but-not-collecting means the container never started; five minutes covers a cold start on an arm64 image |
  * | `collecting` | 1800 | the 8-to-12-minute p99 run duration plus at least 900 seconds of headroom, so an ordinary slow month is not reaped mid-flight |
- * | `compiling` | 300 | pure computation over a snapshot already in memory; five minutes is generous for 200 blocks |
+ * | `compiling` | 600 | the compile itself is seconds, but the narrator's model calls run inside it: the runtime caps them at about 240 seconds (see below) |
  * | `rendering` | 900 | **two** LibreOffice conversions, each bounded at 300 seconds, and the emit precedes both |
  * | `verifying` | 600 | the verifier reads the whole document twice, and replay re-runs the aggregation over the raw archive |
  *
@@ -216,6 +216,17 @@ export const AGENT_ERROR_CODES: ReadonlySet<RunErrorCode> = Object.freeze(
  * This budget moves **with** that adoption and not before it: the other two
  * candidates convert once, and if `ADOPTED_APPROACH` were ever returned to
  * `none` or to a single-conversion candidate, this would go back to 600.
+ *
+ * ## Why `compiling` is 600 and not 300
+ *
+ * At 300 it assumed compiling was pure computation. It is not: the executive
+ * summary and trend narratives are model calls made between the figures and
+ * the document. On 29 Sep 2026 Kimi K3 slowed to 165 seconds a call, one
+ * summary sat through five read timeouts, and run 779dafa2 was reaped with
+ * every figure compiled — the runtime went on to finish a report the app had
+ * already failed. The runtime now bounds narration (`PROSE_BUDGET_S` in
+ * `agent/src/reporting_agent/compile/blocks/__init__.py`, plus one call at two
+ * 60-second attempts), and 600 keeps that worst case well inside the deadline.
  */
 export const PHASE_DEADLINE_SECONDS: Readonly<
   Partial<Record<RunStatus, number>>
@@ -223,7 +234,7 @@ export const PHASE_DEADLINE_SECONDS: Readonly<
   queued: 900,
   claimed: 300,
   collecting: 1800,
-  compiling: 300,
+  compiling: 600,
   rendering: 900,
   verifying: 600,
 })
