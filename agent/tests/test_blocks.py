@@ -1798,3 +1798,41 @@ def test_a_table_narrows_to_the_resources_whose_fact_holds_a_declared_value() ->
     assert context.resources_for(
         spec({FACT_FILTER_KEY: "direction", FACT_FILTER_VALUE_KEY: "Sideways"})
     ) == ()
+
+
+def test_a_table_can_leave_out_one_value_of_a_fact() -> None:
+    """`filter_not` — Housekeeping lists what needs tidying and leaves out `none`.
+
+    The fact is written for every resource, `none` for a healthy one, because a fact left out
+    is a `fact_unavailable` gap. A resource answering nothing is left out too.
+    """
+    from reporting_agent.collect.snapshot import FactEntry
+    from reporting_agent.compile.blocks.base import FACT_FILTER_KEY, FACT_FILTER_NOT_KEY
+
+    def resource(name: str, finding: str | None) -> object:
+        facts = () if finding is None else (
+            FactEntry(key="housekeeping", value=finding, value_kind="text", source="aws",
+                      collected_at="2026-08-01T00:00:00Z", formatted=finding),
+        )
+        return sf.vm(resource_id=f"/r/{name}", name=name, facts=facts)
+
+    view = view_of(resources=[
+        resource("stopped-box", "Stopped: its volumes and any Elastic IP still bill"),
+        resource("busy-box", "none"),
+        resource("loose-volume", "Not attached to any instance"),
+        resource("unanswered", None),
+    ])
+    context = BlockContext(
+        view=view,
+        ledger=FigureLedger(),
+        design=DesignSettings.from_plain(
+            df.definition([df.block("b", "resource_table", {"columns": [df.CPU_AVG]})])["design"]
+        ),
+        default_scope=scope_rules_from_plain(df.scope()),
+        messages=_MESSAGES,
+    )
+    spec = BlockSpec(
+        id="b", type="resource_table",
+        config={FACT_FILTER_KEY: "housekeeping", FACT_FILTER_NOT_KEY: "None"}, scope_override=None,
+    )
+    assert sorted(r.name for r in context.resources_for(spec)) == ["loose-volume", "stopped-box"]

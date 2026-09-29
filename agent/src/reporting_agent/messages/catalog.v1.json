@@ -633,6 +633,14 @@
       "en": "PostgreSQL Flexible Servers",
       "id": "Server Fleksibel PostgreSQL"
     },
+    "doc.section.housekeeping": {
+      "en": "Housekeeping",
+      "id": "Kebersihan Sumber Daya"
+    },
+    "doc.section.housekeeping.clear": {
+      "en": "Nothing to tidy up: no stopped machine, unattached disk or idle public address was found.",
+      "id": "Tidak ada yang perlu dirapikan: tidak ditemukan mesin yang berhenti, disk yang tidak terpasang, atau alamat publik yang menganggur."
+    },
     "doc.section.rightsizing": {
       "en": "Rightsizing Recommendations",
       "id": "Rekomendasi Penyesuaian Ukuran"

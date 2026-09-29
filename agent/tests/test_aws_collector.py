@@ -518,6 +518,7 @@ def test_a_collection_replays_to_the_same_digest() -> None:
         "availability_zone": "us-east-1a", "instance_type": "t3.micro", "launch_date": "2026-08-19",
         "memory": "1 GiB", "platform": "Linux/UNIX", "private_ip": "10.0.0.4", "public_ip": "none",
         "security_groups": "admin-sg, web-sg", "subnet": "subnet-0example", "vcpus": "2", "vpc": "vpc-0example",
+        "housekeeping": "none",
     }
     assert facts[VOLUME]["size"] == "8 GiB" and facts[VOLUME]["attached_to"] == "i-0123456789abcdef0"
     assert facts[DATABASE]["backup_retention_days"] == "0" and facts[DATABASE]["publicly_accessible"] == "yes"
@@ -532,7 +533,8 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     assert facts[VPC] == {"cidr": "10.0.0.0/16", "is_default": "no", "vpc_state": "available"}
     assert facts[SUBNET]["available_ips"] == "250" and facts[SUBNET]["public_on_launch"] == "no"
     assert facts[EIP] == {"public_ip": "203.0.113.10", "attached_to": "i-0123456789abcdef0",
-                          "private_ip": "10.0.0.4", "domain": "vpc"}
+                          "private_ip": "10.0.0.4", "domain": "vpc",
+                          "housekeeping": "none"}
     assert facts[GROUP]["inbound_rules"] == "1" and facts[GROUP]["outbound_rules"] == "1"
     assert facts[RULE_IN] == {"direction": "inbound", "protocol": "tcp", "ports": "443",
                               "peer": "0.0.0.0/0", "description": "public https"}
@@ -654,3 +656,37 @@ def test_each_fact_source_is_asked_only_where_its_resources_are() -> None:
     assert ("backup", "ap-southeast-3") in asked, "the database there is covered by AWS Backup"
     optimizer = {(g["gap_type"], g["resource_id"]) for g in result["gaps"] if g.get("source") == "compute_optimizer"}
     assert optimizer == {("optimizer_not_available", INSTANCE), ("optimizer_not_available", STOPPED)}
+
+
+def test_housekeeping_names_what_bills_without_working() -> None:
+    from reporting_agent.aws.facts import HOUSEKEEPING_CLEAR, fact_items
+
+    region = "us-east-1"
+
+    def rid(kind: str, name: str) -> str:
+        return f"arn:aws:ec2:{region}:{ACCOUNT}:{kind}/{name}"
+
+    raw = {
+        rid("instance", "i-run"): {"_kind": "instance", "_region": region, "InstanceId": "i-run", "State": {"Name": "running"}},
+        rid("instance", "i-off"): {"_kind": "instance", "_region": region, "InstanceId": "i-off", "State": {"Name": "stopped"}},
+        rid("volume", "vol-free"): {"_kind": "volume", "_region": region, "State": "available", "Attachments": []},
+        rid("volume", "vol-off"): {"_kind": "volume", "_region": region, "State": "in-use", "Attachments": [{"InstanceId": "i-off"}]},
+        rid("volume", "vol-run"): {"_kind": "volume", "_region": region, "State": "in-use", "Attachments": [{"InstanceId": "i-run"}]},
+        rid("elastic-ip", "eip-idle"): {"_kind": "eip", "_region": region, "PublicIp": "203.0.113.1"},
+        rid("elastic-ip", "eip-off"): {"_kind": "eip", "_region": region, "PublicIp": "203.0.113.2", "AssociationId": "a-1", "InstanceId": "i-off"},
+        rid("elastic-ip", "eip-run"): {"_kind": "eip", "_region": region, "PublicIp": "203.0.113.3", "AssociationId": "a-2", "InstanceId": "i-run"},
+        DATABASE: {"_kind": "database", "_region": "ap-southeast-3", "DBInstanceStatus": "stopped"},
+    }
+    found = {item["resource_id"].rsplit("/", 1)[-1].rsplit(":", 1)[-1]: item["housekeeping"]
+             for item in fact_items(sorted(raw), raw, {})}
+    assert found == {
+        "i-run": HOUSEKEEPING_CLEAR,
+        "i-off": "Stopped: its volumes and any Elastic IP still bill",
+        "vol-free": "Not attached to any instance",
+        "vol-off": "Attached only to a stopped instance",
+        "vol-run": HOUSEKEEPING_CLEAR,
+        "eip-idle": "Not attached: billed while idle",
+        "eip-off": "On a stopped instance: billed while idle",
+        "eip-run": HOUSEKEEPING_CLEAR,
+        "orders": "Stopped: storage still bills, and AWS starts it again after 7 days",
+    }

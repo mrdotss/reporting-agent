@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.2.0",
+  "catalogue_version": "1.3.0",
   "providers": {
     "azure": {
       "sections": [
@@ -1237,6 +1237,65 @@
               "per": "resource"
             }
           ]
+        },
+        {
+          "key": "housekeeping",
+          "number": 17,
+          "title_id": "doc.section.housekeeping",
+          "group": "closing",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "Microsoft.Compute/virtualMachines"
+          ],
+          "needs_fact_sources": [
+            "resource_graph"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "Resources that bill without doing work: stopped machines, unattached disks and volumes, idle public addresses. Read from each resource's `housekeeping` fact, which is `none` when there is nothing to tidy; the table leaves those out.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "housekeeping"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  }
+                ],
+                "_types": [
+                  "Microsoft.Compute/virtualMachines",
+                  "Microsoft.Compute/disks",
+                  "Microsoft.Network/publicIPAddresses"
+                ],
+                "filter_fact": "housekeeping",
+                "filter_not": "none",
+                "empty_message_id": "doc.section.housekeeping.clear"
+              }
+            }
+          ]
         }
       ]
     },
@@ -2309,6 +2368,66 @@
             {
               "block": "verification_record",
               "per": "section"
+            }
+          ]
+        },
+        {
+          "key": "housekeeping",
+          "number": 17,
+          "title_id": "doc.section.housekeeping",
+          "group": "closing",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance"
+          ],
+          "needs_fact_sources": [
+            "aws"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "Resources that bill without doing work: stopped machines, unattached disks and volumes, idle public addresses. Read from each resource's `housekeeping` fact, which is `none` when there is nothing to tidy; the table leaves those out.",
+          "expands_to": [
+            {
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "housekeeping"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  }
+                ],
+                "_types": [
+                  "AWS::EC2::Instance",
+                  "AWS::EC2::Volume",
+                  "AWS::EC2::EIP",
+                  "AWS::RDS::DBInstance"
+                ],
+                "filter_fact": "housekeeping",
+                "filter_not": "none",
+                "empty_message_id": "doc.section.housekeeping.clear"
+              }
             }
           ]
         }

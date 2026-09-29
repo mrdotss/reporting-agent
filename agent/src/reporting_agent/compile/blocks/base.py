@@ -101,6 +101,7 @@ __all__ = [
     "RESOURCE_TYPES_CONFIG_KEY",
     "EMPTY_MESSAGE_CONFIG_KEY",
     "FACT_FILTER_KEY",
+    "FACT_FILTER_NOT_KEY",
     "FACT_FILTER_VALUE_KEY",
     "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
@@ -163,6 +164,14 @@ a stored definition."""
 
 FACT_FILTER_KEY: Final[str] = "filter_fact"
 FACT_FILTER_VALUE_KEY: Final[str] = "filter_value"
+FACT_FILTER_NOT_KEY: Final[str] = "filter_not"
+"""The other way round: keep the resources whose named fact holds any value **but** this one.
+
+Housekeeping lists what needs tidying. Its `housekeeping` fact is written for every resource
+it covers — `none` for a resource with nothing to tidy — because a fact left out is a
+`fact_unavailable` gap, and a healthy resource is not a gap. So the table narrows to
+`housekeeping` other than `none`, which an equality filter cannot say. A resource that
+answers the key with nothing is left out too: a finding nobody recorded is not a finding."""
 """How one table narrows to the resources whose named fact holds one value.
 
 A network security group's rules are listed under an `Inbound` label and an `Outbound`
@@ -807,6 +816,17 @@ class BlockContext:
         """
         key = block.config.get(FACT_FILTER_KEY)
         value = block.config.get(FACT_FILTER_VALUE_KEY)
+        excluded = block.config.get(FACT_FILTER_NOT_KEY)
+        if isinstance(key, str) and isinstance(excluded, str) and not isinstance(value, str):
+            unwanted = excluded.casefold()
+            return tuple(
+                resource
+                for resource in resources
+                if any(
+                    fact.key == key and str(fact.value).strip() and str(fact.value).casefold() != unwanted
+                    for fact in source.facts_for(resource.resource_id)
+                )
+            )
         if not isinstance(key, str) or not isinstance(value, str):
             return resources
 

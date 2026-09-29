@@ -457,6 +457,7 @@ def test_a_resource_on_a_later_page_records_no_absence_from_an_earlier_one() -> 
                         provisioning_state="Succeeded",
                         vm_size="x",
                         data_disk_count="1",
+                        housekeeping="none",
                     )
                 )
             ),
@@ -468,6 +469,7 @@ def test_a_resource_on_a_later_page_records_no_absence_from_an_earlier_one() -> 
                         provisioning_state="Succeeded",
                         vm_size="x",
                         data_disk_count="1",
+                        housekeeping="none",
                     )
                 )
             ),

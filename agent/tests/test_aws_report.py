@@ -121,3 +121,18 @@ def test_the_document_speaks_aws(walked: tuple[InMemoryObjectStore, list[dict[st
     assert "t3.micro" in tables and "1 GiB" in tables and "admin-sg, web-sg" in tables
     assert "10.0.0.0/16" in tables and "public https" in tables and "203.0.113.10" in tables
     assert "leftover" not in tables  # an unused security group is not reported
+
+
+def test_housekeeping_lists_only_what_needs_tidying(
+    walked: tuple[InMemoryObjectStore, list[dict[str, Any]], BaseException | None],
+) -> None:
+    from docx import Document
+
+    store, _, _ = walked
+    document = Document(BytesIO(store.get(next(k for k in store.keys() if k.endswith("/report.docx"))).body))  # type: ignore[union-attr]
+    assert "Housekeeping" in "\n".join(p.text for p in document.paragraphs)
+    table = next(t for t in document.tables if any("Housekeeping" == c.text for c in t.rows[0].cells))
+    rows = [[cell.text for cell in row.cells] for row in table.rows[1:]]
+    # The stopped instance is listed; the running one, its volume and its Elastic IP are not.
+    assert len(rows) == 1 and "i-0fedcba9876543210" in rows[0][0], rows
+    assert "Stopped: its volumes and any Elastic IP still bill" in rows[0]

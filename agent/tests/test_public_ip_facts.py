@@ -54,7 +54,8 @@ def test_public_ip_addresses_has_no_metrics_v1_entry_and_no_child_of() -> None:
 
 
 def test_public_ip_addresses_declares_the_four_section_5_facts() -> None:
-    """address, allocation_method, sku, association — section 5's own column list."""
+    """address, allocation_method, sku, association — section 5's own column list — plus
+    `housekeeping`, the Housekeeping section's one column."""
     catalog = load_catalog()
     facts = catalog.facts.for_resource_type(PUBLIC_IP_TYPE)
     keys = {entry.key for entry in facts}
@@ -66,6 +67,7 @@ def test_public_ip_addresses_declares_the_four_section_5_facts() -> None:
         "allocation_method",
         "sku",
         "association",
+        "housekeeping",
     }
     assert not {"category", "impact", "recommendation"} & keys
     for entry in facts:
