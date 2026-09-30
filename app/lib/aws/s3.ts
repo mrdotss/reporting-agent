@@ -3,6 +3,7 @@ import "server-only"
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadObjectCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3"
@@ -284,6 +285,18 @@ export async function getObjectSha256(key: string): Promise<string | null> {
   const hash = createHash("sha256")
   for await (const chunk of response.Body as AsyncIterable<Uint8Array>) hash.update(chunk)
   return hash.digest("hex")
+}
+
+/** Whether one artifact exists. The key must be well-formed; nothing is downloaded. */
+export async function objectExists(key: string): Promise<boolean> {
+  if (parseArtifactKey(key) === null) return false
+  try {
+    await getS3Client().send(new HeadObjectCommand({ Bucket: requireEnv("RPT_ARTIFACT_BUCKET"), Key: key }))
+    return true
+  } catch (error) {
+    if (error instanceof Error && (error.name === "NotFound" || error.name === "NoSuchKey")) return false
+    throw error
+  }
 }
 
 // --- Previews ---------------------------------------------------------------

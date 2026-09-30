@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from reporting_agent.compile.ast import Column, FigureCell, Paragraph, Row, Table
+from reporting_agent.compile.ast import Column, FigureCell, Paragraph, Row, Table, Text, TextCell
 from reporting_agent.compile.blocks.base import (
     BlockContext,
     BlockOutput,
@@ -32,9 +32,15 @@ from reporting_agent.compile.blocks.base import (
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.snapshot_view import HOUSEKEEPING_FACT_KEY, SnapshotView
 
-__all__ = ["MAX_DECISIONS", "compile_at_a_glance", "decisions_for"]
+__all__ = ["GLANCE_ARTIFACT", "HEADLINE_KEYS", "MAX_DECISIONS", "compile_at_a_glance", "decisions_for", "glance_summary"]
 
 MAX_DECISIONS: Final[int] = 3
+
+HEADLINE_KEYS: Final[tuple[str, ...]] = ("resources", "housekeeping", "no_backup", "stopped")
+"""The headline table's row keys, in order."""
+
+GLANCE_ARTIFACT: Final[str] = "glance.json"
+"""What the app quotes in the email that delivers the report: see `glance_summary`."""
 
 RIGHTSIZING_FINDINGS: Final[frozenset[str]] = frozenset({"overprovisioned", "underprovisioned"})
 """Compute Optimizer's findings that recommend a different size."""
@@ -124,3 +130,47 @@ def compile_at_a_glance(context: BlockContext, block: BlockSpec, cursor: BlockCu
     for decision in decisions_for(view):
         nodes.append(text_paragraph(cursor.child("nodes", len(nodes)), "Body Text", messages.text(decision)))
     return BlockOutput(nodes=tuple(nodes))
+
+
+def glance_summary(blocks: object) -> dict[str, object] | None:
+    """At a glance as the document printed it, for the email that delivers the report.
+
+    Read back from the compiled nodes rather than recomputed, so each value is the
+    verified figure's own `formatted` string and each decision the sentence on the page.
+    `blocks` is the compile's `nodes_by_block`. `None` when the report has no At a glance
+    section: the email then quotes nothing it would not also find in the document.
+    """
+    if not hasattr(blocks, "values"):
+        return None
+    for nodes in blocks.values():  # type: ignore[attr-defined]
+        nodes = tuple(nodes)
+        if not nodes or not isinstance(nodes[0], Table):
+            continue
+        table = nodes[0]
+        if tuple(row.key for row in table.rows) != HEADLINE_KEYS:
+            continue
+        figures = []
+        for row in table.rows:
+            label, value = row.cells[0], row.cells[1]
+            figures.append(
+                {
+                    "key": row.key,
+                    "label": label.text if isinstance(label, TextCell) else "",
+                    "value": value.figure.formatted if isinstance(value, FigureCell) else "\u2014",
+                }
+            )
+        decisions = [
+            "".join(inline.text for inline in node.inlines if isinstance(inline, Text))
+            for node in nodes[2:]
+            if isinstance(node, Paragraph)
+        ]
+        title = nodes[1]
+        return {
+            "schema_version": 1,
+            "decisions_title": "".join(i.text for i in title.inlines if isinstance(i, Text))
+            if isinstance(title, Paragraph)
+            else "",
+            "figures": figures,
+            "decisions": [d for d in decisions if d],
+        }
+    return None

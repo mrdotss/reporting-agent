@@ -25,6 +25,7 @@ import {
   resolveConnectorCredentials,
 } from "@/lib/subscriptions/store"
 import { declaredLanguage, declaredSchemaVersion } from "@/lib/templates/definition"
+import { publicBaseUrl } from "@/lib/public-url"
 
 /**
  * A human-readable period, in the definition's pinned language (Requirement 13.7).
@@ -509,6 +510,9 @@ export async function startRunInvocation(
                 // The Action register as it stood before this run, for the Actions
                 // section to compare against this run's own snapshot.
                 ...(actionRegister.length > 0 ? { action_register: actionRegister } : {}),
+                // Where the proof link printed in the report points: the address customers
+                // reach, which the progress URL's host may not be.
+                public_base_url: publicBaseUrl(),
                 // The per-run front-matter values (Requirement 13.7), read off the
                 // claim rather than re-queried — `run` already holds what `enqueueRun`
                 // required present for this v2-pinned row. `customerName` /

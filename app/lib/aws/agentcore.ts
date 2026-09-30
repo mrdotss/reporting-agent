@@ -379,6 +379,11 @@ export type InvokeCommand =
        * an absent list as an empty trend.
        */
       historical_candidates?: readonly HistoricalCandidatePayload[]
+      /**
+       * The address customers reach the app on, for the proof link the report prints.
+       * The runtime uses the progress URL's host when this is absent.
+       */
+      public_base_url?: string
     }
   /**
    * A **snapshot-only** run: no pinned version, so no document.

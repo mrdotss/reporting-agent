@@ -659,6 +659,7 @@ FRONT_MATTER_CLASS_NAMES: Final[tuple[str, ...]] = (
     "rpt-note",
     # Appended, never inserted: the `_CLS_*` constants below index this tuple by position.
     "rpt-logo",
+    "rpt-proof",
 )
 """The classes the front matter emits, kept apart from `EMITTED_CLASS_NAMES` because the
 body's are asserted against the block AST and these have no block behind them."""
@@ -669,6 +670,7 @@ _CLS_GRID: Final[str] = FRONT_MATTER_CLASS_NAMES[4]
 _CLS_SIGNATURE: Final[str] = FRONT_MATTER_CLASS_NAMES[5]
 _CLS_FM_NOTE: Final[str] = FRONT_MATTER_CLASS_NAMES[6]
 _CLS_FM_LOGO: Final[str] = FRONT_MATTER_CLASS_NAMES[7]
+_CLS_FM_PROOF: Final[str] = FRONT_MATTER_CLASS_NAMES[8]
 _CLS_COVER: Final[str] = FRONT_MATTER_CLASS_NAMES[1]
 
 
@@ -730,6 +732,7 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
         FrontMatterNote,
         FrontMatterPageBreak,
         FrontMatterPairs,
+        FrontMatterProof,
     )
 
     parts: list[str] = []
@@ -831,6 +834,19 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
                     f'<img alt="" src="data:{media};base64,{encoded}" '
                     f'style="height:100%;width:auto" /></div>'
                 )
+
+        elif isinstance(section, FrontMatterProof):
+            # The QR code beside its note and link — a data URI, like every image here.
+            encoded = base64.b64encode(section.qr_png).decode("ascii")
+            style = html.escape(section.style, quote=True)
+            url = html.escape(section.url, quote=True)
+            parts.append(
+                f'<div class="{_CLS_FM_PROOF}">'
+                f'<img alt="" src="data:image/png;base64,{encoded}" />'
+                f'<div><p class="{_CLS_BLOCK}" data-style="{style}">{html.escape(section.note)}</p>'
+                f'<p class="{_CLS_BLOCK}" data-style="{style}"><a href="{url}">{html.escape(section.url)}</a></p></div>'
+                f"</div>"
+            )
 
         elif isinstance(section, FrontMatterBackground):
             # A `<style>` rather than an element, because the background belongs to the

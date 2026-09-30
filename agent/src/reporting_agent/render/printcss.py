@@ -388,6 +388,18 @@ table.rpt-table td[data-column-key="count"] {{
   margin: 0 0 18pt;
 }}
 
+/* The proof block at the foot of document control: the QR code beside its note and
+   link, the code at the width the .docx prints it (1.1in). */
+.rpt-proof {{
+  display: flex;
+  align-items: center;
+  gap: 14pt;
+  margin: 4pt 0 0;
+}}
+.rpt-proof img {{ width: 1.1in; height: 1.1in; flex: none; }}
+.rpt-proof p {{ margin: 0 0 3pt; }}
+.rpt-proof a {{ color: inherit; word-break: break-all; }}
+
 /* Req 13.6 clause (b) — a ruled box to sign, never the typed name. */
 .rpt-signature {{ height: 13mm; min-width: 40mm; }}
 

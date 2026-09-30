@@ -288,6 +288,8 @@ async def write_report_artifacts(
     prose: object,
     historical: object | None = None,
     actions: object | None = None,
+    glance: object | None = None,
+    proof: object | None = None,
     html: str,
     chart_images: Mapping[str, bytes] | None = None,
     chart_sidecars: Mapping[str, bytes] | None = None,
@@ -349,6 +351,17 @@ async def write_report_artifacts(
         # printed — pinned so a re-verification replays them (`compile/actions.py`).
         await write_json_artifact(
             store, reports_key(actor_id, run_id, "actions.json"), actions, actor_id=actor_id
+        )
+    if glance is not None:
+        # At a glance as printed, which the app quotes in the email that delivers the
+        # report (`compile/blocks/glance.py::glance_summary`).
+        await write_json_artifact(
+            store, reports_key(actor_id, run_id, "glance.json"), glance, actor_id=actor_id
+        )
+    if proof is not None:
+        # The proof link as printed, which a re-verification prints again.
+        await write_json_artifact(
+            store, reports_key(actor_id, run_id, "proof.json"), proof, actor_id=actor_id
         )
     await store.put_bytes(
         reports_key(actor_id, run_id, "document.html"),

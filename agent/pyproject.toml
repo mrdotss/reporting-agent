@@ -47,6 +47,10 @@ dependencies = [
   # ledger `formatted` string is locatable in it (Req 33.5). Pure Python
   # (py3-none-any), so there is nothing arm64-specific to go wrong in the image.
   "pypdf==6.16.1",
+  # segno draws the QR code on the document control page that opens the report's proof
+  # page. Pure Python (py3-none-any) with no dependencies, and its PNG output is
+  # deterministic, so a re-render draws the same bytes.
+  "segno==1.6.6",
   # matplotlib renders the static chart images embedded in the .docx (Req 22.14),
   # Agg only — never an interactive backend. The backend is selected in
   # src/reporting_agent/__init__.py so one setting holds in the container, in the

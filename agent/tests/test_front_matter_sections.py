@@ -90,7 +90,10 @@ FULL = FrontMatterConfig(
 def _full_sections() -> tuple[FrontMatterSection, ...]:
     return front_matter_sections(
         front_matter=FULL,
-        run=_run(revision_history=RevisionHistoryRow(revision="11", author="R. Prakoso")),
+        run=_run(
+            revision_history=RevisionHistoryRow(revision="11", author="R. Prakoso"),
+            verify_url="https://reporting.example/v/run-001",
+        ),
         messages=_MESSAGES,
         heading_entries=(("Azure Subscription Overview", 1), ("Resource Groups", 1)),
     )
@@ -227,3 +230,62 @@ class TestTheDescriptionIsTheOrder:
         contents = next(s for s in _full_sections() if isinstance(s, FrontMatterContents))
         for entry in contents.entries:
             assert f'id="{entry.anchor}"' in body
+
+
+class TestTheProofLink:
+    """The proof link sits at the foot of document control, with a QR code, and never on
+    the cover, where it was drawn over the cover's image."""
+
+    def _kinds(self, sections: tuple[FrontMatterSection, ...]) -> list[str]:
+        return [type(section).__name__ for section in sections]
+
+    def test_it_is_the_last_thing_on_the_document_control_page(self) -> None:
+        from reporting_agent.render.front_matter import FrontMatterProof
+
+        sections = _full_sections()
+        kinds = self._kinds(sections)
+        proof_at = kinds.index("FrontMatterProof")
+        assert kinds[proof_at + 1] == "FrontMatterPageBreak"
+        heading = sections[proof_at - 1]
+        assert isinstance(heading, FrontMatterHeading) and heading.text == "Verify this report"
+        proof = sections[proof_at]
+        assert isinstance(proof, FrontMatterProof)
+        assert proof.url == "https://reporting.example/v/run-001"
+        assert proof.qr_png.startswith(b"\x89PNG")
+
+    def test_it_is_not_on_the_cover(self) -> None:
+        sections = _full_sections()
+        cover_end = self._kinds(sections).index("FrontMatterPageBreak")
+        for section in sections[:cover_end]:
+            if isinstance(section, FrontMatterPairs):
+                assert all("/v/" not in value for _label, value in section.rows)
+
+    def test_the_code_encodes_the_link_and_is_the_same_every_time(self) -> None:
+        from reporting_agent.render.front_matter import proof_qr_png
+
+        url = "https://reporting.example/v/run-001"
+        assert proof_qr_png(url) == proof_qr_png(url)
+        assert proof_qr_png(url) != proof_qr_png(url + "x")
+
+    def test_no_link_no_block(self) -> None:
+        sections = front_matter_sections(front_matter=FULL, run=_run(), messages=_MESSAGES, heading_entries=())
+        assert "FrontMatterProof" not in self._kinds(sections)
+
+    def test_both_emitters_draw_the_code_and_the_link(self) -> None:
+        from io import BytesIO
+
+        from docx import Document as DocxDocument
+
+        from reporting_agent.render.front_matter import FrontMatterProof, _emit_section
+
+        proof = next(s for s in _full_sections() if isinstance(s, FrontMatterProof))
+        document = load_theme("editorial")
+        _emit_section(document, proof)
+        buffer = BytesIO()
+        document.save(buffer)
+        reopened = DocxDocument(BytesIO(buffer.getvalue()))
+        assert len(reopened.inline_shapes) == 1
+        assert proof.url in reopened.tables[-1].rows[0].cells[1].text
+        markup = emit_front_matter_html([proof])
+        assert 'class="rpt-proof"' in markup and "data:image/png;base64," in markup
+        assert f'href="{proof.url}"' in markup
