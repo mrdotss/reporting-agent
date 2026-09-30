@@ -737,6 +737,10 @@
       "en": "Verify this report",
       "id": "Verifikasi laporan ini"
     },
+    "doc.front_matter.verify_note": {
+      "en": "Scan the code or open the link to check that this copy is the one that was verified.",
+      "id": "Pindai kode atau buka tautan untuk memeriksa bahwa salinan ini sama dengan yang telah diverifikasi."
+    },
     "doc.section.rightsizing": {
       "en": "Rightsizing Recommendations",
       "id": "Rekomendasi Penyesuaian Ukuran"

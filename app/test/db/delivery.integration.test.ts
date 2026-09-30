@@ -23,6 +23,11 @@ vi.mock("@/lib/db", () => ({
 // sees which file the proof page asked for.
 vi.mock("@/lib/aws/s3", () => ({
   getObjectSha256: async (key: string) => (key.endsWith("/report-styled.pdf") ? `digest-of:${key}` : null),
+  // No glance.json and no designed PDF in S3 for these runs.
+  getSnapshotJson: async () => {
+    throw new Error("NoSuchKey")
+  },
+  objectExists: async () => false,
 }))
 
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"

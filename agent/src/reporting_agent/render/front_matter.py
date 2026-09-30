@@ -53,7 +53,7 @@ from docx.document import Document as DocxDocument
 from docx.enum.text import WD_BREAK
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
-from docx.shared import Pt
+from docx.shared import Inches, Pt
 
 from reporting_agent.compile.definition import (
     APPROVER_ROLES,
@@ -68,8 +68,10 @@ __all__ = [
     "FrontMatterBackground",
     "FrontMatterPairs",
     "FrontMatterPageBreak",
+    "FrontMatterProof",
     "FrontMatterLogo",
     "FrontMatterNote",
+    "proof_qr_png",
     "FrontMatterHeading",
     "FrontMatterGrid",
     "FrontMatterContents",
@@ -409,6 +411,25 @@ class FrontMatterNote:
 
 
 @dataclass(frozen=True, slots=True)
+class FrontMatterProof:
+    """The proof block at the foot of the document control page: a QR code, a line saying
+    what it is for, and the link it encodes.
+
+    At the foot of document control rather than on the cover, because a cover carries a
+    full-bleed image and the customer's own contact block, and a bordered row laid over
+    them read as neither. Document control is where a reader already looks for what
+    identifies this issue of the document.
+    """
+
+    note: str
+    url: str
+    qr_png: bytes
+    """The code, drawn by :func:`proof_qr_png` from `url` and nothing else, so a re-render
+    draws the same bytes."""
+    style: str
+
+
+@dataclass(frozen=True, slots=True)
 class FrontMatterBackground:
     """The cover's full-bleed image, behind everything else on the page.
 
@@ -505,6 +526,7 @@ FrontMatterSection = (
     | FrontMatterBackground
     | FrontMatterContents
     | FrontMatterPageBreak
+    | FrontMatterProof
 )
 """One piece of front matter, described without saying how it is drawn.
 
@@ -720,16 +742,6 @@ def front_matter_sections(
             sections.append(
                 FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
             )
-        # The proof link: where a reader checks the file in their hands is the one that was
-        # verified. On the cover, because the cover is what a customer forwards.
-        if run.verify_url:
-            sections.append(
-                FrontMatterPairs(
-                    ((messages.text("doc.front_matter.verify"), run.verify_url),),
-                    LAYOUT_TABLE_STYLE,
-                    COVER_META_STYLE,
-                )
-            )
         sections.append(FrontMatterPageBreak())
 
     # --- document control (Req 13.5, 13.6) -----------------------------------
@@ -753,9 +765,6 @@ def front_matter_sections(
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
     if doc_number:
         naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
-    # With no cover to carry it, the proof link sits with the document's own name.
-    if run.verify_url and not front_matter.cover.enabled:
-        naming.append((messages.text("doc.front_matter.verify"), run.verify_url))
     sections.append(
         FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
     )
@@ -877,6 +886,22 @@ def front_matter_sections(
         )
         sections.append(FrontMatterNote(notice, DOCUMENT_CONTROL_STYLE))
 
+    # --- proof link ----------------------------------------------------------
+    # Last on the page, where a reader checks that the file in their hands is the one
+    # that was verified. See `FrontMatterProof` for why it is not on the cover.
+    if run.verify_url:
+        sections.append(
+            FrontMatterHeading(messages.text("doc.front_matter.verify"), DOCUMENT_CONTROL_STYLE)
+        )
+        sections.append(
+            FrontMatterProof(
+                note=messages.text("doc.front_matter.verify_note"),
+                url=run.verify_url,
+                qr_png=proof_qr_png(run.verify_url),
+                style=DOCUMENT_CONTROL_STYLE,
+            )
+        )
+
     sections.append(FrontMatterPageBreak())
 
     # --- table of contents (Req 14.3, 14.5, 14.11) ---------------------------
@@ -982,11 +1007,69 @@ def _emit_section(document: DocxDocument, section: FrontMatterSection) -> None:
             # landed on from the bookmark rather than from a search for its words.
             _add_contents_link(paragraph, entry.text, bookmark=heading_bookmark(ordinal))
 
+    elif isinstance(section, FrontMatterProof):
+        _emit_proof(document, section)
+
     elif isinstance(section, FrontMatterPageBreak):
         _add_page_break(document)
 
     else:  # pragma: no cover - the union is closed and every member is handled above
         raise RenderFailedError(f"unhandled front matter section {type(section).__name__}")
+
+
+PROOF_QR_WIDTH_IN: Final[float] = 1.1
+"""The printed code's width. About 28 mm: comfortably scannable from a phone at reading
+distance, and small enough to sit beside two lines of text."""
+
+
+def proof_qr_png(url: str) -> bytes:
+    """The QR code for `url`, as PNG bytes.
+
+    Error correction `M` (15%), which survives a printed page's smudges without making the
+    code dense. The four-module quiet zone is the standard's own minimum. segno writes the
+    same bytes for the same input, so the delivered document and a re-render agree.
+    """
+    import segno
+
+    buffer = io.BytesIO()
+    segno.make(url, error="m", micro=False).save(buffer, kind="png", scale=10, border=4)
+    return buffer.getvalue()
+
+
+def _emit_proof(document: DocxDocument, section: FrontMatterProof) -> None:
+    """The QR code beside its note and link, in a borderless two-cell table."""
+    from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+
+    table = document.add_table(rows=1, cols=2)
+    table.autofit = False
+    code_cell, text_cell = table.rows[0].cells
+    code_cell.width = Inches(PROOF_QR_WIDTH_IN + 0.2)
+    text_cell.width = Inches(5.0)
+    code_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+    text_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
+    picture = code_cell.paragraphs[0]
+    picture.paragraph_format.space_after = Pt(0)
+    picture.add_run().add_picture(io.BytesIO(section.qr_png), width=Inches(PROOF_QR_WIDTH_IN))
+
+    note = text_cell.paragraphs[0]
+    note.style = section.style
+    note.add_run(section.note)
+    link = text_cell.add_paragraph(style=section.style)
+    _add_external_link(document, link, section.url)
+
+
+def _add_external_link(document: DocxDocument, paragraph: object, url: str) -> None:
+    """`url` as a clickable link that prints the address itself."""
+    from docx.opc.constants import RELATIONSHIP_TYPE
+    from docx.oxml import OxmlElement
+
+    relationship = document.part.relate_to(url, RELATIONSHIP_TYPE.HYPERLINK, is_external=True)
+    link = OxmlElement("w:hyperlink")
+    link.set(qn("r:id"), relationship)
+    text_run = paragraph.add_run(url)  # type: ignore[attr-defined]
+    link.append(text_run._r)
+    paragraph._p.append(link)  # type: ignore[attr-defined]
 
 
 def _emit_grid(document: DocxDocument, section: FrontMatterGrid) -> None:

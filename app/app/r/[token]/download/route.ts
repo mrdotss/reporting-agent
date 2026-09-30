@@ -1,10 +1,10 @@
 import { notFound } from "@/lib/api/response"
 import { keyBelongsToActor, presignArtifact } from "@/lib/aws/s3"
-import { deliveryArtifact } from "@/lib/delivery/store"
+import { DELIVERY_FILES, deliveryArtifact, type DeliveryKind } from "@/lib/delivery/store"
 import { readLatestVerificationStatus } from "@/lib/verifications/store"
 
 /**
- * `GET /r/<token>/download?kind=pdf|docx` — a customer's download: the token is checked, a
+ * `GET /r/<token>/download?kind=pdf|styled|docx` — a customer's download: the token is checked, a
  * short-lived S3 URL is minted at the click, and the browser is sent to it.
  *
  * The second of the two gated presigning paths (`test/download-gate.static.test.ts`): like
@@ -16,9 +16,9 @@ import { readLatestVerificationStatus } from "@/lib/verifications/store"
 export const runtime = "nodejs"
 
 export async function GET(request: Request, { params }: { params: Promise<{ token: string }> }): Promise<Response> {
-  const kind = new URL(request.url).searchParams.get("kind")
-  if (kind !== "pdf" && kind !== "docx") return notFound()
-  const artifact = await deliveryArtifact((await params).token, kind)
+  const kind = new URL(request.url).searchParams.get("kind") ?? ""
+  if (!Object.hasOwn(DELIVERY_FILES, kind)) return notFound()
+  const artifact = await deliveryArtifact((await params).token, kind as DeliveryKind)
   if (artifact === null || !keyBelongsToActor(artifact.actorId, artifact.key)) return notFound()
   if ((await readLatestVerificationStatus(artifact.runId)) !== "pass") return notFound()
   try {

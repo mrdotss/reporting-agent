@@ -115,6 +115,7 @@ from reporting_agent.compile.historical import (
     Selection,
 )
 from reporting_agent.compile.messages import Messages
+from reporting_agent.compile.blocks.glance import glance_summary
 from reporting_agent.compile.actions import (
     ACTIONS_ARTIFACT,
     ACTIONS_PAYLOAD_KEY,
@@ -420,7 +421,7 @@ async def run_generate_report(
             # The snapshot's own instant, so the published date is a fact the run
             # recorded rather than the clock the render happened to run under.
             collected_at=str(sink.collection.document.get("collected_at") or ""),
-            verify_base_url=_verify_base_url(context),
+            verify_base_url=_verify_base_url(context, payload),
         ),
         section_catalogue=section_catalogue,
         action_register=payload.get(ACTIONS_PAYLOAD_KEY),
@@ -1043,6 +1044,7 @@ def _resolve_run_facts(
     run_id: str,
     collected_at: str = "",
     verify_base_url: str = "",
+    verify_url: str | None = None,
 ) -> object | None:
     """Build a `RunFacts` from the payload's per-run values.
 
@@ -1121,27 +1123,44 @@ def _resolve_run_facts(
         period_start_year=period_start_year,
         period_start_month=period_start_month,
         issued_on=_published_date(collected_at),
-        verify_url=f"{verify_base_url}/v/{run_id}" if verify_base_url and run_id else "",
+        verify_url=verify_url
+        if verify_url is not None
+        else (f"{verify_base_url}/v/{run_id}" if verify_base_url and run_id else ""),
     )
 
 
-def _verify_base_url(context: Mapping[str, PlainData]) -> str:
-    """The app's own address, from the progress callback URL both commands carry.
+PROOF_ARTIFACT = "proof.json"
+"""The proof link the document printed, pinned so a re-verification prints the same one."""
 
-    Not a payload field: `verify_report` is sent by an operator as well as by the app, and
-    a field one of them left out would render a cover without the proof link and fail the
-    re-verification of a report that printed one. `https` only — a proof page reached over
-    plain HTTP proves nothing.
+
+def _verify_base_url(context: Mapping[str, PlainData], payload: Mapping[str, PlainData] | None = None) -> str:
+    """The address the proof link opens: the app's **public** one.
+
+    The payload's `public_base_url` when the app sends one — the address customers reach —
+    and otherwise the host of the progress callback URL, which is the address the runtime
+    reaches the app on and may be private. `https` only — a proof page reached over plain
+    HTTP proves nothing.
+
+    A re-verification prints what the delivered document printed: `proof.json` pins it
+    (`_pinned_verify_url`), so this matters only for a report stored before that pin.
     """
     from urllib.parse import urlsplit
 
-    raw = context.get("progress_url")
-    if not isinstance(raw, str) or not raw:
-        return ""
-    parts = urlsplit(raw)
-    if parts.scheme != "https" or not parts.netloc or "@" in parts.netloc:
-        return ""
-    return f"https://{parts.netloc}"
+    for raw in ((payload or {}).get("public_base_url"), context.get("progress_url")):
+        if not isinstance(raw, str) or not raw:
+            continue
+        parts = urlsplit(raw)
+        if parts.scheme != "https" or not parts.netloc or "@" in parts.netloc:
+            continue
+        return f"https://{parts.netloc}"
+    return ""
+
+
+def _pinned_verify_url(proof: object) -> str | None:
+    """The proof link a stored report printed, or `None` for a report stored without one."""
+    if isinstance(proof, Mapping) and isinstance(proof.get("verify_url"), str):
+        return str(proof["verify_url"])
+    return None
 
 
 def _published_date(collected_at: str) -> str:
@@ -1437,6 +1456,12 @@ async def _document_phases(
         prose=_prose_bundle(compiled),
         historical=_historical_bundle(historical_selections, snapshot_sources),
         actions=actions_artifact,
+        glance=glance_summary(compiled.nodes_by_block),
+        proof=(
+            {"schema_version": 1, "verify_url": verify_url}
+            if (verify_url := str(getattr(run_facts, "verify_url", "") or ""))
+            else None
+        ),
         # Req 14.1 — the AST the `.docx` was emitted from, emitted again through the
         # `Html_Emitter`. Both artifacts describe one compilation, so the in-app paper
         # rendering of this report and the delivered `.pdf` cannot describe two.
@@ -2128,6 +2153,7 @@ async def run_verify_report(
     prose = await _optional_json(store, f"{prefix}prose.json")
     historical_raw = await _optional_json(store, f"{prefix}historical.json")
     actions_raw = await _optional_json(store, f"{prefix}{ACTIONS_ARTIFACT}")
+    proof_raw = await _optional_json(store, f"{prefix}{PROOF_ARTIFACT}")
     sources = snapshot_source_actors(historical_raw.get("snapshot_source_actors") if isinstance(historical_raw, Mapping) else None)
     store = SnapshotSourceStore(store, actor_id, run_id, sources)
 
@@ -2232,7 +2258,8 @@ async def run_verify_report(
             collected_at=str(snapshot.get("collected_at") or "")
             if isinstance(snapshot, Mapping)
             else "",
-            verify_base_url=_verify_base_url(context),
+            verify_base_url=_verify_base_url(context, payload),
+            verify_url=_pinned_verify_url(proof_raw),
         ),
     )
     await write_verification_result(store, result, actor_id=actor_id, run_id=run_id)

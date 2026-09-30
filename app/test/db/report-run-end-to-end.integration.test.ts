@@ -631,7 +631,7 @@ describe.skipIf(!db.enabled)(
       expect(command.definition).toEqual(FIXTURE_DEFINITION)
       expect(command.period).toEqual({ start: PERIOD.start, end: PERIOD.end })
 
-      // Exactly these five keys, as an **exact set**: the payload crosses a language
+      // Exactly these keys, as an **exact set**: the payload crosses a language
       // boundary, so a sixth field added here is a field the runtime has never read, and
       // a fifth removed is one it silently misses. `agent/AGENTCORE_INTEGRATION.md` is
       // the authority; this is that authority asserted from the sending side.
@@ -640,6 +640,7 @@ describe.skipIf(!db.enabled)(
         "definition",
         "historical_candidates",
         "period",
+        "public_base_url",
         "scope",
         "template_version_id",
       ])

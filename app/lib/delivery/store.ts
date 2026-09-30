@@ -13,10 +13,13 @@ import {
   reportVerifications,
   type ReportDelivery,
 } from "@/lib/db/schema"
-import { reportArtifactKey } from "@/lib/db/views"
+import { reportArtifactKey, type DownloadableLeafName } from "@/lib/db/views"
 import { sendMail } from "@/lib/mail/mailtrap"
 import { deliveryEmail } from "@/lib/delivery/email"
 import { WorkspaceAccessError, accessWhere, requireProject } from "@/lib/workspaces/access"
+import { publicBaseUrl } from "@/lib/public-url"
+import { objectExists } from "@/lib/aws/s3"
+import { readGlance, type Glance } from "@/lib/delivery/glance"
 
 /**
  * Review and send: a customer's contacts, the approved send of a verified report, and the
@@ -157,7 +160,7 @@ export async function latestDelivery(userId: string, runId: string): Promise<Del
 export async function approveAndSend(
   userId: string,
   runId: string,
-  { now = new Date(), baseUrl = process.env.RPT_APP_BASE_URL ?? "", send = sendMail } = {}
+  { now = new Date(), baseUrl = publicBaseUrl(), send = sendMail } = {}
 ): Promise<DeliveryView> {
   const { run, customer, figureCount } = await sendableRun(userId, runId)
   const scope = { workspaceId: run.workspaceId!, projectId: run.projectId! }
@@ -169,6 +172,7 @@ export async function approveAndSend(
   const expires = new Date(now.getTime() + linkDays() * 24 * 60 * 60 * 1000)
   const base = baseUrl.replace(/\/+$/, "")
 
+  const glance = await readGlance(run.userId, run.id)
   const recipients: ReportDelivery["recipients"] = []
   for (const contact of contacts) {
     const email = deliveryEmail({
@@ -179,6 +183,7 @@ export async function approveAndSend(
       reportUrl: `${base}/r/${token}`,
       proofUrl: `${base}/v/${run.id}`,
       expiresAt: expires,
+      glance,
     })
     const result = await send({ to: { email: contact.email, name: contact.name }, ...email })
     recipients.push(
@@ -219,6 +224,9 @@ export type OpenedReport = {
   readonly figureCount: number
   readonly verifiedAt: string
   readonly linkExpiresAt: string
+  readonly glance: Glance | null
+  /** Whether this run has the designed reading copy to offer. */
+  readonly designedPdf: boolean
 }
 
 async function deliveryByToken(token: string, now: Date) {
@@ -258,13 +266,24 @@ export async function openDelivery(token: string, now: Date = new Date()): Promi
     figureCount: verification?.figureCount ?? 0,
     verifiedAt: verification?.createdAt.toISOString() ?? "",
     linkExpiresAt: row.delivery.linkExpiresAt.toISOString(),
+    glance: await readGlance(row.run.userId, row.run.id),
+    designedPdf: await objectExists(reportArtifactKey(row.run.userId, row.run.id, "report-styled.pdf")).catch(() => false),
   }
 }
+
+/** What a customer's link may download: the plain PDF, the designed PDF, the Word file. */
+export const DELIVERY_FILES = {
+  pdf: "report.pdf",
+  styled: "report-styled.pdf",
+  docx: "report.docx",
+} as const satisfies Record<string, DownloadableLeafName>
+
+export type DeliveryKind = keyof typeof DELIVERY_FILES
 
 /** The artifact key a customer's link may download, or `null`. */
 export async function deliveryArtifact(
   token: string,
-  kind: "pdf" | "docx",
+  kind: DeliveryKind,
   now: Date = new Date()
 ): Promise<{ runId: string; actorId: string; key: string } | null> {
   const row = await deliveryByToken(token, now)
@@ -272,6 +291,6 @@ export async function deliveryArtifact(
   return {
     runId: row.run.id,
     actorId: row.run.userId,
-    key: reportArtifactKey(row.run.userId, row.run.id, kind === "pdf" ? "report.pdf" : "report.docx"),
+    key: reportArtifactKey(row.run.userId, row.run.id, DELIVERY_FILES[kind]),
   }
 }

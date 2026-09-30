@@ -176,3 +176,22 @@ def test_the_action_register_prints_this_months_findings_and_stores_them_for_the
     stored = json.loads(store.get(next(k for k in store.keys() if k.endswith("/actions.json"))).body)  # type: ignore[union-attr]
     assert stored["rows"] == rows
     assert {finding["kind"] for finding in stored["findings"]} >= {"housekeeping", "backup"}
+
+
+def test_glance_json_is_at_a_glance_as_printed_for_the_email(
+    walked: tuple[InMemoryObjectStore, list[dict[str, Any]], BaseException | None],
+) -> None:
+    from docx import Document
+
+    store, _, _ = walked
+    document = Document(BytesIO(store.get(next(k for k in store.keys() if k.endswith("/report.docx"))).body))  # type: ignore[union-attr]
+    table = next(t for t in document.tables if any(c.text == "Resources to tidy up" for row in t.rows for c in row.cells))
+    printed = [(row.cells[0].text, row.cells[1].text) for row in table.rows[1:]]
+
+    glance = json.loads(store.get(next(k for k in store.keys() if k.endswith("/glance.json"))).body)  # type: ignore[union-attr]
+    assert [(f["label"], f["value"]) for f in glance["figures"]] == printed
+    assert [f["key"] for f in glance["figures"]] == ["resources", "housekeeping", "no_backup", "stopped"]
+    assert glance["decisions_title"] == "Decisions for you"
+    assert glance["decisions"][0].startswith("Review the resources listed under Housekeeping.")
+    text = "\n".join(p.text for p in document.paragraphs)
+    assert all(decision in text for decision in glance["decisions"])

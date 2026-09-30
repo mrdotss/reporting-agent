@@ -296,8 +296,11 @@ class TestV3SectionWalkReachesAPassingVerification:
         charted = machines * len(selected) - len(gapped_pairs)
         assert charted >= 1
 
+        # Plus the proof link's QR code on the document control page, the one image
+        # there that is not a chart.
         inline_shapes = document.inline_shapes
-        assert len(inline_shapes) == charted, (
+        proof_codes = 1 if any("/v/" in p.text for t in document.tables for r in t.rows for p in r.cells[-1].paragraphs) else 0
+        assert len(inline_shapes) == charted + proof_codes, (
             f"expected exactly {charted} embedded chart images — one per machine and "
             f"collected metric, over {machines} machine(s) and {len(selected)} metric(s) "
             f"less {len(gapped_pairs)} gapped pair(s) — got {len(inline_shapes)}"

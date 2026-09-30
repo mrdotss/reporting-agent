@@ -714,6 +714,8 @@ describe("Requirements 39.4, 39.6, 41.5 — the tick claims, gates and invokes",
       // are different claims, and the runtime reads the latter as "asked, none
       // eligible" rather than "not asked".
       historical_candidates: [],
+      // Where the report's proof link points; this suite sets no RPT_PUBLIC_BASE_URL.
+      public_base_url: "https://app.test",
     })
     expect(command).not.toHaveProperty("prompt")
 
