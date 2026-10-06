@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { MagnifyingGlassIcon, NotePencilIcon, TrashIcon } from "@phosphor-icons/react"
+import { MagnifyingGlassIcon, PlusIcon, TrashIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -44,6 +44,15 @@ function shortTime(iso: string, now: Date): string {
   }).format(new Date(iso))
 }
 
+/** `2 sources`, `1 source`, `No sources`: what a conversation is attached to, live pulls included. */
+export function sourceCount(thread: ChatThreadView): string {
+  const n =
+    thread.attachments.runIds.length +
+    thread.attachments.connectorIds.length +
+    (thread.attachments.liveIds?.length ?? 0)
+  return n === 0 ? "No sources" : `${n} ${n === 1 ? "source" : "sources"}`
+}
+
 export function ThreadList({
   threads,
   activeId,
@@ -52,6 +61,8 @@ export function ThreadList({
   onNew,
   onDelete,
   unavailable,
+  busyId = null,
+  customerOf,
 }: Readonly<{
   threads: readonly ChatThreadView[]
   activeId: string | null
@@ -62,6 +73,10 @@ export function ThreadList({
   /** Absent for a reader. Only a conversation's author is offered it at all. */
   onDelete?: (id: string) => Promise<boolean>
   unavailable: boolean
+  /** The conversation being answered right now, marked with a pulse. */
+  busyId?: string | null
+  /** The customer a conversation is about, read from what it is attached to. */
+  customerOf?: (thread: ChatThreadView) => string | null
 }>) {
   const [query, setQuery] = useState("")
   const [doomed, setDoomed] = useState<ChatThreadView | null>(null)
@@ -81,16 +96,17 @@ export function ThreadList({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-11 items-center justify-between gap-2 px-3 pt-3 pb-2">
-        <span className="text-micro uppercase text-muted-foreground">Conversations</span>
+      <div className="flex min-h-12 items-center justify-between gap-2 px-4 pt-3 pb-2">
+        <h2 className="text-section">Conversations</h2>
         {onNew ? (
-          <Button variant="ghost" size="icon-sm" onClick={onNew} aria-label="New conversation">
-            <NotePencilIcon aria-hidden="true" />
+          <Button variant="outline" size="sm" onClick={onNew}>
+            <PlusIcon aria-hidden="true" />
+            New
           </Button>
         ) : null}
       </div>
 
-      <label className="mx-3 mb-2 flex h-8 items-center gap-2 rounded-lg border border-border bg-muted px-2.5 text-muted-foreground focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
+      <label className="mx-3 mb-2 flex h-9 items-center gap-2 rounded-lg border border-border bg-muted px-2.5 text-muted-foreground focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30">
         <MagnifyingGlassIcon aria-hidden="true" className="size-3.5 shrink-0" />
         <span className="sr-only">Search conversations</span>
         <input
@@ -103,7 +119,7 @@ export function ThreadList({
         />
       </label>
 
-      <nav aria-label="Conversations" className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-3">
+      <nav aria-label="Conversations" className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {unavailable ? (
           <p className="px-2 py-3 text-meta text-muted-foreground">
             Conversation history can&rsquo;t be read right now. New questions still need it
@@ -127,9 +143,7 @@ export function ThreadList({
                     key={thread.id}
                     className={cn(
                       "group/thread relative flex items-center rounded-lg transition-colors",
-                      active
-                        ? "bg-primary/[0.07] shadow-[inset_2px_0_0_var(--primary)]"
-                        : "hover:bg-muted"
+                      active ? "bg-muted" : "hover:bg-muted/60"
                     )}
                   >
                     <button
@@ -141,15 +155,28 @@ export function ThreadList({
                         mine && "pr-8"
                       )}
                     >
-                      <span className="truncate text-sm font-medium">{thread.title}</span>
-                      <span className="flex gap-1.5 truncate text-xs text-muted-foreground">
-                        <span>
-                          {thread.attachments.runIds.length +
-                            thread.attachments.connectorIds.length}{" "}
-                          attached
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className={cn("truncate text-sm", active ? "font-semibold" : "font-medium")}>
+                          {thread.title}
                         </span>
+                        {thread.id === busyId ? (
+                          <span
+                            role="img"
+                            aria-label="Answering"
+                            className="size-1.5 shrink-0 animate-pulse rounded-full bg-(--status-inflight) motion-reduce:animate-none"
+                          />
+                        ) : null}
+                      </span>
+                      <span className="flex min-w-0 gap-1.5 text-xs text-muted-foreground">
+                        {customerOf?.(thread) ? (
+                          <>
+                            <span className="truncate">{customerOf(thread)}</span>
+                            <span aria-hidden="true">·</span>
+                          </>
+                        ) : null}
+                        <span className="shrink-0">{sourceCount(thread)}</span>
                         <span aria-hidden="true">·</span>
-                        <span>{shortTime(thread.updatedAt, now)}</span>
+                        <span className="shrink-0">{shortTime(thread.updatedAt, now)}</span>
                       </span>
                     </button>
                     {mine ? (

@@ -189,10 +189,19 @@ describe.skipIf(!db.enabled)("Review and send", () => {
     expect(sent[0]!.text).toContain(`https://app.test/v/${runId}`)
     const token = /https:\/\/app\.test\/r\/([A-Za-z0-9_-]+)/.exec(sent[0]!.text)![1]!
 
-    const opened = await openDelivery(token, new Date("2026-09-04T00:00:00Z"))
+    // Every time here is the test's own: the link's expiry is 30 days after `now`, so a call
+    // that read the real clock would start failing the day after that.
+    const opening = new Date("2026-09-04T00:00:00Z")
+    const opened = await openDelivery(token, opening)
     expect(opened).toMatchObject({ runId, figureCount: 402 })
     expect(await latestDelivery(ownerId, runId)).toMatchObject({ openCount: 1, firstOpenedAt: "2026-09-04T00:00:00.000Z" })
-    expect(await deliveryArtifact(token, "pdf")).toEqual({ runId, actorId: ownerId, key: `${ownerId}/reports/${runId}/report.pdf` })
+    expect(await deliveryArtifact(token, "pdf", opening)).toEqual({ runId, actorId: ownerId, key: `${ownerId}/reports/${runId}/report.pdf` })
+    expect(await deliveryArtifact(token, "styled", opening)).toEqual({
+      runId,
+      actorId: ownerId,
+      key: `${ownerId}/reports/${runId}/report-styled.pdf`,
+    })
+    expect(await deliveryArtifact(token, "docx", opening)).toMatchObject({ key: `${ownerId}/reports/${runId}/report.docx` })
 
     // Thirty days by default; after that the link is gone.
     expect(await openDelivery(token, new Date("2026-10-04T00:00:00Z"))).toBeNull()

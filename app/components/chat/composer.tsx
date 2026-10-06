@@ -1,53 +1,46 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import {
-  ArrowUpIcon,
-  FileTextIcon,
-  LightningIcon,
-  PaperclipIcon,
-  PlugsIcon,
-  XIcon,
-} from "@phosphor-icons/react"
+import { ArrowUpIcon, PaperclipIcon } from "@phosphor-icons/react"
 
-import type { AttachmentKind } from "@/components/chat/context-panel"
 import { Button } from "@/components/ui/button"
-import { Kbd } from "@/components/ui/kbd"
 import { ModelPicker } from "@/components/chat/models-picker"
-import { DEFAULT_CHAT_MODEL, isChatModelId, type ChatModelId } from "@/lib/chat/models"
-import type { AttachableConnector, AttachableLive, AttachableRun } from "@/lib/chat/sources"
+import {
+  DEFAULT_CHAT_MODEL,
+  isChatModelId,
+  type ChatModelId,
+} from "@/lib/chat/models"
 import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
 
 const MODEL_KEY = "rpt.ask.model"
 
 /**
- * Where a question is written, beside what it will be answered from.
+ * Where a question is written.
  *
- * Sending is refused with nothing attached — not silently disabled — because the reason
- * is the product's rule: an answer can only cite what is attached.
+ * What it will be answered from is shown above the conversation (`SourceDocket`), so the
+ * box holds only the question, the model and the send button. Sending is refused with
+ * nothing attached — not silently disabled — because the reason is the product's rule: an
+ * answer can only cite what is attached.
+ *
+ * Under the box, a one-line key to the three kinds of figure an answer holds. It replaces a
+ * legend that used to sit in a side panel nobody scrolled to.
  */
 export function Composer({
-  runs,
-  connectors,
-  live,
+  attachedCount,
   busy,
   onSend,
   onAttach,
-  onRemove,
 }: Readonly<{
-  runs: readonly AttachableRun[]
-  connectors: readonly AttachableConnector[]
-  live: readonly AttachableLive[]
+  attachedCount: number
   busy: boolean
   onSend: (question: string, model: ChatModelId) => Promise<boolean>
   onAttach: () => void
-  onRemove: (kind: AttachmentKind, id: string) => void
 }>) {
   const [draft, setDraft] = useState("")
   const [model, setModel] = useState<ChatModelId>(DEFAULT_CHAT_MODEL)
   const [notice, setNotice] = useState("")
   const input = useRef<HTMLTextAreaElement>(null)
-  const nothingAttached = runs.length === 0 && connectors.length === 0 && live.length === 0
+  const nothingAttached = attachedCount === 0
 
   // The last pick is a per-browser convenience; without storage the default simply stands.
   useEffect(() => {
@@ -73,7 +66,9 @@ export function Composer({
     const question = draft.trim()
     if (!question || busy) return
     if (nothingAttached) {
-      setNotice("Attach a verified report, a scanned connector or live metrics first.")
+      setNotice(
+        "Choose a verified report, a scanned connector or live metrics first."
+      )
       return
     }
     setNotice("")
@@ -89,114 +84,100 @@ export function Composer({
         event.preventDefault()
         void submit()
       }}
-      className="mx-auto w-full max-w-5xl px-4 pt-2 pb-4"
+      className="pt-2 pb-3"
     >
-      <div className="rounded-2xl border border-input bg-card shadow-xs transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
-        {nothingAttached ? null : (
-          <ul aria-label="Attached" className="flex flex-wrap gap-1.5 px-2.5 pt-2.5">
-            {runs.map((run) => (
-              <Chip
-                key={run.runId}
-                icon={<FileTextIcon className="size-3.5 text-primary" />}
-                label={run.customerName}
-                detail={run.periodLabel}
-                onRemove={() => onRemove("run", run.runId)}
-              />
-            ))}
-            {live.map((pull) => (
-              <Chip
-                key={pull.id}
-                icon={<LightningIcon className="size-3.5 text-muted-foreground" />}
-                label={pull.resourceNames.join(", ")}
-                detail={`live · ${pull.windowLabel}`}
-                onRemove={() => onRemove("live", pull.id)}
-              />
-            ))}
-            {connectors.map((connector) => (
-              <Chip
-                key={connector.id}
-                icon={<PlugsIcon className="size-3.5 text-primary" />}
-                label={connector.label}
-                detail="inventory"
-                onRemove={() => onRemove("connector", connector.id)}
-              />
-            ))}
-          </ul>
-        )}
-
-        <label htmlFor="chat-prompt" className="sr-only">
-          Ask about the attached usage
-        </label>
-        <textarea
-          id="chat-prompt"
-          ref={input}
-          value={draft}
-          maxLength={CHAT_PROMPT_MAX}
-          rows={1}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault()
-              void submit()
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 md:px-7">
+        <div className="rounded-xl border border-input bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+          <label htmlFor="chat-prompt" className="sr-only">
+            Ask about the attached usage
+          </label>
+          <textarea
+            id="chat-prompt"
+            ref={input}
+            value={draft}
+            maxLength={CHAT_PROMPT_MAX}
+            rows={1}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (
+                event.key === "Enter" &&
+                !event.shiftKey &&
+                !event.nativeEvent.isComposing
+              ) {
+                event.preventDefault()
+                void submit()
+              }
+            }}
+            placeholder={
+              nothingAttached
+                ? "Choose at least one source to start"
+                : "Ask about the attached usage — e.g. which VMs could move down a size?"
             }
-          }}
-          placeholder={
-            nothingAttached
-              ? "Attach a report or live metrics to start asking…"
-              : "Ask about the attached usage — e.g. which VMs could move down a size?"
-          }
-          className="block max-h-44 min-h-12 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground"
-        />
-
-        <div className="flex items-center gap-2 px-2 pt-1 pb-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onAttach}>
-            <PaperclipIcon aria-hidden="true" />
-            Attach
-          </Button>
-          <span className="hidden text-xs text-muted-foreground sm:inline">
-            <Kbd>Enter</Kbd> to send · <Kbd>Shift</Kbd> + <Kbd>Enter</Kbd> for a new line
-          </span>
-          <div className="ml-auto flex items-center gap-1">
-            <ModelPicker value={model} onChange={chooseModel} disabled={busy} />
-            <Button
-              type="submit"
-              size="icon-sm"
-              disabled={busy || draft.trim().length === 0}
-              aria-label="Send question"
-            >
-              <ArrowUpIcon aria-hidden="true" />
+            className="block [field-sizing:content] max-h-44 min-h-14 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[0.9375rem] leading-relaxed outline-none placeholder:text-muted-foreground"
+          />
+          <div className="flex items-center gap-2 px-2 pt-1 pb-2">
+            <Button type="button" variant="ghost" size="sm" onClick={onAttach}>
+              <PaperclipIcon aria-hidden="true" />
+              Attach
             </Button>
+            <div className="ml-auto flex items-center gap-2">
+              <ModelPicker
+                value={model}
+                onChange={chooseModel}
+                disabled={busy}
+              />
+              <Button
+                type="submit"
+                size="icon-sm"
+                disabled={busy || draft.trim().length === 0}
+                aria-label="Send question"
+              >
+                <ArrowUpIcon aria-hidden="true" />
+              </Button>
+            </div>
           </div>
         </div>
+
+        {notice ? (
+          <p role="status" className="px-1 text-xs text-(--status-attention)">
+            {notice}
+          </p>
+        ) : null}
+
+        <FigureKey />
       </div>
-      {notice ? (
-        <p role="status" className="mt-1.5 px-1 text-xs text-(--status-attention)">
-          {notice}
-        </p>
-      ) : null}
     </form>
   )
 }
 
-function Chip({
-  icon,
-  label,
-  detail,
-  onRemove,
-}: Readonly<{ icon: React.ReactNode; label: string; detail: string; onRemove: () => void }>) {
+/** The three kinds of figure an answer holds, drawn as they are drawn in an answer. */
+export function FigureKey() {
   return (
-    <li className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-lg bg-primary/[0.06] pr-1 pl-2 text-xs ring-1 ring-primary/15 ring-inset">
-      <span aria-hidden="true">{icon}</span>
-      <span className="truncate font-medium">{label}</span>
-      <span className="shrink-0 font-mono text-muted-foreground">{detail}</span>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Detach ${label}`}
-        className="grid size-5 place-items-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
-      >
-        <XIcon aria-hidden="true" className="size-3" />
-      </button>
-    </li>
+    <ul
+      aria-label="How figures are marked"
+      className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 text-xs text-muted-foreground"
+    >
+      <li className="inline-flex items-center gap-1.5">
+        <span className="rounded-[4px] bg-(--status-verified-soft) px-1 font-mono text-[0.6875rem] font-medium text-(--status-verified)">
+          6.2%
+        </span>
+        traced to a verified report or price
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span className="rounded-[4px] border border-dashed border-input bg-muted px-1 font-mono text-[0.6875rem] font-medium text-foreground">
+          4.1%
+        </span>
+        live, not verified
+      </li>
+      <li className="inline-flex items-center gap-1.5">
+        <span className="font-mono text-[0.6875rem] text-foreground underline decoration-(--status-attention) decoration-dotted decoration-[1.5px] underline-offset-4">
+          ~$70
+        </span>
+        estimate
+      </li>
+      <li className="ml-auto hidden sm:block">
+        Enter to send · Shift+Enter for a new line
+      </li>
+    </ul>
   )
 }

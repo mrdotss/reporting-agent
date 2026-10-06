@@ -11,12 +11,14 @@ export const CHAT_MODELS = [
     id: "kimi-k3",
     label: "Kimi K3",
     short: "K3",
+    trait: "Careful",
     detail: "Thinks it through first. Most careful.",
   },
   {
     id: "kimi-k2.5",
     label: "Kimi K2.5",
     short: "K2.5",
+    trait: "Fast",
     detail: "Answers straight away. Fastest.",
   },
 ] as const
