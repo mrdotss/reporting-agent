@@ -4,6 +4,7 @@ import { Fragment, useMemo } from "react"
 import { LightbulbIcon } from "@phosphor-icons/react"
 
 import { AnswerChart, AnswerChartPending } from "@/components/chat/answer-chart"
+import { useFigureTrace } from "@/components/chat/figure-trace"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { parseInline, parseMarkdown, type MarkdownAlign } from "@/lib/chat/markdown"
 import {
@@ -221,7 +222,12 @@ function Segments({
         if (segment.kind === "text") return <Emphasis key={index} text={segment.text} />
         if (segment.kind === "figure") {
           return (
-            <FigureChip key={index} text={segment.text} citation={citations[segment.factId]} />
+            <FigureChip
+              key={index}
+              text={segment.text}
+              citation={citations[segment.factId]}
+              factId={segment.factId}
+            />
           )
         }
         return (
@@ -245,34 +251,80 @@ function Segments({
 export function FigureChip({
   text,
   citation,
-}: Readonly<{ text: string; citation: ChatCitation | undefined }>) {
+  factId,
+}: Readonly<{ text: string; citation: ChatCitation | undefined; factId?: string }>) {
+  const trace = useFigureTrace()
   const live = citation?.source === "live"
-  const chip = (
-    <span
-      data-slot="figure-chip"
-      data-source={citation?.source}
-      className={cn(
-        "mx-px inline-flex items-baseline gap-1 rounded-[5px] px-1.5 font-mono text-[0.84em] font-medium tabular-nums",
-        live
-          ? "bg-muted text-foreground ring-1 ring-border ring-inset"
-          : "bg-(--status-verified-soft) text-(--status-verified)",
-        citation !== undefined && "cursor-help outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-      )}
-    >
+  const number = factId === undefined ? undefined : trace?.numbers.get(factId)
+  const selected = trace !== null && factId !== undefined && trace.selectedId === factId
+
+  const className = cn(
+    "mx-px inline-flex items-baseline gap-1 rounded-[5px] px-1.5 font-mono text-[0.84em] font-medium tabular-nums",
+    live
+      ? "border border-dashed border-input bg-muted text-foreground"
+      : "bg-(--status-verified-soft) text-(--status-verified)",
+    citation !== undefined && "cursor-help outline-none focus-visible:ring-3 focus-visible:ring-ring/30",
+    selected && "ring-2 ring-primary ring-offset-1 ring-offset-background"
+  )
+  const content = (
+    <>
       {live ? (
         <span className="font-sans text-[0.72em] font-semibold tracking-wide text-muted-foreground uppercase">
           Live
         </span>
       ) : null}
       {text}
-    </span>
+      {number === undefined ? null : (
+        <sup aria-hidden="true" className="-ml-0.5 font-sans text-[0.62em] font-semibold opacity-70">
+          {number}
+        </sup>
+      )}
+    </>
   )
 
-  if (citation === undefined) return chip
+  // Without a source there is nothing to trace, and without a provider nowhere to show it:
+  // the chip is then just a chip.
+  if (citation === undefined) {
+    return (
+      <span data-slot="figure-chip" className={className}>
+        {content}
+      </span>
+    )
+  }
+
+  if (trace !== null && factId !== undefined && number !== undefined) {
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              data-slot="figure-chip"
+              data-source={citation.source}
+              data-selected={selected ? "" : undefined}
+              aria-pressed={selected}
+              aria-label={`${text}, figure ${number}${live ? ", live, not verified" : ""}. Show where it came from.`}
+              onClick={() => trace.onSelect(factId)}
+              className={cn(className, "cursor-pointer")}
+            />
+          }
+        >
+          {content}
+        </TooltipTrigger>
+        <TooltipContent className="max-w-80">
+          <CitationDetail citation={citation} />
+        </TooltipContent>
+      </Tooltip>
+    )
+  }
 
   return (
     <Tooltip>
-      <TooltipTrigger render={<span tabIndex={0} />}>{chip}</TooltipTrigger>
+      <TooltipTrigger render={<span tabIndex={0} />}>
+        <span data-slot="figure-chip" data-source={citation.source} className={className}>
+          {content}
+        </span>
+      </TooltipTrigger>
       <TooltipContent className="max-w-80">
         <CitationDetail citation={citation} />
       </TooltipContent>

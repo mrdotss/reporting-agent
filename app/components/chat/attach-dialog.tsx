@@ -39,7 +39,10 @@ export function AttachDialog({
   attachments,
   onChange,
   onCollected,
+  initialTab = "reports",
 }: Readonly<{
+  /** The tab it opens on. Read when the dialog opens, not while it is open. */
+  initialTab?: "reports" | "connectors" | "live"
   open: boolean
   onOpenChange: (open: boolean) => void
   sources: ChatSources
@@ -112,7 +115,7 @@ export function AttachDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="reports" className="flex min-h-0 flex-1 flex-col gap-2">
+        <Tabs defaultValue={initialTab} className="flex min-h-0 flex-1 flex-col gap-2">
           <TabsList>
             <TabsTrigger value="reports">
               Reports <span className="font-mono text-xs text-muted-foreground">{attachments.runIds.length}/{MAX_RUNS}</span>
