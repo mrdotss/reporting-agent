@@ -396,7 +396,7 @@ export function AskWorkspace({
     for (const message of messages) {
       if (message.role !== "assistant" || message.failed || message.refused)
         continue
-      const figures = answerFigures(message.text, message.citations)
+      const figures = answerFigures(message.text, message.citations, message.charts)
       total = addTallies(
         total,
         tallyFigures(figures, estimateCount(message.text))

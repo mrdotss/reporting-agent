@@ -226,8 +226,8 @@ function AssistantMessage({
 }>) {
   const [copied, setCopied] = useState(false)
   const figures = useMemo(
-    () => answerFigures(message.text, message.citations),
-    [message.text, message.citations]
+    () => answerFigures(message.text, message.citations, message.charts),
+    [message.text, message.citations, message.charts]
   )
   const trace = useMemo(
     () => ({

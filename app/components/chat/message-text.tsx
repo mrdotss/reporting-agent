@@ -59,7 +59,7 @@ export function MessageText({
         switch (block.kind) {
           case "chart": {
             const chart = charts.find((candidate) => candidate.id === block.id)
-            if (chart !== undefined) return <AnswerChart key={index} chart={chart} />
+            if (chart !== undefined) return <AnswerChart key={index} chart={chart} citations={citations} />
             return streaming ? <AnswerChartPending key={index} /> : null
           }
           case "heading": {

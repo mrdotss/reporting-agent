@@ -47,12 +47,11 @@ describe("AnswerChart", () => {
     expect(screen.getByText("Live · not verified")).toBeTruthy()
   })
 
-  test("a daily chart draws the report's themed chart and lists the daily figures", () => {
+  test("a daily chart stored before trends draws as a one-line trend, peak and all", () => {
     const { container } = render(<AnswerChart chart={DAILY} />)
-    expect(container.querySelector('[data-slot="themed-chart"]')).not.toBeNull()
+    expect(container.querySelector('[data-kind="daily"] svg[role="img"]')).not.toBeNull()
     expect(screen.getByText("Verified figures")).toBeTruthy()
-    expect(screen.getByText(/peak 0\.30% on 2026-09-09/)).toBeTruthy()
-    expect(container.querySelectorAll("tbody tr")).toHaveLength(3)
+    expect(screen.getByText("peak 0.30%")).toBeTruthy()
   })
 })
 
