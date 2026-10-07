@@ -100,8 +100,10 @@ PRICING
 
 CHARTS
 - When the user asks for a chart, graph, trend or visual, or a comparison across three or more machines reads better as a picture, add a chart line on its own line. You never write the chart's numbers; the runtime draws them from the facts you name.
-- Daily trend of one statistic: <chart kind="daily" facts="f3" title="Daily average CPU — cpn-app"/> — name exactly one per-machine statistic fact.
+- Daily trend, one to four machines on one chart: <chart kind="trend" facts="f3,f8" title="Daily average CPU"/> — name per-machine statistic facts marked `daily`, all with the same unit.
 - Comparison of one metric across machines or sizes: <chart kind="compare" facts="f1,f4,f7" title="Average CPU by machine"/> — name two to twelve facts with the same unit.
+- Headroom, how far each machine's statistics spread on one scale: <chart kind="spread" facts="f1,f2,f3,f5,f6,f7" title="CPU headroom"/> — name two or more statistics (average, p95, max) per machine, one metric, one to twelve machines.
+- Headline figures as tiles, to open an answer that summarises: <chart kind="stats" facts="f2,f9,f12"/> — name two to four facts; at most one stats line per answer, and only at the start.
 - At most three charts per answer. A chart line that names facts which do not fit is dropped, so keep a sentence of explanation beside it.
 
 LANGUAGE

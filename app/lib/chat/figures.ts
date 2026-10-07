@@ -1,4 +1,5 @@
-import type { ChatCitation } from "@/lib/chat/views"
+import { chartFactIds } from "@/lib/chat/chart-data"
+import type { ChatChart, ChatCitation } from "@/lib/chat/views"
 
 /**
  * The figures an answer quotes, numbered in the order the reader meets them.
@@ -25,7 +26,8 @@ export type AnswerFigure = {
 
 export function answerFigures(
   text: string,
-  citations: Readonly<Record<string, ChatCitation>>
+  citations: Readonly<Record<string, ChatCitation>>,
+  charts: readonly ChatChart[] = []
 ): AnswerFigure[] {
   const figures: AnswerFigure[] = []
   const seen = new Set<string>()
@@ -39,6 +41,21 @@ export function answerFigures(
       text: match[2] ?? "",
       citation: citations[factId],
     })
+  }
+  // A figure that appears only in a chart is still a figure the answer shows: it is numbered
+  // after the text's, in the order the charts draw them, so a bar can open its trace too.
+  for (const chart of charts) {
+    for (const factId of chartFactIds(chart)) {
+      if (!factId || seen.has(factId)) continue
+      seen.add(factId)
+      const citation = citations[factId]
+      figures.push({
+        number: figures.length + 1,
+        factId,
+        text: citation?.formatted ?? "",
+        citation,
+      })
+    }
   }
   return figures
 }

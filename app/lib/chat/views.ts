@@ -101,6 +101,8 @@ export type ChatCompareChart = {
     readonly label: string
     readonly value: string
     readonly formatted: string
+    /** Absent on a chart stored before bars carried their own source. */
+    readonly source?: "verified" | "live"
   }[]
 }
 
@@ -118,7 +120,60 @@ export type ChatDailyChart = {
   }[]
 }
 
-export type ChatChart = ChatCompareChart | ChatDailyChart
+/** A day's value in a chart series: the decimal string to draw, the string to print. */
+export type ChatChartPoint = { readonly day: string; readonly value: string; readonly formatted: string }
+
+/** One to four daily series sharing a unit, each one a fact the answer cites. */
+export type ChatTrendChart = {
+  readonly id: string
+  readonly kind: "trend"
+  readonly title: string
+  readonly unit: string
+  readonly source: ChatChartSource
+  readonly series: readonly {
+    readonly fact_id: string
+    readonly label: string
+    readonly source: "verified" | "live"
+    readonly points: readonly ChatChartPoint[]
+  }[]
+}
+
+/** Per-machine statistics of one metric on one scale: how much room each machine has. */
+export type ChatSpreadChart = {
+  readonly id: string
+  readonly kind: "spread"
+  readonly title: string
+  readonly unit: string
+  readonly source: ChatChartSource
+  readonly rows: readonly {
+    readonly label: string
+    readonly source: "verified" | "live"
+    /** Ordered by value, lowest first. */
+    readonly stats: readonly {
+      readonly fact_id: string
+      readonly statistic: string
+      readonly value: string
+      readonly formatted: string
+    }[]
+  }[]
+}
+
+/** Two to four headline figures, each with its daily series when the snapshot has one. */
+export type ChatStatsChart = {
+  readonly id: string
+  readonly kind: "stats"
+  readonly title: string
+  readonly source: ChatChartSource
+  readonly tiles: readonly {
+    readonly fact_id: string
+    readonly label: string
+    readonly formatted: string
+    readonly source: "verified" | "live"
+    readonly points: readonly ChatChartPoint[]
+  }[]
+}
+
+export type ChatChart = ChatCompareChart | ChatDailyChart | ChatTrendChart | ChatSpreadChart | ChatStatsChart
 
 export type ChatMessageView = {
   readonly id: string

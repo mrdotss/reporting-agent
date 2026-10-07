@@ -73,8 +73,8 @@ def test_a_comparison_uses_the_facts_own_values_and_strings() -> None:
         "unit": "percent",
         "source": "live",
         "bars": [
-            {"fact_id": "f1", "label": "vm-a", "value": "0.21", "formatted": "0.21%"},
-            {"fact_id": "f2", "label": "vm-b", "value": "25.79", "formatted": "25.79%"},
+            {"fact_id": "f1", "label": "vm-a", "value": "0.21", "formatted": "0.21%", "source": "live"},
+            {"fact_id": "f2", "label": "vm-b", "value": "25.79", "formatted": "25.79%", "source": "live"},
         ],
     }
 
