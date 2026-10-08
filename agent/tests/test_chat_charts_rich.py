@@ -108,3 +108,42 @@ def test_stats_are_tiles_with_a_sparkline_only_where_a_series_exists() -> None:
 def test_stats_take_two_to_four_figures() -> None:
     assert _build("stats", "f1") is None
     assert _build("stats", "f1", "f2", "f3", "f4", "f5") is None
+
+
+def test_a_memory_trend_reads_in_gib_when_its_figure_does() -> None:
+    db = "arn:aws:rds:ap-southeast-1:123456789012:db:da-rds-postgres"
+    snapshot = {
+        "resources": [
+            {
+                "resource_id": db,
+                "day_buckets": [
+                    {"local_day": day, "statistics": [{"metric": "FreeableMemory", "statistic": "avg", "value": value}]}
+                    for day, value in (("2026-09-15", "204010946.0"), ("2026-09-16", "211029208.0"))
+                ],
+            }
+        ]
+    }
+    series_key = ("run_1", db.casefold(), "FreeableMemory", "avg", "")
+    facts = number_facts(
+        [
+            Fact("report", "da-rds-postgres · FreeableMemory · avg", "0.19 GiB", {}, value="207520077.0", unit="bytes", series_key=series_key),
+            Fact("report", "da-rds-postgres · FreeableMemory · max", "211,029,208.0 bytes", {}, value="211029208.0", unit="bytes", series_key=series_key),
+        ]
+    )
+
+    def build(fact_id: str) -> dict[str, Any] | None:
+        return build_chart(
+            ChartRequest("trend", (fact_id,), ""),
+            chart_id="c1",
+            facts=facts,
+            series=series_index_from_snapshot(snapshot, "run_1"),
+            format_value=format_statistic,
+        )
+
+    gib = build("f1")
+    assert gib is not None
+    assert [p["formatted"] for p in gib["series"][0]["points"]] == ["0.19 GiB", "0.20 GiB"]
+    assert [p["value"] for p in gib["series"][0]["points"]] == ["204010946.0", "211029208.0"]
+    raw = build("f2")
+    assert raw is not None
+    assert raw["series"][0]["points"][1]["formatted"] == "211,029,208.0 bytes"

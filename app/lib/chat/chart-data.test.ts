@@ -6,10 +6,13 @@ import {
   chartFactIds,
   csvName,
   niceCeil,
+  resourceLabel,
   statMark,
   tickLabel,
   ticks,
   trendDays,
+  valueScale,
+  withResourceLabels,
 } from "@/lib/chat/chart-data"
 import { answerFigures } from "@/lib/chat/figures"
 import type { ChatChart, ChatTrendChart } from "@/lib/chat/views"
@@ -168,5 +171,72 @@ describe("figures that appear only in a chart", () => {
       [3, "f1", "1.00%"],
       [4, "f2", ""],
     ])
+  })
+})
+
+describe("valueScale", () => {
+  test("bytes whose figures read in GiB get a GiB axis with round marks", () => {
+    const scale = valueScale("bytes", 211029208, ["0.19 GiB", "0.20 GiB"])
+    expect(scale.top).toBeCloseTo(0.2 * 2 ** 30)
+    expect(ticks(scale.top).map(scale.label)).toEqual([
+      "0 GiB",
+      "0.05 GiB",
+      "0.1 GiB",
+      "0.15 GiB",
+      "0.2 GiB",
+    ])
+  })
+
+  test("bytes stored before points read in GiB still get a binary unit, not 250M", () => {
+    const scale = valueScale("bytes", 211029208, ["211,029,208.0 bytes"])
+    expect(scale.top).toBe(250 * 2 ** 20)
+    expect(scale.label(scale.top)).toBe("250 MiB")
+  })
+
+  test("percent and plain units keep their scale", () => {
+    expect(valueScale("percent", 72).top).toBe(100)
+    expect(valueScale("percent", 12.4).label(20)).toBe("20%")
+    expect(valueScale("count", 230).top).toBe(250)
+  })
+})
+
+describe("resourceLabel", () => {
+  test("an ARN or an Azure id reads as the resource's own name", () => {
+    expect(
+      resourceLabel(
+        "arn:aws:rds:ap-southeast-1:123456789012:db:da-rds-postgres · FreeableMemory · avg"
+      )
+    ).toBe("da-rds-postgres · FreeableMemory · avg")
+    expect(
+      resourceLabel("arn:aws:ec2:ap-southeast-1:123456789012:instance/i-0abc")
+    ).toBe("i-0abc")
+    expect(
+      resourceLabel(
+        "/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/vm-01 · Percentage CPU"
+      )
+    ).toBe("vm-01 · Percentage CPU")
+    expect(resourceLabel("cpn-app · Percentage CPU · avg")).toBe(
+      "cpn-app · Percentage CPU · avg"
+    )
+  })
+
+  test("a stored daily chart's series label is shortened, its figures untouched", () => {
+    const daily: ChatChart = {
+      id: "c2",
+      kind: "daily",
+      title: "Daily average freeable memory",
+      unit: "bytes",
+      source: "verified",
+      series_label:
+        "arn:aws:rds:ap-southeast-1:123456789012:db:da-rds-postgres · FreeableMemory · avg",
+      points: [
+        { day: "2026-09-15", value: "204010946.0", formatted: "0.19 GiB" },
+      ],
+    }
+    const short = withResourceLabels(daily)
+    expect(short.kind === "daily" && short.series_label).toBe(
+      "da-rds-postgres · FreeableMemory · avg"
+    )
+    expect(short.kind === "daily" && short.points).toEqual(daily.points)
   })
 })

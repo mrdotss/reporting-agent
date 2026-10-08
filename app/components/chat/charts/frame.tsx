@@ -145,51 +145,63 @@ export function ChartFrame({
     >
       <figcaption
         className={cn(
-          "flex flex-wrap items-center gap-x-3 gap-y-2",
+          "flex flex-col gap-2",
           expanded ? "pr-10 pb-3" : "px-3.5 pt-3 pb-2"
         )}
       >
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span id={headingId} className="truncate text-sm font-semibold">
-            {chart.title}
+        {/* The title has the full width to itself; the controls sit on the line below. */}
+        <span className="flex items-start gap-3">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span
+              id={headingId}
+              className="text-sm font-semibold text-balance break-words"
+            >
+              {chart.title}
+            </span>
+            <span className="text-xs text-muted-foreground">{meta}</span>
           </span>
-          <span className="truncate text-xs text-muted-foreground">{meta}</span>
+          <span className="-mt-1 -mr-1.5 flex shrink-0 items-center">
+            {csv !== null ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={download}
+                aria-label="Download the figures as CSV"
+                title="Download CSV"
+              >
+                <DownloadSimpleIcon aria-hidden="true" />
+              </Button>
+            ) : null}
+            {!expanded && renderExpanded ? (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setOpen(true)}
+                aria-label="Open the chart full size"
+                title="Full size"
+              >
+                <ArrowsOutSimpleIcon aria-hidden="true" />
+              </Button>
+            ) : null}
+          </span>
         </span>
-        <SourceBadge source={chart.source} />
-        {controls}
-        {table ? (
-          <ChartToggle
-            label="Show as"
-            value={view}
-            onChange={setView}
-            options={[
-              { value: "chart", label: "Chart" },
-              { value: "table", label: "Table" },
-            ]}
-          />
-        ) : null}
-        <span className="flex items-center">
-          {csv !== null ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={download}
-              aria-label="Download the figures as CSV"
-              title="Download CSV"
-            >
-              <DownloadSimpleIcon aria-hidden="true" />
-            </Button>
-          ) : null}
-          {!expanded && renderExpanded ? (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setOpen(true)}
-              aria-label="Open the chart full size"
-              title="Full size"
-            >
-              <ArrowsOutSimpleIcon aria-hidden="true" />
-            </Button>
+        <span className="flex flex-wrap items-center gap-2">
+          <SourceBadge source={chart.source} />
+          {controls || table ? (
+            <span className="ml-auto flex flex-wrap items-center gap-2">
+              {controls}
+              {table ? (
+                <ChartToggle
+                  label="Show as"
+                  value={view}
+                  onChange={setView}
+                  options={[
+                    { value: "chart", label: "Chart" },
+                    { value: "table", label: "Table" },
+                  ]}
+                />
+              ) : null}
+            </span>
           ) : null}
         </span>
       </figcaption>

@@ -6,7 +6,7 @@ import { CompareBars } from "@/components/chat/charts/compare"
 import { SpreadChart } from "@/components/chat/charts/spread"
 import { StatsStrip } from "@/components/chat/charts/stats"
 import { TrendChart } from "@/components/chat/charts/trend"
-import { asTrend } from "@/lib/chat/chart-data"
+import { asTrend, withResourceLabels } from "@/lib/chat/chart-data"
 import type { ChatChart, ChatCitation } from "@/lib/chat/views"
 
 /**
@@ -19,7 +19,7 @@ import type { ChatChart, ChatCitation } from "@/lib/chat/views"
  * as a CSV, and at full size.
  */
 export function AnswerChart({
-  chart,
+  chart: stored,
   citations = {},
   expanded = false,
 }: Readonly<{
@@ -27,6 +27,8 @@ export function AnswerChart({
   citations?: Readonly<Record<string, ChatCitation>>
   expanded?: boolean
 }>) {
+  // Charts stored before labels named the resource still read by its name, not its ARN.
+  const chart = withResourceLabels(stored)
   const renderExpanded = expanded
     ? undefined
     : () => <AnswerChart chart={chart} citations={citations} expanded />

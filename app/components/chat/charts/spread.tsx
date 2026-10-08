@@ -2,7 +2,7 @@
 
 import { useFigureTrace } from "@/components/chat/figure-trace"
 import { ChartFrame, FiguresTable } from "@/components/chat/charts/frame"
-import { niceCeil, statMark, tickLabel } from "@/lib/chat/chart-data"
+import { statMark, tickLabel, valueScale } from "@/lib/chat/chart-data"
 import type { ChatSpreadChart } from "@/lib/chat/views"
 import { cn } from "@/lib/utils"
 
@@ -39,7 +39,14 @@ export function SpreadChart({
       .flatMap((row) => row.stats.map((stat) => Number(stat.value)))
       .filter(Number.isFinite)
   )
-  const top = percent ? 100 : niceCeil(max)
+  const scale = percent
+    ? { top: 100, label: (value: number) => tickLabel(value, chart.unit) }
+    : valueScale(
+        chart.unit,
+        max,
+        chart.rows.flatMap((row) => row.stats.map((stat) => stat.formatted))
+      )
+  const top = scale.top
   const at = (value: number) =>
     `${Math.max(0, Math.min(100, (value / top) * 100)).toFixed(2)}%`
   const marks = [
@@ -92,11 +99,11 @@ export function SpreadChart({
       <div className="grid grid-cols-[minmax(5rem,9rem)_minmax(0,1fr)] gap-x-3">
         <span />
         <div className="relative mb-1 h-4 font-mono text-[0.6875rem] text-muted-foreground">
-          <span className="absolute left-0">{tickLabel(0, chart.unit)}</span>
+          <span className="absolute left-0">{scale.label(0)}</span>
           <span className="absolute -translate-x-1/2" style={{ left: "50%" }}>
-            {tickLabel(top / 2, chart.unit)}
+            {scale.label(top / 2)}
           </span>
-          <span className="absolute right-0">{tickLabel(top, chart.unit)}</span>
+          <span className="absolute right-0">{scale.label(top)}</span>
         </div>
 
         {chart.rows.map((row) => {
