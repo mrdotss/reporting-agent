@@ -1,0 +1,210 @@
+[
+  {
+    "id": "c1",
+    "kind": "stats",
+    "title": "",
+    "source": "verified",
+    "tiles": [
+      {
+        "fact_id": "f6",
+        "label": "count(/resources) · count",
+        "formatted": "68",
+        "source": "verified",
+        "points": []
+      },
+      {
+        "fact_id": "f1",
+        "label": "vm-a · Percentage CPU · avg",
+        "formatted": "5.15%",
+        "source": "verified",
+        "points": [
+          {
+            "day": "2026-09-01",
+            "value": "4.10",
+            "formatted": "4.10%"
+          },
+          {
+            "day": "2026-09-02",
+            "value": "6.20",
+            "formatted": "6.20%"
+          }
+        ]
+      },
+      {
+        "fact_id": "f5",
+        "label": "da-rds-postgres · FreeableMemory · avg",
+        "formatted": "0.19 GiB",
+        "source": "verified",
+        "points": [
+          {
+            "day": "2026-09-01",
+            "value": "204010946.0",
+            "formatted": "0.19 GiB"
+          },
+          {
+            "day": "2026-09-02",
+            "value": "211029208.0",
+            "formatted": "0.20 GiB"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "c2",
+    "kind": "compare",
+    "title": "Average CPU by machine",
+    "unit": "percent",
+    "source": "verified",
+    "bars": [
+      {
+        "fact_id": "f1",
+        "label": "vm-a",
+        "value": "5.15",
+        "formatted": "5.15%",
+        "source": "verified"
+      },
+      {
+        "fact_id": "f2",
+        "label": "vm-b",
+        "value": "8.15",
+        "formatted": "8.15%",
+        "source": "verified"
+      }
+    ]
+  },
+  {
+    "id": "c3",
+    "kind": "trend",
+    "title": "Daily average CPU",
+    "unit": "percent",
+    "source": "verified",
+    "series": [
+      {
+        "fact_id": "f1",
+        "label": "vm-a",
+        "source": "verified",
+        "points": [
+          {
+            "day": "2026-09-01",
+            "value": "4.10",
+            "formatted": "4.10%"
+          },
+          {
+            "day": "2026-09-02",
+            "value": "6.20",
+            "formatted": "6.20%"
+          }
+        ]
+      },
+      {
+        "fact_id": "f2",
+        "label": "vm-b",
+        "source": "verified",
+        "points": [
+          {
+            "day": "2026-09-01",
+            "value": "8.90",
+            "formatted": "8.90%"
+          },
+          {
+            "day": "2026-09-02",
+            "value": "7.40",
+            "formatted": "7.40%"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "c4",
+    "kind": "trend",
+    "title": "Daily freeable memory",
+    "unit": "bytes",
+    "source": "verified",
+    "series": [
+      {
+        "fact_id": "f5",
+        "label": "da-rds-postgres · FreeableMemory · avg",
+        "source": "verified",
+        "points": [
+          {
+            "day": "2026-09-01",
+            "value": "204010946.0",
+            "formatted": "0.19 GiB"
+          },
+          {
+            "day": "2026-09-02",
+            "value": "211029208.0",
+            "formatted": "0.20 GiB"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "c5",
+    "kind": "spread",
+    "title": "CPU headroom",
+    "unit": "percent",
+    "source": "mixed",
+    "rows": [
+      {
+        "label": "vm-a",
+        "source": "verified",
+        "stats": [
+          {
+            "fact_id": "f1",
+            "statistic": "avg",
+            "value": "5.15",
+            "formatted": "5.15%"
+          },
+          {
+            "fact_id": "f3",
+            "statistic": "max",
+            "value": "27.40",
+            "formatted": "27.40%"
+          }
+        ]
+      },
+      {
+        "label": "vm-b",
+        "source": "live",
+        "stats": [
+          {
+            "fact_id": "f2",
+            "statistic": "avg",
+            "value": "8.15",
+            "formatted": "8.15%"
+          },
+          {
+            "fact_id": "f4",
+            "statistic": "max",
+            "value": "12.10",
+            "formatted": "12.10%"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "id": "c6",
+    "kind": "daily",
+    "title": "Daily average CPU — vm-a",
+    "unit": "percent",
+    "source": "verified",
+    "series_label": "vm-a · Percentage CPU · avg",
+    "points": [
+      {
+        "day": "2026-09-01",
+        "value": "4.10",
+        "formatted": "4.10%"
+      },
+      {
+        "day": "2026-09-02",
+        "value": "6.20",
+        "formatted": "6.20%"
+      }
+    ]
+  }
+]

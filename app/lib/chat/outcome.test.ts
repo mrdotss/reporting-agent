@@ -147,6 +147,60 @@ describe("chartsFrom — the runtime's charts, trusted by shape only", () => {
     expect(chartsFrom([chart])).toEqual([])
   })
 
+  const trend = {
+    id: "c3",
+    kind: "trend",
+    title: "Daily CPU",
+    unit: "percent",
+    source: "verified",
+    series: [{ fact_id: "f1", label: "cpn-app", source: "verified", points: daily.points }],
+  }
+  const spread = {
+    id: "c4",
+    kind: "spread",
+    title: "CPU headroom",
+    unit: "percent",
+    source: "verified",
+    rows: [
+      {
+        label: "cpn-app",
+        source: "verified",
+        stats: [
+          { fact_id: "f1", statistic: "avg", value: "0.21", formatted: "0.21%" },
+          { fact_id: "f3", statistic: "max", value: "4.10", formatted: "4.10%" },
+        ],
+      },
+    ],
+  }
+  const stats = {
+    id: "c5",
+    kind: "stats",
+    title: "",
+    source: "verified",
+    tiles: [
+      { fact_id: "f1", label: "cpn-app", formatted: "0.21%", source: "verified", points: daily.points },
+      { fact_id: "f9", label: "resources", formatted: "68", source: "verified", points: [] },
+    ],
+  }
+
+  test.each([
+    ["a trend with five series", { ...trend, series: Array(5).fill(trend.series[0]) }],
+    ["a trend series with an unknown source", { ...trend, series: [{ ...trend.series[0], source: "mixed" }] }],
+    ["a trend series with one point", { ...trend, series: [{ ...trend.series[0], points: [daily.points[0]] }] }],
+    ["a spread row with one statistic", { ...spread, rows: [{ ...spread.rows[0], stats: [spread.rows[0].stats[0]] }] }],
+    ["a spread statistic that is not a decimal", { ...spread, rows: [{ ...spread.rows[0], stats: [spread.rows[0].stats[0], { ...spread.rows[0].stats[1], value: "high" }] }] }],
+    ["a stats strip with one tile", { ...stats, tiles: [stats.tiles[0]] }],
+    ["a stats tile with a bad fact id", { ...stats, tiles: [stats.tiles[0], { ...stats.tiles[1], fact_id: "x" }] }],
+  ])("drops %s", (_name, chart) => {
+    expect(chartsFrom([chart])).toEqual([])
+  })
+
+  test("keeps trend, spread and stats charts, and a bar's own source", () => {
+    const sourced = { ...compare, bars: compare.bars.map((bar) => ({ ...bar, source: "live" })) }
+    expect(chartsFrom([trend, spread, stats])).toEqual([trend, spread, stats])
+    expect(chartsFrom([sourced])).toEqual([sourced])
+  })
+
   test("keeps at most three charts and ignores anything not an array", () => {
     expect(chartsFrom([compare, daily, compare, daily])).toHaveLength(3)
     expect(chartsFrom({ charts: [compare] })).toEqual([])
