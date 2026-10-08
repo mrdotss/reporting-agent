@@ -13,6 +13,15 @@ import type {
  * decimal strings, never a number computed here.
  */
 
+/** Every chart kind the runtime builds and the app draws. */
+export const CHART_KINDS: readonly ChatChart["kind"][] = [
+  "compare",
+  "daily",
+  "trend",
+  "spread",
+  "stats",
+]
+
 /** The facts a chart draws, in the order it draws them. A legacy daily chart names none. */
 export function chartFactIds(chart: ChatChart): string[] {
   switch (chart.kind) {

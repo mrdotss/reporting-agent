@@ -3,11 +3,16 @@ import type { ProposalTarget } from "@/lib/chat/sources"
 import type { NewChatMessage } from "@/lib/chat/store"
 import type {
   ChatChart,
+  ChatChartPoint,
   ChatChartSource,
+  ChatCompareChart,
   ChatCitation,
   ChatKnowledgeSource,
   ChatProposal,
+  ChatSpreadChart,
+  ChatStatsChart,
   ChatStep,
+  ChatTrendChart,
 } from "@/lib/chat/views"
 
 /**
@@ -27,6 +32,13 @@ const DECIMAL = /^-?\d+(?:\.\d+)?$/
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const MAX_FIELD = 400
 const MAX_CHARTS = 3
+// The runtime's own bounds (chat/charts.py), so nothing larger is ever stored.
+const MAX_BARS = 12
+const MAX_POINTS = 93
+const MAX_TREND_SERIES = 4
+const MAX_SPREAD_ROWS = 12
+const MAX_SPREAD_STATS = 8
+const MAX_STAT_TILES = 4
 const SOURCES: readonly ChatChartSource[] = ["verified", "live", "mixed"]
 
 export function citationsFrom(value: unknown): Record<string, ChatCitation> {
@@ -63,55 +75,149 @@ function text(value: unknown, limit = 120): string | undefined {
   return typeof value === "string" ? value.slice(0, limit) : undefined
 }
 
+type Field = Record<string, unknown>
+
+function records(value: unknown): Field[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value.filter((item): item is Field => item !== null && typeof item === "object")
+  return items.length === value.length ? items : undefined
+}
+
+function factId(value: unknown): string | undefined {
+  const id = text(value, 8)
+  return id !== undefined && FACT_ID.test(id) ? id : undefined
+}
+
+function decimal(value: unknown): string | undefined {
+  const number = text(value, 40)
+  return number !== undefined && DECIMAL.test(number) ? number : undefined
+}
+
+function seriesSource(value: unknown): "verified" | "live" | undefined {
+  return value === "verified" || value === "live" ? value : undefined
+}
+
+/** Daily points, all well-formed, or `undefined`. `min` is the fewest a drawing needs. */
+function pointsFrom(value: unknown, min: number): ChatChartPoint[] | undefined {
+  const items = records(value)
+  if (items === undefined || items.length < min || items.length > MAX_POINTS) return undefined
+  const points: ChatChartPoint[] = []
+  for (const item of items) {
+    const day = text(item.day, 10)
+    const pointValue = decimal(item.value)
+    const formatted = text(item.formatted)
+    if (day === undefined || !DAY.test(day) || pointValue === undefined || formatted === undefined) return undefined
+    points.push({ day, value: pointValue, formatted })
+  }
+  return points
+}
+
+/** The chart one outcome entry describes, or `undefined` when any part of it is malformed. */
+function chartFrom(record: Field): ChatChart | undefined {
+  const id = text(record.id, 8)
+  const title = text(record.title)
+  const unit = text(record.unit, 60)
+  const source = SOURCES.find((candidate) => candidate === record.source)
+  if (id === undefined || !CHART_ID.test(id) || title === undefined || source === undefined) return undefined
+
+  if (record.kind === "stats") {
+    const items = records(record.tiles)
+    if (items === undefined || items.length < 2 || items.length > MAX_STAT_TILES) return undefined
+    const tiles: ChatStatsChart["tiles"][number][] = []
+    for (const item of items) {
+      const tileFact = factId(item.fact_id)
+      const label = text(item.label)
+      const formatted = text(item.formatted)
+      const tileSource = seriesSource(item.source)
+      // A tile without a daily series carries none; one with a series needs two points.
+      const points = Array.isArray(item.points) && item.points.length === 0 ? [] : pointsFrom(item.points, 2)
+      if (tileFact === undefined || label === undefined || formatted === undefined) return undefined
+      if (tileSource === undefined || points === undefined) return undefined
+      tiles.push({ fact_id: tileFact, label, formatted, source: tileSource, points })
+    }
+    return { id, kind: "stats", title, source, tiles }
+  }
+
+  if (unit === undefined) return undefined
+
+  if (record.kind === "compare") {
+    const items = records(record.bars)
+    if (items === undefined || items.length < 2 || items.length > MAX_BARS) return undefined
+    const bars: ChatCompareChart["bars"][number][] = []
+    for (const item of items) {
+      const barFact = factId(item.fact_id)
+      const label = text(item.label)
+      const barValue = decimal(item.value)
+      const formatted = text(item.formatted)
+      if (barFact === undefined || label === undefined || barValue === undefined || formatted === undefined) {
+        return undefined
+      }
+      const barSource = seriesSource(item.source)
+      bars.push({ fact_id: barFact, label, value: barValue, formatted, ...(barSource ? { source: barSource } : {}) })
+    }
+    return { id, kind: "compare", title, unit, source, bars }
+  }
+
+  if (record.kind === "daily") {
+    const points = pointsFrom(record.points, 2)
+    if (points === undefined) return undefined
+    return { id, kind: "daily", title, unit, source, series_label: text(record.series_label) ?? title, points }
+  }
+
+  if (record.kind === "trend") {
+    const items = records(record.series)
+    if (items === undefined || items.length < 1 || items.length > MAX_TREND_SERIES) return undefined
+    const series: ChatTrendChart["series"][number][] = []
+    for (const item of items) {
+      const seriesFact = factId(item.fact_id)
+      const label = text(item.label)
+      const lineSource = seriesSource(item.source)
+      const points = pointsFrom(item.points, 2)
+      if (seriesFact === undefined || label === undefined || lineSource === undefined || points === undefined) {
+        return undefined
+      }
+      series.push({ fact_id: seriesFact, label, source: lineSource, points })
+    }
+    return { id, kind: "trend", title, unit, source, series }
+  }
+
+  if (record.kind === "spread") {
+    const items = records(record.rows)
+    if (items === undefined || items.length < 1 || items.length > MAX_SPREAD_ROWS) return undefined
+    const rows: ChatSpreadChart["rows"][number][] = []
+    for (const item of items) {
+      const label = text(item.label)
+      const rowSource = seriesSource(item.source)
+      const statItems = records(item.stats)
+      if (label === undefined || rowSource === undefined || statItems === undefined) return undefined
+      if (statItems.length < 2 || statItems.length > MAX_SPREAD_STATS) return undefined
+      const stats: ChatSpreadChart["rows"][number]["stats"][number][] = []
+      for (const stat of statItems) {
+        const statFact = factId(stat.fact_id)
+        const statistic = text(stat.statistic, 60)
+        const statValue = decimal(stat.value)
+        const formatted = text(stat.formatted)
+        if (statFact === undefined || statistic === undefined || statValue === undefined || formatted === undefined) {
+          return undefined
+        }
+        stats.push({ fact_id: statFact, statistic, value: statValue, formatted })
+      }
+      rows.push({ label, source: rowSource, stats })
+    }
+    return { id, kind: "spread", title, unit, source, rows }
+  }
+
+  return undefined
+}
+
 /** The charts an outcome carries, keeping only well-formed ones. */
 export function chartsFrom(value: unknown): ChatChart[] {
   if (!Array.isArray(value)) return []
   const charts: ChatChart[] = []
   for (const entry of value.slice(0, MAX_CHARTS)) {
     if (entry === null || typeof entry !== "object") continue
-    const record = entry as Record<string, unknown>
-    const id = text(record.id, 8)
-    const title = text(record.title)
-    const unit = text(record.unit, 60)
-    const source = SOURCES.find((candidate) => candidate === record.source)
-    if (id === undefined || !CHART_ID.test(id) || title === undefined || unit === undefined || source === undefined) {
-      continue
-    }
-
-    if (record.kind === "compare" && Array.isArray(record.bars)) {
-      const bars = record.bars.flatMap((bar) => {
-        if (bar === null || typeof bar !== "object") return []
-        const item = bar as Record<string, unknown>
-        const factId = text(item.fact_id, 8)
-        const label = text(item.label)
-        const barValue = text(item.value, 40)
-        const formatted = text(item.formatted)
-        if (factId === undefined || !FACT_ID.test(factId) || label === undefined || formatted === undefined) return []
-        if (barValue === undefined || !DECIMAL.test(barValue)) return []
-        return [{ fact_id: factId, label, value: barValue, formatted }]
-      })
-      if (bars.length >= 2 && bars.length <= 12 && bars.length === record.bars.length) {
-        charts.push({ id, kind: "compare", title, unit, source, bars })
-      }
-      continue
-    }
-
-    if (record.kind === "daily" && Array.isArray(record.points)) {
-      const points = record.points.flatMap((point) => {
-        if (point === null || typeof point !== "object") return []
-        const item = point as Record<string, unknown>
-        const day = text(item.day, 10)
-        const pointValue = text(item.value, 40)
-        const formatted = text(item.formatted)
-        if (day === undefined || !DAY.test(day) || formatted === undefined) return []
-        if (pointValue === undefined || !DECIMAL.test(pointValue)) return []
-        return [{ day, value: pointValue, formatted }]
-      })
-      const seriesLabel = text(record.series_label) ?? title
-      if (points.length >= 2 && points.length <= 93 && points.length === record.points.length) {
-        charts.push({ id, kind: "daily", title, unit, source, series_label: seriesLabel, points })
-      }
-    }
+    const chart = chartFrom(entry as Field)
+    if (chart !== undefined) charts.push(chart)
   }
   return charts
 }
