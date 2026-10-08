@@ -396,15 +396,27 @@ def number_facts(facts: Iterable[Fact]) -> dict[str, Fact]:
     return {f"f{position}": fact for position, fact in enumerate(facts, start=1)}
 
 
-def format_statistic(value: str, unit: str, *, path: str = "chat") -> str:
-    """A decimal string as a report prints it, or `<value> <unit>` for an undeclared unit."""
+def format_statistic(value: str, unit: str, *, path: str = "chat", gib: bool = False) -> str:
+    """A decimal string as a report prints it, or `<value> <unit>` for an undeclared unit.
+
+    `gib` prints bytes in GiB, the way a report that pins `bytes_as_gib` prints them, so a
+    chart's points read in the same unit as the figure they belong to.
+    """
     match = _DECIMAL.match(value)
     if match is None:
         return f"{value} {unit}".strip()
-    from reporting_agent.compile.format import format_figure
+    from reporting_agent.compile.format import NumberFormat, format_figure
     from reporting_agent.errors import CompileFailedError
 
     try:
+        if gib and unit == "bytes":
+            return format_figure(
+                value,
+                unit=unit,
+                catalog_scale=len(match.group(1) or ""),
+                number_format=NumberFormat(bytes_as_gib=True),
+                path=path,
+            )
         return format_figure(value, unit=unit, catalog_scale=len(match.group(1) or ""), path=path)
     except CompileFailedError:
         return f"{value} {unit}".strip()
@@ -440,12 +452,25 @@ def _figure_label(entry: Mapping[str, Any], path: str) -> str:
     parts: list[str] = []
     resource_id = entry.get("resource_id")
     if isinstance(resource_id, str) and resource_id:
-        parts.append(resource_id.rstrip("/").rsplit("/", 1)[-1])
+        parts.append(_resource_name(resource_id))
     for name in ("metric", "statistic", "estimator_label"):
         value = entry.get(name)
         if isinstance(value, str) and value:
             parts.append(value)
     return " · ".join(parts) if parts else path
+
+
+def _resource_name(resource_id: str) -> str:
+    """The resource's own name: an id's last path segment, or an ARN's last field.
+
+    `/subscriptions/…/virtualMachines/vm-01` reads `vm-01`, `arn:…:instance/i-0abc` reads
+    `i-0abc`, and an ARN without a path — `arn:aws:rds:…:db:da-rds-postgres` — reads
+    `da-rds-postgres` rather than the whole ARN.
+    """
+    trimmed = resource_id.rstrip("/")
+    if trimmed.startswith("arn:") and "/" not in trimmed:
+        return trimmed.rsplit(":", 1)[-1] or trimmed
+    return trimmed.rsplit("/", 1)[-1] or trimmed
 
 
 def _count(value: object) -> str | None:

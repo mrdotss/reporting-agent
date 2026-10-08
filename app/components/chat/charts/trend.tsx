@@ -18,12 +18,11 @@ import {
 } from "@/components/charts/palette"
 import {
   longDay,
-  niceCeil,
   pointOn,
   shortDay,
-  tickLabel,
   ticks,
   trendDays,
+  valueScale,
 } from "@/lib/chat/chart-data"
 import type { ChatChart, ChatCitation, ChatTrendChart } from "@/lib/chat/views"
 import { cn } from "@/lib/utils"
@@ -91,7 +90,14 @@ export function TrendChart({
       .map((point) => Number(point.value))
   )
   const max = Math.max(0, ...values.filter(Number.isFinite))
-  const top = chart.unit === "percent" && max > 60 ? 100 : niceCeil(max)
+  const scale = valueScale(
+    chart.unit,
+    max,
+    chart.series.flatMap((series) =>
+      series.points.map((point) => point.formatted)
+    )
+  )
+  const top = scale.top
   const x = (index: number) =>
     L + (days.length <= 1 ? 0 : (index / (days.length - 1)) * (W - L - R))
   const y = (value: number) => T + (H - T - B) - (value / top) * (H - T - B)
@@ -280,7 +286,7 @@ export function TrendChart({
                 textAnchor="end"
                 className="fill-muted-foreground font-mono text-[10.5px]"
               >
-                {tickLabel(tick, chart.unit)}
+                {scale.label(tick)}
               </text>
             </g>
           ))}

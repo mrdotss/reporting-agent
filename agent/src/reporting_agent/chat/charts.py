@@ -194,10 +194,21 @@ def build_chart(
         "source": source,
         "series_label": fact.label,
         "points": [
-            {"day": day, "value": value, "formatted": format_value(value, fact.unit)}
+            {"day": day, "value": value, "formatted": _point_format(fact, format_value)(value, fact.unit)}
             for day, value in points
         ],
     }
+
+
+def _point_format(fact: Any, format_value: Any) -> Any:
+    """Formats a fact's daily points in the unit its own figure reads in.
+
+    A report that pins `bytes_as_gib` prints memory as `0.19 GiB`; its daily points are
+    stored in bytes and would otherwise read `211,029,208.0 bytes` beside that chip.
+    """
+    if fact.unit == "bytes" and isinstance(fact.formatted, str) and fact.formatted.endswith(" GiB"):
+        return lambda value, unit: format_value(value, unit, gib=True)
+    return format_value
 
 
 def _series_source(fact: Any) -> str:
@@ -211,7 +222,8 @@ def _points(fact: Any, series: SeriesIndex, format_value: Any) -> list[dict[str,
     points = list(series.get(fact.series_key, ()))[:MAX_DAILY_POINTS]
     if len(points) < 2:
         return []
-    return [{"day": day, "value": value, "formatted": format_value(value, fact.unit)} for day, value in points]
+    point_format = _point_format(fact, format_value)
+    return [{"day": day, "value": value, "formatted": point_format(value, fact.unit)} for day, value in points]
 
 
 def _trend(

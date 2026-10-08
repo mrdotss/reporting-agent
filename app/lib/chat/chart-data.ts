@@ -95,6 +95,121 @@ export function tickLabel(value: number, unit: string): string {
   return unit === "percent" ? `${text}%` : text
 }
 
+const BINARY_UNITS: readonly (readonly [string, number])[] = [
+  ["TiB", 2 ** 40],
+  ["GiB", 2 ** 30],
+  ["MiB", 2 ** 20],
+  ["KiB", 2 ** 10],
+]
+
+/** A value axis from zero: where it tops out, and how its marks read. */
+export type ValueScale = {
+  readonly top: number
+  readonly label: (value: number) => string
+}
+
+/**
+ * The scale for a chart's values. Bytes read in binary units — in GiB whenever the figures
+ * themselves read in GiB, so the axis says what the chips say — and the top is a round number
+ * of that unit. Percent tops out at 100% once a value passes 60%.
+ */
+export function valueScale(
+  unit: string,
+  max: number,
+  formatted: readonly string[] = []
+): ValueScale {
+  if (unit === "bytes") {
+    const pinned =
+      formatted.length > 0 && formatted.every((text) => text.endsWith(" GiB"))
+    const [suffix, factor] = pinned
+      ? (["GiB", 2 ** 30] as const)
+      : (BINARY_UNITS.find(([, size]) => max >= size) ?? (["B", 1] as const))
+    const top = niceCeil(max / factor) * factor
+    const decimals = stepDecimals(top / factor / 4)
+    return {
+      top,
+      label: (value) =>
+        `${String(Number((value / factor).toFixed(decimals)))} ${suffix}`,
+    }
+  }
+  const top = unit === "percent" && max > 60 ? 100 : niceCeil(max)
+  return { top, label: (value) => tickLabel(value, unit) }
+}
+
+/** The fewest decimals that spell a tick step exactly: `0.05` needs two, `2.5` one. */
+function stepDecimals(step: number): number {
+  for (let decimals = 0; decimals < 4; decimals++) {
+    const scaled = step * 10 ** decimals
+    if (Math.abs(Math.round(scaled) - scaled) < 1e-9) return decimals
+  }
+  return 4
+}
+
+/**
+ * A label's resource named by its own name: an ARN or an Azure resource id reads as its last
+ * field, so `arn:aws:rds:…:db:da-rds-postgres · FreeableMemory · avg` reads
+ * `da-rds-postgres · FreeableMemory · avg`.
+ */
+export function resourceLabel(label: string): string {
+  return label
+    .split(" · ")
+    .map((part) => {
+      const trimmed = part.replace(/\/+$/, "")
+      if (trimmed.startsWith("arn:"))
+        return (
+          (trimmed.includes("/")
+            ? trimmed.slice(trimmed.lastIndexOf("/") + 1)
+            : trimmed.slice(trimmed.lastIndexOf(":") + 1)) || part
+        )
+      if (/^\/subscriptions\//i.test(trimmed))
+        return trimmed.slice(trimmed.lastIndexOf("/") + 1) || part
+      return part
+    })
+    .join(" · ")
+}
+
+/** The chart with every resource label shortened by `resourceLabel`; its figures untouched. */
+export function withResourceLabels(chart: ChatChart): ChatChart {
+  switch (chart.kind) {
+    case "compare":
+      return {
+        ...chart,
+        bars: chart.bars.map((bar) => ({
+          ...bar,
+          label: resourceLabel(bar.label),
+        })),
+      }
+    case "daily":
+      return { ...chart, series_label: resourceLabel(chart.series_label) }
+    case "trend":
+      return {
+        ...chart,
+        series: chart.series.map((series) => ({
+          ...series,
+          label: resourceLabel(series.label),
+        })),
+      }
+    case "spread":
+      return {
+        ...chart,
+        rows: chart.rows.map((row) => ({
+          ...row,
+          label: resourceLabel(row.label),
+        })),
+      }
+    case "stats":
+      return {
+        ...chart,
+        tiles: chart.tiles.map((tile) => ({
+          ...tile,
+          label: resourceLabel(tile.label),
+        })),
+      }
+    default:
+      return chart
+  }
+}
+
 function trim(value: number): string {
   return Number.isInteger(value)
     ? String(value)

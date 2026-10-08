@@ -482,3 +482,15 @@ def test_the_bedrock_stream_is_guarded_and_carries_no_tools() -> None:
     assert "toolConfig" not in client.kwargs
     assert client.kwargs["guardrailConfig"]["guardrailIdentifier"] == "gr-1"
     assert client.kwargs["guardrailConfig"]["streamProcessingMode"] == "async"
+
+
+def test_a_figure_label_names_the_resource_not_its_whole_arn() -> None:
+    from reporting_agent.chat.grounding import _figure_label
+
+    def label(resource_id: str) -> str:
+        return _figure_label({"resource_id": resource_id, "metric": "FreeableMemory", "statistic": "avg"}, "p")
+
+    assert label("arn:aws:rds:ap-southeast-1:123456789012:db:da-rds-postgres") == "da-rds-postgres · FreeableMemory · avg"
+    assert label("arn:aws:ec2:ap-southeast-1:123456789012:instance/i-0abc") == "i-0abc · FreeableMemory · avg"
+    assert label("/subscriptions/s/resourceGroups/g/providers/Microsoft.Compute/virtualMachines/vm-01") == "vm-01 · FreeableMemory · avg"
+    assert label("i-0abc") == "i-0abc · FreeableMemory · avg"
