@@ -17,8 +17,12 @@ import { expiryWarningText } from "@/lib/subscriptions/state"
  * component can render a string it was given, and would keep passing after the
  * banner and the gate started disagreeing about the same row.
  *
- * `next/navigation` is doubled because `RotateSecretDialog` — the one client leaf
- * below the list — reads the router. That is the whole seam.
+ * The page shows the list and, beside it, the selected connector's header — where the
+ * state notice, Scan and Rotate now live — so `renderList` renders both, for the first
+ * connector, as the page does when nothing is selected.
+ *
+ * `next/navigation` is doubled because `RotateSecretDialog` — the one client leaf in the
+ * header — reads the router. That is the whole seam.
  *
  * ## Why `now` is a fixture rather than the clock
  *
@@ -39,6 +43,7 @@ vi.mock("next/navigation", () => ({
   }),
 }))
 
+import { ConnectorHeader } from "./connector-detail"
 import { SubscriptionList } from "./subscription-list"
 
 // --- Fixtures ---------------------------------------------------------------
@@ -81,8 +86,14 @@ function renderList(
   subscriptions: readonly ConnectedSubscriptionView[],
   canConnect = true
 ): void {
+  const first = subscriptions[0]
   render(
-    <SubscriptionList subscriptions={subscriptions} now={NOW} canConnect={canConnect} />
+    <>
+      <SubscriptionList subscriptions={subscriptions} now={NOW} canConnect={canConnect} />
+      {first === undefined ? null : (
+        <ConnectorHeader subscription={first} scannedLine="Not scanned yet." now={NOW} canConnect={canConnect} />
+      )}
+    </>
   )
 }
 
@@ -96,6 +107,10 @@ function expiredNotice(): Element | null {
 
 function row(): Element | null {
   return document.querySelector('[data-slot="subscription-row"]')
+}
+
+function header(): Element | null {
+  return document.querySelector('[data-slot="connector-header"]')
 }
 
 afterEach(cleanup)
@@ -263,7 +278,7 @@ describe("Requirement 12.6's surface — an unverified scope is stated, not styl
 
     expect(row()?.getAttribute("data-state")).toBe("pending")
 
-    const copy = row()?.textContent ?? ""
+    const copy = header()?.textContent ?? ""
 
     expect(copy).toMatch(/has not been proved/i)
     expect(copy).toMatch(/resource group/i)
@@ -322,9 +337,9 @@ describe("Requirement 10.2 — only the browser-safe projection is rendered", ()
   })
 
   test("the card carries no fidelity or scope chips", () => {
-    // Fidelity moved to the inventory panel beside the list, and a verified scope is the
-    // normal state rather than a badge: the card keeps its three lines for the name, the
-    // expiry and the actions.
+    // Fidelity is in the detail beside the list, and a verified scope is the normal state
+    // rather than a badge: the card keeps its three lines for the name, the id and the
+    // expiry.
     renderList([view({ fidelityTier: "enhanced" })])
 
     expect(screen.queryByText("Enhanced fidelity")).toBeNull()
@@ -405,12 +420,13 @@ function scanButton(): HTMLElement | null {
 const scanLink = scanButton
 
 describe("the scan entry point", () => {
-  test("a scannable subscription offers Scan in place on its card", () => {
-    // The scan runs from the card and its inventory shows beside the list, rather than
-    // the card navigating away to a separate scan page.
+  test("a scannable subscription offers Scan in the selected connector's header", () => {
+    // The scan runs in place and its inventory shows beside the list, rather than
+    // navigating away to a separate scan page. Cards select; they carry no controls.
     renderList([view()])
 
     expect(scanButton()).not.toBeNull()
+    expect(row()?.querySelector("button")).toBeNull()
   })
 
   test("an unverified scope offers no Scan link", () => {

@@ -6,8 +6,6 @@ import {
   ShieldWarningIcon,
 } from "@phosphor-icons/react/ssr"
 
-import { RescanButton } from "@/components/scan/rescan-button"
-import { RotateSecretDialog } from "@/components/subscriptions/rotate-secret-dialog"
 import { SecretExpiryBanner } from "@/components/subscriptions/secret-expiry-banner"
 import { Identifier } from "@/components/identifier"
 import { StatusBadge, type CloseState } from "@/components/ui/status-mark"
@@ -31,8 +29,10 @@ import { cn } from "@/lib/utils"
  * ## A card is a selection, not a navigation
  *
  * Clicking a connector selects it (`?c=<id>`) and the page shows what it can see beside
- * the list. Scan runs the scan in place and Rotate opens the rotation dialog, both on the
- * same line as the expiry meter, so a card is three lines tall.
+ * the list. A card is three short lines (name and state, the masked id and what keeps it
+ * readable, the secret meter on Azure) so the list fits a narrow column. Scan, Rotate and
+ * the state notices live in the selected connector's header ({@link ConnectorHeader}),
+ * next to what they act on, rather than repeated on every card.
  *
  * ## `resolveSubscriptionState` decides, not this file
  *
@@ -44,7 +44,7 @@ import { cn } from "@/lib/utils"
  * Requirement 13.6: only the `expired` and `disabled` states, which block runs.
  */
 
-const STATE_BADGE: Record<
+export const STATE_BADGE: Record<
   SubscriptionState["kind"],
   { readonly label: string; readonly state: CloseState }
 > = {
@@ -60,13 +60,19 @@ const METER_SPAN_DAYS = 730
 
 const DAY_MS = 86_400_000
 
+/** Whole days until the recorded secret expiry, never below zero. */
+export function secretDaysLeft(view: ConnectedSubscriptionView, now: Date): number {
+  const expiresMs = view.secretExpiresAt === null ? Number.NaN : Date.parse(view.secretExpiresAt)
+  return Number.isNaN(expiresMs) ? 0 : Math.max(0, Math.floor((expiresMs - now.getTime()) / DAY_MS))
+}
+
 /** Whether `POST .../scan` would accept this connector. Mirrors the route's refusals. */
 export function canScanConnector(view: ConnectedSubscriptionView, now: Date): boolean {
   const state = resolveSubscriptionState(view, now)
   return view.scopeVerified && state.kind !== "expired" && state.kind !== "disabled"
 }
 
-function StateNotice({
+export function StateNotice({
   state,
   provider,
 }: Readonly<{ state: SubscriptionState; provider: ConnectedSubscriptionView["provider"] }>) {
@@ -137,7 +143,7 @@ function StateNotice({
  * How much of the secret's life is left, as a bar coloured by what it means: healthy in
  * the verified green, amber inside the thirty-day warning window, red once it has run out.
  */
-function ExpiryMeter({
+export function ExpiryMeter({
   view,
   state,
   now,
@@ -191,9 +197,9 @@ type SubscriptionListProps = Readonly<{
   /** The connector whose inventory the page is showing, if any. */
   selectedId?: string
   /**
-   * Whether this member may connect, rotate and scan (`connect`: Owner and Admin). Editors
-   * and Viewers see the connectors without those controls (roles-and-ask-access Req 5);
-   * the routes refuse them either way.
+   * Whether this member may connect (`connect`: Owner and Admin). Only the empty state
+   * uses it here; Scan and Rotate are in {@link ConnectorHeader}, which takes the same
+   * flag (roles-and-ask-access Req 5). The routes refuse others either way.
    */
   canConnect: boolean
 }>
@@ -204,8 +210,6 @@ export function SubscriptionList({
   selectedId,
   canConnect,
 }: SubscriptionListProps) {
-  const nowIso = now.toISOString()
-
   if (subscriptions.length === 0) {
     return (
       <div
@@ -247,6 +251,16 @@ export function SubscriptionList({
         const state = resolveSubscriptionState(view, now)
         const badge = STATE_BADGE[state.kind]
         const selected = view.id === selectedId
+        const dead = state.kind === "expired" || state.kind === "disabled"
+        const days = secretDaysLeft(view, now)
+        const meta =
+          view.provider === "aws"
+            ? state.kind === "pending"
+              ? "role not verified"
+              : "role · no expiry"
+            : dead
+              ? "secret expired"
+              : `${days} ${days === 1 ? "day" : "days"} left · ${view.secretExpiresAt?.slice(0, 10) ?? "no date"}`
 
         return (
           <li key={view.id} className="min-w-0">
@@ -255,7 +269,7 @@ export function SubscriptionList({
               data-state={state.kind}
               data-selected={selected || undefined}
               className={cn(
-                "relative flex flex-col gap-3 rounded-xl border bg-card p-3.5 transition-[border-color,box-shadow]",
+                "relative flex flex-col gap-2 rounded-xl border bg-card px-3.5 py-3 transition-[border-color,box-shadow]",
                 selected
                   ? "border-primary ring-3 ring-primary/15"
                   : "border-border hover:border-input"
@@ -265,8 +279,7 @@ export function SubscriptionList({
                 <ProviderMark kind={view.provider} />
                 {/*
                   The name is the selection. Its link covers the whole card through
-                  `after:inset-0`, and the actions below sit above that layer, so a click
-                  anywhere on the card selects it and a click on Scan or Rotate does not.
+                  `after:inset-0`, so a click anywhere on the card selects it.
                 */}
                 <Link
                   href={`/subscriptions?c=${encodeURIComponent(view.id)}`}
@@ -281,68 +294,62 @@ export function SubscriptionList({
                 </span>
               </header>
 
-              <div className="grid items-center gap-x-4 gap-y-3 sm:grid-cols-[auto_minmax(0,1fr)_auto]">
-                <div className="flex flex-col gap-0.5 text-sm">
-                  <span className="text-xs text-muted-foreground">
-                    {view.provider === "aws" ? "Account" : "Subscription"}
-                  </span>
-                  <span data-slot="masked-subscription-id">
-                    <Identifier
-                      value={view.maskedSubscriptionId}
-                      kind="mask"
-                      label={view.provider === "aws" ? "Account" : "Subscription"}
-                    />
-                  </span>
-                </div>
-
-                {view.provider === "aws" ? (
-                  <p className="min-w-0 text-xs text-muted-foreground">
-                    Assumed role with an external ID. No secret is stored, so nothing expires.
-                  </p>
-                ) : (
-                  <ExpiryMeter view={view} state={state} now={now} />
-                )}
-
-                {canConnect ? (
-                  <span className="relative z-10 flex items-center gap-2">
-                    {canScanConnector(view, now) ? (
-                      <RescanButton subscriptionId={view.id} language="en" />
-                    ) : null}
-                    {view.provider === "aws" ? (
-                      <Link
-                        href={`/subscriptions/${encodeURIComponent(view.id)}/setup`}
-                        className={buttonVariants({
-                          variant: state.kind === "pending" ? "default" : "outline",
-                          size: "sm",
-                        })}
-                      >
-                        {state.kind === "pending" ? "Finish setup" : "Role setup"}
-                      </Link>
-                    ) : (
-                      <RotateSecretDialog
-                        subscriptionId={view.id}
-                        displayName={view.displayName}
-                        emphasis={
-                          state.kind === "expired" || state.kind === "disabled"
-                            ? "expired"
-                            : "neutral"
-                        }
-                        nowIso={nowIso}
-                      />
-                    )}
-                  </span>
-                ) : null}
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span data-slot="masked-subscription-id" className="flex min-w-0 items-center gap-1.5">
+                  {view.provider === "aws" ? "Account" : "Subscription"}
+                  <Identifier
+                    value={view.maskedSubscriptionId}
+                    kind="mask"
+                    label={view.provider === "aws" ? "Account" : "Subscription"}
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 font-mono tabular-nums",
+                    dead && "text-(--status-failed)",
+                    state.kind === "expiring" && "font-medium text-(--status-attention)"
+                  )}
+                >
+                  {meta}
+                </span>
               </div>
 
-              {state.kind === "active" ? null : (
-                <div className="relative z-10">
-                  <StateNotice state={state} provider={view.provider} />
-                </div>
-              )}
+              {view.provider === "aws" ? null : <SecretMeter view={view} state={state} now={now} />}
             </article>
           </li>
         )
       })}
     </ul>
+  )
+}
+
+/** The secret's remaining life as a thin bar, for the card. The figure is on the line above. */
+function SecretMeter({
+  view,
+  state,
+  now,
+}: Readonly<{ view: ConnectedSubscriptionView; state: SubscriptionState; now: Date }>) {
+  const days = secretDaysLeft(view, now)
+  const dead = state.kind === "expired" || state.kind === "disabled"
+  const warn = !dead && days < 30
+  const fill = dead ? 100 : Math.max(3, Math.min(100, (days / METER_SPAN_DAYS) * 100))
+  return (
+    <div
+      role="meter"
+      aria-label="Client secret lifetime remaining"
+      aria-valuemin={0}
+      aria-valuemax={METER_SPAN_DAYS}
+      aria-valuenow={Math.min(days, METER_SPAN_DAYS)}
+      aria-valuetext={dead ? "expired" : `${days} days left`}
+      className="h-1 overflow-hidden rounded-full bg-muted"
+    >
+      <span
+        className={cn(
+          "block h-full rounded-full",
+          dead ? "bg-(--status-failed)" : warn ? "bg-(--status-attention)" : "bg-(--status-verified)"
+        )}
+        style={{ width: `${fill}%` }}
+      />
+    </div>
   )
 }
