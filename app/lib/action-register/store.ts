@@ -1,14 +1,14 @@
 import "server-only"
 
-import { and, asc, eq } from "drizzle-orm"
+import { and, asc, eq, isNull } from "drizzle-orm"
 
 import { getDb } from "@/lib/db"
-import { actionItems, connectedSubscriptions, type ActionItem } from "@/lib/db/schema"
-import { WorkspaceAccessError, requireProject } from "@/lib/workspaces/access"
+import { actionItems, connectedSubscriptions, projects, type ActionItem } from "@/lib/db/schema"
+import { WorkspaceAccessError, requireProject, requireWorkspace } from "@/lib/workspaces/access"
 
 /**
- * The Action register for people: list one customer's items, and set an item's owner,
- * status and note. `resolved` is never set here — only a sync resolves, on evidence.
+ * The Action register for people: list one customer's items, or every customer's in a
+ * workspace, and set an item's owner, status and note. `resolved` is never set here — only a sync resolves, on evidence.
  */
 
 export const EDITABLE_STATUSES = ["open", "accepted", "wont_do"] as const
@@ -24,6 +24,8 @@ export type ActionItemView = {
   readonly status: "open" | "accepted" | "wont_do" | "resolved"
   readonly note: string | null
   readonly connector: string
+  /** The customer (project) the item belongs to. */
+  readonly customer: string
   readonly firstSeenPeriod: string
   readonly lastSeenRunId: string
   readonly resolvedRunId: string | null
@@ -32,7 +34,7 @@ export type ActionItemView = {
 
 export class ActionItemInputError extends Error {}
 
-function toView(row: ActionItem, connector: string): ActionItemView {
+function toView(row: ActionItem, connector: string, customer: string): ActionItemView {
   return {
     id: row.id,
     kind: row.kind,
@@ -41,6 +43,7 @@ function toView(row: ActionItem, connector: string): ActionItemView {
     status: row.status as ActionItemView["status"],
     note: row.note,
     connector,
+    customer,
     firstSeenPeriod: row.firstSeenPeriod,
     lastSeenRunId: row.lastSeenRunId,
     resolvedRunId: row.resolvedRunId,
@@ -48,18 +51,30 @@ function toView(row: ActionItem, connector: string): ActionItemView {
   }
 }
 
+/**
+ * One customer's items, or — with no `projectId` ("All customers") — every active customer's
+ * in the workspace, ordered by customer and then title.
+ */
 export async function listActionItems(
   userId: string,
-  scope: { workspaceId: string; projectId: string }
+  scope: { workspaceId: string; projectId?: string }
 ): Promise<ActionItemView[]> {
-  await requireProject(userId, scope, "read")
+  const { workspaceId, projectId } = scope
+  if (projectId === undefined) await requireWorkspace(userId, workspaceId, "read")
+  else await requireProject(userId, { workspaceId, projectId }, "read")
   const rows = await getDb()
-    .select({ item: actionItems, connector: connectedSubscriptions.displayName })
+    .select({ item: actionItems, connector: connectedSubscriptions.displayName, customer: projects.name })
     .from(actionItems)
     .innerJoin(connectedSubscriptions, eq(connectedSubscriptions.id, actionItems.connectedSubscriptionId))
-    .where(and(eq(actionItems.workspaceId, scope.workspaceId), eq(actionItems.projectId, scope.projectId)))
-    .orderBy(asc(actionItems.title))
-  return rows.map(({ item, connector }) => toView(item, connector))
+    .innerJoin(projects, eq(projects.id, actionItems.projectId))
+    .where(
+      and(
+        eq(actionItems.workspaceId, workspaceId),
+        projectId === undefined ? isNull(projects.archivedAt) : eq(actionItems.projectId, projectId)
+      )
+    )
+    .orderBy(asc(projects.name), asc(actionItems.title))
+  return rows.map(({ item, connector, customer }) => toView(item, connector, customer))
 }
 
 /** Set owner, status and note. Needs edit on the item's customer; Won't do needs a note. */
@@ -89,5 +104,6 @@ export async function updateActionItem(
     .select({ name: connectedSubscriptions.displayName })
     .from(connectedSubscriptions)
     .where(eq(connectedSubscriptions.id, row.connectedSubscriptionId))
-  return toView(updated as ActionItem, connector?.name ?? "")
+  const [customer] = await db.select({ name: projects.name }).from(projects).where(eq(projects.id, row.projectId))
+  return toView(updated as ActionItem, connector?.name ?? "", customer?.name ?? "")
 }

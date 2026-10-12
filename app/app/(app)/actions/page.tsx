@@ -8,9 +8,12 @@ import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
 
 /**
- * `/actions` — the selected customer's Action register. Every finding its verified reports
- * raised, carried month to month with an owner and a status, and resolved only when a
- * report checks it clear.
+ * `/actions` — the selected customer's Action register, or every customer's with "All
+ * customers". Every finding the verified reports raised, carried month to month with an
+ * owner and a status, and resolved only when a report checks it clear.
+ *
+ * The list is keyed by the customer, so a switch mounts a fresh one rather than keeping
+ * the rows (and their unsaved edits) of the customer before.
  */
 
 export const metadata: Metadata = {
@@ -29,15 +32,15 @@ export default async function ActionsPage() {
         <p className="max-w-[62ch] text-meta text-muted-foreground">
           {project
             ? `What ${project.name}'s reports found to act on. Give each an owner; the next verified report resolves what it checks clear.`
-            : "Choose a customer to see what its reports found to act on."}
+            : "What every customer's reports found to act on. Give each an owner; the next verified report resolves what it checks clear."}
         </p>
       </header>
-      {project ? (
-        <ActionList
-          items={await listActionItems(user.id, { workspaceId: workspace.id, projectId: project.id })}
-          canEdit={can(workspace.role, "edit")}
-        />
-      ) : null}
+      <ActionList
+        key={project?.id ?? "all"}
+        items={await listActionItems(user.id, { workspaceId: workspace.id, projectId: project?.id })}
+        canEdit={can(workspace.role, "edit")}
+        showCustomer={project === undefined}
+      />
     </PageBody>
   )
 }
