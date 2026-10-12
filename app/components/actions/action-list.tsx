@@ -9,9 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import type { ActionItemView } from "@/lib/action-register/store"
 
 /**
- * One customer's Action register: what to act on, what was turned down, and what the
- * reports have proved resolved. Owner, status and note are set here; Resolved is not —
- * the next verified report sets it when it checks a finding clear.
+ * One customer's Action register, or every customer's: what to act on, what was turned
+ * down, and what the reports have proved resolved. Owner, status and note are set here;
+ * Resolved is not — the next verified report sets it when it checks a finding clear.
+ *
+ * The items come from the server on every customer switch, so the list keeps only what
+ * this browser saved since, on top of them, never a copy of the props it started with.
  */
 
 const KIND: Readonly<Record<string, string>> = {
@@ -25,7 +28,12 @@ const OWNER: Readonly<Record<string, string>> = { none: "No owner", customer: "C
 const month = new Intl.DateTimeFormat("en-GB", { month: "short", year: "numeric", timeZone: "UTC" })
 const since = (period: string) => month.format(new Date(`${period}T00:00:00Z`))
 
-function Row({ item, canEdit, onSaved }: Readonly<{ item: ActionItemView; canEdit: boolean; onSaved: (item: ActionItemView) => void }>) {
+function Row({
+  item,
+  canEdit,
+  showCustomer,
+  onSaved,
+}: Readonly<{ item: ActionItemView; canEdit: boolean; showCustomer: boolean; onSaved: (item: ActionItemView) => void }>) {
   const [owner, setOwner] = useState<string>(item.owner ?? "none")
   const [status, setStatus] = useState<string>(item.status === "resolved" ? "open" : item.status)
   const [note, setNote] = useState(item.note ?? "")
@@ -61,8 +69,8 @@ function Row({ item, canEdit, onSaved }: Readonly<{ item: ActionItemView; canEdi
         <div className="flex min-w-0 flex-col gap-0.5">
           <p className="text-sm font-medium break-words">{item.title}</p>
           <p className="text-xs text-muted-foreground">
-            <span className="rounded-md bg-muted px-1.5 py-0.5">{KIND[item.kind] ?? item.kind}</span> · {item.connector} ·
-            First seen {since(item.firstSeenPeriod)}
+            <span className="rounded-md bg-muted px-1.5 py-0.5">{KIND[item.kind] ?? item.kind}</span>
+            {showCustomer ? ` · ${item.customer}` : null} · {item.connector} · First seen {since(item.firstSeenPeriod)}
           </p>
         </div>
         {item.status === "resolved" ? (
@@ -131,8 +139,18 @@ function Row({ item, canEdit, onSaved }: Readonly<{ item: ActionItemView; canEdi
   )
 }
 
-export function ActionList({ items, canEdit }: Readonly<{ items: readonly ActionItemView[]; canEdit: boolean }>) {
-  const [current, setCurrent] = useState(items)
+export function ActionList({
+  items,
+  canEdit,
+  showCustomer = false,
+}: Readonly<{
+  items: readonly ActionItemView[]
+  canEdit: boolean
+  /** "All customers": name each item's customer. */
+  showCustomer?: boolean
+}>) {
+  const [saved, setSaved] = useState<Readonly<Record<string, ActionItemView>>>({})
+  const current = items.map((item) => saved[item.id] ?? item)
   const groups: { key: string; title: string; hint: string; items: ActionItemView[] }[] = [
     {
       key: "act",
@@ -147,8 +165,8 @@ export function ActionList({ items, canEdit }: Readonly<{ items: readonly Action
   if (current.length === 0) {
     return (
       <p className="rounded-xl border border-border bg-card px-4 py-6 text-meta text-muted-foreground">
-        No actions yet. They appear after this customer&rsquo;s next verified report: stopped machines, missing backups,
-        rightsizing and Advisor recommendations.
+        No actions yet. They appear after {showCustomer ? "a customer\u2019s" : "this customer\u2019s"} next verified
+        report: stopped machines, missing backups, rightsizing and Advisor recommendations.
       </p>
     )
   }
@@ -173,7 +191,8 @@ export function ActionList({ items, canEdit }: Readonly<{ items: readonly Action
                   key={item.id}
                   item={item}
                   canEdit={canEdit}
-                  onSaved={(saved) => setCurrent((all) => all.map((entry) => (entry.id === saved.id ? saved : entry)))}
+                  showCustomer={showCustomer}
+                  onSaved={(item) => setSaved((all) => ({ ...all, [item.id]: item }))}
                 />
               ))}
             </ul>

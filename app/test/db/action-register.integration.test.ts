@@ -161,6 +161,32 @@ describe.skipIf(!db.enabled)("the Action register", () => {
     expect(await listActionItems(ownerId, scopeOf(ownerId))).toEqual([])
   })
 
+  test("All customers lists every active customer's items, named, and only for members", async () => {
+    const workspaceId = scopeOf(ownerId).workspaceId
+    const otherProject = `project-${randomUUID()}`
+    await db.query(`INSERT INTO projects (id, workspace_id, name) VALUES ($1, $2, 'Zeta Corp')`, [otherProject, workspaceId])
+    await db.query(`UPDATE projects SET name = 'Acme' WHERE id = $1`, [scopeOf(ownerId).projectId])
+
+    s3.bundle = { schema_version: 1, findings: [finding("backup:/r/vm", "Back up vm")], checked: [], advisor_answered: false }
+    await syncActionRegister(run("run-aug", "2026-08-01", "snap-aug"))
+    s3.bundle = { schema_version: 1, findings: [finding("backup:/r/db", "Back up db")], checked: [], advisor_answered: false }
+    await syncActionRegister({ ...run("run-aug-z", "2026-08-01", "snap-aug-z"), projectId: otherProject } as ReportRun)
+
+    const all = await listActionItems(ownerId, { workspaceId })
+    expect(all.map((i) => [i.customer, i.title])).toEqual([
+      ["Acme", "Back up vm"],
+      ["Zeta Corp", "Back up db"],
+    ])
+    const one = await listActionItems(ownerId, scopeOf(ownerId))
+    expect(one.map((i) => i.title)).toEqual(["Back up vm"])
+
+    // An archived customer drops out of All customers.
+    await db.query(`UPDATE projects SET archived_at = now() WHERE id = $1`, [otherProject])
+    expect((await listActionItems(ownerId, { workspaceId })).map((i) => i.customer)).toEqual(["Acme"])
+
+    await expect(listActionItems(strangerId, { workspaceId })).rejects.toBeInstanceOf(WorkspaceAccessError)
+  })
+
   test("people set owner and status; Won't do needs a note; resolved is not theirs to set", async () => {
     s3.bundle = { schema_version: 1, findings: [finding("backup:/r/vm", "Back up vm")], checked: [], advisor_answered: false }
     await syncActionRegister(run("run-aug", "2026-08-01", "snap-aug"))
