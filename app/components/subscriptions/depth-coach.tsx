@@ -38,11 +38,14 @@ export function DepthCoach({
   checklist,
   runId,
   periodStart,
+  framed = true,
 }: Readonly<{
   checklist: DepthChecklist
   /** The report the gaps were read from, or `null` before the first one. */
   runId: string | null
   periodStart: string | null
+  /** `false` inside a tab that already names it: no card edge, and the title only for screen readers. */
+  framed?: boolean
 }>) {
   const source =
     runId === null || periodStart === null
@@ -53,11 +56,11 @@ export function DepthCoach({
     <section
       aria-labelledby="depth-coach-title"
       data-slot="depth-coach"
-      className="flex min-w-0 flex-col rounded-xl border border-border bg-card"
+      className={framed ? "flex min-w-0 flex-col rounded-xl border border-border bg-card" : "flex min-w-0 flex-col"}
     >
       <div className="flex flex-wrap items-start justify-between gap-3 p-4 pb-3 md:px-5">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 id="depth-coach-title" className="text-section">
+          <h2 id="depth-coach-title" className={framed ? "text-section" : "sr-only"}>
             Data depth
           </h2>
           <p className="text-meta text-muted-foreground">
