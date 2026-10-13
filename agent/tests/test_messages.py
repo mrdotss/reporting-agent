@@ -136,6 +136,8 @@ def test_the_two_languages_are_actually_different_copy() -> None:
         # "SKU" is the initialism in Indonesian technical writing too, and the column
         # header is the initialism rather than the phrase behind it.
         "doc.table.attr.sku_name",
+        # "CPU" likewise: the report page's short bar label is the initialism.
+        "ui.utilization.cpu_short",
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
         "ui.run_list.utc_suffix",

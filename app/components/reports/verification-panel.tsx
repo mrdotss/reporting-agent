@@ -64,6 +64,25 @@ function Check({
   )
 }
 
+/** A check in the inline layout: a filled tick, the check, and what it recorded. */
+function InlineCheck({
+  slot,
+  heading,
+  children,
+}: Readonly<{ slot: string; heading: string | undefined; children: React.ReactNode }>) {
+  return (
+    <div data-slot={slot} className="flex min-w-0 gap-3">
+      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-(--status-verified-soft) text-(--status-verified)">
+        <CheckIcon aria-hidden="true" weight="bold" className="size-3" />
+      </span>
+      <div className="flex min-w-0 flex-col">
+        <p className="text-sm font-medium">{heading}</p>
+        <p className="text-meta text-muted-foreground">{children}</p>
+      </div>
+    </div>
+  )
+}
+
 /** One digest in a well: what it names, the value, and a copy control. */
 function DigestWell({
   label,
@@ -80,10 +99,28 @@ function DigestWell({
   )
 }
 
+/** One fingerprint as a row: what it names on the left, the value and its copy on the right. */
+function DigestRow({
+  label,
+  value,
+  copyLabel,
+}: Readonly<{ label: string | undefined; value: string; copyLabel: string }>) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 border-t border-border py-2 first:border-t-0">
+      <dt className="text-meta text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 text-sm">
+        <CopyDigest value={value} label={copyLabel} />
+      </dd>
+    </div>
+  )
+}
+
 export function VerificationPanel({
   verification,
   delivered = true,
   language = "en",
+  layout = "card",
+  definition = null,
 }: Readonly<{
   /** The stored row, or `null` when the run carries none (Requirement 39.8). */
   verification: VerificationView | null
@@ -94,6 +131,14 @@ export function VerificationPanel({
    */
   delivered?: boolean
   language?: Language
+  /**
+   * `inline` is the report page's Proof tab: a passed verification whose verdict is
+   * already the page's summary, so it drops the card and the heading and lists the
+   * checks and fingerprints. A failed or absent one always renders as the card.
+   */
+  layout?: "card" | "inline"
+  /** The pinned definition, listed with the fingerprints in the inline layout. */
+  definition?: Readonly<{ label: string; sha256: string }> | null
 }>) {
   // Requirement 39.8 — no verification, or a status that is neither pass nor fail,
   // presents "not verified" in neutral ink. An unverified report is not a failed one.
@@ -129,6 +174,85 @@ export function VerificationPanel({
   const blockingCount = verification.blockingFindings.length
   const failNoun = messageText(blockingCount === 1 ? FAIL_NOUN_SINGULAR : FAIL_NOUN_PLURAL, language ?? "en") ?? ""
   const advisoryCount = verification.advisoryFindings.length
+
+  if (layout === "inline" && passed) {
+    const lang = language ?? "en"
+    return (
+      <div
+        data-slot="verification-panel"
+        data-status={verification.status}
+        role="region"
+        aria-labelledby="verification-checks-heading"
+        className="grid min-w-0 gap-7 sm:grid-cols-2"
+      >
+        <p data-slot="verification-announcement" aria-live="polite" className="sr-only">
+          {messageText("ui.verification.pass_aria", lang, { count: grouped(verification.figureCount) })}
+        </p>
+
+        <div className="flex min-w-0 flex-col gap-3.5">
+          <h3 id="verification-checks-heading" className="text-sm font-semibold">
+            {messageText("ui.verification.checks_heading", lang)}
+          </h3>
+          <InlineCheck slot="replay-outcome" heading={messageText("ui.verification.replay_heading", lang)}>
+            {!verification.replay.possible
+              ? messageText("ui.verification.replay_not_possible", lang)
+              : messageText("ui.verification.replay_folded", lang, {
+                  folded: grouped(verification.replay.objectsFolded),
+                  named: grouped(verification.replay.objectsNamed),
+                })}
+          </InlineCheck>
+          <InlineCheck slot="drift-sample" heading={messageText("ui.verification.drift_heading", lang)}>
+            {verification.driftSample.n === 0 && !verification.driftSample.seed
+              ? messageText("ui.verification.drift_empty", lang)
+              : messageText("ui.verification.drift_short", lang, { n: grouped(verification.driftSample.n) })}
+          </InlineCheck>
+          <InlineCheck slot="advisory-findings" heading={messageText("ui.finding.advisory_heading", lang)}>
+            {advisoryCount === 0
+              ? messageText("ui.finding.empty_advisory", lang)
+              : messageText("ui.finding.advisory_note", lang)}
+          </InlineCheck>
+          {advisoryCount === 0 ? null : (
+            <FindingList
+              findings={verification.advisoryFindings}
+              blocking={false}
+              emptyText={messageText("ui.finding.empty_advisory", lang) ?? ""}
+            />
+          )}
+        </div>
+
+        <div className="flex min-w-0 flex-col gap-2">
+          <h3 className="text-sm font-semibold">{messageText("ui.verification.fingerprints_heading", lang)}</h3>
+          <dl data-slot="verification-digests" className="flex flex-col">
+            <DigestRow
+              label={messageText("ui.verification.digest_snapshot", lang)}
+              value={verification.snapshotSha256}
+              copyLabel="snapshot digest"
+            />
+            <DigestRow
+              label={messageText("ui.verification.digest_docx", lang)}
+              value={verification.docxSha256}
+              copyLabel="docx digest"
+            />
+            <DigestRow
+              label={messageText("ui.verification.digest_pdf", lang)}
+              value={verification.pdfSha256}
+              copyLabel="pdf digest"
+            />
+            {verification.replay.recomputedSha256 === undefined ? null : (
+              <DigestRow
+                label={messageText("ui.verification.digest_recomputed", lang)}
+                value={verification.replay.recomputedSha256}
+                copyLabel="recomputed snapshot digest"
+              />
+            )}
+            {definition === null ? null : (
+              <DigestRow label={definition.label} value={definition.sha256} copyLabel="definition digest" />
+            )}
+          </dl>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <Card

@@ -11,8 +11,54 @@ import { IDLE_CPU_PERCENT, type VmUtilization } from "@/lib/runs/utilization"
  */
 export function UtilizationCard({
   machines,
-}: Readonly<{ machines: readonly VmUtilization[] }>) {
+  variant = "card",
+}: Readonly<{
+  machines: readonly VmUtilization[]
+  /** `compact` is the report page's Overview tab: no card, one block per machine. */
+  variant?: "card" | "compact"
+}>) {
   if (machines.length === 0) return null
+
+  if (variant === "compact") {
+    return (
+      <section aria-labelledby="utilization-title" data-slot="utilization-card" className="flex min-w-0 flex-col gap-4">
+        <div className="flex flex-col gap-0.5">
+          <h3 id="utilization-title" className="text-sm font-semibold">
+            {messageText("ui.utilization.compact_heading", "en")}
+          </h3>
+          <p className="text-meta text-muted-foreground">
+            {messageText("ui.utilization.compact_description", "en")}
+          </p>
+        </div>
+        <ul className="flex flex-col gap-4">
+          {machines.map((machine) => (
+            <li key={machine.resourceId} className="flex min-w-0 flex-col gap-1.5">
+              <div className="flex min-w-0 items-baseline justify-between gap-3">
+                <span className="truncate font-mono text-[13px]" title={machine.resourceId}>
+                  {machine.name}
+                </span>
+                {machine.cpuAvg < IDLE_CPU_PERCENT ? (
+                  <span className="shrink-0 rounded-md bg-(--status-attention-soft) px-1.5 text-xs font-medium leading-5 text-(--status-attention)">
+                    {messageText("ui.utilization.idle", "en", { percent: IDLE_CPU_PERCENT })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-[3.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                <span>{messageText("ui.utilization.cpu_short", "en")}</span>
+                <Bar value={machine.cpuAvg} text={`${machine.cpuText}%`} tone="cpu" />
+                <span>{messageText("ui.utilization.memory_short", "en")}</span>
+                {machine.memoryAvg === null ? (
+                  <span>—</span>
+                ) : (
+                  <Bar value={machine.memoryAvg} text={`${machine.memoryText}%`} tone="memory" />
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </section>
+    )
+  }
 
   return (
     <section

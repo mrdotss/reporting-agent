@@ -12,9 +12,9 @@ export const REPLAY_TOGGLE_EVENT = "run-replay:toggle"
 export const REPLAY_STATE_EVENT = "run-replay:state"
 
 /**
- * "Watch this run", beside Download in the report header.
+ * "Replay run", beside Download in the report header.
  *
- * The replay itself lives in the Run card further down; the two talk through a window
+ * The replay itself lives in the summary card below it; the two talk through a window
  * event rather than shared state because one is in the page header and the other is a
  * separate client island, and neither owns the other.
  */

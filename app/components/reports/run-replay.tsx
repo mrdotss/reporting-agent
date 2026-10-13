@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { SealIcon, SealWarningIcon, ShieldCheckIcon } from "@phosphor-icons/react"
 
 import {
   REPLAY_STATE_EVENT,
@@ -12,7 +13,9 @@ import { RUN_PHASE_ORDER, RUN_STATUS_PRESENTATION } from "@/lib/runs/presentatio
 import { cn } from "@/lib/utils"
 
 /**
- * A finished run's six phases, which the header's "Watch this run" replays.
+ * The summary at the top of a finished report: the verdict, the few numbers a reader
+ * checks first, and the run's six phases as one bar, each phase as wide as the time it
+ * took. The header's "Replay run" plays the bar back.
  *
  * ## What "recorded" means here
  *
@@ -79,18 +82,37 @@ function timingsFor(
   }
 }
 
+export type RunVerdict = Readonly<{
+  tone: "verified" | "failed" | "neutral"
+  title: string
+  detail: string | null
+}>
+
+export type RunStat = Readonly<{ label: string; value: string }>
+
+const VERDICT_ICON = {
+  verified: ShieldCheckIcon,
+  failed: SealWarningIcon,
+  neutral: SealIcon,
+} as const
+
 export function RunReplay({
   status,
   createdAt,
   claimedAt,
   finishedAt,
   phaseTimings,
+  verdict,
+  stats = [],
 }: Readonly<{
   status: RunStatus
   createdAt: string
   claimedAt: string | null
   finishedAt: string
   phaseTimings: Readonly<Record<string, string>> | null
+  verdict: RunVerdict
+  /** Shown beside the verdict, before the run time. */
+  stats?: readonly RunStat[]
 }>) {
   const { phases, recorded, totalMs } = timingsFor(
     createdAt,
@@ -99,6 +121,8 @@ export function RunReplay({
     phaseTimings
   )
   const failed = status === "failed"
+  // On a failed run, the last phase with a recorded entry is where it stopped.
+  const stoppedAt = failed ? phases.findLastIndex((p) => p.ms !== null) : -1
 
   // `null` when idle; otherwise the index of the phase being replayed and when it began.
   const [playing, setPlaying] = useState<{ index: number; startedAt: number } | null>(null)
@@ -112,6 +136,10 @@ export function RunReplay({
       ? Math.max(MIN_PHASE_MS, (REPLAY_MS * (phase.ms ?? 0)) / knownTotal)
       : REPLAY_MS / phases.length
   )
+
+  // The phase the caption talks about: the longest one, until the reader picks another.
+  const longest = recorded && knownTotal > 0 ? known.indexOf(Math.max(...known)) : -1
+  const [picked, setPicked] = useState<number>(longest)
 
   // The header button toggles the replay.
   useEffect(() => {
@@ -159,80 +187,130 @@ export function RunReplay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, phases.length])
 
+  const Icon = VERDICT_ICON[verdict.tone]
+  const label = (index: number) => RUN_STATUS_PRESENTATION[phases[index].status].label
+  const time = (index: number) =>
+    (recorded || phases[index].status === "queued") && phases[index].ms !== null
+      ? clock(phases[index].ms ?? 0)
+      : "—"
+
+  const caption = replaying
+    ? `Replaying ${label(playing.index).toLowerCase()}…`
+    : failed && stoppedAt >= 0
+      ? `Stopped while ${label(stoppedAt).toLowerCase()}`
+      : picked >= 0 && recorded && knownTotal > 0
+        ? `${label(picked)} took ${Math.round((100 * known[picked]) / knownTotal)}% of the run`
+        : null
+
   return (
     <section
       aria-labelledby="run-replay-title"
       data-slot="run-replay"
-      className="flex scroll-mt-20 flex-col gap-4 rounded-xl border border-border bg-card p-4 md:p-5"
+      className="flex scroll-mt-20 flex-col gap-5 rounded-xl border border-border bg-card p-4 md:px-6 md:py-5"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <h2 id="run-replay-title" className="text-section">
-            {messageText("ui.run_replay.heading", "en")}
-          </h2>
-          <p aria-live="polite" className="text-meta text-muted-foreground">
-            {replaying
-              ? `Replaying ${RUN_STATUS_PRESENTATION[phases[playing.index].status].label.toLowerCase()}…`
-              : failed
-                ? "Stopped before a document was delivered."
-                : "Verified — every figure in the document traced to the snapshot."}
-          </p>
-        </div>
-        <span className="flex items-baseline gap-1.5">
-          <span className="font-mono text-[15px] tabular-nums">{clock(totalMs)}</span>
-          <span className="text-xs text-muted-foreground">
-            {messageText("ui.run_replay.elapsed", "en")}
+      <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={cn(
+              "grid size-9 shrink-0 place-items-center rounded-lg",
+              verdict.tone === "verified" && "bg-(--status-verified-soft) text-(--status-verified)",
+              verdict.tone === "failed" && "bg-(--status-failed-soft) text-(--status-failed)",
+              verdict.tone === "neutral" && "bg-muted text-muted-foreground"
+            )}
+          >
+            <Icon aria-hidden="true" className="size-[18px]" />
           </span>
-        </span>
+          <div className="flex min-w-0 flex-col">
+            <h2 id="run-replay-title" className="text-[15px] font-semibold text-balance">
+              {verdict.title}
+            </h2>
+            {verdict.detail === null ? null : (
+              <p className="text-meta text-muted-foreground">{verdict.detail}</p>
+            )}
+          </div>
+        </div>
+
+        <dl className="flex flex-wrap gap-y-3">
+          {[...stats, { label: messageText("ui.run_replay.run_time", "en") ?? "run time", value: clock(totalMs) }].map(
+            (stat) => (
+              <div
+                key={stat.label}
+                className="flex flex-col-reverse border-l border-border px-4 first:border-l-0 first:pl-0 last:pr-0 md:px-5"
+              >
+                <dt className="text-meta text-muted-foreground">{stat.label}</dt>
+                <dd className="font-mono text-2xl font-medium tracking-tight tabular-nums">{stat.value}</dd>
+              </div>
+            )
+          )}
+        </dl>
       </div>
 
-      <ol
-        aria-label={messageText("ui.run_replay.phases_label", "en") ?? undefined}
-        className="grid grid-cols-2 gap-x-1.5 gap-y-3 sm:grid-cols-3 lg:grid-cols-6"
-      >
-        {phases.map((phase, index) => {
-          const done = replaying ? index < playing.index : true
-          const current = replaying && index === playing.index
-          // On a failed run, the last phase with a recorded entry is where it stopped.
-          const stoppedHere =
-            failed && !replaying && index === phases.findLastIndex((p) => p.ms !== null)
-          const fill = current ? progress : done ? 1 : 0
-
-          return (
-            <li key={phase.status} className="flex min-w-0 flex-col gap-2">
-              <span aria-hidden="true" className="relative block h-1.5 overflow-hidden rounded-full bg-muted">
+      <div className="flex flex-col gap-2.5">
+        <div
+          role="group"
+          aria-label={messageText("ui.run_replay.phases_label", "en") ?? undefined}
+          className="flex gap-[3px]"
+        >
+          {phases.map((phase, index) => {
+            const done = replaying ? index < playing.index : true
+            const current = replaying && index === playing.index
+            const fill = current ? progress : done ? 1 : 0
+            const weight = recorded && knownTotal > 0 ? Math.max(1, phase.ms ?? 0) : 1
+            const lost = failed && stoppedAt >= 0 && index > stoppedAt
+            return (
+              <button
+                key={phase.status}
+                type="button"
+                aria-label={`${label(index)}, ${time(index)}`}
+                aria-pressed={!replaying && picked === index}
+                onClick={() => setPicked(index)}
+                style={{ flex: `${weight} 1 0px` }}
+                className="relative h-2.5 min-w-2 cursor-pointer overflow-hidden rounded-[3px] bg-primary/15 outline-none hover:bg-primary/25 focus-visible:ring-3 focus-visible:ring-ring/40"
+              >
                 <span
+                  aria-hidden="true"
                   className={cn(
-                    "absolute inset-y-0 left-0 rounded-full",
-                    stoppedHere
+                    "absolute inset-y-0 left-0",
+                    index === stoppedAt
                       ? "bg-(--status-failed)"
                       : current
                         ? "bg-(--status-inflight)"
-                        : "bg-(--status-verified)"
+                        : !replaying && picked === index
+                          ? "bg-primary"
+                          : "bg-primary/35",
+                    lost && "hidden"
                   )}
                   style={{ width: `${fill * 100}%` }}
                 />
-              </span>
-              <span className="flex items-baseline justify-between gap-1.5">
-                <span
-                  className={cn(
-                    "truncate text-meta font-medium",
-                    replaying && !done && !current && "text-muted-foreground",
-                    stoppedHere && "text-(--status-failed)"
-                  )}
-                >
-                  {RUN_STATUS_PRESENTATION[phase.status].label}
-                </span>
-                <span className="shrink-0 font-mono text-xs text-muted-foreground tabular-nums">
-                  {(recorded || phase.status === "queued") && phase.ms !== null
-                    ? clock(phase.ms)
-                    : "—"}
-                </span>
-              </span>
-            </li>
-          )
-        })}
-      </ol>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1.5">
+          {phases.map((phase, index) => (
+            <button
+              key={phase.status}
+              type="button"
+              onClick={() => setPicked(index)}
+              className={cn(
+                "flex cursor-pointer items-baseline gap-1.5 rounded-sm text-meta text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30",
+                ((!replaying && picked === index) || (replaying && playing.index === index)) &&
+                  "font-semibold text-foreground",
+                index === stoppedAt && "text-(--status-failed)"
+              )}
+            >
+              {label(index)}
+              <span className="font-mono text-xs font-normal tabular-nums">{time(index)}</span>
+            </button>
+          ))}
+          {caption === null ? null : (
+            <span aria-live="polite" className="text-meta text-muted-foreground sm:ml-auto">
+              {caption}
+            </span>
+          )}
+        </div>
+      </div>
 
       {recorded ? null : (
         <p className="text-xs text-muted-foreground">
