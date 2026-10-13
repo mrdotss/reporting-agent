@@ -1062,6 +1062,14 @@ export const MESSAGE_CATALOG = {
     en: "affected",
     id: "terdampak",
   },
+  "ui.gap_list.summary_heading": {
+    en: "What couldn’t be read",
+    id: "Yang tidak dapat dibaca",
+  },
+  "ui.gap_list.summary_description": {
+    en: "Recorded, not filled with zeros",
+    id: "Dicatat, bukan diisi nol",
+  },
   "ui.gap_list.heading": {
     en: "Recorded gaps",
     id: "Celah tercatat",
@@ -1288,8 +1296,12 @@ export const MESSAGE_CATALOG = {
     id: "Proses ini selesai sebelum waktu tiap tahap dicatat, jadi waktu antre dan totalnya nyata, dan pemutaran ulang membagi tahap lainnya secara merata.",
   },
   "ui.run_replay.watch": {
-    en: "Watch this run",
-    id: "Tonton proses ini",
+    en: "Replay run",
+    id: "Putar ulang proses",
+  },
+  "ui.run_replay.run_time": {
+    en: "run time",
+    id: "waktu proses",
   },
   "ui.run_replay.stop": {
     en: "Stop",
@@ -1328,6 +1340,34 @@ export const MESSAGE_CATALOG = {
     id: "WIB",
   },
   /* The three busiest virtual machines on the report page. */
+  "ui.utilization.cpu_short": {
+    en: "CPU",
+    id: "CPU",
+  },
+  "ui.utilization.memory_short": {
+    en: "Memory",
+    id: "Memori",
+  },
+  "ui.report_tabs.overview": {
+    en: "Overview",
+    id: "Ringkasan",
+  },
+  "ui.report_tabs.proof": {
+    en: "Proof",
+    id: "Bukti",
+  },
+  "ui.report_tabs.gaps": {
+    en: "Gaps",
+    id: "Celah",
+  },
+  "ui.utilization.compact_heading": {
+    en: "Busiest machines",
+    id: "Mesin tersibuk",
+  },
+  "ui.utilization.compact_description": {
+    en: "Average for the period, CPU and memory",
+    id: "Rata-rata selama periode, CPU dan memori",
+  },
   "ui.utilization.heading": {
     en: "Utilization",
     id: "Utilisasi",
@@ -1879,6 +1919,18 @@ export const MESSAGE_CATALOG = {
   "ui.verification.replay_recomputed_label": {
     en: "recomputed",
     id: "dihitung ulang",
+  },
+  "ui.verification.digest_recomputed": {
+    en: "Recomputed snapshot",
+    id: "Snapshot dihitung ulang",
+  },
+  "ui.verification.checks_heading": {
+    en: "Checks",
+    id: "Pemeriksaan",
+  },
+  "ui.verification.fingerprints_heading": {
+    en: "Fingerprints",
+    id: "Sidik digital",
   },
   "ui.verification.replay_stored_label": {
     en: "· stored",

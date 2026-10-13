@@ -95,11 +95,18 @@ export type GapListProps = Readonly<{
   language?: Language
   /** The pinned template id, for the metric_not_selected link. */
   templateId?: string
+  /** A gap type whose group starts open, when a reader arrived from its summary row. */
+  openType?: string | null
 }>
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+/** The short label that heads a gap type's group, in the given language. */
+export function gapTypeLabel(gapType: string, language: Language = "en"): string {
+  return resolveLabel(gapType, language)
+}
+
 function resolveLabel(
   gapType: string,
   language: Language
@@ -322,12 +329,14 @@ function GapGroupSection({
   group,
   language,
   templateId,
+  initiallyOpen = false,
 }: Readonly<{
   group: GapTypeGroup
   language: Language
   templateId: string | undefined
+  initiallyOpen?: boolean
 }>) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(initiallyOpen)
 
   const label = resolveLabel(group.gapType, language)
   const note = resolveNote(group.gapType, language)
@@ -433,6 +442,7 @@ export function GapList({
   groupOptions,
   language = "en",
   templateId,
+  openType = null,
 }: GapListProps) {
   // Requirement 20.10: zero entries → explicit statement, never omit the section
   if (gaps.length === 0) {
@@ -462,6 +472,7 @@ export function GapList({
           group={group}
           language={language}
           templateId={templateId}
+          initiallyOpen={group.gapType === openType}
         />
       ))}
     </div>

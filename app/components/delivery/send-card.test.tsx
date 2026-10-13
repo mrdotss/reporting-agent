@@ -49,23 +49,26 @@ const props = {
 describe("SendCard", () => {
   test("sending asks first, in the card, then records what was sent", async () => {
     render(<SendCard {...props} />)
-    fireEvent.click(screen.getByRole("button", { name: "Approve and send" }))
+    fireEvent.click(screen.getByRole("button", { name: "Approve and send to 1 contact" }))
     expect(calls).toHaveLength(0)
     expect(screen.getByText("Send this verified report to 1 contact?")).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole("button", { name: "Send" }))
     await waitFor(() => expect(calls).toEqual([{ url: "/api/runs/run-1/deliver", method: "POST" }]))
-    expect(await screen.findByText(/to 1 of 1 contact/)).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Send again" })).toBeInTheDocument()
+    expect(await screen.findByText(/To 1 of 1 contact/)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Send again to 1 contact" })).toBeInTheDocument()
   })
 
   test("an Editor can manage contacts but not send, and nothing sends without email set up", () => {
     render(<SendCard {...props} canSend={false} />)
     expect(screen.getByText("Only an Owner or Admin can approve and send a report.")).toBeInTheDocument()
+    // The add fields fold behind one button until they are needed.
+    expect(screen.queryByRole("button", { name: "Add" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Add contact" }))
     expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument()
     cleanup()
     render(<SendCard {...props} mailIssue="RPT_MAIL_FROM is not set in the running service." />)
     expect(screen.getByText(/Email is not set up on this server/)).toHaveTextContent("RPT_MAIL_FROM is not set")
-    expect(screen.queryByRole("button", { name: "Approve and send" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Approve and send/ })).toBeNull()
   })
 })

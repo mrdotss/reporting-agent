@@ -11,10 +11,10 @@ import { latestDelivery, listContacts } from "@/lib/delivery/store"
 import { mailProblem } from "@/lib/mail/mailtrap"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
-import { GapList } from "@/components/reports/gap-list"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
 import { RunProgress } from "@/components/reports/run-progress"
-import { RunReplay } from "@/components/reports/run-replay"
+import { ReportTabs } from "@/components/reports/report-tabs"
+import { RunReplay, type RunStat, type RunVerdict } from "@/components/reports/run-replay"
 import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
 import { UtilizationCard } from "@/components/reports/utilization-card"
@@ -43,10 +43,13 @@ import { latestForRun } from "@/lib/verifications/store"
  *
  * ## The order is the order a reader asks in
  *
- * Which report, for which period, did it go out — with Watch and Download beside the
- * title. Then how the run went, as six phases; then the verdict and the snapshot it rests
- * on, the three busiest machines, and what could not be read. On a run still in flight
- * the live phase track takes the run's place and the rest waits for the verdict.
+ * Which report, for which period — with Replay and Download beside the title. Then one
+ * summary card: the verdict, the few numbers a reader checks first, and the run's six
+ * phases as one bar sized by time. Below it the detail sits in three tabs (Overview,
+ * Proof, Gaps) with Send to customer as a column beside them, so a finished report is
+ * one screen rather than a stack of cards. A verification that did not pass is shown
+ * in full above the tabs. On a run still in flight the live phase track takes the run's
+ * place and the rest waits for the verdict.
  *
  * ## Terminal state is read from the row
  *
@@ -131,6 +134,48 @@ export default async function RunPage({ params }: RunPageProps) {
       : await Promise.all([listContacts(user.id, sendScope), latestDelivery(user.id, run.id)])
   const mailIssue = mailProblem()
 
+  const latest = verification.latest
+  const verdict: RunVerdict =
+    run.status === "failed"
+      ? { tone: "failed", title: "Stopped before a document was delivered.", detail: null }
+      : verified && verificationView !== null
+        ? {
+            tone: "verified",
+            title: "Every figure in the document traced to the snapshot",
+            detail: [
+              `Snapshot ${verificationView.snapshotSha256.slice(0, 12)}`,
+              verificationView.replay.possible
+                ? `replay re-folded ${verificationView.replay.objectsFolded} of ${verificationView.replay.objectsNamed} objects`
+                : null,
+              verificationView.driftSample.n > 0
+                ? `${verificationView.driftSample.n} resources re-checked for drift`
+                : null,
+            ]
+              .filter((part) => part !== null)
+              .join(" · "),
+          }
+        : latest?.status === "fail"
+          ? {
+              tone: "failed",
+              title: messageText("ui.verification.not_delivered_heading", "en") ?? "Not delivered",
+              detail: null,
+            }
+          : {
+              tone: "neutral",
+              title: messageText("ui.verification.failed", "en") ?? "Not verified",
+              detail: null,
+            }
+
+  const count = (value: number | null | undefined) =>
+    value === null || value === undefined ? "—" : value.toLocaleString("en-US")
+  const stats: RunStat[] = [
+    ...(verified && verificationView !== null
+      ? [{ label: "figures traced", value: count(verificationView.figureCount) }]
+      : []),
+    { label: "resources", value: count(view.resourceCount) },
+    { label: "gaps recorded", value: count(view.gapCount) },
+  ]
+
   return (
     <PageBody kind="wide">
       <Link
@@ -192,109 +237,90 @@ export default async function RunPage({ params }: RunPageProps) {
             claimedAt={iso(run.claimedAt)}
             finishedAt={view.updatedAt}
             phaseTimings={run.phaseTimings ?? null}
+            verdict={verdict}
+            stats={stats}
           />
 
           {run.status === "failed" ? (
             <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
           ) : null}
 
+          {/* Requirement 39 — a verification that did not pass stays loud, above the detail. */}
+          {verified ? null : (
+            <VerificationPanel verification={verificationView} delivered={delivered} />
+          )}
+
           <div
             className={
-              run.status === "completed"
-                ? "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]"
-                : "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2"
+              sendScope === null
+                ? "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2"
+                : "grid items-start gap-5 duration-200 animate-in fade-in-0 slide-in-from-bottom-2 lg:grid-cols-[minmax(0,1fr)_21rem]"
             }
           >
-            {/* Requirement 39 — rendered for every terminal run, verified or not. */}
-            <div className="flex min-w-0 flex-col gap-5">
-              <VerificationPanel verification={verificationView} delivered={delivered} />
-              {sendScope === null ? null : (
-                <SendCard
-                  runId={run.id}
-                  workspaceId={sendScope.workspaceId}
-                  projectId={sendScope.projectId}
-                  customer={projects.find((entry) => entry.id === sendScope.projectId)?.name ?? "this customer"}
-                  contacts={contacts}
-                  delivery={delivery}
-                  canEdit={can(workspace.role, "edit")}
-                  canSend={can(workspace.role, "manage")}
-                  mailIssue={mailIssue}
-                />
-              )}
-            </div>
+            <ReportTabs
+              gaps={gaps}
+              machines={
+                machines.length === 0 ? null : <UtilizationCard machines={machines} variant="compact" />
+              }
+              proof={
+                <div className="flex flex-col gap-7">
+                  {verified ? (
+                    <VerificationPanel
+                      verification={verificationView}
+                      delivered={delivered}
+                      layout="inline"
+                      definition={
+                        pinned === null
+                          ? null
+                          : {
+                              label: `Definition · ${pinned.templateName} v${pinned.version}`,
+                              sha256: pinned.definitionSha256,
+                            }
+                      }
+                    />
+                  ) : null}
 
-            {run.status === "completed" ? (
-              <section
-                aria-labelledby="snapshot-title"
-                data-slot="snapshot-card"
-                className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4 md:p-5"
-              >
-                <div className="flex flex-col gap-0.5">
-                  <h2 id="snapshot-title" className="text-section">
-                    {messageText("ui.snapshot.label_snapshot", "en")}
-                  </h2>
-                  <p className="text-meta text-muted-foreground">
-                    {messageText("ui.snapshot.subtitle", "en")}
-                  </p>
-                </div>
-
-                <SnapshotProvenance run={view} provenance={provenance} />
-
-                {pinned === null ? null : (
-                  <div className="flex min-w-0 flex-col gap-0.5">
-                    <span className="text-xs text-muted-foreground">Rendered from</span>
-                    <span className="flex flex-wrap items-center gap-x-1.5 text-sm">
-                      {pinned.templateName}{" "}
-                      <span className="font-mono tabular-nums">v{pinned.version}</span>
-                      <span aria-hidden="true" className="text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">definition</span>
-                      <Identifier
-                        value={pinned.definitionSha256}
-                        kind="digest"
-                        label="Definition digest"
-                      />
-                    </span>
-                  </div>
-                )}
-
-                {documentHtml === null ? null : (
-                  <Link
-                    href={`/reports/${runId}/figures`}
-                    className="flex w-fit items-center gap-1.5 rounded-lg text-sm font-medium text-primary outline-none transition-colors hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+                  <section
+                    aria-labelledby="snapshot-title"
+                    data-slot="snapshot-card"
+                    className={
+                      verified
+                        ? "flex flex-col gap-3 border-t border-border pt-5"
+                        : "flex flex-col gap-3"
+                    }
                   >
-                    Trace every figure
-                    <ArrowUpRightIcon aria-hidden="true" className="size-4" />
-                  </Link>
-                )}
-              </section>
-            ) : null}
-          </div>
-
-          <UtilizationCard machines={machines} />
-
-          <section
-            aria-labelledby="gaps-title"
-            data-slot="collection-gaps"
-            className="rounded-xl border border-border bg-card"
-          >
-            <div className="flex flex-col gap-0.5 p-4 pb-3 md:px-5">
-              <h2 id="gaps-title" className="text-section">
-                {messageText("ui.gap_list.heading", "en")}
-              </h2>
-              <p className="text-meta text-muted-foreground">
-                {messageText("ui.gap_list.description", "en")}
-              </p>
-            </div>
-            <div className="border-t border-border">
-              {gaps.length === 0 ? (
-                <div className="px-4 py-4 md:px-5">
-                  <GapList gaps={gaps} />
+                    <h3 id="snapshot-title" className="text-sm font-semibold">
+                      {messageText("ui.snapshot.label_snapshot", "en")}
+                    </h3>
+                    <SnapshotProvenance run={view} provenance={provenance} />
+                    {documentHtml === null ? null : (
+                      <Link
+                        href={`/reports/${runId}/figures`}
+                        className="flex w-fit items-center gap-1.5 rounded-lg text-sm font-medium text-primary outline-none transition-colors hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+                      >
+                        Trace every figure
+                        <ArrowUpRightIcon aria-hidden="true" className="size-4" />
+                      </Link>
+                    )}
+                  </section>
                 </div>
-              ) : (
-                <GapList gaps={gaps} />
-              )}
-            </div>
-          </section>
+              }
+            />
+
+            {sendScope === null ? null : (
+              <SendCard
+                runId={run.id}
+                workspaceId={sendScope.workspaceId}
+                projectId={sendScope.projectId}
+                customer={projects.find((entry) => entry.id === sendScope.projectId)?.name ?? "this customer"}
+                contacts={contacts}
+                delivery={delivery}
+                canEdit={can(workspace.role, "edit")}
+                canSend={can(workspace.role, "manage")}
+                mailIssue={mailIssue}
+              />
+            )}
+          </div>
         </>
       ) : (
         <section
