@@ -308,6 +308,8 @@ export type CreateTemplateInput = {
   readonly description?: string
   /** The source the preset is written for. Defaults to Azure, the only catalogue today. */
   readonly provider?: ReportTemplate["provider"]
+  /** A first draft to open with — a starter's sections — written unvalidated, as any draft is. */
+  readonly draftDefinition?: unknown
 }
 
 /**
@@ -333,6 +335,9 @@ export async function createTemplate(
     ...(input.description === undefined
       ? {}
       : { description: input.description }),
+    ...(input.draftDefinition === undefined
+      ? {}
+      : { draftDefinition: input.draftDefinition }),
   }
 
   try {

@@ -87,67 +87,30 @@ describe("the workspace palette covers what it has to cover", () => {
 })
 
 /**
- * The document preview persists across steps.
+ * The page in the preset builder is one surface, mounted once.
  *
- * It used to be mounted inside the Review step, which meant it unmounted on every step
- * change. A real preview is a `python-docx` render, a LibreOffice conversion and an
- * upload — measured in seconds, not milliseconds — so a preview thrown away on
- * navigation was only ever useful on the step that paid for it, and the consultant chose
- * sections and appearance without ever seeing the page they affect.
- *
- * Mounting it in the shell is what makes it survive. That is a structural property, not a
- * visual one: a rendering test of any single step passes either way.
+ * The wizard this replaced kept its preview alive across steps by mounting it in the shell
+ * rather than in a step. The builder has no steps, but the same property holds for its
+ * left-hand tabs: the page is mounted beside them, never inside the tab switch, so changing
+ * from Outline to Theme redraws nothing but the panel.
  */
-describe("the document preview outlives the step that rendered it", () => {
-  test("the wizard mounts it, not a step", () => {
-    const shell = read("components/templates/wizard-shell.tsx")
-    expect(shell).toMatch(/<DocumentPreview/)
-    expect(read("components/templates/step-preview.tsx")).not.toMatch(
-      /<DocumentPreview/
-    )
+describe("the builder's page outlives the panel beside it", () => {
+  test("the builder mounts the page outside the left tab switch", () => {
+    const builder = read("components/builder/builder.tsx")
+    expect(builder).toMatch(/<Canvas \/>/)
+    const tabs = builder.slice(builder.indexOf('leftTab === "outline"'), builder.indexOf('leftTab === "document"'))
+    expect(tabs).not.toMatch(/<Canvas/)
   })
 
-  test("it is mounted outside the step switch, so navigating keeps it alive", () => {
-    // `renderStep` is the switch. Anything mounted inside it is remounted per step.
-    const shell = read("components/templates/wizard-shell.tsx")
-    const switchStart = shell.indexOf("function renderStep(")
-    expect(switchStart).toBeGreaterThan(-1)
-    expect(shell.slice(switchStart)).not.toMatch(/<DocumentPreview/)
-  })
-
-  test("every step has it, Identity included", () => {
-    // It used to start at Sections, on the reasoning that a name and a customer
-    // describe no page yet. They describe the most visible text in the document: the
-    // report title and the customer name are printed on the cover and in the running
-    // header. Withholding the preview there also made the form jump a third of the
-    // page wider on the way to step two, which reads as a layout bug rather than as a
-    // step change.
-    //
-    // Asserted as an unconditional value rather than as "not identity", so a later
-    // edit cannot reintroduce a per-step condition — which is what would remount the
-    // preview and throw away a render the test above exists to preserve.
-    expect(read("components/templates/wizard-shell.tsx")).toMatch(
-      /const showsPreview = true/
-    )
-  })
-
-  test("the retired specimens are gone, not merely unmounted", () => {
-    // Three preview surfaces have been retired from this wizard. Each was removed
-    // rather than left unmounted, because an unreferenced canvas is one an edit
-    // re-enables by accident.
-    const design = read("components/templates/step-design.tsx")
-    expect(design).not.toMatch(/LiveThemePreview/)
-
+  test("the wizard and its specimens are gone, not merely unmounted", () => {
     for (const gone of [
+      "components/templates/wizard-shell.tsx",
+      "components/templates/document-preview.tsx",
       "components/templates/live-theme-preview.tsx",
       "components/templates/real-preview-panel.tsx",
       "components/templates/paper-preview.tsx",
     ]) {
       expect(() => read(gone), gone).toThrow()
     }
-
-    expect(read("components/templates/wizard-shell.tsx")).not.toMatch(
-      /RealPreviewPanel/
-    )
   })
 })

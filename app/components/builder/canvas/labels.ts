@@ -1,0 +1,72 @@
+import {
+  expansionFor,
+  resourceNoun,
+  type CatalogueSection,
+} from "@/lib/builder/catalogue"
+
+/**
+ * What the builder calls a block — in the outline, the selection tag and the inspector.
+ *
+ * Named for what a reader sees on the page (a "Details table", a "Chart"), not for the
+ * block type the runtime compiles. Interface copy is English throughout, as the rest of the
+ * app is; the document's language governs only what prints.
+ */
+
+const BY_BLOCK: Readonly<Record<string, string>> = {
+  timeseries_chart: "Chart",
+  metric_summary: "Metric summary",
+  resource_narrative: "Narrative",
+  trend_narrative: "Narrative",
+  historical_trend: "Trend chart",
+  top_n_table: "Top list",
+  inventory_summary: "Summary table",
+  blank_rows_table: "Typed rows",
+  gaps_and_coverage: "Coverage",
+  verification_record: "Verification record",
+  at_a_glance: "At a glance",
+}
+
+function words(slot: string): string {
+  const spaced = slot.replaceAll("_", " ")
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+}
+
+export function blockLabel(entry: CatalogueSection, slot: string): string {
+  const expansion = expansionFor(entry, slot)
+  if (!expansion) return words(slot)
+  if (expansion.block === "heading") {
+    if (slot === "title") return "Section title"
+    if (slot === "name") return `${words(resourceNoun(entry))} heading`
+    return words(slot)
+  }
+  if (expansion.block === "resource_table") {
+    if (slot === "details") return "Details table"
+    if (slot === "table") return "Table"
+    return words(slot.endsWith("_table") ? slot : `${slot} table`)
+  }
+  return BY_BLOCK[expansion.block] ?? words(slot)
+}
+
+/** One line on what the block shows, for the Add panel and the inspector. */
+export function blockHint(entry: CatalogueSection, slot: string): string {
+  const expansion = expansionFor(entry, slot)
+  switch (expansion?.block) {
+    case "heading":
+      return slot === "title" ? "The section's name, in the contents too." : "A subheading."
+    case "resource_table":
+      return expansion.per === "resource" ? "One row per field, for each resource." : "One row per resource."
+    case "timeseries_chart":
+      return "Each selected metric over the period."
+    case "metric_summary":
+      return "Average, estimated P95, peak and when it peaked."
+    case "resource_narrative":
+    case "trend_narrative":
+      return "A short paragraph written from the verified figures."
+    case "historical_trend":
+      return "Month by month, from earlier verified reports."
+    case "top_n_table":
+      return "The resources ranked by the section's ranking metric."
+    default:
+      return ""
+  }
+}

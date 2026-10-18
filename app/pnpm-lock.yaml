@@ -32,6 +32,9 @@ importers:
       '@dnd-kit/dom':
         specifier: 0.5.0
         version: 0.5.0
+      '@dnd-kit/helpers':
+        specifier: 0.5.0
+        version: 0.5.0
       '@dnd-kit/react':
         specifier: 0.5.0
         version: 0.5.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -59,6 +62,9 @@ importers:
       echarts:
         specifier: 6.1.0
         version: 6.1.0
+      immer:
+        specifier: 11.1.21
+        version: 11.1.21
       next:
         specifier: 16.2.6
         version: 16.2.6(@babel/core@7.29.7(supports-color@7.2.0))(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -74,9 +80,15 @@ importers:
       react-dom:
         specifier: 19.2.4
         version: 19.2.4(react@19.2.4)
+      react-hotkeys-hook:
+        specifier: 5.3.3
+        version: 5.3.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react-is:
         specifier: 19.2.4
         version: 19.2.4
+      react-resizable-panels:
+        specifier: ^4.14.5
+        version: 4.14.5(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       recharts:
         specifier: 3.10.1
         version: 3.10.1(@types/react@19.2.18)(react-dom@19.2.4(react@19.2.4))(react-is@19.2.4)(react@19.2.4)(redux@5.0.1)
@@ -98,6 +110,12 @@ importers:
       zod:
         specifier: 4.4.3
         version: 4.4.3
+      zundo:
+        specifier: 2.3.0
+        version: 2.3.0(zustand@5.0.15(@types/react@19.2.18)(immer@11.1.21)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)))
+      zustand:
+        specifier: 5.0.15
+        version: 5.0.15(@types/react@19.2.18)(immer@11.1.21)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
@@ -526,6 +544,9 @@ packages:
 
   '@dnd-kit/geometry@0.5.0':
     resolution: {integrity: sha512-ubHQS1CiSDH8ssYH2xG5BnpwPSFP1tStXXjug7/Ba6qnQdu/EUH47l6QXKIksQnnanfVfDf0aGeevRxgZlj28A==}
+
+  '@dnd-kit/helpers@0.5.0':
+    resolution: {integrity: sha512-i4y+51/icSw+OHMr/su19qhnmNhAzh8PnBwXvapFYTd+64oodIyJRiRkB+hhfxAfnur7RYSW8qacDTrXjg2XOg==}
 
   '@dnd-kit/react@0.5.0':
     resolution: {integrity: sha512-abQPLI8lmfVE+v/n+pqy5WFxrw6T2Yg0UQZsL78dp5DKci7dKTVDjvLWqvass+XTFtzJmsZEjk1NdqE6xG8Jiw==}
@@ -3205,8 +3226,8 @@ packages:
     resolution: {integrity: sha512-BAg6QkE8W+TuQLrrw0Ugr7HegXduRuuj8/ti2kSOc+jz1dmx8/WNcjr6XGnq5YpDWxFwwaavqD0+jIUOKelTsw==}
     engines: {node: '>= 4'}
 
-  immer@11.1.16:
-    resolution: {integrity: sha512-Xs7H9rBc+kti1J6RueUvbEBkmOz7jqj11XYgf+YMXAYzu8EeE7hwZ9poLXdVfVnGmJu7QAf41T7H2KuF6QoK6Q==}
+  immer@11.1.21:
+    resolution: {integrity: sha512-bZSadeCPGdaY5/qRLgr6mDSH1ra21rD3rqpiWk7+QTr4ayYPTE9qZYdLh/NdPhMe0wSrTvHD/Lk8q5EwhUs0aw==}
 
   import-fresh@3.3.1:
     resolution: {integrity: sha512-TR3KfrTZTYLPB6jUjfx6MF9WcWrHL9su5TObK4ZkYgBdWKPOFoSoQIdEuTuR82pmtxH2spWG9h6etwfr1pLBqQ==}
@@ -4181,6 +4202,12 @@ packages:
     peerDependencies:
       react: ^19.2.4
 
+  react-hotkeys-hook@5.3.3:
+    resolution: {integrity: sha512-aswgyWUnE25hmhzHTfKDmKzsaSE5DJ4LKaU/o6rQSXkDd/1Bh9TfAFQbHkf6fLy11HvlYkp+cDDarGdhmCDhoQ==}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
   react-is@16.13.1:
     resolution: {integrity: sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==}
 
@@ -4221,6 +4248,12 @@ packages:
     peerDependenciesMeta:
       '@types/react':
         optional: true
+
+  react-resizable-panels@4.14.5:
+    resolution: {integrity: sha512-AoHgoq3sGOfciPn2ahddFrBCqsitZLse8cJIYWblvE3kQ9z39IrhdlHCjnVRrDL8XcWqvA0u/t9nLZTfWePJ5A==}
+    peerDependencies:
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
 
   react-style-singleton@2.2.3:
     resolution: {integrity: sha512-b6jSvxvVnyptAiLjbkWLE/lOnR4lfTtDAl+eUC7RZy+QQWc6wRzIV2CE6xBuMmDxc2qIihtDCZD5NPOFl7fRBQ==}
@@ -4928,6 +4961,29 @@ packages:
   zrender@6.1.0:
     resolution: {integrity: sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ==}
 
+  zundo@2.3.0:
+    resolution: {integrity: sha512-4GXYxXA17SIKYhVbWHdSEU04P697IMyVGXrC2TnzoyohEAWytFNOKqOp5gTGvaW93F/PM5Y0evbGtOPF0PWQwQ==}
+    peerDependencies:
+      zustand: ^4.3.0 || ^5.0.0
+
+  zustand@5.0.15:
+    resolution: {integrity: sha512-MpSEjRiBkA9crSYeOUH32rJC7SVqAbm0Fqcqge/bUi2PPoLcBWKOsG+C8mevmpr8TwXHBVkChbbJiyvkE+i/3A==}
+    engines: {node: '>=12.20.0'}
+    peerDependencies:
+      '@types/react': '>=18.0.0'
+      immer: '>=9.0.6'
+      react: '>=18.0.0'
+      use-sync-external-store: '>=1.2.0'
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+      immer:
+        optional: true
+      react:
+        optional: true
+      use-sync-external-store:
+        optional: true
+
 snapshots:
 
   '@adobe/css-tools@4.5.0': {}
@@ -5496,6 +5552,11 @@ snapshots:
   '@dnd-kit/geometry@0.5.0':
     dependencies:
       '@dnd-kit/state': 0.5.0
+      tslib: 2.8.1
+
+  '@dnd-kit/helpers@0.5.0':
+    dependencies:
+      '@dnd-kit/abstract': 0.5.0
       tslib: 2.8.1
 
   '@dnd-kit/react@0.5.0(react-dom@19.2.4(react@19.2.4))(react@19.2.4)':
@@ -6216,7 +6277,7 @@ snapshots:
     dependencies:
       '@standard-schema/spec': 1.1.0
       '@standard-schema/utils': 0.3.0
-      immer: 11.1.16
+      immer: 11.1.21
       redux: 5.0.1
       redux-thunk: 3.1.0(redux@5.0.1)
       reselect: 5.2.0
@@ -7952,7 +8013,7 @@ snapshots:
 
   ignore@7.0.6: {}
 
-  immer@11.1.16: {}
+  immer@11.1.21: {}
 
   import-fresh@3.3.1:
     dependencies:
@@ -8775,6 +8836,11 @@ snapshots:
       react: 19.2.4
       scheduler: 0.27.0
 
+  react-hotkeys-hook@5.3.3(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+
   react-is@16.13.1: {}
 
   react-is@17.0.2: {}
@@ -8809,6 +8875,11 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.18
 
+  react-resizable-panels@4.14.5(react-dom@19.2.4(react@19.2.4))(react@19.2.4):
+    dependencies:
+      react: 19.2.4
+      react-dom: 19.2.4(react@19.2.4)
+
   react-style-singleton@2.2.3(@types/react@19.2.18)(react@19.2.4):
     dependencies:
       get-nonce: 1.0.1
@@ -8834,7 +8905,7 @@ snapshots:
       decimal.js-light: 2.5.1
       es-toolkit: 1.50.0
       eventemitter3: 5.0.4
-      immer: 11.1.16
+      immer: 11.1.21
       react: 19.2.4
       react-dom: 19.2.4(react@19.2.4)
       react-is: 19.2.4
@@ -9644,3 +9715,14 @@ snapshots:
   zrender@6.1.0:
     dependencies:
       tslib: 2.3.0
+
+  zundo@2.3.0(zustand@5.0.15(@types/react@19.2.18)(immer@11.1.21)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))):
+    dependencies:
+      zustand: 5.0.15(@types/react@19.2.18)(immer@11.1.21)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4))
+
+  zustand@5.0.15(@types/react@19.2.18)(immer@11.1.21)(react@19.2.4)(use-sync-external-store@1.6.0(react@19.2.4)):
+    optionalDependencies:
+      '@types/react': 19.2.18
+      immer: 11.1.21
+      react: 19.2.4
+      use-sync-external-store: 1.6.0(react@19.2.4)

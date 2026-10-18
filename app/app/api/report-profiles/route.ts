@@ -24,6 +24,8 @@ import {
   templateQuerySchema,
 } from "@/lib/templates/input"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
+import { starterDraft, starterFor } from "@/lib/builder/starters"
+import { METRIC_CATALOG } from "@/lib/templates/catalog"
 
 /**
  * `POST /api/templates` and `GET /api/templates` (Requirements 1.4, 1.9, 9.2,
@@ -99,6 +101,16 @@ export async function POST(request: Request): Promise<Response> {
   if (!parsed.success) return invalidInput(parsed.error)
 
   try {
+    // A starter is built here rather than sent by the client: the server holds the metric
+    // catalogue the starter's presets expand against, and a client cannot name sections
+    // its preset's provider does not have.
+    const starter = parsed.data.starter === undefined ? undefined : starterFor(parsed.data.starter)
+    const provider = parsed.data.provider === "aws" ? "aws" : "azure"
+    const draftDefinition =
+      starter === undefined
+        ? undefined
+        : starterDraft(starter, provider, parsed.data.name, parsed.data.theme ?? starter.theme, METRIC_CATALOG)
+
     const template = await createTemplate(user.id, {
       workspaceId: parsed.data.workspaceId,
       projectId: parsed.data.projectId,
@@ -107,6 +119,7 @@ export async function POST(request: Request): Promise<Response> {
       ...(parsed.data.description === undefined
         ? {}
         : { description: parsed.data.description }),
+      ...(draftDefinition === undefined ? {} : { draftDefinition }),
     })
 
     if (parsed.data.definition === undefined) {

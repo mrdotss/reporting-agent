@@ -1,0 +1,317 @@
+{
+  "cases": [
+    {
+      "name": "azure vm_utilization, catalogue layout",
+      "provider": "azure",
+      "section": {
+        "id": "s",
+        "type": "vm_utilization",
+        "position": 0
+      }
+    },
+    {
+      "name": "aws ec2_utilization, every block named",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "ec2_utilization",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "title",
+            "title": {
+              "en": "Instance use"
+            }
+          },
+          {
+            "kind": "text",
+            "id": "u_note",
+            "text": {
+              "en": "Read this first."
+            }
+          },
+          {
+            "slot": "each",
+            "blocks": [
+              {
+                "slot": "chart"
+              },
+              {
+                "slot": "name"
+              },
+              {
+                "slot": "details",
+                "columns": [
+                  "power_state"
+                ]
+              },
+              {
+                "slot": "summary"
+              },
+              {
+                "slot": "narrative",
+                "hidden": true
+              }
+            ]
+          },
+          {
+            "slot": "fleet",
+            "hidden": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "the per-resource group hidden",
+      "provider": "azure",
+      "section": {
+        "id": "s",
+        "type": "vm_utilization",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "each",
+            "hidden": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "every per-resource block hidden drops the group",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "historical_ec2_utilization",
+        "position": 0,
+        "lookback": 3,
+        "blocks": [
+          {
+            "slot": "each",
+            "blocks": [
+              {
+                "slot": "name",
+                "hidden": true
+              },
+              {
+                "slot": "trend",
+                "hidden": true
+              },
+              {
+                "slot": "narrative",
+                "hidden": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "unnamed slots print after the named ones",
+      "provider": "azure",
+      "section": {
+        "id": "s",
+        "type": "vm_utilization",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "fleet"
+          },
+          {
+            "slot": "each",
+            "blocks": [
+              {
+                "slot": "narrative"
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a section with no per-resource blocks, reordered",
+      "provider": "azure",
+      "section": {
+        "id": "s",
+        "type": "virtual_machines",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "title"
+          },
+          {
+            "slot": "disks_heading"
+          },
+          {
+            "slot": "disks_table"
+          },
+          {
+            "kind": "text",
+            "id": "u_a",
+            "text": {
+              "en": "Disks first."
+            }
+          },
+          {
+            "slot": "inventory_heading"
+          },
+          {
+            "slot": "inventory_table",
+            "hidden": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "aws security groups, inbound only",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "security_groups",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "title"
+          },
+          {
+            "slot": "each",
+            "blocks": [
+              {
+                "slot": "name"
+              },
+              {
+                "slot": "details",
+                "hidden": true
+              },
+              {
+                "slot": "inbound_heading"
+              },
+              {
+                "slot": "inbound_table"
+              },
+              {
+                "slot": "outbound_heading",
+                "hidden": true
+              },
+              {
+                "slot": "outbound_table",
+                "hidden": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "two added text blocks around the title",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "backups",
+        "position": 0,
+        "blocks": [
+          {
+            "kind": "text",
+            "id": "u_one",
+            "text": {
+              "en": "Before."
+            }
+          },
+          {
+            "slot": "title"
+          },
+          {
+            "kind": "text",
+            "id": "u_two",
+            "text": {
+              "en": "After."
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "orders": [
+    {
+      "name": "aws: fixed closing sections keep their order whatever their positions",
+      "provider": "aws",
+      "sections": [
+        {
+          "id": "a",
+          "type": "coverage_and_verification",
+          "position": 0
+        },
+        {
+          "id": "b",
+          "type": "rightsizing",
+          "position": 1
+        },
+        {
+          "id": "c",
+          "type": "backups",
+          "position": 9
+        },
+        {
+          "id": "d",
+          "type": "ec2_utilization",
+          "position": 5
+        },
+        {
+          "id": "e",
+          "type": "ec2_instances",
+          "position": 7
+        },
+        {
+          "id": "f",
+          "type": "at_a_glance",
+          "position": 8
+        },
+        {
+          "id": "g",
+          "type": "housekeeping",
+          "position": 2
+        },
+        {
+          "id": "h",
+          "type": "incident_report",
+          "position": 3
+        }
+      ]
+    },
+    {
+      "name": "azure: free sections follow their positions within a group",
+      "provider": "azure",
+      "sections": [
+        {
+          "id": "a",
+          "type": "vm_utilization",
+          "position": 4
+        },
+        {
+          "id": "b",
+          "type": "database_utilization",
+          "position": 1
+        },
+        {
+          "id": "c",
+          "type": "virtual_machines",
+          "position": 3
+        },
+        {
+          "id": "d",
+          "type": "azure_subscription",
+          "position": 2
+        },
+        {
+          "id": "e",
+          "type": "recommendations",
+          "position": 0
+        },
+        {
+          "id": "f",
+          "type": "backup_report",
+          "position": 6
+        }
+      ]
+    }
+  ]
+}
