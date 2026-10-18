@@ -65,6 +65,11 @@ def compile_rich_text(
     from `executive_summary`, whose prose is per-run narration. A methodological caveat
     belongs here; a description of what this month's numbers did does not.
     """
+    from reporting_agent.compile.blocks.callout import CALLOUT_CONDITION_KEY, compile_callout
+
+    if CALLOUT_CONDITION_KEY in block.config:
+        return compile_callout(context, block, cursor)
+
     text = block.config.get("text")
     if not isinstance(text, str) or not text:
         raise block.fail("config.text must be a non-empty string")

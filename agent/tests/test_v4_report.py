@@ -20,13 +20,13 @@ from typing import Any
 
 import pytest
 
+import test_run_end_to_end_v3 as v3_walk
 from reporting_agent.artifacts import reports_key
 from reporting_agent.events import TERMINAL_EVENT_TYPE
 from reporting_agent.redaction import discard_secrets
 from reporting_agent.render import pdf as P
 from test_aws_report import aws_definition
 from test_run_end_to_end_v2 import ACTOR_ID, RUN_ID, V2Walk, one
-import test_run_end_to_end_v3 as v3_walk
 from test_run_end_to_end_v3 import v3_definition
 
 pytestmark = pytest.mark.skipif(P.SOFFICE_BINARY is None, reason="LibreOffice is not installed")
@@ -330,3 +330,97 @@ def test_key_figures_and_top_list_print(placed_blocks_walk) -> None:
     headers = [tuple(cell.text for cell in table.rows[0].cells) for table in document.tables]
     assert any(header[:2] == ("Metric", "Basis") for header in headers), headers
     assert any("Gap" in header for header in headers)
+
+
+# --- New blocks (PR 4) ---------------------------------------------------------------------
+
+
+def aws_new_blocks_definition() -> dict[str, Any]:
+    definition = _to_v4(aws_definition())
+    for section in definition["sections"]:
+        if section["type"] == "ec2_utilization":
+            section["blocks"] = [
+                {"slot": "title"},
+                {"kind": "callout", "id": "u_gaps", "when": "coverage_gaps", "tone": "attention",
+                 "text": {"en": "Some figures could not be measured: {count} gaps are listed in the appendix."}},
+                {"kind": "callout", "id": "u_never", "when": "peak_at_or_above", "threshold": 100,
+                 "text": {"en": "A machine ran flat out."}},
+                {"kind": "callout", "id": "u_peak", "when": "peak_at_or_above", "threshold": 1,
+                 "text": {"en": "The busiest instance, {resource}, peaked at {value}."}},
+                {"kind": "heatmap", "id": "u_heat"},
+                {"kind": "sparklines", "id": "u_spark"},
+                {"slot": "each"},
+            ]
+    return definition
+
+
+@pytest.fixture(scope="module")
+def new_blocks_walk():
+    import asyncio
+    import json
+
+    from fakes.object_store import InMemoryObjectStore
+    from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.main import StepTracker
+    from reporting_agent.report_pipeline import ReportOutcome, run_generate_report
+    from test_aws_collector import ACCOUNT, fake_clients, provider
+    from test_run_end_to_end_v2 import invoke_payload
+
+    store = InMemoryObjectStore()
+    payload = invoke_payload(aws_new_blocks_definition())
+    payload["period"] = {"start": "2026-09-01", "end": "2026-09-01"}
+    payload["scope"] = {"resource_types": [], "resource_groups": [], "tag_filters": {}, "regions": ["us-east-1", "ap-southeast-3"]}
+    payload.pop("context", None)
+    context = {"actor_id": "actor-1", "run_id": "run-1", "subscription_id": ACCOUNT, "timezone": "UTC",
+               "provider": "aws", "fidelity_tier": "baseline", "display_name": "Example AWS"}
+    events: list[dict[str, Any]] = []
+
+    async def go() -> None:
+        async for event in run_generate_report(
+            payload=payload, context=context, steps=StepTracker(), artifact_bucket="unused",
+            outcome=ReportOutcome(), prose=None, provider=provider(store, fake_clients()),
+            object_store=store, catalog=load_catalog(),
+        ):
+            events.append(event)
+
+    try:
+        asyncio.run(go())
+    except Exception:  # a report with gaps ends `PARTIAL_COVERAGE`, which is still a delivery
+        pass
+    finally:
+        discard_secrets()
+    records = [json.loads(store.get(key).body) for key in store.keys() if "/verification-" in key]  # type: ignore[union-attr]
+    return store, events, records
+
+
+def _paragraphs(store) -> list[str]:
+    from docx import Document
+
+    key = next(key for key in store.keys() if key.endswith("/report.docx"))
+    return [p.text for p in Document(BytesIO(store.get(key).body)).paragraphs]  # type: ignore[union-attr]
+
+
+def test_new_blocks_verify(new_blocks_walk) -> None:
+    _, events, records = new_blocks_walk
+    assert _verified(events)
+    assert records and not [f for f in records[-1].get("findings", []) if f.get("severity") == "blocking"]
+
+
+def test_a_callout_prints_only_when_its_condition_holds_and_fills_its_figures(new_blocks_walk) -> None:
+    store, _, _ = new_blocks_walk
+    text = "\n".join(_paragraphs(store))
+    assert "A machine ran flat out." not in text  # threshold 100 is never reached
+    gaps = next(line for line in _paragraphs(store) if line.startswith("Some figures could not be measured"))
+    assert "{count}" not in gaps and any(ch.isdigit() for ch in gaps)
+    peak = next(line for line in _paragraphs(store) if line.startswith("The busiest instance"))
+    assert "{resource}" not in peak and "{value}" not in peak and "%" in peak
+
+
+def test_heatmap_and_sparklines_draw_figures_from_the_snapshot(new_blocks_walk) -> None:
+    """Each cell of the heatmap and each sparkline point is a figure in the ledger, under the
+    block id the section's layout gave it."""
+    store, _, _ = new_blocks_walk
+    ledger = next(store.get(key).body.decode() for key in store.keys() if key.endswith("/ledger.json"))  # type: ignore[union-attr]
+    assert "__u_heat:" in ledger
+    assert "__u_spark__chart:" in ledger
+    assert "__u_spark__summary:" in ledger

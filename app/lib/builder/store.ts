@@ -76,6 +76,7 @@ export type BuilderState = {
   addBlock(sectionId: string, kind: AddedKind, after?: BlockRef): string | null
   removeAdded(sectionId: string, id: string): void
   setText(sectionId: string, id: string, language: Language, text: string): void
+  setCallout(sectionId: string, id: string, patch: Partial<Pick<AddedEntry, "when" | "tone" | "threshold">>): void
   setTitle(sectionId: string, slot: string, language: Language, text: string): void
   setColumns(sectionId: string, ref: BlockRef, columns: readonly string[] | null): void
 }
@@ -295,7 +296,11 @@ export function createBuilderStore({ initial, catalog }: Options) {
             const found = anchor ? locate(blocks, anchor) : null
             const index = found && found.list === blocks ? found.index + 1 : blocks.length
             const entry: AddedEntry =
-              kind === "text" ? { kind, id, text: { [language]: "" } } : { kind, id }
+              kind === "text"
+                ? { kind, id, text: { [language]: "" } }
+                : kind === "callout"
+                  ? { kind, id, when: "coverage_gaps", tone: "info", text: { [language]: "" } }
+                  : { kind, id }
             blocks.splice(index, 0, entry as Draft<AddedEntry>)
             added = true
           })
@@ -322,6 +327,19 @@ export function createBuilderStore({ initial, catalog }: Options) {
             const found = locate(materialise(draft, section), { kind: "added", id })
             if (!found) return
             setTyped(found.list[found.index] as Draft<TextEntry>, "text", language, text)
+          }),
+
+        setCallout: (sectionId, id, patch) =>
+          get().edit((draft) => {
+            const section = findSection(draft, sectionId)
+            if (!section) return
+            const found = locate(materialise(draft, section), { kind: "added", id })
+            if (!found) return
+            const callout = found.list[found.index] as Draft<AddedEntry>
+            Object.assign(callout, patch)
+            // A threshold belongs to a peak condition only; the validator refuses it elsewhere.
+            if (callout.when !== "peak_at_or_above") delete callout.threshold
+            else if (callout.threshold === undefined) callout.threshold = 80
           }),
 
         setTitle: (sectionId, slot, language, text) =>

@@ -294,6 +294,10 @@ __all__ = [
     "BLOCK_ID_MAX_LENGTH",
     "BLOCK_ID_MIN_LENGTH",
     "BLOCK_TYPES",
+    "CALLOUT_CONDITIONS",
+    "CALLOUT_THRESHOLD_MAX",
+    "CALLOUT_THRESHOLD_MIN",
+    "CALLOUT_TONES",
     "COLUMN_KINDS",
     "DENSITY_VALUES",
     "DESCRIPTION_MAX_LENGTH",
@@ -564,8 +568,30 @@ SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "month_vs_month",
     "coverage",
     "page_break",
+    "callout",
+    "heatmap",
+    "sparklines",
 )
-METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = ("key_figures", "top_list", "month_vs_month")
+METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
+    "key_figures",
+    "top_list",
+    "month_vs_month",
+    "heatmap",
+    "sparklines",
+)
+# A callout prints the author's words only when its condition holds in the snapshot. The
+# conditions are a closed set, each a fixed rule; `peak_at_or_above` compares the section's
+# ranking metric with an author-set `threshold`, the rest count resources or gaps.
+CALLOUT_CONDITIONS: Final[tuple[str, ...]] = (
+    "peak_at_or_above",
+    "without_backup",
+    "housekeeping",
+    "stopped",
+    "coverage_gaps",
+)
+CALLOUT_TONES: Final[tuple[str, ...]] = ("info", "attention")
+CALLOUT_THRESHOLD_MIN: Final[int] = 1
+CALLOUT_THRESHOLD_MAX: Final[int] = 100
 MAX_LOCATIONS: Final[int] = 50
 LOCATION_MAX_LENGTH: Final[int] = 64
 # The trend depth a section may ask for, in months. `compile/blocks/charts.py` reads
@@ -3234,7 +3260,13 @@ def _validate_user_block(
 ) -> None:
     """One block a person added: `{kind, id}`, and `text` for a text block."""
     kind = block.get("kind")
-    allowed = ("kind", "id", "text") if kind == "text" else ("kind", "id")
+    allowed = (
+        ("kind", "id", "text")
+        if kind == "text"
+        else ("kind", "id", "text", "when", "tone", "threshold")
+        if kind == "callout"
+        else ("kind", "id")
+    )
     for key in block:
         if key not in allowed:
             walk.add((*path, key), f'Unrecognized block field "{key}".')
@@ -3249,11 +3281,68 @@ def _validate_user_block(
         walk.add((*path, "id"), f'Duplicate block id "{block_id}".')
     else:
         seen_ids.add(block_id)
-    if kind == "text":
+    if kind in ("text", "callout"):
         _validate_typed_text(
             block.get("text"), (*path, "text"), walk,
             max_length=SECTION_TEXT_MAX_LENGTH, what="Text",
         )
+    if kind == "callout":
+        _validate_callout(block, path, walk, metric_bearing)
+
+
+_CALLOUT_TOKENS: Final[dict[str, frozenset[str]]] = {
+    "peak_at_or_above": frozenset({"resource", "value"}),
+    "without_backup": frozenset({"count"}),
+    "housekeeping": frozenset({"count"}),
+    "stopped": frozenset({"count"}),
+    "coverage_gaps": frozenset({"count"}),
+}
+"""The `{token}`s a callout's text may hold, per condition — each filled from the snapshot:
+`{count}` with the counted cardinality, `{value}` with the peak figure and `{resource}` with
+the name of the resource that reached it. Letters only, so the numeral rule still holds."""
+
+_TOKEN_PATTERN: Final[re.Pattern[str]] = re.compile(r"\{([^{}]*)\}")
+
+
+def _validate_callout(
+    block: dict[str, object], path: Path, walk: _Walk, metric_bearing: bool | None
+) -> None:
+    when = block.get("when")
+    if when not in CALLOUT_CONDITIONS:
+        walk.add((*path, "when"), f"when must be one of: {', '.join(CALLOUT_CONDITIONS)}.")
+        return
+    tone = block.get("tone", "info")
+    if tone not in CALLOUT_TONES:
+        walk.add((*path, "tone"), f"tone must be one of: {', '.join(CALLOUT_TONES)}.")
+    threshold = block.get("threshold")
+    if when == "peak_at_or_above":
+        if metric_bearing is False:
+            walk.add((*path, "when"), "This condition reads metrics; use it in a section that reports some.")
+        if (
+            isinstance(threshold, bool)
+            or not isinstance(threshold, int)
+            or not CALLOUT_THRESHOLD_MIN <= threshold <= CALLOUT_THRESHOLD_MAX
+        ):
+            walk.add(
+                (*path, "threshold"),
+                f"threshold must be an integer from {CALLOUT_THRESHOLD_MIN} to {CALLOUT_THRESHOLD_MAX}.",
+            )
+    elif "threshold" in block:
+        walk.add((*path, "threshold"), "Only a peak condition takes a threshold.")
+    text = block.get("text")
+    if _is_plain_object(text):
+        allowed = _CALLOUT_TOKENS[str(when)]
+        for language in LANGUAGES:
+            value = text.get(language)
+            if not isinstance(value, str):
+                continue
+            for token in _TOKEN_PATTERN.findall(value):
+                if token not in allowed:
+                    walk.add(
+                        (*path, "text", language),
+                        f"{{{token}}} cannot be filled here; this condition offers "
+                        f"{', '.join('{' + name + '}' for name in sorted(allowed))}.",
+                    )
 
 
 def _validate_section_blocks(

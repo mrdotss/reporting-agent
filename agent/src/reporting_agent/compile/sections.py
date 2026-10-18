@@ -628,7 +628,7 @@ def _expand_one_section_v4(
             continue
 
         if item.expansion is None:
-            result.append(_added_block(section_id, section, entry, item.settings, scope_override, messages))
+            result.extend(_added_blocks(section_id, section, entry, item.settings, scope_override, messages))
             continue
 
         expansion = item.expansion
@@ -700,6 +700,103 @@ TOP_LIST_DEFAULT_COUNT: Final[int] = 10
 """How many resources an added top list ranks when the section sets no top-N of its own."""
 
 
+SPARKLINE_ROWS: Final[int] = 5
+"""The resources a sparkline table draws: a chart's series bound, ranked by the section."""
+
+
+def _ranked_scope(
+    scope_override: ScopeRules | None, metric: str, statistic: str, count: int
+) -> ScopeRules:
+    """The section's scope ranked by `metric`, keeping its own top-N where it has one."""
+    base = scope_override or ScopeRules()
+    if base.top_n is not None:
+        return base
+    return replace(
+        base,
+        top_n=TopNRule(count=count, metric=metric, statistic=statistic),
+        sort=base.sort or "descending",
+    )
+
+
+def _added_blocks(
+    section_id: str,
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    settings: Mapping[str, object],
+    scope_override: ScopeRules | None,
+    messages: Messages,
+) -> list[BlockSpec]:
+    """The block — or, for a sparkline table, the two — an added entry compiles to."""
+    kind = settings.get("kind")
+    block_id = f"{section_id}__{settings.get('id')}"
+    if kind == "callout":
+        return [_callout_block(block_id, section, entry, settings, scope_override, messages)]
+    if kind in ("heatmap", "sparklines"):
+        ranking = _ranking_of(section, entry)
+        if ranking is None:
+            raise CompileFailedError(
+                f"section {section_id!r}: block {settings.get('id')!r} reads metrics, and the "
+                f"section selects none"
+            )
+        metric, statistic = ranking
+        ref = {"metric": metric, "statistic": statistic}
+        if kind == "heatmap":
+            from reporting_agent.compile.blocks.charts import HEATMAP_LAYOUT, MAX_HEATMAP_ROWS
+
+            return [BlockSpec(
+                id=block_id,
+                type="timeseries_chart",
+                config={"metrics": [ref], "layout": HEATMAP_LAYOUT},
+                scope_override=_ranked_scope(scope_override, metric, statistic, MAX_HEATMAP_ROWS),
+            )]
+        ranked = _ranked_scope(scope_override, metric, statistic, SPARKLINE_ROWS)
+        return [
+            BlockSpec(
+                id=f"{block_id}__chart",
+                type="timeseries_chart",
+                config={"metrics": [ref], "style": "sparkline"},
+                scope_override=ranked,
+            ),
+            BlockSpec(
+                id=f"{block_id}__summary",
+                type="metric_summary",
+                config={"metrics": [ref], "orientation": "resource_major"},
+                scope_override=ranked,
+            ),
+        ]
+    return [_added_block(section_id, section, entry, settings, scope_override, messages)]
+
+
+def _callout_block(
+    block_id: str,
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    settings: Mapping[str, object],
+    scope_override: ScopeRules | None,
+    messages: Messages,
+) -> BlockSpec:
+    """A callout: the author's words in the report's language, and the condition that prints
+    them. A peak condition reads the section's ranking metric."""
+    from reporting_agent.compile.blocks.callout import CALLOUT_CONDITION_KEY
+
+    text = settings.get("text")
+    value = text.get(messages.language) if isinstance(text, Mapping) else None
+    if not isinstance(value, str) or not value:
+        raise CompileFailedError(f"{block_id}: a callout has no text in {messages.language!r}")
+    condition: dict[str, object] = {"when": settings.get("when"), "tone": settings.get("tone", "info")}
+    if settings.get("when") == "peak_at_or_above":
+        ranking = _ranking_of(section, entry)
+        if ranking is None:
+            raise CompileFailedError(f"{block_id}: a peak callout needs the section to select a metric")
+        condition.update(metric=ranking[0], statistic=ranking[1], threshold=settings.get("threshold"))
+    return BlockSpec(
+        id=block_id,
+        type="rich_text",
+        config={"text": value, CALLOUT_CONDITION_KEY: condition},
+        scope_override=scope_override,
+    )
+
+
 def _added_block(
     section_id: str,
     section: Mapping[str, object],
@@ -748,12 +845,7 @@ def _added_block(
     if kind == "top_list":
         # Ranked by the section's own top-N rule where it has one; otherwise the top ten by
         # the ranking metric, so a "top list" is a ranking and never the whole estate.
-        base = scope_override or ScopeRules()
-        ranked = base if base.top_n is not None else replace(
-            base,
-            top_n=TopNRule(count=TOP_LIST_DEFAULT_COUNT, metric=metric, statistic=statistic),
-            sort=base.sort or "descending",
-        )
+        ranked = _ranked_scope(scope_override, metric, statistic, TOP_LIST_DEFAULT_COUNT)
         return BlockSpec(
             id=block_id,
             type="top_n_table",

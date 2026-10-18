@@ -1078,6 +1078,10 @@ class Chart:
     period_label: str = ""
     series: tuple[Series, ...] = field(default_factory=tuple)
     caption: str | None = None
+    style: str = ""
+    """A chart style this chart draws in whatever the document's is — a v4 sparkline
+    table's chart, drawn as sparklines in a document of stacked charts. Empty means the
+    document's style. Presentation only: the chart's data hash does not read it."""
     panels: tuple[tuple[str, ...], ...] = field(default_factory=tuple)
     """Req 17.1, 17.2 — how `series` splits across stacked panels, as tuples of
     series `key`. Empty means **one panel holding every series** — every

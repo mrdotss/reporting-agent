@@ -75,6 +75,15 @@ export function DataNote({
       case "coverage":
         lines.push("The run's collection log: what could not be measured, counted per gap type.")
         break
+      case "callout":
+        lines.push("Prints only when its condition holds in this report's snapshot, decided by a fixed rule.")
+        lines.push("A {count} or {value} it fills is a figure in the ledger, traced like any other. The threshold is a setting and never prints.")
+        break
+      case "heatmap":
+      case "sparklines":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push("Every cell and point is a day's value for one resource, each a figure traced to its snapshot path.")
+        break
       case "page_break":
         lines.push("A page break carries no figure.")
         break

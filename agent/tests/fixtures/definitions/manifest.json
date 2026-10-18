@@ -1260,6 +1260,68 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-callouts-and-charts.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "b808c5f22b54b181693ed2839b85b4c44ad0b6dbaf5cb9724e31ef8e5358d066",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-callout-token-not-offered.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "3dfa3a7949c173dbb86bf4542c78a07e876d05136c3cbf6d3ae6eb23498f7fba",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            0,
+            "text",
+            "en"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-callout-without-threshold.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "28923e0464ebee0184f61950e55cd05ea1a7c8a5b30b70d0b5ed49b0953ccf7c",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            0,
+            "threshold"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-peak-callout-without-metrics.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "416aa3180568fb3902e7a8f4e0776847e169d1a66eb0f962e73ff7bbb0297b3a",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            0,
+            "when"
+          ]
+        }
+      ]
     }
   ]
 }

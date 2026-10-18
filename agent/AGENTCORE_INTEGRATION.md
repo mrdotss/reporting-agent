@@ -69,8 +69,14 @@ expansion) in print order, with three things it can do:
   section's top-N or its top ten), `month_vs_month` (`comparison_delta` against the
   previous verified report — a lookback-one trend key, so the earlier report's snapshot is
   selected, recorded and reloaded on re-verification the way a trend's is), `coverage`
-  (`gaps_and_coverage`) or `page_break`. The three that read metrics need a section that
-  reports some.
+  (`gaps_and_coverage`), `page_break`, `heatmap` (the time-series compile with
+  `layout: heatmap`, one row per resource up to twelve) or `sparklines` (a sparkline-style
+  chart of the top five plus their `metric_summary`); or a `callout` —
+  `{kind, id, when, tone?, threshold?, text}`, the author's words printed only when `when`
+  holds in the snapshot (`peak_at_or_above` with a `threshold`, `without_backup`,
+  `housekeeping`, `stopped`, `coverage_gaps`), with `{count}`, `{value}` or `{resource}`
+  filled from the snapshot as figures or names. The blocks that read metrics need a section
+  that reports some.
 
 Typed text may not contain numerals. Slots the list does not name print after the named
 ones, in catalogue order, and a section with no `blocks` prints the v3 `chart_and_table`
