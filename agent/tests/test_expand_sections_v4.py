@@ -205,3 +205,50 @@ def test_a_hidden_trend_fetches_no_prior_runs() -> None:
     )
     assert historical_trend_keys(shown, catalogue=catalogue) == {("Percentage CPU", "avg", 3)}
     assert historical_trend_keys(hidden, catalogue=catalogue) == set()
+
+
+# --- Blocks the author places -------------------------------------------------------------
+
+
+def _placed(kind: str, provider: str = "azure", section_type: str = "vm_utilization", **extra):
+    blocks = [{"slot": "title"}, {"kind": kind, "id": "u_x"}]
+    return _expand(provider, [_section(section_type, blocks=blocks, **extra)])
+
+
+def test_key_figures_read_the_sections_metrics() -> None:
+    spec = next(s for s in _placed("key_figures") if s.id == "sec__u_x")
+    assert spec.type == "kpi_row"
+    assert spec.config["metrics"] == [{"metric": "Percentage CPU", "statistic": "avg"}]
+
+
+def test_a_top_list_ranks_the_top_ten_when_the_section_sets_no_top_n() -> None:
+    spec = next(s for s in _placed("top_list") if s.id == "sec__u_x")
+    assert spec.type == "top_n_table"
+    assert spec.scope_override is not None and spec.scope_override.top_n is not None
+    assert (spec.scope_override.top_n.count, spec.scope_override.top_n.metric) == (10, "Percentage CPU")
+    assert spec.config["order_by"] == {"metric": "Percentage CPU", "statistic": "avg"}
+
+
+def test_a_top_list_keeps_the_sections_own_top_n() -> None:
+    selection = {
+        "resource_types": [], "resource_groups": [], "tag_filters": [], "sort": "ascending",
+        "top_n": {"count": 3, "metric": "Percentage CPU", "statistic": "avg"},
+    }
+    spec = next(s for s in _placed("top_list", selection=selection) if s.id == "sec__u_x")
+    assert spec.scope_override.top_n.count == 3  # type: ignore[union-attr]
+    assert spec.scope_override.sort == "ascending"  # type: ignore[union-attr]
+
+
+def test_month_vs_month_compares_against_the_previous_report_and_asks_for_it() -> None:
+    spec = next(s for s in _placed("month_vs_month") if s.id == "sec__u_x")
+    assert (spec.type, spec.config["against"], spec.config["lookback"]) == ("comparison_delta", "previous", 1)
+    definition = _definition(
+        "azure", [_section("vm_utilization", blocks=[{"kind": "month_vs_month", "id": "u_x"}])]
+    )
+    keys = historical_trend_keys(definition, catalogue=load_section_catalogue(provider="azure"))
+    assert ("Percentage CPU", "avg", 1) in keys
+
+
+def test_coverage_and_page_break_need_nothing_from_the_section() -> None:
+    assert next(s for s in _placed("coverage", "aws", "backups") if s.id == "sec__u_x").type == "gaps_and_coverage"
+    assert next(s for s in _placed("page_break", "aws", "backups") if s.id == "sec__u_x").type == "page_break"

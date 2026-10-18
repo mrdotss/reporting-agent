@@ -3,20 +3,25 @@
 import { DragDropProvider } from "@dnd-kit/react"
 import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable"
 import {
+  ArrowsDownUpIcon,
   CaretDownIcon,
+  ChartBarHorizontalIcon,
   CaretRightIcon,
   DotsSixVerticalIcon,
   EyeIcon,
   EyeSlashIcon,
+  FileDashedIcon,
+  ListNumbersIcon,
   LockSimpleIcon,
   PlusIcon,
   RepeatIcon,
+  ShieldCheckIcon,
   TextTIcon,
 } from "@phosphor-icons/react"
 import { useState, type ReactNode } from "react"
 
 import { useBuilder, useIssues } from "@/components/builder/context"
-import { blockLabel } from "@/components/builder/canvas/labels"
+import { addedLabel, blockLabel } from "@/components/builder/canvas/labels"
 import {
   GROUP_ORDER,
   resourceNoun,
@@ -24,7 +29,14 @@ import {
   type CatalogueSection,
 } from "@/lib/builder/catalogue"
 import { issuesForSection } from "@/lib/builder/issues"
-import { displayTitle, orderedSections, sectionLayout, type LayoutItem, type SectionV4 } from "@/lib/builder/model"
+import {
+  displayTitle,
+  orderedSections,
+  sectionLayout,
+  type AddedKind,
+  type LayoutItem,
+  type SectionV4,
+} from "@/lib/builder/model"
 import { blockKey, type BlockRef, type Selection } from "@/lib/builder/store"
 import { cn } from "@/lib/utils"
 
@@ -51,7 +63,7 @@ const ROW =
 const refKey = blockKey
 
 function refFromKey(key: string): BlockRef {
-  if (key.startsWith("text:")) return { kind: "text", id: key.slice(5) }
+  if (key.startsWith("added:")) return { kind: "added", id: key.slice("added:".length) }
   if (key === "each") return { kind: "each" }
   const [where, slot] = key.split(":")
   return { kind: "slot", slot: slot ?? "", inEach: where === "in" }
@@ -247,7 +259,7 @@ function BlockTree({ section, entry }: Readonly<{ section: SectionV4; entry: Cat
 }
 
 function itemKey(item: LayoutItem): string {
-  return item.kind === "text" ? `text:${item.id}` : item.kind === "each" ? "each" : `top:${item.slot}`
+  return item.kind === "added" ? `added:${item.id}` : item.kind === "each" ? "each" : `top:${item.slot}`
 }
 
 function TreeItem({
@@ -290,16 +302,15 @@ function TreeItem({
       </div>
     )
   }
-  if (item.kind === "text") {
-    const text = item.entry.text[language]
+  if (item.kind === "added") {
     return (
       <BlockRow
         section={section}
-        ref_={{ kind: "text", id: item.id }}
+        ref_={{ kind: "added", id: item.id }}
         index={index}
         group={`blocks:${section.id}:top`}
-        icon={<TextTIcon aria-hidden className="size-3.5" />}
-        label={text ? `“${text.slice(0, 28)}${text.length > 28 ? "…" : ""}”` : "Text (empty)"}
+        icon={<AddedIcon kind={item.entry.kind} />}
+        label={addedLabel(item.entry, language)}
       />
     )
   }
@@ -366,7 +377,7 @@ function BlockRow({
         {icon}
         <span className="truncate">{label}</span>
       </button>
-      {ref_.kind !== "text" && (
+      {ref_.kind !== "added" && (
         <button
           type="button"
           aria-label={locked ? `${label} always prints` : hidden ? `Show ${label}` : `Hide ${label}`}
@@ -385,4 +396,23 @@ function BlockRow({
 function isSelected(selection: Selection, sectionId: string, ref: BlockRef): boolean {
   if (selection?.kind !== "block" || selection.sectionId !== sectionId) return false
   return refKey(selection.ref) === refKey(ref)
+}
+
+/** The glyph an added block carries in the outline and the Add panel. */
+export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
+  const className = "size-3.5"
+  switch (kind) {
+    case "text":
+      return <TextTIcon aria-hidden className={className} />
+    case "key_figures":
+      return <ChartBarHorizontalIcon aria-hidden className={className} />
+    case "top_list":
+      return <ListNumbersIcon aria-hidden className={className} />
+    case "month_vs_month":
+      return <ArrowsDownUpIcon aria-hidden className={className} />
+    case "coverage":
+      return <ShieldCheckIcon aria-hidden className={className} />
+    case "page_break":
+      return <FileDashedIcon aria-hidden className={className} />
+  }
 }

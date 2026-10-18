@@ -4,7 +4,7 @@ import {
 } from "@/lib/templates/definition"
 
 import { sectionEntry } from "./catalogue"
-import { isEachEntry, isTextEntry, type DefinitionV4, type EachEntry, type SlotEntry } from "./model"
+import { isAddedEntry, isEachEntry, type DefinitionV4, type EachEntry, type SlotEntry } from "./model"
 import type { BlockRef, LeftTab, Selection } from "./store"
 
 /**
@@ -44,7 +44,7 @@ function targetOf(
 
   const block = section.blocks?.[path[3]]
   let ref: BlockRef | null = null
-  if (block !== undefined && isTextEntry(block)) ref = { kind: "text", id: block.id }
+  if (block !== undefined && isAddedEntry(block)) ref = { kind: "added", id: block.id }
   else if (block !== undefined && isEachEntry(block)) {
     const child = path[4] === "blocks" && typeof path[5] === "number"
       ? (block as EachEntry).blocks?.[path[5]]

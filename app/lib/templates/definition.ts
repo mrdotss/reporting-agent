@@ -427,10 +427,20 @@ export const SECTION_TITLE_MAX_LENGTH = 120
 export const SECTION_TEXT_MAX_LENGTH = 2000
 
 /**
- * The blocks a person may add to a v4 section. Words only: every one is checked for
- * numerals, because a number in a report comes from the snapshot or not at all.
+ * The blocks a person may add to a v4 section. `text` is words only, checked for numerals,
+ * because a number in a report comes from the snapshot or not at all. The rest are catalogue
+ * blocks placed by the author, configured from the section they sit in; the three that read
+ * metrics need a section that reports some.
  */
-export const SECTION_BLOCK_KINDS = ["text"] as const
+export const SECTION_BLOCK_KINDS = [
+  "text",
+  "key_figures",
+  "top_list",
+  "month_vs_month",
+  "coverage",
+  "page_break",
+] as const
+export const METRIC_BLOCK_KINDS = ["key_figures", "top_list", "month_vs_month"] as const
 
 export const MAX_LOCATIONS = 50
 export const LOCATION_MAX_LENGTH = 64
@@ -560,6 +570,20 @@ export const ALWAYS_SECTION_KEY_BY_PROVIDER: Readonly<
   Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
     provider,
     sections.find((s) => s.position === "always")?.key,
+  ])
+)
+
+/** The section types that report metrics, per provider. */
+export const METRIC_BEARING_SECTION_KEYS_BY_PROVIDER: Readonly<
+  Record<string, ReadonlySet<string>>
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    new Set(
+      sections
+        .filter((s) => (s as { metric_bearing?: boolean }).metric_bearing === true)
+        .map((s) => s.key)
+    ),
   ])
 )
 
@@ -3227,6 +3251,7 @@ export function containsNumeral(text: string): boolean {
 
 const SECTION_KEYS_V4_SET: ReadonlySet<string> = new Set(SECTION_KEYS_V4)
 const SECTION_BLOCK_KINDS_SET: ReadonlySet<string> = new Set(SECTION_BLOCK_KINDS)
+const METRIC_BLOCK_KINDS_SET: ReadonlySet<string> = new Set(METRIC_BLOCK_KINDS)
 
 function validateTypedText(
   value: unknown,
@@ -3331,10 +3356,12 @@ function validateUserBlock(
   path: readonly (string | number)[],
   issues: IssueSink,
   seenIds: Set<string>,
-  language: (typeof LANGUAGES)[number] | null
+  language: (typeof LANGUAGES)[number] | null,
+  metricBearing: boolean | null
 ): void {
+  const isText = block.kind === "text"
   for (const key of Object.keys(block)) {
-    if (key !== "kind" && key !== "id" && key !== "text") {
+    if (key !== "kind" && key !== "id" && !(isText && key === "text")) {
       addIssue(issues, [...path, key], `Unrecognized block field "${key}".`)
     }
   }
@@ -3343,6 +3370,12 @@ function validateUserBlock(
       issues,
       [...path, "kind"],
       `kind must be one of: ${SECTION_BLOCK_KINDS.join(", ")}.`
+    )
+  } else if (METRIC_BLOCK_KINDS_SET.has(block.kind) && metricBearing === false) {
+    addIssue(
+      issues,
+      [...path, "kind"],
+      "This block reads metrics; add it to a section that reports some."
     )
   }
   const id = block.id
@@ -3357,14 +3390,16 @@ function validateUserBlock(
   } else {
     seenIds.add(id)
   }
-  validateTypedText(
-    block.text,
-    [...path, "text"],
-    issues,
-    language,
-    SECTION_TEXT_MAX_LENGTH,
-    "Text"
-  )
+  if (isText) {
+    validateTypedText(
+      block.text,
+      [...path, "text"],
+      issues,
+      language,
+      SECTION_TEXT_MAX_LENGTH,
+      "Text"
+    )
+  }
 }
 
 /**
@@ -3379,7 +3414,8 @@ function validateSectionBlocks(
   path: readonly (string | number)[],
   issues: IssueSink,
   shapes: readonly SlotShape[] | undefined,
-  language: (typeof LANGUAGES)[number] | null
+  language: (typeof LANGUAGES)[number] | null,
+  metricBearing: boolean | null = null
 ): void {
   if (!Array.isArray(blocks)) {
     addIssue(issues, path, "blocks must be an array.")
@@ -3400,7 +3436,7 @@ function validateSectionBlocks(
       return
     }
     if ("kind" in block) {
-      validateUserBlock(block, blockPath, issues, seenIds, language)
+      validateUserBlock(block, blockPath, issues, seenIds, language, metricBearing)
       return
     }
     const slot = block.slot
@@ -3540,7 +3576,18 @@ function validateSectionV4(
         "The coverage and verification appendix prints as it is; its blocks cannot change."
       )
     } else {
-      validateSectionBlocks(entry.blocks, [...entryPath, "blocks"], issues, shapes, language)
+      const metricBearing =
+        shapes !== undefined && provider !== undefined && typeof type === "string"
+          ? (METRIC_BEARING_SECTION_KEYS_BY_PROVIDER[provider]?.has(type) ?? false)
+          : null
+      validateSectionBlocks(
+        entry.blocks,
+        [...entryPath, "blocks"],
+        issues,
+        shapes,
+        language,
+        metricBearing
+      )
     }
   }
 }

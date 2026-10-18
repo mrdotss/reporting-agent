@@ -80,9 +80,9 @@ function BuilderScreen({
     if (selection?.kind === "section") moveSection(selection.sectionId, offset)
   })
   useHotkeys(["delete", "backspace"], () => {
-    const { selection, removeText, toggleHidden } = store.getState()
+    const { selection, removeAdded, toggleHidden } = store.getState()
     if (selection?.kind !== "block") return
-    if (selection.ref.kind === "text") removeText(selection.sectionId, selection.ref.id)
+    if (selection.ref.kind === "added") removeAdded(selection.sectionId, selection.ref.id)
     else if (!(selection.ref.kind === "slot" && selection.ref.slot === "title")) toggleHidden(selection.sectionId, selection.ref)
   })
 

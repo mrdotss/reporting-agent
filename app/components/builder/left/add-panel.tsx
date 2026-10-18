@@ -1,12 +1,15 @@
 "use client"
 
-import { MagnifyingGlassIcon, TextTIcon } from "@phosphor-icons/react"
+import { MagnifyingGlassIcon } from "@phosphor-icons/react"
 import { useMemo, useState } from "react"
 
+import { ADDED_BLOCKS, ADDED_KINDS } from "@/components/builder/canvas/labels"
 import { useBuilder, useEnvironment } from "@/components/builder/context"
+import { AddedIcon } from "@/components/builder/left/outline"
 import {
   GROUP_ORDER,
   catalogueFor,
+  sectionEntry,
   sectionTitle,
   type CatalogueSection,
 } from "@/lib/builder/catalogue"
@@ -17,9 +20,10 @@ import { cn } from "@/lib/utils"
  * What can be put on the page: blocks into the selected section, and sections from the
  * provider's catalogue.
  *
- * Text is the block an author adds in this release. The catalogue's own blocks are already
- * on the page in every section — hidden ones come back from the outline — so the library
- * offers what is not there yet.
+ * Blocks go into the selected section, after the selected block: text, and catalogue blocks
+ * that read the section — key figures, a top list, month vs month, coverage, a page break.
+ * The three that read metrics are offered only to a section that reports some. A section's
+ * own blocks are already on the page; hidden ones come back from the outline.
  *
  * Only this provider's sections are listed: an AWS preset is offered Compute Optimizer's
  * rightsizing, an Azure one Advisor's recommendations, never the other's.
@@ -36,7 +40,7 @@ export function AddPanel() {
   const definition = useBuilder((state) => state.definition)
   const selection = useBuilder((state) => state.selection)
   const addSection = useBuilder((state) => state.addSection)
-  const addText = useBuilder((state) => state.addText)
+  const addBlock = useBuilder((state) => state.addBlock)
   const setLeftTab = useBuilder((state) => state.setLeftTab)
   const { scanTypeCounts, collectedFactSources } = useEnvironment()
   const [query, setQuery] = useState("")
@@ -45,6 +49,7 @@ export function AddPanel() {
 
   const targetSectionId = selection !== null && "sectionId" in selection ? selection.sectionId : null
   const targetSection = definition.sections.find((section) => section.id === targetSectionId)
+  const targetEntry = targetSection ? sectionEntry(definition.provider, targetSection.type) : undefined
   const used = new Set(definition.sections.map((section) => section.type))
 
   const available = catalogueFor(definition.provider).filter(
@@ -80,22 +85,37 @@ export function AddPanel() {
           )}
         </p>
         <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={!targetSection || !(folded === "" || "text paragraph note".includes(folded))}
-            onClick={() => {
-              if (!targetSectionId) return
-              addText(targetSectionId, selection?.kind === "block" ? selection.ref : undefined)
-              setLeftTab("outline")
-            }}
-            className="flex flex-col items-start gap-2 rounded-lg border border-border bg-card p-2.5 text-left text-[12.5px] font-medium hover:border-input disabled:opacity-50"
-          >
-            <span className="grid h-8 w-full place-items-center rounded bg-muted text-muted-foreground">
-              <TextTIcon aria-hidden className="size-4" />
-            </span>
-            Text
-            <span className="text-[11px] font-normal text-muted-foreground">Words only, en and id</span>
-          </button>
+          {ADDED_KINDS.filter(
+            (kind) =>
+              folded === "" ||
+              ADDED_BLOCKS[kind].label.toLowerCase().includes(folded) ||
+              ADDED_BLOCKS[kind].blurb.toLowerCase().includes(folded)
+          ).map((kind) => {
+            const needsMetrics = ADDED_BLOCKS[kind].needsMetrics && !targetEntry?.metricBearing
+            const disabled = !targetSection || needsMetrics
+            return (
+              <button
+                key={kind}
+                type="button"
+                disabled={disabled}
+                title={needsMetrics && targetSection ? "Reads metrics: add it to a section that reports some." : undefined}
+                onClick={() => {
+                  if (!targetSectionId) return
+                  addBlock(targetSectionId, kind, selection?.kind === "block" ? selection.ref : undefined)
+                  setLeftTab("outline")
+                }}
+                className="flex flex-col items-start gap-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-[12.5px] font-medium hover:border-input disabled:opacity-50"
+              >
+                <span className="grid h-8 w-full place-items-center rounded bg-muted text-muted-foreground">
+                  <AddedIcon kind={kind} />
+                </span>
+                {ADDED_BLOCKS[kind].label}
+                <span className="text-[11px] leading-snug font-normal text-muted-foreground">
+                  {ADDED_BLOCKS[kind].blurb}
+                </span>
+              </button>
+            )
+          })}
         </div>
       </div>
 

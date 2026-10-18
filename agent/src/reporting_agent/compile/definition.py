@@ -323,6 +323,7 @@ __all__ = [
     "MAX_SECTION_BLOCKS",
     "MAX_SUPPORTED_SCHEMA_VERSION",
     "MAX_TAG_FILTERS",
+    "METRIC_BLOCK_KINDS",
     "MIN_DECIMAL_PLACES",
     "MIN_METRIC_ITEMS_PER_ENTRY",
     "MIN_PERIOD_LOCAL_DAYS",
@@ -552,9 +553,19 @@ SECTION_POSITION_MAX: Final[int] = 999
 MAX_SECTION_BLOCKS: Final[int] = 40
 SECTION_TITLE_MAX_LENGTH: Final[int] = 120
 SECTION_TEXT_MAX_LENGTH: Final[int] = 2000
-# The blocks a person may add to a v4 section. Words only: every one is checked for
-# numerals, because a number in a report comes from the snapshot or not at all.
-SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = ("text",)
+# The blocks a person may add to a v4 section. `text` is words only, checked for numerals,
+# because a number in a report comes from the snapshot or not at all. The rest are
+# catalogue blocks placed by the author, configured from the section they sit in; the
+# three that read metrics need a section that reports some.
+SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = (
+    "text",
+    "key_figures",
+    "top_list",
+    "month_vs_month",
+    "coverage",
+    "page_break",
+)
+METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = ("key_figures", "top_list", "month_vs_month")
 MAX_LOCATIONS: Final[int] = 50
 LOCATION_MAX_LENGTH: Final[int] = 64
 # The trend depth a section may ask for, in months. `compile/blocks/charts.py` reads
@@ -712,6 +723,25 @@ def _load_lookback_types() -> frozenset[str]:
 
 
 _LOOKBACK_SECTION_TYPES: Final[frozenset[str]] = _load_lookback_types()
+
+
+def _load_metric_bearing_keys() -> dict[str, frozenset[str]]:
+    """The section types that report metrics, per provider."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    return {
+        provider_name: frozenset(
+            s["key"] for s in provider_data.get("sections", []) if s.get("metric_bearing")
+        )
+        for provider_name, provider_data in raw.get("providers", {}).items()
+    }
+
+
+METRIC_BEARING_SECTION_KEYS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = (
+    _load_metric_bearing_keys()
+)
 NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = (
     _load_non_repeatable_keys()
 )
@@ -3196,15 +3226,22 @@ def _validate_slot_entry(
 
 
 def _validate_user_block(
-    block: dict[str, object], path: Path, walk: _Walk, seen_ids: set[str]
+    block: dict[str, object],
+    path: Path,
+    walk: _Walk,
+    seen_ids: set[str],
+    metric_bearing: bool | None,
 ) -> None:
-    """One block a person added: `{kind, id, text}`."""
-    for key in block:
-        if key not in ("kind", "id", "text"):
-            walk.add((*path, key), f'Unrecognized block field "{key}".')
+    """One block a person added: `{kind, id}`, and `text` for a text block."""
     kind = block.get("kind")
+    allowed = ("kind", "id", "text") if kind == "text" else ("kind", "id")
+    for key in block:
+        if key not in allowed:
+            walk.add((*path, key), f'Unrecognized block field "{key}".')
     if kind not in SECTION_BLOCK_KINDS:
         walk.add((*path, "kind"), f"kind must be one of: {', '.join(SECTION_BLOCK_KINDS)}.")
+    elif kind in METRIC_BLOCK_KINDS and metric_bearing is False:
+        walk.add((*path, "kind"), "This block reads metrics; add it to a section that reports some.")
     block_id = block.get("id")
     if not isinstance(block_id, str) or not _USER_BLOCK_ID_PATTERN.match(block_id):
         walk.add((*path, "id"), "An added block's id is u_ and 1 to 12 lowercase letters or digits.")
@@ -3212,10 +3249,11 @@ def _validate_user_block(
         walk.add((*path, "id"), f'Duplicate block id "{block_id}".')
     else:
         seen_ids.add(block_id)
-    _validate_typed_text(
-        block.get("text"), (*path, "text"), walk,
-        max_length=SECTION_TEXT_MAX_LENGTH, what="Text",
-    )
+    if kind == "text":
+        _validate_typed_text(
+            block.get("text"), (*path, "text"), walk,
+            max_length=SECTION_TEXT_MAX_LENGTH, what="Text",
+        )
 
 
 def _validate_section_blocks(
@@ -3223,6 +3261,7 @@ def _validate_section_blocks(
     path: Path,
     walk: _Walk,
     shapes: tuple[_SlotShape, ...] | None,
+    metric_bearing: bool | None = None,
 ) -> None:
     """A v4 section's `blocks`: catalogue slots in the author's order, with added text.
 
@@ -3246,7 +3285,7 @@ def _validate_section_blocks(
             walk.add(block_path, "A block entry must be an object.")
             continue
         if "kind" in block:
-            _validate_user_block(block, block_path, walk, seen_ids)
+            _validate_user_block(block, block_path, walk, seen_ids, metric_bearing)
             continue
         slot = block.get("slot")
         if not isinstance(slot, str):
@@ -3369,7 +3408,14 @@ def _validate_section_v4(
                 "The coverage and verification appendix prints as it is; its blocks cannot change.",
             )
         else:
-            _validate_section_blocks(entry.get("blocks"), (*entry_path, "blocks"), walk, shapes)
+            metric_bearing = (
+                entry_type in METRIC_BEARING_SECTION_KEYS_BY_PROVIDER.get(provider, frozenset())
+                if provider is not None and isinstance(entry_type, str) and shapes is not None
+                else None
+            )
+            _validate_section_blocks(
+                entry.get("blocks"), (*entry_path, "blocks"), walk, shapes, metric_bearing
+            )
 
 
 # --- the pass -----------------------------------------------------------------------

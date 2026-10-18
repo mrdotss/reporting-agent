@@ -7,6 +7,7 @@ import {
   type CatalogueSection,
   type Provider,
 } from "@/lib/builder/catalogue"
+import type { AddedKind } from "@/lib/builder/model"
 import type { BlockRef } from "@/lib/builder/store"
 
 /**
@@ -44,15 +45,42 @@ export function DataNote({
   provider,
   entry,
   ref_,
-}: Readonly<{ kind: "section" | "block"; provider: Provider; entry: CatalogueSection; ref_?: BlockRef }>) {
+  added,
+}: Readonly<{
+  kind: "section" | "block"
+  provider: Provider
+  entry: CatalogueSection
+  ref_?: BlockRef
+  added?: AddedKind
+}>) {
   const lines: string[] = []
   if (kind === "section") {
     lines.push(`Selects ${entry.needsResourceTypes.join(", ") || "the whole estate"} from the snapshot.`)
     if (entry.needsFactSources.length > 0) lines.push(`Facts from ${sourcesOf(entry)}.`)
     if (entry.metricBearing) lines.push(METRIC_SOURCE[provider])
     if (entry.drawsFromPriorRuns) lines.push("Earlier months come from this preset's earlier verified reports.")
-  } else if (ref_?.kind === "text") {
-    lines.push("Words you typed. Numbers are refused here, so every number in the report stays traceable to the snapshot.")
+  } else if (ref_?.kind === "added") {
+    switch (added) {
+      case "key_figures":
+      case "top_list":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push("Every value is a figure in the report's ledger, traced to its snapshot path.")
+        break
+      case "month_vs_month":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push(
+          "The earlier value is read from the previous verified report's own snapshot and recorded with that report's id, so the verifier proves the report it came from passed. The direction is a word, never a computed change."
+        )
+        break
+      case "coverage":
+        lines.push("The run's collection log: what could not be measured, counted per gap type.")
+        break
+      case "page_break":
+        lines.push("A page break carries no figure.")
+        break
+      default:
+        lines.push("Words you typed. Numbers are refused here, so every number in the report stays traceable to the snapshot.")
+    }
   } else if (ref_?.kind === "each") {
     lines.push(`One repetition per resource the section selects, in the snapshot's order or ranked by its top-N rule.`)
   } else if (ref_?.kind === "slot") {

@@ -4,7 +4,7 @@ import { ArrowDownIcon, ArrowUpIcon, CursorClickIcon, EyeIcon, EyeSlashIcon, Tra
 import { useId, useMemo, type ReactNode } from "react"
 
 import { useBuilder, useEnvironment, useIssues } from "@/components/builder/context"
-import { blockHint, blockLabel } from "@/components/builder/canvas/labels"
+import { ADDED_BLOCKS, blockHint, blockLabel } from "@/components/builder/canvas/labels"
 import { Field, Segmented } from "@/components/builder/left/theme-panel"
 import {
   columnLabel,
@@ -20,14 +20,16 @@ import {
 import { issuesForSection } from "@/lib/builder/issues"
 import {
   displayTitle,
+  rankingOf,
   isEachEntry,
-  isTextEntry,
+  isAddedEntry,
   sectionLayout,
   type MetricItem,
   type ScopeSelection,
   type SectionV4,
+  type AddedEntry,
+  type AddedKind,
   type SlotEntry,
-  type TextEntry,
 } from "@/lib/builder/model"
 import type { BlockRef, InspectorTab } from "@/lib/builder/store"
 import { pageDesign } from "@/lib/builder/theme"
@@ -253,7 +255,7 @@ function TitleFields({ section, slot }: Readonly<{ section: SectionV4; slot: str
   const definition = useBuilder((state) => state.definition)
   const setTitle = useBuilder((state) => state.setTitle)
   const entry = sectionEntry(definition.provider, section.type)
-  const current = section.blocks?.find((block) => !isTextEntry(block) && block.slot === slot) as SlotEntry | undefined
+  const current = section.blocks?.find((block) => !isAddedEntry(block) && block.slot === slot) as SlotEntry | undefined
   const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
   return (
     <Field label="Title" hint="Leave empty to print the catalogue title.">
@@ -487,14 +489,18 @@ function BlockInspector({ section, entry, ref_ }: Readonly<{ section: SectionV4;
   const tab = useBuilder((state) => state.inspectorTab)
   const toggleHidden = useBuilder((state) => state.toggleHidden)
   const moveBlock = useBuilder((state) => state.moveBlock)
-  const removeText = useBuilder((state) => state.removeText)
+  const removeAdded = useBuilder((state) => state.removeAdded)
   const select = useBuilder((state) => state.select)
   const language = definition.identity.language
   const layout = sectionLayout(section, entry)
 
+  const added =
+    ref_.kind === "added"
+      ? (section.blocks?.find((b) => isAddedEntry(b) && b.id === ref_.id) as AddedEntry | undefined)
+      : undefined
   const title =
-    ref_.kind === "text"
-      ? "Text"
+    ref_.kind === "added"
+      ? ADDED_BLOCKS[added?.kind ?? "text"].label
       : ref_.kind === "each"
         ? `For each ${resourceNoun(entry)}`
         : blockLabel(entry, ref_.slot)
@@ -513,8 +519,8 @@ function BlockInspector({ section, entry, ref_ }: Readonly<{ section: SectionV4;
         <span className="flex gap-0.5">
           <IconButton label="Move up" onClick={() => moveBlock(section.id, ref_, -1)}><ArrowUpIcon className="size-3.5" /></IconButton>
           <IconButton label="Move down" onClick={() => moveBlock(section.id, ref_, 1)}><ArrowDownIcon className="size-3.5" /></IconButton>
-          {ref_.kind === "text" ? (
-            <IconButton label="Remove" onClick={() => removeText(section.id, ref_.id)}><TrashIcon className="size-3.5" /></IconButton>
+          {ref_.kind === "added" ? (
+            <IconButton label="Remove" onClick={() => removeAdded(section.id, ref_.id)}><TrashIcon className="size-3.5" /></IconButton>
           ) : (
             <IconButton label={hidden ? "Show" : "Hide"} disabled={required} onClick={() => toggleHidden(section.id, ref_)}>
               {hidden ? <EyeSlashIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
@@ -526,7 +532,9 @@ function BlockInspector({ section, entry, ref_ }: Readonly<{ section: SectionV4;
       <Tabs />
       {tab === "content" && <BlockContent section={section} entry={entry} ref_={ref_} />}
       {tab === "style" && <BlockStyle entry={entry} ref_={ref_} />}
-      {tab === "data" && <DataNote kind="block" provider={definition.provider} entry={entry} ref_={ref_} />}
+      {tab === "data" && (
+        <DataNote kind="block" provider={definition.provider} entry={entry} ref_={ref_} added={added?.kind} />
+      )}
       <button type="button" onClick={() => select({ kind: "section", sectionId: section.id })} className="self-start text-xs font-medium text-primary hover:underline">
         Section settings
       </button>
@@ -540,8 +548,9 @@ function BlockContent({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
   const select = useBuilder((state) => state.select)
   const setInspectorTab = useBuilder((state) => state.setInspectorTab)
 
-  if (ref_.kind === "text") {
-    const block = section.blocks?.find((b) => isTextEntry(b) && b.id === ref_.id) as TextEntry | undefined
+  if (ref_.kind === "added") {
+    const block = section.blocks?.find((b) => isAddedEntry(b) && b.id === ref_.id) as AddedEntry | undefined
+    if (block && block.kind !== "text") return <AddedContent section={section} entry={entry} kind={block.kind} />
     const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
     return (
       <Field label="Words" hint="The report's language is required; the other is optional. Numbers are refused.">
@@ -551,7 +560,7 @@ function BlockContent({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
             label={language === "en" ? "English" : "Indonesian"}
             multiline
             max={2000}
-            value={block?.text[language] ?? ""}
+            value={block?.text?.[language] ?? ""}
             onChange={(value) => setText(section.id, ref_.id, language, value)}
           />
         ))}
@@ -603,7 +612,7 @@ function ColumnsField({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
   const each = section.blocks?.find((b) => isEachEntry(b))
   const settings = (ref_.inEach
     ? (each && isEachEntry(each) ? each.blocks : [])?.find((b) => b.slot === ref_.slot)
-    : section.blocks?.find((b) => !isTextEntry(b) && b.slot === ref_.slot)) as SlotEntry | undefined
+    : section.blocks?.find((b) => !isAddedEntry(b) && b.slot === ref_.slot)) as SlotEntry | undefined
   const chosen = settings?.columns ?? declared.map((column) => column.id)
   const ordered = [...chosen, ...declared.map((c) => c.id).filter((id) => !chosen.includes(id))]
   const language = definition.identity.language
@@ -701,4 +710,43 @@ function BlockStyle({ entry, ref_ }: Readonly<{ entry: CatalogueSection; ref_: B
     )
   }
   return <p className="text-[13px] leading-relaxed text-muted-foreground">This block follows the theme: its face, accent and spacing.</p>
+}
+
+/** What an added catalogue block shows, and the section setting that decides it. */
+function AddedContent({
+  section,
+  entry,
+  kind,
+}: Readonly<{ section: SectionV4; entry: CatalogueSection; kind: Exclude<AddedKind, "text"> }>) {
+  const select = useBuilder((state) => state.select)
+  const setInspectorTab = useBuilder((state) => state.setInspectorTab)
+  const rank = rankingOf(section, entry)
+  const ranking = rank ? `${rank.metric} (${rank.statistic})` : "the section's first metric"
+  const lines: Record<Exclude<AddedKind, "text">, string> = {
+    key_figures: "One row for each of the section's metrics: its highest value in the period, and which resource reached it.",
+    top_list: section.selection?.top_n
+      ? `The section's own top ${section.selection.top_n.count}, ranked by ${ranking}.`
+      : `The top ten resources, ranked by ${ranking}. Set a top-N under the section's Data tab to change how many.`,
+    month_vs_month: `Each resource's ${ranking} in the previous verified report of this preset, beside this period's, with the direction it moved. The first report has no earlier one, and says so.`,
+    coverage: "Every gap the run recorded, grouped by type, with the resources it affects. The appendix prints the same record.",
+    page_break: "The next block starts on a new page in the delivered document.",
+  }
+  const readsMetrics = kind === "key_figures" || kind === "top_list" || kind === "month_vs_month"
+  return (
+    <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted-foreground">
+      <p>{lines[kind]}</p>
+      {readsMetrics && (
+        <button
+          type="button"
+          onClick={() => {
+            select({ kind: "section", sectionId: section.id })
+            setInspectorTab("content")
+          }}
+          className="self-start text-xs font-medium text-primary hover:underline"
+        >
+          Change the section&rsquo;s metrics
+        </button>
+      )}
+    </div>
+  )
 }

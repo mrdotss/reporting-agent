@@ -9,13 +9,15 @@ import { newSection, newUserBlockId, settled } from "./draft"
 import {
   explicitBlocks,
   isEachEntry,
-  isTextEntry,
+  isAddedEntry,
   orderedSections,
   type BlockEntry,
   type DefinitionV4,
   type EachEntry,
   type SectionV4,
   type SlotEntry,
+  type AddedEntry,
+  type AddedKind,
   type TextEntry,
 } from "./model"
 
@@ -29,12 +31,12 @@ import {
 
 export type BlockRef =
   | { readonly kind: "slot"; readonly slot: string; readonly inEach: boolean }
-  | { readonly kind: "text"; readonly id: string }
+  | { readonly kind: "added"; readonly id: string }
   | { readonly kind: "each" }
 
 /** A block's key within its section — stable across edits, used by the outline and the page. */
 export function blockKey(ref: BlockRef): string {
-  if (ref.kind === "text") return `text:${ref.id}`
+  if (ref.kind === "added") return `added:${ref.id}`
   if (ref.kind === "each") return "each"
   return `${ref.inEach ? "in" : "top"}:${ref.slot}`
 }
@@ -71,8 +73,8 @@ export type BuilderState = {
   toggleHidden(sectionId: string, ref: BlockRef): void
   moveBlock(sectionId: string, ref: BlockRef, offset: -1 | 1): void
   moveBlockTo(sectionId: string, ref: BlockRef, toIndex: number): void
-  addText(sectionId: string, after?: BlockRef): string | null
-  removeText(sectionId: string, id: string): void
+  addBlock(sectionId: string, kind: AddedKind, after?: BlockRef): string | null
+  removeAdded(sectionId: string, id: string): void
   setText(sectionId: string, id: string, language: Language, text: string): void
   setTitle(sectionId: string, slot: string, language: Language, text: string): void
   setColumns(sectionId: string, ref: BlockRef, columns: readonly string[] | null): void
@@ -115,7 +117,7 @@ function materialise(draft: Draft<DefinitionV4>, section: Draft<SectionV4>): Dra
 function needsFilling(section: Draft<SectionV4>, slotCount: number): boolean {
   let named = 0
   for (const block of section.blocks ?? []) {
-    if (isTextEntry(block as BlockEntry)) continue
+    if (isAddedEntry(block as BlockEntry)) continue
     if (isEachEntry(block as BlockEntry)) named += (block as EachEntry).blocks?.length ?? 0
     else named += 1
   }
@@ -127,8 +129,8 @@ function locate(
   blocks: Draft<BlockEntry>[],
   ref: BlockRef
 ): { list: Draft<BlockEntry>[] | Draft<SlotEntry>[]; index: number } | null {
-  if (ref.kind === "text") {
-    const index = blocks.findIndex((b) => isTextEntry(b as BlockEntry) && (b as TextEntry).id === ref.id)
+  if (ref.kind === "added") {
+    const index = blocks.findIndex((b) => isAddedEntry(b as BlockEntry) && (b as AddedEntry).id === ref.id)
     return index === -1 ? null : { list: blocks, index }
   }
   if (ref.kind === "each") {
@@ -142,7 +144,7 @@ function locate(
     return index === -1 ? null : { list: children, index }
   }
   const index = blocks.findIndex(
-    (b) => !isTextEntry(b as BlockEntry) && (b as SlotEntry).slot === ref.slot
+    (b) => !isAddedEntry(b as BlockEntry) && (b as SlotEntry).slot === ref.slot
   )
   return index === -1 ? null : { list: blocks, index }
 }
@@ -278,7 +280,7 @@ export function createBuilderStore({ initial, catalog }: Options) {
             ;(found.list as unknown[]).splice(toIndex, 0, moved)
           }),
 
-        addText: (sectionId, after) => {
+        addBlock: (sectionId, kind, after) => {
           const id = newUserBlockId()
           const language = get().definition.identity.language
           let added = false
@@ -286,26 +288,28 @@ export function createBuilderStore({ initial, catalog }: Options) {
             const section = findSection(draft, sectionId)
             if (!section) return
             const blocks = materialise(draft, section)
-            // Added text sits at section level. Placed after a block inside the
-            // per-resource group, it goes after the group itself.
+            // Added blocks sit at section level. Placed after a block inside the
+            // per-resource group, one goes after the group itself.
             const anchor: BlockRef | undefined =
               after?.kind === "slot" && after.inEach ? { kind: "each" } : after
             const found = anchor ? locate(blocks, anchor) : null
             const index = found && found.list === blocks ? found.index + 1 : blocks.length
-            blocks.splice(index, 0, { kind: "text", id, text: { [language]: "" } } as Draft<TextEntry>)
+            const entry: AddedEntry =
+              kind === "text" ? { kind, id, text: { [language]: "" } } : { kind, id }
+            blocks.splice(index, 0, entry as Draft<AddedEntry>)
             added = true
           })
           if (!added) return null
-          set({ selection: { kind: "block", sectionId, ref: { kind: "text", id } }, inspectorTab: "content" })
+          set({ selection: { kind: "block", sectionId, ref: { kind: "added", id } }, inspectorTab: "content" })
           return id
         },
 
-        removeText: (sectionId, id) => {
+        removeAdded: (sectionId, id) => {
           get().edit((draft) => {
             const section = findSection(draft, sectionId)
             if (!section?.blocks) return
             section.blocks = section.blocks.filter(
-              (block) => !(isTextEntry(block as BlockEntry) && (block as TextEntry).id === id)
+              (block) => !(isAddedEntry(block as BlockEntry) && (block as AddedEntry).id === id)
             )
           })
           set({ selection: { kind: "section", sectionId } })
@@ -315,7 +319,7 @@ export function createBuilderStore({ initial, catalog }: Options) {
           get().edit((draft) => {
             const section = findSection(draft, sectionId)
             if (!section) return
-            const found = locate(materialise(draft, section), { kind: "text", id })
+            const found = locate(materialise(draft, section), { kind: "added", id })
             if (!found) return
             setTyped(found.list[found.index] as Draft<TextEntry>, "text", language, text)
           }),

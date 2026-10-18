@@ -202,3 +202,131 @@ def test_the_aws_document_carries_the_authors_title(walked_aws_v4) -> None:
     assert "Instance use" in text
     assert "EC2 Instance Utilization" not in text
     assert "EBS Volumes" in text  # the located section still prints
+
+
+# --- Blocks an author places (PR 3) ------------------------------------------------------
+
+PRIOR_AWS_RUN = "run-prior-aws"
+
+
+def aws_placed_blocks_definition() -> dict[str, Any]:
+    """Every added block kind in one AWS section, plus a page break before the next."""
+    definition = _to_v4(aws_definition())
+    for section in definition["sections"]:
+        if section["type"] == "ec2_utilization":
+            section["blocks"] = [
+                {"slot": "title"},
+                {"kind": "key_figures", "id": "u_kpi"},
+                {"kind": "month_vs_month", "id": "u_mvm"},
+                {"slot": "each"},
+                {"kind": "top_list", "id": "u_top"},
+                {"slot": "fleet", "hidden": True},
+                {"kind": "coverage", "id": "u_cov"},
+                {"kind": "page_break", "id": "u_brk"},
+            ]
+    return definition
+
+
+def _aws_run(store, *, run_id: str, candidates: list[dict[str, Any]] | None = None):
+    import asyncio
+
+    from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.main import StepTracker
+    from reporting_agent.report_pipeline import ReportOutcome, run_generate_report
+    from test_aws_collector import ACCOUNT, fake_clients, provider
+    from test_run_end_to_end_v2 import invoke_payload
+
+    payload = invoke_payload(aws_placed_blocks_definition())
+    payload["period"] = {"start": "2026-09-01", "end": "2026-09-01"}
+    payload["scope"] = {"resource_types": [], "resource_groups": [], "tag_filters": {}, "regions": ["us-east-1", "ap-southeast-3"]}
+    payload.pop("context", None)
+    if candidates is not None:
+        payload["historical_candidates"] = candidates
+    context = {"actor_id": "actor-1", "run_id": run_id, "subscription_id": ACCOUNT, "timezone": "UTC",
+               "provider": "aws", "fidelity_tier": "baseline", "display_name": "Example AWS"}
+    events: list[dict[str, Any]] = []
+
+    async def go() -> None:
+        async for event in run_generate_report(
+            payload=payload, context=context, steps=StepTracker(), artifact_bucket="unused",
+            outcome=ReportOutcome(), prose=None, provider=provider(store, fake_clients()),
+            object_store=store, catalog=load_catalog(),
+        ):
+            events.append(event)
+
+    try:
+        asyncio.run(go())
+    except Exception:  # a report with gaps ends `PARTIAL_COVERAGE`, which is still a delivery
+        pass
+    finally:
+        discard_secrets()
+    return events
+
+
+@pytest.fixture(scope="module")
+def placed_blocks_walk():
+    """Two runs: the first becomes the second's previous verified report."""
+    import json
+
+    from fakes.object_store import InMemoryObjectStore, StoredObject
+    from reporting_agent.collect.snapshot import snapshot_key
+
+    first_store = InMemoryObjectStore()
+    first = _aws_run(first_store, run_id="run-1")
+    prior = first_store.get(snapshot_key("actor-1", "run-1"))
+    assert prior is not None
+
+    store = InMemoryObjectStore()
+    store._objects[snapshot_key("actor-1", PRIOR_AWS_RUN)] = StoredObject(
+        body=prior.body, content_type=prior.content_type, tags=prior.tags
+    )
+    candidates = [{
+        "id": PRIOR_AWS_RUN, "period_start": "2026-08-01", "period_end": "2026-08-31", "timezone": "UTC",
+        "status": "completed", "verification_status": "pass", "verification_created_at": "2026-09-01T00:00:00Z",
+        "verification_id": "v-prior", "verification_snapshot_sha256": "b" * 64,
+    }]
+    # The fake provider archives under `run-1` whatever the context says, so the second run
+    # keeps that id too — in its own store, where `run-1` is this month's run.
+    second = _aws_run(store, run_id="run-1", candidates=candidates)
+    records = [json.loads(store.get(key).body) for key in store.keys() if "/verification-" in key]  # type: ignore[union-attr]
+    return first, second, store, records
+
+
+def _verified(events: list[dict[str, Any]]) -> bool:
+    verification = [event for event in events if event["type"] == "verification"]
+    return bool(verification) and verification[-1]["status"] == "pass"
+
+
+def test_placed_blocks_verify_without_and_with_a_previous_report(placed_blocks_walk) -> None:
+    first, second, _, records = placed_blocks_walk
+    assert _verified(first)
+    assert _verified(second)
+    assert records and not [f for f in records[-1].get("findings", []) if f.get("severity") == "blocking"]
+
+
+def test_month_vs_month_reads_the_previous_report(placed_blocks_walk) -> None:
+    from docx import Document
+
+    _, _, store, records = placed_blocks_walk
+    key = next(key for key in store.keys() if key.endswith("/report.docx"))
+    document = Document(BytesIO(store.get(key).body))  # type: ignore[union-attr]
+    tables = [[cell.text for cell in row.cells] for table in document.tables for row in table.rows]
+    headers = [row for row in tables if "Previous report" in row]
+    assert headers, "no month-vs-month table"
+    directions = {row[3] for row in tables if len(row) == 4 and row[3] in ("Higher", "Lower", "Same", "No earlier report")}
+    # The previous report is this month's own snapshot, so every instance measured in both
+    # reads "Same"; an instance with no figure in either (a stopped one) has no earlier one.
+    assert "Same" in directions
+    points = records[-1].get("historical_points") or records[-1].get("historicalPoints") or []
+    assert any(point.get("run_id") == PRIOR_AWS_RUN for point in points), points
+
+
+def test_key_figures_and_top_list_print(placed_blocks_walk) -> None:
+    from docx import Document
+
+    _, _, store, _ = placed_blocks_walk
+    key = next(key for key in store.keys() if key.endswith("/report.docx"))
+    document = Document(BytesIO(store.get(key).body))  # type: ignore[union-attr]
+    headers = [tuple(cell.text for cell in table.rows[0].cells) for table in document.tables]
+    assert any(header[:2] == ("Metric", "Basis") for header in headers), headers
+    assert any("Gap" in header for header in headers)

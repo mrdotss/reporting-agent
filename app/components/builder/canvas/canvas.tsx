@@ -32,8 +32,8 @@ import { blockKey, type BlockRef, type Selection } from "@/lib/builder/store"
 import { DENSITY_SCALE, PAGE_PX, PT, pageDesign, type PageDesign } from "@/lib/builder/theme"
 import { cn } from "@/lib/utils"
 
-import { AddedText, CatalogueBlock, Heading, px } from "./blocks"
-import { blockLabel } from "./labels"
+import { AddedBlockView, CatalogueBlock, Heading, px } from "./blocks"
+import { ADDED_BLOCKS, blockLabel } from "./labels"
 
 /**
  * The live page: every section in the order the report prints it, every visible block drawn
@@ -46,7 +46,7 @@ import { blockLabel } from "./labels"
 
 function sameRef(a: BlockRef, b: BlockRef): boolean {
   if (a.kind !== b.kind) return false
-  if (a.kind === "text" && b.kind === "text") return a.id === b.id
+  if (a.kind === "added" && b.kind === "added") return a.id === b.id
   if (a.kind === "slot" && b.kind === "slot") return a.slot === b.slot && a.inEach === b.inEach
   return true
 }
@@ -286,7 +286,7 @@ function SectionView({
       )}
       {layout.map((item, index) => (
         <LayoutItemView
-          key={item.kind === "text" ? item.id : item.kind === "each" ? "each" : item.slot}
+          key={item.kind === "added" ? item.id : item.kind === "each" ? "each" : item.slot}
           item={item}
           index={index}
           section={section}
@@ -321,10 +321,23 @@ function LayoutItemView({
   const language = definition.identity.language
   const provider = definition.provider
 
-  if (item.kind === "text") {
+  if (item.kind === "added") {
     return (
-      <Selectable section={section} ref_={{ kind: "text", id: item.id }} label="Text" editing={editing} index={index}>
-        <AddedText design={design} text={item.entry.text[language]} />
+      <Selectable
+        section={section}
+        ref_={{ kind: "added", id: item.id }}
+        label={ADDED_BLOCKS[item.entry.kind].label}
+        editing={editing}
+        index={index}
+      >
+        <AddedBlockView
+          provider={provider}
+          design={design}
+          language={language}
+          section={section}
+          sectionEntry={entry}
+          entry={item.entry}
+        />
       </Selectable>
     )
   }
@@ -466,8 +479,8 @@ function Selectable({
   const select = useBuilder((state) => state.select)
   const moveBlock = useBuilder((state) => state.moveBlock)
   const toggleHidden = useBuilder((state) => state.toggleHidden)
-  const removeText = useBuilder((state) => state.removeText)
-  const addText = useBuilder((state) => state.addText)
+  const removeAdded = useBuilder((state) => state.removeAdded)
+  const addBlock = useBuilder((state) => state.addBlock)
   const selected = isSelected(selection, section.id, ref_)
 
   if (!editing) return <div>{children}</div>
@@ -496,8 +509,8 @@ function Selectable({
             <ToolbarButton label="Move down" onClick={() => moveBlock(section.id, ref_, 1)}>
               <ArrowDownIcon className="size-3.5" />
             </ToolbarButton>
-            {ref_.kind === "text" ? (
-              <ToolbarButton label="Remove" onClick={() => removeText(section.id, ref_.id)}>
+            {ref_.kind === "added" ? (
+              <ToolbarButton label="Remove" onClick={() => removeAdded(section.id, ref_.id)}>
                 <TrashIcon className="size-3.5" />
               </ToolbarButton>
             ) : (
@@ -509,7 +522,7 @@ function Selectable({
         </>
       )}
       <div className="relative">{children}</div>
-      <InsertLine onAdd={() => addText(section.id, ref_)} />
+      <InsertLine onAdd={() => addBlock(section.id, "text", ref_)} />
     </div>
   )
 }

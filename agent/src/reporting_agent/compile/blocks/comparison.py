@@ -31,9 +31,18 @@ own report, verified against the snapshot they came from.
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import replace as dc_replace
+from typing import Final
 
 from reporting_agent.compare.delta import DeltaKind, DeltaRow, DeltaTable, compile_delta
-from reporting_agent.compile.ast import Column, FigureCell, Row, Table, compiling_against
+from reporting_agent.compile.ast import (
+    PRIOR_RUNS_POINTER_PREFIX,
+    Column,
+    FigureCell,
+    Row,
+    Table,
+    compiling_against,
+)
 from reporting_agent.compile.blocks.base import (
     MAX_TABLE_ROWS,
     NOT_COMPARABLE_TEXT,
@@ -49,7 +58,11 @@ from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.scope import resolve
 
-__all__ = ["compile_comparison_delta"]
+__all__ = ["PREVIOUS_REPORT", "compile_comparison_delta", "compile_previous_report"]
+
+PREVIOUS_REPORT: Final[str] = "previous"
+"""`config.against` for a v4 month-vs-month block: compare with the latest earlier verified
+report of the same preset, which the pipeline selected as a lookback-one trend key."""
 
 def _comparison_columns(messages: Messages) -> tuple[Column, ...]:
     return (
@@ -71,6 +84,9 @@ def compile_comparison_delta(
     the run id: a comparison block that silently rendered one run's numbers would look like a
     delta of zero, which is the most misleading possible outcome.
     """
+    if block.config.get("against") == PREVIOUS_REPORT:
+        return compile_previous_report(context, block, cursor)
+
     table_cursor = cursor.child("nodes", 0)
     style = context.design.table_style_name
     caption = caption_of(block)
@@ -241,3 +257,141 @@ def _delta_row(cursor: BlockCursor, context: BlockContext, row: DeltaRow) -> Row
     cells.append(text_cell(cursor.child("cells", 3), note))
 
     return Row(path=cursor.path, key=row.resource_id, cells=tuple(cells))  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Against the previous report — the v4 month-vs-month block
+# ---------------------------------------------------------------------------
+
+
+def compile_previous_report(
+    context: BlockContext, block: BlockSpec, cursor: BlockCursor
+) -> BlockOutput:
+    """Each resource's value in the previous verified report beside this period's, and which
+    way it moved.
+
+    Both values are **figures**: this period's against this run's snapshot, the earlier one
+    against the previous report's, at `/prior_runs/<run>/…` — the address a historical trend
+    point uses, with the source run recorded, so the `historical` gate proves the earlier
+    report verified and re-verification reloads the same snapshot. No new number is made:
+    the direction is a word chosen by comparing the two, never a computed change.
+
+    The previous report is the one the pipeline selected for the block's
+    `(metric, statistic, 1)` key. With none — a customer's first month, or no verified
+    report yet — every row still prints, saying there is no earlier report.
+    """
+    from reporting_agent.compile.blocks.charts import HistoricalResolver, _find_historical_value
+    from reporting_agent.compile.historical import Selection
+
+    table_cursor = cursor.child("nodes", 0)
+    style = context.design.table_style_name
+    metric = str(block.config.get("metric") or "")
+    statistic = str(block.config.get("statistic") or "")
+    lookback = block.config.get("lookback")
+    if not metric or not statistic or not isinstance(lookback, int):
+        raise block.fail("config.metric, config.statistic and config.lookback are required")
+
+    selection = (context.historical_selections or {}).get((metric, statistic, lookback)) or Selection(
+        selected=(), exclusions=()
+    )
+    previous = selection.selected[-1] if selection.selected else None
+    prior_view = (
+        context.historical.snapshot_view_for(previous.run_id)
+        if previous is not None and context.historical is not None
+        else None
+    )
+    messages = context.messages
+    caption = messages.text("doc.comparison.caption", metric=metric, statistic=statistic)
+
+    matched = context.resources_for(block)[:MAX_TABLE_ROWS]
+    if not matched:
+        return BlockOutput(nodes=(empty_scope_table(table_cursor, style, caption, messages=messages),))
+
+    resolver = HistoricalResolver(
+        base=context.view,
+        prior_views={previous.run_id: prior_view} if previous is not None and prior_view is not None else {},
+    )
+    rows: list[Row] = []
+    with compiling_against(resolver):
+        for ordinal, resource in enumerate(matched):
+            row_cursor = table_cursor.child("rows", ordinal)
+            later = context.view.stat(resource.resource_id, metric, statistic)
+            earlier = (
+                _find_historical_value(prior_view, metric, statistic, resource_id=resource.resource_id)
+                if prior_view is not None
+                else None
+            )
+
+            earlier_cursor = row_cursor.child("cells", 1)
+            if earlier is None or previous is None:
+                earlier_cell: object = empty_cell(earlier_cursor)
+            else:
+                prefixed = dc_replace(
+                    earlier, pointer=f"{PRIOR_RUNS_POINTER_PREFIX}/{previous.run_id}{earlier.pointer}"
+                )
+                earlier_cell = FigureCell(
+                    path=earlier_cursor.path,
+                    figure=earlier_cursor.child("figure", 0).figure(
+                        prefixed,
+                        catalog_scale=context.catalog_scale(earlier),
+                        source_run_id=previous.run_id,
+                        source_snapshot_sha256=previous.snapshot_sha256 or "",
+                    ),
+                )
+
+            later_cursor = row_cursor.child("cells", 2)
+            later_cell: object = (
+                empty_cell(later_cursor)
+                if later is None
+                else FigureCell(
+                    path=later_cursor.path,
+                    figure=later_cursor.child("figure", 0).figure(
+                        later, catalog_scale=context.catalog_scale(later)
+                    ),
+                )
+            )
+
+            rows.append(
+                Row(
+                    path=row_cursor.path,
+                    key=resource.resource_id,
+                    cells=(
+                        text_cell(row_cursor.child("cells", 0), resource.name),
+                        earlier_cell,
+                        later_cell,
+                        text_cell(
+                            row_cursor.child("cells", 3),
+                            messages.text(_direction(earlier, later)),
+                        ),
+                    ),  # type: ignore[arg-type]
+                )
+            )
+
+    table = Table(
+        path=table_cursor.path,
+        style=style,
+        columns=(
+            Column(key="resource", header=messages.text("doc.table.resource")),
+            Column(key="previous", header=messages.text("doc.table.previous_report")),
+            Column(key="later", header=messages.text("doc.table.this_run")),
+            Column(key="direction", header=messages.text("doc.table.direction")),
+        ),
+        rows=tuple(rows),
+        caption=caption,
+    )
+    cursor.anchor_table(table_cursor.path)
+    return BlockOutput(nodes=(table,))
+
+
+def _direction(earlier: object, later: object) -> str:
+    """Which way a value moved, as a message id. Compared exactly: no tolerance decides
+    "the same", because a hidden tolerance is a rule nobody chose."""
+    earlier_value = getattr(earlier, "value", None)
+    later_value = getattr(later, "value", None)
+    if earlier_value is None or later_value is None:
+        return "doc.comparison.direction.none"
+    if later_value > earlier_value:
+        return "doc.comparison.direction.higher"
+    if later_value < earlier_value:
+        return "doc.comparison.direction.lower"
+    return "doc.comparison.direction.same"

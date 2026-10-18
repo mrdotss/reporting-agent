@@ -51,6 +51,17 @@ def print_order(provider: str, sections: list[dict[str, Any]]) -> list[str]:
     return [section["id"] for section, _ in keyed]
 
 
+def ranking(provider: str, section: dict[str, Any]) -> list[str] | None:
+    """What `_ranking_of` ranks an added metric block by."""
+    from reporting_agent.catalog.loader import load_section_catalogue
+    from reporting_agent.compile.sections import _ranking_of
+
+    entry = load_section_catalogue(provider=provider).by_key(section["type"])
+    assert entry is not None, section["type"]
+    found = _ranking_of(section, entry)
+    return None if found is None else list(found)
+
+
 def payload() -> dict[str, Any]:
     document = json.loads(CASES_PATH.read_text())
     return {
@@ -61,6 +72,10 @@ def payload() -> dict[str, Any]:
         "orders": {
             case["name"]: print_order(case["provider"], case["sections"])
             for case in document["orders"]
+        },
+        "rankings": {
+            case["name"]: ranking(case["provider"], case["section"])
+            for case in document.get("rankings", [])
         },
     }
 
