@@ -396,8 +396,8 @@ export function resolveCustomerName(
     // A blank or whitespace-only value is ABSENT, not present-and-empty. Accepting
     // it would pass this gate and print an empty customer on the cover and the
     // document-control page — a run that succeeds and delivers a wrong document,
-    // which is strictly worse than the refusal. `customerNameMissing` in
-    // `lib/profiles/wizard.ts` applies the same rule so the wizard refuses to
+    // which is strictly worse than the refusal. `builderIssues` in
+    // `lib/builder/issues.ts` applies the same rule so the builder refuses to
     // publish such a version in the first place.
     const identityCustomerName = raw !== null && raw.trim() !== "" ? raw : null
 

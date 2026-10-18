@@ -104,8 +104,8 @@ export default async function TemplatesPage() {
             </EmptyMedia>
             <EmptyTitle>No report profiles</EmptyTitle>
             <EmptyDescription>
-              Three starters are normally created with your account. If none is
-              here, author one and the wizard walks you through the steps.
+              Start one from a starter — monthly utilisation, an executive brief,
+              rightsizing and more — and lay it out block by block in the builder.
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>

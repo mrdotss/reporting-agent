@@ -1,6 +1,7 @@
 import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
-import { SUPPORTED_PROVIDERS } from "@/lib/templates/definition"
+import { STARTER_KEYS_V4 } from "@/lib/builder/starters"
+import { DESIGN_PRESETS, SUPPORTED_PROVIDERS } from "@/lib/templates/definition"
 
 /**
  * Every input the template routes parse — bodies, path parameters and search
@@ -113,6 +114,13 @@ export const templateCreateInputSchema = z
           "Presets can only be created for Microsoft Azure until a catalogue exists for that source.",
       })
       .optional(),
+    /**
+     * A Start screen starter to open the preset with, and the theme chosen beside it. The
+     * server builds the draft (`lib/builder/starters.ts`) — the client names a starter, it
+     * does not send a definition.
+     */
+    starter: z.enum(STARTER_KEYS_V4).optional(),
+    theme: z.enum(DESIGN_PRESETS).optional(),
   })
   .strict()
 

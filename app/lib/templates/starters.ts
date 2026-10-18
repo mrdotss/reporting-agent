@@ -207,7 +207,6 @@ function section(
     position,
     selection,
     metrics: [],
-    presentation: "chart_and_table",
   }
 }
 
@@ -218,7 +217,7 @@ function section(
  * groups, every VM and its utilization, closed by coverage.
  */
 const MONTHLY_UTILIZATION: TemplateDefinition = {
-  schema_version: 3,
+  schema_version: 4,
   provider: "azure",
   identity: {
     name: "Monthly utilization",
@@ -250,7 +249,7 @@ const MONTHLY_UTILIZATION: TemplateDefinition = {
  * calendar month, for a right-sizing conversation rather than a periodic one.
  */
 const CAPACITY_PLANNING: TemplateDefinition = {
-  schema_version: 3,
+  schema_version: 4,
   provider: "azure",
   identity: {
     name: "Capacity planning",
@@ -280,7 +279,7 @@ const CAPACITY_PLANNING: TemplateDefinition = {
  * fewer inventory page.
  */
 const EXECUTIVE_SUMMARY: TemplateDefinition = {
-  schema_version: 3,
+  schema_version: 4,
   provider: "azure",
   identity: {
     name: "Executive summary",
@@ -341,10 +340,9 @@ export const STARTER_KEYS: readonly string[] = STARTER_TEMPLATES.map(
 /** Requirement 10.1 — three, asserted as a value the guard can read. */
 export const STARTER_TEMPLATE_COUNT = 3
 
-/** Every section entry in a v3 starter's `sections` array — `TemplateDefinition`
+/** Every section entry in a starter's `sections` array — `TemplateDefinition`
  * types this as the v1/v2 `blocks` shape, so this reads it defensively as
- * `unknown` narrowed to the shape a v3 profile actually carries, the same
- * pattern `lib/profiles/wizard.ts` uses throughout. */
+ * `unknown` narrowed to the shape a sectioned profile actually carries. */
 export function starterSections(
   definition: TemplateDefinition
 ): readonly { readonly id: string; readonly type: string }[] {
