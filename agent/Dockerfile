@@ -9,7 +9,7 @@
 #
 #   docker buildx build --platform linux/arm64 -t <ecr>/reporting-agent:<tag> --push .
 #
-# The image carries LibreOffice, the fonts the four themes name, and a LibreOffice
+# The image carries LibreOffice, the fonts the themes name, and a LibreOffice
 # user profile warmed at BUILD time. The PDF is converted from the produced .docx
 # rather than rendered independently, so Word and PDF cannot disagree (Req 23.1).
 #
@@ -156,6 +156,20 @@ RUN --mount=type=bind,from=libreoffice,source=/rpms,target=/tmp/lo-rpms \
 
 ENV PATH=/opt/venv/bin:$PATH
 
+# --- The vendored theme faces --------------------------------------------------
+#
+# `ledger`, `signal` and `brief` name faces no Amazon Linux package carries: IBM Plex Sans
+# and Mono, Archivo, Source Serif 4 and Source Sans 3. They are vendored under fonts/ from
+# each foundry's own repository at a pinned commit (fonts/README.md), with their SIL Open
+# Font License texts, and SHA256SUMS fails the build if a byte differs. fc-cache makes them
+# visible to LibreOffice, WeasyPrint and the chart rasterizer alike; `--assert-fonts` below
+# then proves every face a theme names resolves to itself, since all three substitute a
+# missing face silently and repaginate the document doing it.
+COPY fonts/ /usr/share/fonts/reporting-agent/
+RUN cd /usr/share/fonts/reporting-agent \
+ && sha256sum --check --strict --quiet SHA256SUMS \
+ && fc-cache -f /usr/share/fonts/reporting-agent
+
 WORKDIR /app
 COPY --from=chart_engine /usr/local/bin/node /usr/local/bin/node
 COPY --from=chart_engine /chart-renderer ./chart-renderer
@@ -179,7 +193,7 @@ RUN echo "pip==25.0.1 --hash=sha256:c46efd13b6aa8279f33f2864459c8ce587ea6a1a59ee
 # path, two environments.
 COPY src/reporting_agent/ ./reporting_agent/
 
-# The four styles-only theme documents (Req 8.1). They are code — versioned, reviewed
+# The styles-only theme documents (Req 8.1). They are code — versioned, reviewed
 # and asserted below — not user content, and there is no upload path that could supply
 # them at run time.
 #
@@ -249,15 +263,20 @@ print('azure monitor split ok')"
 # frozen and slotted. No arithmetic, no I/O — a few hundred microseconds.
 RUN python -m reporting_agent.compile.ast --assert-build
 
-# Fail the BUILD if any of the four themes is missing a style the compiled blocks
+# Fail the BUILD if any of the themes is missing a style the compiled blocks
 # reference, carries content, or cannot be opened (Req 8.7).
 #
 # Runs here rather than only in tests/test_themes.py because .dockerignore excludes
 # tests/ — and because this is the assertion that stops an image from producing a
 # document with unstyled figures, which is a defect a reader sees and a verifier does
-# not. Reports every (theme, style) pair missing across all four documents in one run,
+# not. Reports every (theme, style) pair missing across all the documents in one run,
 # so one fix pass clears the build.
 RUN python -m reporting_agent.render.themes --assert-build
+
+# Fail the BUILD if any face a theme names is not installed — a package dropped from the
+# dnf line, or a vendored file missing from fonts/. `fc-match` answers every request with
+# some family, so the guard checks the answer is the face that was asked for.
+RUN python -m reporting_agent.render.themes --assert-fonts
 
 # Fail the BUILD if any catalog entry disagrees with the Metric Definitions response it
 # was derived from (Req 2.2, 2.3, 2.4, 2.6, 2.7, 2.10, 2.11).

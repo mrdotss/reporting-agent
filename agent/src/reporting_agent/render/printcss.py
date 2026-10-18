@@ -71,8 +71,8 @@ def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", de
   --muted: #{palette.muted};
   --rule: #{palette.rule};
   --band: {band};
-  --body-face: "{spec.face.body}", serif;
-  --heading-face: "{spec.face.heading}", sans-serif;
+  --body-face: "{spec.face.body}", {_generic(spec.face.body)};
+  --heading-face: "{spec.face.heading}", {_generic(spec.face.heading)};
   --figure-face: "{spec.face.figure}", monospace;
 }}
 
@@ -598,6 +598,97 @@ input.rpt-fill {{
         if table_style == "banded":
             css += "\n.rpt-grid tbody tr:nth-child(even), table.rpt-table tbody tr:nth-child(even) { background: var(--band); }"
     css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
+    css += _treatments(spec, h1=h1)
+    return css
+
+
+def _generic(face: str) -> str:
+    """The generic family a named face falls back to, should the image lack it."""
+    return "serif" if "Serif" in face else "sans-serif"
+
+
+def _treatments(spec: object, *, h1: float) -> str:
+    """What sets one theme's page apart beyond faces and colours: the callout block, the rule
+    under a section heading, the section number's size, and how the cover sits.
+
+    Read off the same `ThemeSpec` fields the Word file is built from (`heading_rule`,
+    `display_numbers`, `cover_style`), so the two outputs make one decision. Appended rather
+    than interleaved, so the first four themes' rules above stay exactly as they were.
+    """
+    from reporting_agent.render.themes import ATTENTION_RULE, ATTENTION_TINT
+
+    palette = spec.palette  # type: ignore[attr-defined]
+    css = f"""
+/* A v4 callout: the author's words, a rule down the left and a tint. */
+.rpt-block[data-style="Callout"],
+.rpt-block[data-style="Callout Attention"] {{
+  border-left: 3pt solid var(--accent);
+  background: #{palette.band};
+  padding: 6pt 9pt;
+  margin: 0.6em 0 1em;
+  break-inside: avoid;
+}}
+.rpt-block[data-style="Callout Attention"] {{
+  border-left-color: #{ATTENTION_RULE};
+  background: #{ATTENTION_TINT};
+}}
+"""
+    rule = spec.heading_rule  # type: ignore[attr-defined]
+    if rule != "rule":
+        css += "\nh1::after, h2::after { content: none; }"
+    if rule == "double":
+        css += "\nh1, h2 { border-bottom: 2.4pt double var(--accent); padding-bottom: 4pt; margin-bottom: 10pt; }"
+    elif rule == "line":
+        css += "\nh1, h2 { color: var(--accent); border-bottom: 0.75pt solid var(--accent); padding-bottom: 3pt; margin-bottom: 8pt; }"
+
+    if spec.display_numbers:  # type: ignore[attr-defined]
+        # The section number on its own line, set large in the accent above the heading.
+        css += (
+            f"\n.rpt-block[data-style=\"Heading 1\"] .rpt-h-number {{ display: block;"
+            f" font-size: {round(h1 * 2.6, 1)}pt; font-weight: 900; line-height: 0.85;"
+            f" letter-spacing: -0.05em; color: var(--accent); margin: 0 0 4pt; }}"
+        )
+
+    cover = spec.cover_style  # type: ignore[attr-defined]
+    if cover == "full_bleed":
+        # The cover's own page carries the accent ground (`front_matter.cover_treatment`),
+        # so the band would draw on top of it and the text turns white.
+        css += f"""
+@page :first {{ border-top: none; }}
+.rpt-cover {{ padding-top: 62mm; }}
+.rpt-cover [data-style="Cover Title"] {{
+  color: #fff;
+  font-size: {round(spec.title_pt * 1.6, 1)}pt;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}}
+.rpt-cover [data-style="Cover Meta"],
+.rpt-cover .rpt-pairs th,
+.rpt-cover .rpt-pairs td {{ color: #fff; }}
+/* The prepared-by line: a title block, not a table — no box, a white hairline over it. */
+.rpt-cover .rpt-pairs {{ border-top: 0.5pt solid rgba(255, 255, 255, 0.6); margin-top: 14pt; }}
+.rpt-cover .rpt-pairs th,
+.rpt-cover .rpt-pairs td {{ border: 0; background: transparent; padding: 6pt 22pt 3pt 0; }}
+"""
+    elif cover == "summary":
+        # A title strip, with document control beginning beneath its rule on page one.
+        css += f"""
+@page :first {{ border-top: none; }}
+.rpt-front-matter > [data-style="Cover Title"] {{ color: var(--accent); font-size: {round(spec.title_pt * 1.15, 1)}pt; margin: 0; }}
+.rpt-front-matter > [data-style="Cover Meta"] {{ margin: 2pt 0; letter-spacing: 0.06em; }}
+.rpt-front-matter > [data-style="Document Control"] {{
+  border-top: 0.75pt solid var(--accent);
+  padding-top: 12pt;
+  margin-top: 14pt;
+}}
+/* Only the first: document control's own subsections keep their plain headings. */
+.rpt-front-matter > [data-style="Document Control"] ~ [data-style="Document Control"] {{
+  border-top: 0;
+  padding-top: 0;
+  margin-top: 1.4em;
+}}
+"""
     return css
 
 

@@ -7,9 +7,9 @@ import { ProviderMark, SOURCE_NAMES } from "@/components/subscriptions/provider-
 import { useCreationScope } from "@/components/workspaces/workspace-context"
 import { GROUP_ORDER, sectionEntry, sectionTitle, type Provider } from "@/lib/builder/catalogue"
 import { STARTERS, type Starter } from "@/lib/builder/starters"
-import { THEME_LABELS, pageDesign } from "@/lib/builder/theme"
+import { NEW_THEMES, THEME_LABELS, pageDesign, themeAccent } from "@/lib/builder/theme"
 import { emptyDraftV4 } from "@/lib/builder/draft"
-import { PRESET_FACES } from "@/lib/profiles/preview-sample"
+import { PRESET_HEADING_FACES } from "@/lib/profiles/preview-sample"
 import { DESIGN_PRESETS, type DesignPreset } from "@/lib/templates/definition"
 import { cn } from "@/lib/utils"
 
@@ -182,7 +182,7 @@ export function StartScreen({
 
         <div className="flex flex-col gap-2">
           <span className="text-xs font-medium text-muted-foreground">Look</span>
-          <div role="radiogroup" aria-label="Theme" className="grid grid-cols-2 gap-1.5">
+          <div role="radiogroup" aria-label="Theme" className="flex flex-wrap gap-1.5">
             {DESIGN_PRESETS.map((preset) => (
               <button
                 key={preset}
@@ -195,8 +195,15 @@ export function StartScreen({
                   theme === preset && "border-primary font-semibold"
                 )}
               >
-                <span aria-hidden className="text-sm font-bold" style={{ fontFamily: PRESET_FACES[preset] }}>Aa</span>
+                <span
+                  aria-hidden
+                  className="text-sm font-bold"
+                  style={{ fontFamily: PRESET_HEADING_FACES[preset], color: themeAccent(preset) }}
+                >
+                  Aa
+                </span>
                 {THEME_LABELS[preset].name}
+                {NEW_THEMES.has(preset) && <span className="sr-only">(new)</span>}
               </button>
             ))}
           </div>

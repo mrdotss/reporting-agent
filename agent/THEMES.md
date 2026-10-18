@@ -1,11 +1,11 @@
-# The four styles-only theme documents
+# The styles-only theme documents
 
-`agent/themes/` holds four Word packages carrying **paragraph, character and table styles and
+`agent/themes/` holds one Word package per preset, carrying **paragraph, character and table styles and
 no content** (Req 8.1, 8.5). They are stylesheets that happen to be `.docx`, and they ship
 inside the arm64 image.
 
 > This file lives beside `agent/themes/` rather than inside it on purpose. Req 8.8 fails the
-> guard if that directory contains anything other than exactly the four required file names,
+> guard if that directory contains anything other than exactly the required file names,
 > which is what catches a stray `editorial (1).docx` or a `~$editorial.docx` Word lock file.
 > Documentation is not worth loosening that rule for.
 
@@ -15,6 +15,23 @@ inside the arm64 image.
 | `corporate.docx` | `corporate` | Liberation Sans | navy `1F3A5F` |
 | `technical.docx` | `technical` | DejaVu Sans | slate `33556B` |
 | `minimal.docx` | `minimal` | Liberation Sans | near-black `1A1A1A` |
+| `ledger.docx` | `ledger` | IBM Plex Sans, figures in IBM Plex Mono | forest `245C45` |
+| `signal.docx` | `signal` | Archivo headings over Liberation Sans | rust `A3401F` |
+| `brief.docx` | `brief` | Source Serif 4 headings over Source Sans 3 | slate blue `3D4F8F` |
+
+The last three came with the preset builder. Their faces are vendored under `agent/fonts/`
+(see its README), and each carries treatments the first four do not:
+
+| preset | cover | under a section heading | section number |
+|---|---|---|---|
+| `ledger` | accent band | double accent rule | inline |
+| `signal` | full-bleed accent ground, set in white | nothing | large, in the accent |
+| `brief` | title strip on page one, document control beneath it | single accent rule | inline |
+
+`cover_style`, `heading_rule` and `display_numbers` on `ThemeSpec` drive both outputs: the
+Word file through its built styles and `front_matter.cover_treatment`, and the reading copy
+through `render/printcss.py`. Every theme also declares `Callout` and `Callout Attention`,
+the two tones of a v4 callout.
 
 A template's `design.preset` selects the **file**. A template's `design.table_style`
 (`hairline` / `banded` / `bordered`) selects a **style inside** that file. The two are

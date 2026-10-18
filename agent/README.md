@@ -748,7 +748,8 @@ agent/
     compare/            two snapshots -> a delta, as a pure function
     narrate/            the only package that may reach Bedrock. Prose only.
     storage/            the ObjectStore protocol and its boto3 implementation
-  themes/               editorial · corporate · technical · minimal — STYLES, no content
+  themes/               editorial · corporate · technical · minimal · ledger · signal · brief — STYLES, no content
+  fonts/                the vendored faces the last three name (OFL), with SHA256SUMS
   tests/                5242 tests in 148 files, ~9 minutes; LANG=C.UTF-8 required
     conftest.py         the hypothesis profile
     test_lock_consistency.py    one version per package across both locks

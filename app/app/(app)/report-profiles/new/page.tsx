@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { PageBody } from "@/components/app-shell/page-body"
 import { StartScreen } from "@/components/builder/start/start-screen"
 import { requireSession } from "@/lib/auth/guard"
+import { THEME_FONT_VARIABLES } from "@/lib/builder/fonts"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
@@ -39,7 +40,9 @@ export default async function NewPresetPage() {
           can be changed in the builder.
         </p>
       </div>
-      <StartScreen defaultProvider={defaultProvider} canCreate={canCreate} />
+      <div className={`contents ${THEME_FONT_VARIABLES}`}>
+        <StartScreen defaultProvider={defaultProvider} canCreate={canCreate} />
+      </div>
     </PageBody>
   )
 }

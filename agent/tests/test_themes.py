@@ -48,6 +48,7 @@ from reporting_agent.compile.blocks.base import (
     heading_style,
     table_style_name,
 )
+from reporting_agent.compile.definition import DESIGN_PRESETS
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.errors import ErrorCode, RenderFailedError
 from reporting_agent.render import themes as T
@@ -129,7 +130,7 @@ def test_the_guard_inspected_something() -> None:
     `test_boundaries.py` deliberately omits a non-empty rule on its own scan; here the
     directory contents *are* the subject, so an empty directory must not read as clean.
     """
-    assert len(T.THEME_FILENAMES) == 4
+    assert len(T.THEME_FILENAMES) == len(DESIGN_PRESETS) == 7
     assert len(T.REQUIRED_STYLE_NAMES) >= 14
     for preset in T.THEME_PRESETS:
         assert T.theme_path(preset).is_file(), preset
@@ -382,7 +383,8 @@ def test_the_union_adds_exactly_the_seven_names_the_compile_stage_cannot_declare
 
 
 def test_the_front_matter_styles_are_additive_and_nothing_was_dropped() -> None:
-    """The front-matter styles grew the union by exactly five and displaced nothing.
+    """The front-matter styles grew the union by exactly five, the callouts by two, and
+    neither displaced anything.
 
     A regeneration is a binary change to four committed files, so "additive" has to be a
     checked claim rather than an intention: this pins the fifteen names that were required
@@ -407,7 +409,8 @@ def test_the_front_matter_styles_are_additive_and_nothing_was_dropped() -> None:
         "Layout Table",
     }
     assert before <= set(T.REQUIRED_STYLE_NAMES)
-    assert len(T.REQUIRED_STYLE_NAMES) == len(before) + 5 == 20
+    assert len(T.REQUIRED_STYLE_NAMES) == len(before) + 5 + 2 == 22
+    assert {"Callout", "Callout Attention"} <= set(T.REQUIRED_PARAGRAPH_STYLES)
     assert len(set(T.REQUIRED_STYLE_NAMES)) == len(T.REQUIRED_STYLE_NAMES)
 
 
@@ -440,6 +443,10 @@ class _ComparisonOverOneView:
 
     def snapshot_for(self, run_id: str) -> object:
         return self._view
+
+
+V4_ONLY_STYLES: frozenset[str] = frozenset({"Callout", "Callout Attention"})
+"""A v4 section's callout block, in its two tones — not a block type the v1 corpus has."""
 
 
 def _styles_in_tree(node: object) -> set[str]:
@@ -529,9 +536,11 @@ def test_every_style_a_compiled_document_asks_for_is_declared_by_every_theme() -
         )
 
     # Every name the AST can carry is now covered, and the nine it cannot are accounted for.
-    assert asked_for | RENDERER_APPLIED_STYLES == set(T.REQUIRED_STYLE_NAMES) - {
+    # The two callout styles are v4-only, so this v1 corpus never reaches them; a real v4
+    # document carries both in `tests/test_v4_report.py`.
+    assert asked_for | RENDERER_APPLIED_STYLES | V4_ONLY_STYLES == set(T.REQUIRED_STYLE_NAMES) - {
         T.FIGURE_CHARACTER_STYLE
-    }, sorted(set(T.REQUIRED_STYLE_NAMES) - asked_for - RENDERER_APPLIED_STYLES)
+    }, sorted(set(T.REQUIRED_STYLE_NAMES) - asked_for - RENDERER_APPLIED_STYLES - V4_ONLY_STYLES)
 
     documents = {preset: T.load_theme(preset) for preset in T.THEME_PRESETS}
     missing: list[str] = []
@@ -588,7 +597,7 @@ def test_the_guard_catches_any_single_missing_style(style_name: str, tmp_path: P
     assert repr(style_name) in violations[0]
 
 
-def test_the_guard_reports_every_missing_pair_across_all_four_documents(tmp_path: Path) -> None:
+def test_the_guard_reports_every_missing_pair_across_every_document(tmp_path: Path) -> None:
     """Req 8.4 explicitly: **not** only the first, so one fix pass clears the build.
 
     A first-error-only guard turns twelve missing styles into twelve build cycles, and the
@@ -609,7 +618,7 @@ def test_the_guard_reports_every_missing_pair_across_all_four_documents(tmp_path
     _rewrite("minimal", tmp_path / "minimal.docx", styles=reduced)
 
     violations = T.collect_theme_violations(tmp_path)
-    assert len(violations) == 5, violations
+    assert len(violations) == len(T.THEME_PRESETS) + 1, violations
     for preset in T.THEME_PRESETS:
         assert any(
             f"{preset}.docx" in line and repr(T.FIGURE_CHARACTER_STYLE) in line

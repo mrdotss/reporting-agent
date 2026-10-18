@@ -4,8 +4,8 @@ import { useId } from "react"
 
 import { useBuilder } from "@/components/builder/context"
 import { CHART_STYLE_NOTES } from "@/lib/profiles/chart-styles"
-import { PRESET_FACES } from "@/lib/profiles/preview-sample"
-import { ACCENT_SWATCHES, THEME_LABELS, pageDesign, themeAccent } from "@/lib/builder/theme"
+import { PRESET_HEADING_FACES } from "@/lib/profiles/preview-sample"
+import { ACCENT_SWATCHES, NEW_THEMES, THEME_LABELS, pageDesign, themeAccent } from "@/lib/builder/theme"
 import {
   CHART_FONTS,
   CHART_STYLES,
@@ -108,11 +108,20 @@ export function ThemePanel() {
                   on && "border-primary shadow-[0_0_0_2px_color-mix(in_oklab,var(--primary)_18%,transparent)]"
                 )}
               >
-                <span aria-hidden className="grid size-8 shrink-0 place-items-center rounded bg-muted text-[15px] font-bold" style={{ fontFamily: PRESET_FACES[preset] }}>
+                <span
+                  aria-hidden
+                  className="grid size-8 shrink-0 place-items-center rounded bg-muted text-[15px] font-bold"
+                  style={{ fontFamily: PRESET_HEADING_FACES[preset], color: themeAccent(preset) }}
+                >
                   Aa
                 </span>
                 <span className="flex min-w-0 flex-col">
-                  <span className="text-[13px] font-semibold">{THEME_LABELS[preset].name}</span>
+                  <span className="flex items-center gap-1.5 text-[13px] font-semibold">
+                    {THEME_LABELS[preset].name}
+                    {NEW_THEMES.has(preset) && (
+                      <span className="rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">New</span>
+                    )}
+                  </span>
                   <span className="truncate text-[11.5px] text-muted-foreground">{THEME_LABELS[preset].note}</span>
                 </span>
               </button>

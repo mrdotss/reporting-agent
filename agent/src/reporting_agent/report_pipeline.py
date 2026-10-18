@@ -1578,7 +1578,11 @@ def _render_styled_pdf(
     serialises one figure as both a PNG and an SVG, and taking the vector from the same
     render is what stops the Word file and the reading copy from showing different charts.
     """
-    from reporting_agent.render.front_matter import FrontMatterConfig, front_matter_sections
+    from reporting_agent.render.front_matter import (
+        FrontMatterConfig,
+        cover_treatment,
+        front_matter_sections,
+    )
     from reporting_agent.render.printpdf import render_print_pdf
     from reporting_agent.render.toc import should_emit_toc, toc_entries_from_document
 
@@ -1591,6 +1595,7 @@ def _render_styled_pdf(
                 messages=messages,
                 heading_entries=toc_entries_from_document(compiled.document),
                 include_toc=should_emit_toc(),
+                cover=cover_treatment(design),
             )
         outcome = render_print_pdf(
             compiled.document,

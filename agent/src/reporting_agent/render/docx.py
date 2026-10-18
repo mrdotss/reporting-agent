@@ -898,6 +898,7 @@ def render_document(
         from reporting_agent.render.front_matter import (
             FrontMatterConfig,
             RunFacts,
+            cover_treatment,
             emit_front_matter,
         )
 
@@ -909,6 +910,7 @@ def render_document(
                 messages=messages,
                 cursor=compiled,
                 ledger=ledger,
+                cover=cover_treatment(design),
             )
 
     for ordinal, block in enumerate(compiled.blocks):

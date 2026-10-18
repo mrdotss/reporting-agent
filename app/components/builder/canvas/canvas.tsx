@@ -170,28 +170,70 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
   const customer = definition.identity.customer_name?.trim()
   const subtitle = (definition.front_matter.cover as { subtitle?: string } | undefined)?.subtitle
   const selected = selection?.kind === "front" && selection.part === "cover"
+  // `signal` fills the page with its accent; `brief` sets a title strip on page one.
+  const bleed = spec.coverStyle === "full_bleed"
+  const strip = spec.coverStyle === "summary"
   return (
     <button
       type="button"
-      aria-label="Cover page"
+      aria-label={strip ? "Cover title strip" : "Cover page"}
       data-front="cover"
       onClick={() => select({ kind: "front", part: "cover" })}
       className={cn(
         "relative block bg-white text-left shadow-[0_1px_3px_rgba(20,20,30,0.12),0_8px_24px_rgba(20,20,30,0.06)] outline-offset-4",
         selected ? "outline-2 outline-primary" : "hover:outline-1 hover:outline-primary/40"
       )}
-      style={{ width: page.width, height: page.height * 0.62, fontFamily: spec.face, color: spec.ink, cursor: "pointer" }}
+      style={{
+        width: page.width,
+        height: page.height * (strip ? 0.2 : 0.62),
+        fontFamily: spec.headingFace,
+        color: bleed ? "#fff" : spec.ink,
+        background: bleed ? spec.accent : "#fff",
+        cursor: "pointer",
+      }}
     >
-      <span className="absolute inset-x-0 top-0" style={{ height: 14, background: spec.accent }} />
-      <span className="absolute flex flex-col" style={{ left: 76, right: 76, bottom: 96, gap: 12 }}>
-        <span style={{ fontSize: px(spec.smallPt + 1), letterSpacing: "0.14em", textTransform: "uppercase", color: spec.muted }}>
+      {spec.coverStyle === "band" && (
+        <span className="absolute inset-x-0 top-0" style={{ height: 14, background: spec.accent }} />
+      )}
+      <span
+        className="absolute flex flex-col"
+        style={strip ? { left: 76, right: 76, top: 56, gap: 6 } : { left: 76, right: 76, bottom: 96, gap: 12 }}
+      >
+        <span
+          style={{
+            fontSize: px(spec.smallPt + 1),
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: bleed ? "rgba(255,255,255,0.85)" : spec.muted,
+          }}
+        >
           {customer || "Customer name"} · {periodLabel(definition.period.kind, definition.identity.language)}
         </span>
-        <span style={{ fontSize: px(spec.titlePt), fontWeight: 700, lineHeight: 1.1, color: spec.accent }}>{title}</span>
-        {subtitle && <span style={{ fontSize: px(spec.subtitlePt), color: spec.muted }}>{subtitle}</span>}
+        <span
+          style={{
+            fontSize: px(spec.titlePt * (bleed ? 1.6 : strip ? 1.15 : 1)),
+            fontWeight: bleed ? 800 : 700,
+            letterSpacing: bleed ? "-0.03em" : undefined,
+            lineHeight: bleed ? 1.05 : 1.1,
+            color: bleed ? "#fff" : spec.accent,
+          }}
+        >
+          {title}
+        </span>
+        {subtitle && (
+          <span style={{ fontSize: px(spec.subtitlePt), color: bleed ? "rgba(255,255,255,0.85)" : spec.muted }}>
+            {subtitle}
+          </span>
+        )}
       </span>
-      <span className="absolute font-sans text-[10.5px] text-muted-foreground" style={{ left: 76, bottom: 40 }}>
-        Cover · edit it under Document
+      {strip && (
+        <span className="absolute inset-x-[76px] bottom-6 border-t" style={{ borderColor: spec.accent }} />
+      )}
+      <span
+        className={cn("absolute font-sans text-[10.5px]", bleed ? "text-white/80" : "text-muted-foreground")}
+        style={strip ? { right: 76, top: 20 } : { left: 76, bottom: 40 }}
+      >
+        {strip ? "Title strip · document control follows beneath it" : "Cover · edit it under Document"}
       </span>
     </button>
   )
@@ -237,7 +279,11 @@ function FrontMatterRows({ design }: Readonly<{ design: PageDesign }>) {
             style={{ borderColor: selected ? undefined : design.spec.rule }}
           >
             {row.label}
-            <span className="text-[10.5px]">Own page</span>
+            <span className="text-[10.5px]">
+              {row.part === "control" && design.cover && design.spec.coverStyle === "summary"
+                ? "Page one, beneath the strip"
+                : "Own page"}
+            </span>
           </button>
         )
       })}

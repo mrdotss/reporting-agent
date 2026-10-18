@@ -1,6 +1,7 @@
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { requireSession } from "@/lib/auth/guard"
+import { THEME_FONT_VARIABLES } from "@/lib/builder/fonts"
 
 /**
  * The full-screen editors: the preset builder, outside the app's rail and header.
@@ -20,7 +21,8 @@ export default async function EditorLayout({
   await requireSession()
   return (
     <TooltipProvider>
-      {children}
+      {/* `contents`: the theme faces' variables reach the canvas without a box of their own. */}
+      <div className={`contents ${THEME_FONT_VARIABLES}`}>{children}</div>
       <Toaster position="bottom-right" />
     </TooltipProvider>
   )

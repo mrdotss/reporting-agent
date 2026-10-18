@@ -1,5 +1,5 @@
 import { CHART_FONT_STACKS } from "@/lib/profiles/chart-styles"
-import { PRESET_FACES } from "@/lib/profiles/preview-sample"
+import { PRESET_FACES, PRESET_HEADING_FACES } from "@/lib/profiles/preview-sample"
 import {
   CHART_FONTS,
   CHART_STYLES,
@@ -20,8 +20,14 @@ import type { DefinitionV4 } from "./model"
  * the Word document use one set of numbers.
  */
 
+export type CoverStyle = "band" | "full_bleed" | "summary"
+export type HeadingRule = "rule" | "double" | "line" | "none"
+
 export type ThemeSpec = {
+  /** The body face, as a browser stack. */
   readonly face: string
+  /** The heading and cover face. */
+  readonly headingFace: string
   readonly accent: string
   readonly ink: string
   readonly muted: string
@@ -35,28 +41,57 @@ export type ThemeSpec = {
   readonly lineSpacing: number
   readonly headingAllCaps: boolean
   readonly bandedRows: boolean
+  /** `render/themes.py`'s treatments, which the Word file and the reading copy both follow. */
+  readonly coverStyle: CoverStyle
+  readonly headingRule: HeadingRule
+  readonly displayNumbers: boolean
 }
 
-const SPECS: Readonly<Record<DesignPreset, Omit<ThemeSpec, "face">>> = {
+type SpecValues = Omit<ThemeSpec, "face" | "headingFace">
+
+const FIRST_FOUR = { coverStyle: "band", headingRule: "rule", displayNumbers: false } as const
+
+/** `Callout Attention`'s rule and tint, the same in every theme (`ATTENTION_RULE`, `ATTENTION_TINT`). */
+export const ATTENTION = { rule: "#B45309", tint: "#FDF4E7" } as const
+
+export const SPECS: Readonly<Record<DesignPreset, SpecValues>> = {
   editorial: {
     accent: "#0F6470", ink: "#1A1A1A", muted: "#5A6B70", rule: "#C9D4D7", band: "#F2F6F7",
     titlePt: 26, subtitlePt: 13, headingPt: [16, 13, 11.5, 10.5], bodyPt: 11, smallPt: 9,
-    lineSpacing: 1.28, headingAllCaps: false, bandedRows: true,
+    lineSpacing: 1.28, headingAllCaps: false, bandedRows: true, ...FIRST_FOUR,
   },
   corporate: {
     accent: "#1F3A5F", ink: "#1C1C1C", muted: "#5B6B7C", rule: "#C8D2DC", band: "#EEF2F6",
     titlePt: 24, subtitlePt: 12, headingPt: [15, 12.5, 11, 10], bodyPt: 10.5, smallPt: 8.5,
-    lineSpacing: 1.22, headingAllCaps: false, bandedRows: true,
+    lineSpacing: 1.22, headingAllCaps: false, bandedRows: true, ...FIRST_FOUR,
   },
   technical: {
     accent: "#33556B", ink: "#202325", muted: "#5E6B72", rule: "#B9C4CA", band: "#EDF1F3",
     titlePt: 22, subtitlePt: 11.5, headingPt: [14, 12, 10.5, 9.5], bodyPt: 10, smallPt: 8.5,
-    lineSpacing: 1.18, headingAllCaps: true, bandedRows: true,
+    lineSpacing: 1.18, headingAllCaps: true, bandedRows: true, ...FIRST_FOUR,
   },
   minimal: {
     accent: "#1A1A1A", ink: "#1A1A1A", muted: "#6B6B6B", rule: "#DCDCDC", band: "#F6F6F6",
     titlePt: 23, subtitlePt: 11.5, headingPt: [14, 12, 10.5, 10], bodyPt: 10.5, smallPt: 9,
-    lineSpacing: 1.3, headingAllCaps: true, bandedRows: false,
+    lineSpacing: 1.3, headingAllCaps: true, bandedRows: false, ...FIRST_FOUR,
+  },
+  ledger: {
+    accent: "#245C45", ink: "#1C1C1C", muted: "#5C6660", rule: "#CFD6D2", band: "#F1F5F2",
+    titlePt: 24, subtitlePt: 12, headingPt: [15, 12.5, 11, 10], bodyPt: 10, smallPt: 8.5,
+    lineSpacing: 1.3, headingAllCaps: false, bandedRows: false,
+    coverStyle: "band", headingRule: "double", displayNumbers: false,
+  },
+  signal: {
+    accent: "#A3401F", ink: "#1C1C1C", muted: "#6B625E", rule: "#DDD3CF", band: "#F7EFEC",
+    titlePt: 26, subtitlePt: 12.5, headingPt: [18, 14, 12, 10.5], bodyPt: 10.5, smallPt: 9,
+    lineSpacing: 1.32, headingAllCaps: false, bandedRows: true,
+    coverStyle: "full_bleed", headingRule: "none", displayNumbers: true,
+  },
+  brief: {
+    accent: "#3D4F8F", ink: "#1F2128", muted: "#5F6270", rule: "#D3D6E0", band: "#F1F2F7",
+    titlePt: 20, subtitlePt: 11, headingPt: [13, 11.5, 10.5, 9.5], bodyPt: 10, smallPt: 8.5,
+    lineSpacing: 1.22, headingAllCaps: false, bandedRows: false,
+    coverStyle: "summary", headingRule: "line", displayNumbers: false,
   },
 }
 
@@ -70,7 +105,13 @@ export const THEME_LABELS: Readonly<Record<DesignPreset, { name: string; note: s
   corporate: { name: "Corporate", note: "Plain sans, navy accent, board-pack ready" },
   technical: { name: "Technical", note: "Compact, tracked caps, for engineers" },
   minimal: { name: "Minimal", note: "Black and white, hairline rules, no bands" },
+  ledger: { name: "Ledger", note: "Reads like a statement: mono figures, double rules" },
+  signal: { name: "Signal", note: "Full-bleed cover, big section numbers, for executives" },
+  brief: { name: "Brief", note: "A title strip on page one, compact serif headings" },
 }
+
+/** The themes the preset builder added, shown as new in the pickers. */
+export const NEW_THEMES: ReadonlySet<DesignPreset> = new Set(["ledger", "signal", "brief"])
 
 /** Points to CSS pixels at 96 dpi: the canvas draws the page at its printed size. */
 export const PT = 96 / 72
@@ -110,7 +151,12 @@ export function pageDesign(definition: DefinitionV4): PageDesign {
     typeof design.accent_color === "string" && /^#[0-9a-fA-F]{6}$/.test(design.accent_color)
       ? design.accent_color
       : SPECS[preset].accent
-  const spec: ThemeSpec = { ...SPECS[preset], accent, face: PRESET_FACES[preset] }
+  const spec: ThemeSpec = {
+    ...SPECS[preset],
+    accent,
+    face: PRESET_FACES[preset],
+    headingFace: PRESET_HEADING_FACES[preset],
+  }
   const chartFont = oneOf(design.chart_font, CHART_FONTS, "document")
   const cover = (definition.front_matter.cover as { enabled?: boolean } | undefined)?.enabled !== false
   return {
