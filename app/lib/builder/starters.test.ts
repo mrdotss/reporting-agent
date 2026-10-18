@@ -43,3 +43,14 @@ test("the three themes the builder added each open a starter, and the brief has 
   const kept = starterDraft(monthly, "aws", monthly.name, monthly.theme, METRIC_CATALOG)
   expect((kept.front_matter.toc as { enabled?: boolean }).enabled).toBeUndefined()
 })
+
+test.each<Provider>(["aws", "azure"])("Quarterly review puts month vs month after the %s utilisation title", (provider) => {
+  const quarterly = STARTERS.find((starter) => starter.key === "quarterly_review")!
+  const draft = starterDraft(quarterly, provider, quarterly.name, quarterly.theme, METRIC_CATALOG)
+  const utilisation = draft.sections.find((section) => section.type === (provider === "aws" ? "ec2_utilization" : "vm_utilization"))!
+  const blocks = utilisation.blocks ?? []
+  expect(blocks[0]).toMatchObject({ slot: "title" })
+  expect(blocks[1]).toMatchObject({ kind: "month_vs_month" })
+  expect((blocks[1] as { id: string }).id).toMatch(/^u_/)
+  expect(collectDefinitionIssues(draft, { mode: "run" })).toEqual([])
+})

@@ -3,9 +3,9 @@ import type { DesignPreset } from "@/lib/templates/definition"
 import { expandPreset } from "@/lib/profiles/presets"
 
 import { sectionEntry, type Provider } from "./catalogue"
-import { emptyDraftV4, newSection, settled } from "./draft"
+import { emptyDraftV4, newSection, newUserBlockId, settled } from "./draft"
 import { themeAccent } from "./theme"
-import type { DefinitionV4, SectionV4 } from "./model"
+import { explicitBlocks, isAddedEntry, type AddedKind, type BlockEntry, type DefinitionV4, type SectionV4 } from "./model"
 
 /**
  * The Start screen's gallery: seven starting points per provider.
@@ -16,8 +16,9 @@ import type { DefinitionV4, SectionV4 } from "./model"
  * stored template — choosing one writes its sections into a new preset, which is then the
  * author's to change.
  *
- * Quarterly review reports the last full month, with a three-month trend: a report period
- * is at most 31 days, so "quarterly" is the trend's depth, not the period's.
+ * Quarterly review reports the last full month, with a three-month trend and month vs month
+ * beside the utilisation: a report period is at most 31 days, so "quarterly" is the trend's
+ * depth, not the period's.
  */
 
 export const STARTER_KEYS_V4 = [
@@ -32,7 +33,13 @@ export const STARTER_KEYS_V4 = [
 
 export type StarterKey = (typeof STARTER_KEYS_V4)[number]
 
-type StarterSection = { readonly type: string; readonly preset?: string; readonly lookback?: number }
+type StarterSection = {
+  readonly type: string
+  readonly preset?: string
+  readonly lookback?: number
+  /** Blocks the starter places in the section, after its title. */
+  readonly added?: readonly Extract<AddedKind, "month_vs_month" | "key_figures">[]
+}
 
 export type Starter = {
   readonly key: StarterKey
@@ -119,8 +126,8 @@ export const STARTERS: readonly Starter[] = [
     period: "last_full_month",
     isNew: true,
     sections: {
-      aws: [{ type: "at_a_glance" }, { type: "aws_account" }, { type: "ec2_utilization" }, { type: "historical_ec2_utilization", lookback: 3 }, { type: "rds_utilization" }, { type: "backups" }, { type: "rightsizing" }, { type: "action_register" }, COVERAGE],
-      azure: [{ type: "at_a_glance" }, { type: "azure_subscription" }, { type: "vm_utilization" }, { type: "historical_vm_utilization", lookback: 3 }, { type: "database_utilization" }, { type: "backup_report" }, { type: "recommendations" }, { type: "action_register" }, COVERAGE],
+      aws: [{ type: "at_a_glance" }, { type: "aws_account" }, { type: "ec2_utilization", added: ["month_vs_month"] }, { type: "historical_ec2_utilization", lookback: 3 }, { type: "rds_utilization" }, { type: "backups" }, { type: "rightsizing" }, { type: "action_register" }, COVERAGE],
+      azure: [{ type: "at_a_glance" }, { type: "azure_subscription" }, { type: "vm_utilization", added: ["month_vs_month"] }, { type: "historical_vm_utilization", lookback: 3 }, { type: "database_utilization" }, { type: "backup_report" }, { type: "recommendations" }, { type: "action_register" }, COVERAGE],
     },
   },
   {
@@ -158,13 +165,19 @@ export function starterDraft(
             catalog
           )
         : section.metrics
-    return {
+    const seeded: SectionV4 = {
       ...section,
       // A preset a section's catalogue entry does not declare expands to nothing; the
       // standard set the section was seeded with stays.
       metrics: [...(metrics && metrics.length > 0 ? metrics : (section.metrics ?? []))],
       ...(item.lookback ? { lookback: item.lookback } : {}),
     }
+    if (!item.added?.length || !entry) return seeded
+    // The layout written out, with the starter's blocks after the title.
+    const blocks: BlockEntry[] = [...explicitBlocks(seeded, entry)]
+    const title = blocks.findIndex((block) => !isAddedEntry(block) && block.slot === "title")
+    blocks.splice(title + 1, 0, ...item.added.map((kind) => ({ kind, id: newUserBlockId() })))
+    return { ...seeded, blocks }
   })
   return {
     ...base,
