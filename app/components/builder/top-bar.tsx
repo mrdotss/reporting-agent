@@ -14,14 +14,15 @@ import { toast } from "sonner"
 
 import { useBuilder, useBuilderStore, useHistory, useIssues } from "@/components/builder/context"
 import { Segmented } from "@/components/builder/left/theme-panel"
+import { PreviewPdf } from "@/components/builder/preview-pdf"
 import type { SaveState } from "@/components/builder/use-autosave"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { BuilderIssue } from "@/lib/builder/issues"
 import { cn } from "@/lib/utils"
 
 /**
- * Name, save state and the version that is live; edit or preview; undo; what is left to fix;
- * publish.
+ * Name, save state and the version that is live; edit or preview; undo; a real-figures PDF
+ * of the draft; what is left to fix; publish.
  *
  * Publishing refuses while anything is left to fix and opens the list instead — each entry
  * goes to the section, block or panel that fixes it.
@@ -161,6 +162,7 @@ export function TopBar({
         <button type="button" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={() => redo()} className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35">
           <ArrowClockwiseIcon className="size-4" />
         </button>
+        <PreviewPdf templateId={templateId} />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
             className={cn(

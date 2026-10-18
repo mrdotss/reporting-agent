@@ -443,3 +443,37 @@ def test_heatmap_and_sparklines_draw_figures_from_the_snapshot(new_blocks_walk) 
     assert "__u_heat:" in ledger
     assert "__u_spark__chart:" in ledger
     assert "__u_spark__summary:" in ledger
+
+
+# --- Preview (PR 6) -------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("preset", ["editorial", "ledger", "signal", "brief"])
+def test_a_v4_draft_previews_against_a_completed_run(placed_blocks_walk, preset: str) -> None:
+    """The builder's Preview PDF: an inline v4 draft rendered against a completed run's
+    snapshot, in any theme. It writes under `previews/`, a key the report download path
+    cannot serve, and emits no `report_file`."""
+    import asyncio
+
+    from reporting_agent.main import StepTracker
+    from reporting_agent.report_pipeline import run_render_preview
+
+    _, _, store, _ = placed_blocks_walk
+    definition = aws_placed_blocks_definition()
+    definition["design"] = {**definition["design"], "preset": preset}
+    preview_id = f"pv-{preset}"
+    events: list[dict[str, Any]] = []
+
+    async def go() -> None:
+        async for event in run_render_preview(
+            payload={"definition": definition, "preview_id": preview_id, "snapshot_run_id": "run-1"},
+            context={"actor_id": "actor-1", "run_id": preview_id},
+            steps=StepTracker(), artifact_bucket="unused", object_store=store,
+        ):
+            events.append(event)
+
+    asyncio.run(go())
+    pdf = store.get(f"actor-1/previews/{preview_id}/preview.pdf")
+    assert pdf is not None and pdf.body.startswith(b"%PDF")
+    assert store.get(f"actor-1/previews/{preview_id}/preview.html") is not None
+    assert not [event for event in events if event.get("type") == "report_file"]
