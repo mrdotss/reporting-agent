@@ -66,6 +66,9 @@ export const MIGRATION_SOURCE_VERSION = MIN_SCHEMA_VERSION
  * could have meant.
  */
 const RECONCILED_PROVIDER = "azure"
+
+/** The first version that carries `sections` — the one a stale-header draft is reconciled to. */
+const SECTIONED_SCHEMA_VERSION = 3
 export const MIGRATION_TARGET_VERSION = 2 as const
 
 /**
@@ -268,13 +271,20 @@ export function toSchemaVersion2<T>(definition: T): T {
   // or moved. Whether those sections are themselves valid is then the v3 validator's
   // question, which is the right place for it.
   if (Array.isArray(definition.sections)) {
-    if (definition.schema_version === MAX_SUPPORTED_SCHEMA_VERSION) {
+    // Any sectioned version passes through as it is. v4 is a layout the builder writes on
+    // purpose, never something a stale v3 header is raised to: a v3 section carries no
+    // `position` or `blocks`, so relabelling it v4 would only make it invalid.
+    if (
+      typeof definition.schema_version === "number" &&
+      definition.schema_version >= SECTIONED_SCHEMA_VERSION &&
+      definition.schema_version <= MAX_SUPPORTED_SCHEMA_VERSION
+    ) {
       return definition
     }
 
     const reconciled: Record<string, unknown> = {
       ...definition,
-      schema_version: MAX_SUPPORTED_SCHEMA_VERSION,
+      schema_version: SECTIONED_SCHEMA_VERSION,
     }
 
     if (typeof reconciled.provider !== "string") {

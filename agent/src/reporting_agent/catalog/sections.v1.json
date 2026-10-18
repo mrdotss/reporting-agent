@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.5.0",
+  "catalogue_version": "1.6.0",
   "providers": {
     "azure": {
       "sections": [
@@ -16,6 +16,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -23,6 +24,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "inventory_summary",
               "per": "section",
               "config": {
@@ -44,6 +46,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -51,6 +54,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "inventory_summary",
               "per": "section",
               "config": {
@@ -76,6 +80,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -83,6 +88,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -90,6 +96,7 @@
               "per": "resource"
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -119,6 +126,7 @@
               }
             },
             {
+              "slot": "subnets",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -161,6 +169,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -168,6 +177,7 @@
               "per": "section"
             },
             {
+              "slot": "inventory_heading",
               "block": "heading",
               "config": {
                 "level": 2,
@@ -176,6 +186,7 @@
               "per": "section"
             },
             {
+              "slot": "inventory_table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -201,6 +212,7 @@
               }
             },
             {
+              "slot": "network_heading",
               "block": "heading",
               "config": {
                 "level": 2,
@@ -209,6 +221,7 @@
               "per": "section"
             },
             {
+              "slot": "network_table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -245,6 +258,7 @@
               }
             },
             {
+              "slot": "disks_heading",
               "block": "heading",
               "config": {
                 "level": 2,
@@ -253,6 +267,7 @@
               "per": "section"
             },
             {
+              "slot": "disks_table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -307,6 +322,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -314,6 +330,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -360,6 +377,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -367,6 +385,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -374,6 +393,7 @@
               "per": "resource"
             },
             {
+              "slot": "inbound_heading",
               "block": "heading",
               "config": {
                 "level": 3,
@@ -383,6 +403,7 @@
               "per": "resource"
             },
             {
+              "slot": "inbound_table",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -430,6 +451,7 @@
               }
             },
             {
+              "slot": "outbound_heading",
               "block": "heading",
               "config": {
                 "level": 3,
@@ -439,6 +461,7 @@
               "per": "resource"
             },
             {
+              "slot": "outbound_table",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -505,6 +528,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -512,6 +536,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -610,6 +635,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -617,6 +643,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -624,6 +651,7 @@
               "per": "resource"
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -665,6 +693,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "resource",
               "when_presentation": [
@@ -674,6 +703,7 @@
               "config": {}
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "resource",
               "config": {
@@ -686,10 +716,12 @@
               ]
             },
             {
+              "slot": "narrative",
               "block": "resource_narrative",
               "per": "resource"
             },
             {
+              "slot": "fleet",
               "block": "top_n_table",
               "per": "section",
               "config": {
@@ -731,6 +763,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -738,6 +771,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -745,6 +779,7 @@
               "per": "resource"
             },
             {
+              "slot": "trend",
               "block": "historical_trend",
               "per": "resource",
               "when_presentation": [
@@ -753,6 +788,7 @@
               ]
             },
             {
+              "slot": "narrative",
               "block": "trend_narrative",
               "per": "resource",
               "when_presentation": [
@@ -799,6 +835,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -806,6 +843,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "section",
               "when_presentation": [
@@ -814,6 +852,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "section",
               "when_presentation": [
@@ -822,6 +861,7 @@
               ]
             },
             {
+              "slot": "fleet",
               "block": "top_n_table",
               "per": "section",
               "config": {
@@ -870,6 +910,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -877,6 +918,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "section",
               "when_presentation": [
@@ -885,6 +927,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "section",
               "when_presentation": [
@@ -911,6 +954,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -918,6 +962,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -961,6 +1006,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -968,6 +1014,7 @@
               "per": "section"
             },
             {
+              "slot": "rows",
               "block": "blank_rows_table",
               "per": "section",
               "config": {
@@ -997,6 +1044,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1004,6 +1052,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1038,6 +1087,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1045,10 +1095,12 @@
               "per": "section"
             },
             {
+              "slot": "coverage",
               "block": "gaps_and_coverage",
               "per": "section"
             },
             {
+              "slot": "verification",
               "block": "verification_record",
               "per": "section"
             }
@@ -1109,6 +1161,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "per": "section",
               "config": {
@@ -1116,6 +1169,7 @@
               }
             },
             {
+              "slot": "name",
               "block": "heading",
               "per": "resource",
               "config": {
@@ -1123,6 +1177,7 @@
               }
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1184,6 +1239,7 @@
               }
             },
             {
+              "slot": "network",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1213,6 +1269,7 @@
               }
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "resource",
               "when_presentation": [
@@ -1221,6 +1278,7 @@
               ]
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "resource",
               "when_presentation": [
@@ -1233,6 +1291,7 @@
               }
             },
             {
+              "slot": "narrative",
               "block": "resource_narrative",
               "per": "resource"
             }
@@ -1257,6 +1316,7 @@
           "notes": "Resources that bill without doing work: stopped machines, unattached disks and volumes, idle public addresses. Read from each resource's `housekeeping` fact, which is `none` when there is nothing to tidy; the table leaves those out.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1264,6 +1324,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1312,6 +1373,7 @@
           "notes": "A one-page summary for a reader who reads one page: headline counts derived from this run's snapshot, and at most three decisions chosen by fixed rules. Its own group, so it always comes first.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1319,6 +1381,7 @@
               "per": "section"
             },
             {
+              "slot": "glance",
               "block": "at_a_glance",
               "per": "section"
             }
@@ -1340,6 +1403,7 @@
           "notes": "The Action register: every finding this snapshot holds (housekeeping, missing backups, rightsizing, Advisor), with the owner and status the app's register gave it, and each item the register held that this snapshot no longer shows marked Resolved. The runtime computes the rows (compile/actions.py); they carry no figure.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1347,6 +1411,7 @@
               "per": "section"
             },
             {
+              "slot": "rows",
               "block": "blank_rows_table",
               "per": "section",
               "config": {
@@ -1378,6 +1443,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1385,6 +1451,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "inventory_summary",
               "per": "section",
               "config": {
@@ -1406,6 +1473,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1413,6 +1481,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "inventory_summary",
               "per": "section",
               "config": {
@@ -1438,6 +1507,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1445,6 +1515,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -1452,6 +1523,7 @@
               "per": "resource"
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1477,6 +1549,7 @@
               }
             },
             {
+              "slot": "subnets",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1527,6 +1600,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1534,6 +1608,7 @@
               "per": "section"
             },
             {
+              "slot": "inventory_heading",
               "block": "heading",
               "config": {
                 "level": 2,
@@ -1542,6 +1617,7 @@
               "per": "section"
             },
             {
+              "slot": "inventory_table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1579,6 +1655,7 @@
               }
             },
             {
+              "slot": "network_heading",
               "block": "heading",
               "config": {
                 "level": 2,
@@ -1587,6 +1664,7 @@
               "per": "section"
             },
             {
+              "slot": "network_table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1638,6 +1716,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1645,6 +1724,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1687,6 +1767,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1694,6 +1775,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -1701,6 +1783,7 @@
               "per": "resource"
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1730,6 +1813,7 @@
               }
             },
             {
+              "slot": "inbound_heading",
               "block": "heading",
               "config": {
                 "level": 3,
@@ -1739,6 +1823,7 @@
               "per": "resource"
             },
             {
+              "slot": "inbound_table",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1774,6 +1859,7 @@
               }
             },
             {
+              "slot": "outbound_heading",
               "block": "heading",
               "config": {
                 "level": 3,
@@ -1783,6 +1869,7 @@
               "per": "resource"
             },
             {
+              "slot": "outbound_table",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -1836,6 +1923,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1843,6 +1931,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -1897,6 +1986,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -1904,6 +1994,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -2006,6 +2097,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2013,6 +2105,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -2020,6 +2113,7 @@
               "per": "resource"
             },
             {
+              "slot": "details",
               "block": "resource_table",
               "per": "resource",
               "config": {
@@ -2053,6 +2147,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "resource",
               "when_presentation": [
@@ -2062,6 +2157,7 @@
               "config": {}
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "resource",
               "config": {
@@ -2074,10 +2170,12 @@
               ]
             },
             {
+              "slot": "narrative",
               "block": "resource_narrative",
               "per": "resource"
             },
             {
+              "slot": "fleet",
               "block": "top_n_table",
               "per": "section",
               "config": {
@@ -2119,6 +2217,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2126,6 +2225,7 @@
               "per": "section"
             },
             {
+              "slot": "name",
               "block": "heading",
               "config": {
                 "level": 2
@@ -2133,6 +2233,7 @@
               "per": "resource"
             },
             {
+              "slot": "trend",
               "block": "historical_trend",
               "per": "resource",
               "when_presentation": [
@@ -2141,6 +2242,7 @@
               ]
             },
             {
+              "slot": "narrative",
               "block": "trend_narrative",
               "per": "resource",
               "when_presentation": [
@@ -2189,6 +2291,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2196,6 +2299,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "section",
               "when_presentation": [
@@ -2204,6 +2308,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "section",
               "when_presentation": [
@@ -2212,6 +2317,7 @@
               ]
             },
             {
+              "slot": "fleet",
               "block": "top_n_table",
               "per": "section",
               "config": {
@@ -2247,6 +2353,7 @@
           },
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2254,6 +2361,7 @@
               "per": "section"
             },
             {
+              "slot": "summary",
               "block": "metric_summary",
               "per": "section",
               "when_presentation": [
@@ -2262,6 +2370,7 @@
               ]
             },
             {
+              "slot": "chart",
               "block": "timeseries_chart",
               "per": "section",
               "when_presentation": [
@@ -2290,6 +2399,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2297,6 +2407,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -2336,6 +2447,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2343,6 +2455,7 @@
               "per": "section"
             },
             {
+              "slot": "rows",
               "block": "blank_rows_table",
               "per": "section",
               "config": {
@@ -2374,6 +2487,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2381,6 +2495,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -2419,6 +2534,7 @@
           "presets": {},
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2426,10 +2542,12 @@
               "per": "section"
             },
             {
+              "slot": "coverage",
               "block": "gaps_and_coverage",
               "per": "section"
             },
             {
+              "slot": "verification",
               "block": "verification_record",
               "per": "section"
             }
@@ -2454,6 +2572,7 @@
           "notes": "Resources that bill without doing work: stopped machines, unattached disks and volumes, idle public addresses. Read from each resource's `housekeeping` fact, which is `none` when there is nothing to tidy; the table leaves those out.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2461,6 +2580,7 @@
               "per": "section"
             },
             {
+              "slot": "table",
               "block": "resource_table",
               "per": "section",
               "config": {
@@ -2510,6 +2630,7 @@
           "notes": "A one-page summary for a reader who reads one page: headline counts derived from this run's snapshot, and at most three decisions chosen by fixed rules. Its own group, so it always comes first.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2517,6 +2638,7 @@
               "per": "section"
             },
             {
+              "slot": "glance",
               "block": "at_a_glance",
               "per": "section"
             }
@@ -2538,6 +2660,7 @@
           "notes": "The Action register: every finding this snapshot holds (housekeeping, missing backups, rightsizing, Advisor), with the owner and status the app's register gave it, and each item the register held that this snapshot no longer shows marked Resolved. The runtime computes the rows (compile/actions.py); they carry no figure.",
           "expands_to": [
             {
+              "slot": "title",
               "block": "heading",
               "config": {
                 "level": 1
@@ -2545,6 +2668,7 @@
               "per": "section"
             },
             {
+              "slot": "rows",
               "block": "blank_rows_table",
               "per": "section",
               "config": {

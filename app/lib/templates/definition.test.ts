@@ -1712,7 +1712,7 @@ describe("Requirement 13.10 — schema_version 2 is supported and 3 is not", () 
     expect(collectDefinitionIssues(validDefinitionV2())).toEqual([])
   })
 
-  test.each([4, 99])("%s is rejected", (value) => {
+  test.each([5, 99])("%s is rejected", (value) => {
     const issues = collectDefinitionIssues({
       ...validDefinitionV2(),
       schema_version: value,
@@ -1735,7 +1735,8 @@ describe("Requirement 13.10 — schema_version 2 is supported and 3 is not", () 
 
   test("MIN stays 1, so every stored v1 definition still validates", () => {
     expect(MIN_SCHEMA_VERSION).toBe(1)
-    expect(MAX_SUPPORTED_SCHEMA_VERSION).toBe(3)
+    // 4 since the preset builder: a section's own `blocks`, `position` and `locations`.
+    expect(MAX_SUPPORTED_SCHEMA_VERSION).toBe(4)
     expect(collectDefinitionIssues(validDefinition())).toEqual([])
   })
 

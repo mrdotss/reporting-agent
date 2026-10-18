@@ -216,7 +216,7 @@ export const CUSTOMER_NAME_MAX_LENGTH = 200
  * `identity.language`, and the two `number_format` separators.
  */
 export const MIN_SCHEMA_VERSION = 1
-export const MAX_SUPPORTED_SCHEMA_VERSION = 3
+export const MAX_SUPPORTED_SCHEMA_VERSION = 4
 
 /**
  * The version-conditional key sets, **declared as data rather than as two validators**.
@@ -269,6 +269,19 @@ export const REQUIRED_TOP_LEVEL_KEYS = {
     "design",
     "front_matter",
   ],
+  // v4 changes nothing at the top level. It changes what a section entry may carry: an
+  // explicit `position`, its own `blocks`, and a `locations` filter. The version moves
+  // anyway, because a v3 reader tolerates unknown section keys and would drop a block
+  // layout silently rather than refuse it.
+  4: [
+    "schema_version",
+    "identity",
+    "provider",
+    "sections",
+    "period",
+    "design",
+    "front_matter",
+  ],
 } as const
 
 /** Requirement 16.1 — two keys at v1, four at v2+. */
@@ -291,6 +304,14 @@ export const NUMBER_FORMAT_KEYS = {
     "trim_trailing_zeros",
     "bytes_as_gib",
   ],
+  4: [
+    "decimal_places",
+    "group_thousands",
+    "decimal_separator",
+    "grouping_separator",
+    "trim_trailing_zeros",
+    "bytes_as_gib",
+  ],
 } as const
 
 /** Requirement 15.1 — `identity.language` exists at v2+ and nowhere else. */
@@ -306,6 +327,7 @@ export const IDENTITY_KEYS = {
   // the pinned version instead of the run form, but the wire key and the
   // store-to-send mirror guard's mechanism are untouched (task 4.4).
   3: ["name", "description", "report_title", "language", "customer_name"],
+  4: ["name", "description", "report_title", "language", "customer_name"],
 } as const
 
 export const REQUIRED_IDENTITY_KEYS = {
@@ -319,6 +341,7 @@ export const REQUIRED_IDENTITY_KEYS = {
   // belongs to `enqueueRun` (the same place that already gates a v2
   // template's front-matter completeness), not to draft-mode validation.
   3: ["name", "language"],
+  4: ["name", "language"],
 } as const
 
 /**
@@ -380,6 +403,39 @@ export const SECTION_ID_MAX_LENGTH = 64
 export const MAX_SECTIONS = 200
 
 /**
+ * Schema v4: what a section entry may carry, closed. v3 tolerated unknown keys, which is the
+ * silent drop v4 exists to end. `presentation` is gone: `blocks` hides what it hid.
+ */
+export const SECTION_KEYS_V4 = [
+  "id",
+  "type",
+  "position",
+  "selection",
+  "metrics",
+  "lookback",
+  "blocks",
+] as const
+
+/**
+ * Shorter than a v3 id, because every block id is built from it and a figure path bounds a
+ * block id at 64 characters: 24 + `__` + a 20-character slot + `__m9` + `__499` fits.
+ */
+export const SECTION_ID_MAX_LENGTH_V4 = 24
+export const SECTION_POSITION_MAX = 999
+export const MAX_SECTION_BLOCKS = 40
+export const SECTION_TITLE_MAX_LENGTH = 120
+export const SECTION_TEXT_MAX_LENGTH = 2000
+
+/**
+ * The blocks a person may add to a v4 section. Words only: every one is checked for
+ * numerals, because a number in a report comes from the snapshot or not at all.
+ */
+export const SECTION_BLOCK_KINDS = ["text"] as const
+
+export const MAX_LOCATIONS = 50
+export const LOCATION_MAX_LENGTH = 64
+
+/**
  * `historical_vm_utilization`'s `lookback` bound, in months — mirrors
  * `HISTORICAL_LOOKBACK_MIN`/`MAX` in `agent/.../compile/blocks/charts.py` exactly
  * (task 7.3). Author-set, with no catalogue default: `lookback` is a number the
@@ -410,7 +466,18 @@ type CatalogueSection = {
   readonly key: string
   readonly repeatable: boolean
   readonly position: string
-  readonly expands_to?: readonly { readonly block: string }[]
+  readonly expands_to?: readonly {
+    readonly slot?: string
+    readonly block: string
+    readonly per?: string
+    readonly config?: {
+      readonly level?: number
+      readonly columns?: readonly {
+        readonly fact_key?: string
+        readonly attribute?: string
+      }[]
+    }
+  }[]
 }
 
 /** Every provider's section list in `catalog/sections.v1.json`, keyed by provider. */
@@ -493,6 +560,49 @@ export const ALWAYS_SECTION_KEY_BY_PROVIDER: Readonly<
   Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
     provider,
     sections.find((s) => s.position === "always")?.key,
+  ])
+)
+
+/** What a v4 `blocks` entry may set on one catalogue expansion, read from its slot. */
+export type SlotShape = {
+  readonly slot: string
+  readonly per: "section" | "resource"
+  readonly block: string
+  /** A section heading, whose text an author may replace (`title`). */
+  readonly titled: boolean
+  /** The section's own title: hiding it would leave a section with no name. */
+  readonly required: boolean
+  /** The columns a `resource_table` declares, which `columns` may narrow and reorder. */
+  readonly columns: readonly string[]
+}
+
+/** Every section type's slots per provider, in catalogue order. */
+export const SECTION_SLOTS_BY_PROVIDER: Readonly<
+  Record<string, Readonly<Record<string, readonly SlotShape[]>>>
+> = Object.fromEntries(
+  Object.entries(SECTIONS_BY_PROVIDER).map(([provider, sections]) => [
+    provider,
+    Object.fromEntries(
+      sections.map((section) => [
+        section.key,
+        (section.expands_to ?? []).map((expansion): SlotShape => {
+          const heading = expansion.block === "heading" && expansion.per === "section"
+          const columns =
+            expansion.block === "resource_table" ? (expansion.config?.columns ?? []) : []
+          return {
+            slot: expansion.slot ?? "",
+            per: expansion.per === "resource" ? "resource" : "section",
+            block: expansion.block,
+            titled: heading,
+            required: heading && expansion.config?.level === 1,
+            columns: columns.flatMap((column) => {
+              const id = column.fact_key || column.attribute
+              return typeof id === "string" ? [id] : []
+            }),
+          }
+        }),
+      ])
+    ),
   ])
 )
 // --- END SCHEMA VERSIONS ---
@@ -1700,7 +1810,8 @@ const SCOPE_ALLOWED_KEYS = new Set([
 function validateScopeSpec(
   scope: unknown,
   path: readonly (string | number)[],
-  issues: IssueSink
+  issues: IssueSink,
+  allowLocations = false
 ): void {
   if (!isPlainObject(scope)) {
     addIssue(issues, path, "A scope specification must be an object.")
@@ -1708,9 +1819,12 @@ function validateScopeSpec(
   }
 
   for (const key of Object.keys(scope)) {
-    if (!SCOPE_ALLOWED_KEYS.has(key)) {
+    if (!SCOPE_ALLOWED_KEYS.has(key) && !(allowLocations && key === "locations")) {
       addIssue(issues, [...path, key], `Unrecognized scope field "${key}".`)
     }
+  }
+  if (allowLocations && "locations" in scope) {
+    validateLocations(scope.locations, [...path, "locations"], issues)
   }
 
   validateResourceTypes(
@@ -1837,6 +1951,33 @@ function validateTagFilters(
         issues,
         [...entryPath, "value"],
         azureIdentifierMessage([...entryPath, "value"])
+      )
+    }
+  })
+}
+
+function validateLocations(
+  value: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink
+): void {
+  if (!Array.isArray(value)) {
+    addIssue(issues, path, "locations must be an array.")
+    return
+  }
+  if (value.length > MAX_LOCATIONS) {
+    addIssue(issues, path, `locations accepts at most ${MAX_LOCATIONS} entries.`)
+  }
+  value.forEach((entry: unknown, index: number) => {
+    if (
+      !isNonEmptyString(entry) ||
+      entry.length < 1 ||
+      entry.length > LOCATION_MAX_LENGTH
+    ) {
+      addIssue(
+        issues,
+        [...path, index],
+        `Each location must be a string of 1 to ${LOCATION_MAX_LENGTH} characters.`
       )
     }
   })
@@ -3056,11 +3197,361 @@ function validateProvider(
   }
 }
 
+// --- Schema v4: a section's own layout ----------------------------------------
+
+/**
+ * An added block's id: `u_` and up to twelve lowercase letters or digits. The prefix is
+ * reserved in the catalogue (`catalog/loader.py::USER_BLOCK_ID_PREFIX`), so an added block
+ * and a catalogue slot never share a block id.
+ */
+const USER_BLOCK_ID_PATTERN = /^u_[a-z0-9]{1,12}$/
+
+/** The name a v4 `blocks` list gives a section's run of per-resource expansions. */
+export const EACH_RESOURCE_SLOT = "each"
+
+const LANGUAGE_NAMES: Readonly<Record<(typeof LANGUAGES)[number], string>> = {
+  en: "English",
+  id: "Indonesian",
+}
+
+/**
+ * Whether `text` holds any numeral — a decimal digit, a Roman numeral, a fraction.
+ *
+ * Typed text in a v4 section is words only. A figure in a report comes from the snapshot
+ * and is traced, and a number someone typed would read exactly like one. Mirrors
+ * `contains_numeral` in `compile/definition.py` (Unicode category N).
+ */
+export function containsNumeral(text: string): boolean {
+  return /\p{N}/u.test(text)
+}
+
+const SECTION_KEYS_V4_SET: ReadonlySet<string> = new Set(SECTION_KEYS_V4)
+const SECTION_BLOCK_KINDS_SET: ReadonlySet<string> = new Set(SECTION_BLOCK_KINDS)
+
+function validateTypedText(
+  value: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  language: (typeof LANGUAGES)[number] | null,
+  maxLength: number,
+  what: string
+): void {
+  if (!isPlainObject(value)) {
+    addIssue(issues, path, `${what} must be an object with an \`en\` and/or \`id\` string.`)
+    return
+  }
+  for (const key of Object.keys(value)) {
+    if (!LANGUAGES.includes(key as (typeof LANGUAGES)[number])) {
+      addIssue(issues, [...path, key], `Unrecognized language "${key}".`)
+    }
+  }
+  if (language !== null && !(language in value)) {
+    addIssue(
+      issues,
+      [...path, language],
+      `${what} needs an ${LANGUAGE_NAMES[language]} version, the report's language.`
+    )
+  } else if (Object.keys(value).length === 0) {
+    addIssue(issues, path, `${what} needs at least one language.`)
+  }
+  for (const key of LANGUAGES) {
+    if (!(key in value)) continue
+    const text = value[key]
+    if (typeof text !== "string" || text.trim() === "" || text.length > maxLength) {
+      addIssue(issues, [...path, key], `${what} must be 1 to ${maxLength} characters.`)
+    } else if (containsNumeral(text)) {
+      addIssue(
+        issues,
+        [...path, key],
+        `${what} cannot contain numbers. Every number in a report comes from the snapshot.`
+      )
+    }
+  }
+}
+
+function validateSlotEntry(
+  block: Record<string, unknown>,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  shape: SlotShape | undefined,
+  language: (typeof LANGUAGES)[number] | null
+): void {
+  const allowed = new Set(["slot", "hidden"])
+  if (shape?.titled) allowed.add("title")
+  if (shape && shape.columns.length > 0) allowed.add("columns")
+  for (const key of Object.keys(block)) {
+    if (!allowed.has(key)) {
+      addIssue(issues, [...path, key], `"${key}" cannot be set on this block.`)
+    }
+  }
+
+  const hidden = block.hidden ?? false
+  if (typeof hidden !== "boolean") {
+    addIssue(issues, [...path, "hidden"], "hidden must be true or false.")
+  } else if (hidden && shape?.required) {
+    addIssue(issues, [...path, "hidden"], "A section's title cannot be hidden.")
+  }
+
+  if ("title" in block && allowed.has("title")) {
+    validateTypedText(
+      block.title,
+      [...path, "title"],
+      issues,
+      language,
+      SECTION_TITLE_MAX_LENGTH,
+      "A heading"
+    )
+  }
+
+  if ("columns" in block && shape && allowed.has("columns")) {
+    const columns = block.columns
+    if (!Array.isArray(columns) || columns.length === 0) {
+      addIssue(issues, [...path, "columns"], "columns must be a non-empty array.")
+      return
+    }
+    const seen = new Set<string>()
+    columns.forEach((column: unknown, index: number) => {
+      if (typeof column !== "string" || !shape.columns.includes(column)) {
+        addIssue(
+          issues,
+          [...path, "columns", index],
+          `Unknown column ${JSON.stringify(column)}; this table has: ${shape.columns.join(", ")}.`
+        )
+      } else if (seen.has(column)) {
+        addIssue(issues, [...path, "columns", index], `Column "${column}" appears twice.`)
+      } else {
+        seen.add(column)
+      }
+    })
+  }
+}
+
+function validateUserBlock(
+  block: Record<string, unknown>,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  seenIds: Set<string>,
+  language: (typeof LANGUAGES)[number] | null
+): void {
+  for (const key of Object.keys(block)) {
+    if (key !== "kind" && key !== "id" && key !== "text") {
+      addIssue(issues, [...path, key], `Unrecognized block field "${key}".`)
+    }
+  }
+  if (typeof block.kind !== "string" || !SECTION_BLOCK_KINDS_SET.has(block.kind)) {
+    addIssue(
+      issues,
+      [...path, "kind"],
+      `kind must be one of: ${SECTION_BLOCK_KINDS.join(", ")}.`
+    )
+  }
+  const id = block.id
+  if (typeof id !== "string" || !USER_BLOCK_ID_PATTERN.test(id)) {
+    addIssue(
+      issues,
+      [...path, "id"],
+      "An added block's id is u_ and 1 to 12 lowercase letters or digits."
+    )
+  } else if (seenIds.has(id)) {
+    addIssue(issues, [...path, "id"], `Duplicate block id "${id}".`)
+  } else {
+    seenIds.add(id)
+  }
+  validateTypedText(
+    block.text,
+    [...path, "text"],
+    issues,
+    language,
+    SECTION_TEXT_MAX_LENGTH,
+    "Text"
+  )
+}
+
+/**
+ * A v4 section's `blocks`: catalogue slots in the author's order, with added text.
+ *
+ * Slots it does not name keep their catalogue place and visibility. The section's
+ * per-resource slots are named inside the one `each` entry, so a block that repeats per
+ * resource cannot be moved out of the group it repeats in.
+ */
+function validateSectionBlocks(
+  blocks: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  shapes: readonly SlotShape[] | undefined,
+  language: (typeof LANGUAGES)[number] | null
+): void {
+  if (!Array.isArray(blocks)) {
+    addIssue(issues, path, "blocks must be an array.")
+    return
+  }
+  if (blocks.length > MAX_SECTION_BLOCKS) {
+    addIssue(issues, path, `blocks accepts at most ${MAX_SECTION_BLOCKS} entries.`)
+  }
+
+  const bySlot = new Map((shapes ?? []).map((shape) => [shape.slot, shape]))
+  const hasEach = (shapes ?? []).some((shape) => shape.per === "resource")
+  const seenSlots = new Set<string>()
+  const seenIds = new Set<string>()
+  blocks.forEach((block: unknown, index: number) => {
+    const blockPath = [...path, index]
+    if (!isPlainObject(block)) {
+      addIssue(issues, blockPath, "A block entry must be an object.")
+      return
+    }
+    if ("kind" in block) {
+      validateUserBlock(block, blockPath, issues, seenIds, language)
+      return
+    }
+    const slot = block.slot
+    if (typeof slot !== "string") {
+      addIssue(
+        issues,
+        blockPath,
+        "A block entry names a catalogue `slot` or an added block's `kind`."
+      )
+      return
+    }
+    if (seenSlots.has(slot)) {
+      addIssue(issues, [...blockPath, "slot"], `Slot "${slot}" appears twice.`)
+      return
+    }
+    seenSlots.add(slot)
+
+    if (slot === EACH_RESOURCE_SLOT) {
+      if (shapes && !hasEach) {
+        addIssue(
+          issues,
+          [...blockPath, "slot"],
+          "This section has no blocks that repeat per resource."
+        )
+        return
+      }
+      for (const key of Object.keys(block)) {
+        if (key !== "slot" && key !== "hidden" && key !== "blocks") {
+          addIssue(
+            issues,
+            [...blockPath, key],
+            `"${key}" cannot be set on the per-resource group.`
+          )
+        }
+      }
+      if (typeof (block.hidden ?? false) !== "boolean") {
+        addIssue(issues, [...blockPath, "hidden"], "hidden must be true or false.")
+      }
+      const inner = block.blocks ?? []
+      if (!Array.isArray(inner)) {
+        addIssue(issues, [...blockPath, "blocks"], "blocks must be an array.")
+        return
+      }
+      const seenInner = new Set<string>()
+      inner.forEach((innerBlock: unknown, innerIndex: number) => {
+        const innerPath = [...blockPath, "blocks", innerIndex]
+        if (!isPlainObject(innerBlock) || typeof innerBlock.slot !== "string") {
+          addIssue(issues, innerPath, "Each entry here names a per-resource `slot`.")
+          return
+        }
+        const innerSlot = innerBlock.slot
+        const shape = bySlot.get(innerSlot)
+        if (shapes && (shape === undefined || shape.per !== "resource")) {
+          addIssue(
+            issues,
+            [...innerPath, "slot"],
+            `"${innerSlot}" is not a per-resource block of this section.`
+          )
+          return
+        }
+        if (seenInner.has(innerSlot)) {
+          addIssue(issues, [...innerPath, "slot"], `Slot "${innerSlot}" appears twice.`)
+          return
+        }
+        seenInner.add(innerSlot)
+        validateSlotEntry(innerBlock, innerPath, issues, shape, language)
+      })
+      return
+    }
+
+    const shape = bySlot.get(slot)
+    if (shapes && (shape === undefined || shape.per !== "section")) {
+      const reason =
+        shape !== undefined
+          ? "repeats per resource; name it inside the `each` entry"
+          : "is not a block of this section"
+      addIssue(issues, [...blockPath, "slot"], `"${slot}" ${reason}.`)
+      return
+    }
+    validateSlotEntry(block, blockPath, issues, shape, language)
+  })
+}
+
+/** What schema v4 adds to a section entry: closed keys, `position`, `lookback`, `blocks`. */
+function validateSectionV4(
+  entry: Record<string, unknown>,
+  entryPath: readonly (string | number)[],
+  issues: IssueSink,
+  provider: string | undefined,
+  language: (typeof LANGUAGES)[number] | null
+): void {
+  for (const key of Object.keys(entry)) {
+    if (!SECTION_KEYS_V4_SET.has(key)) {
+      addIssue(issues, [...entryPath, key], `Unrecognized section field "${key}".`)
+    }
+  }
+
+  const id = entry.id
+  if (typeof id === "string" && (id.length > SECTION_ID_MAX_LENGTH_V4 || id.includes("__"))) {
+    addIssue(
+      issues,
+      [...entryPath, "id"],
+      `Section id must be at most ${SECTION_ID_MAX_LENGTH_V4} characters, without a double underscore.`
+    )
+  }
+
+  const position = entry.position
+  if (!("position" in entry)) {
+    addIssue(issues, [...entryPath, "position"], "A section needs a position.")
+  } else if (
+    typeof position !== "number" ||
+    !Number.isInteger(position) ||
+    position < 0 ||
+    position > SECTION_POSITION_MAX
+  ) {
+    addIssue(
+      issues,
+      [...entryPath, "position"],
+      `position must be an integer from 0 to ${SECTION_POSITION_MAX}.`
+    )
+  }
+
+  if ("blocks" in entry) {
+    const type = entry.type
+    const shapes =
+      provider !== undefined && typeof type === "string"
+        ? SECTION_SLOTS_BY_PROVIDER[provider]?.[type]
+        : undefined
+    if (
+      provider !== undefined &&
+      typeof type === "string" &&
+      ALWAYS_SECTION_KEY_BY_PROVIDER[provider] === type
+    ) {
+      addIssue(
+        issues,
+        [...entryPath, "blocks"],
+        "The coverage and verification appendix prints as it is; its blocks cannot change."
+      )
+    } else {
+      validateSectionBlocks(entry.blocks, [...entryPath, "blocks"], issues, shapes, language)
+    }
+  }
+}
+
 function validateSections(
   sections: unknown,
   path: readonly (string | number)[],
   issues: IssueSink,
-  provider: unknown
+  provider: unknown,
+  version: number = 3,
+  language: (typeof LANGUAGES)[number] | null = null
 ): void {
   if (!Array.isArray(sections)) {
     addIssue(issues, path, "sections must be an array.")
@@ -3158,7 +3649,12 @@ function validateSections(
 
     // --- selection (through existing validateScopeSpec) ---
     if ("selection" in entry) {
-      validateScopeSpec(entry.selection, [...entryPath, "selection"], issues)
+      validateScopeSpec(
+        entry.selection,
+        [...entryPath, "selection"],
+        issues,
+        version >= 4
+      )
     }
 
     // --- metrics (through the existing validateMetricItem loop) ---
@@ -3211,6 +3707,11 @@ function validateSections(
         `Section type "${String(type)}" requires lookback (an integer from ` +
           `${HISTORICAL_LOOKBACK_MIN} to ${HISTORICAL_LOOKBACK_MAX} inclusive).`
       )
+    }
+
+    if (version >= 4) {
+      validateSectionV4(entry, entryPath, issues, resolvedProvider, language)
+      return
     }
 
     // --- presentation ---
@@ -3618,7 +4119,14 @@ export function collectDefinitionIssues(
   } else {
     validateProvider(raw.provider, ["provider"], issues)
     validatePeriod(raw.period, ["period"], issues)
-    validateSections(raw.sections, ["sections"], issues, raw.provider)
+    validateSections(
+      raw.sections,
+      ["sections"],
+      issues,
+      raw.provider,
+      version,
+      language
+    )
   }
   validateDesign(raw.design, ["design"], issues, version, language)
   // Requirement 13.13 — `front_matter` is validated only where the resolved version declares

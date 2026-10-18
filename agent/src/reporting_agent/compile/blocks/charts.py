@@ -60,6 +60,10 @@ from reporting_agent.compile.blocks.base import (
     read_metric_refs,
     resolve_stat,
 )
+from reporting_agent.compile.definition import (
+    HISTORICAL_LOOKBACK_MAX,  # the bound a section's `lookback` is validated against
+    HISTORICAL_LOOKBACK_MIN,
+)
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.historical import Selection
 from reporting_agent.compile.messages import Messages
@@ -76,8 +80,6 @@ ENCODING_SEQUENTIAL = "sequential"
 PRIOR_RUN_NAMESPACE: str = "prior_runs"
 """The namespace prefix for prior-run pointers in the historical trend block."""
 
-HISTORICAL_LOOKBACK_MIN: int = 2
-HISTORICAL_LOOKBACK_MAX: int = 24
 
 
 @dataclass(frozen=True, slots=True)

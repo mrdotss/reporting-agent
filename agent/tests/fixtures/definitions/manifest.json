@@ -1030,6 +1030,193 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-minimal.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "989b888f55edd906ab463ca5de1b2ec1240a77ef2a2a1f3c7dbd1883bdaf0637",
+      "offenders": []
+    },
+    {
+      "file": "accept-schema-version-4-aws-blocks.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "71d51be4dd52553a98343501b8126ae03e276723008ae6fac1efc36a00714a69",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-presentation.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "ee9475ebca9dcdda22280e82dd905d06e75522d7a4b293acfbd68395ece62206",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "presentation"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-missing-position.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "0e9f96d518444fac74676d75c1b8e9927fb5f51fba4ef871f65c9d4c5c6bb810",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "position"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-numeral-in-text.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "57f2721d94cc6d3a1ad16ba6f6831f5f5204410b252acfb67d732bcf624ebd31",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            1,
+            "text",
+            "en"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-hidden-title.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "ada344193c561af94c56433cffa3ed6ad1bf284cb04cf93de35add0a1e437e7f",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            0,
+            "hidden"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-unknown-column.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "5c5d869486228e2710e8abaf95775e23efe851e7dddea7d1a7ea4db49146873f",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            2,
+            "blocks",
+            2,
+            "columns",
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-resource-slot-outside-each.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "e211f6ece80383632c9fd6b65843ff3eb696a767f00b55f3533587a0939343de",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            4,
+            "slot"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-blocks-on-appendix.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "c5190d1a2a65c89a97de2ae0394194887a9f7192549eee47e172696fad28c802",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            3,
+            "blocks"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-long-section-id.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "4c3941a8a0b0b56d22f31253102cd994db43417337d116df19b27876c11a2e9f",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "id"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v3-locations.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "6d48648a549be6ba4c6125be820487e8eb8187700153fda9af35a38b524a9778",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "selection",
+            "locations"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-missing-lookback.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "418a4cc59afe3d0368a85f5b159e50644c19dd0e4ee097eba29607bb71de5733",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            1,
+            "lookback"
+          ]
+        }
+      ]
     }
   ]
 }
