@@ -416,6 +416,25 @@ def test_a_callout_prints_only_when_its_condition_holds_and_fills_its_figures(ne
     assert "{resource}" not in peak and "{value}" not in peak and "%" in peak
 
 
+def test_a_callout_prints_in_its_tone_s_theme_style(new_blocks_walk) -> None:
+    """`attention` prints in `Callout Attention`, the default `info` tone in `Callout` — the
+    styles every theme declares (`tests/test_themes.py` walks a v1 corpus that has no callout,
+    so this is where the two names are seen in a real document)."""
+    from docx import Document
+
+    store, _, _ = new_blocks_walk
+    key = next(key for key in store.keys() if key.endswith("/report.docx"))
+    styles = {
+        p.text.split(":")[0]: p.style.name
+        for p in Document(BytesIO(store.get(key).body)).paragraphs  # type: ignore[union-attr]
+        if p.text.startswith(("Some figures could not be measured", "The busiest instance"))
+    }
+    assert styles == {
+        "Some figures could not be measured": "Callout Attention",
+        next(name for name in styles if name.startswith("The busiest instance")): "Callout",
+    }
+
+
 def test_heatmap_and_sparklines_draw_figures_from_the_snapshot(new_blocks_walk) -> None:
     """Each cell of the heatmap and each sparkline point is a figure in the ledger, under the
     block id the section's layout gave it."""

@@ -277,13 +277,73 @@ def test_every_font_a_theme_names_is_installed_by_a_named_package(
     for spec in THEME_SPECS.values():
         named.update({spec.face.heading, spec.face.body, spec.face.figure})
 
-    unaccounted = sorted(name for name in named if name not in supplied_by)
+    vendored = _vendored_families()
+    unaccounted = sorted(name for name in named if name not in supplied_by and name not in vendored)
     assert unaccounted == [], (
-        f"{unaccounted} are named by a theme and this test knows no package that supplies "
-        f"them; add the package to the Dockerfile and the mapping here"
+        f"{unaccounted} are named by a theme and neither a package this test knows nor a file "
+        f"under fonts/ supplies them; add the package to the Dockerfile and the mapping here, "
+        f"or vendor the face"
     )
     for font in sorted(named):
-        assert supplied_by[font] in _system_install(dockerfile_body), (font, supplied_by[font])
+        if font in supplied_by:
+            assert supplied_by[font] in _system_install(dockerfile_body), (font, supplied_by[font])
+
+
+FONTS: Final[Path] = AGENT_ROOT / "fonts"
+
+
+def _vendored_families() -> set[str]:
+    """The typographic family of every face under `fonts/`, read from each file's own name
+    table — so a file renamed to look like a face it is not does not count."""
+    from fontTools.ttLib import TTFont
+
+    families: set[str] = set()
+    for path in sorted(FONTS.glob("*.ttf")):
+        names = TTFont(path)["name"]
+        family = names.getDebugName(16) or names.getDebugName(1)
+        if family:
+            families.add(family)
+    return families
+
+
+def test_the_vendored_faces_match_their_checksums() -> None:
+    """The build runs `sha256sum --check` over the same list; this keeps the list honest in
+    the checkout, so a face swapped without its checksum fails here first."""
+    import hashlib
+
+    listed: dict[str, str] = {}
+    for line in (FONTS / "SHA256SUMS").read_text().splitlines():
+        digest, name = line.split(maxsplit=1)
+        listed[name.lstrip("*")] = digest
+    on_disk = {path.name for path in FONTS.iterdir() if path.suffix in (".ttf", ".txt")}
+    assert set(listed) == on_disk, sorted(set(listed) ^ on_disk)
+    for name, digest in listed.items():
+        assert hashlib.sha256((FONTS / name).read_bytes()).hexdigest() == digest, name
+
+
+def test_every_vendored_face_carries_its_licence() -> None:
+    """The SIL Open Font License requires the licence to travel with the fonts."""
+    licences = sorted(path.name for path in FONTS.glob("OFL-*.txt"))
+    assert len(licences) == 4, licences
+    for path in FONTS.glob("OFL-*.txt"):
+        assert "SIL Open Font License" in path.read_text(), path.name
+
+
+def test_the_image_installs_the_vendored_faces_and_asserts_them(dockerfile_body: str) -> None:
+    """Copied, checked against their sums, cached — and then proved to resolve."""
+    assert "COPY fonts/ /usr/share/fonts/reporting-agent/" in dockerfile_body
+    assert "sha256sum --check --strict --quiet SHA256SUMS" in dockerfile_body
+    assert "fc-cache -f /usr/share/fonts/reporting-agent" in dockerfile_body
+    assert "python -m reporting_agent.render.themes --assert-fonts" in dockerfile_body
+
+
+def test_the_dockerignore_keeps_the_licences(dockerfile_body: str) -> None:
+    """`.dockerignore` drops every `*.md`, so a licence named `.md` would be missing from the
+    image and its checksum line would fail the build."""
+    assert not list(FONTS.glob("*.md")) or all(
+        name.endswith(".txt") or name.endswith(".ttf")
+        for name in (FONTS / "SHA256SUMS").read_text().split()[1::2]
+    )
 
 
 # --------------------------------------------------------------------------- #

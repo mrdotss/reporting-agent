@@ -63,7 +63,11 @@ from reporting_agent.errors import RenderFailedError
 
 __all__ = [
     "front_matter_sections",
+    "cover_treatment",
+    "solid_png",
     "ContentsEntry",
+    "CoverTreatment",
+    "DEFAULT_COVER",
     "FrontMatterSection",
     "FrontMatterBackground",
     "FrontMatterPairs",
@@ -642,6 +646,62 @@ def document_number(pattern: str, *, run: RunFacts) -> str:
 
 
 
+@dataclass(frozen=True, slots=True)
+class CoverTreatment:
+    """How the selected theme lays its cover out — read off `ThemeSpec.cover_style` by
+    :func:`cover_treatment`, so both emitters receive one decision."""
+
+    fill: str | None = None
+    """`RRGGBB`: a full-bleed cover's ground, painted as its background where the definition
+    supplies no image. A supplied image still wins — it is the consultant's cover."""
+
+    own_page: bool = True
+    """False for a title strip: the cover ends without a page break and document control
+    begins beneath it on page one."""
+
+
+DEFAULT_COVER: Final[CoverTreatment] = CoverTreatment()
+"""The band cover the first four themes have always had."""
+
+
+def cover_treatment(design: object) -> CoverTreatment:
+    """The cover the design's theme asks for. An unknown preset gets the default band."""
+    from reporting_agent.render.themes import THEME_SPECS
+
+    spec = THEME_SPECS.get(str(getattr(design, "preset", "")))
+    if spec is None:
+        return DEFAULT_COVER
+    accent = str(getattr(design, "accent_color", "") or "")
+    if spec.cover_style == "full_bleed":
+        fill = accent[1:].upper() if re.fullmatch(r"#[0-9a-fA-F]{6}", accent) else spec.palette.accent
+        return CoverTreatment(fill=fill)
+    if spec.cover_style == "summary":
+        return CoverTreatment(own_page=False)
+    return DEFAULT_COVER
+
+
+def solid_png(color: str) -> bytes:
+    """An 8x8 PNG of one `RRGGBB` colour — a full-bleed cover's ground, as an image.
+
+    Built by hand rather than through an imaging library so the bytes are fixed by the colour
+    alone: the Word file is byte-deterministic (Req 20.8), and an encoder's version must not be
+    able to change it. Both emitters already lay a cover image over the whole page, so a ground
+    drawn this way needs no second mechanism.
+    """
+    import struct
+    import zlib
+
+    red, green, blue = (int(color[index : index + 2], 16) for index in (0, 2, 4))
+    size = 8
+    raw = b"".join(b"\x00" + bytes((red, green, blue)) * size for _ in range(size))
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    header = struct.pack(">IIBBBBB", size, size, 8, 2, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", header) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
+
+
 def front_matter_sections(
     *,
     front_matter: FrontMatterConfig,
@@ -649,6 +709,7 @@ def front_matter_sections(
     messages: Messages,
     heading_entries: tuple[tuple[str, int], ...] = (),
     include_toc: bool = True,
+    cover: CoverTreatment = DEFAULT_COVER,
 ) -> tuple[FrontMatterSection, ...]:
     """The front matter, in order, described without saying how it is drawn.
 
@@ -692,13 +753,15 @@ def front_matter_sections(
             sections.append(
                 FrontMatterBackground(image=front_matter.cover.background_image)
             )
+        elif cover.fill is not None:
+            sections.append(FrontMatterBackground(image=solid_png(cover.fill)))
         # The logo's space, above everything, as `ReportA.dc.html` opens its cover.
         if front_matter.cover.logo:
             sections.append(
                 FrontMatterLogo(
                     height_pt=LOGO_HEIGHT_PT,
                     width_pt=LOGO_WIDTH_PT,
-                    space_before_pt=COVER_SPACE_BEFORE_PT,
+                    space_before_pt=COVER_SPACE_BEFORE_PT if cover.own_page else 0.0,
                     space_after_pt=LOGO_SPACE_AFTER_PT,
                     image=front_matter.cover.logo_image,
                 )
@@ -742,7 +805,8 @@ def front_matter_sections(
             sections.append(
                 FrontMatterPairs(tuple(cover_rows), LAYOUT_TABLE_STYLE, COVER_META_STYLE)
             )
-        sections.append(FrontMatterPageBreak())
+        if cover.own_page:
+            sections.append(FrontMatterPageBreak())
 
     # --- document control (Req 13.5, 13.6) -----------------------------------
     sections.append(
@@ -926,6 +990,7 @@ def emit_front_matter(
     messages: Messages,
     cursor: object = None,
     ledger: object = None,
+    cover: CoverTreatment = DEFAULT_COVER,
 ) -> None:
     """Render the front matter into a Word document.
 
@@ -947,6 +1012,7 @@ def emit_front_matter(
         messages=messages,
         heading_entries=toc_entries_from_document(cursor) if cursor is not None else (),
         include_toc=should_emit_toc(),
+        cover=cover,
     )
     for section in sections:
         _emit_section(document, section)

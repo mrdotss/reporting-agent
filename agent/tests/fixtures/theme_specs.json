@@ -1,0 +1,198 @@
+{
+  "editorial": {
+    "faces": {
+      "heading": "Liberation Serif",
+      "body": "Liberation Serif",
+      "figure": "DejaVu Sans Mono"
+    },
+    "accent": "#0F6470",
+    "ink": "#1A1A1A",
+    "muted": "#5A6B70",
+    "rule": "#C9D4D7",
+    "band": "#F2F6F7",
+    "titlePt": 26,
+    "subtitlePt": 13,
+    "headingPt": [
+      16,
+      13,
+      11.5,
+      10.5
+    ],
+    "bodyPt": 11,
+    "smallPt": 9,
+    "lineSpacing": 1.28,
+    "headingAllCaps": false,
+    "bandedRows": true,
+    "coverStyle": "band",
+    "headingRule": "rule",
+    "displayNumbers": false
+  },
+  "corporate": {
+    "faces": {
+      "heading": "Liberation Sans",
+      "body": "Liberation Sans",
+      "figure": "DejaVu Sans Mono"
+    },
+    "accent": "#1F3A5F",
+    "ink": "#1C1C1C",
+    "muted": "#5B6B7C",
+    "rule": "#C8D2DC",
+    "band": "#EEF2F6",
+    "titlePt": 24,
+    "subtitlePt": 12,
+    "headingPt": [
+      15,
+      12.5,
+      11,
+      10
+    ],
+    "bodyPt": 10.5,
+    "smallPt": 8.5,
+    "lineSpacing": 1.22,
+    "headingAllCaps": false,
+    "bandedRows": true,
+    "coverStyle": "band",
+    "headingRule": "rule",
+    "displayNumbers": false
+  },
+  "technical": {
+    "faces": {
+      "heading": "DejaVu Sans",
+      "body": "DejaVu Sans",
+      "figure": "DejaVu Sans Mono"
+    },
+    "accent": "#33556B",
+    "ink": "#202325",
+    "muted": "#5E6B72",
+    "rule": "#B9C4CA",
+    "band": "#EDF1F3",
+    "titlePt": 22,
+    "subtitlePt": 11.5,
+    "headingPt": [
+      14,
+      12,
+      10.5,
+      9.5
+    ],
+    "bodyPt": 10,
+    "smallPt": 8.5,
+    "lineSpacing": 1.18,
+    "headingAllCaps": true,
+    "bandedRows": true,
+    "coverStyle": "band",
+    "headingRule": "rule",
+    "displayNumbers": false
+  },
+  "minimal": {
+    "faces": {
+      "heading": "Liberation Sans",
+      "body": "Liberation Sans",
+      "figure": "DejaVu Sans Mono"
+    },
+    "accent": "#1A1A1A",
+    "ink": "#1A1A1A",
+    "muted": "#6B6B6B",
+    "rule": "#DCDCDC",
+    "band": "#F6F6F6",
+    "titlePt": 23,
+    "subtitlePt": 11.5,
+    "headingPt": [
+      14,
+      12,
+      10.5,
+      10
+    ],
+    "bodyPt": 10.5,
+    "smallPt": 9,
+    "lineSpacing": 1.3,
+    "headingAllCaps": true,
+    "bandedRows": false,
+    "coverStyle": "band",
+    "headingRule": "rule",
+    "displayNumbers": false
+  },
+  "ledger": {
+    "faces": {
+      "heading": "IBM Plex Sans",
+      "body": "IBM Plex Sans",
+      "figure": "IBM Plex Mono"
+    },
+    "accent": "#245C45",
+    "ink": "#1C1C1C",
+    "muted": "#5C6660",
+    "rule": "#CFD6D2",
+    "band": "#F1F5F2",
+    "titlePt": 24,
+    "subtitlePt": 12,
+    "headingPt": [
+      15,
+      12.5,
+      11,
+      10
+    ],
+    "bodyPt": 10,
+    "smallPt": 8.5,
+    "lineSpacing": 1.3,
+    "headingAllCaps": false,
+    "bandedRows": false,
+    "coverStyle": "band",
+    "headingRule": "double",
+    "displayNumbers": false
+  },
+  "signal": {
+    "faces": {
+      "heading": "Archivo",
+      "body": "Liberation Sans",
+      "figure": "IBM Plex Mono"
+    },
+    "accent": "#A3401F",
+    "ink": "#1C1C1C",
+    "muted": "#6B625E",
+    "rule": "#DDD3CF",
+    "band": "#F7EFEC",
+    "titlePt": 26,
+    "subtitlePt": 12.5,
+    "headingPt": [
+      18,
+      14,
+      12,
+      10.5
+    ],
+    "bodyPt": 10.5,
+    "smallPt": 9,
+    "lineSpacing": 1.32,
+    "headingAllCaps": false,
+    "bandedRows": true,
+    "coverStyle": "full_bleed",
+    "headingRule": "none",
+    "displayNumbers": true
+  },
+  "brief": {
+    "faces": {
+      "heading": "Source Serif 4",
+      "body": "Source Sans 3",
+      "figure": "IBM Plex Mono"
+    },
+    "accent": "#3D4F8F",
+    "ink": "#1F2128",
+    "muted": "#5F6270",
+    "rule": "#D3D6E0",
+    "band": "#F1F2F7",
+    "titlePt": 20,
+    "subtitlePt": 11,
+    "headingPt": [
+      13,
+      11.5,
+      10.5,
+      9.5
+    ],
+    "bodyPt": 10,
+    "smallPt": 8.5,
+    "lineSpacing": 1.22,
+    "headingAllCaps": false,
+    "bandedRows": false,
+    "coverStyle": "summary",
+    "headingRule": "line",
+    "displayNumbers": false
+  }
+}

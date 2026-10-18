@@ -43,6 +43,8 @@ export type Starter = {
   readonly sections: Readonly<Record<Provider, readonly StarterSection[]>>
   /** Shown as new in the gallery: the starters this redesign added. */
   readonly isNew: boolean
+  /** False for a brief short enough that a contents page would be most of it. */
+  readonly contents?: boolean
 }
 
 const COVERAGE: StarterSection = { type: "coverage_and_verification" }
@@ -64,9 +66,10 @@ export const STARTERS: readonly Starter[] = [
     key: "executive_brief",
     name: "Executive brief",
     blurb: "One page of headline counts and decisions, then what needs tidying and who owns it.",
-    theme: "corporate",
+    theme: "brief",
     period: "last_full_month",
     isNew: true,
+    contents: false,
     sections: {
       aws: [{ type: "at_a_glance" }, { type: "aws_account" }, { type: "housekeeping" }, { type: "action_register" }, COVERAGE],
       azure: [{ type: "at_a_glance" }, { type: "azure_subscription" }, { type: "housekeeping" }, { type: "action_register" }, COVERAGE],
@@ -88,7 +91,7 @@ export const STARTERS: readonly Starter[] = [
     key: "backup_exposure",
     name: "Backup & exposure",
     blurb: "What has no backup, what faces the internet, and what bills without working.",
-    theme: "minimal",
+    theme: "ledger",
     period: "last_full_month",
     isNew: true,
     sections: {
@@ -112,7 +115,7 @@ export const STARTERS: readonly Starter[] = [
     key: "quarterly_review",
     name: "Quarterly review",
     blurb: "The month just closed with three months of trend behind it, for a business review.",
-    theme: "editorial",
+    theme: "signal",
     period: "last_full_month",
     isNew: true,
     sections: {
@@ -168,6 +171,9 @@ export function starterDraft(
     identity: { ...base.identity, report_title: name, description: starter.blurb },
     period: { kind: starter.period },
     design: { ...base.design, preset: theme, accent_color: themeAccent(theme) },
+    ...(starter.contents === false
+      ? { front_matter: { ...base.front_matter, toc: { ...(base.front_matter.toc as Record<string, unknown>), enabled: false } } }
+      : {}),
     sections: settled(provider, sections),
   }
 }

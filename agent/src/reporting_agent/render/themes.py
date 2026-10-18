@@ -1,7 +1,7 @@
-"""The four styles-only theme documents: their specification, their builder, and their guard.
+"""The styles-only theme documents: their specification, their builder, and their guard.
 
-`agent/themes/{editorial,corporate,technical,minimal}.docx` are **stylesheets that happen to
-be `.docx`** (Req 8.1). Each carries Word paragraph, character and table styles and **zero
+`agent/themes/<preset>.docx` — one per `DESIGN_PRESETS` entry — are **stylesheets that happen
+to be `.docx`** (Req 8.1). Each carries Word paragraph, character and table styles and **zero
 content**. `render/docx.py` opens one as its base and applies styles by name; a theme missing
 a name the compiled blocks reference is a terminal `RENDER_FAILED` (Req 8.6) and, before that,
 a failed image build (Req 8.7).
@@ -110,8 +110,10 @@ __all__ = [
     "missing_styles",
     "non_whitespace_text",
     "theme_directory",
+    "theme_faces",
     "theme_filename",
     "theme_path",
+    "unresolved_faces",
     "write_theme_documents",
 ]
 
@@ -187,8 +189,8 @@ REQUIRED_STYLE_NAMES: Final[tuple[str, ...]] = (
 """The union Req 8.3 defines, in a fixed order so a failure message reads the same every run."""
 
 THEME_PRESETS: Final[tuple[str, ...]] = DESIGN_PRESETS
-"""The four preset names, imported from the validator that constrains a definition to them, so
-a fifth preset cannot appear here without appearing there (Req 7.1, 8.1)."""
+"""The preset names, imported from the validator that constrains a definition to them, so a
+preset cannot appear here without appearing there (Req 7.1, 8.1)."""
 
 THEME_FILENAMES: Final[tuple[str, ...]] = tuple(f"{preset}.docx" for preset in THEME_PRESETS)
 
@@ -206,10 +208,11 @@ reaching into module state."""
 class Face:
     """The three type faces one theme uses.
 
-    Every name here is a font the image installs (`fonts-liberation2`,
-    `fonts-dejavu-core`) — see the Dockerfile. A theme naming a font the container lacks
-    renders through LibreOffice's substitution, which changes line breaking and therefore
-    pagination, so the font list and this spec are one decision in two files.
+    Every name here is a font the image installs: the Liberation and DejaVu packages, or a
+    face vendored under `agent/fonts/` with its checksum — see the Dockerfile. A theme naming
+    a font the container lacks renders through LibreOffice's substitution, which changes line
+    breaking and therefore pagination, so the font list and this spec are one decision in two
+    files.
     """
 
     heading: str
@@ -255,11 +258,32 @@ class ThemeSpec:
 
     banded_rows: bool = True
 
+    cover_style: str = "band"
+    """How the cover sits on its page. `band` is an accent band over a page of its own;
+    `full_bleed` fills the page with the accent and sets the cover in white; `summary` is a
+    title strip at the top of page one with the document carrying on beneath it."""
+
+    heading_rule: str = "rule"
+    """What sits under a section heading: `rule` (a hairline in the Word file, a short accent
+    bar in the reading copy), `double` (a double accent rule, a statement's), `line` (a single
+    accent rule) or `none`."""
+
+    display_numbers: bool = False
+    """Section numbers set large, in the accent, above the heading — `signal`'s device."""
+
     def __post_init__(self) -> None:
         if self.preset not in THEME_PRESETS:
             raise ValueError(f"{self.preset!r} is not one of {THEME_PRESETS}")
         if len(self.heading_pt) != 4:
             raise ValueError(f"{self.preset!r} declares {len(self.heading_pt)} heading sizes, not 4")
+        if self.cover_style not in COVER_STYLES:
+            raise ValueError(f"{self.preset!r} cover_style {self.cover_style!r} is not one of {COVER_STYLES}")
+        if self.heading_rule not in HEADING_RULES:
+            raise ValueError(f"{self.preset!r} heading_rule {self.heading_rule!r} is not one of {HEADING_RULES}")
+
+
+COVER_STYLES: Final[tuple[str, ...]] = ("band", "full_bleed", "summary")
+HEADING_RULES: Final[tuple[str, ...]] = ("rule", "double", "line", "none")
 
 
 _EDITORIAL: Final[ThemeSpec] = ThemeSpec(
@@ -317,8 +341,67 @@ _MINIMAL: Final[ThemeSpec] = ThemeSpec(
     banded_rows=False,
 )
 
+# --- The three that came with the preset builder ---------------------------------------
+#
+# Each names faces vendored under `agent/fonts/` (SIL Open Font License, pinned by checksum)
+# and serves a reader the first four did not: a finance or audit reviewer, an executive, and
+# a one-to-three page brief. Figures in all three are IBM Plex Mono, for the reason the first
+# four set them in DejaVu Sans Mono — a column of numerals aligns.
+
+_LEDGER: Final[ThemeSpec] = ThemeSpec(
+    preset="ledger",
+    # Reads like a statement: a plain grotesque, figures in its mono, a double rule under each
+    # section, and hairline tables rather than bands.
+    face=Face(heading="IBM Plex Sans", body="IBM Plex Sans", figure="IBM Plex Mono"),
+    palette=Palette(accent="245C45", ink="1C1C1C", muted="5C6660", rule="CFD6D2", band="F1F5F2"),
+    title_pt=24,
+    subtitle_pt=12,
+    heading_pt=(15, 12.5, 11, 10),
+    body_pt=10,
+    small_pt=8.5,
+    line_spacing=1.3,
+    banded_rows=False,
+    heading_rule="double",
+)
+
+_SIGNAL: Final[ThemeSpec] = ThemeSpec(
+    preset="signal",
+    # For executives and business reviews: a full-bleed accent cover, section numbers set large
+    # in the accent, and few rules. Archivo for display; the body is Liberation Sans, which is
+    # metric-compatible with the Arimo the design was drawn in.
+    face=Face(heading="Archivo", body="Liberation Sans", figure="IBM Plex Mono"),
+    palette=Palette(accent="A3401F", ink="1C1C1C", muted="6B625E", rule="DDD3CF", band="F7EFEC"),
+    title_pt=26,
+    subtitle_pt=12.5,
+    heading_pt=(18, 14, 12, 10.5),
+    body_pt=10.5,
+    small_pt=9,
+    line_spacing=1.32,
+    cover_style="full_bleed",
+    heading_rule="none",
+    display_numbers=True,
+)
+
+_BRIEF: Final[ThemeSpec] = ThemeSpec(
+    preset="brief",
+    # For a short brief: the cover is a title strip on page one, headings are compact serif
+    # over a single accent rule, and the type is set tight.
+    face=Face(heading="Source Serif 4", body="Source Sans 3", figure="IBM Plex Mono"),
+    palette=Palette(accent="3D4F8F", ink="1F2128", muted="5F6270", rule="D3D6E0", band="F1F2F7"),
+    title_pt=20,
+    subtitle_pt=11,
+    heading_pt=(13, 11.5, 10.5, 9.5),
+    body_pt=10,
+    small_pt=8.5,
+    line_spacing=1.22,
+    banded_rows=False,
+    cover_style="summary",
+    heading_rule="line",
+)
+
 THEME_SPECS: Final[Mapping[str, ThemeSpec]] = {
-    spec.preset: spec for spec in (_EDITORIAL, _CORPORATE, _TECHNICAL, _MINIMAL)
+    spec.preset: spec
+    for spec in (_EDITORIAL, _CORPORATE, _TECHNICAL, _MINIMAL, _LEDGER, _SIGNAL, _BRIEF)
 }
 
 assert tuple(THEME_SPECS) == THEME_PRESETS, (
@@ -423,13 +506,13 @@ def load_theme(preset: str) -> Document:
     path = theme_path(preset)
     if preset not in THEME_PRESETS:
         raise RenderFailedError(
-            f"style preset {preset!r} names no theme document; the four presets are "
+            f"style preset {preset!r} names no theme document; the presets are "
             f"{', '.join(THEME_PRESETS)}"
         )
     if not path.is_file():
         raise RenderFailedError(
             f"theme document {theme_filename(preset)!r} is absent from {path.parent}; the "
-            f"image must carry all four of {', '.join(THEME_FILENAMES)}"
+            f"image must carry every one of {', '.join(THEME_FILENAMES)}"
         )
 
     try:
@@ -499,7 +582,7 @@ def collect_theme_violations(directory: Path | None = None) -> list[str]:
     if present != expected:
         for unexpected in sorted(set(present) - set(expected)):
             violations.append(
-                f"{DIRECTORY_VIOLATION}: {root / unexpected} is not one of the four required "
+                f"{DIRECTORY_VIOLATION}: {root / unexpected} is not one of the required "
                 f"theme documents"
             )
         for absent in sorted(set(expected) - set(present)):
@@ -542,7 +625,7 @@ def assert_themes_usable(directory: Path | None = None) -> None:
     violations = collect_theme_violations(directory)
     if violations:
         raise RenderFailedError(
-            f"the four theme documents in {theme_directory() if directory is None else directory} "
+            f"the theme documents in {theme_directory() if directory is None else directory} "
             f"are not usable:\n  " + "\n  ".join(violations)
         )
 
@@ -576,6 +659,8 @@ _STYLE_IDS: Final[Mapping[str, str]] = {
     "Body Text": "BodyText",
     "Caption": "Caption",
     "Notice": "Notice",
+    "Callout": "Callout",
+    "Callout Attention": "CalloutAttention",
     "PreviewNotice": "PreviewNotice",
     "Cover Title": "CoverTitle",
     "Cover Meta": "CoverMeta",
@@ -683,15 +768,34 @@ def _paragraph_style(
     keep_next: bool = False,
     outline_level: int | None = None,
     border_bottom: str | None = None,
+    border_bottom_style: str = "single",
+    border_bottom_size: int = 4,
+    border_left: str | None = None,
+    shading: str | None = None,
+    indent_twips: int | None = None,
     right_tab_twips: int | None = None,
 ) -> str:
+    # In `CT_PPr`'s sequence — keepNext, pBdr, shd, tabs, spacing, ind, outlineLvl — which
+    # Word enforces where LibreOffice forgives.
     paragraph_parts: list[str] = []
     if keep_next:
         paragraph_parts.append("<w:keepNext/><w:keepLines/>")
+    if border_bottom or border_left:
+        edges = ""
+        if border_left:
+            edges += f'<w:left w:val="single" w:sz="18" w:space="8" w:color="{border_left}"/>'
+        if border_bottom:
+            edges += (
+                f'<w:bottom w:val="{border_bottom_style}" w:sz="{border_bottom_size}" w:space="3"'
+                f' w:color="{border_bottom}"/>'
+            )
+        paragraph_parts.append(f"<w:pBdr>{edges}</w:pBdr>")
+    if shading:
+        paragraph_parts.append(f'<w:shd w:val="clear" w:color="auto" w:fill="{shading}"/>')
     if right_tab_twips is not None:
         # A right tab with a dot leader — the page-number column of a contents entry. It
-        # belongs to the theme rather than to the emitter, so the four themes cannot lay a
-        # table of contents out four different ways.
+        # belongs to the theme rather than to the emitter, so the themes cannot lay a table
+        # of contents out different ways.
         paragraph_parts.append(
             f'<w:tabs><w:tab w:val="right" w:leader="dot" w:pos="{right_tab_twips}"/></w:tabs>'
         )
@@ -700,11 +804,8 @@ def _paragraph_style(
         f' w:after="{_twentieths(space_after_pt)}"'
         f' w:line="{_twentieths(size_pt * spec.line_spacing)}" w:lineRule="auto"/>'
     )
-    if border_bottom:
-        paragraph_parts.append(
-            f'<w:pBdr><w:bottom w:val="single" w:sz="4" w:space="3" w:color="{border_bottom}"/>'
-            f"</w:pBdr>"
-        )
+    if indent_twips is not None:
+        paragraph_parts.append(f'<w:ind w:left="{indent_twips}" w:right="{indent_twips}"/>')
     if outline_level is not None:
         paragraph_parts.append(f'<w:outlineLvl w:val="{outline_level}"/>')
 
@@ -876,6 +977,26 @@ def _data_table_styles(spec: ThemeSpec) -> str:
     return hairline + banded + bordered + signature + layout
 
 
+_COVER_INK: Final[str] = "FFFFFF"
+"""A full-bleed cover's text: white on the accent it sits on."""
+
+ATTENTION_RULE: Final[str] = "B45309"
+ATTENTION_TINT: Final[str] = "FDF4E7"
+"""`Callout Attention`'s rule and tint, the same in every theme. Amber rather than red: a
+callout marks something to act on, not a failure."""
+
+
+def _heading_rule(spec: ThemeSpec) -> dict[str, object]:
+    """What `Heading 1` carries under it in the Word file, per `ThemeSpec.heading_rule`."""
+    if spec.heading_rule == "double":
+        return {"border_bottom": spec.palette.accent, "border_bottom_style": "double", "border_bottom_size": 6}
+    if spec.heading_rule == "line":
+        return {"border_bottom": spec.palette.accent, "border_bottom_size": 6}
+    if spec.heading_rule == "none":
+        return {}
+    return {"border_bottom": spec.palette.rule}
+
+
 def _styles_xml(spec: ThemeSpec) -> str:
     """The whole payload of a theme: `word/styles.xml`."""
     palette = spec.palette
@@ -947,7 +1068,7 @@ def _styles_xml(spec: ThemeSpec) -> str:
                 space_after_pt=5,
                 keep_next=True,
                 outline_level=0,
-                border_bottom=palette.rule,
+                **_heading_rule(spec),
             ),
             _paragraph_style(
                 "Heading 2",
@@ -1019,6 +1140,34 @@ def _styles_xml(spec: ThemeSpec) -> str:
                 space_before_pt=2,
                 space_after_pt=4,
             ),
+            # A v4 callout: the author's words, set apart by a rule down the left and a
+            # tint. `Callout` takes the accent, so a changed accent recolours it with every
+            # other accent; `Callout Attention` takes a fixed amber, because "act on this"
+            # should not depend on which accent a consultant picked.
+            _paragraph_style(
+                "Callout",
+                spec,
+                size_pt=spec.body_pt,
+                color=palette.ink,
+                font=face.body,
+                space_before_pt=6,
+                space_after_pt=8,
+                border_left=palette.accent,
+                shading=palette.band,
+                indent_twips=140,
+            ),
+            _paragraph_style(
+                "Callout Attention",
+                spec,
+                size_pt=spec.body_pt,
+                color=palette.ink,
+                font=face.body,
+                space_before_pt=6,
+                space_after_pt=8,
+                border_left=ATTENTION_RULE,
+                shading=ATTENTION_TINT,
+                indent_twips=140,
+            ),
             _paragraph_style(
                 "PreviewNotice",
                 spec,
@@ -1040,8 +1189,8 @@ def _styles_xml(spec: ThemeSpec) -> str:
                 "Cover Title",
                 spec,
                 next_style="Cover Meta",
-                size_pt=spec.title_pt * 1.35,
-                color=palette.accent,
+                size_pt=spec.title_pt * (1.15 if spec.cover_style == "summary" else 1.35),
+                color=_COVER_INK if spec.cover_style == "full_bleed" else palette.accent,
                 font=face.heading,
                 bold=True,
                 space_before_pt=0,
@@ -1053,7 +1202,7 @@ def _styles_xml(spec: ThemeSpec) -> str:
                 spec,
                 next_style="Cover Meta",
                 size_pt=spec.subtitle_pt,
-                color=palette.muted,
+                color=_COVER_INK if spec.cover_style == "full_bleed" else palette.muted,
                 font=face.heading,
                 space_after_pt=3,
             ),
@@ -1249,6 +1398,45 @@ def write_theme_documents(directory: Path | None = None) -> tuple[Path, ...]:
     return tuple(written)
 
 
+# --------------------------------------------------------------------------- #
+# The faces — every one a theme names must resolve in the image
+# --------------------------------------------------------------------------- #
+
+
+def theme_faces() -> tuple[str, ...]:
+    """Every face any theme names, sorted, each once."""
+    return tuple(
+        sorted({name for spec in THEME_SPECS.values() for name in (spec.face.heading, spec.face.body, spec.face.figure)})
+    )
+
+
+def unresolved_faces(match: object = None) -> list[str]:
+    """The faces fontconfig does not resolve to themselves, each with what it gave instead.
+
+    A face the image lacks does not fail anything at run time: LibreOffice and WeasyPrint
+    both substitute silently, which changes line breaking and therefore pagination — so the
+    delivered PDF would be set in a face nobody reviewed. `fc-match` answers with its nearest
+    family whatever is asked, so the check is that the answer *is* the face asked for.
+
+    `match` is `fc-match` itself unless a test supplies one.
+    """
+    import subprocess
+
+    def fc_match(name: str) -> str:
+        result = subprocess.run(
+            ["fc-match", "--format=%{family}", name], capture_output=True, text=True, check=False
+        )
+        return result.stdout
+
+    resolve = fc_match if match is None else match
+    missing: list[str] = []
+    for face in theme_faces():
+        families = [family.strip() for family in str(resolve(face)).split(",")]  # type: ignore[operator]
+        if face not in families:
+            missing.append(f"{face!r} resolves to {', '.join(families) or 'nothing'}")
+    return missing
+
+
 # The style-name vocabulary has to be internally consistent or the builder writes a `w:basedOn`
 # pointing at nothing. Asserted at import, the way `errors.py` asserts its own partitions.
 assert set(REQUIRED_STYLE_NAMES) <= set(_STYLE_IDS), sorted(
@@ -1264,6 +1452,14 @@ if __name__ == "__main__":  # pragma: no cover - exercised by the Dockerfile and
     import sys
 
     flags = sys.argv[1:]
+    if "--assert-fonts" in flags:
+        unresolved = unresolved_faces()
+        if unresolved:
+            print("theme faces missing from the image:\n  " + "\n  ".join(unresolved), file=sys.stderr)
+            raise SystemExit(1)
+        print(f"fonts ok: {len(theme_faces())} faces resolve to themselves")
+        raise SystemExit(0)
+
     if "--write" in flags:
         for written_path in write_theme_documents():
             print(f"wrote {written_path}")
@@ -1271,7 +1467,7 @@ if __name__ == "__main__":  # pragma: no cover - exercised by the Dockerfile and
 
     if "--assert-build" not in flags:
         print(
-            "usage: python -m reporting_agent.render.themes [--assert-build | --write]",
+            "usage: python -m reporting_agent.render.themes [--assert-build | --assert-fonts | --write]",
             file=sys.stderr,
         )
         raise SystemExit(2)

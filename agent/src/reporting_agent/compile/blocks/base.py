@@ -144,13 +144,18 @@ PARAGRAPH_STYLES: Final[tuple[str, ...]] = (
     "Body Text",
     "Caption",
     "Notice",
+    "Callout",
+    "Callout Attention",
 )
 """Every paragraph style the declared block types reference.
 
 `Notice` is the empty-scope and no-gaps row's style, and it is a **separate style from
 `Body Text` on purpose**: `design-system.md` requires those rows in mist neutrals rather
 than in `--destructive`, because an empty result is information and not an error. Making it
-a style rather than inline formatting is what lets a theme honour that."""
+a style rather than inline formatting is what lets a theme honour that.
+
+`Callout` and `Callout Attention` are a v4 callout's two tones: the author's words set apart
+from the body, the second marked for a reader to act on."""
 
 CHILD_SCOPE_CONFIG_KEY: Final[str] = "_scope"
 CHILD_SCOPE_CHILDREN: Final[str] = "children"

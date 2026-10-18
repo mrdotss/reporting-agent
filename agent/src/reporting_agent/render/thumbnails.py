@@ -1,4 +1,4 @@
-"""Real page images of the four themes, for the wizard's preset picker (Req 13.2).
+"""Real page images of the themes, for the builder's theme picker (Req 13.2).
 
 Run as ``python -m reporting_agent.render.thumbnails --write``, mirroring
 ``render/themes.py``'s convention. The produced PNGs and their sidecars are **committed**
@@ -356,8 +356,15 @@ def _render_preset(preset: str) -> bytes:
     from reporting_agent.compile.snapshot_view import build_snapshot_view
     from reporting_agent.render.docx import render_document
     from reporting_agent.render.pdf import convert_to_pdf
+    from reporting_agent.render.themes import THEME_SPECS
 
-    definition = {**SAMPLE_DEFINITION, "design": {**SAMPLE_DEFINITION["design"], "preset": preset}}
+    # Each card in its theme's own accent, which is what choosing the theme sets: one shared
+    # accent made seven themes look like one in seven faces.
+    accent = f"#{THEME_SPECS[preset].palette.accent}"
+    definition = {
+        **SAMPLE_DEFINITION,
+        "design": {**SAMPLE_DEFINITION["design"], "preset": preset, "accent_color": accent},
+    }
 
     view = build_snapshot_view(_sample_snapshot())
     compiled = compile_document(

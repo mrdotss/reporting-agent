@@ -28,7 +28,7 @@ import {
   type SampleResource,
   type SampleUnit,
 } from "@/lib/builder/sample"
-import { DENSITY_SCALE, PT, type PageDesign } from "@/lib/builder/theme"
+import { ATTENTION, DENSITY_SCALE, PT, type PageDesign } from "@/lib/builder/theme"
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 
 /**
@@ -144,6 +144,20 @@ function Caption({ design, children }: Readonly<{ design: PageDesign; children: 
   )
 }
 
+/** What sits under a section heading, per `ThemeSpec.headingRule` — the Word file's rule. */
+function sectionRule(spec: PageDesign["spec"]): string | undefined {
+  switch (spec.headingRule) {
+    case "double":
+      return `3px double ${spec.accent}`
+    case "line":
+      return `1px solid ${spec.accent}`
+    case "none":
+      return undefined
+    default:
+      return `1px solid ${spec.rule}`
+  }
+}
+
 function Heading({
   design,
   level,
@@ -153,11 +167,14 @@ function Heading({
   const { spec } = design
   const size = spec.headingPt[level - 1]!
   const caps = spec.headingAllCaps && level >= 3
+  const display = spec.displayNumbers && level === 1 && number !== undefined
+  const rule = level === 1 ? sectionRule(spec) : undefined
   return (
     <div
       role="heading"
       aria-level={level + 1}
       style={{
+        fontFamily: spec.headingFace,
         fontSize: px(size),
         fontWeight: 700,
         color: level === 1 ? spec.accent : spec.ink,
@@ -165,17 +182,33 @@ function Heading({
         textTransform: caps ? "uppercase" : undefined,
         lineHeight: 1.2,
         display: "flex",
-        alignItems: "baseline",
-        gap: 10,
-        paddingBottom: level === 1 ? 6 : 0,
-        borderBottom: level === 1 ? `1px solid ${spec.rule}` : undefined,
+        flexDirection: display ? "column" : "row",
+        alignItems: display ? "flex-start" : "baseline",
+        gap: display ? 4 : 10,
+        paddingBottom: rule ? 6 : 0,
+        borderBottom: rule,
       }}
     >
-      {number !== undefined && (
-        <span style={{ color: spec.muted, fontWeight: 400, fontVariantNumeric: "tabular-nums" }}>
-          {String(number).padStart(2, "0")}
-        </span>
-      )}
+      {number !== undefined &&
+        (display ? (
+          // `signal`: the number on its own line, large and in the accent.
+          <span
+            style={{
+              fontSize: px(size * 2.6),
+              fontWeight: 900,
+              lineHeight: 0.85,
+              letterSpacing: "-0.05em",
+              color: spec.accent,
+              fontVariantNumeric: "tabular-nums",
+            }}
+          >
+            {number}
+          </span>
+        ) : (
+          <span style={{ color: spec.muted, fontWeight: 400, fontVariantNumeric: "tabular-nums" }}>
+            {String(number).padStart(2, "0")}
+          </span>
+        ))}
       <span>{children}</span>
     </div>
   )
@@ -698,8 +731,8 @@ export function AddedBlockView({
       return (
         <div
           style={{
-            borderLeft: `3px solid ${attention ? "#b7791f" : design.spec.accent}`,
-            background: attention ? "#fbf3e2" : design.spec.band,
+            borderLeft: `3px solid ${attention ? ATTENTION.rule : design.spec.accent}`,
+            background: attention ? ATTENTION.tint : design.spec.band,
             padding: "8px 12px",
             color: design.spec.ink,
           }}

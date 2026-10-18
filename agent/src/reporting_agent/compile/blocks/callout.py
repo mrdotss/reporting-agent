@@ -27,14 +27,16 @@ from reporting_agent.compile.blocks.base import BlockContext, BlockOutput, Block
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.snapshot_view import HOUSEKEEPING_FACT_KEY, SnapshotValue
 
-__all__ = ["CALLOUT_CONDITION_KEY", "CALLOUT_STYLE", "compile_callout"]
+__all__ = ["CALLOUT_ATTENTION_STYLE", "CALLOUT_CONDITION_KEY", "CALLOUT_STYLE", "compile_callout"]
 
 CALLOUT_CONDITION_KEY: Final[str] = "callout"
 """The config key a `rich_text` block carries when it is a callout."""
 
-CALLOUT_STYLE: Final[str] = "Notice"
-"""A callout prints in the theme's notice style: set apart from body text, and information
-rather than an error."""
+CALLOUT_STYLE: Final[str] = "Callout"
+"""The `info` tone: set apart from body text, in the theme's accent."""
+
+CALLOUT_ATTENTION_STYLE: Final[str] = "Callout Attention"
+"""The `attention` tone: the same block, marked for a reader to act on."""
 
 _COUNTED: Final[Mapping[str, tuple[str, ...]]] = {
     "without_backup": ("resources", "with_gap", "backup_not_configured"),
@@ -102,4 +104,5 @@ def compile_callout(context: BlockContext, block: BlockSpec, cursor: BlockCursor
     if position < len(text):
         inlines.append(Text(path=paragraph_cursor.child("inlines", len(inlines)).path, text=text[position:]))
 
-    return BlockOutput(nodes=(Paragraph(path=paragraph_cursor.path, style=CALLOUT_STYLE, inlines=tuple(inlines)),))
+    style = CALLOUT_ATTENTION_STYLE if condition.get("tone") == "attention" else CALLOUT_STYLE
+    return BlockOutput(nodes=(Paragraph(path=paragraph_cursor.path, style=style, inlines=tuple(inlines)),))

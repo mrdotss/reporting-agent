@@ -825,7 +825,15 @@ MAX_PERIOD_LOCAL_DAYS: Final[int] = 31
 # --- Closed value sets --------------------------------------------------------------
 
 SORT_DIRECTIONS: Final[tuple[str, ...]] = ("descending", "ascending")
-DESIGN_PRESETS: Final[tuple[str, ...]] = ("editorial", "corporate", "technical", "minimal")
+DESIGN_PRESETS: Final[tuple[str, ...]] = (
+    "editorial",
+    "corporate",
+    "technical",
+    "minimal",
+    "ledger",
+    "signal",
+    "brief",
+)
 DENSITY_VALUES: Final[tuple[str, ...]] = ("compact", "normal", "relaxed")
 TABLE_STYLE_VALUES: Final[tuple[str, ...]] = ("hairline", "banded", "bordered")
 PAGE_SIZE_VALUES: Final[tuple[str, ...]] = ("A4", "Letter")

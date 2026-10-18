@@ -69,4 +69,18 @@ export const PRESET_FACES: Readonly<Record<DesignPreset, string>> = {
   technical: '"DejaVu Sans", "Helvetica Neue", Arial, sans-serif',
   corporate: '"Liberation Sans", Arial, Helvetica, sans-serif',
   minimal: '"Liberation Sans", Arial, Helvetica, sans-serif',
+  // The last three lead with the vendored face `lib/builder/fonts.ts` loads.
+  ledger: 'var(--font-plex-sans), "IBM Plex Sans", Arial, sans-serif',
+  signal: '"Liberation Sans", Arimo, Arial, Helvetica, sans-serif',
+  brief: 'var(--font-source-sans), "Source Sans 3", Arial, sans-serif',
+}
+
+/**
+ * The face each theme sets its headings and cover in. The first four use one face for both;
+ * `signal` and `brief` pair a display face with their body face.
+ */
+export const PRESET_HEADING_FACES: Readonly<Record<DesignPreset, string>> = {
+  ...PRESET_FACES,
+  signal: 'var(--font-archivo), "Archivo", Arial, sans-serif',
+  brief: 'var(--font-source-serif), "Source Serif 4", Georgia, serif',
 }

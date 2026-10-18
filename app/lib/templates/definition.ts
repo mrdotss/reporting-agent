@@ -757,12 +757,15 @@ export const MAX_DECIMAL_PLACES = 3
 export const SORT_DIRECTIONS = ["descending", "ascending"] as const
 export type SortDirection = (typeof SORT_DIRECTIONS)[number]
 
-/** Requirement 7.1 — exactly four, case-sensitive. */
+/** Requirement 7.1, case-sensitive. The last three came with the preset builder. */
 export const DESIGN_PRESETS = [
   "editorial",
   "corporate",
   "technical",
   "minimal",
+  "ledger",
+  "signal",
+  "brief",
 ] as const
 export type DesignPreset = (typeof DESIGN_PRESETS)[number]
 
