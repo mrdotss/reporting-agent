@@ -302,13 +302,17 @@ __all__ = [
     "DOCUMENT_NUMBER_VARYING_PLACEHOLDERS",
     "FRONT_MATTER_FORBIDDEN_BLOCK_TYPES",
     "FRONT_MATTER_KEYS",
+    "HISTORICAL_LOOKBACK_MAX",
+    "HISTORICAL_LOOKBACK_MIN",
     "IDENTITY_KEYS",
     "LANGUAGES",
+    "LOCATION_MAX_LENGTH",
     "LOGO_MAX_LENGTH",
     "MAX_BLOCKS_TOTAL",
     "MAX_CHILDREN_PER_COLUMN",
     "MAX_DECIMAL_PLACES",
     "MAX_DEFINITION_CANONICAL_BYTES",
+    "MAX_LOCATIONS",
     "MAX_METRIC_ITEMS_PER_ENTRY",
     "MAX_METRIC_RESOURCE_TYPE_ENTRIES",
     "MAX_PERIOD_LOCAL_DAYS",
@@ -316,6 +320,7 @@ __all__ = [
     "MAX_RESOURCE_TYPES",
     "MAX_ROW_COLUMNS",
     "MAX_SECTIONS",
+    "MAX_SECTION_BLOCKS",
     "MAX_SUPPORTED_SCHEMA_VERSION",
     "MAX_TAG_FILTERS",
     "MIN_DECIMAL_PLACES",
@@ -336,9 +341,15 @@ __all__ = [
     "RESOURCE_GROUP_MAX_LENGTH",
     "RESOURCE_GROUP_MIN_LENGTH",
     "RESOURCE_TYPE_MAX_LENGTH",
+    "SECTION_BLOCK_KINDS",
     "SECTION_ID_MAX_LENGTH",
+    "SECTION_ID_MAX_LENGTH_V4",
     "SECTION_ID_MIN_LENGTH",
+    "SECTION_KEYS_V4",
+    "SECTION_POSITION_MAX",
     "SECTION_PRESENTATIONS",
+    "SECTION_TEXT_MAX_LENGTH",
+    "SECTION_TITLE_MAX_LENGTH",
     "SEPARATOR_DEFAULTS",
     "SORT_DIRECTIONS",
     "SUPPORTED_PROVIDERS",
@@ -354,6 +365,7 @@ __all__ = [
     "canonical_bytes",
     "canonical_digest",
     "collect_definition_issues",
+    "contains_numeral",
     "format_path",
     "inclusive_local_day_span",
     "is_real_calendar_date",
@@ -385,7 +397,7 @@ it moved onto the profile."""
 # version is exactly three things: `front_matter`, `identity.language`, and the two
 # `number_format` separators.
 MIN_SCHEMA_VERSION: Final[int] = 1
-MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 3
+MAX_SUPPORTED_SCHEMA_VERSION: Final[int] = 4
 
 # The version-conditional key sets, **declared as data rather than as two validators**.
 # `collect_definition_issues` resolves the version once and reads the record for it, so no
@@ -421,6 +433,19 @@ REQUIRED_TOP_LEVEL_KEYS: Final[dict[int, tuple[str, ...]]] = {
         "design",
         "front_matter",
     ),
+    # v4 changes nothing at the top level. It changes what a section entry may carry:
+    # an explicit `position`, its own `blocks`, and a `locations` filter (Req: preset
+    # builder). The version moves anyway, because a v3 reader tolerates unknown section
+    # keys and would drop a block layout silently rather than refuse it.
+    4: (
+        "schema_version",
+        "identity",
+        "provider",
+        "sections",
+        "period",
+        "design",
+        "front_matter",
+    ),
 }
 
 # Req 16.1 — two keys at v1, four at v2.
@@ -444,6 +469,14 @@ NUMBER_FORMAT_KEYS: Final[dict[int, tuple[str, ...]]] = {
         "trim_trailing_zeros",
         "bytes_as_gib",
     ),
+    4: (
+        "decimal_places",
+        "group_thousands",
+        "decimal_separator",
+        "grouping_separator",
+        "trim_trailing_zeros",
+        "bytes_as_gib",
+    ),
 }
 
 # Req 15.1 — `identity.language` exists at v2 and nowhere else.
@@ -455,6 +488,7 @@ IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     # _resolve_run_facts still reads payload.get("customer_name") unchanged
     # (task 4.4).
     3: ("name", "description", "report_title", "language", "customer_name"),
+    4: ("name", "description", "report_title", "language", "customer_name"),
 }
 
 REQUIRED_IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
@@ -465,6 +499,7 @@ REQUIRED_IDENTITY_KEYS: Final[dict[int, tuple[str, ...]]] = {
     # report_title is optional at every version. The run-time gate belongs
     # to enqueueRun, not to draft-mode validation.
     3: ("name", "language"),
+    4: ("name", "language"),
 }
 
 # Req 15.1 — the two declared languages, matched **case-sensitively**. `EN` is not a
@@ -498,6 +533,35 @@ SECTION_PRESENTATIONS: Final[tuple[str, ...]] = (
 SECTION_ID_MIN_LENGTH: Final[int] = 1
 SECTION_ID_MAX_LENGTH: Final[int] = 64
 MAX_SECTIONS: Final[int] = 200
+
+# Schema v4: what a section entry may carry, closed. v3 tolerated unknown keys, which is
+# the silent drop v4 exists to end. `presentation` is gone: `blocks` hides what it hid.
+SECTION_KEYS_V4: Final[tuple[str, ...]] = (
+    "id",
+    "type",
+    "position",
+    "selection",
+    "metrics",
+    "lookback",
+    "blocks",
+)
+# Shorter than a v3 id, because every block id is built from it and a figure path bounds
+# a block id at 64 characters: 24 + `__` + a 20-character slot + `__m9` + `__499` fits.
+SECTION_ID_MAX_LENGTH_V4: Final[int] = 24
+SECTION_POSITION_MAX: Final[int] = 999
+MAX_SECTION_BLOCKS: Final[int] = 40
+SECTION_TITLE_MAX_LENGTH: Final[int] = 120
+SECTION_TEXT_MAX_LENGTH: Final[int] = 2000
+# The blocks a person may add to a v4 section. Words only: every one is checked for
+# numerals, because a number in a report comes from the snapshot or not at all.
+SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = ("text",)
+MAX_LOCATIONS: Final[int] = 50
+LOCATION_MAX_LENGTH: Final[int] = 64
+# The trend depth a section may ask for, in months. `compile/blocks/charts.py` reads
+# these too, so the bound the author is held to and the one the chart compiles under
+# are one declaration.
+HISTORICAL_LOOKBACK_MIN: Final[int] = 2
+HISTORICAL_LOOKBACK_MAX: Final[int] = 24
 # --- END SCHEMA VERSIONS ---
 
 assert set(REQUIRED_TOP_LEVEL_KEYS) == set(
@@ -557,7 +621,97 @@ def _load_fixed_keys() -> dict[str, tuple[str, ...]]:
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class _SlotShape:
+    """What a v4 `blocks` entry may set on one catalogue expansion, read from its slot."""
+
+    slot: str
+    per: str
+    titled: bool
+    """A section heading, whose text an author may replace (`title`)."""
+    required: bool
+    """The section's own title: hiding it would leave a section with no name."""
+    columns: tuple[str, ...]
+    """The columns a `resource_table` declares, which `columns` may narrow and reorder."""
+
+
+def _column_id(column: object) -> str | None:
+    if not isinstance(column, dict):
+        return None
+    value = column.get("fact_key") or column.get("attribute")
+    return value if isinstance(value, str) else None
+
+
+def _load_section_slots() -> dict[str, dict[str, tuple[_SlotShape, ...]]]:
+    """Every section type's slots per provider, in catalogue order."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    result: dict[str, dict[str, tuple[_SlotShape, ...]]] = {}
+    for provider_name, provider_data in raw.get("providers", {}).items():
+        by_type: dict[str, tuple[_SlotShape, ...]] = {}
+        for section in provider_data.get("sections", []):
+            shapes: list[_SlotShape] = []
+            for expansion in section.get("expands_to", []):
+                config = expansion.get("config", {})
+                heading = expansion.get("block") == "heading" and expansion.get("per") == "section"
+                columns = config.get("columns") if expansion.get("block") == "resource_table" else None
+                shapes.append(
+                    _SlotShape(
+                        slot=expansion.get("slot", ""),
+                        per=expansion.get("per", ""),
+                        titled=heading,
+                        required=heading and config.get("level") == 1,
+                        columns=tuple(
+                            column_id
+                            for column_id in (_column_id(c) for c in columns or ())
+                            if column_id is not None
+                        ),
+                    )
+                )
+            by_type[section["key"]] = tuple(shapes)
+        result[provider_name] = by_type
+    return result
+
+
+def _load_always_keys() -> dict[str, frozenset[str]]:
+    """The `always` section keys per provider: the appendix whose blocks no author edits."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    return {
+        provider_name: frozenset(
+            s["key"] for s in provider_data.get("sections", []) if s.get("position") == "always"
+        )
+        for provider_name, provider_data in raw.get("providers", {}).items()
+    }
+
+
 SECTION_KEYS_BY_PROVIDER: Final[dict[str, tuple[str, ...]]] = _load_section_keys()
+SECTION_SLOTS_BY_PROVIDER: Final[dict[str, dict[str, tuple[_SlotShape, ...]]]] = (
+    _load_section_slots()
+)
+ALWAYS_SECTION_KEYS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = _load_always_keys()
+
+
+def _load_lookback_types() -> frozenset[str]:
+    """Section types that draw a trend, and so need a `lookback` — the app's
+    `LOOKBACK_SECTION_TYPES`, derived the same way: from what each entry expands to."""
+    import json as _json
+
+    with open(_SECTIONS_CATALOGUE_PATH, encoding="utf-8") as f:
+        raw = _json.load(f)
+    return frozenset(
+        s["key"]
+        for provider_data in raw.get("providers", {}).values()
+        for s in provider_data.get("sections", [])
+        if any(e.get("block") == "historical_trend" for e in s.get("expands_to", []))
+    )
+
+
+_LOOKBACK_SECTION_TYPES: Final[frozenset[str]] = _load_lookback_types()
 NON_REPEATABLE_SECTION_KEYS_BY_PROVIDER: Final[dict[str, frozenset[str]]] = (
     _load_non_repeatable_keys()
 )
@@ -637,6 +791,10 @@ _NON_ROW_BLOCK_TYPE_SET: Final[frozenset[str]] = frozenset(NON_ROW_BLOCK_TYPES)
 _SCOPE_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
     {"resource_types", "tag_filters", "resource_groups", "top_n", "sort"}
 )
+# A v4 section's `selection` may also narrow by location (an AWS region, an Azure
+# location). Optional rather than required-present like the other dimensions: absent is
+# the v3 shape, and reading it as unconstrained is what it always meant.
+_SCOPE_ALLOWED_KEYS_V4: Final[frozenset[str]] = _SCOPE_ALLOWED_KEYS | {"locations"}
 _TOP_N_ALLOWED_KEYS: Final[frozenset[str]] = frozenset({"count", "metric", "statistic"})
 _METRIC_ITEM_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
     {"metric", "derived", "statistic", "estimator", "fidelity_tier"}
@@ -1069,9 +1227,12 @@ def _validate_scope_spec(
         walk.add(path, "A scope specification must be an object.", block_id)
         return
 
+    allowed = _SCOPE_ALLOWED_KEYS_V4 if walk.version >= 4 and path[:1] == ("sections",) else _SCOPE_ALLOWED_KEYS
     for key in scope:
-        if key not in _SCOPE_ALLOWED_KEYS:
+        if key not in allowed:
             walk.add((*path, key), f'Unrecognized scope field "{key}".', block_id)
+    if "locations" in scope and "locations" in allowed:
+        _validate_locations(scope.get("locations"), (*path, "locations"), walk)
 
     _validate_resource_types(
         scope.get("resource_types"), (*path, "resource_types"), walk, block_id
@@ -1179,6 +1340,22 @@ def _validate_tag_filters(
                 (*entry_path, "value"),
                 _azure_identifier_message((*entry_path, "value")),
                 block_id,
+            )
+
+
+def _validate_locations(value: object, path: Path, walk: _Walk) -> None:
+    if not _is_json_array(value):
+        walk.add(path, "locations must be an array.")
+        return
+    if len(value) > MAX_LOCATIONS:
+        walk.add(path, f"locations accepts at most {MAX_LOCATIONS} entries.")
+    for index, entry in enumerate(value):
+        if not _is_non_empty_string(entry) or not _string_length_in_range(
+            entry, 1, LOCATION_MAX_LENGTH
+        ):
+            walk.add(
+                (*path, index),
+                f"Each location must be a string of 1 to {LOCATION_MAX_LENGTH} characters.",
             )
 
 
@@ -2897,6 +3074,10 @@ def _validate_sections(
                 for item_index, item in enumerate(metrics):
                     _validate_metric_item(item, (*metrics_path, item_index), walk)
 
+        if walk.version >= 4:
+            _validate_section_v4(entry, entry_path, walk, resolved_provider)
+            continue
+
         # --- presentation ---
         if "presentation" in entry:
             pres = entry.get("presentation")
@@ -2909,6 +3090,286 @@ def _validate_sections(
                     f"presentation must be one of: "
                     f"{', '.join(SECTION_PRESENTATIONS)}.",
                 )
+
+
+# --- schema v4: a section's own layout --------------------------------------------
+
+_USER_BLOCK_ID_PATTERN: Final[re.Pattern[str]] = re.compile(r"\Au_[a-z0-9]{1,12}\Z")
+"""An added block's id: `u_` and up to twelve lowercase letters or digits. The prefix is
+reserved in the catalogue (`catalog/loader.py::USER_BLOCK_ID_PREFIX`), so an added block
+and a catalogue slot never share a block id."""
+
+_EACH_RESOURCE_SLOT: Final[str] = "each"
+
+_LANGUAGE_NAMES: Final[dict[str, str]] = {"en": "English", "id": "Indonesian"}
+
+
+def contains_numeral(text: str) -> bool:
+    """Whether `text` holds any numeral — a decimal digit, a Roman numeral, a fraction.
+
+    Typed text in a v4 section is words only. A figure in a report comes from the
+    snapshot and is traced, and a number someone typed would read exactly like one.
+    """
+    import unicodedata
+
+    return any(unicodedata.category(character).startswith("N") for character in text)
+
+
+def _validate_typed_text(
+    value: object, path: Path, walk: _Walk, *, max_length: int, what: str
+) -> None:
+    """An `{en, id}` object of typed words: the document's language required, no numerals."""
+    if not _is_plain_object(value):
+        walk.add(path, f"{what} must be an object with an `en` and/or `id` string.")
+        return
+    for key in value:
+        if key not in LANGUAGES:
+            walk.add((*path, key), f'Unrecognized language "{key}".')
+    if walk.language is not None and walk.language not in value:
+        walk.add(
+            (*path, walk.language),
+            f"{what} needs an {_LANGUAGE_NAMES[walk.language]} version, the report's language.",
+        )
+    elif not value:
+        walk.add(path, f"{what} needs at least one language.")
+    for language in LANGUAGES:
+        if language not in value:
+            continue
+        text = value.get(language)
+        if not isinstance(text, str) or not text.strip() or len(text) > max_length:
+            walk.add(
+                (*path, language),
+                f"{what} must be 1 to {max_length} characters.",
+            )
+        elif contains_numeral(text):
+            walk.add(
+                (*path, language),
+                f"{what} cannot contain numbers. Every number in a report comes from the "
+                f"snapshot.",
+            )
+
+
+def _validate_slot_entry(
+    block: dict[str, object],
+    path: Path,
+    walk: _Walk,
+    shape: _SlotShape | None,
+) -> None:
+    """One `{slot, hidden?, title?, columns?}` entry against its catalogue expansion."""
+    allowed = {"slot", "hidden"}
+    if shape is not None and shape.titled:
+        allowed.add("title")
+    if shape is not None and shape.columns:
+        allowed.add("columns")
+    for key in block:
+        if key not in allowed:
+            walk.add((*path, key), f'"{key}" cannot be set on this block.')
+
+    hidden = block.get("hidden", False)
+    if not isinstance(hidden, bool):
+        walk.add((*path, "hidden"), "hidden must be true or false.")
+    elif hidden and shape is not None and shape.required:
+        walk.add((*path, "hidden"), "A section's title cannot be hidden.")
+
+    if "title" in block and "title" in allowed:
+        _validate_typed_text(
+            block.get("title"), (*path, "title"), walk,
+            max_length=SECTION_TITLE_MAX_LENGTH, what="A heading",
+        )
+
+    if "columns" in block and shape is not None and "columns" in allowed:
+        columns = block.get("columns")
+        if not _is_json_array(columns) or not columns:
+            walk.add((*path, "columns"), "columns must be a non-empty array.")
+            return
+        seen: set[str] = set()
+        for index, column in enumerate(columns):
+            if not isinstance(column, str) or column not in shape.columns:
+                walk.add(
+                    (*path, "columns", index),
+                    f"Unknown column {column!r}; this table has: {', '.join(shape.columns)}.",
+                )
+            elif column in seen:
+                walk.add((*path, "columns", index), f'Column "{column}" appears twice.')
+            else:
+                seen.add(column)
+
+
+def _validate_user_block(
+    block: dict[str, object], path: Path, walk: _Walk, seen_ids: set[str]
+) -> None:
+    """One block a person added: `{kind, id, text}`."""
+    for key in block:
+        if key not in ("kind", "id", "text"):
+            walk.add((*path, key), f'Unrecognized block field "{key}".')
+    kind = block.get("kind")
+    if kind not in SECTION_BLOCK_KINDS:
+        walk.add((*path, "kind"), f"kind must be one of: {', '.join(SECTION_BLOCK_KINDS)}.")
+    block_id = block.get("id")
+    if not isinstance(block_id, str) or not _USER_BLOCK_ID_PATTERN.match(block_id):
+        walk.add((*path, "id"), "An added block's id is u_ and 1 to 12 lowercase letters or digits.")
+    elif block_id in seen_ids:
+        walk.add((*path, "id"), f'Duplicate block id "{block_id}".')
+    else:
+        seen_ids.add(block_id)
+    _validate_typed_text(
+        block.get("text"), (*path, "text"), walk,
+        max_length=SECTION_TEXT_MAX_LENGTH, what="Text",
+    )
+
+
+def _validate_section_blocks(
+    blocks: object,
+    path: Path,
+    walk: _Walk,
+    shapes: tuple[_SlotShape, ...] | None,
+) -> None:
+    """A v4 section's `blocks`: catalogue slots in the author's order, with added text.
+
+    Slots it does not name keep their catalogue place and visibility. The section's
+    per-resource slots are named inside the one `each` entry, so a block that repeats per
+    resource cannot be moved out of the group it repeats in.
+    """
+    if not _is_json_array(blocks):
+        walk.add(path, "blocks must be an array.")
+        return
+    if len(blocks) > MAX_SECTION_BLOCKS:
+        walk.add(path, f"blocks accepts at most {MAX_SECTION_BLOCKS} entries.")
+
+    by_slot = {shape.slot: shape for shape in shapes or ()}
+    has_each = any(shape.per == "resource" for shape in shapes or ())
+    seen_slots: set[str] = set()
+    seen_ids: set[str] = set()
+    for index, block in enumerate(blocks):
+        block_path: Path = (*path, index)
+        if not _is_plain_object(block):
+            walk.add(block_path, "A block entry must be an object.")
+            continue
+        if "kind" in block:
+            _validate_user_block(block, block_path, walk, seen_ids)
+            continue
+        slot = block.get("slot")
+        if not isinstance(slot, str):
+            walk.add(block_path, "A block entry names a catalogue `slot` or an added block's `kind`.")
+            continue
+        if slot in seen_slots:
+            walk.add((*block_path, "slot"), f'Slot "{slot}" appears twice.')
+            continue
+        seen_slots.add(slot)
+
+        if slot == _EACH_RESOURCE_SLOT:
+            if shapes is not None and not has_each:
+                walk.add((*block_path, "slot"), "This section has no blocks that repeat per resource.")
+                continue
+            for key in block:
+                if key not in ("slot", "hidden", "blocks"):
+                    walk.add((*block_path, key), f'"{key}" cannot be set on the per-resource group.')
+            if not isinstance(block.get("hidden", False), bool):
+                walk.add((*block_path, "hidden"), "hidden must be true or false.")
+            inner = block.get("blocks", [])
+            if not _is_json_array(inner):
+                walk.add((*block_path, "blocks"), "blocks must be an array.")
+                continue
+            seen_inner: set[str] = set()
+            for inner_index, inner_block in enumerate(inner):
+                inner_path: Path = (*block_path, "blocks", inner_index)
+                if not _is_plain_object(inner_block) or not isinstance(inner_block.get("slot"), str):
+                    walk.add(inner_path, "Each entry here names a per-resource `slot`.")
+                    continue
+                inner_slot = inner_block["slot"]
+                shape = by_slot.get(inner_slot)
+                if shapes is not None and (shape is None or shape.per != "resource"):
+                    walk.add((*inner_path, "slot"), f'"{inner_slot}" is not a per-resource block of this section.')
+                    continue
+                if inner_slot in seen_inner:
+                    walk.add((*inner_path, "slot"), f'Slot "{inner_slot}" appears twice.')
+                    continue
+                seen_inner.add(inner_slot)
+                _validate_slot_entry(inner_block, inner_path, walk, shape)
+            continue
+
+        shape = by_slot.get(slot)
+        if shapes is not None and (shape is None or shape.per != "section"):
+            reason = (
+                "repeats per resource; name it inside the `each` entry"
+                if shape is not None
+                else "is not a block of this section"
+            )
+            walk.add((*block_path, "slot"), f'"{slot}" {reason}.')
+            continue
+        _validate_slot_entry(block, block_path, walk, shape)
+
+
+def _validate_section_v4(
+    entry: dict[str, object],
+    entry_path: Path,
+    walk: _Walk,
+    provider: str | None,
+) -> None:
+    """What schema v4 adds to a section entry: closed keys, `position`, `lookback`, `blocks`."""
+    for key in entry:
+        if key not in SECTION_KEYS_V4:
+            walk.add((*entry_path, key), f'Unrecognized section field "{key}".')
+
+    entry_id = entry.get("id")
+    if isinstance(entry_id, str) and (len(entry_id) > SECTION_ID_MAX_LENGTH_V4 or "__" in entry_id):
+        walk.add(
+            (*entry_path, "id"),
+            f"Section id must be at most {SECTION_ID_MAX_LENGTH_V4} characters, without "
+            f"a double underscore.",
+        )
+
+    position = entry.get("position")
+    if "position" not in entry:
+        walk.add((*entry_path, "position"), "A section needs a position.")
+    elif (
+        isinstance(position, bool)
+        or not isinstance(position, int)
+        or not 0 <= position <= SECTION_POSITION_MAX
+    ):
+        walk.add(
+            (*entry_path, "position"),
+            f"position must be an integer from 0 to {SECTION_POSITION_MAX}.",
+        )
+
+    entry_type = entry.get("type")
+    shapes = (
+        SECTION_SLOTS_BY_PROVIDER.get(provider, {}).get(entry_type)
+        if provider is not None and isinstance(entry_type, str)
+        else None
+    )
+
+    lookback = entry.get("lookback")
+    if "lookback" in entry:
+        if (
+            isinstance(lookback, bool)
+            or not isinstance(lookback, int)
+            or not HISTORICAL_LOOKBACK_MIN <= lookback <= HISTORICAL_LOOKBACK_MAX
+        ):
+            walk.add(
+                (*entry_path, "lookback"),
+                f"lookback must be an integer from {HISTORICAL_LOOKBACK_MIN} to "
+                f"{HISTORICAL_LOOKBACK_MAX} inclusive.",
+            )
+    elif isinstance(entry_type, str) and entry_type in _LOOKBACK_SECTION_TYPES:
+        walk.add(
+            (*entry_path, "lookback"),
+            f'Section type "{entry_type}" requires lookback (an integer from '
+            f"{HISTORICAL_LOOKBACK_MIN} to {HISTORICAL_LOOKBACK_MAX} inclusive).",
+        )
+
+    if "blocks" in entry:
+        if (
+            provider is not None
+            and isinstance(entry_type, str)
+            and entry_type in ALWAYS_SECTION_KEYS_BY_PROVIDER.get(provider, frozenset())
+        ):
+            walk.add(
+                (*entry_path, "blocks"),
+                "The coverage and verification appendix prints as it is; its blocks cannot change.",
+            )
+        else:
+            _validate_section_blocks(entry.get("blocks"), (*entry_path, "blocks"), walk, shapes)
 
 
 # --- the pass -----------------------------------------------------------------------

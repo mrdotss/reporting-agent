@@ -547,6 +547,18 @@ describe("a definition carrying `sections` is reconciled, not lifted to 2", () =
     expect(toSchemaVersion2(v3)).toBe(v3)
   })
 
+  test("a v4 definition passes through untouched", () => {
+    const v4 = { ...withSections, schema_version: 4 }
+    expect(toSchemaVersion2(v4)).toBe(v4)
+  })
+
+  test("a stale header is reconciled to v3, never raised to v4", () => {
+    const stale = { ...withSections, schema_version: 1 }
+    expect(
+      (toSchemaVersion2(stale) as Record<string, unknown>).schema_version
+    ).toBe(3)
+  })
+
   test("the wizard is not told that opening it raises the version", () => {
     expect(needsSchemaVersion2Migration(withSections)).toBe(false)
   })

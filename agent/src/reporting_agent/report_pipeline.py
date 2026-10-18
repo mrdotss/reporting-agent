@@ -254,7 +254,7 @@ async def run_generate_report(
     # would be independent chances to disagree about what a section expands to.
     section_catalogue = (
         load_section_catalogue(loaded_catalog=catalog, provider=definition_provider(definition))
-        if definition.get("schema_version") == 3
+        if (definition.get("schema_version") or 0) >= 3
         else None
     )
 
@@ -525,7 +525,7 @@ def requested_metric_union(
     from reporting_agent.compile.scope import scope_rules_from_plain, union_scope
 
     schema_version = definition.get("schema_version")
-    if schema_version == 3:
+    if isinstance(schema_version, int) and schema_version >= 3:
         return _requested_metric_union_v3(definition, catalog)
 
     selected: dict[str, set[str]] = {}
@@ -1985,7 +1985,7 @@ def _historical_selection_keys(
     defect exactly — silently, on the same input, with the same invisible symptom — and a
     caller that forgot the catalogue has made a mistake this function can see.
     """
-    if definition.get("schema_version") == 3:
+    if (definition.get("schema_version") or 0) >= 3:
         if catalogue is None:
             raise CompileFailedError(
                 "a v3 definition's historical-trend keys cannot be resolved without the "
@@ -2192,7 +2192,7 @@ async def run_verify_report(
     # keeps taking the branch that needs no catalogue at all.
     verify_catalogue = (
         load_section_catalogue(provider=definition_provider(definition))
-        if definition.get("schema_version") == 3
+        if (definition.get("schema_version") or 0) >= 3
         else None
     )
     # The same rows the report was produced with, sent again with the command.
@@ -2571,6 +2571,13 @@ async def run_render_preview(
         definition,
         view=build_snapshot_view(
             snapshot, child_resource_types=_child_resource_types()
+        ),
+        # A sectioned definition (v3 and up) compiles from the section catalogue, exactly
+        # as the delivered path compiles it. Without it a v3 or v4 draft cannot preview.
+        catalogue=(
+            load_section_catalogue(provider=definition_provider(definition))
+            if (definition.get("schema_version") or 0) >= 3
+            else None
         ),
     )
 

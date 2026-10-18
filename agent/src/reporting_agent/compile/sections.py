@@ -30,6 +30,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from reporting_agent.catalog.loader import (
+    EACH_RESOURCE_SLOT,
     LoadedSectionCatalogue,
     SectionCatalogueEntry,
     SectionExpansionBlock,
@@ -303,6 +304,24 @@ def _historical_configs(expansion, entry, section):
     return [{**base, "metric": metric, "statistic": statistic} for metric, statistic in pairs]
 
 
+def _chart_chunks(config: Mapping[str, object]) -> list[list[object]]:
+    """A per-resource chart's metrics, split into the charts it takes.
+
+    Keeps unlike metrics in separate figures and preserves every selection without
+    exceeding the chart compiler's per-chart series bound. Always at least one chunk, so a
+    chart with no metric still compiles into the statement that it has none.
+    """
+    from reporting_agent.compile.blocks.charts import MAX_CHART_SERIES
+
+    grouped: dict[object, list[object]] = {}
+    metrics = config.get("metrics", [])
+    for ref in metrics if isinstance(metrics, Sequence) and not isinstance(metrics, str) else ():
+        grouped.setdefault(ref.get("metric") if isinstance(ref, Mapping) else None, []).append(ref)
+    chunks = [refs[start:start + MAX_CHART_SERIES] for refs in grouped.values()
+              for start in range(0, len(refs), MAX_CHART_SERIES)]
+    return chunks or [[]]
+
+
 def _expand_one_section(
     section: Mapping[str, object],
     entry: SectionCatalogueEntry,
@@ -414,15 +433,7 @@ def _expand_one_section(
                     chart_id = run_index if metric_index == 0 else f"{run_index}__metric_{metric_index}"
                     run_configs.append((chart_id, run_expansion, metric_config))
             elif run_expansion.block == "timeseries_chart":
-                # Keep unlike metrics in separate figures and preserve every selection
-                # without exceeding the chart compiler's per-chart series bound.
-                from reporting_agent.compile.blocks.charts import MAX_CHART_SERIES
-                grouped = {}
-                for ref in run_config.get("metrics", []):
-                    grouped.setdefault(ref.get("metric"), []).append(ref)
-                chunks = [refs[start:start + MAX_CHART_SERIES] for refs in grouped.values()
-                          for start in range(0, len(refs), MAX_CHART_SERIES)]
-                for chart_index, refs in enumerate(chunks or [[]]):
+                for chart_index, refs in enumerate(_chart_chunks(run_config)):
                     chart_id = run_index if chart_index == 0 else f"{run_index}__metric_{chart_index}"
                     run_configs.append((chart_id, run_expansion, {**run_config, "metrics": refs}))
             else:
@@ -468,6 +479,261 @@ def _expand_one_section(
                 ))
 
     return tuple(result)
+
+
+# ---------------------------------------------------------------------------
+# Schema v4: a section's own layout
+# ---------------------------------------------------------------------------
+#
+# A v4 section may carry `blocks`: the catalogue's slots in the author's order, hidden or
+# configured, with text the author added. Absent, a section prints exactly as the
+# catalogue lays it out — the v3 `chart_and_table` document, block for block.
+#
+# Block ids are named by slot rather than numbered by expansion index:
+#   ``<section.id>__<slot>``                      per section
+#   ``<section.id>__<slot>__<n>``                 per resource
+#   ``<section.id>__<slot>__m<k>[__<n>]``         a second and later chart of one block
+#   ``<section.id>__<u_id>``                      a block the author added
+# so hiding or moving one block never renumbers another. The v3 scheme above is untouched:
+# every delivered v3 report re-verifies by recompiling, byte for byte.
+
+
+@dataclass(frozen=True, slots=True)
+class _Placed:
+    """One visible entry of a v4 section's layout.
+
+    A catalogue block (`expansion` set), a block the author added (`expansion` None, the
+    entry in `settings`), or the per-resource group (`group` non-empty)."""
+
+    expansion: SectionExpansionBlock | None
+    settings: Mapping[str, object]
+    group: tuple[_Placed, ...] = ()
+
+
+def _listed(raw: object) -> list[Mapping[str, object]]:
+    if not isinstance(raw, Sequence) or isinstance(raw, str):
+        return []
+    return [item for item in raw if isinstance(item, Mapping)]
+
+
+def _v4_layout(
+    section: Mapping[str, object], entry: SectionCatalogueEntry
+) -> tuple[_Placed, ...]:
+    """A v4 section's visible blocks in print order.
+
+    The author's `blocks` first, in their order; then any catalogue slot it does not name,
+    in catalogue order, so a slot the catalogue gains later still prints. Hidden entries
+    are dropped here, which is the only place visibility is decided.
+    """
+    by_slot = {expansion.slot: expansion for expansion in entry.expands_to}
+    catalogue_order: list[str] = []
+    for expansion in entry.expands_to:
+        name = EACH_RESOURCE_SLOT if expansion.per == "resource" else expansion.slot
+        if name not in catalogue_order:
+            catalogue_order.append(name)
+    resource_slots = [expansion.slot for expansion in entry.expands_to if expansion.per == "resource"]
+
+    authored = _listed(section.get("blocks"))
+    named = {item.get("slot") for item in authored if "slot" in item}
+    ordered = authored + [{"slot": name} for name in catalogue_order if name not in named]
+
+    placed: list[_Placed] = []
+    for item in ordered:
+        if "kind" in item:
+            placed.append(_Placed(expansion=None, settings=item))
+            continue
+        if item.get("hidden") is True:
+            continue
+        slot = item.get("slot")
+        if slot == EACH_RESOURCE_SLOT:
+            inner = _listed(item.get("blocks"))
+            inner_named = {child.get("slot") for child in inner}
+            inner += [{"slot": name} for name in resource_slots if name not in inner_named]
+            group = tuple(
+                _Placed(expansion=by_slot[str(child.get("slot"))], settings=child)
+                for child in inner
+                if child.get("hidden") is not True and child.get("slot") in by_slot
+            )
+            if group:
+                placed.append(_Placed(expansion=None, settings=item, group=group))
+            continue
+        if isinstance(slot, str) and slot in by_slot:
+            placed.append(_Placed(expansion=by_slot[slot], settings=item))
+    return tuple(placed)
+
+
+def _column_key(column: object) -> object:
+    if isinstance(column, Mapping):
+        return column.get("fact_key") or column.get("attribute")
+    return None
+
+
+def _apply_v4_settings(
+    expansion: SectionExpansionBlock,
+    entry: SectionCatalogueEntry,
+    settings: Mapping[str, object],
+    config: dict[str, object],
+    messages: Messages,
+) -> None:
+    """The author's settings on one catalogue block, applied to its config in place.
+
+    `title` replaces a section heading's catalogue title with words the author typed, in
+    the report's language. `columns` narrows and reorders a table's declared columns.
+    Both were validated against this slot before the run began.
+    """
+    title = settings.get("title")
+    if expansion.block == "heading" and expansion.per == "section":
+        if isinstance(title, Mapping) and isinstance(title.get(messages.language), str):
+            config.pop("title_id", None)
+            config["text"] = title[messages.language]
+        else:
+            _resolve_heading_text(expansion, entry, config, messages)
+    columns = settings.get("columns")
+    declared = config.get("columns")
+    if (
+        expansion.block == "resource_table"
+        and isinstance(columns, Sequence)
+        and not isinstance(columns, str)
+        and isinstance(declared, Sequence)
+        and not isinstance(declared, str)
+    ):
+        by_key = {_column_key(column): column for column in declared}
+        config["columns"] = [by_key[key] for key in columns if key in by_key]
+
+
+def _expand_one_section_v4(
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    view: SnapshotView,
+    messages: Messages,
+) -> tuple[BlockSpec, ...]:
+    """Expand one v4 section into its BlockSpec sequence, in the author's layout.
+
+    The same compile as v3 for each block — metrics threaded the same way, typed incident
+    rows placed the same way, the per-resource group emitted resource-major — with the
+    layout, the overrides and the slot-named ids being what v4 adds.
+    """
+    section_id = section.get("id", "")
+    if not isinstance(section_id, str) or not section_id:
+        raise CompileFailedError("a section carries no usable id")
+
+    scope_override = _build_scope_override(section)
+    result: list[BlockSpec] = []
+
+    for item in _v4_layout(section, entry):
+        if item.group:
+            result.extend(
+                _expand_resource_group_v4(section_id, section, entry, item.group, scope_override, view, messages)
+            )
+            continue
+
+        if item.expansion is None:
+            # A block the author added. Words only, in the report's language — both were
+            # checked before the run began.
+            text = item.settings.get("text")
+            value = text.get(messages.language) if isinstance(text, Mapping) else None
+            if not isinstance(value, str) or not value:
+                raise CompileFailedError(
+                    f"section {section_id!r}: block {item.settings.get('id')!r} has no text "
+                    f"in {messages.language!r}"
+                )
+            result.append(BlockSpec(
+                id=f"{section_id}__{item.settings.get('id')}",
+                type="rich_text",
+                config={"text": value},
+                scope_override=None,
+            ))
+            continue
+
+        expansion = item.expansion
+        config: dict[str, object] = dict(expansion.config)
+        _apply_v4_settings(expansion, entry, item.settings, config, messages)
+        _thread_metric_config(expansion, entry, section, config)
+        if entry.author_filled and expansion.block == BLANK_ROWS_BLOCK:
+            supplied = section.get(SUPPLIED_ROWS_KEY)
+            if supplied:
+                config[SUPPLIED_ROWS_KEY] = supplied
+        configs = (
+            _historical_configs(expansion, entry, section)
+            if expansion.block == "historical_trend"
+            else [config]
+        )
+        for metric_index, metric_config in enumerate(configs):
+            suffix = "" if metric_index == 0 else f"__m{metric_index}"
+            result.append(BlockSpec(
+                id=f"{section_id}__{expansion.slot}{suffix}",
+                type=expansion.block,
+                config=metric_config,
+                scope_override=scope_override,
+            ))
+
+    return tuple(result)
+
+
+def _expand_resource_group_v4(
+    section_id: str,
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    group: tuple[_Placed, ...],
+    scope_override: ScopeRules | None,
+    view: SnapshotView,
+    messages: Messages,
+) -> list[BlockSpec]:
+    """The per-resource group, emitted resource-major as v3 emits it: every block of one
+    resource, in the author's order, before the next resource."""
+    planned: list[tuple[str, SectionExpansionBlock, dict[str, object]]] = []
+    for item in group:
+        expansion = item.expansion
+        assert expansion is not None  # a group holds catalogue blocks only
+        config: dict[str, object] = dict(expansion.config)
+        if expansion.block == "heading":
+            _assert_resource_heading_untitled(entry, config)
+            if config.pop("repeats_per_resource", None) is True:
+                _resolve_heading_text(expansion, entry, config, messages)
+        _apply_v4_settings(expansion, entry, item.settings, config, messages)
+        _thread_metric_config(expansion, entry, section, config)
+        if expansion.block == "historical_trend":
+            for metric_index, metric_config in enumerate(_historical_configs(expansion, entry, section)):
+                name = expansion.slot if metric_index == 0 else f"{expansion.slot}__m{metric_index}"
+                planned.append((name, expansion, metric_config))
+        elif expansion.block == "timeseries_chart":
+            for chart_index, refs in enumerate(_chart_chunks(config)):
+                name = expansion.slot if chart_index == 0 else f"{expansion.slot}__m{chart_index}"
+                planned.append((name, expansion, {**config, "metrics": refs}))
+        else:
+            planned.append((expansion.slot, expansion, config))
+
+    resolved = resolve(scope_override, view) if scope_override is not None else view.resources
+    specs: list[BlockSpec] = []
+    for resource_ordinal, resource in enumerate(resolved):
+        for name, expansion, config in planned:
+            per_resource_config = dict(config)
+            per_resource_config[RESOURCE_ID_CONFIG_KEY] = resource.resource_id
+            if expansion.block == "heading" and "text" not in per_resource_config:
+                per_resource_config["text"] = resource.name
+            specs.append(BlockSpec(
+                id=f"{section_id}__{name}__{resource_ordinal}",
+                type=expansion.block,
+                config=per_resource_config,
+                scope_override=scope_override,
+            ))
+    return specs
+
+
+def _visible_expansions(
+    section: Mapping[str, object], entry: SectionCatalogueEntry, schema_version: object
+) -> list[SectionExpansionBlock]:
+    """The catalogue blocks a section will emit: by presentation at v3, by layout at v4."""
+    if isinstance(schema_version, int) and schema_version >= 4:
+        visible: list[SectionExpansionBlock] = []
+        for item in _v4_layout(section, entry):
+            if item.group:
+                visible.extend(child.expansion for child in item.group if child.expansion is not None)
+            elif item.expansion is not None:
+                visible.append(item.expansion)
+        return visible
+    presentation = _presentation_of(section)
+    return [expansion for expansion in entry.expands_to if _should_emit(expansion, presentation)]
 
 
 # ---------------------------------------------------------------------------
@@ -613,11 +879,8 @@ def historical_trend_keys(
             # failure earlier and word it worse.
             continue
 
-        presentation = _presentation_of(section)
-        for expansion in entry.expands_to:
+        for expansion in _visible_expansions(section, entry, definition.get("schema_version")):
             if expansion.block != "historical_trend":
-                continue
-            if not _should_emit(expansion, presentation):
                 continue
             for config in _historical_configs(expansion, entry, section):
                 metric, statistic, lookback = config.get("metric"), config.get("statistic"), config.get("lookback")
@@ -779,10 +1042,17 @@ def expand_sections(
     # Sort: group order → position within group → catalogue number as tiebreaker
     resolved_sections.sort(key=lambda pair: _section_sort_key(pair[0], pair[1], fixed_order))
 
-    # Expand each section in sorted order
+    # Expand each section in sorted order. v4 lays each section out by its own `blocks`;
+    # v3 keeps the expansion every delivered v3 report was compiled with.
+    schema_version = definition.get("schema_version")
+    expand_one = (
+        _expand_one_section_v4
+        if isinstance(schema_version, int) and schema_version >= 4
+        else _expand_one_section
+    )
     all_specs: list[BlockSpec] = []
     for section, entry in resolved_sections:
-        specs = _expand_one_section(section, entry, view, messages)
+        specs = expand_one(section, entry, view, messages)
         all_specs.extend(specs)
 
     return tuple(all_specs)

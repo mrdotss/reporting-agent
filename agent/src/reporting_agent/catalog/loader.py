@@ -77,12 +77,15 @@ __all__ = [
     "DEFAULT_CATALOG_PATH",
     "DEFAULT_FACTS_PATH",
     "DEFAULT_SECTIONS_PATH",
+    "EACH_RESOURCE_SLOT",
     "FIXED_SECTION_ORDER",
     "FIXED_SECTION_ORDER_BY_PROVIDER",
     "MAX_FACT_KEY_LENGTH",
     "MAX_SCALE",
     "MIN_FACT_KEY_LENGTH",
     "MIN_SCALE",
+    "SLOT_PATTERN",
+    "USER_BLOCK_ID_PREFIX",
     "CatalogEntry",
     "DerivedEntry",
     "EnhancedCounterEntry",
@@ -246,6 +249,25 @@ FIXED_SECTION_ORDER_BY_PROVIDER: Final[Mapping[str, tuple[str, ...]]] = {
 """Each provider's fixed-position sections, in their declared order."""
 """The declared order for position:'fixed' entries. A catalogue declaring them
 out of this order fails validation."""
+
+SLOT_PATTERN: Final[re.Pattern[str]] = re.compile(r"\A[a-z][a-z0-9_]{0,19}\Z")
+"""A catalogue expansion's `slot`: what a schema v4 section's `blocks` names it by.
+
+Twenty characters at most, because a slot is part of every block id derived from it
+(`<section>__<slot>__<resource>`), and a figure path bounds its block id at 64 characters
+(`compile/ast.py::FIGURE_PATH_PATTERN`)."""
+
+EACH_RESOURCE_SLOT: Final[str] = "each"
+"""The name a v4 `blocks` list gives a section's run of per-resource expansions.
+
+Reserved: a catalogue expansion may not take it, since `blocks` would then name two things
+with one word."""
+
+USER_BLOCK_ID_PREFIX: Final[str] = "u_"
+"""The prefix every block a person adds to a v4 section carries in its id.
+
+Reserved too, so an added block's id and a catalogue slot can never collide in the block
+ids both become."""
 
 
 # --- the frozen shapes ---------------------------------------------------------------
@@ -1754,12 +1776,18 @@ def _valid_string_list(value: object, declared: frozenset[str]) -> list[str] | N
 
 @dataclass(frozen=True, slots=True)
 class SectionExpansionBlock:
-    """One block in a section's `expands_to` sequence."""
+    """One block in a section's `expands_to` sequence.
+
+    `slot` is its stable name (catalogue 1.6.0). A schema v4 section hides, reorders and
+    configures its blocks by slot, and a v4 block id is built from it, so a slot never
+    changes once shipped. v3 ignores it: a v3 block id is built from the expansion's index.
+    """
 
     block: str
     per: str
     config: tuple[tuple[str, object], ...] = ()
     when_presentation: tuple[str, ...] = ()
+    slot: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2115,12 +2143,30 @@ def load_section_catalogue(
             )
 
         expansion_blocks: list[SectionExpansionBlock] = []
+        seen_slots: set[str] = set()
         for exp_idx, raw_block in enumerate(raw_expands):
             if not isinstance(raw_block, dict):
                 raise CatalogUnusableError(
                     f"section catalogue entry {key!r}: expands_to[{exp_idx}] must "
                     f"be a JSON object"
                 )
+            slot = raw_block.get("slot")
+            if (
+                not isinstance(slot, str)
+                or not SLOT_PATTERN.match(slot)
+                or slot == EACH_RESOURCE_SLOT
+                or slot.startswith(USER_BLOCK_ID_PREFIX)
+            ):
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: expands_to[{exp_idx}].slot "
+                    f"{slot!r} must be a lowercase name of at most twenty characters, "
+                    f"neither {EACH_RESOURCE_SLOT!r} nor starting {USER_BLOCK_ID_PREFIX!r}"
+                )
+            if slot in seen_slots:
+                raise CatalogUnusableError(
+                    f"section catalogue entry {key!r}: slot {slot!r} appears twice"
+                )
+            seen_slots.add(slot)
             block_type = raw_block.get("block")
             if not isinstance(block_type, str) or block_type not in block_types_set:
                 raise CatalogUnusableError(
@@ -2149,7 +2195,17 @@ def load_section_catalogue(
                     per=per,
                     config=config_tuple,
                     when_presentation=wp_tuple,
+                    slot=slot,
                 )
+            )
+
+        # A v4 section names its per-resource expansions as one group (`each`), so they
+        # must form one unbroken run. Every shipped entry has at most one.
+        pers = "".join("r" if block.per == "resource" else "s" for block in expansion_blocks)
+        if pers.count("sr") + pers.startswith("r") > 1:
+            raise CatalogUnusableError(
+                f"section catalogue entry {key!r}: its per-resource expansions must be "
+                f"adjacent, so a v4 section can name them as one group"
             )
 
         # Validate presets against the metric catalogue

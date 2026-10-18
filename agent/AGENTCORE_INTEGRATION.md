@@ -53,13 +53,32 @@ writes nothing (see [`chat`](#chat) and `.kiro/specs/ask-chat/requirements.md`).
 standalone comparison screen is out of scope. Recording it as declared-and-unrouted is
 what stops the next reader treating its absence as an oversight and adding it.
 
+### Schema v4: a section's own layout
+
+A v4 definition is a v3 one whose sections may lay themselves out. Each section entry is
+closed to `id`, `type`, `position` (required), `selection`, `metrics`, `lookback` and
+`blocks`. `presentation` is gone, and `selection` may add `locations` (AWS regions, Azure
+locations). `blocks` names catalogue slots (`sections.v1.json` 1.6.0, the `slot` on every
+expansion) in print order, with three things it can do:
+
+- set `hidden`, or override a block: `title: {en, id}` on a section heading, or `columns`
+  to narrow a table's declared columns;
+- hold the per-resource blocks inside one `{"slot": "each", "blocks": [...]}` group;
+- add `{"kind": "text", "id": "u_…", "text": {en, id}}` blocks.
+
+Typed text may not contain numerals. Slots the list does not name print after the named
+ones, in catalogue order, and a section with no `blocks` prints the v3 `chart_and_table`
+document. v4 block ids are named by slot (`<section>__<slot>[__<n>]`), so hiding a block
+renames nothing else. v3 keeps its index-named ids, and delivered v3 reports re-verify
+unchanged.
+
 ### `generate_report`
 
 ```jsonc
 {
   "command": "generate_report",
   "template_version_id": "tv_01HQZX…",     // pinned; the run is checked against this and no other
-  "definition": { /* the pinned version's definition, inline */ },
+  "definition": { /* the pinned version's definition, inline — schema_version 1 to 4 */ },
   "period":  { "start": "2026-07-01", "end": "2026-07-31" },
   "scope":   {                              // the UNION of the template default and every
     "resource_types":  ["Microsoft.Compute/virtualMachines"],   // block override, with

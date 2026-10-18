@@ -1,0 +1,153 @@
+{
+  "schema_version": 4,
+  "identity": {
+    "name": "Test v4 AWS",
+    "language": "en"
+  },
+  "provider": "aws",
+  "sections": [
+    {
+      "id": "sec_ec2",
+      "type": "ec2_utilization",
+      "position": 0,
+      "selection": {
+        "resource_types": [
+          "AWS::EC2::Instance"
+        ],
+        "resource_groups": [],
+        "tag_filters": [],
+        "top_n": null,
+        "sort": null,
+        "locations": [
+          "ap-southeast-1"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "CPUUtilization",
+          "statistic": "avg"
+        },
+        {
+          "metric": "CPUUtilization",
+          "statistic": "max"
+        }
+      ],
+      "blocks": [
+        {
+          "slot": "title",
+          "title": {
+            "en": "Compute use"
+          }
+        },
+        {
+          "kind": "text",
+          "id": "u_intro",
+          "text": {
+            "en": "Each instance below has its own chart.",
+            "id": "Setiap instans di bawah memiliki grafiknya sendiri."
+          }
+        },
+        {
+          "slot": "each",
+          "blocks": [
+            {
+              "slot": "name"
+            },
+            {
+              "slot": "chart"
+            },
+            {
+              "slot": "details",
+              "columns": [
+                "instance_type",
+                "power_state"
+              ]
+            },
+            {
+              "slot": "summary"
+            },
+            {
+              "slot": "narrative",
+              "hidden": true
+            }
+          ]
+        },
+        {
+          "slot": "fleet",
+          "hidden": true
+        }
+      ]
+    },
+    {
+      "id": "sec_hist",
+      "type": "historical_ec2_utilization",
+      "position": 1,
+      "metrics": [
+        {
+          "metric": "CPUUtilization",
+          "statistic": "avg"
+        }
+      ],
+      "lookback": 6
+    },
+    {
+      "id": "sec_bak",
+      "type": "backups",
+      "position": 2
+    },
+    {
+      "id": "sec_cov",
+      "type": "coverage_and_verification",
+      "position": 3
+    }
+  ],
+  "period": {
+    "kind": "last_full_month"
+  },
+  "design": {
+    "preset": "editorial",
+    "accent_color": "oklch(0.52 0.105 223)",
+    "density": "normal",
+    "table_style": "hairline",
+    "page_size": "A4",
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true,
+      "decimal_separator": ".",
+      "grouping_separator": ","
+    },
+    "cover_page": true,
+    "logo": null
+  },
+  "front_matter": {
+    "cover": {
+      "subtitle": "Test"
+    },
+    "document_control": {
+      "document_name": "Test",
+      "document_number_pattern": "RPT-{year}{month}-{run}",
+      "approvers": [
+        {
+          "role": "author",
+          "name": "A"
+        },
+        {
+          "role": "reviewer",
+          "name": "B"
+        },
+        {
+          "role": "approver",
+          "name": "C"
+        },
+        {
+          "role": "recipient",
+          "name": "D"
+        }
+      ]
+    },
+    "toc": {
+      "enabled": true,
+      "max_level": 3
+    }
+  }
+}

@@ -152,6 +152,9 @@ class ScopeRules:
     resource_groups: tuple[str, ...] = ()
     top_n: TopNRule | None = None
     sort: str | None = None
+    locations: tuple[str, ...] = ()
+    """A v4 section's location filter: AWS regions, Azure locations. Compared folded,
+    the way resource groups are. A v3 scope has none, which is unconstrained."""
 
     def __post_init__(self) -> None:
         if self.sort is not None and self.sort not in SORT_DIRECTIONS:
@@ -169,7 +172,11 @@ class ScopeRules:
     def is_unconstrained(self) -> bool:
         """Whether this scope narrows nothing — every dimension empty and no top-N."""
         return not (
-            self.resource_types or self.tag_filters or self.resource_groups or self.top_n
+            self.resource_types
+            or self.tag_filters
+            or self.resource_groups
+            or self.top_n
+            or self.locations
         )
 
 
@@ -213,6 +220,7 @@ def scope_rules_from_plain(raw: object, *, at: str = "scope") -> ScopeRules:
         resource_groups=_string_tuple(raw.get("resource_groups"), f"{at}.resource_groups"),
         top_n=top_n,
         sort=sort,
+        locations=_string_tuple(raw.get("locations"), f"{at}.locations"),
     )
 
 
@@ -304,6 +312,13 @@ def _matches_any_group(scope: ScopeRules, resource: ResourceView) -> bool:
     return any(declared.casefold() == folded for declared in scope.resource_groups)
 
 
+def _matches_any_location(scope: ScopeRules, resource: ResourceView) -> bool:
+    if not scope.locations:
+        return True
+    folded = resource.location.casefold()
+    return any(declared.casefold() == folded for declared in scope.locations)
+
+
 def _matches_any_tag(scope: ScopeRules, resource: ResourceView) -> bool:
     """Any-of across the tag-filter dimension, with a folded key and an exact value.
 
@@ -332,6 +347,7 @@ def matches(scope: ScopeRules, resource: ResourceView) -> bool:
     return (
         _matches_any_type(scope, resource)
         and _matches_any_group(scope, resource)
+        and _matches_any_location(scope, resource)
         and _matches_any_tag(scope, resource)
     )
 
