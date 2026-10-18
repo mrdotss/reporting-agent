@@ -85,3 +85,22 @@ test("one historical observation is visible and carries its supplied exact label
   assert(svg.includes("79.88%"));
   assert(svg.includes("circle") || svg.includes("path"));
 });
+
+test("a heatmap draws one row per resource and skips the days with no value", () => {
+  const spec = {
+    ...base,
+    type: "heatmap",
+    style: "heatmap",
+    series: [
+      { ...base.series[0], key: "a", label: "app-web-01", values: ["30", null, "45", "30"] },
+      { ...base.series[1], key: "b", label: "app-api-02", values: ["1", "2", "3", null] },
+    ],
+  };
+  const options = chartOptions(spec);
+  assert.deepEqual(options.yAxis.data, ["app-web-01", "app-api-02"]);
+  assert.equal(options.series[0].type, "heatmap");
+  assert.equal(options.series[0].data.length, 6);
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /app-web-01/);
+  new Resvg(svg).render();
+});

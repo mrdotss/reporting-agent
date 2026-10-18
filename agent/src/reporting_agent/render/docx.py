@@ -491,7 +491,7 @@ class _Emitter:
             preset=self.design.preset,
             # The shape and the face the profile chose. Both default to what shipped
             # before the fields existed, so a version naming neither draws as it did.
-            chart_style=self.design.chart_style,
+            chart_style=getattr(node, "style", "") or self.design.chart_style,
             chart_font=self.design.chart_font,
             accent_color=self.design.accent_color,
             messages=self.messages,

@@ -47,12 +47,28 @@ export type AddedKind =
   | "month_vs_month"
   | "coverage"
   | "page_break"
+  | "callout"
+  | "heatmap"
+  | "sparklines"
 
-/** A block the author added. Only text carries anything of its own: its words. */
+export type CalloutCondition =
+  | "peak_at_or_above"
+  | "without_backup"
+  | "housekeeping"
+  | "stopped"
+  | "coverage_gaps"
+
+/**
+ * A block the author added. Text and callouts carry words; a callout also carries the
+ * condition that prints it, and a peak callout its threshold.
+ */
 export type AddedEntry = {
   readonly kind: AddedKind
   readonly id: string
   readonly text?: TypedText
+  readonly when?: CalloutCondition
+  readonly tone?: "info" | "attention"
+  readonly threshold?: number
 }
 
 export type TextEntry = {

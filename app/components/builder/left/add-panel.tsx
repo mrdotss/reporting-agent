@@ -20,9 +20,10 @@ import { cn } from "@/lib/utils"
  * What can be put on the page: blocks into the selected section, and sections from the
  * provider's catalogue.
  *
- * Blocks go into the selected section, after the selected block: text, and catalogue blocks
- * that read the section — key figures, a top list, month vs month, coverage, a page break.
- * The three that read metrics are offered only to a section that reports some. A section's
+ * Blocks go into the selected section, after the selected block: text, a callout, and
+ * catalogue blocks that read the section — key figures, a top list, month vs month, a
+ * heatmap, sparklines, coverage, a page break. Those that read metrics are offered only to a
+ * section that reports some. A section's
  * own blocks are already on the page; hidden ones come back from the outline.
  *
  * Only this provider's sections are listed: an AWS preset is offered Compute Optimizer's

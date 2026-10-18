@@ -3,7 +3,7 @@ import {
   resourceNoun,
   type CatalogueSection,
 } from "@/lib/builder/catalogue"
-import type { AddedEntry, AddedKind } from "@/lib/builder/model"
+import type { AddedEntry, AddedKind, CalloutCondition } from "@/lib/builder/model"
 
 /**
  * What the builder calls a block — in the outline, the selection tag and the inspector.
@@ -94,6 +94,45 @@ export const ADDED_BLOCKS: Readonly<
   },
   coverage: { label: "Coverage", blurb: "What could not be measured, and for which resources.", needsMetrics: false },
   page_break: { label: "Page break", blurb: "Starts the next block on a new page.", needsMetrics: false },
+  callout: {
+    label: "Callout",
+    blurb: "Your words, printed only when a condition holds.",
+    needsMetrics: false,
+  },
+  heatmap: {
+    label: "Heatmap",
+    blurb: "One row per resource, one cell per day, shaded by the ranking metric.",
+    needsMetrics: true,
+  },
+  sparklines: {
+    label: "Sparkline table",
+    blurb: "Each resource's shape over the period, with its numbers beside it.",
+    needsMetrics: true,
+  },
+}
+
+/** What each callout condition tests, per provider — the providers name the same idea differently. */
+export function calloutConditionLabel(when: CalloutCondition, provider: "aws" | "azure"): string {
+  switch (when) {
+    case "peak_at_or_above":
+      return "A resource reaches a threshold"
+    case "without_backup":
+      return provider === "aws" ? "Resources with no AWS Backup plan" : "Resources with no Azure Backup"
+    case "housekeeping":
+      return "Resources to tidy up"
+    case "stopped":
+      return provider === "aws" ? "Stopped instances" : "Deallocated machines"
+    case "coverage_gaps":
+      return "Figures that could not be measured"
+  }
+}
+
+export const CALLOUT_TOKENS: Readonly<Record<CalloutCondition, readonly string[]>> = {
+  peak_at_or_above: ["resource", "value"],
+  without_backup: ["count"],
+  housekeeping: ["count"],
+  stopped: ["count"],
+  coverage_gaps: ["count"],
 }
 
 export const ADDED_KINDS = Object.keys(ADDED_BLOCKS) as AddedKind[]

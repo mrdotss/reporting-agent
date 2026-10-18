@@ -202,43 +202,62 @@ function SampleChart({
   categories,
   unit,
   height = 190,
+  type = "line",
+  style,
+  panelLabel,
 }: Readonly<{
   design: PageDesign
   series: readonly { label: string; values: readonly number[]; dashed?: boolean }[]
   categories: readonly string[]
   unit: SampleUnit
   height?: number
+  type?: "line" | "heatmap"
+  /** A style this chart draws in whatever the document's is — a sparkline table's. */
+  style?: PageDesign["chartStyle"]
+  /** A heatmap's title: the metric its colour scale reads. */
+  panelLabel?: string
 }>) {
-  const { spec, chartStyle, chartFace } = design
+  const { spec, chartFace } = design
+  const chartStyle = style ?? design.chartStyle
   // ECharts numbers its clip paths per instance, so two charts on one page would share ids.
   const prefix = `builder${useId().replace(/[^a-zA-Z0-9]/g, "")}`
   const svg = useMemo(() => {
     const split = (chartStyle === "stacked" || chartStyle === "sparkline") && series.length > 1
     const max = niceMax(Math.max(...series.flatMap((s) => s.values)), unit)
+    const heatmap = type === "heatmap"
+    const all = series.flatMap((s) => s.values)
     const chartSpec: ReportChartSpec = {
-      style: chartStyle,
-      type: "line",
+      style: heatmap ? "heatmap" : chartStyle,
+      type,
       width: 640,
-      height: split ? Math.max(height, series.length * 115 + 30) : height,
+      height: heatmap
+        ? Math.max(140, 30 * series.length + 80)
+        : chartStyle === "sparkline"
+          ? Math.max(100, series.length * 70 + 20)
+          : split
+            ? Math.max(height, series.length * 115 + 30)
+            : height,
       font: chartFace.split(",")[0]!.replaceAll('"', ""),
       ink: spec.ink,
       muted: spec.muted,
       rule: spec.rule,
       emptyLabel: "",
       categories: [...categories],
-      panels: (split ? series : series.slice(0, 1)).map((s) => ({
-        label: s.label,
-        unit,
-        min: 0,
-        max: split ? niceMax(Math.max(...s.values), unit) : max,
-      })),
+      panels: heatmap
+        ? [{ label: panelLabel ?? "", unit, min: Math.min(...all), max: Math.max(...all) }]
+        : (split ? series : series.slice(0, 1)).map((s) => ({
+            label: s.label,
+            unit,
+            min: 0,
+            max: split ? niceMax(Math.max(...s.values), unit) : max,
+          })),
       series: series.map((s, index) => ({
         key: s.label,
         label: s.label,
         last: formatSample(s.values.at(-1) ?? 0, unit),
         panel: split ? index : 0,
         color: spec.accent,
-        dashed: s.dashed ?? index > 0,
+        dashed: chartStyle === "sparkline" ? false : (s.dashed ?? index > 0),
         values: s.values.map(String),
       })),
       bands: chartStyle === "range_band" && series.length > 1 ? [{ lower: 1, upper: 0 }] : [],
@@ -246,7 +265,7 @@ function SampleChart({
     return renderSVG(chartSpec, false, init)
       .replace(/zr\d+/g, prefix)
       .replace(/<svg /, '<svg style="width:100%;height:auto;display:block" ')
-  }, [categories, chartFace, chartStyle, height, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, unit])
+  }, [categories, chartFace, chartStyle, height, panelLabel, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, type, unit])
   // The chart renderer's own SVG, the same drawing the runtime embeds in the report. Drawn
   // in the browser only: ECharts measures text, and the server's measurements differ from
   // the browser's, so a server-drawn chart would never match the one that hydrates it.
@@ -666,6 +685,83 @@ export function AddedBlockView({
           ])}
           numeric={ordered.map((_, index) => index + 1)}
         />
+      )
+    }
+    case "callout": {
+      const fills: Record<string, string> = {
+        count: "3",
+        resource: [...resources].sort((a, b) => b.peak - a.peak)[0]!.name,
+        value: formatSample([...resources].sort((a, b) => b.peak - a.peak)[0]!.peak, sampleUnit(firstName)),
+      }
+      const words = entry.text?.[language] ?? ""
+      const attention = entry.tone === "attention"
+      return (
+        <div
+          style={{
+            borderLeft: `3px solid ${attention ? "#b7791f" : design.spec.accent}`,
+            background: attention ? "#fbf3e2" : design.spec.band,
+            padding: "8px 12px",
+            color: design.spec.ink,
+          }}
+        >
+          {words ? words.replace(/\{(count|resource|value)\}/g, (_, token: string) => fills[token] ?? "") : (
+            <span style={{ color: design.spec.muted, fontStyle: "italic" }}>Write the callout in the inspector — it prints only when its condition holds.</span>
+          )}
+        </div>
+      )
+    }
+    case "heatmap": {
+      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
+      const rows = ranked.map((r) => ({
+        label: r.name,
+        values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg"),
+      }))
+      return (
+        <div>
+          <Caption design={design}>
+            {t("doc.chart.title.over_time", language, "Over time", { metrics: `${firstName} (${firstStat})` })}
+          </Caption>
+          <SampleChart
+            design={design}
+            type="heatmap"
+            panelLabel={`${firstName} (${firstStat})`}
+            series={rows}
+            categories={rows[0]!.values.map((_, index) => String(index + 1))}
+            unit={sampleUnit(firstName)}
+          />
+        </div>
+      )
+    }
+    case "sparklines": {
+      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <SampleChart
+            design={design}
+            style="sparkline"
+            series={ranked.map((r) => ({
+              label: r.name,
+              values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg"),
+            }))}
+            categories={sampleMetricSeries(ranked[0]!, firstName, "avg").map((_, index) => String(index + 1))}
+            unit={sampleUnit(firstName)}
+          />
+          <Table
+            design={design}
+            head={[
+              t("doc.table.resource", language, "Resource"),
+              t("doc.summary.avg", language, "Average"),
+              t("doc.summary.p95", language, "P95 (est.)"),
+              t("doc.summary.max", language, "Peak"),
+            ]}
+            rows={ranked.map((r) => {
+              const summary = sampleSummary(sampleMetricSeries(r, firstName, "max"))
+              const unit = sampleUnit(firstName)
+              return [r.name, formatSample(summary.avg * 0.62, unit), formatSample(summary.p95, unit), formatSample(summary.peak, unit)]
+            })}
+            numeric={[1, 2, 3]}
+          />
+        </div>
       )
     }
     case "month_vs_month":

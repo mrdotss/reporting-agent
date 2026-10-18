@@ -78,6 +78,13 @@ ENCODING_SEQUENTIAL = "sequential"
 # --- Historical trend ---
 
 PRIOR_RUN_NAMESPACE: str = "prior_runs"
+
+HEATMAP_LAYOUT: str = "heatmap"
+"""`config.layout` for a v4 heatmap: the time-series compile, drawn as one row per resource
+and one cell per day instead of one line per resource."""
+
+MAX_HEATMAP_ROWS: int = 12
+"""The resources a heatmap draws, ranked by the section's scope."""
 """The namespace prefix for prior-run pointers in the historical trend block."""
 
 
@@ -433,11 +440,14 @@ def compile_timeseries_chart(
             )
         )
 
+    # A v4 heatmap draws one row per resource, so it can hold more rows than a line chart
+    # can hold lines before they stop being readable.
+    heatmap = block.config.get("layout") == HEATMAP_LAYOUT
     planned = [
         (resource, ref)
         for resource in matched
         for ref in refs
-    ][:MAX_CHART_SERIES]
+    ][: MAX_HEATMAP_ROWS if heatmap else MAX_CHART_SERIES]
 
     series: list[Series] = []
     for ordinal, (resource, ref) in enumerate(planned):
@@ -501,16 +511,19 @@ def compile_timeseries_chart(
         title = context.messages.text(
             "doc.chart.title.for_resource", resource=matched[0].name, title=title
         )
+    style = block.config.get("style")
     chart = Chart(
         path=chart_cursor.path,
-        chart_type="line",
+        chart_type="heatmap" if heatmap else "line",
         title=title,
         unit=unit,
-        # One series is one ordered quantity over time; two or more are peers.
-        encoding=ENCODING_SEQUENTIAL if len(series) == 1 else ENCODING_CATEGORICAL,
+        # One series is one ordered quantity over time; two or more are peers. A heatmap's
+        # rows share one colour scale, which is an ordered encoding.
+        encoding=ENCODING_SEQUENTIAL if heatmap or len(series) == 1 else ENCODING_CATEGORICAL,
         series=tuple(series),
         caption=caption,
-        panels=panel_groups(tuple(series)),
+        style=style if isinstance(style, str) else "",
+        panels=() if heatmap else panel_groups(tuple(series)),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))

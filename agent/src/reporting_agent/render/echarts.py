@@ -41,6 +41,8 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
     if categories and all(re.fullmatch(r"\d{4}-\d{2}", c) for c in categories):
         month_indexes = [int(c[:4]) * 12 + int(c[5:]) - 1 for c in categories]
         categories = [f"{index // 12:04d}-{index % 12 + 1:02d}" for index in range(min(month_indexes), max(month_indexes) + 1)]
+    if node.chart_type == "heatmap":
+        return _heatmap_spec(node, selected, categories, face=face, accent=accent, furniture=furniture, messages=messages)
     groups = legacy._panel_groups_for(node, selected)
     if chart_style == "sparkline":
         groups = tuple((s.key,) for s in selected) or ((),)
@@ -143,6 +145,60 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         "yTitle": legacy._resolve_axis_title(
             node.y_axis_label_id, node=node, axis="y", messages=messages
         ),
+        "emptyLabel": messages.text(legacy.EMPTY_CHART_TEXT_ID),
+    }
+
+
+def _heatmap_spec(node, selected, categories, *, face, accent, furniture, messages):
+    """One row per resource, one cell per day, one colour scale from the lowest value to the
+    highest — drawn from the same figures a line chart would plot."""
+    rows = []
+    values = []
+    gib = all(" GiB" in p.y.formatted for s in selected for p in s.points) and any(
+        p.y.unit == "bytes" for s in selected for p in s.points
+    )
+    for s in selected:
+        points = {p.x: p.y for p in s.points}
+        row = []
+        for c in categories:
+            if c in points:
+                value = Decimal(str(points[c].value))
+                value = bytes_to_gib(value) if gib else value
+                values.append(value)
+                row.append(str(value))
+            else:
+                row.append(None)
+        rows.append({
+            "key": s.key,
+            # The series label is "<resource> — <metric>"; a row is named by its resource.
+            "label": s.label.split(" — ", 1)[0],
+            "last": s.points[-1].y.formatted if s.points else "",
+            "panel": 0,
+            "color": accent,
+            "dashed": False,
+            "values": row,
+        })
+    unit = "GiB" if gib else next((p.y.unit for s in selected for p in s.points), node.unit)
+    return {
+        "style": "heatmap",
+        "type": "heatmap",
+        "width": 720,
+        "height": max(140, 34 * len(rows) + 90),
+        "font": face,
+        "ink": furniture.value_label,
+        "muted": furniture.axis_label,
+        "rule": furniture.grid,
+        "categories": categories,
+        "panels": [{
+            "label": node.title,
+            "unit": unit,
+            "min": float(min(values)) if values else 0.0,
+            "max": float(max(values)) if values else 1.0,
+        }],
+        "series": rows,
+        "bands": [],
+        "xTitle": "",
+        "yTitle": "",
         "emptyLabel": messages.text(legacy.EMPTY_CHART_TEXT_ID),
     }
 

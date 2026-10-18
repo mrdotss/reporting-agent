@@ -439,8 +439,33 @@ export const SECTION_BLOCK_KINDS = [
   "month_vs_month",
   "coverage",
   "page_break",
+  "callout",
+  "heatmap",
+  "sparklines",
 ] as const
-export const METRIC_BLOCK_KINDS = ["key_figures", "top_list", "month_vs_month"] as const
+export const METRIC_BLOCK_KINDS = [
+  "key_figures",
+  "top_list",
+  "month_vs_month",
+  "heatmap",
+  "sparklines",
+] as const
+
+/**
+ * A callout prints the author's words only when its condition holds in the snapshot. The
+ * conditions are a closed set, each a fixed rule; `peak_at_or_above` compares the section's
+ * ranking metric with an author-set `threshold`, the rest count resources or gaps.
+ */
+export const CALLOUT_CONDITIONS = [
+  "peak_at_or_above",
+  "without_backup",
+  "housekeeping",
+  "stopped",
+  "coverage_gaps",
+] as const
+export const CALLOUT_TONES = ["info", "attention"] as const
+export const CALLOUT_THRESHOLD_MIN = 1
+export const CALLOUT_THRESHOLD_MAX = 100
 
 export const MAX_LOCATIONS = 50
 export const LOCATION_MAX_LENGTH = 64
@@ -3360,8 +3385,16 @@ function validateUserBlock(
   metricBearing: boolean | null
 ): void {
   const isText = block.kind === "text"
+  const isCallout = block.kind === "callout"
+  const allowed = new Set(
+    isText
+      ? ["kind", "id", "text"]
+      : isCallout
+        ? ["kind", "id", "text", "when", "tone", "threshold"]
+        : ["kind", "id"]
+  )
   for (const key of Object.keys(block)) {
-    if (key !== "kind" && key !== "id" && !(isText && key === "text")) {
+    if (!allowed.has(key)) {
       addIssue(issues, [...path, key], `Unrecognized block field "${key}".`)
     }
   }
@@ -3390,7 +3423,7 @@ function validateUserBlock(
   } else {
     seenIds.add(id)
   }
-  if (isText) {
+  if (isText || isCallout) {
     validateTypedText(
       block.text,
       [...path, "text"],
@@ -3399,6 +3432,81 @@ function validateUserBlock(
       SECTION_TEXT_MAX_LENGTH,
       "Text"
     )
+  }
+  if (isCallout) validateCallout(block, path, issues, metricBearing)
+}
+
+/**
+ * The `{token}`s a callout's text may hold, per condition — each filled from the snapshot:
+ * `{count}` with the counted cardinality, `{value}` with the peak figure and `{resource}`
+ * with the name of the resource that reached it. Letters only, so the numeral rule holds.
+ */
+export const CALLOUT_TOKENS: Readonly<Record<(typeof CALLOUT_CONDITIONS)[number], readonly string[]>> = {
+  peak_at_or_above: ["resource", "value"],
+  without_backup: ["count"],
+  housekeeping: ["count"],
+  stopped: ["count"],
+  coverage_gaps: ["count"],
+}
+
+function validateCallout(
+  block: Record<string, unknown>,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  metricBearing: boolean | null
+): void {
+  const when = block.when
+  if (typeof when !== "string" || !(CALLOUT_CONDITIONS as readonly string[]).includes(when)) {
+    addIssue(issues, [...path, "when"], `when must be one of: ${CALLOUT_CONDITIONS.join(", ")}.`)
+    return
+  }
+  const tone = block.tone ?? "info"
+  if (typeof tone !== "string" || !(CALLOUT_TONES as readonly string[]).includes(tone)) {
+    addIssue(issues, [...path, "tone"], `tone must be one of: ${CALLOUT_TONES.join(", ")}.`)
+  }
+  const threshold = block.threshold
+  if (when === "peak_at_or_above") {
+    if (metricBearing === false) {
+      addIssue(
+        issues,
+        [...path, "when"],
+        "This condition reads metrics; use it in a section that reports some."
+      )
+    }
+    if (
+      typeof threshold !== "number" ||
+      !Number.isInteger(threshold) ||
+      threshold < CALLOUT_THRESHOLD_MIN ||
+      threshold > CALLOUT_THRESHOLD_MAX
+    ) {
+      addIssue(
+        issues,
+        [...path, "threshold"],
+        `threshold must be an integer from ${CALLOUT_THRESHOLD_MIN} to ${CALLOUT_THRESHOLD_MAX}.`
+      )
+    }
+  } else if ("threshold" in block) {
+    addIssue(issues, [...path, "threshold"], "Only a peak condition takes a threshold.")
+  }
+  const text = block.text
+  if (isPlainObject(text)) {
+    const allowed = CALLOUT_TOKENS[when as (typeof CALLOUT_CONDITIONS)[number]]
+    for (const language of LANGUAGES) {
+      const value = text[language]
+      if (typeof value !== "string") continue
+      for (const match of value.matchAll(/\{([^{}]*)\}/g)) {
+        if (!allowed.includes(match[1]!)) {
+          addIssue(
+            issues,
+            [...path, "text", language],
+            `{${match[1]}} cannot be filled here; this condition offers ${[...allowed]
+              .sort()
+              .map((name) => `{${name}}`)
+              .join(", ")}.`
+          )
+        }
+      }
+    }
   }
 }
 

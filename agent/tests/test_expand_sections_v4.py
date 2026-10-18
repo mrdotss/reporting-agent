@@ -252,3 +252,26 @@ def test_month_vs_month_compares_against_the_previous_report_and_asks_for_it() -
 def test_coverage_and_page_break_need_nothing_from_the_section() -> None:
     assert next(s for s in _placed("coverage", "aws", "backups") if s.id == "sec__u_x").type == "gaps_and_coverage"
     assert next(s for s in _placed("page_break", "aws", "backups") if s.id == "sec__u_x").type == "page_break"
+
+
+def test_a_heatmap_is_the_time_series_compile_as_rows_of_cells() -> None:
+    spec = next(s for s in _placed("heatmap") if s.id == "sec__u_x")
+    assert (spec.type, spec.config["layout"]) == ("timeseries_chart", "heatmap")
+    assert spec.scope_override.top_n.count == 12  # type: ignore[union-attr]
+
+
+def test_a_sparkline_table_is_a_sparkline_chart_and_its_summary() -> None:
+    specs = [s for s in _placed("sparklines") if s.id.startswith("sec__u_x")]
+    assert [(s.id, s.type) for s in specs] == [("sec__u_x__chart", "timeseries_chart"), ("sec__u_x__summary", "metric_summary")]
+    assert specs[0].config["style"] == "sparkline"
+    assert specs[0].scope_override == specs[1].scope_override
+
+
+def test_a_callout_carries_its_condition_and_the_reports_words() -> None:
+    blocks = [{"kind": "callout", "id": "u_x", "when": "peak_at_or_above", "threshold": 80,
+               "text": {"en": "{resource} ran hot at {value}.", "id": "{resource} panas di {value}."}}]
+    specs = _expand("azure", [_section("vm_utilization", blocks=blocks)], language="id")
+    spec = next(s for s in specs if s.id == "sec__u_x")
+    assert spec.type == "rich_text"
+    assert spec.config["text"] == "{resource} panas di {value}."
+    assert spec.config["callout"] == {"when": "peak_at_or_above", "tone": "info", "metric": "Percentage CPU", "statistic": "avg", "threshold": 80}

@@ -176,7 +176,9 @@ def plotted_series(node: Chart, *, messages: Messages) -> tuple[Series, ...]:
     silently renders English copy in an Indonesian document — exactly the outcome criterion
     15.11 exists to prevent. Every call site supplies the run's pinned messages explicitly.
     """
-    if len(node.series) <= style.CATEGORICAL_LIMIT:
+    # A heatmap's rows are drawn side by side on one colour scale, never folded into an
+    # "Other" row — each row is its own resource, and the compiler already capped them.
+    if node.chart_type == "heatmap" or len(node.series) <= style.CATEGORICAL_LIMIT:
         return node.series
 
     plotted = node.series[: style.CATEGORICAL_PLOTTED_LIMIT]

@@ -160,7 +160,16 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
       fc.record({
         op: fc.constant("place"),
         pick: fc.nat(),
-        kind: fc.constantFrom("key_figures", "top_list", "month_vs_month", "coverage", "page_break" as const),
+        kind: fc.constantFrom(
+          "key_figures",
+          "top_list",
+          "month_vs_month",
+          "coverage",
+          "page_break",
+          "callout",
+          "heatmap",
+          "sparklines" as const
+        ),
       }),
       fc.record({ op: fc.constant("swap"), pick: fc.nat(), other: fc.nat() }),
       fc.record({ op: fc.constant("remove"), pick: fc.nat() })
@@ -198,9 +207,13 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
             case "place": {
               // The Add panel offers metric blocks only to sections that report metrics.
               if (!section) break
-              const needsMetrics = a.kind === "key_figures" || a.kind === "top_list" || a.kind === "month_vs_month"
+              const needsMetrics = !["coverage", "page_break", "callout"].includes(a.kind)
               if (needsMetrics && !entry?.metricBearing) break
-              s.getState().addBlock(section.id, a.kind)
+              const added = s.getState().addBlock(section.id, a.kind)
+              if (added && a.kind === "callout") {
+                s.getState().setText(section.id, added, "en", "Some resources have no backup: {count}.")
+                s.getState().setCallout(section.id, added, { when: "without_backup" })
+              }
               break
             }
             case "swap": {
@@ -248,5 +261,23 @@ describe("added blocks", () => {
     s.getState().removeAdded(id, added)
     expect(definitionOf(s).sections[0]!.blocks!.some((block) => "kind" in block)).toBe(false)
     expect(s.getState().selection).toEqual({ kind: "section", sectionId: id })
+  })
+})
+
+
+describe("callouts", () => {
+  test("a peak condition brings a threshold; another takes it away", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const callout = s.getState().addBlock(id, "callout")!
+    s.getState().setText(id, callout, "en", "{resource} ran hot.")
+    s.getState().setCallout(id, callout, { when: "peak_at_or_above" })
+    const read = () => definitionOf(s).sections[0]!.blocks!.find((b) => "kind" in b && b.id === callout)!
+    expect(read()).toMatchObject({ when: "peak_at_or_above", threshold: 80 })
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+    s.getState().setCallout(id, callout, { when: "stopped" })
+    expect(read()).not.toHaveProperty("threshold")
+    // {resource} is not something a stopped-machines count can fill.
+    expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.at(-1))).toEqual(["en"])
   })
 })

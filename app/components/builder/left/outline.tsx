@@ -6,13 +6,16 @@ import {
   ArrowsDownUpIcon,
   CaretDownIcon,
   ChartBarHorizontalIcon,
+  ChartLineIcon,
   CaretRightIcon,
   DotsSixVerticalIcon,
   EyeIcon,
   EyeSlashIcon,
   FileDashedIcon,
+  GridFourIcon,
   ListNumbersIcon,
   LockSimpleIcon,
+  MegaphoneSimpleIcon,
   PlusIcon,
   RepeatIcon,
   ShieldCheckIcon,
@@ -414,5 +417,11 @@ export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
       return <ShieldCheckIcon aria-hidden className={className} />
     case "page_break":
       return <FileDashedIcon aria-hidden className={className} />
+    case "callout":
+      return <MegaphoneSimpleIcon aria-hidden className={className} />
+    case "heatmap":
+      return <GridFourIcon aria-hidden className={className} />
+    case "sparklines":
+      return <ChartLineIcon aria-hidden className={className} />
   }
 }

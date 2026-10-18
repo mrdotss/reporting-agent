@@ -1,7 +1,105 @@
 /** Shared by the profile selector and the production SVG/PNG renderer.
  * Every numeric operation below positions marks; displayed values arrive formatted.
  */
+/** One row per resource, one cell per day, one colour scale from lowest to highest. */
+function heatmapOptions(spec, compact) {
+  const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
+  const rows = spec.series.map((s) => s.label);
+  const data = [];
+  spec.series.forEach((s, y) =>
+    s.values.forEach((v, x) => {
+      if (v != null) data.push([x, y, Number(v)]);
+    }),
+  );
+  const color = spec.series[0]?.color ?? "#2f3c7e";
+  const format = (v) =>
+    panel.unit === "percent" ? `${Number(v.toPrecision(3))}%` : String(Number(v.toPrecision(3)));
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    grid: {
+      left: compact ? 70 : 150,
+      right: compact ? 10 : 24,
+      top: compact ? 8 : 40,
+      bottom: compact ? 18 : 30,
+    },
+    title: compact
+      ? []
+      : [
+          {
+            text: panel.label + " · " + (spec.yTitle || panel.unit),
+            left: 8,
+            top: 3,
+            textStyle: { fontFamily: spec.font, fontSize: 12, fontWeight: 500, color: spec.ink },
+          },
+        ],
+    xAxis: {
+      type: "category",
+      data: spec.categories,
+      axisTick: { show: false },
+      axisLine: { show: false },
+      splitArea: { show: false },
+      axisLabel: {
+        fontSize: compact ? 8 : 10,
+        color: spec.muted,
+        fontFamily: spec.font,
+        interval: Math.max(0, Math.ceil(spec.categories.length / 8) - 1),
+        formatter: (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v.slice(8) + "/" + v.slice(5, 7) : v),
+      },
+    },
+    yAxis: {
+      type: "category",
+      data: rows,
+      inverse: true,
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        fontSize: compact ? 8 : 10,
+        color: spec.ink,
+        fontFamily: spec.font,
+        width: compact ? 62 : 140,
+        overflow: "truncate",
+      },
+    },
+    visualMap: {
+      min: panel.min,
+      max: panel.max === panel.min ? panel.min + 1 : panel.max,
+      show: !compact,
+      orient: "horizontal",
+      right: 24,
+      top: 4,
+      itemWidth: 10,
+      itemHeight: 110,
+      calculable: false,
+      text: [format(panel.max), format(panel.min)],
+      textStyle: { fontSize: 10, color: spec.muted, fontFamily: spec.font },
+      inRange: { color: ["#f3f4f6", color] },
+    },
+    series: [
+      {
+        type: "heatmap",
+        data,
+        itemStyle: { borderColor: "#ffffff", borderWidth: 1 },
+        emphasis: { disabled: true },
+        animation: false,
+      },
+    ],
+    graphic: data.length
+      ? []
+      : [
+          {
+            type: "text",
+            left: "center",
+            top: "middle",
+            style: { text: spec.emptyLabel, fill: spec.muted, fontFamily: spec.font, fontSize: 12 },
+          },
+        ],
+  };
+}
+
 export function chartOptions(spec, compact = false) {
+  if (spec.type === "heatmap") return heatmapOptions(spec, compact);
   const bare = spec.style === "sparkline";
   const panelHeight = spec.height / spec.panels.length;
   const grid = spec.panels.map((p, i) => ({

@@ -4,7 +4,13 @@ import { ArrowDownIcon, ArrowUpIcon, CursorClickIcon, EyeIcon, EyeSlashIcon, Tra
 import { useId, useMemo, type ReactNode } from "react"
 
 import { useBuilder, useEnvironment, useIssues } from "@/components/builder/context"
-import { ADDED_BLOCKS, blockHint, blockLabel } from "@/components/builder/canvas/labels"
+import {
+  ADDED_BLOCKS,
+  CALLOUT_TOKENS,
+  blockHint,
+  blockLabel,
+  calloutConditionLabel,
+} from "@/components/builder/canvas/labels"
 import { Field, Segmented } from "@/components/builder/left/theme-panel"
 import {
   columnLabel,
@@ -29,6 +35,7 @@ import {
   type SectionV4,
   type AddedEntry,
   type AddedKind,
+  type CalloutCondition,
   type SlotEntry,
 } from "@/lib/builder/model"
 import type { BlockRef, InspectorTab } from "@/lib/builder/store"
@@ -550,6 +557,7 @@ function BlockContent({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
 
   if (ref_.kind === "added") {
     const block = section.blocks?.find((b) => isAddedEntry(b) && b.id === ref_.id) as AddedEntry | undefined
+    if (block?.kind === "callout") return <CalloutContent section={section} block={block} />
     if (block && block.kind !== "text") return <AddedContent section={section} entry={entry} kind={block.kind} />
     const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
     return (
@@ -730,8 +738,11 @@ function AddedContent({
     month_vs_month: `Each resource's ${ranking} in the previous verified report of this preset, beside this period's, with the direction it moved. The first report has no earlier one, and says so.`,
     coverage: "Every gap the run recorded, grouped by type, with the resources it affects. The appendix prints the same record.",
     page_break: "The next block starts on a new page in the delivered document.",
+    callout: "",
+    heatmap: `One row for each of the section's top resources (up to twelve), one cell per day, shaded by ${ranking}.`,
+    sparklines: `The section's top five resources by ${ranking}: each one's shape over the period as a small line, with its average, estimated P95 and peak beside it.`,
   }
-  const readsMetrics = kind === "key_figures" || kind === "top_list" || kind === "month_vs_month"
+  const readsMetrics = kind !== "coverage" && kind !== "page_break"
   return (
     <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted-foreground">
       <p>{lines[kind]}</p>
@@ -747,6 +758,91 @@ function AddedContent({
           Change the section&rsquo;s metrics
         </button>
       )}
+    </div>
+  )
+}
+
+/** A callout: when it prints, how it reads, and the words — with the tokens its condition fills. */
+function CalloutContent({ section, block }: Readonly<{ section: SectionV4; block: AddedEntry }>) {
+  const definition = useBuilder((state) => state.definition)
+  const setCallout = useBuilder((state) => state.setCallout)
+  const setText = useBuilder((state) => state.setText)
+  const thresholdId = useId()
+  const entry = sectionEntry(definition.provider, section.type)
+  const when = block.when ?? "coverage_gaps"
+  const conditions: CalloutCondition[] = [
+    ...(entry?.metricBearing ? (["peak_at_or_above"] as const) : []),
+    "without_backup",
+    "housekeeping",
+    "stopped",
+    "coverage_gaps",
+  ]
+  const rank = rankingOf(section, entry)
+  const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
+  return (
+    <div className="flex flex-col gap-4">
+      <Field label="Prints when">
+        <div role="radiogroup" aria-label="Condition" className="flex flex-col gap-1">
+          {conditions.map((condition) => (
+            <label key={condition} className="flex items-center gap-2 rounded-md px-1.5 py-1 text-[13px] hover:bg-muted">
+              <input
+                type="radio"
+                name={`callout-${block.id}`}
+                checked={when === condition}
+                onChange={() => setCallout(section.id, block.id, { when: condition })}
+              />
+              {calloutConditionLabel(condition, definition.provider)}
+            </label>
+          ))}
+        </div>
+      </Field>
+      {when === "peak_at_or_above" && (
+        <Field
+          label="Threshold"
+          hint={`Prints when any resource's ${rank ? `${rank.metric} (${rank.statistic})` : "ranking metric"} is at or above this, in the metric's own unit. The threshold itself never prints.`}
+        >
+          <input
+            id={thresholdId}
+            aria-label="Threshold"
+            type="number"
+            min={1}
+            max={100}
+            value={block.threshold ?? 80}
+            onChange={(event) =>
+              setCallout(section.id, block.id, {
+                threshold: Math.max(1, Math.min(100, Math.round(Number(event.target.value) || 1))),
+              })
+            }
+            className={cn(INPUT, "w-24 font-mono tabular-nums")}
+          />
+        </Field>
+      )}
+      <Field label="Tone">
+        <Segmented
+          label="Tone"
+          value={block.tone ?? "info"}
+          options={[
+            { value: "info", label: "Note" },
+            { value: "attention", label: "Attention" },
+          ]}
+          onChange={(tone) => setCallout(section.id, block.id, { tone })}
+        />
+      </Field>
+      <Field
+        label="Words"
+        hint={`Numbers are refused; these fill from the snapshot: ${CALLOUT_TOKENS[when].map((token) => `{${token}}`).join(", ")}.`}
+      >
+        {languages.map((language) => (
+          <TypedField
+            key={language}
+            label={language === "en" ? "English" : "Indonesian"}
+            multiline
+            max={2000}
+            value={block.text?.[language] ?? ""}
+            onChange={(value) => setText(section.id, block.id, language, value)}
+          />
+        ))}
+      </Field>
     </div>
   )
 }
