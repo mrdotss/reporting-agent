@@ -13,6 +13,7 @@ import { readTypeCounts } from "@/lib/scans/view"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { currentDisplayFormat } from "@/lib/templates/current-format"
+import { previewSources } from "@/lib/templates/preview"
 import { getTemplate, readLatestVersion, TemplateNotFoundError } from "@/lib/templates/store"
 import { requireProject } from "@/lib/workspaces/access"
 import { can } from "@/lib/workspaces/policy"
@@ -75,6 +76,7 @@ export default async function EditPresetPage({ params }: PageProps) {
   const connection =
     subscriptions.find((entry) => entry.status === "active" && entry.provider === provider) ?? null
   const scan = connection === null ? null : await readLatestScan(user.id, connection.id)
+  const sources = await previewSources(user.id, subscriptions, provider)
 
   return (
     <Builder
@@ -88,6 +90,7 @@ export default async function EditPresetPage({ params }: PageProps) {
         collectedFactSources: [...COLLECTED_FACT_SOURCES],
         metricsHistorySince: connection?.metricsHistorySince ?? null,
         latestVersion: loaded.version?.version ?? null,
+        previewSources: sources,
       }}
     />
   )

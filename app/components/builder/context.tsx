@@ -8,6 +8,7 @@ import { builderIssues, type BuilderIssue } from "@/lib/builder/issues"
 import type { DefinitionV4 } from "@/lib/builder/model"
 import { createBuilderStore, type BuilderState, type BuilderStore } from "@/lib/builder/store"
 import type { MetricCatalogSnapshot } from "@/lib/templates/definition"
+import type { PreviewSource } from "@/lib/templates/input"
 
 /**
  * One store per open preset, shared by every panel through context.
@@ -26,6 +27,8 @@ export type BuilderEnvironment = {
   /** How far back exported metrics reach on that connection (Azure), ISO date or null. */
   readonly metricsHistorySince: string | null
   readonly latestVersion: number | null
+  /** The connections Preview PDF can render against: this provider's, with their latest report. */
+  readonly previewSources: readonly PreviewSource[]
 }
 
 type Context = { store: BuilderStore; environment: BuilderEnvironment }

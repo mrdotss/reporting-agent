@@ -233,3 +233,15 @@ export const previewRequestSchema = z
   .strict()
 
 export type PreviewRequest = z.output<typeof previewRequestSchema>
+
+/**
+ * One connection the builder's Preview PDF can render a draft against, and the period of
+ * its latest completed report — `null` where it has none yet, so the picker can say why it
+ * is disabled. Declared here rather than in `lib/templates/preview.ts` for the reason
+ * {@link PREVIEW_BUDGET_MS} is: that module is server-only, and the builder reads this type.
+ */
+export type PreviewSource = {
+  readonly id: string
+  readonly name: string
+  readonly period: { readonly start: string; readonly end: string } | null
+}
