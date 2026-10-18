@@ -26,7 +26,7 @@ resolved set.  It never stores a resource id in the definition.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Final
 
 from reporting_agent.catalog.loader import (
@@ -37,7 +37,7 @@ from reporting_agent.catalog.loader import (
 )
 from reporting_agent.compile.blocks.base import RESOURCE_ID_CONFIG_KEY, BlockSpec
 from reporting_agent.compile.messages import Messages
-from reporting_agent.compile.scope import ScopeRules, resolve, scope_rules_from_plain
+from reporting_agent.compile.scope import ScopeRules, TopNRule, resolve, scope_rules_from_plain
 from reporting_agent.compile.snapshot_view import SnapshotView
 from reporting_agent.errors import CompileFailedError
 
@@ -628,21 +628,7 @@ def _expand_one_section_v4(
             continue
 
         if item.expansion is None:
-            # A block the author added. Words only, in the report's language — both were
-            # checked before the run began.
-            text = item.settings.get("text")
-            value = text.get(messages.language) if isinstance(text, Mapping) else None
-            if not isinstance(value, str) or not value:
-                raise CompileFailedError(
-                    f"section {section_id!r}: block {item.settings.get('id')!r} has no text "
-                    f"in {messages.language!r}"
-                )
-            result.append(BlockSpec(
-                id=f"{section_id}__{item.settings.get('id')}",
-                type="rich_text",
-                config={"text": value},
-                scope_override=None,
-            ))
+            result.append(_added_block(section_id, section, entry, item.settings, scope_override, messages))
             continue
 
         expansion = item.expansion
@@ -668,6 +654,127 @@ def _expand_one_section_v4(
             ))
 
     return tuple(result)
+
+
+PREVIOUS_PERIOD_LOOKBACK: Final[int] = 1
+"""The prior-run selection a month-vs-month block reads: the one latest verified report.
+
+A `historical_trend` key with a lookback of one, so the pipeline fetches, records and — on
+re-verification — reloads that report's snapshot through the same path a trend uses."""
+
+
+def _section_metric_refs(section: Mapping[str, object]) -> list[dict[str, object]]:
+    metrics = section.get("metrics")
+    if not isinstance(metrics, Sequence) or isinstance(metrics, str):
+        return []
+    return [dict(item) for item in metrics if isinstance(item, Mapping)]
+
+
+def _first_metric(section: Mapping[str, object]) -> tuple[str, str] | None:
+    for item in _section_metric_refs(section):
+        name = item.get("metric") or item.get("derived")
+        statistic = item.get("statistic")
+        if isinstance(name, str) and name and isinstance(statistic, str) and statistic:
+            return (name, statistic)
+    return None
+
+
+def _ranking_of(section: Mapping[str, object], entry: SectionCatalogueEntry) -> tuple[str, str] | None:
+    """What a section ranks by: its own top-N rule, else the catalogue's, else its first metric."""
+    selection = section.get("selection")
+    top_n = selection.get("top_n") if isinstance(selection, Mapping) else None
+    if isinstance(top_n, Mapping) and isinstance(top_n.get("metric"), str) and isinstance(top_n.get("statistic"), str):
+        return (str(top_n["metric"]), str(top_n["statistic"]))
+    selected = {
+        (str(item.get("metric") or item.get("derived")), str(item.get("statistic")))
+        for item in _section_metric_refs(section)
+    }
+    # The catalogue's ranking only where the section collects it: an author who chose other
+    # metrics would otherwise get a ranking column with nothing in it.
+    if entry.order_by is not None and entry.order_by in selected:
+        return entry.order_by
+    return _first_metric(section)
+
+
+TOP_LIST_DEFAULT_COUNT: Final[int] = 10
+"""How many resources an added top list ranks when the section sets no top-N of its own."""
+
+
+def _added_block(
+    section_id: str,
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    settings: Mapping[str, object],
+    scope_override: ScopeRules | None,
+    messages: Messages,
+) -> BlockSpec:
+    """A block the author placed in a v4 section, configured from the section it sits in.
+
+    Text prints the author's words in the report's language. The others are catalogue
+    blocks with nothing of their own to configure: they read the section's metrics and its
+    selection, so what the author chose for the section is what they show.
+    """
+    kind = settings.get("kind")
+    block_id = f"{section_id}__{settings.get('id')}"
+
+    if kind == "text":
+        text = settings.get("text")
+        value = text.get(messages.language) if isinstance(text, Mapping) else None
+        if not isinstance(value, str) or not value:
+            raise CompileFailedError(
+                f"section {section_id!r}: block {settings.get('id')!r} has no text in "
+                f"{messages.language!r}"
+            )
+        return BlockSpec(id=block_id, type="rich_text", config={"text": value}, scope_override=None)
+
+    if kind == "page_break":
+        return BlockSpec(id=block_id, type="page_break", config={}, scope_override=None)
+
+    if kind == "coverage":
+        return BlockSpec(id=block_id, type="gaps_and_coverage", config={}, scope_override=None)
+
+    metrics = _section_metric_refs(section)
+    if kind == "key_figures":
+        return BlockSpec(id=block_id, type="kpi_row", config={"metrics": metrics}, scope_override=scope_override)
+
+    ranking = _ranking_of(section, entry)
+    if ranking is None:
+        raise CompileFailedError(
+            f"section {section_id!r}: block {settings.get('id')!r} reads metrics, and the "
+            f"section selects none"
+        )
+    metric, statistic = ranking
+
+    if kind == "top_list":
+        # Ranked by the section's own top-N rule where it has one; otherwise the top ten by
+        # the ranking metric, so a "top list" is a ranking and never the whole estate.
+        base = scope_override or ScopeRules()
+        ranked = base if base.top_n is not None else replace(
+            base,
+            top_n=TopNRule(count=TOP_LIST_DEFAULT_COUNT, metric=metric, statistic=statistic),
+            sort=base.sort or "descending",
+        )
+        return BlockSpec(
+            id=block_id,
+            type="top_n_table",
+            config={"columns": metrics, "order_by": {"metric": metric, "statistic": statistic}},
+            scope_override=ranked,
+        )
+
+    if kind == "month_vs_month":
+        return BlockSpec(
+            id=block_id,
+            type="comparison_delta",
+            config={
+                "against": "previous",
+                "metric": metric,
+                "statistic": statistic,
+                "lookback": PREVIOUS_PERIOD_LOOKBACK,
+            },
+            scope_override=scope_override,
+        )
+
+    raise CompileFailedError(f"section {section_id!r}: unknown added block kind {kind!r}")
 
 
 def _expand_resource_group_v4(
@@ -879,7 +986,14 @@ def historical_trend_keys(
             # failure earlier and word it worse.
             continue
 
-        for expansion in _visible_expansions(section, entry, definition.get("schema_version")):
+        version = definition.get("schema_version")
+        if isinstance(version, int) and version >= 4:
+            for item in _listed(section.get("blocks")):
+                if item.get("kind") == "month_vs_month":
+                    ranking = _ranking_of(section, entry)
+                    if ranking is not None:
+                        keys.add((*ranking, PREVIOUS_PERIOD_LOOKBACK))
+        for expansion in _visible_expansions(section, entry, version):
             if expansion.block != "historical_trend":
                 continue
             for config in _historical_configs(expansion, entry, section):

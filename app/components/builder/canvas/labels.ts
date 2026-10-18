@@ -3,6 +3,7 @@ import {
   resourceNoun,
   type CatalogueSection,
 } from "@/lib/builder/catalogue"
+import type { AddedEntry, AddedKind } from "@/lib/builder/model"
 
 /**
  * What the builder calls a block — in the outline, the selection tag and the inspector.
@@ -69,4 +70,36 @@ export function blockHint(entry: CatalogueSection, slot: string): string {
     default:
       return ""
   }
+}
+
+/** What the builder calls a block the author added, and one line on what it shows. */
+export const ADDED_BLOCKS: Readonly<
+  Record<AddedKind, { readonly label: string; readonly blurb: string; readonly needsMetrics: boolean }>
+> = {
+  text: { label: "Text", blurb: "Words only, in English and Indonesian.", needsMetrics: false },
+  key_figures: {
+    label: "Key figures",
+    blurb: "Each metric's highest value, and which resource reached it.",
+    needsMetrics: true,
+  },
+  top_list: {
+    label: "Top list",
+    blurb: "The resources ranked by the section's ranking metric.",
+    needsMetrics: true,
+  },
+  month_vs_month: {
+    label: "Month vs month",
+    blurb: "Each resource against the previous verified report.",
+    needsMetrics: true,
+  },
+  coverage: { label: "Coverage", blurb: "What could not be measured, and for which resources.", needsMetrics: false },
+  page_break: { label: "Page break", blurb: "Starts the next block on a new page.", needsMetrics: false },
+}
+
+export const ADDED_KINDS = Object.keys(ADDED_BLOCKS) as AddedKind[]
+
+export function addedLabel(entry: AddedEntry, language: "en" | "id"): string {
+  if (entry.kind !== "text") return ADDED_BLOCKS[entry.kind].label
+  const text = entry.text?.[language]
+  return text ? `“${text.slice(0, 28)}${text.length > 28 ? "…" : ""}”` : "Text (empty)"
 }

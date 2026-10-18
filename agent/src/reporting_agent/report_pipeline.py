@@ -1956,7 +1956,9 @@ def _seed_trend_months(
     catch it: a trend that silently collected nothing is the defect that function's own
     docstring records at length.
     """
-    keys = _historical_selection_keys(definition, catalogue=catalogue)
+    # A lookback of one is a month-vs-month block's previous report, read from that
+    # report's snapshot rather than seeded, so it asks this run to collect nothing extra.
+    keys = {key for key in _historical_selection_keys(definition, catalogue=catalogue) if key[2] >= 2}
     if not keys:
         return 0
     return min(max(lookback for _, _, lookback in keys), MAX_TREND_MONTHS)

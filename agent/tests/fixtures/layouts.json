@@ -228,6 +228,47 @@
           }
         ]
       }
+    },
+    {
+      "name": "placed blocks keep the author's order around the group",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "ec2_utilization",
+        "position": 0,
+        "blocks": [
+          {
+            "slot": "title"
+          },
+          {
+            "kind": "key_figures",
+            "id": "u_kpi"
+          },
+          {
+            "kind": "month_vs_month",
+            "id": "u_mvm"
+          },
+          {
+            "slot": "each"
+          },
+          {
+            "kind": "top_list",
+            "id": "u_top"
+          },
+          {
+            "slot": "fleet",
+            "hidden": true
+          },
+          {
+            "kind": "coverage",
+            "id": "u_cov"
+          },
+          {
+            "kind": "page_break",
+            "id": "u_brk"
+          }
+        ]
+      }
     }
   ],
   "orders": [
@@ -312,6 +353,83 @@
           "position": 6
         }
       ]
+    }
+  ],
+  "rankings": [
+    {
+      "name": "the catalogue's ranking where the section collects it",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "ec2_utilization",
+        "position": 0,
+        "metrics": [
+          {
+            "metric": "CPUUtilization",
+            "statistic": "avg"
+          },
+          {
+            "metric": "CPUUtilization",
+            "statistic": "max"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the first metric where the catalogue's is not collected",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "ec2_utilization",
+        "position": 0,
+        "metrics": [
+          {
+            "metric": "NetworkIn",
+            "statistic": "avg"
+          }
+        ]
+      }
+    },
+    {
+      "name": "the section's own top-N first",
+      "provider": "azure",
+      "section": {
+        "id": "s",
+        "type": "vm_utilization",
+        "position": 0,
+        "metrics": [
+          {
+            "metric": "Percentage CPU",
+            "statistic": "max"
+          }
+        ],
+        "selection": {
+          "resource_types": [],
+          "resource_groups": [],
+          "tag_filters": [],
+          "sort": null,
+          "top_n": {
+            "count": 5,
+            "metric": "Percentage CPU",
+            "statistic": "avg"
+          }
+        }
+      }
+    },
+    {
+      "name": "a section with no ranking in its catalogue entry",
+      "provider": "aws",
+      "section": {
+        "id": "s",
+        "type": "ebs_activity",
+        "position": 0,
+        "metrics": [
+          {
+            "metric": "VolumeReadBytes",
+            "statistic": "avg"
+          }
+        ]
+      }
     }
   ]
 }

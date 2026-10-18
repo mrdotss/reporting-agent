@@ -41,6 +41,34 @@
       "en": "lowest observed",
       "id": "terendah teramati"
     },
+    "doc.comparison.caption": {
+      "en": "{metric} ({statistic}) against the previous verified report",
+      "id": "{metric} ({statistic}) dibandingkan dengan laporan terverifikasi sebelumnya"
+    },
+    "doc.comparison.direction.higher": {
+      "en": "Higher",
+      "id": "Lebih tinggi"
+    },
+    "doc.comparison.direction.lower": {
+      "en": "Lower",
+      "id": "Lebih rendah"
+    },
+    "doc.comparison.direction.none": {
+      "en": "No earlier report",
+      "id": "Belum ada laporan sebelumnya"
+    },
+    "doc.comparison.direction.same": {
+      "en": "Same",
+      "id": "Sama"
+    },
+    "doc.table.direction": {
+      "en": "Direction",
+      "id": "Arah"
+    },
+    "doc.table.previous_report": {
+      "en": "Previous report",
+      "id": "Laporan sebelumnya"
+    },
     "doc.basis.observed": {
       "en": "observed",
       "id": "teramati"

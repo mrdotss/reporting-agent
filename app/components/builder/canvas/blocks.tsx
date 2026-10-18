@@ -16,7 +16,7 @@ import {
   type Language,
   type Provider,
 } from "@/lib/builder/catalogue"
-import type { MetricItem, SectionV4, SlotEntry } from "@/lib/builder/model"
+import { rankingOf, type AddedEntry, type MetricItem, type SectionV4, type SlotEntry } from "@/lib/builder/model"
 import {
   SAMPLE_COUNTS,
   formatSample,
@@ -581,3 +581,128 @@ export function AddedText({ design, text }: Readonly<{ design: PageDesign; text:
 }
 
 export { Heading, Caption, px }
+
+// --- Blocks the author placed -----------------------------------------------------------
+
+export function AddedBlockView({
+  provider,
+  design,
+  language,
+  section,
+  sectionEntry: catalogueEntry,
+  entry,
+}: Readonly<{
+  provider: Provider
+  design: PageDesign
+  language: Language
+  section: SectionV4
+  sectionEntry: CatalogueSection
+  entry: AddedEntry
+}>) {
+  const metrics = section.metrics ?? []
+  const resources = sampleResources(provider)
+  const ranking = rankingOf(section, catalogueEntry)
+  const firstName = ranking?.metric ?? "CPU"
+  const firstStat = ranking?.statistic ?? "avg"
+  const valueOf = (resource: SampleResource, name: string, statistic: string): number => {
+    const summary = sampleSummary(sampleMetricSeries(resource, name, statistic === "max" ? "max" : "avg"))
+    return statistic === "max" ? summary.peak : summary.avg
+  }
+
+  switch (entry.kind) {
+    case "text":
+      return <AddedText design={design} text={entry.text?.[language]} />
+    case "page_break":
+      return (
+        <div className="flex items-center gap-2 font-sans text-[10.5px] tracking-wide text-muted-foreground uppercase">
+          <span className="h-px flex-1 border-t border-dashed border-current" />
+          Page break
+          <span className="h-px flex-1 border-t border-dashed border-current" />
+        </div>
+      )
+    case "coverage":
+      return <CoverageView {...({ design, language } as BlockViewProps)} />
+    case "key_figures":
+      return (
+        <Table
+          design={design}
+          head={[
+            t("doc.table.metric", language, "Metric"),
+            t("doc.table.basis", language, "Basis"),
+            t("doc.table.value", language, "Value"),
+            t("doc.table.resource", language, "Resource"),
+          ]}
+          rows={(metrics.length ? metrics : [{ metric: "CPU", statistic: "avg" }]).map((item) => {
+            const name = metricLabel(item)
+            const lowest = item.statistic === "min"
+            const sorted = [...resources].sort((a, b) => valueOf(b, name, item.statistic) - valueOf(a, name, item.statistic))
+            const pick = lowest ? sorted.at(-1)! : sorted[0]!
+            return [
+              `${name} (${item.statistic})`,
+              t(lowest ? "doc.basis.lowest_observed" : "doc.basis.highest_observed", language, lowest ? "lowest observed" : "highest observed"),
+              formatSample(valueOf(pick, name, item.statistic), sampleUnit(name)),
+              pick.name,
+            ]
+          })}
+          numeric={[2]}
+        />
+      )
+    case "top_list": {
+      // Ranking column first, then the section's other metrics, as the runtime lays it out.
+      const ordered = [
+        { metric: firstName, statistic: firstStat },
+        ...metrics
+          .map((m) => ({ metric: metricLabel(m), statistic: m.statistic }))
+          .filter((m) => !(m.metric === firstName && m.statistic === firstStat)),
+      ].slice(0, 4)
+      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
+      return (
+        <Table
+          design={design}
+          head={[t("doc.table.resource", language, "Resource"), ...ordered.map((m) => `${m.metric} (${m.statistic})`)]}
+          rows={ranked.map((r) => [
+            r.name,
+            ...ordered.map((m) => formatSample(valueOf(r, m.metric, m.statistic), sampleUnit(m.metric))),
+          ])}
+          numeric={ordered.map((_, index) => index + 1)}
+        />
+      )
+    }
+    case "month_vs_month":
+      return (
+        <div>
+          <Caption design={design}>
+            {t("doc.comparison.caption", language, "Against the previous verified report", {
+              metric: firstName,
+              statistic: firstStat,
+            })}
+          </Caption>
+          <Table
+            design={design}
+            head={[
+              t("doc.table.resource", language, "Resource"),
+              t("doc.table.previous_report", language, "Previous report"),
+              t("doc.table.this_run", language, "This run"),
+              t("doc.table.direction", language, "Direction"),
+            ]}
+            rows={resources.map((r, index) => {
+              const unit = sampleUnit(firstName)
+              const now = valueOf(r, firstName, firstStat)
+              const before = now * (index === 1 ? 1.12 : 0.86)
+              return [
+                r.name,
+                formatSample(before, unit),
+                formatSample(now, unit),
+                t(
+                  before < now ? "doc.comparison.direction.higher" : "doc.comparison.direction.lower",
+                  language,
+                  before < now ? "Higher" : "Lower"
+                ),
+              ]
+            })}
+            numeric={[1, 2]}
+          />
+        </div>
+      )
+  }
+}

@@ -39,13 +39,29 @@ export type EachEntry = {
   readonly blocks?: readonly SlotEntry[]
 }
 
+/** The blocks an author can add to a section — `SECTION_BLOCK_KINDS` in the validator. */
+export type AddedKind =
+  | "text"
+  | "key_figures"
+  | "top_list"
+  | "month_vs_month"
+  | "coverage"
+  | "page_break"
+
+/** A block the author added. Only text carries anything of its own: its words. */
+export type AddedEntry = {
+  readonly kind: AddedKind
+  readonly id: string
+  readonly text?: TypedText
+}
+
 export type TextEntry = {
   readonly kind: "text"
   readonly id: string
   readonly text: TypedText
 }
 
-export type BlockEntry = SlotEntry | EachEntry | TextEntry
+export type BlockEntry = SlotEntry | EachEntry | AddedEntry
 
 export type ScopeSelection = {
   readonly resource_types: readonly string[]
@@ -90,12 +106,12 @@ export type DefinitionV4 = {
   readonly front_matter: Readonly<Record<string, unknown>>
 }
 
-export function isTextEntry(entry: BlockEntry): entry is TextEntry {
+export function isAddedEntry(entry: BlockEntry): entry is AddedEntry {
   return "kind" in entry
 }
 
 export function isEachEntry(entry: BlockEntry): entry is EachEntry {
-  return !isTextEntry(entry) && entry.slot === EACH_RESOURCE_SLOT
+  return !isAddedEntry(entry) && entry.slot === EACH_RESOURCE_SLOT
 }
 
 // --- Section order -------------------------------------------------------------------
@@ -141,10 +157,10 @@ export type LayoutSlot = {
   readonly hidden: boolean
 }
 
-export type LayoutText = {
-  readonly kind: "text"
+export type LayoutAdded = {
+  readonly kind: "added"
   readonly id: string
-  readonly entry: TextEntry
+  readonly entry: AddedEntry
 }
 
 export type LayoutEach = {
@@ -154,7 +170,7 @@ export type LayoutEach = {
   readonly children: readonly LayoutSlot[]
 }
 
-export type LayoutItem = LayoutSlot | LayoutText | LayoutEach
+export type LayoutItem = LayoutSlot | LayoutAdded | LayoutEach
 
 /**
  * Every block of a section in print order, hidden ones included and flagged.
@@ -172,7 +188,7 @@ export function sectionLayout(section: SectionV4, entry: CatalogueSection): Layo
   const resourceSlots = entry.slots.filter((shape) => shape.per === "resource").map((s) => s.slot)
 
   const authored = section.blocks ?? []
-  const named = new Set(authored.flatMap((item) => (isTextEntry(item) ? [] : [item.slot])))
+  const named = new Set(authored.flatMap((item) => (isAddedEntry(item) ? [] : [item.slot])))
   const ordered: BlockEntry[] = [
     ...authored,
     ...catalogueOrder.filter((name) => !named.has(name)).map((slot) => ({ slot })),
@@ -180,8 +196,8 @@ export function sectionLayout(section: SectionV4, entry: CatalogueSection): Layo
 
   const items: LayoutItem[] = []
   for (const item of ordered) {
-    if (isTextEntry(item)) {
-      items.push({ kind: "text", id: item.id, entry: item })
+    if (isAddedEntry(item)) {
+      items.push({ kind: "added", id: item.id, entry: item })
       continue
     }
     if (item.slot === EACH_RESOURCE_SLOT) {
@@ -212,7 +228,7 @@ export function sectionLayout(section: SectionV4, entry: CatalogueSection): Layo
 /** What the runtime prints, as nested slot names — the shape the mirror test compares. */
 export function visibleLayout(section: SectionV4, entry: CatalogueSection): (string | string[])[] {
   return sectionLayout(section, entry).flatMap((item): (string | string[])[] => {
-    if (item.kind === "text") return [item.id]
+    if (item.kind === "added") return [item.id]
     if (item.hidden) return []
     if (item.kind === "each") {
       const children = item.children.filter((child) => !child.hidden).map((child) => child.slot)
@@ -230,7 +246,7 @@ export function visibleLayout(section: SectionV4, entry: CatalogueSection): (str
  */
 export function explicitBlocks(section: SectionV4, entry: CatalogueSection): BlockEntry[] {
   return sectionLayout(section, entry).map((item): BlockEntry => {
-    if (item.kind === "text") return item.entry
+    if (item.kind === "added") return item.entry
     if (item.kind === "each") {
       return {
         ...item.entry,
@@ -253,7 +269,27 @@ export function entryOf(
 /** A section's title as it prints: the author's rename in the report's language, else the catalogue's. */
 export function displayTitle(section: SectionV4, entry: CatalogueSection | undefined, language: Language): string {
   const title = section.blocks?.find(
-    (block): block is SlotEntry => !isTextEntry(block) && block.slot === "title"
+    (block): block is SlotEntry => !isAddedEntry(block) && block.slot === "title"
   )?.title?.[language]
   return title || sectionTitle(entry, language)
+}
+
+/**
+ * What a section's added metric blocks rank and compare by — `compile/sections.py`'s
+ * `_ranking_of`: the section's own top-N rule, else the catalogue's ranking where the
+ * section collects it, else the section's first metric.
+ */
+export function rankingOf(
+  section: SectionV4,
+  entry: CatalogueSection | undefined
+): { metric: string; statistic: string } | null {
+  const topN = section.selection?.top_n
+  if (topN) return { metric: topN.metric, statistic: topN.statistic }
+  const metrics = section.metrics ?? []
+  const order = entry?.orderBy
+  if (order && metrics.some((m) => (m.metric ?? m.derived) === order.metric && m.statistic === order.statistic)) {
+    return order
+  }
+  const first = metrics.find((m) => (m.metric ?? m.derived) && m.statistic)
+  return first ? { metric: (first.metric ?? first.derived)!, statistic: first.statistic } : null
 }

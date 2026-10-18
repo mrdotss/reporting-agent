@@ -607,6 +607,7 @@ const VERSION_LISTS = [
   "SECTION_PRESENTATIONS",
   "SECTION_KEYS_V4",
   "SECTION_BLOCK_KINDS",
+  "METRIC_BLOCK_KINDS",
 ] as const
 
 const DECLARED_VERSION_NAMES: readonly string[] = [

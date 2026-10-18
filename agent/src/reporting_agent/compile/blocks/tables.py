@@ -299,8 +299,8 @@ def read_column_entries(block: BlockSpec, field_name: str) -> tuple[ColumnEntry,
     return tuple(entries)
 
 
-_LOWEST = "lowest observed"
-_HIGHEST = "highest observed"
+_LOWEST = "doc.basis.lowest_observed"
+_HIGHEST = "doc.basis.highest_observed"
 
 
 def _figure_cell(
@@ -1061,7 +1061,7 @@ def compile_kpi_row(
 
         cells: list[object] = [
             text_cell(row_cursor.child("cells", 0), ref.label),
-            text_cell(row_cursor.child("cells", 1), _basis(ref)),
+            text_cell(row_cursor.child("cells", 1), context.messages.text(_basis(ref))),
         ]
         if selected is None:
             # No resource in scope carries this metric. An EmptyCell and no resource name,
@@ -1092,6 +1092,8 @@ def compile_kpi_row(
 
 
 def _basis(ref: MetricRef) -> str:
+    """The message id saying which extreme a row reports — in the report's language, which a
+    literal never was: an Indonesian report printed "highest observed"."""
     return _LOWEST if ref.statistic == "min" else _HIGHEST
 
 

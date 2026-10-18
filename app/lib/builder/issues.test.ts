@@ -48,7 +48,7 @@ describe("builderIssues", () => {
     }
     const issues = builderIssues({ ...base, sections: [section] })
     expect(issues[0]!.target).toEqual({
-      selection: { kind: "block", sectionId: section.id, ref: { kind: "text", id: "u_a" } },
+      selection: { kind: "block", sectionId: section.id, ref: { kind: "added", id: "u_a" } },
     })
   })
 

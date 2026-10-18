@@ -98,14 +98,14 @@ describe("blocks", () => {
   test("added text goes after the block it was added at, and after the group from inside it", () => {
     const s = store()
     const id = s.getState().addSection("ec2_utilization")!
-    const first = s.getState().addText(id, { kind: "slot", slot: "title", inEach: false })!
-    const second = s.getState().addText(id, each("chart"))!
+    const first = s.getState().addBlock(id, "text", { kind: "slot", slot: "title", inEach: false })!
+    const second = s.getState().addBlock(id, "text", each("chart"))!
     const entry = catalogueFor("aws").find((e) => e.key === "ec2_utilization")!
     const layout = sectionLayout(definitionOf(s).sections[0]!, entry).map((item) =>
-      item.kind === "text" ? item.id : item.kind === "each" ? "each" : item.slot
+      item.kind === "added" ? item.id : item.kind === "each" ? "each" : item.slot
     )
     expect(layout).toEqual(["title", first, "each", second, "fleet"])
-    expect(s.getState().selection).toEqual({ kind: "block", sectionId: id, ref: { kind: "text", id: second } })
+    expect(s.getState().selection).toEqual({ kind: "block", sectionId: id, ref: { kind: "added", id: second } })
   })
 
   test("a renamed title and narrowed columns are what the validator accepts", () => {
@@ -113,7 +113,7 @@ describe("blocks", () => {
     const id = s.getState().addSection("ec2_utilization")!
     s.getState().setTitle(id, "title", "en", "Instance use")
     s.getState().setColumns(id, each("details"), ["power_state", "instance_type"])
-    const text = s.getState().addText(id)!
+    const text = s.getState().addBlock(id, "text")!
     s.getState().setText(id, text, "en", "Read the chart first.")
     const definition = definitionOf(s)
     const blocks = definition.sections[0]!.blocks!
@@ -157,6 +157,11 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
       fc.record({ op: fc.constant("hide"), pick: fc.nat(), slot: fc.nat() }),
       fc.record({ op: fc.constant("move"), pick: fc.nat(), slot: fc.nat(), up: fc.boolean() }),
       fc.record({ op: fc.constant("text"), pick: fc.nat() }),
+      fc.record({
+        op: fc.constant("place"),
+        pick: fc.nat(),
+        kind: fc.constantFrom("key_figures", "top_list", "month_vs_month", "coverage", "page_break" as const),
+      }),
       fc.record({ op: fc.constant("swap"), pick: fc.nat(), other: fc.nat() }),
       fc.record({ op: fc.constant("remove"), pick: fc.nat() })
     )
@@ -186,8 +191,16 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
               break
             case "text": {
               if (!section) break
-              const id = s.getState().addText(section.id)
+              const id = s.getState().addBlock(section.id, "text")
               if (id) s.getState().setText(section.id, id, "en", "Words only.")
+              break
+            }
+            case "place": {
+              // The Add panel offers metric blocks only to sections that report metrics.
+              if (!section) break
+              const needsMetrics = a.kind === "key_figures" || a.kind === "top_list" || a.kind === "month_vs_month"
+              if (needsMetrics && !entry?.metricBearing) break
+              s.getState().addBlock(section.id, a.kind)
               break
             }
             case "swap": {
@@ -205,5 +218,35 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
       }),
       { numRuns: 150 }
     )
+  })
+})
+
+
+describe("added blocks", () => {
+  test("a placed block is a kind and an id, and the validator accepts it in a metric section", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    for (const kind of ["key_figures", "top_list", "month_vs_month", "coverage", "page_break"] as const) {
+      s.getState().addBlock(id, kind)
+    }
+    const kinds = definitionOf(s).sections[0]!.blocks!.flatMap((block) => ("kind" in block ? [block.kind] : []))
+    expect(kinds).toEqual(["key_figures", "top_list", "month_vs_month", "coverage", "page_break"])
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+  })
+
+  test("a metric block in a section without metrics is refused by the validator", () => {
+    const s = store()
+    const id = s.getState().addSection("backups")!
+    s.getState().addBlock(id, "key_figures")
+    expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.at(-1))).toEqual(["kind"])
+  })
+
+  test("removing an added block selects its section", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const added = s.getState().addBlock(id, "page_break")!
+    s.getState().removeAdded(id, added)
+    expect(definitionOf(s).sections[0]!.blocks!.some((block) => "kind" in block)).toBe(false)
+    expect(s.getState().selection).toEqual({ kind: "section", sectionId: id })
   })
 })

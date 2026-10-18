@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, test } from "vitest"
 
 import { sectionEntry, type Provider } from "@/lib/builder/catalogue"
-import { orderedSections, visibleLayout, type SectionV4 } from "@/lib/builder/model"
+import { orderedSections, rankingOf, visibleLayout, type SectionV4 } from "@/lib/builder/model"
 
 /**
  * The builder lays a v4 section out on the canvas with `lib/builder/model.ts`; the runtime
@@ -30,10 +30,17 @@ type OrderCase = { name: string; provider: Provider; sections: SectionV4[] }
 const document = JSON.parse(readFileSync(casesPath, "utf8")) as {
   cases: LayoutCase[]
   orders: OrderCase[]
+  rankings: LayoutCase[]
 }
 const cases = document.cases
 
-function runtimeReadings(): { layouts: Record<string, unknown>; orders: Record<string, unknown> } {
+type Readings = {
+  layouts: Record<string, unknown>
+  orders: Record<string, unknown>
+  rankings: Record<string, unknown>
+}
+
+function runtimeReadings(): Readings {
   expect(existsSync(python), "agent/.venv is missing — from agent/: uv sync").toBe(true)
   const result = spawnSync(python, [script], {
     cwd: agentRoot,
@@ -41,7 +48,7 @@ function runtimeReadings(): { layouts: Record<string, unknown>; orders: Record<s
     env: { ...process.env, PYTHONPATH: path.join(agentRoot, "src") },
   })
   expect(result.status, `layout_corpus.py exited ${result.status}:\n${result.stderr}`).toBe(0)
-  return JSON.parse(result.stdout) as { layouts: Record<string, unknown>; orders: Record<string, unknown> }
+  return JSON.parse(result.stdout) as Readings
 }
 
 const runtime = runtimeReadings()
@@ -64,5 +71,12 @@ describe("the outline orders sections exactly as the report prints them", () => 
       (section) => section.id
     )
     expect(ids).toEqual(runtime.orders[name])
+  })
+})
+
+describe("added metric blocks rank by what the runtime ranks by", () => {
+  test.each(document.rankings.map((c) => [c.name, c] as const))("%s", (name, rankingCase) => {
+    const found = rankingOf(rankingCase.section, sectionEntry(rankingCase.provider, rankingCase.section.type))
+    expect(found === null ? null : [found.metric, found.statistic]).toEqual(runtime.rankings[name])
   })
 })

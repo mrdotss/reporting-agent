@@ -64,7 +64,13 @@ expansion) in print order, with three things it can do:
 - set `hidden`, or override a block: `title: {en, id}` on a section heading, or `columns`
   to narrow a table's declared columns;
 - hold the per-resource blocks inside one `{"slot": "each", "blocks": [...]}` group;
-- add `{"kind": "text", "id": "u_…", "text": {en, id}}` blocks.
+- add blocks: `{"kind": "text", "id": "u_…", "text": {en, id}}`, or a `kind` alone of
+  `key_figures` (`kpi_row` over the section's metrics), `top_list` (`top_n_table`, the
+  section's top-N or its top ten), `month_vs_month` (`comparison_delta` against the
+  previous verified report — a lookback-one trend key, so the earlier report's snapshot is
+  selected, recorded and reloaded on re-verification the way a trend's is), `coverage`
+  (`gaps_and_coverage`) or `page_break`. The three that read metrics need a section that
+  reports some.
 
 Typed text may not contain numerals. Slots the list does not name print after the named
 ones, in catalogue order, and a section with no `blocks` prints the v3 `chart_and_table`

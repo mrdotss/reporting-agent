@@ -58,6 +58,8 @@ export type CatalogueSection = {
   >
   readonly expansions: readonly CatalogueExpansion[]
   readonly slots: readonly SlotShape[]
+  /** What the section's fleet table ranks by, where the catalogue declares it. */
+  readonly orderBy?: { readonly metric: string; readonly statistic: string }
   readonly notes?: string
 }
 
@@ -75,6 +77,7 @@ type RawSection = {
   readonly author_filled?: boolean
   readonly draws_from_prior_verified_runs?: boolean
   readonly presets?: CatalogueSection["presets"]
+  readonly order_by?: { readonly metric: string; readonly statistic: string }
   readonly notes?: string
   readonly expands_to: readonly {
     readonly slot: string
@@ -103,6 +106,7 @@ function build(provider: Provider): readonly CatalogueSection[] {
     authorFilled: raw.author_filled ?? false,
     drawsFromPriorRuns: raw.draws_from_prior_verified_runs ?? false,
     presets: raw.presets ?? {},
+    orderBy: raw.order_by,
     notes: raw.notes,
     expansions: raw.expands_to.map((expansion) => ({
       slot: expansion.slot,

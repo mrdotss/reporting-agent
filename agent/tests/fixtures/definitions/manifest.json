@@ -1217,6 +1217,49 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-placed-blocks.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "6ac6c6c4db8610d47d85a822167b85df038ffd028f2a833c79e8de1bf29d9ec9",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-metric-block-without-metrics.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "cfe7bce5b988e28ff904465f2199c09d9eb9f66d8ef4433cce93eae62cfa8819",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            1,
+            "kind"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-text-on-a-page-break.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "9ef2aeee1d0632e2f6d604b567ec936d7f1f1917233a6689b202daaaeb250150",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            0,
+            "text"
+          ]
+        }
+      ]
     }
   ]
 }
