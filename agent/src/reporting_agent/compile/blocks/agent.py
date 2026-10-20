@@ -101,6 +101,11 @@ def compile_agent_paragraph(context: BlockContext, block: BlockSpec, cursor: Blo
         for figure in context.ledger.entries.values():
             if not reads(str(figure.path).split(":", 1)[0]):
                 continue
+            # An estimate prints with its note — `1,25% (p95, est. from hourly averages)` —
+            # and the gate matches that whole string. A model quoting the number alone
+            # writes a figure the report never printed, so estimates are not shown.
+            if figure.estimator_label is not None:
+                continue
             if len(figures) >= MAX_AGENT_FIGURES:
                 break
             measure = f"{figure.metric} ({figure.statistic})" if figure.metric else figure.statistic

@@ -152,6 +152,14 @@ class TestTheWalk:
         verification = next(e for e in events if e["type"] == "verification")
         assert verification["status"] == "pass", verification.get("findings")
 
+    def test_an_estimate_is_never_shown(self, walk) -> None:
+        """An estimate prints with its note, and the gate matches the whole string: a model
+        quoting the number alone (`1,25%` for `1,25% (p95, est. from hourly averages)`, seen
+        on the deployed runtime on 2026-10-20) would write a figure the report never printed."""
+        _, _, prose = walk
+        shown = [formatted for request in prose.requests.values() if request.kind == PROSE_KIND_AGENT for _, formatted in request.figures]
+        assert shown and not [value for value in shown if "est." in value]
+
     def test_the_model_sees_only_what_the_paragraph_reads(self, walk) -> None:
         _, _, prose = walk
         request = next(r for block_id, r in prose.requests.items() if block_id.endswith("__u_ag1"))
@@ -445,11 +453,10 @@ def test_a_preview_spends_no_more_than_its_narration_budget(walk, monkeypatch: p
 
 
 def test_the_agent_is_told_to_copy_numbers_exactly_in_either_language() -> None:
-    """Writing Indonesian, the model turned a printed `1.25%` into `1,25%` — a number it was
-    not shown, so the check refused the paragraph (seen on the deployed runtime, 2026-10-20).
-    The instruction now says so in both languages."""
+    """A number quoted any other way than printed is refused, so the instruction says to
+    copy each one exactly, in both languages."""
     from reporting_agent.narrate.summary import SYSTEM_PROMPT_AGENT, SYSTEM_PROMPT_AGENT_ID
 
     assert "character for character" in SYSTEM_PROMPT_AGENT
     assert "never reformatted for the language you write in" in SYSTEM_PROMPT_AGENT
-    assert "bukan 1,25%" in SYSTEM_PROMPT_AGENT_ID
+    assert "karakter demi karakter" in SYSTEM_PROMPT_AGENT_ID
