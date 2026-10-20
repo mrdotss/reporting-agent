@@ -195,7 +195,7 @@ Declared as a constant because two things compare against it — `Figure.__post_
 resolver that indexes a prior run's values — and a prefix spelled twice is a prefix that
 eventually differs in one of the two places."""
 
-CHART_TYPES: Final[tuple[str, ...]] = ("bar", "hbar", "line", "area", "heatmap")
+CHART_TYPES: Final[tuple[str, ...]] = ("bar", "hbar", "line", "area", "heatmap", "dumbbell")
 CHART_ENCODINGS: Final[tuple[str, ...]] = ("categorical", "sequential")
 """Req 16.14 — the compiler decides the encoding from whether the series are peers or
 one ordered quantity, and the client must not infer it from the series count. A closed
@@ -1004,6 +1004,13 @@ class Table:
     something even when none of its facts resolved, and a notice row in its place would
     discard both the list and the omitted-row count.
     """
+    header_look: str = ""
+    """This table's header look (`STYLE_TABLE_HEADERS`) when it leaves the design's; empty
+    means the design's. Presentation only."""
+    mark_at_or_above: str = ""
+    """The percentage at or above which this table's percentage figures are marked, as the
+    setting's digits; empty means the design's. A setting, never printed: marking colours a
+    cell and adds no text."""
 
     def __post_init__(self) -> None:
         at = f"table {self.path!r}"
@@ -1091,6 +1098,15 @@ class Chart:
     renderer: a renderer deciding panels from units would make a data
     decision the ledger cannot show, and the in-app chart would have to
     infer the same split identically by accident rather than reading it."""
+    height: str = ""
+    """`short`, `normal` or `tall` when this chart leaves the design's height; empty means
+    normal. Presentation only, like `style`."""
+    values: str = ""
+    """Which plotted values this chart labels (`STYLE_CHART_VALUES`) when it leaves the
+    design's choice. A label is a plotted figure's own `formatted` string."""
+    threshold: str = ""
+    """The percentage this chart draws a dashed line at, as the setting's digits; empty means
+    the design's. Drawn and named in words, never printed as a number."""
 
     def __post_init__(self) -> None:
         at = f"chart {self.path!r}"

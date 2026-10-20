@@ -579,7 +579,9 @@ def _apply_v4_settings(
 
     `title` replaces a section heading's catalogue title with words the author typed, in
     the report's language. `columns` narrows and reorders a table's declared columns.
-    Both were validated against this slot before the run began.
+    `style` is a chart's or a table's own look, carried in its config to
+    `blocks.base.apply_block_options`. All were validated against this slot before the run
+    began.
     """
     title = settings.get("title")
     if expansion.block == "heading" and expansion.per == "section":
@@ -599,6 +601,18 @@ def _apply_v4_settings(
     ):
         by_key = {_column_key(column): column for column in declared}
         config["columns"] = [by_key[key] for key in columns if key in by_key]
+    style = settings.get("style")
+    if isinstance(style, Mapping):
+        from reporting_agent.compile.blocks.base import (
+            CHART_OPTIONS_CONFIG_KEY,
+            TABLE_OPTIONS_CONFIG_KEY,
+        )
+        from reporting_agent.compile.definition import CHART_SLOT_BLOCKS, TABLE_SLOT_BLOCKS
+
+        if expansion.block in CHART_SLOT_BLOCKS:
+            config[CHART_OPTIONS_CONFIG_KEY] = dict(style)
+        elif expansion.block in TABLE_SLOT_BLOCKS:
+            config[TABLE_OPTIONS_CONFIG_KEY] = dict(style)
 
 
 def _expand_one_section_v4(
@@ -797,6 +811,21 @@ def _callout_block(
     )
 
 
+def _avg_and_peak_metric(section: Mapping[str, object]) -> str | None:
+    """The first metric the section collects both an average and a maximum of, if any."""
+    metrics = section.get("metrics")
+    if not isinstance(metrics, Sequence) or isinstance(metrics, str):
+        return None
+    seen: dict[str, set[str]] = {}
+    for item in metrics:
+        if isinstance(item, Mapping) and isinstance(item.get("metric"), str) and isinstance(item.get("statistic"), str):
+            seen.setdefault(str(item["metric"]), set()).add(str(item["statistic"]))
+    for name, statistics in seen.items():
+        if {"avg", "max"} <= statistics:
+            return name
+    return None
+
+
 def _added_block(
     section_id: str,
     section: Mapping[str, object],
@@ -841,6 +870,22 @@ def _added_block(
             f"section selects none"
         )
     metric, statistic = ranking
+
+    if kind == "avg_vs_peak":
+        # One row per resource from its average to its peak, on the first metric the section
+        # collects both of — the busiest by peak first, at most twelve rows.
+        from reporting_agent.compile.blocks.charts import AVG_VS_PEAK_LAYOUT, AVG_VS_PEAK_ROWS
+
+        pair = _avg_and_peak_metric(section) or metric
+        return BlockSpec(
+            id=block_id,
+            type="distribution_chart",
+            config={
+                "metrics": [{"metric": pair, "statistic": "avg"}, {"metric": pair, "statistic": "max"}],
+                "layout": AVG_VS_PEAK_LAYOUT,
+            },
+            scope_override=_ranked_scope(scope_override, pair, "max", AVG_VS_PEAK_ROWS),
+        )
 
     if kind == "top_list":
         # Ranked by the section's own top-N rule where it has one; otherwise the top ten by

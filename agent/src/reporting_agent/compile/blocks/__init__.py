@@ -46,6 +46,7 @@ from reporting_agent.compile.blocks import charts, comparison, glance, layout, n
 from reporting_agent.compile.blocks.base import (
     BlockContext,
     BlockOutput,
+    apply_block_options,
     BlockSpec,
     Deferred,
     DesignSettings,
@@ -184,7 +185,7 @@ def compile_block(
             f"ignored or dropped."
         )
 
-    output = compiler(context, block, cursor)
+    output = apply_block_options(compiler(context, block, cursor), block)
     return (output, {block.id: output.nodes})
 
 

@@ -1606,6 +1606,10 @@ def _render_styled_pdf(
             messages=messages,
             title=getattr(run_facts, "report_title", "") or "",
             language=messages.language,
+            # The running header a design can ask for instead of the section's name.
+            running_text=" · ".join(
+                part for part in (getattr(run_facts, "customer_name", ""), getattr(run_facts, "period_display", "")) if part
+            ),
         )
         return outcome
     except Exception:

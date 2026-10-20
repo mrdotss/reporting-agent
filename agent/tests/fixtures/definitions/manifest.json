@@ -1322,6 +1322,92 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-design-style.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "7479e8963a2a49bda03ffd6ab0b0cd8b6e4f164055b0d008005eaa6169f64d1d",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-style-unknown-key-and-threshold.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "4bb4a8d2acbe3fed7073fb932bbfab6afd46ea49f9badbc6ad09e0dab5dffc07",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "design",
+            "style",
+            "bogus"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "design",
+            "style",
+            "chart_threshold"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-style-on-a-heading.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "696d15f8e98d8efc1cb34a138a41e130a997b5b0164ee374f27ae9f6739bbe8f",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            0,
+            "style"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-chart-style-on-a-table.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "50f887f5ef37a7e7931342cb62d2aca2e5d4e9ea2edb86afc0d33a48087499e3",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "style",
+            "look"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-avg-vs-peak-without-metrics.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "79991ec8e0c972585dd59464ebf9d65b4f03c16aaf6606312fad025fb1786c7b",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            2,
+            "kind"
+          ]
+        }
+      ]
     }
   ]
 }

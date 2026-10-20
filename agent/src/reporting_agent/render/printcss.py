@@ -44,7 +44,27 @@ PAGE_MARGIN: Final[str] = "17mm 16mm 14mm 16mm"
 text lands where it would on any other page. One value, so the two cannot drift."""
 
 
-def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", density: str = "normal", table_style: str | None = None) -> str:
+_MARGINS: Final[dict[str, str]] = {"narrow": "12mm 11mm 10mm 11mm", "wide": "22mm 21mm 18mm 21mm"}
+"""`design.style.margins` other than normal, which is :data:`PAGE_MARGIN`."""
+
+_TEXT_SIZE_FACTORS: Final[dict[str, float]] = {"small": 0.92, "large": 1.08}
+
+
+def _css_string(text: str) -> str:
+    """`text` as a CSS string literal: quotes and backslashes escaped, line breaks dropped."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", " ") + '"'
+
+
+def stylesheet(
+    preset: str,
+    *,
+    page_size: str = "A4",
+    accent_color: str = "",
+    density: str = "normal",
+    table_style: str | None = None,
+    style: object = None,
+    running_text: str = "",
+) -> str:
     """The print stylesheet for one theme.
 
     Raises nothing for an unknown preset — falls back to `editorial`, the definition
@@ -52,10 +72,16 @@ def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", de
     rendered successfully, and refusing to style it would withhold an artifact over a
     presentation decision.
     """
-    from reporting_agent.render.themes import THEME_SPECS
+    from reporting_agent.render.themes import FONT_PAIRS, THEME_SPECS
 
     spec = THEME_SPECS.get(preset) or THEME_SPECS["editorial"]
     palette = spec.palette
+    # `design.style`, where the design has one. Every value below falls back to the theme's,
+    # so a design without a style gets the stylesheet it always got.
+    chosen = lambda name: getattr(style, name, None)  # noqa: E731
+    heading_face, body_face = FONT_PAIRS.get(str(chosen("fonts") or ""), (spec.face.heading, spec.face.body))
+    figure_face = body_face if chosen("figures") == "text" else spec.face.figure
+    page_margin = _MARGINS.get(str(chosen("margins") or ""), PAGE_MARGIN)
     size = PAGE_SIZES.get(page_size, "A4")
     h1, h2, h3, h4 = spec.heading_pt
     caps = "uppercase" if spec.heading_all_caps else "none"
@@ -71,9 +97,9 @@ def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", de
   --muted: #{palette.muted};
   --rule: #{palette.rule};
   --band: {band};
-  --body-face: "{spec.face.body}", {_generic(spec.face.body)};
-  --heading-face: "{spec.face.heading}", {_generic(spec.face.heading)};
-  --figure-face: "{spec.face.figure}", monospace;
+  --body-face: "{body_face}", {_generic(body_face)};
+  --heading-face: "{heading_face}", {_generic(heading_face)};
+  --figure-face: "{figure_face}", {"monospace" if figure_face == spec.face.figure else _generic(figure_face)};
 }}
 
 /* --- the page ------------------------------------------------------------
@@ -82,7 +108,7 @@ def stylesheet(preset: str, *, page_size: str = "A4", accent_color: str = "", de
    Nothing else is furniture. */
 @page {{
   size: {size};
-  margin: {PAGE_MARGIN};
+  margin: {page_margin};
 
   @top-left {{
     content: string(running-head);
@@ -587,7 +613,7 @@ input.rpt-fill {{
   color: var(--ink);
   padding: 0;
 }}
-.rpt-cover {{ page: cover; padding: {PAGE_MARGIN}; }}
+.rpt-cover {{ page: cover; padding: {page_margin}; }}
 """
     css += f"\n.rpt-grid th, .rpt-grid td, table.rpt-table th, table.rpt-table td {{ padding: {padding}pt 5pt; }}"
     if table_style == "bordered":
@@ -598,7 +624,74 @@ input.rpt-fill {{
         if table_style == "banded":
             css += "\n.rpt-grid tbody tr:nth-child(even), table.rpt-table tbody tr:nth-child(even) { background: var(--band); }"
     css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
-    css += _treatments(spec, h1=h1)
+    css += _treatments(
+        spec,
+        h1=h1,
+        cover=str(chosen("cover") or spec.cover_style),
+        display_numbers=(chosen("section_numbers") == "display") if chosen("section_numbers") else spec.display_numbers,
+        callout=str(chosen("callout") or "rule"),
+    )
+    css += _style_rules(spec, style, accent=accent, h_sizes=(h1, h2, h3, h4), running_text=running_text)
+    return css
+
+
+def _tint_css(hex_colour: str, amount: float) -> str:
+    channels = [int(hex_colour[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(c + (255 - c) * amount):02x}" for c in channels)
+
+
+def _style_rules(spec: object, style: object, *, accent: str, h_sizes: tuple[float, ...], running_text: str) -> str:
+    """The rest of `design.style`: tables, marking, heading colour, sizes, numbers, header.
+
+    The per-table attribute rules are always present — a table carries `data-header` only
+    when it leaves the design's look, and `data-mark` only on a cell the rule marked — so a
+    document that uses neither renders as before."""
+    from reporting_agent.render.docx import MARK_FILL, MARK_INK
+
+    chosen = lambda name: getattr(style, name, None)  # noqa: E731
+    palette = spec.palette  # type: ignore[attr-defined]
+    looks = {
+        "rule": f"background: transparent; color: var(--ink); border: 0; border-bottom: 1.5pt solid {accent};",
+        "tint": f"background: {_tint_css(accent, 0.86)}; color: var(--ink);",
+        "solid": f"background: {accent}; color: #fff; border-color: {accent};",
+        "plain": "background: transparent; color: var(--ink); border: 0; border-bottom: 0.5pt solid var(--rule);",
+    }
+    css = f"""
+/* Open rows: no rule anywhere, a little more air. */
+table.rpt-table[data-style="Table Open"] th,
+table.rpt-table[data-style="Table Open"] td {{ border: 0; background: transparent; padding-top: 6pt; padding-bottom: 6pt; }}
+/* A percentage at or above the table's setting: a tint and a darker ink, never a number. */
+table.rpt-table td[data-mark] {{ background: #{MARK_FILL}; color: #{MARK_INK}; font-weight: 700; }}
+"""
+    for name, rule in looks.items():
+        css += f'\ntable.rpt-table[data-header="{name}"] th {{ {rule} }}'
+    header = chosen("table_header")
+    if header in ("tint", "solid", "plain"):
+        css += f"\ntable.rpt-table:not([data-header]) th {{ {looks[header]} }}"
+
+    if chosen("heading_color") == "accent":
+        css += "\nh1, h2 { color: var(--accent); }"
+    elif chosen("heading_color") == "ink":
+        css += f"\nh1, h2 {{ color: #{palette.ink}; }}"
+
+    factor = _TEXT_SIZE_FACTORS.get(str(chosen("text_size") or ""))
+    if factor is not None:
+        body = round(spec.body_pt * factor, 2)  # type: ignore[attr-defined]
+        small = round(spec.small_pt * factor, 2)  # type: ignore[attr-defined]
+        css += f"\nbody {{ font-size: {body}pt; }}"
+        css += f"\n.rpt-grid, table.rpt-table, .rpt-pairs {{ font-size: {small}pt; }}"
+        for level, size in zip(("h1", "h2", "h3", "h4"), h_sizes, strict=True):
+            css += f"\n{level} {{ font-size: {round(size * factor, 2)}pt; }}"
+
+    if chosen("section_numbers") == "none":
+        css += "\n.rpt-h-number { display: none; }"
+
+    running = chosen("running_header")
+    if running == "none":
+        css += "\n@page { @top-left { content: none; border-bottom: none; } }"
+    elif running == "customer" and running_text:
+        css += f"\n@page {{ @top-left {{ content: {_css_string(running_text)}; }} }}"
+        css += "\n@page :first { @top-left { content: none; border-bottom: none; } }"
     return css
 
 
@@ -607,7 +700,7 @@ def _generic(face: str) -> str:
     return "serif" if "Serif" in face else "sans-serif"
 
 
-def _treatments(spec: object, *, h1: float) -> str:
+def _treatments(spec: object, *, h1: float, cover: str = "", display_numbers: bool | None = None, callout: str = "rule") -> str:
     """What sets one theme's page apart beyond faces and colours: the callout block, the rule
     under a section heading, the section number's size, and how the cover sits.
 
@@ -633,6 +726,16 @@ def _treatments(spec: object, *, h1: float) -> str:
   background: #{ATTENTION_TINT};
 }}
 """
+    if callout == "boxed":
+        css += f"""
+.rpt-block[data-style="Callout"] {{ border: 0.75pt solid var(--accent); border-radius: 3pt; }}
+.rpt-block[data-style="Callout Attention"] {{ border: 0.75pt solid #{ATTENTION_RULE}; border-radius: 3pt; }}
+"""
+    elif callout == "banner":
+        css += f"""
+.rpt-block[data-style="Callout"] {{ border: 0; background: var(--accent); color: #fff; font-weight: 700; }}
+.rpt-block[data-style="Callout Attention"] {{ border: 0; background: #{ATTENTION_RULE}; color: #fff; font-weight: 700; }}
+"""
     rule = spec.heading_rule  # type: ignore[attr-defined]
     if rule != "rule":
         css += "\nh1::after, h2::after { content: none; }"
@@ -641,7 +744,9 @@ def _treatments(spec: object, *, h1: float) -> str:
     elif rule == "line":
         css += "\nh1, h2 { color: var(--accent); border-bottom: 0.75pt solid var(--accent); padding-bottom: 3pt; margin-bottom: 8pt; }"
 
-    if spec.display_numbers:  # type: ignore[attr-defined]
+    if display_numbers is None:
+        display_numbers = spec.display_numbers  # type: ignore[attr-defined]
+    if display_numbers:
         # The section number on its own line, set large in the accent above the heading.
         css += (
             f"\n.rpt-block[data-style=\"Heading 1\"] .rpt-h-number {{ display: block;"
@@ -649,7 +754,7 @@ def _treatments(spec: object, *, h1: float) -> str:
             f" letter-spacing: -0.05em; color: var(--accent); margin: 0 0 4pt; }}"
         )
 
-    cover = spec.cover_style  # type: ignore[attr-defined]
+    cover = cover or spec.cover_style  # type: ignore[attr-defined]
     if cover == "full_bleed":
         # The cover's own page carries the accent ground (`front_matter.cover_treatment`),
         # so the band would draw on top of it and the text turns white.

@@ -43,6 +43,7 @@ import io
 import zipfile
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Final
 
 from docx.document import Document as DocxDocument
@@ -50,7 +51,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
-from docx.shared import Emu, Inches, Pt, Twips
+from docx.shared import Emu, Inches, Pt, RGBColor, Twips
 from docx.table import Table as DocxTable
 from docx.table import _Cell as DocxCell
 from docx.text.paragraph import Paragraph as DocxParagraph
@@ -106,6 +107,7 @@ from reporting_agent.render.themes import (
     FIGURE_CHARACTER_STYLE,
     PREVIEW_NOTICE_STYLE,
     THEME_SPECS,
+    faces_for,
     load_theme,
     missing_styles,
 )
@@ -245,13 +247,19 @@ def _apply_column_widths(table: DocxTable, node: Table, *, text_width: int) -> N
                 cell.width = widths[ordinal]
 
 
-def _polish_data_table(table: DocxTable, design: DesignSettings) -> None:
+def _polish_data_table(table: DocxTable, design: DesignSettings, *, header: str = "") -> None:
     """Apply page-safe table typography without changing values or their anchors.
 
     Do not keep whole tables together: daily-series tables must flow across pages.
     Word can still split a row that is taller than a complete page.
+
+    `header` is the table's own header look, else the design's; `rule` and empty keep the
+    theme's, which is the accent rule under accent capitals.
     """
     spec = THEME_SPECS[design.preset]
+    look = header or design.style.table_header or ""
+    if look in ("tint", "solid", "plain") and len(table.rows) > 0:
+        _restyle_header_row(table.rows[0], design, look)
     leading = {"compact": 1.0, "normal": 1.1, "relaxed": 1.2}[design.density]
     for index, row in enumerate(table.rows):
         properties = row._tr.get_or_add_trPr()
@@ -269,6 +277,75 @@ def _polish_data_table(table: DocxTable, design: DesignSettings) -> None:
                     # The Figure character style is essential to verification, but its
                     # body size must not override the table's smaller type scale.
                     run.font.size = Pt(spec.small_pt)
+
+
+MARK_FILL: Final[str] = "FDF1E2"
+MARK_INK: Final[str] = "9A4507"
+"""A marked cell: a tint and a darker ink, the same in every theme. Colour only — the
+figure's text and its run's style are untouched, so the verifier reads it as before."""
+
+
+def mark_threshold(node: object, design: DesignSettings) -> Decimal | None:
+    """The percentage a table marks figures from: its own setting, else the design's."""
+    own = getattr(node, "mark_at_or_above", "")
+    if own:
+        return Decimal(own)
+    designed = design.style.mark_at_or_above
+    return Decimal(designed) if designed else None
+
+
+def _marked(figure: object, node: object, design: DesignSettings) -> bool:
+    threshold = mark_threshold(node, design)
+    if threshold is None or getattr(figure, "unit", "") != "percent":
+        return False
+    try:
+        return Decimal(str(figure.value)) >= threshold  # type: ignore[attr-defined]
+    except (ArithmeticError, ValueError):
+        return False
+
+
+def _mark_cell(cell: DocxCell, run: object) -> None:
+    properties = cell._tc.get_or_add_tcPr()
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:val"), "clear")
+    shading.set(qn("w:color"), "auto")
+    shading.set(qn("w:fill"), MARK_FILL)
+    properties.append(shading)
+    run.font.bold = True  # type: ignore[attr-defined]
+    run.font.color.rgb = RGBColor.from_string(MARK_INK)  # type: ignore[attr-defined]
+
+
+def _restyle_header_row(row: object, design: DesignSettings, look: str) -> None:
+    """A tinted, solid or plain header row, over the theme's accent-rule header."""
+    from reporting_agent.render.themes import accent_for
+
+    spec = THEME_SPECS[design.preset]
+    accent = accent_for(design)
+    fill = {"tint": _tint(accent, 0.86), "solid": accent}.get(look)
+    ink = "FFFFFF" if look == "solid" else spec.palette.ink
+    for cell in row.cells:  # type: ignore[attr-defined]
+        properties = cell._tc.get_or_add_tcPr()
+        if fill is not None:
+            shading = OxmlElement("w:shd")
+            shading.set(qn("w:val"), "clear")
+            shading.set(qn("w:color"), "auto")
+            shading.set(qn("w:fill"), fill)
+            properties.append(shading)
+        if look == "plain":
+            borders = OxmlElement("w:tcBorders")
+            bottom = OxmlElement("w:bottom")
+            for key, value in (("val", "single"), ("sz", "4"), ("space", "0"), ("color", spec.palette.rule)):
+                bottom.set(qn(f"w:{key}"), value)
+            borders.append(bottom)
+            properties.append(borders)
+        for paragraph in cell.paragraphs:
+            for run in paragraph.runs:
+                run.font.color.rgb = RGBColor.from_string(ink)
+
+
+def _tint(hex_colour: str, amount: float) -> str:
+    channels = [int(hex_colour[i : i + 2], 16) for i in (0, 2, 4)]
+    return "".join(f"{round(c + (255 - c) * amount):02X}" for c in channels)
 
 
 @dataclass(slots=True)
@@ -495,6 +572,7 @@ class _Emitter:
             chart_font=self.design.chart_font,
             accent_color=self.design.accent_color,
             messages=self.messages,
+            style=self.design.style,
         )
 
         picture_paragraph = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
@@ -602,7 +680,7 @@ class _Emitter:
         # After every row, because the demand is measured from the cells the table
         # actually carries rather than from its declaration.
         _apply_column_widths(table, node, text_width=self.available_width(container))
-        _polish_data_table(table, self.design)
+        _polish_data_table(table, self.design, header=node.header_look)
 
         if node.caption:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))
@@ -659,11 +737,13 @@ class _Emitter:
                 paragraph = docx_cell.paragraphs[0]
                 if isinstance(cell, FigureCell):
                     self.write_figure_run(paragraph, cell.figure)
+                    if _marked(cell.figure, node, self.design):
+                        _mark_cell(docx_cell, paragraph.runs[-1])
                 else:
                     self.write_text_fact_run(paragraph, cell.fact)
                     # Keep the verification style, but use readable prose typography
                     # for names and identifiers rather than oversized monospace.
-                    paragraph.runs[-1].font.name = THEME_SPECS[self.design.preset].face.body
+                    paragraph.runs[-1].font.name = faces_for(self.design)[1]
                 if isinstance(cell, FigureCell):
                     paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
                 # Req 21.3, 6.9 — the anchor triple, completed here because only the
@@ -1061,6 +1141,118 @@ def _apply_appearance(document, design):
     for style in document.styles:
         if style.type == 1:
             style.paragraph_format.line_spacing = spec.line_spacing * factor
+    _apply_style_options(document, design)
+
+
+_HEADING_STYLE_NAMES: Final[frozenset[str]] = frozenset(
+    {"Title", "Subtitle", "Heading 1", "Heading 2", "Heading 3", "Heading 4", "Cover Title", "Cover Meta", "PreviewNotice"}
+)
+"""The paragraph styles set in a theme's heading face; every other style is its body face."""
+
+_TEXT_SIZE_FACTORS: Final[Mapping[str, float]] = {"small": 0.92, "large": 1.08}
+_MARGIN_FACTORS: Final[Mapping[str, float]] = {"narrow": 0.7, "wide": 1.3}
+_ATTENTION_FILL: Final[str] = "B45309"
+
+
+def _set_fonts(rpr: object, face: str) -> None:
+    fonts = rpr.find(qn("w:rFonts"))  # type: ignore[attr-defined]
+    if fonts is None:
+        fonts = OxmlElement("w:rFonts")
+        rpr.insert(0, fonts)  # type: ignore[attr-defined]
+    for attribute in ("ascii", "hAnsi", "cs", "eastAsia"):
+        fonts.set(qn(f"w:{attribute}"), face)
+
+
+def _apply_style_options(document, design) -> None:
+    """`design.style`, written into this document's styles. Nothing changes for a design
+    without one — every branch below is keyed on a value the design set."""
+    from reporting_agent.render.themes import (
+        ATTENTION_TINT,
+        THEME_SPECS,
+        accent_for,
+        cover_style_for,
+        faces_for,
+    )
+
+    style = design.style
+    spec = THEME_SPECS[design.preset]
+    styles = document.styles.element
+    accent = accent_for(design)
+
+    if (style.fonts and style.fonts != "theme") or style.figures == "text":
+        heading_face, body_face, figure_face = faces_for(design)
+        # The UI name of each style, as the renderer applies styles by — `heading 1` in the
+        # XML is `Heading 1` here, the same translation `load_theme` relies on.
+        names = {id(each.element): each.name for each in document.styles}
+        for element in styles.iter(qn("w:style")):
+            name = names.get(id(element), "")
+            kind = element.get(qn("w:type"))
+            rpr = element.find(qn("w:rPr"))
+            if name == FIGURE_CHARACTER_STYLE:
+                if rpr is not None:
+                    _set_fonts(rpr, figure_face)
+                continue
+            if style.fonts and style.fonts != "theme":
+                if rpr is not None and kind in ("paragraph", "table"):
+                    _set_fonts(rpr, heading_face if name in _HEADING_STYLE_NAMES else body_face)
+                for conditional in element.iter(qn("w:tblStylePr")):
+                    inner = conditional.find(qn("w:rPr"))
+                    if inner is not None and conditional.get(qn("w:type")) == "firstRow":
+                        _set_fonts(inner, heading_face)
+        if style.fonts and style.fonts != "theme":
+            for defaults in styles.iter(qn("w:rPrDefault")):
+                inner = defaults.find(qn("w:rPr"))
+                if inner is not None:
+                    _set_fonts(inner, body_face)
+
+    size = _TEXT_SIZE_FACTORS.get(style.text_size or "")
+    if size is not None:
+        for tag in ("w:sz", "w:szCs"):
+            for element in styles.iter(qn(tag)):
+                element.set(qn("w:val"), str(max(10, round(int(element.get(qn("w:val"))) * size))))
+
+    if style.heading_color == "ink":
+        for name in ("Title", "Heading 1", "Heading 2"):
+            document.styles[name].font.color.rgb = RGBColor.from_string(spec.palette.ink)
+
+    cover = cover_style_for(design)
+    if cover != spec.cover_style:
+        white = cover == "full_bleed"
+        title, meta = document.styles["Cover Title"], document.styles["Cover Meta"]
+        title.font.color.rgb = RGBColor.from_string("FFFFFF" if white else accent)
+        meta.font.color.rgb = RGBColor.from_string("FFFFFF" if white else spec.palette.muted)
+        title.font.size = Pt(spec.title_pt * (1.15 if cover == "summary" else 1.35))
+
+    if style.callout in ("boxed", "banner"):
+        for name, rule, tint in (("Callout", accent, spec.palette.band), ("Callout Attention", _ATTENTION_FILL, ATTENTION_TINT)):
+            element = document.styles[name].element
+            ppr = element.get_or_add_pPr()
+            for old in (ppr.find(qn("w:pBdr")), ppr.find(qn("w:shd"))):
+                if old is not None:
+                    ppr.remove(old)
+            shading = OxmlElement("w:shd")
+            shading.set(qn("w:val"), "clear")
+            shading.set(qn("w:color"), "auto")
+            shading.set(qn("w:fill"), rule if style.callout == "banner" else tint)
+            if style.callout == "boxed":
+                borders = OxmlElement("w:pBdr")
+                for edge in ("top", "left", "bottom", "right"):
+                    line = OxmlElement(f"w:{edge}")
+                    for key, value in (("val", "single"), ("sz", "6"), ("space", "6"), ("color", rule)):
+                        line.set(qn(f"w:{key}"), value)
+                    borders.append(line)
+                ppr.insert(0, borders)
+                ppr.insert(1, shading)
+            else:
+                ppr.insert(0, shading)
+                document.styles[name].font.color.rgb = RGBColor.from_string("FFFFFF")
+                document.styles[name].font.bold = True
+
+    margin = _MARGIN_FACTORS.get(style.margins or "")
+    if margin is not None:
+        for section in document.sections:
+            for edge in ("left_margin", "right_margin", "top_margin", "bottom_margin"):
+                setattr(section, edge, Twips(round(getattr(section, edge).twips * margin)))
 
 
 def _bookmark(paragraph: object, name: str, ordinal: int) -> None:

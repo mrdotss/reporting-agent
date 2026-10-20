@@ -232,6 +232,9 @@ class _Emitter:
     form_fields: bool = False
     """Whether a fill-in cell becomes an `<input>` — for the designed PDF, where WeasyPrint
     writes it as a PDF form field. The app's preview leaves it an empty cell."""
+    design: object = None
+    """The design, where the caller has one: its style marks percentage cells at or above a
+    setting. Absent, nothing is marked — as before the style existed."""
     fill_ins: int = 0
     parts: list[str] = field(default_factory=list)
     figure_count: int = 0
@@ -469,11 +472,23 @@ class _Emitter:
                 f'<span data-role="note">{html.escape(node.note)}</span>'
             )
         caption = f"<caption>{caption_inner}</caption>" if caption_inner else ""
+        # A table's own header look, where it leaves the design's; the stylesheet styles the
+        # design's for every other table.
+        header = f' data-header="{html.escape(node.header_look, quote=True)}"' if node.header_look else ""
         self.write(
             f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
-            f' data-path="{html.escape(str(node.path), quote=True)}">{caption}'
+            f'{header} data-path="{html.escape(str(node.path), quote=True)}">{caption}'
             f"{_colgroup(node)}{''.join(rows)}</table>"
         )
+
+    def _marked(self, figure: object, node: Table) -> bool:
+        """The Word emitter's rule (`docx._marked`): a percentage at or above the table's own
+        setting, else the design's. Colour only, applied by the stylesheet."""
+        if self.design is None:
+            return False
+        from reporting_agent.render.docx import _marked
+
+        return _marked(figure, node, self.design)  # type: ignore[arg-type]
 
     def row(self, node: Table, row: Row) -> str:
         classes = [_CLS_ROW]
@@ -491,7 +506,8 @@ class _Emitter:
             cell = row.cells[ordinal]
             attribute = f' data-column-key="{html.escape(column.key, quote=True)}"'
             if isinstance(cell, FigureCell):
-                cells.append(f"<td{attribute}>{self.figure(cell.figure)}</td>")
+                mark = ' data-mark="at-or-above"' if self._marked(cell.figure, node) else ""
+                cells.append(f"<td{attribute}{mark}>{self.figure(cell.figure)}</td>")
             elif isinstance(cell, TextFactCell):
                 cells.append(f"<td{attribute}>{self.text_fact(cell.fact)}</td>")
             elif isinstance(cell, TextCell):
@@ -916,6 +932,7 @@ def emit_html(
     chart_vectors: Mapping[str, str] | None = None,
     chart_tables: Mapping[str, object] | None = None,
     form_fields: bool = False,
+    design: object = None,
 ) -> HtmlOutcome:
     """Emit `document` as an HTML fragment (Req 24.1).
 
@@ -948,6 +965,7 @@ def emit_html(
         chart_tables=dict(chart_tables or {}),
         form_fields=form_fields,
         heading_numbers=document_heading_numbers(document),
+        design=design,
     )
     for block in document.blocks:
         emitter.block(block)

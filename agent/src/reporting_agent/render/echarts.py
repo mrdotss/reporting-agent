@@ -16,9 +16,56 @@ from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import charts as legacy
 from reporting_agent.render import chartstyle
 
+LINE_WIDTHS = {"thin": 1.4, "regular": 2.3, "bold": 3.2}
+HEIGHT_SCALES = {"short": 0.75, "normal": 1.0, "tall": 1.3}
+LEGEND_SPACE = 24
+"""The band a legend above or below the plot takes, added to the chart's height so the
+panels keep their size."""
 
-def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, messages):
+_SHADE_STEPS = (0.0, 0.32, 0.5, 0.64, 0.75, 0.83)
+_GREYS = ("#6F747C", "#9599A0", "#B5B8BD", "#CFD1D4", "#E0E1E3")
+
+
+def _mix_with_white(hex_colour, amount):
+    channels = [int(hex_colour[i : i + 2], 16) for i in (1, 3, 5)]
+    return "#" + "".join(f"{round(c + (255 - c) * amount):02x}" for c in channels)
+
+
+def palette_colour(palette, index, accent):
+    """The colour of the `index`th series under a design's chart palette, or `None` for the
+    standard assignment. `shades` steps the accent toward white; `greys` keeps the accent for
+    the first series and sets the rest in greys, so one line leads."""
+    if palette == "shades":
+        return _mix_with_white(accent, _SHADE_STEPS[min(index, len(_SHADE_STEPS) - 1)])
+    if palette == "greys":
+        return accent if index == 0 else _GREYS[min(index - 1, len(_GREYS) - 1)]
+    return None
+
+
+def chart_options(node, style):
+    """This chart's look: the node's own setting where it has one, else the design's.
+
+    Every value is `None` at the default, and a default adds nothing to the spec — so a
+    design with no style draws exactly the chart it always drew.
+    """
+    def pick(own, designed):
+        return own or designed or None
+
+    threshold = node.threshold or (str(style.chart_threshold) if style and style.chart_threshold else "")
+    return {
+        "line": pick("", getattr(style, "chart_line", None)),
+        "grid": pick("", getattr(style, "chart_grid", None)),
+        "values": pick(node.values, getattr(style, "chart_values", None)),
+        "legend": pick("", getattr(style, "chart_legend", None)),
+        "palette": pick("", getattr(style, "chart_palette", None)),
+        "height": pick(node.height, None),
+        "threshold": int(threshold) if threshold else None,
+    }
+
+
+def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, messages, style=None):
     selected = legacy.plotted_series(node, messages=messages)
+    options = chart_options(node, style)
     furniture = legacy._furniture_for(preset, theme)
     face = chartstyle.chart_font_face(chart_font, body_face=furniture.body_face)
     accent = (
@@ -52,6 +99,17 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
             unit = s.points[0].y.unit if s.points else node.unit
             by_unit.setdefault(unit, []).append(s.key)
         groups = tuple(tuple(g) for g in by_unit.values()) or ((),)
+    elif chart_style == "small_multiples":
+        # One panel per resource, every panel on the same scale its unit gives it.
+        by_resource = {}
+        for s in selected:
+            resource = (s.points[0].y.resource_id or s.key) if s.points else s.key
+            by_resource.setdefault(resource, []).append(s.key)
+        groups = tuple(tuple(g) for g in by_resource.values()) or ((),)
+    if node.chart_type == "dumbbell":
+        # Average and peak share one scale, whatever the document's chart style: the
+        # renderer draws the dumbbell on the first panel alone.
+        groups = (tuple(s.key for s in selected),)
     facets = {(p.y.resource_id, p.y.metric) for s in selected for p in s.points}
     single_metric = len(facets) == 1
     panels = []
@@ -89,10 +147,11 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
             points = {p.x: p.y for p in s.points}
             statistic = s.points[0].y.statistic if s.points else ""
             # Metric meaning stays consistent between per-resource charts.
+            shaded = palette_colour(options["palette"], [e.key for e in selected].index(s.key), accent)
             color = (
                 accent
                 if node.encoding == "sequential" or single_metric
-                else legacy._colour_for(s, tuple(entry.key for entry in selected), node, theme)
+                else shaded or legacy._colour_for(s, tuple(entry.key for entry in selected), node, theme)
             )
             series.append(
                 {
@@ -126,11 +185,37 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
                 b = next(i for i, s in enumerate(series) if s["key"] == high.key)
                 if series[a]["panel"] == series[b]["panel"]:
                     bands.append({"lower": a, "upper": b})
+    look = {}
+    if options["line"] and options["line"] != "regular":
+        look["lineWidth"] = LINE_WIDTHS[options["line"]]
+    if options["grid"] and options["grid"] != "light":
+        look["gridLines"] = options["grid"]
+    if options["values"] and options["values"] != "last":
+        look["values"] = options["values"]
+    if options["legend"] and options["legend"] != "line_ends":
+        look["legend"] = options["legend"]
+    if options["threshold"] is not None:
+        look["threshold"] = options["threshold"]
+        look["thresholdLabel"] = messages.text("doc.chart.threshold")
+    if node.chart_type == "dumbbell" and len(series) == 2:
+        # Average and peak of one metric per resource: the average muted, the peak in the
+        # accent, joined row by row by the renderer.
+        series[0]["color"] = _mix_with_white(accent, 0.55)
+        series[1]["color"] = accent
+    scale = HEIGHT_SCALES.get(options["height"] or "normal", 1.0)
+    height = min(850, max(120, (110 if chart_style == "sparkline" else 205) * len(panels)))
+    if node.chart_type == "dumbbell":
+        height = min(850, max(140, 64 + 26 * len(categories)))
+    if scale != 1.0:
+        height = min(1100, max(100, round(height * scale)))
+    if "legend" in look:
+        height += LEGEND_SPACE
     return {
+        **look,
         "style": chart_style,
         "type": node.chart_type,
         "width": 720,
-        "height": min(850, max(120, (110 if chart_style == "sparkline" else 205) * len(panels))),
+        "height": height,
         "font": face,
         "ink": furniture.value_label,
         "muted": furniture.axis_label,
@@ -213,6 +298,7 @@ def render_chart(
     accent_color="",
     theme="light",
     messages,
+    style=None,
 ):
     if not node.unit:
         raise RenderFailedError(f"chart {node.path!r} has no axis unit")
@@ -230,6 +316,7 @@ def render_chart(
         accent_color=accent_color,
         theme=theme,
         messages=messages,
+        style=style,
     )
     parent = Path(__file__).resolve().parents[2]
     root = parent.parent if parent.name == "src" else parent

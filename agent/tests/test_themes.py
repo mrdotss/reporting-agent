@@ -383,8 +383,8 @@ def test_the_union_adds_exactly_the_seven_names_the_compile_stage_cannot_declare
 
 
 def test_the_front_matter_styles_are_additive_and_nothing_was_dropped() -> None:
-    """The front-matter styles grew the union by exactly five, the callouts by two, and
-    neither displaced anything.
+    """The front-matter styles grew the union by exactly five, the callouts by two and the
+    open table by one, and none displaced anything.
 
     A regeneration is a binary change to four committed files, so "additive" has to be a
     checked claim rather than an intention: this pins the fifteen names that were required
@@ -409,7 +409,8 @@ def test_the_front_matter_styles_are_additive_and_nothing_was_dropped() -> None:
         "Layout Table",
     }
     assert before <= set(T.REQUIRED_STYLE_NAMES)
-    assert len(T.REQUIRED_STYLE_NAMES) == len(before) + 5 + 2 == 22
+    assert len(T.REQUIRED_STYLE_NAMES) == len(before) + 5 + 2 + 1 == 23
+    assert "Table Open" in T.REQUIRED_TABLE_STYLES
     assert {"Callout", "Callout Attention"} <= set(T.REQUIRED_PARAGRAPH_STYLES)
     assert len(set(T.REQUIRED_STYLE_NAMES)) == len(T.REQUIRED_STYLE_NAMES)
 
@@ -530,7 +531,7 @@ def test_every_style_a_compiled_document_asks_for_is_declared_by_every_theme() -
     first version of this test walked six names and read as though it had walked fourteen.
     """
     asked_for: set[str] = set()
-    for table_style in ("hairline", "banded", "bordered"):
+    for table_style in ("hairline", "banded", "bordered", "open"):
         asked_for |= _compiled_styles(
             table_style=table_style, heading_levels=(1, 2, 3, 4, 9)
         )
