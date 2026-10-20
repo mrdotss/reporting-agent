@@ -420,3 +420,36 @@ def test_try_agent_through_main_invoke(walk, monkeypatch: pytest.MonkeyPatch) ->
     assert done["agent"]["outcome"] == "written"
     assert done["agent"]["text"].startswith("The busiest instance peaked at")
     assert not [event for event in events if event["type"] in ("report_file", "verification")]
+
+
+def test_a_preview_spends_no_more_than_its_narration_budget(walk, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Past the preview's budget a paragraph is not asked for: the preview keeps inside the
+    app's wait, and the paragraph shows its fallback there."""
+    from reporting_agent.main import StepTracker
+    from reporting_agent.report_pipeline import run_render_preview
+
+    store, _, _ = walk
+    monkeypatch.setattr("reporting_agent.report_pipeline.PREVIEW_PROSE_BUDGET_S", 0.0)
+    prose = FakeProse()
+
+    async def go() -> None:
+        async for _event in run_render_preview(
+            payload={"definition": _definition(), "snapshot_run_id": "run-1", "preview_id": "pv-budget"},
+            context={"actor_id": "actor-1", "run_id": "pv-budget"}, steps=StepTracker(),
+            artifact_bucket="unused", object_store=store, prose=prose,
+        ):
+            pass
+
+    asyncio.run(go())
+    assert prose.requests == {}
+
+
+def test_the_agent_is_told_to_copy_numbers_exactly_in_either_language() -> None:
+    """Writing Indonesian, the model turned a printed `1.25%` into `1,25%` — a number it was
+    not shown, so the check refused the paragraph (seen on the deployed runtime, 2026-10-20).
+    The instruction now says so in both languages."""
+    from reporting_agent.narrate.summary import SYSTEM_PROMPT_AGENT, SYSTEM_PROMPT_AGENT_ID
+
+    assert "character for character" in SYSTEM_PROMPT_AGENT
+    assert "never reformatted for the language you write in" in SYSTEM_PROMPT_AGENT
+    assert "bukan 1,25%" in SYSTEM_PROMPT_AGENT_ID

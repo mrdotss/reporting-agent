@@ -2610,6 +2610,7 @@ async def run_render_preview(
             if _has_agent_paragraph(definition)
             else None
         ),
+        prose_budget_s=PREVIEW_PROSE_BUDGET_S,
         view=build_snapshot_view(
             snapshot, child_resource_types=_child_resource_types()
         ),
@@ -2689,6 +2690,14 @@ async def run_render_preview(
     )
 
     yield steps.end(step["id"])
+
+
+PREVIEW_PROSE_BUDGET_S: Final[float] = 45.0
+"""Seconds of narration a preview may spend before later agent paragraphs show their fallback.
+
+The app waits 180 seconds for a preview (Req 14.9), and a large draft spends most of that
+compiling, rendering and converting. A preview is for the layout; Try it writes any one
+paragraph on its own, and a delivered report narrates under the full `PROSE_BUDGET_S`."""
 
 
 def _has_agent_paragraph(definition: Mapping[str, Any]) -> bool:

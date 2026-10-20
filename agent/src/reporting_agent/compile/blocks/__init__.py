@@ -230,6 +230,7 @@ def compile_document(
     catalog_scales: Mapping[str, int] | None = None,
     catalogue: LoadedSectionCatalogue | None = None,
     authored_matches: Mapping[str, object] | None = None,
+    prose_budget_s: float | None = None,
 ) -> CompiledDocument:
     """Compile a validated definition against one snapshot.
 
@@ -342,7 +343,9 @@ def compile_document(
         emitted, nodes_by_block, deferrals, factory_calls = _phase_one(
             context, specs, design, schema_version=schema_version
         )
-        prose_by_block = _phase_two(context, deferrals)
+        prose_by_block = _phase_two(
+            context, deferrals, budget_s=PROSE_BUDGET_S if prose_budget_s is None else prose_budget_s
+        )
         document, nodes_by_block = _phase_three(
             emitted, nodes_by_block, deferrals, prose_by_block
         )
