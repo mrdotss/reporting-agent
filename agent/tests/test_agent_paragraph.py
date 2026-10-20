@@ -266,6 +266,7 @@ def _request(**kwargs: Any) -> ProseRequest:
 def test_the_message_carries_the_instruction_length_and_voice() -> None:
     text = build_messages(_request())[0]["content"][0]["text"]
     assert "Instruction: Flag anything above 80%." in text
+    assert "A number in the instruction is for your judgement only: do not write it." in text
     assert "starting with \"• \"" in text
     assert "name the metrics" in text
     assert "- web · CPUUtilization (max): 97.2%" in text

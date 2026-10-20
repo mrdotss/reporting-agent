@@ -333,6 +333,14 @@ SYSTEM_PROMPT_AGENT_ID: Final[str] = (
 )
 """Indonesian variant of the agent instruction (Req 15.7)."""
 
+AGENT_INSTRUCTION_NUMBERS: Final[dict[str, str]] = {
+    "en": "A number in the instruction is for your judgement only: do not write it.",
+    "id": "Angka dalam instruksi hanya untuk pertimbangan Anda: jangan menuliskannya.",
+}
+"""Beside the instruction in the request, not only in the system prompt: a model asked to
+look for "above 80%" sometimes answered "nothing came near 80%", and 80% is a number the
+report never printed (seen on the deployed runtime on 2026-10-20)."""
+
 AGENT_LENGTH_RULES: Final[dict[str, dict[str, str]]] = {
     "sentence": {"en": "Write one sentence.", "id": "Tulis satu kalimat."},
     "short": {
@@ -441,6 +449,7 @@ def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
         lines[-1:-1] = [
             "",
             f"Instruction: {request.instruction}",
+            *([AGENT_INSTRUCTION_NUMBERS[language]] if any(c.isdigit() for c in request.instruction) else []),
             AGENT_LENGTH_RULES.get(request.length, AGENT_LENGTH_RULES["short"])[language],
             AGENT_VOICE_RULES.get(request.voice, AGENT_VOICE_RULES["plain"])[language],
         ]

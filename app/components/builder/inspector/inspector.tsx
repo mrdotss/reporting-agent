@@ -1003,7 +1003,7 @@ function AgentContent({
     <div className="flex flex-col gap-4">
       <Field
         label="Instruction"
-        hint="What the agent should say about these figures. It may name a number — a threshold to look for — but it never prints. What the agent writes is checked: a number it was not shown refuses the paragraph."
+        hint="What the agent should say about these figures. It may name a number, such as a threshold, but that number never prints — if the agent repeats it, or writes any number it was not shown, its words are refused. Try it shows you the result."
       >
         {languages.map((language) => (
           <InstructionField
@@ -1092,7 +1092,7 @@ function InstructionField({ label, value, onChange }: Readonly<{ label: string; 
         value={value}
         maxLength={AGENT_INSTRUCTION_MAX_LENGTH}
         rows={3}
-        placeholder="e.g. Say which machines ran above 80% at peak and whether that needs attention."
+        placeholder="e.g. Say which machines ran hot at peak and whether that needs attention."
         onChange={(event) => onChange(event.target.value)}
         className={cn(INPUT, "h-auto min-h-[72px] py-1.5 leading-relaxed")}
       />
