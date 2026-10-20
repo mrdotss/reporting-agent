@@ -34,9 +34,29 @@ through `render/printcss.py`. Every theme also declares `Callout` and `Callout A
 the two tones of a v4 callout.
 
 A template's `design.preset` selects the **file**. A template's `design.table_style`
-(`hairline` / `banded` / `bordered`) selects a **style inside** that file. The two are
-orthogonal, so every theme defines all three data-table styles — a theme carrying only "its
+(`hairline` / `banded` / `bordered` / `open`) selects a **style inside** that file. The two are
+orthogonal, so every theme defines all four data-table styles — a theme carrying only "its
 own" look would fail the moment a template paired `technical` with `bordered`.
+
+## A preset's own look: `design.style`
+
+A v4 preset may also carry `design.style`, a set of overrides on top of its theme
+(`STYLE_KEYS` in `compile/definition.py`): heading colour, a font pairing, text size, the
+figures face, the table header, a mark-at-or-above threshold, chart palette, line, grid,
+value labels, legend and threshold, the cover, section numbers, margins, the running header
+and the callout treatment. **An absent key is the theme's choice**, so a preset with no
+`style` draws exactly what it drew before; `tests/test_design_style.py` holds both halves of
+that promise.
+
+None of it is baked into the theme files. The Word output applies it at render time
+(`docx._apply_style_options`, after the theme document is opened), the reading copy through
+`printcss._style_rules`, and charts through `echarts.chart_options`. A chart or table slot
+may carry its own `style` too (look, height, value labels, threshold; header, rows, marking),
+which `blocks.base.apply_block_options` sets on the nodes that block emitted. Section numbers
+and the running header exist only in the styled PDF; Word has neither.
+
+The font pairings (`FONT_PAIRS` in `render/themes.py`) name only vendored or packaged faces,
+so a pairing can never fall back to substitution in the image.
 
 ## Do not edit these files directly
 

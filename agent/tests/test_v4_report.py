@@ -477,3 +477,102 @@ def test_a_v4_draft_previews_against_a_completed_run(placed_blocks_walk, preset:
     assert pdf is not None and pdf.body.startswith(b"%PDF")
     assert store.get(f"actor-1/previews/{preview_id}/preview.html") is not None
     assert not [event for event in events if event.get("type") == "report_file"]
+
+
+# --- Design style (PR 7) --------------------------------------------------------------------
+
+STYLE = {
+    "heading_color": "ink", "fonts": "plex", "text_size": "large", "figures": "text", "table_header": "tint",
+    "mark_at_or_above": 1, "chart_palette": "shades", "chart_line": "bold", "chart_grid": "full",
+    "chart_values": "peak", "chart_legend": "top", "chart_threshold": 50, "cover": "full_bleed",
+    "section_numbers": "display", "margins": "wide", "running_header": "customer", "callout": "banner",
+}
+
+
+@pytest.fixture(scope="module")
+def styled_walk():
+    """The AWS walk with every style option set, a block's own look on three slots, and an
+    average-and-peak chart."""
+    import asyncio
+    import json
+
+    from fakes.object_store import InMemoryObjectStore
+    from reporting_agent.catalog.loader import load_catalog
+    from reporting_agent.main import StepTracker
+    from reporting_agent.report_pipeline import ReportOutcome, run_generate_report
+    from test_aws_collector import ACCOUNT, fake_clients, provider
+    from test_run_end_to_end_v2 import invoke_payload
+
+    definition = aws_new_blocks_definition()
+    for section in definition["sections"]:
+        if section["type"] == "ec2_utilization":
+            section["blocks"] = [
+                {"slot": "title"},
+                {"kind": "callout", "id": "u_gaps", "when": "coverage_gaps", "tone": "attention",
+                 "text": {"en": "Some figures could not be measured: {count} gaps are listed in the appendix."}},
+                {"kind": "avg_vs_peak", "id": "u_avp"},
+                {"slot": "each", "blocks": [
+                    {"slot": "name"}, {"slot": "details", "style": {"header": "solid"}},
+                    {"slot": "chart", "style": {"height": "tall", "threshold": 60}},
+                    {"slot": "summary"}, {"slot": "narrative"},
+                ]},
+                {"slot": "fleet", "style": {"rows": "open"}},
+            ]
+    definition["design"] = {**definition["design"], "preset": "corporate", "chart_style": "small_multiples", "style": dict(STYLE)}
+    store = InMemoryObjectStore()
+    payload = invoke_payload(definition)
+    payload["period"] = {"start": "2026-09-01", "end": "2026-09-01"}
+    payload["scope"] = {"resource_types": [], "resource_groups": [], "tag_filters": {}, "regions": ["us-east-1", "ap-southeast-3"]}
+    payload.pop("context", None)
+    context = {"actor_id": "actor-1", "run_id": "run-1", "subscription_id": ACCOUNT, "timezone": "UTC",
+               "provider": "aws", "fidelity_tier": "baseline", "display_name": "Example AWS"}
+    events: list[dict[str, Any]] = []
+
+    async def go() -> None:
+        async for event in run_generate_report(
+            payload=payload, context=context, steps=StepTracker(), artifact_bucket="unused",
+            outcome=ReportOutcome(), prose=None, provider=provider(store, fake_clients()),
+            object_store=store, catalog=load_catalog(),
+        ):
+            events.append(event)
+
+    try:
+        asyncio.run(go())
+    except Exception:  # a report with gaps ends `PARTIAL_COVERAGE`, which is still a delivery
+        pass
+    finally:
+        discard_secrets()
+    records = [json.loads(store.get(key).body) for key in store.keys() if "/verification-" in key]  # type: ignore[union-attr]
+    return store, events, records
+
+
+def _part(store, suffix: str, member: str) -> str:
+    import zipfile
+
+    key = next(key for key in store.keys() if key.endswith(suffix))
+    with zipfile.ZipFile(BytesIO(store.get(key).body)) as archive:  # type: ignore[union-attr]
+        return archive.read(member).decode()
+
+
+def test_a_fully_styled_report_verifies(styled_walk) -> None:
+    _, events, records = styled_walk
+    assert _verified(events)
+    assert records and not [f for f in records[-1].get("findings", []) if f.get("severity") == "blocking"]
+
+
+def test_the_word_file_carries_the_style(styled_walk) -> None:
+    store, _, _ = styled_walk
+    styles = _part(store, "/report.docx", "word/styles.xml")
+    body = _part(store, "/report.docx", "word/document.xml")
+    assert 'w:ascii="IBM Plex Sans"' in styles  # the Plex pairing
+    assert 'w:fill="FDF1E2"' in body  # a marked percentage cell
+    assert 'w:fill="1F6F78"' in body  # the details table's own solid header, in the fixture's accent
+    assert 'w:fill="E0EBEC"' in body  # the design's tinted header on every other table
+    assert 'behindDoc="1"' in body  # the full-bleed cover's ground, on a band theme
+
+
+def test_the_reading_copy_and_the_ledger_carry_the_rest(styled_walk) -> None:
+    store, _, _ = styled_walk
+    ledger = next(store.get(key).body.decode() for key in store.keys() if key.endswith("/ledger.json"))  # type: ignore[union-attr]
+    assert "__u_avp:" in ledger
+    assert any(key.endswith("/report-styled.pdf") for key in store.keys())

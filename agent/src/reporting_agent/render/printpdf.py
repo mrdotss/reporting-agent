@@ -91,6 +91,7 @@ def print_document_html(
     design: DesignSettings,
     title: str,
     language: str,
+    running_text: str = "",
 ) -> str:
     """Assemble the complete page: front matter, body, and the theme's stylesheet.
 
@@ -101,7 +102,15 @@ def print_document_html(
     return _DOCUMENT.format(
         language=language,
         title=title,
-        css=stylesheet(design.preset, page_size=design.page_size, accent_color=design.accent_color, density=design.density, table_style=design.table_style),
+        css=stylesheet(
+            design.preset,
+            page_size=design.page_size,
+            accent_color=design.accent_color,
+            density=design.density,
+            table_style=design.table_style,
+            style=design.style,
+            running_text=running_text,
+        ),
         front_matter=front_matter_html,
         body=body_html,
     )
@@ -144,6 +153,7 @@ def render_print_pdf(
     messages: Messages,
     title: str,
     language: str = "en",
+    running_text: str = "",
 ) -> PrintOutcome:
     """The whole path: emit both halves, assemble, render.
 
@@ -163,6 +173,7 @@ def render_print_pdf(
         chart_vectors=chart_vectors,
         chart_tables=None,
         form_fields=True,
+        design=design,
     ).html
     front_matter = emit_front_matter_html(front_matter_sections)
     page = print_document_html(
@@ -171,6 +182,7 @@ def render_print_pdf(
         design=design,
         title=title,
         language=language,
+        running_text=running_text,
     )
     return PrintOutcome(
         print_pdf_bytes(page), page, _figure_paths_in(chart_tables)

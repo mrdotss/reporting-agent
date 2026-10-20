@@ -60,6 +60,12 @@ export const CHART_STYLE_NOTES: Readonly<Record<ChartStyle, ChartStyleNote>> = {
     raster: false,
     height: "0.9 in",
   },
+  small_multiples: {
+    blurb:
+      "One panel per resource on a shared scale. Past five lines, a panel each reads where one tangled panel does not.",
+    raster: false,
+    height: "2.0 in",
+  },
 }
 
 /**

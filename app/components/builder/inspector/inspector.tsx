@@ -11,7 +11,7 @@ import {
   blockLabel,
   calloutConditionLabel,
 } from "@/components/builder/canvas/labels"
-import { Field, Segmented } from "@/components/builder/left/theme-panel"
+import { CHART_STYLE_NAMES, Field, Segmented } from "@/components/builder/left/theme-panel"
 import {
   columnLabel,
   declaredColumns,
@@ -36,13 +36,24 @@ import {
   type AddedEntry,
   type AddedKind,
   type CalloutCondition,
+  type BlockStyle,
   type SlotEntry,
+  avgAndPeakMetric,
 } from "@/lib/builder/model"
 import type { BlockRef, InspectorTab } from "@/lib/builder/store"
 import { pageDesign } from "@/lib/builder/theme"
 import { expandPresets, matchPresetName } from "@/lib/profiles/presets"
 import { metricChoicesFor, toggleMetric, entryKey } from "@/lib/profiles/section-metrics"
-import { containsNumeral, type MetricSelectionItem } from "@/lib/templates/definition"
+import {
+  BLOCK_CHART_HEIGHTS,
+  CHART_SLOT_BLOCKS,
+  CHART_STYLES,
+  STYLE_THRESHOLD_MAX,
+  STYLE_THRESHOLD_MIN,
+  TABLE_SLOT_BLOCKS,
+  containsNumeral,
+  type MetricSelectionItem,
+} from "@/lib/templates/definition"
 import { cn } from "@/lib/utils"
 
 import { DataNote } from "./data-notes"
@@ -538,7 +549,7 @@ function BlockInspector({ section, entry, ref_ }: Readonly<{ section: SectionV4;
       {hidden && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">Hidden — it won&rsquo;t print.</p>}
       <Tabs />
       {tab === "content" && <BlockContent section={section} entry={entry} ref_={ref_} />}
-      {tab === "style" && <BlockStyle entry={entry} ref_={ref_} />}
+      {tab === "style" && <BlockLook section={section} entry={entry} ref_={ref_} />}
       {tab === "data" && (
         <DataNote kind="block" provider={definition.provider} entry={entry} ref_={ref_} added={added?.kind} />
       )}
@@ -676,48 +687,136 @@ function ColumnsField({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
   )
 }
 
-function BlockStyle({ entry, ref_ }: Readonly<{ entry: CatalogueSection; ref_: BlockRef }>) {
+const HEIGHT_NAMES: Readonly<Record<(typeof BLOCK_CHART_HEIGHTS)[number], string>> = { short: "Short", normal: "Normal", tall: "Tall" }
+const VALUE_NAMES = { last: "Last value", peak: "Peak", none: "None" } as const
+const HEADER_NAMES = { rule: "Rule", tint: "Tint", solid: "Solid", plain: "Plain" } as const
+const ROW_NAMES = { hairline: "Hairline", banded: "Zebra", bordered: "Boxed", open: "Open" } as const
+
+/**
+ * A chart's or a table's own look, over the document's (`slot.style`). Each control shows
+ * what prints; choosing the document's value drops the key, so the block keeps following
+ * the theme for everything it has not changed.
+ */
+function BlockLook({ section, entry, ref_ }: Readonly<{ section: SectionV4; entry: CatalogueSection; ref_: BlockRef }>) {
   const definition = useBuilder((state) => state.definition)
-  const edit = useBuilder((state) => state.edit)
+  const setSlotStyle = useBuilder((state) => state.setSlotStyle)
   const design = pageDesign(definition)
   const block = ref_.kind === "slot" ? expansionFor(entry, ref_.slot)?.block : undefined
-  const set = (key: string, value: unknown) =>
-    edit((draft) => {
-      ;(draft.design as Record<string, unknown>)[key] = value
-    })
-  if (block === "timeseries_chart" || block === "historical_trend") {
+  const chart = (CHART_SLOT_BLOCKS as readonly string[]).includes(block ?? "")
+  const table = (TABLE_SLOT_BLOCKS as readonly string[]).includes(block ?? "")
+  if (ref_.kind !== "slot" || (!chart && !table)) {
+    return <p className="text-[13px] leading-relaxed text-muted-foreground">This block follows the theme: its face, accent and spacing. Change those under Theme.</p>
+  }
+  const each = section.blocks?.find((b) => isEachEntry(b))
+  const own = ((ref_.inEach
+    ? (each && isEachEntry(each) ? each.blocks : [])?.find((b) => b.slot === ref_.slot)
+    : section.blocks?.find((b) => !isAddedEntry(b) && b.slot === ref_.slot)) as SlotEntry | undefined)?.style
+  const set = <K extends keyof BlockStyle>(key: K, value: BlockStyle[K], documentValue: BlockStyle[K]) =>
+    setSlotStyle(section.id, ref_, { [key]: value === documentValue ? undefined : value })
+
+  const threshold = (key: "threshold" | "mark_at_or_above", label: string, documentValue: number | null) => {
+    const value = own?.[key] ?? documentValue
     return (
-      <Field label="Chart style" hint="Applies to every chart in the document.">
-        <Segmented
-          label="Chart style"
-          value={design.chartStyle}
-          options={[
-            { value: "stacked", label: "Stacked" },
-            { value: "range_band", label: "Band" },
-            { value: "columns", label: "Columns" },
-          ]}
-          onChange={(value) => set("chart_style", value)}
-        />
-      </Field>
+      <div className="flex flex-col gap-1.5">
+        <label className="flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+          {label}
+          <span className="flex items-center gap-1.5">
+            <input
+              type="number"
+              aria-label={label}
+              min={STYLE_THRESHOLD_MIN}
+              max={STYLE_THRESHOLD_MAX}
+              placeholder="Off"
+              value={value ?? ""}
+              onChange={(event) => {
+                if (event.target.value === "") return setSlotStyle(section.id, ref_, { [key]: undefined })
+                const next = Math.round(Number(event.target.value))
+                if (next >= STYLE_THRESHOLD_MIN && next <= STYLE_THRESHOLD_MAX) set(key, next, documentValue ?? undefined)
+              }}
+              className="h-7 w-14 rounded-md border border-input bg-background px-1.5 text-right font-mono text-xs text-foreground"
+            />
+            %
+          </span>
+        </label>
+        <span className="text-[11.5px] leading-snug text-muted-foreground">
+          {own?.[key] !== undefined
+            ? `This block's own. The document's is ${documentValue === null ? "off" : `${documentValue}%`}.`
+            : documentValue === null
+              ? "Off in the document. Type a value to set one for this block."
+              : "The document's. Type a value to change it here only."}
+        </span>
+      </div>
     )
   }
-  if (block?.endsWith("table") || block === "metric_summary") {
-    return (
-      <Field label="Table rules" hint="Applies to every table in the document.">
-        <Segmented
-          label="Table style"
-          value={design.tableStyle}
-          options={[
-            { value: "hairline", label: "Hairline" },
-            { value: "banded", label: "Banded" },
-            { value: "bordered", label: "Bordered" },
-          ]}
-          onChange={(value) => set("table_style", value)}
-        />
-      </Field>
-    )
-  }
-  return <p className="text-[13px] leading-relaxed text-muted-foreground">This block follows the theme: its face, accent and spacing.</p>
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2 rounded-md bg-muted px-2.5 py-1.5 text-xs">
+        <span className="text-muted-foreground">{own ? "Its own look" : "Follows the theme"}</span>
+        {own && (
+          <button type="button" onClick={() => setSlotStyle(section.id, ref_, null)} className="font-medium text-primary hover:underline">
+            Reset to the theme
+          </button>
+        )}
+      </div>
+      {chart ? (
+        <>
+          <Field label="Look">
+            <select
+              aria-label="Chart look"
+              value={own?.look ?? design.chartStyle}
+              onChange={(event) => set("look", event.target.value as BlockStyle["look"], design.chartStyle)}
+              className="h-8 rounded-md border border-input bg-background px-2 text-[13px]"
+            >
+              {CHART_STYLES.map((style) => (
+                <option key={style} value={style}>
+                  {CHART_STYLE_NAMES[style]}
+                  {style === design.chartStyle ? " (document)" : ""}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Height">
+            <Segmented
+              label="Chart height"
+              value={own?.height ?? "normal"}
+              options={BLOCK_CHART_HEIGHTS.map((value) => ({ value, label: HEIGHT_NAMES[value] }))}
+              onChange={(value) => set("height", value, "normal")}
+            />
+          </Field>
+          <Field label="Value labels">
+            <Segmented
+              label="Value labels"
+              value={own?.values ?? design.look.chartValues}
+              options={(["last", "peak", "none"] as const).map((value) => ({ value, label: VALUE_NAMES[value] }))}
+              onChange={(value) => set("values", value, design.look.chartValues)}
+            />
+          </Field>
+          {threshold("threshold", "Threshold line at", design.look.chartThreshold)}
+        </>
+      ) : (
+        <>
+          <Field label="Rows">
+            <Segmented
+              label="Table rows"
+              value={own?.rows ?? design.tableStyle}
+              options={(["hairline", "banded", "bordered", "open"] as const).map((value) => ({ value, label: ROW_NAMES[value] }))}
+              onChange={(value) => set("rows", value, design.tableStyle)}
+            />
+          </Field>
+          <Field label="Header">
+            <Segmented
+              label="Table header"
+              value={own?.header ?? design.look.tableHeader}
+              options={(["rule", "tint", "solid", "plain"] as const).map((value) => ({ value, label: HEADER_NAMES[value] }))}
+              onChange={(value) => set("header", value, design.look.tableHeader)}
+            />
+          </Field>
+          {threshold("mark_at_or_above", "Mark values at or above", design.look.markAtOrAbove)}
+        </>
+      )}
+    </div>
+  )
 }
 
 /** What an added catalogue block shows, and the section setting that decides it. */
@@ -741,6 +840,9 @@ function AddedContent({
     callout: "",
     heatmap: `One row for each of the section's top resources (up to twelve), one cell per day, shaded by ${ranking}.`,
     sparklines: `The section's top five resources by ${ranking}: each one's shape over the period as a small line, with its average, estimated P95 and peak beside it.`,
+    avg_vs_peak: avgAndPeakMetric(section)
+      ? `Each resource's average and peak ${avgAndPeakMetric(section)}, busiest by peak first, up to twelve rows. Both dots are figures from the snapshot.`
+      : "Needs a metric the section collects both an average and a maximum of. Add the missing statistic under the section's metrics.",
   }
   const readsMetrics = kind !== "coverage" && kind !== "page_break"
   return (

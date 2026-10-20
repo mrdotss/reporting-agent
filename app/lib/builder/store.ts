@@ -12,6 +12,7 @@ import {
   isAddedEntry,
   orderedSections,
   type BlockEntry,
+  type BlockStyle,
   type DefinitionV4,
   type EachEntry,
   type SectionV4,
@@ -79,6 +80,8 @@ export type BuilderState = {
   setCallout(sectionId: string, id: string, patch: Partial<Pick<AddedEntry, "when" | "tone" | "threshold">>): void
   setTitle(sectionId: string, slot: string, language: Language, text: string): void
   setColumns(sectionId: string, ref: BlockRef, columns: readonly string[] | null): void
+  /** Sets (or, with `undefined`, clears) keys of a chart or table slot's own look; `null` clears it all. */
+  setSlotStyle(sectionId: string, ref: BlockRef, patch: { [K in keyof BlockStyle]?: BlockStyle[K] | undefined } | null): void
 }
 
 type Options = {
@@ -360,6 +363,22 @@ export function createBuilderStore({ initial, catalog }: Options) {
             const block = found.list[found.index] as Draft<SlotEntry>
             if (columns === null) delete block.columns
             else block.columns = [...columns]
+          }),
+
+        setSlotStyle: (sectionId, ref, patch) =>
+          get().edit((draft) => {
+            const section = findSection(draft, sectionId)
+            if (!section || ref.kind !== "slot") return
+            const found = locate(materialise(draft, section), ref)
+            if (!found) return
+            const block = found.list[found.index] as Draft<SlotEntry>
+            const next: Record<string, unknown> = patch === null ? {} : { ...block.style }
+            for (const [key, value] of Object.entries(patch ?? {})) {
+              if (value === undefined) delete next[key]
+              else next[key] = value
+            }
+            if (Object.keys(next).length === 0) delete block.style
+            else block.style = next as BlockStyle
           }),
       }),
       {

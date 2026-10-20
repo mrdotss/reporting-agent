@@ -442,6 +442,7 @@ export const SECTION_BLOCK_KINDS = [
   "callout",
   "heatmap",
   "sparklines",
+  "avg_vs_peak",
 ] as const
 export const METRIC_BLOCK_KINDS = [
   "key_figures",
@@ -449,6 +450,7 @@ export const METRIC_BLOCK_KINDS = [
   "month_vs_month",
   "heatmap",
   "sparklines",
+  "avg_vs_peak",
 ] as const
 
 /**
@@ -480,6 +482,63 @@ export const LOCATION_MAX_LENGTH = 64
  */
 export const HISTORICAL_LOOKBACK_MIN = 2
 export const HISTORICAL_LOOKBACK_MAX = 24
+
+/**
+ * `design.style`: the look a preset sets on top of its theme. Every key is optional and an
+ * absent key is the theme's own choice, so a design without `style` renders as it always
+ * did. The two integers are settings, never printed: the threshold a table marks values from
+ * and the line a chart draws at, both on a percentage scale.
+ */
+export const STYLE_KEYS = [
+  "heading_color",
+  "fonts",
+  "text_size",
+  "figures",
+  "table_header",
+  "mark_at_or_above",
+  "chart_palette",
+  "chart_line",
+  "chart_grid",
+  "chart_values",
+  "chart_legend",
+  "chart_threshold",
+  "cover",
+  "section_numbers",
+  "margins",
+  "running_header",
+  "callout",
+] as const
+export const STYLE_HEADING_COLORS = ["accent", "ink"] as const
+export const STYLE_FONTS = ["theme", "plex", "source", "archivo", "serif"] as const
+export const STYLE_TEXT_SIZES = ["small", "normal", "large"] as const
+export const STYLE_FIGURES = ["mono", "text"] as const
+export const STYLE_TABLE_HEADERS = ["rule", "tint", "solid", "plain"] as const
+export const STYLE_CHART_PALETTES = ["standard", "shades", "greys"] as const
+export const STYLE_CHART_LINES = ["thin", "regular", "bold"] as const
+export const STYLE_CHART_GRIDS = ["none", "light", "full"] as const
+export const STYLE_CHART_VALUES = ["last", "peak", "none"] as const
+export const STYLE_CHART_LEGENDS = ["line_ends", "top", "bottom"] as const
+export const STYLE_COVERS = ["band", "full_bleed", "summary"] as const
+export const STYLE_SECTION_NUMBERS = ["inline", "display", "none"] as const
+export const STYLE_MARGINS = ["narrow", "normal", "wide"] as const
+export const STYLE_RUNNING_HEADERS = ["section", "customer", "none"] as const
+export const STYLE_CALLOUTS = ["rule", "boxed", "banner"] as const
+export const STYLE_THRESHOLD_MIN = 1
+export const STYLE_THRESHOLD_MAX = 100
+/**
+ * A v4 slot entry's own `style`, on a chart or a table expansion: the block leaves the theme
+ * for its own look. Which expansions are which is read from the block they expand to.
+ */
+export const CHART_SLOT_BLOCKS = ["timeseries_chart", "historical_trend"] as const
+export const TABLE_SLOT_BLOCKS = [
+  "resource_table",
+  "metric_summary",
+  "top_n_table",
+  "inventory_summary",
+] as const
+export const BLOCK_STYLE_CHART_KEYS = ["look", "height", "values", "threshold"] as const
+export const BLOCK_STYLE_TABLE_KEYS = ["header", "rows", "mark_at_or_above"] as const
+export const BLOCK_CHART_HEIGHTS = ["short", "normal", "tall"] as const
 
 /**
  * How many months of history a run measures **from Azure Monitor** before it needs a Log
@@ -773,7 +832,7 @@ export type DesignPreset = (typeof DESIGN_PRESETS)[number]
 export const DENSITY_VALUES = ["compact", "normal", "relaxed"] as const
 export type Density = (typeof DENSITY_VALUES)[number]
 
-export const TABLE_STYLE_VALUES = ["hairline", "banded", "bordered"] as const
+export const TABLE_STYLE_VALUES = ["hairline", "banded", "bordered", "open"] as const
 export type TableStyle = (typeof TABLE_STYLE_VALUES)[number]
 
 export const PAGE_SIZE_VALUES = ["A4", "Letter"] as const
@@ -2851,10 +2910,12 @@ const DESIGN_ALLOWED_KEYS = new Set([
   // renders exactly as it always did.
   "chart_style",
   "chart_font",
+  // The look on top of the theme (`STYLE_KEYS`). Optional, and every key in it too.
+  "style",
 ])
 
 /**
- * The six chart shapes a profile chooses between, in the wizard's own order.
+ * The chart shapes a profile chooses between, in the builder's own order.
  *
  * `stacked` is the default **and the shipped behaviour**: a panel per magnitude group,
  * the only arrangement that keeps a 0.19% average legible beside a 27% peak. The rest
@@ -2869,6 +2930,7 @@ export const CHART_STYLES = [
   "range_band",
   "columns",
   "sparkline",
+  "small_multiples",
 ] as const
 
 export type ChartStyle = (typeof CHART_STYLES)[number]
@@ -3105,6 +3167,91 @@ function validateDesign(
       `page_size must be one of: ${PAGE_SIZE_VALUES.join(", ")}.`
     )
   }
+
+  if ("style" in design) validateStyle(design.style, [...path, "style"], issues)
+}
+
+const STYLE_CHOICES: Readonly<Record<string, readonly string[]>> = {
+  heading_color: STYLE_HEADING_COLORS,
+  fonts: STYLE_FONTS,
+  text_size: STYLE_TEXT_SIZES,
+  figures: STYLE_FIGURES,
+  table_header: STYLE_TABLE_HEADERS,
+  chart_palette: STYLE_CHART_PALETTES,
+  chart_line: STYLE_CHART_LINES,
+  chart_grid: STYLE_CHART_GRIDS,
+  chart_values: STYLE_CHART_VALUES,
+  chart_legend: STYLE_CHART_LEGENDS,
+  cover: STYLE_COVERS,
+  section_numbers: STYLE_SECTION_NUMBERS,
+  margins: STYLE_MARGINS,
+  running_header: STYLE_RUNNING_HEADERS,
+  callout: STYLE_CALLOUTS,
+}
+const STYLE_THRESHOLDS: ReadonlySet<string> = new Set(["mark_at_or_above", "chart_threshold"])
+
+function validateThreshold(
+  value: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  name: string
+): void {
+  if (
+    typeof value !== "number" ||
+    !Number.isInteger(value) ||
+    value < STYLE_THRESHOLD_MIN ||
+    value > STYLE_THRESHOLD_MAX
+  ) {
+    addIssue(
+      issues,
+      path,
+      `${name} must be an integer from ${STYLE_THRESHOLD_MIN} to ${STYLE_THRESHOLD_MAX}.`
+    )
+  }
+}
+
+/** `design.style`: each key optional, each value from its closed set or a 1-100 setting. */
+function validateStyle(style: unknown, path: readonly (string | number)[], issues: IssueSink): void {
+  if (!isPlainObject(style)) {
+    addIssue(issues, path, "style must be an object.")
+    return
+  }
+  for (const [key, value] of Object.entries(style)) {
+    if (STYLE_THRESHOLDS.has(key)) validateThreshold(value, [...path, key], issues, key)
+    else if (key in STYLE_CHOICES) {
+      const allowed = STYLE_CHOICES[key]!
+      if (typeof value !== "string" || !allowed.includes(value)) {
+        addIssue(issues, [...path, key], `${key} must be one of: ${allowed.join(", ")}.`)
+      }
+    } else addIssue(issues, [...path, key], `Unrecognized style field "${key}".`)
+  }
+}
+
+/** A chart or table slot's own `style`, overriding the design's for that block alone. */
+function validateBlockStyle(
+  style: unknown,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  block: string
+): void {
+  if (!isPlainObject(style)) {
+    addIssue(issues, path, "style must be an object.")
+    return
+  }
+  const chart = (CHART_SLOT_BLOCKS as readonly string[]).includes(block)
+  const allowed: readonly string[] = chart ? BLOCK_STYLE_CHART_KEYS : BLOCK_STYLE_TABLE_KEYS
+  const choices: Readonly<Record<string, readonly string[]>> = chart
+    ? { look: CHART_STYLES, height: BLOCK_CHART_HEIGHTS, values: STYLE_CHART_VALUES }
+    : { header: STYLE_TABLE_HEADERS, rows: TABLE_STYLE_VALUES }
+  for (const [key, value] of Object.entries(style)) {
+    if (!allowed.includes(key)) {
+      addIssue(issues, [...path, key], `"${key}" cannot be set on this block's style.`)
+    } else if (key === "threshold" || key === "mark_at_or_above") {
+      validateThreshold(value, [...path, key], issues, key)
+    } else if (typeof value !== "string" || !choices[key]!.includes(value)) {
+      addIssue(issues, [...path, key], `${key} must be one of: ${choices[key]!.join(", ")}.`)
+    }
+  }
 }
 
 // --- Top level (Requirements 2.1, 2.2, 2.4, 2.9, 2.10) ----------------------
@@ -3332,6 +3479,12 @@ function validateSlotEntry(
   const allowed = new Set(["slot", "hidden"])
   if (shape?.titled) allowed.add("title")
   if (shape && shape.columns.length > 0) allowed.add("columns")
+  if (
+    shape &&
+    ([...CHART_SLOT_BLOCKS, ...TABLE_SLOT_BLOCKS] as readonly string[]).includes(shape.block)
+  ) {
+    allowed.add("style")
+  }
   for (const key of Object.keys(block)) {
     if (!allowed.has(key)) {
       addIssue(issues, [...path, key], `"${key}" cannot be set on this block.`)
@@ -3354,6 +3507,10 @@ function validateSlotEntry(
       SECTION_TITLE_MAX_LENGTH,
       "A heading"
     )
+  }
+
+  if ("style" in block && shape && allowed.has("style")) {
+    validateBlockStyle(block.style, [...path, "style"], issues, shape.block)
   }
 
   if ("columns" in block && shape && allowed.has("columns")) {

@@ -35,7 +35,7 @@ tree.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 
@@ -529,6 +529,13 @@ def compile_timeseries_chart(
     return BlockOutput(nodes=(chart,))
 
 
+AVG_VS_PEAK_LAYOUT: str = "avg_vs_peak"
+"""A distribution chart's config `layout` for a v4 `avg_vs_peak` block: one row per resource
+from its average to its peak, drawn as a dumbbell."""
+
+AVG_VS_PEAK_ROWS: int = 12
+
+
 def compile_distribution_chart(
     context: BlockContext, block: BlockSpec, cursor: BlockCursor
 ) -> BlockOutput:
@@ -547,6 +554,9 @@ def compile_distribution_chart(
     chart_cursor = cursor.child("nodes", 0)
     matched = context.resources_for(block)
     caption = caption_of(block)
+
+    if block.config.get("layout") == AVG_VS_PEAK_LAYOUT and len(refs) >= 2:
+        return _avg_vs_peak(context, block, cursor, refs[0], refs[1], matched, caption)
 
     # Req 3.7, ahead of the metric lookup. Without this guard the two outcomes below
     # collapse into one, and an empty scope would be reported as missing data — the same
@@ -598,6 +608,61 @@ def compile_distribution_chart(
         series=series,
         caption=caption,
         panels=panel_groups(series),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
+
+
+def _avg_vs_peak(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    average: MetricRef,
+    peak: MetricRef,
+    matched: Sequence[ResourceView],
+    caption: str | None,
+) -> BlockOutput:
+    """Each resource's average and peak of one metric, busiest by peak first.
+
+    Two series over the same resources — every point a figure from the snapshot — which the
+    renderer joins row by row. A resource missing either statistic is left out rather than
+    drawn half: a line from an average to nothing says nothing.
+    """
+    chart_cursor = cursor.child("nodes", 0)
+    if not matched:
+        return BlockOutput(nodes=(empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    rows: list[tuple[Decimal, str, ResourceView, SnapshotValue, SnapshotValue]] = []
+    for resource in matched:
+        low = resolve_stat(context.view, resource, average)
+        high = resolve_stat(context.view, resource, peak)
+        if low is not None and high is not None:
+            rows.append((high.value, resource.resource_id, resource, low, high))
+    if not rows:
+        return BlockOutput(nodes=(no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    rows.sort(key=lambda entry: (-entry[0], entry[1]))
+    rows = rows[:AVG_VS_PEAK_ROWS]
+
+    messages = context.messages
+    series_list: list[Series] = []
+    for ordinal, (ref, label_id, pick) in enumerate(
+        ((average, "doc.chart.series.average", 3), (peak, "doc.chart.series.peak", 4))
+    ):
+        series_cursor = chart_cursor.child("series", ordinal)
+        points = tuple(
+            _point(series_cursor.child("points", position), context, row[2].name, row[pick])
+            for position, row in enumerate(rows)
+        )
+        series_list.append(Series(path=series_cursor.path, key=ref.key, label=messages.text(label_id), points=points))
+    series = tuple(series_list)
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="dumbbell",
+        title=caption or messages.text("doc.chart.title.avg_vs_peak", metric=average.name),
+        unit=rows[0][3].unit,
+        encoding=ENCODING_SEQUENTIAL,
+        series=series,
+        caption=caption,
+        panels=(tuple(entry.key for entry in series),),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))

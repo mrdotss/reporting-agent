@@ -1,12 +1,12 @@
 import fc from "fast-check"
 import { describe, expect, test } from "vitest"
 
-import { collectDefinitionIssues } from "@/lib/templates/definition"
+import { CHART_SLOT_BLOCKS, TABLE_SLOT_BLOCKS, collectDefinitionIssues } from "@/lib/templates/definition"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 
 import { catalogueFor, type Provider } from "./catalogue"
 import { emptyDraftV4 } from "./draft"
-import { orderedSections, sectionLayout, visibleLayout } from "./model"
+import { avgAndPeakMetric, isEachEntry, orderedSections, sectionLayout, visibleLayout, type SlotEntry } from "./model"
 import { createBuilderStore, type BlockRef } from "./store"
 
 function store(provider: Provider = "aws") {
@@ -14,6 +14,8 @@ function store(provider: Provider = "aws") {
 }
 
 const definitionOf = (s: ReturnType<typeof store>) => s.getState().definition
+const CHART_SLOTS: readonly string[] = CHART_SLOT_BLOCKS
+const TABLE_SLOTS: readonly string[] = TABLE_SLOT_BLOCKS
 
 describe("sections", () => {
   test("a section added to an empty draft is selected and seeded from its catalogue entry", () => {
@@ -171,6 +173,18 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
           "sparklines" as const
         ),
       }),
+      fc.record({ op: fc.constant("avg_vs_peak"), pick: fc.nat() }),
+      fc.record({
+        op: fc.constant("style"),
+        pick: fc.nat(),
+        slot: fc.nat(),
+        look: fc.constantFrom(undefined, "soft_area", "small_multiples" as const),
+        height: fc.constantFrom(undefined, "short", "tall" as const),
+        threshold: fc.option(fc.integer({ min: 1, max: 100 }), { nil: undefined }),
+        header: fc.constantFrom(undefined, "tint", "solid" as const),
+        rows: fc.constantFrom(undefined, "open", "banded" as const),
+        clear: fc.boolean(),
+      }),
       fc.record({ op: fc.constant("swap"), pick: fc.nat(), other: fc.nat() }),
       fc.record({ op: fc.constant("remove"), pick: fc.nat() })
     )
@@ -214,6 +228,21 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
                 s.getState().setText(section.id, added, "en", "Some resources have no backup: {count}.")
                 s.getState().setCallout(section.id, added, { when: "without_backup" })
               }
+              break
+            }
+            case "avg_vs_peak":
+              // The Add panel offers it only where one metric is collected as both figures.
+              if (section && avgAndPeakMetric(section) !== null) s.getState().addBlock(section.id, "avg_vs_peak")
+              break
+            case "style": {
+              // The Style tab offers a chart's keys on a chart and a table's on a table.
+              const block = shape?.block ?? ""
+              if (!section || !ref) break
+              if (a.clear) s.getState().setSlotStyle(section.id, ref, null)
+              else if (CHART_SLOTS.includes(block))
+                s.getState().setSlotStyle(section.id, ref, { look: a.look, height: a.height, threshold: a.threshold })
+              else if (TABLE_SLOTS.includes(block))
+                s.getState().setSlotStyle(section.id, ref, { header: a.header, rows: a.rows, mark_at_or_above: a.threshold })
               break
             }
             case "swap": {
@@ -279,5 +308,53 @@ describe("callouts", () => {
     expect(read()).not.toHaveProperty("threshold")
     // {resource} is not something a stopped-machines count can fill.
     expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.at(-1))).toEqual(["en"])
+  })
+})
+
+
+describe("a block's own look", () => {
+  const chart: BlockRef = { kind: "slot", slot: "chart", inEach: true }
+  const slotOf = (s: ReturnType<typeof store>, slot: string) => {
+    const each = definitionOf(s).sections[0]!.blocks!.find(isEachEntry)!
+    return each.blocks!.find((b: SlotEntry) => b.slot === slot)!
+  }
+
+  test("a chart's look is written on its slot, key by key, and the validator accepts it", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    s.getState().setSlotStyle(id, chart, { look: "small_multiples", threshold: 90 })
+    s.getState().setSlotStyle(id, chart, { height: "tall" })
+    expect(slotOf(s, "chart").style).toEqual({ look: "small_multiples", threshold: 90, height: "tall" })
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+  })
+
+  test("clearing its last key, or all of it, leaves no style behind", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    s.getState().setSlotStyle(id, chart, { values: "peak" })
+    s.getState().setSlotStyle(id, chart, { values: undefined })
+    expect(slotOf(s, "chart")).not.toHaveProperty("style")
+    s.getState().setSlotStyle(id, chart, { values: "peak", height: "short" })
+    s.getState().setSlotStyle(id, chart, null)
+    expect(slotOf(s, "chart")).not.toHaveProperty("style")
+  })
+
+  test("an added block has no slot look to set", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const added = s.getState().addBlock(id, "text")!
+    const before = definitionOf(s)
+    s.getState().setSlotStyle(id, { kind: "added", id: added }, { look: "columns" })
+    expect(definitionOf(s)).toBe(before)
+  })
+
+  test("average and peak is offered where one metric is collected as both", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const section = definitionOf(s).sections[0]!
+    expect(avgAndPeakMetric(section)).toBe("CPUUtilization")
+    s.getState().addBlock(id, "avg_vs_peak")
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+    expect(avgAndPeakMetric({ metrics: [{ metric: "CPUUtilization", statistic: "avg" }] })).toBeNull()
   })
 })

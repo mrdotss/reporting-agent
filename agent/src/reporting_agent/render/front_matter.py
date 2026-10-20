@@ -666,16 +666,15 @@ DEFAULT_COVER: Final[CoverTreatment] = CoverTreatment()
 
 def cover_treatment(design: object) -> CoverTreatment:
     """The cover the design's theme asks for. An unknown preset gets the default band."""
-    from reporting_agent.render.themes import THEME_SPECS
+    from reporting_agent.render.themes import THEME_SPECS, accent_for, cover_style_for
 
-    spec = THEME_SPECS.get(str(getattr(design, "preset", "")))
-    if spec is None:
+    if str(getattr(design, "preset", "")) not in THEME_SPECS:
         return DEFAULT_COVER
-    accent = str(getattr(design, "accent_color", "") or "")
-    if spec.cover_style == "full_bleed":
-        fill = accent[1:].upper() if re.fullmatch(r"#[0-9a-fA-F]{6}", accent) else spec.palette.accent
-        return CoverTreatment(fill=fill)
-    if spec.cover_style == "summary":
+    # The design's own cover where its style picks one, else its theme's.
+    cover = cover_style_for(design)
+    if cover == "full_bleed":
+        return CoverTreatment(fill=accent_for(design))
+    if cover == "summary":
         return CoverTreatment(own_page=False)
     return DEFAULT_COVER
 

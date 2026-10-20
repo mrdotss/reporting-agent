@@ -16,7 +16,15 @@ import {
   type Language,
   type Provider,
 } from "@/lib/builder/catalogue"
-import { rankingOf, type AddedEntry, type MetricItem, type SectionV4, type SlotEntry } from "@/lib/builder/model"
+import {
+  avgAndPeakMetric,
+  rankingOf,
+  type AddedEntry,
+  type BlockStyle,
+  type MetricItem,
+  type SectionV4,
+  type SlotEntry,
+} from "@/lib/builder/model"
 import {
   SAMPLE_COUNTS,
   formatSample,
@@ -28,7 +36,7 @@ import {
   type SampleResource,
   type SampleUnit,
 } from "@/lib/builder/sample"
-import { ATTENTION, DENSITY_SCALE, PT, type PageDesign } from "@/lib/builder/theme"
+import { ATTENTION, DENSITY_SCALE, MARK, PT, TEXT_SIZE_FACTORS, tint, type PageDesign } from "@/lib/builder/theme"
 import { messageText, type MessageId } from "@/lib/messages/catalog"
 
 /**
@@ -73,49 +81,63 @@ function statisticLabel(statistic: string, language: Language): string {
 
 // --- Shared pieces ------------------------------------------------------------------
 
+/**
+ * A table drawn as the theme draws it, with the design's look — header, rows, marked values —
+ * or a block's own (`own`) where it has one.
+ */
 function Table({
   design,
   head,
   rows,
   numeric = [],
+  own,
 }: Readonly<{
   design: PageDesign
   head: readonly string[]
   rows: readonly (readonly ReactNode[])[]
   numeric?: readonly number[]
+  own?: BlockStyle
 }>) {
-  const { spec, tableStyle, density } = design
+  const { spec, density, look } = design
+  const tableStyle = (own?.rows ?? design.tableStyle) as PageDesign["tableStyle"]
+  const header = own?.header ?? look.tableHeader
+  const mark = own?.mark_at_or_above ?? look.markAtOrAbove
   const scale = DENSITY_SCALE[density]
+  const size = (spec.smallPt + 0.5) * TEXT_SIZE_FACTORS[look.textSize]
   const hair = `0.75px solid ${spec.rule}`
-  const under = `1.5px solid ${spec.accent}`
+  const open = tableStyle === "open"
   const cell = (index: number, rowIndex?: number): CSSProperties => ({
-    padding: `${4 * scale}px 8px`,
+    padding: `${(open ? 6 : 4) * scale}px 8px`,
     textAlign: numeric.includes(index) ? "right" : "left",
     fontVariantNumeric: "tabular-nums",
+    fontFamily: numeric.includes(index) && rowIndex !== undefined ? design.figureFace : undefined,
     borderTop: tableStyle === "bordered" ? hair : "none",
     borderLeft: tableStyle === "bordered" ? hair : "none",
     borderRight: tableStyle === "bordered" ? hair : "none",
-    borderBottom: tableStyle === "banded" ? "none" : hair,
-    background:
-      tableStyle === "banded" && spec.bandedRows && rowIndex !== undefined && rowIndex % 2 === 1
-        ? spec.band
-        : "transparent",
+    borderBottom: tableStyle === "banded" || open ? "none" : hair,
+    background: tableStyle === "banded" && rowIndex !== undefined && rowIndex % 2 === 1 ? spec.band : "transparent",
   })
+  const headLook: CSSProperties =
+    header === "tint"
+      ? { background: tint(spec.accent, 0.86), color: spec.ink, borderBottom: "none" }
+      : header === "solid"
+        ? { background: spec.accent, color: "#fff", borderBottom: "none" }
+        : header === "plain"
+          ? { color: spec.ink, borderBottom: hair }
+          : { color: spec.ink, borderBottom: `1.5px solid ${spec.accent}` }
+  // Marked as the runtime marks: a percentage at or above the setting, colour only.
+  const marked = (value: ReactNode, index: number) =>
+    mark !== null &&
+    numeric.includes(index) &&
+    typeof value === "string" &&
+    value.endsWith("%") &&
+    Number.parseFloat(value) >= mark
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: px(spec.smallPt + 0.5) }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: px(size) }}>
       <thead>
         <tr>
           {head.map((label, index) => (
-            <th
-              key={`${label}-${index}`}
-              style={{
-                ...cell(index),
-                fontWeight: 700,
-                color: spec.ink,
-                borderBottom: under,
-                whiteSpace: "nowrap",
-              }}
-            >
+            <th key={`${label}-${index}`} style={{ ...cell(index), fontWeight: 700, whiteSpace: "nowrap", fontFamily: spec.headingFace, ...headLook }}>
               {label}
             </th>
           ))}
@@ -125,7 +147,13 @@ function Table({
         {rows.map((row, rowIndex) => (
           <tr key={rowIndex}>
             {row.map((value, index) => (
-              <td key={index} style={cell(index, rowIndex)}>
+              <td
+                key={index}
+                style={{
+                  ...cell(index, rowIndex),
+                  ...(marked(value, index) ? { background: MARK.fill, color: MARK.ink, fontWeight: 700 } : {}),
+                }}
+              >
                 {value}
               </td>
             ))}
@@ -165,9 +193,10 @@ function Heading({
   number,
 }: Readonly<{ design: PageDesign; level: 1 | 2 | 3 | 4; children: ReactNode; number?: number }>) {
   const { spec } = design
-  const size = spec.headingPt[level - 1]!
+  const size = spec.headingPt[level - 1]! * TEXT_SIZE_FACTORS[design.look.textSize]
   const caps = spec.headingAllCaps && level >= 3
-  const display = spec.displayNumbers && level === 1 && number !== undefined
+  const display = design.look.sectionNumbers === "display" && level === 1 && number !== undefined
+  const numbered = number !== undefined && design.look.sectionNumbers !== "none"
   const rule = level === 1 ? sectionRule(spec) : undefined
   return (
     <div
@@ -177,7 +206,7 @@ function Heading({
         fontFamily: spec.headingFace,
         fontSize: px(size),
         fontWeight: 700,
-        color: level === 1 ? spec.accent : spec.ink,
+        color: level === 1 && design.look.headingColor === "accent" ? spec.accent : spec.ink,
         letterSpacing: caps ? "0.06em" : level === 1 ? "-0.005em" : undefined,
         textTransform: caps ? "uppercase" : undefined,
         lineHeight: 1.2,
@@ -189,7 +218,7 @@ function Heading({
         borderBottom: rule,
       }}
     >
-      {number !== undefined &&
+      {numbered &&
         (display ? (
           // `signal`: the number on its own line, large and in the accent.
           <span
@@ -238,38 +267,68 @@ function SampleChart({
   type = "line",
   style,
   panelLabel,
+  own,
 }: Readonly<{
   design: PageDesign
   series: readonly { label: string; values: readonly number[]; dashed?: boolean }[]
   categories: readonly string[]
   unit: SampleUnit
   height?: number
-  type?: "line" | "heatmap"
+  type?: "line" | "heatmap" | "dumbbell"
+  /** A chart slot's own look, over the design's. */
+  own?: BlockStyle
   /** A style this chart draws in whatever the document's is — a sparkline table's. */
   style?: PageDesign["chartStyle"]
   /** A heatmap's title: the metric its colour scale reads. */
   panelLabel?: string
 }>) {
-  const { spec, chartFace } = design
-  const chartStyle = style ?? design.chartStyle
+  const { spec, chartFace, look } = design
+  const chartStyle = style ?? own?.look ?? design.chartStyle
+  const values = own?.values ?? look.chartValues
+  const threshold = own?.threshold ?? look.chartThreshold
+  const heightScale = own?.height === "short" ? 0.75 : own?.height === "tall" ? 1.3 : 1
   // ECharts numbers its clip paths per instance, so two charts on one page would share ids.
   const prefix = `builder${useId().replace(/[^a-zA-Z0-9]/g, "")}`
   const svg = useMemo(() => {
-    const split = (chartStyle === "stacked" || chartStyle === "sparkline") && series.length > 1
+    const dumbbell = type === "dumbbell"
+    // A dumbbell's average and peak share one scale, as the runtime draws it.
+    const split =
+      !dumbbell &&
+      (chartStyle === "stacked" || chartStyle === "sparkline" || chartStyle === "small_multiples") &&
+      series.length > 1
+    // The runtime's look keys: present only where they leave the default, as there.
+    const legend = look.chartLegend === "line_ends" ? undefined : look.chartLegend
+    const options = {
+      ...(look.chartLine !== "regular" ? { lineWidth: look.chartLine === "thin" ? 1.4 : 3.2 } : {}),
+      ...(look.chartGrid === "light" ? {} : { gridLines: look.chartGrid }),
+      ...(values === "last" ? {} : { values }),
+      ...(legend ? { legend } : {}),
+      ...(threshold !== null && unit === "percent" ? { threshold, thresholdLabel: t("doc.chart.threshold", "en", "Threshold") } : {}),
+    }
+    const palette = (index: number) =>
+      look.chartPalette === "shades"
+        ? tint(spec.accent, [0, 0.32, 0.5, 0.64, 0.75][Math.min(index, 4)]!)
+        : look.chartPalette === "greys" && index > 0
+          ? ["#6F747C", "#9599A0", "#B5B8BD", "#CFD1D4"][Math.min(index - 1, 3)]!
+          : spec.accent
     const max = niceMax(Math.max(...series.flatMap((s) => s.values)), unit)
     const heatmap = type === "heatmap"
     const all = series.flatMap((s) => s.values)
-    const chartSpec: ReportChartSpec = {
-      style: heatmap ? "heatmap" : chartStyle,
-      type,
-      width: 640,
-      height: heatmap
-        ? Math.max(140, 30 * series.length + 80)
+    const base = heatmap
+      ? Math.max(140, 30 * series.length + 80)
+      : dumbbell
+        ? Math.max(140, 64 + 26 * categories.length)
         : chartStyle === "sparkline"
           ? Math.max(100, series.length * 70 + 20)
           : split
             ? Math.max(height, series.length * 115 + 30)
-            : height,
+            : height
+    const chartSpec: ReportChartSpec = {
+      ...options,
+      style: heatmap ? "heatmap" : chartStyle,
+      type,
+      width: 640,
+      height: Math.round(base * heightScale) + (legend && !heatmap && !dumbbell ? 24 : 0),
       font: chartFace.split(",")[0]!.replaceAll('"', ""),
       ink: spec.ink,
       muted: spec.muted,
@@ -289,16 +348,17 @@ function SampleChart({
         label: s.label,
         last: formatSample(s.values.at(-1) ?? 0, unit),
         panel: split ? index : 0,
-        color: spec.accent,
-        dashed: chartStyle === "sparkline" ? false : (s.dashed ?? index > 0),
+        color: dumbbell ? (index === 0 ? tint(spec.accent, 0.55) : spec.accent) : palette(split ? 0 : index),
+        dashed: chartStyle === "sparkline" || dumbbell ? false : (s.dashed ?? index > 0),
         values: s.values.map(String),
+        pointLabels: s.values.map((v) => formatSample(v, unit)),
       })),
       bands: chartStyle === "range_band" && series.length > 1 ? [{ lower: 1, upper: 0 }] : [],
     }
     return renderSVG(chartSpec, false, init)
       .replace(/zr\d+/g, prefix)
       .replace(/<svg /, '<svg style="width:100%;height:auto;display:block" ')
-  }, [categories, chartFace, chartStyle, height, panelLabel, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, type, unit])
+  }, [categories, chartFace, chartStyle, height, heightScale, look, panelLabel, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, threshold, type, unit, values])
   // The chart renderer's own SVG, the same drawing the runtime embeds in the report. Drawn
   // in the browser only: ECharts measures text, and the server's measurements differ from
   // the browser's, so a server-drawn chart would never match the one that hydrates it.
@@ -346,6 +406,7 @@ function ResourceTableView(props: BlockViewProps) {
         design={design}
         head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
         rows={columns.map((column) => [columnLabel(column, language), sampleCell(resource, column.id)])}
+        own={settings.style}
       />
     )
   }
@@ -361,6 +422,7 @@ function ResourceTableView(props: BlockViewProps) {
           ...metrics.map((m) => formatSample(m.statistic === "max" ? r.peak : r.avg, "percent")),
         ])}
         numeric={metrics.map((_, index) => index + 1)}
+        own={settings.style}
       />
     )
   }
@@ -370,6 +432,7 @@ function ResourceTableView(props: BlockViewProps) {
       design={design}
       head={[t("doc.table.resource", language, "Resource"), ...shown.map((c) => columnLabel(c, language))]}
       rows={(resource ? [resource] : resources).map((r) => [r.name, ...shown.map((c) => sampleCell(r, c.id))])}
+      own={settings.style}
     />
   )
 }
@@ -393,7 +456,7 @@ function ChartView(props: BlockViewProps) {
   return (
     <div>
       <Caption design={design}>{resource ? `${resource.name} — ${title}` : title}</Caption>
-      <SampleChart design={design} series={series} categories={categories} unit={unit} />
+      <SampleChart design={design} series={series} categories={categories} unit={unit} own={props.settings.style} />
     </div>
   )
 }
@@ -424,6 +487,7 @@ function MetricSummaryView(props: BlockViewProps) {
         ]
       })}
       numeric={[1, 2, 3]}
+      own={props.settings.style}
     />
   )
 }
@@ -444,6 +508,7 @@ function TopNView(props: BlockViewProps) {
         ]}
         rows={ranked.map((r) => [r.name, formatSample(r.avg, "percent"), formatSample(r.peak, "percent")])}
         numeric={[1, 2]}
+        own={props.settings.style}
       />
     </div>
   )
@@ -464,7 +529,14 @@ function InventoryView(props: BlockViewProps) {
           [t("doc.inventory.resource_groups", language, "Resource groups"), "rg-app-prod, rg-data-prod"],
           [t("doc.inventory.total_resources", language, "Total resources"), String(counts.resources)],
         ]
-  return <Table design={design} head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]} rows={rows} />
+  return (
+    <Table
+      design={design}
+      head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
+      rows={rows}
+      own={props.settings.style}
+    />
+  )
 }
 
 function TrendView(props: BlockViewProps) {
@@ -487,7 +559,14 @@ function TrendView(props: BlockViewProps) {
           statistic: metric?.statistic ?? "avg",
         })}
       </Caption>
-      <SampleChart design={design} series={[{ label: "Monthly", values }]} categories={categories} unit="percent" height={170} />
+      <SampleChart
+        design={design}
+        series={[{ label: "Monthly", values }]}
+        categories={categories}
+        unit="percent"
+        height={170}
+        own={props.settings.style}
+      />
     </div>
   )
 }
@@ -728,17 +807,19 @@ export function AddedBlockView({
       }
       const words = entry.text?.[language] ?? ""
       const attention = entry.tone === "attention"
+      const rule = attention ? ATTENTION.rule : design.spec.accent
+      const tone = attention ? ATTENTION.tint : design.spec.band
+      // The three treatments `printcss._treatments` and `docx._apply_style_options` draw.
+      const look =
+        design.look.callout === "banner"
+          ? { background: rule, color: "#fff", fontWeight: 700 }
+          : design.look.callout === "boxed"
+            ? { border: `1px solid ${rule}`, borderRadius: 4, background: tone, color: design.spec.ink }
+            : { borderLeft: `3px solid ${rule}`, background: tone, color: design.spec.ink }
       return (
-        <div
-          style={{
-            borderLeft: `3px solid ${attention ? ATTENTION.rule : design.spec.accent}`,
-            background: attention ? ATTENTION.tint : design.spec.band,
-            padding: "8px 12px",
-            color: design.spec.ink,
-          }}
-        >
+        <div style={{ ...look, padding: "8px 12px" }}>
           {words ? words.replace(/\{(count|resource|value)\}/g, (_, token: string) => fills[token] ?? "") : (
-            <span style={{ color: design.spec.muted, fontStyle: "italic" }}>Write the callout in the inspector — it prints only when its condition holds.</span>
+            <span style={{ opacity: 0.7, fontStyle: "italic" }}>Write the callout in the inspector — it prints only when its condition holds.</span>
           )}
         </div>
       )
@@ -793,6 +874,27 @@ export function AddedBlockView({
               return [r.name, formatSample(summary.avg * 0.62, unit), formatSample(summary.p95, unit), formatSample(summary.peak, unit)]
             })}
             numeric={[1, 2, 3]}
+          />
+        </div>
+      )
+    }
+    case "avg_vs_peak": {
+      const metric = avgAndPeakMetric(section) ?? firstName
+      const ranked = [...resources].sort((a, b) => valueOf(b, metric, "max") - valueOf(a, metric, "max"))
+      return (
+        <div>
+          <Caption design={design}>
+            {t("doc.chart.title.avg_vs_peak", language, "Average and peak by resource", { metric })}
+          </Caption>
+          <SampleChart
+            design={design}
+            type="dumbbell"
+            series={[
+              { label: t("doc.chart.series.average", language, "Average"), values: ranked.map((r) => valueOf(r, metric, "avg")) },
+              { label: t("doc.chart.series.peak", language, "Peak"), values: ranked.map((r) => valueOf(r, metric, "max")) },
+            ]}
+            categories={ranked.map((r) => r.name)}
+            unit={sampleUnit(metric)}
           />
         </div>
       )

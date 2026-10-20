@@ -89,6 +89,7 @@ __all__ = [
     "COVER_TITLE_STYLE",
     "DOCUMENT_CONTROL_STYLE",
     "FIGURE_CHARACTER_STYLE",
+    "FONT_PAIRS",
     "FRONT_MATTER_PARAGRAPH_STYLES",
     "PREVIEW_NOTICE_STYLE",
     "REQUIRED_CHARACTER_STYLES",
@@ -102,10 +103,13 @@ __all__ = [
     "THEME_SPECS",
     "TOC_ENTRY_STYLE",
     "ThemeSpec",
+    "accent_for",
     "assert_theme_available",
     "assert_themes_usable",
     "build_theme_bytes",
     "collect_theme_violations",
+    "cover_style_for",
+    "faces_for",
     "load_theme",
     "missing_styles",
     "non_whitespace_text",
@@ -283,6 +287,40 @@ class ThemeSpec:
 
 
 COVER_STYLES: Final[tuple[str, ...]] = ("band", "full_bleed", "summary")
+
+FONT_PAIRS: Final[Mapping[str, tuple[str, str]]] = {
+    "plex": ("IBM Plex Sans", "IBM Plex Sans"),
+    "source": ("Source Serif 4", "Source Sans 3"),
+    "archivo": ("Archivo", "Liberation Sans"),
+    "serif": ("Liberation Serif", "Liberation Serif"),
+}
+"""`design.style.fonts`: a heading face and a body face, each one the image carries — vendored
+under `agent/fonts/` or a Liberation package — so a pairing cannot ask for a face LibreOffice or
+WeasyPrint would substitute. `theme` is the theme's own pair and is not listed."""
+
+
+def faces_for(design: object) -> tuple[str, str, str]:
+    """The heading, body and figure faces a design sets text in: the theme's, unless the
+    design's style picks a pairing or sets figures in the text face."""
+    spec = THEME_SPECS.get(str(getattr(design, "preset", "")), THEME_SPECS["editorial"])
+    style = getattr(design, "style", None)
+    heading, body = FONT_PAIRS.get(str(getattr(style, "fonts", "") or ""), (spec.face.heading, spec.face.body))
+    figure = body if getattr(style, "figures", None) == "text" else spec.face.figure
+    return heading, body, figure
+
+
+def cover_style_for(design: object) -> str:
+    """The cover a design asks for: its style's choice, else its theme's."""
+    spec = THEME_SPECS.get(str(getattr(design, "preset", "")), THEME_SPECS["editorial"])
+    chosen = getattr(getattr(design, "style", None), "cover", None)
+    return chosen if chosen in COVER_STYLES else spec.cover_style
+
+
+def accent_for(design: object) -> str:
+    """`RRGGBB`: the design's chosen accent where it is a valid hex, else its theme's."""
+    spec = THEME_SPECS.get(str(getattr(design, "preset", "")), THEME_SPECS["editorial"])
+    chosen = str(getattr(design, "accent_color", "") or "")
+    return chosen[1:].upper() if re.fullmatch(r"#[0-9a-fA-F]{6}", chosen) else spec.palette.accent
 HEADING_RULES: Final[tuple[str, ...]] = ("rule", "double", "line", "none")
 
 
@@ -670,6 +708,7 @@ _STYLE_IDS: Final[Mapping[str, str]] = {
     "Table Hairline": "TableHairline",
     "Table Banded": "TableBanded",
     "Table Bordered": "TableBordered",
+    "Table Open": "TableOpen",
     "Table Signature": "TableSignature",
     "Layout Table": "LayoutTable",
 }
@@ -939,6 +978,21 @@ def _data_table_styles(spec: ThemeSpec) -> str:
         ),
     )
 
+    # `open`: no rule anywhere and a little more air, the header carried by its accent caps
+    # alone. For short tables a reader takes in at a glance rather than reads down.
+    open_ = _table_style(
+        "Table Open",
+        spec,
+        body=(
+            f"{common_pPr}{common_run}"
+            f"<w:tblPr>"
+            f"{_borders(edges=dict.fromkeys(('top', 'left', 'bottom', 'right', 'insideH', 'insideV'), ('none', 0, 'auto')))}"
+            f"{_cell_margins(vertical=90, horizontal=100)}"
+            f"</w:tblPr>"
+            f"{_header_row_props(spec, underline=False)}"
+        ),
+    )
+
     # Breadth 13.6 — the approvers table. Not one of the three `design.table_style` choices,
     # because it is the one table whose **row height** is part of the contract: where the
     # definition supplies no signature image for a role, the renderer emits an empty ruled box
@@ -974,7 +1028,7 @@ def _data_table_styles(spec: ThemeSpec) -> str:
         ),
     )
 
-    return hairline + banded + bordered + signature + layout
+    return hairline + banded + bordered + open_ + signature + layout
 
 
 _COVER_INK: Final[str] = "FFFFFF"
@@ -1404,10 +1458,10 @@ def write_theme_documents(directory: Path | None = None) -> tuple[Path, ...]:
 
 
 def theme_faces() -> tuple[str, ...]:
-    """Every face any theme names, sorted, each once."""
-    return tuple(
-        sorted({name for spec in THEME_SPECS.values() for name in (spec.face.heading, spec.face.body, spec.face.figure)})
-    )
+    """Every face any theme or font pairing names, sorted, each once."""
+    named = {name for spec in THEME_SPECS.values() for name in (spec.face.heading, spec.face.body, spec.face.figure)}
+    named |= {name for pair in FONT_PAIRS.values() for name in pair}
+    return tuple(sorted(named))
 
 
 def unresolved_faces(match: object = None) -> list[str]:

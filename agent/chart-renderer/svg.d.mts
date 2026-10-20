@@ -29,6 +29,13 @@ export type ReportChartSpec = {
     pointLabels?: (string | null)[];
   }[];
   bands?: { lower: number; upper: number }[];
+  // A design's chart look; each is present only where it leaves the default.
+  lineWidth?: number;
+  gridLines?: "none" | "full";
+  values?: "peak" | "none";
+  legend?: "top" | "bottom";
+  threshold?: number;
+  thresholdLabel?: string;
 };
 export function renderSVG(
   spec: ReportChartSpec,

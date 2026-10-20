@@ -41,6 +41,22 @@
       "en": "lowest observed",
       "id": "terendah teramati"
     },
+    "doc.chart.series.average": {
+      "en": "Average",
+      "id": "Rata-rata"
+    },
+    "doc.chart.series.peak": {
+      "en": "Peak",
+      "id": "Puncak"
+    },
+    "doc.chart.threshold": {
+      "en": "Threshold",
+      "id": "Ambang batas"
+    },
+    "doc.chart.title.avg_vs_peak": {
+      "en": "{metric}: average and peak by resource",
+      "id": "{metric}: rata-rata dan puncak per sumber daya"
+    },
     "doc.comparison.caption": {
       "en": "{metric} ({statistic}) against the previous verified report",
       "id": "{metric} ({statistic}) dibandingkan dengan laporan terverifikasi sebelumnya"

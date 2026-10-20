@@ -4,6 +4,7 @@ import { DragDropProvider } from "@dnd-kit/react"
 import { isSortableOperation, useSortable } from "@dnd-kit/react/sortable"
 import {
   ArrowsDownUpIcon,
+  ArrowsHorizontalIcon,
   CaretDownIcon,
   ChartBarHorizontalIcon,
   ChartLineIcon,
@@ -423,5 +424,7 @@ export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
       return <GridFourIcon aria-hidden className={className} />
     case "sparklines":
       return <ChartLineIcon aria-hidden className={className} />
+    case "avg_vs_peak":
+      return <ArrowsHorizontalIcon aria-hidden className={className} />
   }
 }

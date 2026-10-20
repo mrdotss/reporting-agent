@@ -4,6 +4,24 @@ import {
   CHART_FONTS,
   CHART_STYLES,
   DESIGN_PRESETS,
+  STYLE_CALLOUTS,
+  STYLE_CHART_GRIDS,
+  STYLE_CHART_LEGENDS,
+  STYLE_CHART_LINES,
+  STYLE_CHART_PALETTES,
+  STYLE_CHART_VALUES,
+  STYLE_COVERS,
+  STYLE_FIGURES,
+  STYLE_FONTS,
+  STYLE_HEADING_COLORS,
+  STYLE_KEYS,
+  STYLE_MARGINS,
+  STYLE_RUNNING_HEADERS,
+  STYLE_SECTION_NUMBERS,
+  STYLE_TABLE_HEADERS,
+  STYLE_TEXT_SIZES,
+  STYLE_THRESHOLD_MAX,
+  STYLE_THRESHOLD_MIN,
   type ChartFont,
   type ChartStyle,
   type Density,
@@ -128,9 +146,147 @@ export const DENSITY_SCALE: Readonly<Record<Density, number>> = {
   relaxed: 1.15,
 }
 
+/**
+ * `design.style` resolved against the theme: every key the preset leaves unset reads as the
+ * theme's own choice, which is what the runtime does with an absent key.
+ */
+export type Look = {
+  readonly headingColor: (typeof STYLE_HEADING_COLORS)[number]
+  readonly fonts: (typeof STYLE_FONTS)[number]
+  readonly textSize: (typeof STYLE_TEXT_SIZES)[number]
+  readonly figures: (typeof STYLE_FIGURES)[number]
+  readonly tableHeader: (typeof STYLE_TABLE_HEADERS)[number]
+  readonly markAtOrAbove: number | null
+  readonly chartPalette: (typeof STYLE_CHART_PALETTES)[number]
+  readonly chartLine: (typeof STYLE_CHART_LINES)[number]
+  readonly chartGrid: (typeof STYLE_CHART_GRIDS)[number]
+  readonly chartValues: (typeof STYLE_CHART_VALUES)[number]
+  readonly chartLegend: (typeof STYLE_CHART_LEGENDS)[number]
+  readonly chartThreshold: number | null
+  readonly cover: (typeof STYLE_COVERS)[number]
+  readonly sectionNumbers: (typeof STYLE_SECTION_NUMBERS)[number]
+  readonly margins: (typeof STYLE_MARGINS)[number]
+  readonly runningHeader: (typeof STYLE_RUNNING_HEADERS)[number]
+  readonly callout: (typeof STYLE_CALLOUTS)[number]
+}
+
+/** The `design.style` key each `Look` field reads. */
+export const LOOK_KEYS: Readonly<Record<keyof Look, (typeof STYLE_KEYS)[number]>> = {
+  headingColor: "heading_color",
+  fonts: "fonts",
+  textSize: "text_size",
+  figures: "figures",
+  tableHeader: "table_header",
+  markAtOrAbove: "mark_at_or_above",
+  chartPalette: "chart_palette",
+  chartLine: "chart_line",
+  chartGrid: "chart_grid",
+  chartValues: "chart_values",
+  chartLegend: "chart_legend",
+  chartThreshold: "chart_threshold",
+  cover: "cover",
+  sectionNumbers: "section_numbers",
+  margins: "margins",
+  runningHeader: "running_header",
+  callout: "callout",
+}
+
+/** What a theme does where the preset's style says nothing — the values the runtime keeps. */
+export function themeLook(preset: DesignPreset): Look {
+  const spec = SPECS[preset]
+  return {
+    headingColor: "accent",
+    fonts: "theme",
+    textSize: "normal",
+    figures: "mono",
+    tableHeader: "rule",
+    markAtOrAbove: null,
+    chartPalette: "standard",
+    chartLine: "regular",
+    chartGrid: "light",
+    chartValues: "last",
+    chartLegend: "line_ends",
+    chartThreshold: null,
+    cover: spec.coverStyle,
+    sectionNumbers: spec.displayNumbers ? "display" : "inline",
+    margins: "normal",
+    runningHeader: "section",
+    callout: "rule",
+  }
+}
+
+const PAIRING_FACES: Readonly<Record<Exclude<(typeof STYLE_FONTS)[number], "theme">, readonly [string, string]>> = {
+  plex: ['var(--font-plex-sans), "IBM Plex Sans", Arial, sans-serif', 'var(--font-plex-sans), "IBM Plex Sans", Arial, sans-serif'],
+  source: ['var(--font-source-serif), "Source Serif 4", Georgia, serif', 'var(--font-source-sans), "Source Sans 3", Arial, sans-serif'],
+  archivo: ['var(--font-archivo), "Archivo", Arial, sans-serif', '"Liberation Sans", Arimo, Arial, sans-serif'],
+  serif: ['"Liberation Serif", "Times New Roman", Times, serif', '"Liberation Serif", "Times New Roman", Times, serif'],
+}
+
+const MONO_FACES: Readonly<Record<DesignPreset, string>> = {
+  editorial: '"DejaVu Sans Mono", Menlo, monospace',
+  corporate: '"DejaVu Sans Mono", Menlo, monospace',
+  technical: '"DejaVu Sans Mono", Menlo, monospace',
+  minimal: '"DejaVu Sans Mono", Menlo, monospace',
+  ledger: 'var(--font-plex-mono), "IBM Plex Mono", monospace',
+  signal: 'var(--font-plex-mono), "IBM Plex Mono", monospace',
+  brief: 'var(--font-plex-mono), "IBM Plex Mono", monospace',
+}
+
+function lookOf(preset: DesignPreset, raw: unknown): Look {
+  const base = themeLook(preset)
+  if (raw === null || typeof raw !== "object") return base
+  const style = raw as Record<string, unknown>
+  const pick = <K extends keyof Look>(key: K, allowed: readonly string[]): Look[K] => {
+    const value = style[LOOK_KEYS[key]]
+    return (typeof value === "string" && allowed.includes(value) ? value : base[key]) as Look[K]
+  }
+  const threshold = (key: "markAtOrAbove" | "chartThreshold"): number | null => {
+    const value = style[LOOK_KEYS[key]]
+    return typeof value === "number" && Number.isInteger(value) && value >= STYLE_THRESHOLD_MIN && value <= STYLE_THRESHOLD_MAX
+      ? value
+      : base[key]
+  }
+  return {
+    headingColor: pick("headingColor", STYLE_HEADING_COLORS),
+    fonts: pick("fonts", STYLE_FONTS),
+    textSize: pick("textSize", STYLE_TEXT_SIZES),
+    figures: pick("figures", STYLE_FIGURES),
+    tableHeader: pick("tableHeader", STYLE_TABLE_HEADERS),
+    markAtOrAbove: threshold("markAtOrAbove"),
+    chartPalette: pick("chartPalette", STYLE_CHART_PALETTES),
+    chartLine: pick("chartLine", STYLE_CHART_LINES),
+    chartGrid: pick("chartGrid", STYLE_CHART_GRIDS),
+    chartValues: pick("chartValues", STYLE_CHART_VALUES),
+    chartLegend: pick("chartLegend", STYLE_CHART_LEGENDS),
+    chartThreshold: threshold("chartThreshold"),
+    cover: pick("cover", STYLE_COVERS),
+    sectionNumbers: pick("sectionNumbers", STYLE_SECTION_NUMBERS),
+    margins: pick("margins", STYLE_MARGINS),
+    runningHeader: pick("runningHeader", STYLE_RUNNING_HEADERS),
+    callout: pick("callout", STYLE_CALLOUTS),
+  }
+}
+
+/** Text sizes the runtime scales every style by (`docx._TEXT_SIZE_FACTORS`). */
+export const TEXT_SIZE_FACTORS: Readonly<Record<Look["textSize"], number>> = { small: 0.92, normal: 1, large: 1.08 }
+/** Page margins against the theme's (`docx._MARGIN_FACTORS`). */
+export const MARGIN_FACTORS: Readonly<Record<Look["margins"], number>> = { narrow: 0.7, normal: 1, wide: 1.3 }
+/** A marked cell, the same in every theme (`docx.MARK_FILL`, `docx.MARK_INK`). */
+export const MARK = { fill: "#FDF1E2", ink: "#9A4507" } as const
+
+/** `RRGGBB` mixed toward white by `amount` — the runtime's tints. */
+export function tint(hex: string, amount: number): string {
+  const channels = [1, 3, 5].map((i) => Number.parseInt(hex.slice(i, i + 2), 16))
+  return "#" + channels.map((c) => Math.round(c + (255 - c) * amount).toString(16).padStart(2, "0")).join("")
+}
+
 export type PageDesign = {
   readonly preset: DesignPreset
   readonly spec: ThemeSpec
+  /** `design.style` resolved against the theme. */
+  readonly look: Look
+  /** The face figures are set in. */
+  readonly figureFace: string
   readonly density: Density
   readonly tableStyle: TableStyle
   readonly pageSize: PageSize
@@ -151,19 +307,23 @@ export function pageDesign(definition: DefinitionV4): PageDesign {
     typeof design.accent_color === "string" && /^#[0-9a-fA-F]{6}$/.test(design.accent_color)
       ? design.accent_color
       : SPECS[preset].accent
+  const look = lookOf(preset, (design as Record<string, unknown>).style)
+  const pairing = look.fonts === "theme" ? null : PAIRING_FACES[look.fonts]
   const spec: ThemeSpec = {
     ...SPECS[preset],
     accent,
-    face: PRESET_FACES[preset],
-    headingFace: PRESET_HEADING_FACES[preset],
+    face: pairing?.[1] ?? PRESET_FACES[preset],
+    headingFace: pairing?.[0] ?? PRESET_HEADING_FACES[preset],
   }
   const chartFont = oneOf(design.chart_font, CHART_FONTS, "document")
   const cover = (definition.front_matter.cover as { enabled?: boolean } | undefined)?.enabled !== false
   return {
     preset,
     spec,
+    look,
+    figureFace: look.figures === "text" ? spec.face : MONO_FACES[preset],
     density: oneOf(design.density, ["compact", "normal", "relaxed"] as const, "normal"),
-    tableStyle: oneOf(design.table_style, ["hairline", "banded", "bordered"] as const, "hairline"),
+    tableStyle: oneOf(design.table_style, ["hairline", "banded", "bordered", "open"] as const, "hairline"),
     pageSize: oneOf(design.page_size, ["A4", "Letter"] as const, "A4"),
     chartStyle: oneOf(design.chart_style, CHART_STYLES, "stacked"),
     chartFont,

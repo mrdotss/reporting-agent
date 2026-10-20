@@ -29,7 +29,15 @@ import {
 } from "@/lib/builder/model"
 import { sampleResources } from "@/lib/builder/sample"
 import { blockKey, type BlockRef, type Selection } from "@/lib/builder/store"
-import { DENSITY_SCALE, PAGE_PX, PT, pageDesign, type PageDesign } from "@/lib/builder/theme"
+import {
+  DENSITY_SCALE,
+  MARGIN_FACTORS,
+  PAGE_PX,
+  PT,
+  TEXT_SIZE_FACTORS,
+  pageDesign,
+  type PageDesign,
+} from "@/lib/builder/theme"
 import { cn } from "@/lib/utils"
 
 import { AddedBlockView, CatalogueBlock, Heading, px } from "./blocks"
@@ -94,6 +102,18 @@ export function Canvas() {
   }, [desk, selection])
   const sections = orderedSections(definition)
   const language = definition.identity.language
+  const margin = MARGIN_FACTORS[design.look.margins]
+  const firstTitle = sections[0]
+    ? sectionTitle(sectionEntry(definition.provider, sections[0].type), language)
+    : undefined
+  // The styled PDF's running head (`printcss`): the section's name, or the customer and
+  // period on every page after the first. Word has none.
+  const runningHead =
+    design.look.runningHeader === "none"
+      ? null
+      : design.look.runningHeader === "customer"
+        ? `${definition.identity.customer_name?.trim() || "Customer name"} · ${periodLabel(definition.period.kind, language)}`
+        : firstTitle
 
   return (
     <div
@@ -112,14 +132,34 @@ export function Canvas() {
           style={{
             width: page.width,
             minHeight: page.height,
-            padding: `${72 * DENSITY_SCALE[design.density]}px 76px`,
+            padding: `${72 * DENSITY_SCALE[design.density] * margin}px ${76 * margin}px`,
             fontFamily: design.spec.face,
-            fontSize: px(design.spec.bodyPt),
+            fontSize: px(design.spec.bodyPt * TEXT_SIZE_FACTORS[design.look.textSize]),
             lineHeight: design.spec.lineSpacing,
             color: design.spec.ink,
           }}
         >
           <SampleBadge />
+          {runningHead && (
+            <div
+              aria-hidden
+              title="Running head · styled PDF only"
+              className="absolute"
+              style={{
+                top: 30 * margin,
+                left: 76 * margin,
+                right: 76 * margin,
+                paddingBottom: 4,
+                borderBottom: `0.5px solid ${design.spec.rule}`,
+                fontFamily: design.spec.headingFace,
+                fontSize: px(design.spec.smallPt - 1),
+                fontWeight: 700,
+                color: design.spec.muted,
+              }}
+            >
+              {runningHead}
+            </div>
+          )}
           <FrontMatterRows design={design} />
           <div className="flex flex-col" style={{ gap: 18 * DENSITY_SCALE[design.density] }}>
             {sections.length === 0 && (
@@ -171,8 +211,8 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
   const subtitle = (definition.front_matter.cover as { subtitle?: string } | undefined)?.subtitle
   const selected = selection?.kind === "front" && selection.part === "cover"
   // `signal` fills the page with its accent; `brief` sets a title strip on page one.
-  const bleed = spec.coverStyle === "full_bleed"
-  const strip = spec.coverStyle === "summary"
+  const bleed = design.look.cover === "full_bleed"
+  const strip = design.look.cover === "summary"
   return (
     <button
       type="button"
@@ -192,7 +232,7 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
         cursor: "pointer",
       }}
     >
-      {spec.coverStyle === "band" && (
+      {design.look.cover === "band" && (
         <span className="absolute inset-x-0 top-0" style={{ height: 14, background: spec.accent }} />
       )}
       <span
@@ -280,7 +320,7 @@ function FrontMatterRows({ design }: Readonly<{ design: PageDesign }>) {
           >
             {row.label}
             <span className="text-[10.5px]">
-              {row.part === "control" && design.cover && design.spec.coverStyle === "summary"
+              {row.part === "control" && design.cover && design.look.cover === "summary"
                 ? "Page one, beneath the strip"
                 : "Own page"}
             </span>

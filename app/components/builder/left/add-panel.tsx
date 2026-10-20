@@ -6,6 +6,7 @@ import { useMemo, useState } from "react"
 import { ADDED_BLOCKS, ADDED_KINDS } from "@/components/builder/canvas/labels"
 import { useBuilder, useEnvironment } from "@/components/builder/context"
 import { AddedIcon } from "@/components/builder/left/outline"
+import { avgAndPeakMetric } from "@/lib/builder/model"
 import {
   GROUP_ORDER,
   catalogueFor,
@@ -93,13 +94,22 @@ export function AddPanel() {
               ADDED_BLOCKS[kind].blurb.toLowerCase().includes(folded)
           ).map((kind) => {
             const needsMetrics = ADDED_BLOCKS[kind].needsMetrics && !targetEntry?.metricBearing
-            const disabled = !targetSection || needsMetrics
+            // Average and peak draws one metric's two figures, so the section must collect both.
+            const needsPair =
+              !needsMetrics && kind === "avg_vs_peak" && targetSection !== undefined && avgAndPeakMetric(targetSection) === null
+            const disabled = !targetSection || needsMetrics || needsPair
             return (
               <button
                 key={kind}
                 type="button"
                 disabled={disabled}
-                title={needsMetrics && targetSection ? "Reads metrics: add it to a section that reports some." : undefined}
+                title={
+                  needsMetrics && targetSection
+                    ? "Reads metrics: add it to a section that reports some."
+                    : needsPair
+                      ? "Needs a metric this section collects as both an average and a maximum."
+                      : undefined
+                }
                 onClick={() => {
                   if (!targetSectionId) return
                   addBlock(targetSectionId, kind, selection?.kind === "block" ? selection.ref : undefined)

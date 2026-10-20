@@ -654,7 +654,7 @@ label lands, which changes the bytes."""
 class ChartStyleSpec:
     """What one chart style asks the renderer to draw.
 
-    The six differ along four axes and nothing else, which is what keeps the drawing code
+    The styles differ along four axes and nothing else, which is what keeps the drawing code
     one path with four decisions rather than six drawing functions that drift apart.
     """
 
@@ -691,6 +691,9 @@ _CHART_STYLE_SPECS: Final[Mapping[str, ChartStyleSpec]] = {
     "range_band": ChartStyleSpec("band", "line", "single", "full"),
     "columns": ChartStyleSpec("none", "bar", "single", "full"),
     "sparkline": ChartStyleSpec("none", "line", "single", "bare"),
+    # One panel per resource on a shared axis: past five series, a panel each reads where
+    # one tangled panel does not. Drawn by the ECharts path; the legacy path stacks.
+    "small_multiples": ChartStyleSpec("none", "line", "magnitude", "full"),
 }
 
 

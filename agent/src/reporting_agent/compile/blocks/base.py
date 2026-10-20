@@ -105,6 +105,10 @@ __all__ = [
     "FACT_FILTER_VALUE_KEY",
     "RESOURCE_ID_CONFIG_KEY",
     "BlockOutput",
+    "CHART_OPTIONS_CONFIG_KEY",
+    "StyleSettings",
+    "TABLE_OPTIONS_CONFIG_KEY",
+    "apply_block_options",
     "BlockSpec",
     "CapacityRef",
     "ComparisonSource",
@@ -211,11 +215,12 @@ TABLE_STYLES: Final[tuple[str, ...]] = (
     "Table Hairline",
     "Table Banded",
     "Table Bordered",
+    "Table Open",
     "Layout Table",
 )
 """Every table style the declared block types reference.
 
-The first three are the template's `design.table_style` choices. `Layout Table` is the
+The first four are the template's `design.table_style` choices. `Layout Table` is the
 **borderless** style a `row` block's container takes, and it exists so the verifier's table
 pass can exclude a layout table by construction: a data table always carries a
 `w:tblCaption` id, a layout table never does (Req 15.9)."""
@@ -226,6 +231,7 @@ _TABLE_STYLE_BY_SETTING: Final[tuple[tuple[str, str], ...]] = (
     ("hairline", "Table Hairline"),
     ("banded", "Table Banded"),
     ("bordered", "Table Bordered"),
+    ("open", "Table Open"),
 )
 
 NON_CATALOG_ESTIMATORS: Final[frozenset[str]] = DECLARED_ESTIMATORS | COMPARE_ESTIMATORS
@@ -336,6 +342,47 @@ def table_style_name(setting: str) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class StyleSettings:
+    """A design's `style`: the look a preset sets on top of its theme.
+
+    Every field is `None` where the preset says nothing, and `None` is the theme's own
+    choice — so a design without `style`, which is every design before it existed, renders
+    exactly as it always did. Read only by the renderers: nothing here reaches a figure.
+    """
+
+    heading_color: str | None = None
+    fonts: str | None = None
+    text_size: str | None = None
+    figures: str | None = None
+    table_header: str | None = None
+    mark_at_or_above: int | None = None
+    chart_palette: str | None = None
+    chart_line: str | None = None
+    chart_grid: str | None = None
+    chart_values: str | None = None
+    chart_legend: str | None = None
+    chart_threshold: int | None = None
+    cover: str | None = None
+    section_numbers: str | None = None
+    margins: str | None = None
+    running_header: str | None = None
+    callout: str | None = None
+
+    @classmethod
+    def from_plain(cls, raw: object) -> StyleSettings:
+        if not isinstance(raw, Mapping):
+            return cls()
+        values: dict[str, object] = {}
+        for name in cls.__slots__:  # type: ignore[attr-defined]
+            value = raw.get(name)
+            if name in ("mark_at_or_above", "chart_threshold"):
+                values[name] = value if isinstance(value, int) and not isinstance(value, bool) else None
+            else:
+                values[name] = value if isinstance(value, str) else None
+        return cls(**values)  # type: ignore[arg-type]
+
+
+@dataclass(frozen=True, slots=True)
 class DesignSettings:
     """A template's `design` object, as the compiler needs it (Req 7.1, 7.2)."""
 
@@ -350,7 +397,9 @@ class DesignSettings:
 
     chart_style: str = "stacked"
     chart_font: str = "grotesque"
-    """How every chart is drawn, and the face its labels are set in.
+    style: StyleSettings = field(default_factory=StyleSettings)
+    """How every chart is drawn, and the face its labels are set in; `style` is the rest of
+    the look on top of the theme.
 
     Both default to what shipped before the fields existed, so a stored definition that
     names neither renders exactly as it always did — the same rule
@@ -379,6 +428,7 @@ class DesignSettings:
             page_size=str(raw.get("page_size", "A4")),
             chart_style=str(raw.get("chart_style", "stacked")),
             chart_font=str(raw.get("chart_font", "grotesque")),
+            style=StyleSettings.from_plain(raw.get("style")),
         )
 
 
@@ -1241,3 +1291,52 @@ def empty_cell(cursor: BlockCursor) -> EmptyCell:
     resource does not emit is a recorded gap, and a zero would read as measured idleness.
     """
     return EmptyCell(path=cursor.path)
+
+
+# --- a block's own look ---------------------------------------------------------------
+
+CHART_OPTIONS_CONFIG_KEY: Final[str] = "chart_options"
+TABLE_OPTIONS_CONFIG_KEY: Final[str] = "table_options"
+"""Where a v4 chart or table slot's own `style` travels in its block's config, written by
+`compile/sections.py` and read by :func:`apply_block_options` alone."""
+
+
+def apply_block_options(output: BlockOutput, block: BlockSpec) -> BlockOutput:
+    """The block's own look, set on the Chart and Table nodes it emitted.
+
+    Applied once, after the block compiled, rather than inside each of the table and chart
+    compilers: the look is the renderer's business and none of those compilers needs to know
+    it exists. Presentation only — no figure, path or row is touched.
+    """
+    from dataclasses import replace
+
+    from reporting_agent.compile.ast import Chart, Table
+
+    chart = block.config.get(CHART_OPTIONS_CONFIG_KEY)
+    table = block.config.get(TABLE_OPTIONS_CONFIG_KEY)
+    if not isinstance(chart, Mapping) and not isinstance(table, Mapping):
+        return output
+
+    def restyle(node: object) -> object:
+        if isinstance(node, Chart) and isinstance(chart, Mapping):
+            changes: dict[str, str] = {}
+            if isinstance(chart.get("look"), str):
+                changes["style"] = str(chart["look"])
+            for key in ("height", "values"):
+                if isinstance(chart.get(key), str):
+                    changes[key] = str(chart[key])
+            if isinstance(chart.get("threshold"), int):
+                changes["threshold"] = str(chart["threshold"])
+            return replace(node, **changes) if changes else node
+        if isinstance(node, Table) and isinstance(table, Mapping) and node.style != LAYOUT_TABLE_STYLE:
+            changes = {}
+            if isinstance(table.get("rows"), str):
+                changes["style"] = table_style_name(str(table["rows"]))
+            if isinstance(table.get("header"), str):
+                changes["header_look"] = str(table["header"])
+            if isinstance(table.get("mark_at_or_above"), int):
+                changes["mark_at_or_above"] = str(table["mark_at_or_above"])
+            return replace(node, **changes) if changes else node
+        return node
+
+    return BlockOutput(nodes=tuple(restyle(node) for node in output.nodes), deferred=output.deferred)  # type: ignore[misc]

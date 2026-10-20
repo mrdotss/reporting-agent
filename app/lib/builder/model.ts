@@ -1,5 +1,10 @@
 import {
+  BLOCK_CHART_HEIGHTS,
+  CHART_STYLES,
   EACH_RESOURCE_SLOT,
+  STYLE_CHART_VALUES,
+  STYLE_TABLE_HEADERS,
+  TABLE_STYLE_VALUES,
   type SlotShape,
 } from "@/lib/templates/definition"
 
@@ -31,6 +36,19 @@ export type SlotEntry = {
   readonly hidden?: boolean
   readonly title?: TypedText
   readonly columns?: readonly string[]
+  /** A chart's or a table's own look, over the design's (`BLOCK_STYLE_*_KEYS`). */
+  readonly style?: BlockStyle
+}
+
+/** A chart slot's or a table slot's own look. Absent keys follow the design. */
+export type BlockStyle = {
+  readonly look?: (typeof CHART_STYLES)[number]
+  readonly height?: (typeof BLOCK_CHART_HEIGHTS)[number]
+  readonly values?: (typeof STYLE_CHART_VALUES)[number]
+  readonly threshold?: number
+  readonly header?: (typeof STYLE_TABLE_HEADERS)[number]
+  readonly rows?: (typeof TABLE_STYLE_VALUES)[number]
+  readonly mark_at_or_above?: number
 }
 
 export type EachEntry = {
@@ -50,6 +68,7 @@ export type AddedKind =
   | "callout"
   | "heatmap"
   | "sparklines"
+  | "avg_vs_peak"
 
 export type CalloutCondition =
   | "peak_at_or_above"
@@ -308,4 +327,20 @@ export function rankingOf(
   }
   const first = metrics.find((m) => (m.metric ?? m.derived) && m.statistic)
   return first ? { metric: (first.metric ?? first.derived)!, statistic: first.statistic } : null
+}
+
+/**
+ * The first metric a section collects both an average and a maximum of — what an
+ * `avg_vs_peak` block plots (`compile/sections.py::_avg_and_peak_metric`).
+ */
+export function avgAndPeakMetric(section: Pick<SectionV4, "metrics">): string | null {
+  const seen = new Map<string, Set<string>>()
+  for (const item of section.metrics ?? []) {
+    if (typeof item.metric !== "string" || typeof item.statistic !== "string") continue
+    const statistics = seen.get(item.metric) ?? new Set<string>()
+    statistics.add(item.statistic)
+    seen.set(item.metric, statistics)
+  }
+  for (const [name, statistics] of seen) if (statistics.has("avg") && statistics.has("max")) return name
+  return null
 }

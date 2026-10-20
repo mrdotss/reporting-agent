@@ -81,6 +81,7 @@ export function DataNote({
         break
       case "heatmap":
       case "sparklines":
+      case "avg_vs_peak":
         lines.push(METRIC_SOURCE[provider])
         lines.push("Every cell and point is a day's value for one resource, each a figure traced to its snapshot path.")
         break

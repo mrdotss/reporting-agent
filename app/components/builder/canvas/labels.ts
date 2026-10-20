@@ -109,6 +109,11 @@ export const ADDED_BLOCKS: Readonly<
     blurb: "Each resource's shape over the period, with its numbers beside it.",
     needsMetrics: true,
   },
+  avg_vs_peak: {
+    label: "Average and peak",
+    blurb: "One row per resource, from its average to its peak. Busiest first.",
+    needsMetrics: true,
+  },
 }
 
 /** What each callout condition tests, per provider — the providers name the same idea differently. */

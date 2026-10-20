@@ -290,14 +290,18 @@ assert set(BLOCK_CONFIG.keys()) == set(BLOCK_TYPES), BLOCK_CONFIG.keys()
 __all__ = [
     "ACCENT_COLOR_MAX_LENGTH",
     "APPROVER_ROLES",
+    "BLOCK_CHART_HEIGHTS",
     "BLOCK_CONFIG",
     "BLOCK_ID_MAX_LENGTH",
     "BLOCK_ID_MIN_LENGTH",
+    "BLOCK_STYLE_CHART_KEYS",
+    "BLOCK_STYLE_TABLE_KEYS",
     "BLOCK_TYPES",
     "CALLOUT_CONDITIONS",
     "CALLOUT_THRESHOLD_MAX",
     "CALLOUT_THRESHOLD_MIN",
     "CALLOUT_TONES",
+    "CHART_SLOT_BLOCKS",
     "COLUMN_KINDS",
     "DENSITY_VALUES",
     "DESCRIPTION_MAX_LENGTH",
@@ -357,7 +361,26 @@ __all__ = [
     "SECTION_TITLE_MAX_LENGTH",
     "SEPARATOR_DEFAULTS",
     "SORT_DIRECTIONS",
+    "STYLE_CALLOUTS",
+    "STYLE_CHART_GRIDS",
+    "STYLE_CHART_LEGENDS",
+    "STYLE_CHART_LINES",
+    "STYLE_CHART_PALETTES",
+    "STYLE_CHART_VALUES",
+    "STYLE_COVERS",
+    "STYLE_FIGURES",
+    "STYLE_FONTS",
+    "STYLE_HEADING_COLORS",
+    "STYLE_KEYS",
+    "STYLE_MARGINS",
+    "STYLE_RUNNING_HEADERS",
+    "STYLE_SECTION_NUMBERS",
+    "STYLE_TABLE_HEADERS",
+    "STYLE_TEXT_SIZES",
+    "STYLE_THRESHOLD_MAX",
+    "STYLE_THRESHOLD_MIN",
     "SUPPORTED_PROVIDERS",
+    "TABLE_SLOT_BLOCKS",
     "TABLE_STYLE_VALUES",
     "TAG_KEY_MAX_LENGTH",
     "TAG_KEY_MIN_LENGTH",
@@ -571,6 +594,7 @@ SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "callout",
     "heatmap",
     "sparklines",
+    "avg_vs_peak",
 )
 METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "key_figures",
@@ -578,6 +602,7 @@ METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "month_vs_month",
     "heatmap",
     "sparklines",
+    "avg_vs_peak",
 )
 # A callout prints the author's words only when its condition holds in the snapshot. The
 # conditions are a closed set, each a fixed rule; `peak_at_or_above` compares the section's
@@ -599,6 +624,58 @@ LOCATION_MAX_LENGTH: Final[int] = 64
 # are one declaration.
 HISTORICAL_LOOKBACK_MIN: Final[int] = 2
 HISTORICAL_LOOKBACK_MAX: Final[int] = 24
+# `design.style`: the look a preset sets on top of its theme. Every key is optional and an
+# absent key is the theme's own choice, so a design without `style` renders as it always did.
+# The two integers are settings, never printed: the threshold a table marks values from and
+# the line a chart draws at, both on a percentage scale.
+STYLE_KEYS: Final[tuple[str, ...]] = (
+    "heading_color",
+    "fonts",
+    "text_size",
+    "figures",
+    "table_header",
+    "mark_at_or_above",
+    "chart_palette",
+    "chart_line",
+    "chart_grid",
+    "chart_values",
+    "chart_legend",
+    "chart_threshold",
+    "cover",
+    "section_numbers",
+    "margins",
+    "running_header",
+    "callout",
+)
+STYLE_HEADING_COLORS: Final[tuple[str, ...]] = ("accent", "ink")
+STYLE_FONTS: Final[tuple[str, ...]] = ("theme", "plex", "source", "archivo", "serif")
+STYLE_TEXT_SIZES: Final[tuple[str, ...]] = ("small", "normal", "large")
+STYLE_FIGURES: Final[tuple[str, ...]] = ("mono", "text")
+STYLE_TABLE_HEADERS: Final[tuple[str, ...]] = ("rule", "tint", "solid", "plain")
+STYLE_CHART_PALETTES: Final[tuple[str, ...]] = ("standard", "shades", "greys")
+STYLE_CHART_LINES: Final[tuple[str, ...]] = ("thin", "regular", "bold")
+STYLE_CHART_GRIDS: Final[tuple[str, ...]] = ("none", "light", "full")
+STYLE_CHART_VALUES: Final[tuple[str, ...]] = ("last", "peak", "none")
+STYLE_CHART_LEGENDS: Final[tuple[str, ...]] = ("line_ends", "top", "bottom")
+STYLE_COVERS: Final[tuple[str, ...]] = ("band", "full_bleed", "summary")
+STYLE_SECTION_NUMBERS: Final[tuple[str, ...]] = ("inline", "display", "none")
+STYLE_MARGINS: Final[tuple[str, ...]] = ("narrow", "normal", "wide")
+STYLE_RUNNING_HEADERS: Final[tuple[str, ...]] = ("section", "customer", "none")
+STYLE_CALLOUTS: Final[tuple[str, ...]] = ("rule", "boxed", "banner")
+STYLE_THRESHOLD_MIN: Final[int] = 1
+STYLE_THRESHOLD_MAX: Final[int] = 100
+# A v4 slot entry's own `style`, on a chart or a table expansion: the block leaves the
+# theme for its own look. Which expansions are which is read from the block they expand to.
+CHART_SLOT_BLOCKS: Final[tuple[str, ...]] = ("timeseries_chart", "historical_trend")
+TABLE_SLOT_BLOCKS: Final[tuple[str, ...]] = (
+    "resource_table",
+    "metric_summary",
+    "top_n_table",
+    "inventory_summary",
+)
+BLOCK_STYLE_CHART_KEYS: Final[tuple[str, ...]] = ("look", "height", "values", "threshold")
+BLOCK_STYLE_TABLE_KEYS: Final[tuple[str, ...]] = ("header", "rows", "mark_at_or_above")
+BLOCK_CHART_HEIGHTS: Final[tuple[str, ...]] = ("short", "normal", "tall")
 # --- END SCHEMA VERSIONS ---
 
 assert set(REQUIRED_TOP_LEVEL_KEYS) == set(
@@ -670,6 +747,9 @@ class _SlotShape:
     """The section's own title: hiding it would leave a section with no name."""
     columns: tuple[str, ...]
     """The columns a `resource_table` declares, which `columns` may narrow and reorder."""
+    block: str = ""
+    """The block type the slot expands to, which decides whether it takes a chart's or a
+    table's `style`."""
 
 
 def _column_id(column: object) -> str | None:
@@ -705,6 +785,7 @@ def _load_section_slots() -> dict[str, dict[str, tuple[_SlotShape, ...]]]:
                             for column_id in (_column_id(c) for c in columns or ())
                             if column_id is not None
                         ),
+                        block=str(expansion.get("block", "")),
                     )
                 )
             by_type[section["key"]] = tuple(shapes)
@@ -835,7 +916,7 @@ DESIGN_PRESETS: Final[tuple[str, ...]] = (
     "brief",
 )
 DENSITY_VALUES: Final[tuple[str, ...]] = ("compact", "normal", "relaxed")
-TABLE_STYLE_VALUES: Final[tuple[str, ...]] = ("hairline", "banded", "bordered")
+TABLE_STYLE_VALUES: Final[tuple[str, ...]] = ("hairline", "banded", "bordered", "open")
 PAGE_SIZE_VALUES: Final[tuple[str, ...]] = ("A4", "Letter")
 PERIOD_KINDS: Final[tuple[str, ...]] = (
     "last_24h",
@@ -882,6 +963,8 @@ _DESIGN_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         # definition that names neither renders exactly as it always did.
         "chart_style",
         "chart_font",
+        # The look on top of the theme (`STYLE_KEYS`). Optional, and every key in it too.
+        "style",
     }
 )
 
@@ -892,8 +975,9 @@ CHART_STYLES: Final[tuple[str, ...]] = (
     "range_band",
     "columns",
     "sparkline",
+    "small_multiples",
 )
-"""The six chart shapes a profile may choose between (in the wizard's own order).
+"""The chart shapes a profile may choose between (in the builder's own order).
 
 `stacked` is the default **and the shipped behaviour**: a panel per magnitude group, which
 is the only arrangement that keeps a 0.19% average legible beside a 27% peak. The rest
@@ -2673,6 +2757,78 @@ def _validate_design(design: object, path: Path, walk: _Walk) -> None:
             f"page_size must be one of: {', '.join(PAGE_SIZE_VALUES)}.",
         )
 
+    if "style" in design:
+        _validate_style(design.get("style"), (*path, "style"), walk)
+
+
+_STYLE_CHOICES: Final[dict[str, tuple[str, ...]]] = {
+    "heading_color": STYLE_HEADING_COLORS,
+    "fonts": STYLE_FONTS,
+    "text_size": STYLE_TEXT_SIZES,
+    "figures": STYLE_FIGURES,
+    "table_header": STYLE_TABLE_HEADERS,
+    "chart_palette": STYLE_CHART_PALETTES,
+    "chart_line": STYLE_CHART_LINES,
+    "chart_grid": STYLE_CHART_GRIDS,
+    "chart_values": STYLE_CHART_VALUES,
+    "chart_legend": STYLE_CHART_LEGENDS,
+    "cover": STYLE_COVERS,
+    "section_numbers": STYLE_SECTION_NUMBERS,
+    "margins": STYLE_MARGINS,
+    "running_header": STYLE_RUNNING_HEADERS,
+    "callout": STYLE_CALLOUTS,
+}
+_STYLE_THRESHOLDS: Final[frozenset[str]] = frozenset({"mark_at_or_above", "chart_threshold"})
+assert set(_STYLE_CHOICES) | _STYLE_THRESHOLDS == set(STYLE_KEYS)
+
+
+def _validate_threshold(value: object, path: Path, walk: _Walk, *, name: str) -> None:
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, int)
+        or not STYLE_THRESHOLD_MIN <= value <= STYLE_THRESHOLD_MAX
+    ):
+        walk.add(
+            path,
+            f"{name} must be an integer from {STYLE_THRESHOLD_MIN} to {STYLE_THRESHOLD_MAX}.",
+        )
+
+
+def _validate_style(style: object, path: Path, walk: _Walk) -> None:
+    """`design.style`: each key optional, each value from its closed set or a 1-100 setting."""
+    if not _is_plain_object(style):
+        walk.add(path, "style must be an object.")
+        return
+    for key, value in style.items():
+        if key in _STYLE_THRESHOLDS:
+            _validate_threshold(value, (*path, key), walk, name=key)
+        elif key in _STYLE_CHOICES:
+            if value not in _STYLE_CHOICES[key]:
+                walk.add((*path, key), f"{key} must be one of: {', '.join(_STYLE_CHOICES[key])}.")
+        else:
+            walk.add((*path, key), f'Unrecognized style field "{key}".')
+
+
+def _validate_block_style(style: object, path: Path, walk: _Walk, *, block: str) -> None:
+    """A chart or table slot's own `style`, overriding the design's for that block alone."""
+    if not _is_plain_object(style):
+        walk.add(path, "style must be an object.")
+        return
+    chart = block in CHART_SLOT_BLOCKS
+    allowed = BLOCK_STYLE_CHART_KEYS if chart else BLOCK_STYLE_TABLE_KEYS
+    choices: dict[str, tuple[str, ...]] = (
+        {"look": CHART_STYLES, "height": BLOCK_CHART_HEIGHTS, "values": STYLE_CHART_VALUES}
+        if chart
+        else {"header": STYLE_TABLE_HEADERS, "rows": TABLE_STYLE_VALUES}
+    )
+    for key, value in style.items():
+        if key not in allowed:
+            walk.add((*path, key), f'"{key}" cannot be set on this block\'s style.')
+        elif key in ("threshold", "mark_at_or_above"):
+            _validate_threshold(value, (*path, key), walk, name=key)
+        elif value not in choices[key]:
+            walk.add((*path, key), f"{key} must be one of: {', '.join(choices[key])}.")
+
 
 # --- schema_version and the canonical byte bound (Req 2.9, 2.10) --------------------
 
@@ -3225,6 +3381,8 @@ def _validate_slot_entry(
         allowed.add("title")
     if shape is not None and shape.columns:
         allowed.add("columns")
+    if shape is not None and shape.block in (*CHART_SLOT_BLOCKS, *TABLE_SLOT_BLOCKS):
+        allowed.add("style")
     for key in block:
         if key not in allowed:
             walk.add((*path, key), f'"{key}" cannot be set on this block.')
@@ -3240,6 +3398,9 @@ def _validate_slot_entry(
             block.get("title"), (*path, "title"), walk,
             max_length=SECTION_TITLE_MAX_LENGTH, what="A heading",
         )
+
+    if "style" in block and "style" in allowed and shape is not None:
+        _validate_block_style(block.get("style"), (*path, "style"), walk, block=shape.block)
 
     if "columns" in block and shape is not None and "columns" in allowed:
         columns = block.get("columns")
