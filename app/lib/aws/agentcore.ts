@@ -54,6 +54,13 @@ export const COMMAND_PREFLIGHT = "preflight"
 export const COMMAND_RENDER_PREVIEW = "render_preview"
 
 /**
+ * One agent paragraph of an inline draft, written against a completed run's snapshot, for
+ * the builder's Try it. Writes nothing; the paragraph, whether it was kept and why not come
+ * back on `done` as `agent`.
+ */
+export const COMMAND_TRY_AGENT = "try_agent"
+
+/**
  * The distinct dimensions of one subscription's inventory, for the wizard's
  * pickers (Requirement 9.3).
  *
@@ -431,6 +438,15 @@ export type InvokeCommand =
        * would otherwise hold a second copy of a rule the mirror guard already
        * covers twice.
        */
+      definition: unknown
+    }
+  | {
+      command: typeof COMMAND_TRY_AGENT
+      /** A **completed** run the actor owns, whose snapshot supplies the figures. */
+      snapshot_run_id: string
+      /** `<sectionId>__<blockId>`: the agent paragraph to write. */
+      block_id: string
+      /** The draft, inline, as for `render_preview`; the runtime validates it. */
       definition: unknown
     }
 

@@ -745,6 +745,8 @@ def _added_blocks(
     block_id = f"{section_id}__{settings.get('id')}"
     if kind == "callout":
         return [_callout_block(block_id, section, entry, settings, scope_override, messages)]
+    if kind == "agent":
+        return [_agent_block(block_id, section_id, section, entry, settings, messages)]
     if kind in ("heatmap", "sparklines"):
         ranking = _ranking_of(section, entry)
         if ranking is None:
@@ -809,6 +811,80 @@ def _callout_block(
         config={"text": value, CALLOUT_CONDITION_KEY: condition},
         scope_override=scope_override,
     )
+
+
+def _agent_block(
+    block_id: str,
+    section_id: str,
+    section: Mapping[str, object],
+    entry: SectionCatalogueEntry,
+    settings: Mapping[str, object],
+    messages: Messages,
+) -> BlockSpec:
+    """An agent paragraph: its instruction and note in the report's language, and the stems
+    of the blocks it reads — the whole section where it names none."""
+    from reporting_agent.compile.blocks.agent import AGENT_PARAGRAPH_BLOCK, READS_CONFIG_KEY
+
+    def worded(key: str) -> str:
+        value = settings.get(key)
+        text = value.get(messages.language) if isinstance(value, Mapping) else None
+        return text if isinstance(text, str) else ""
+
+    instruction = worded("instruction")
+    if not instruction:
+        raise CompileFailedError(f"{block_id}: an agent paragraph has no instruction in {messages.language!r}")
+    reads = settings.get("reads")
+    names = [str(ref) for ref in reads] if isinstance(reads, Sequence) and not isinstance(reads, str) else []
+    return BlockSpec(
+        id=block_id,
+        type=AGENT_PARAGRAPH_BLOCK,
+        config={
+            "instruction": instruction,
+            READS_CONFIG_KEY: [f"{section_id}__{name}" for name in names] or [f"{section_id}__"],
+            "length": settings.get("length", "short"),
+            "voice": settings.get("voice", "plain"),
+            "fallback": settings.get("fallback", "omit"),
+            "note": worded("note"),
+            "section_id": section_id,
+            "section_title": _section_title_v4(section, entry, messages),
+        },
+        scope_override=None,
+    )
+
+
+def _section_title_v4(section: Mapping[str, object], entry: SectionCatalogueEntry, messages: Messages) -> str:
+    """The title a v4 section prints under: the author's, else the catalogue's."""
+    blocks = section.get("blocks")
+    for block in blocks if isinstance(blocks, Sequence) and not isinstance(blocks, str) else ():
+        if isinstance(block, Mapping) and block.get("slot") == "title":
+            title = block.get("title")
+            text = title.get(messages.language) if isinstance(title, Mapping) else None
+            if isinstance(text, str) and text:
+                return text
+    return messages.text(entry.title_id) if entry.title_id else entry.key
+
+
+def _with_agent_record(
+    definition: Mapping[str, object],
+    resolved: Sequence[tuple[Mapping[str, object], SectionCatalogueEntry]],
+    specs: list[BlockSpec],
+) -> list[BlockSpec]:
+    """The record of agent-written paragraphs, at the foot of the coverage section — or at
+    the end of the document where a preset has none. Only where the preset has an agent
+    paragraph, so every other v4 preset expands exactly as before."""
+    from reporting_agent.compile.blocks.agent import AGENT_PARAGRAPH_BLOCK, AGENT_RECORD_BLOCK
+
+    if not any(spec.type == AGENT_PARAGRAPH_BLOCK for spec in specs):
+        return specs
+    coverage = next(
+        (str(section.get("id")) for section, entry in resolved if entry.key == "coverage_and_verification"),
+        None,
+    )
+    if coverage is None:
+        return [*specs, BlockSpec(id=AGENT_RECORD_BLOCK, type=AGENT_RECORD_BLOCK, config={}, scope_override=None)]
+    record = BlockSpec(id=f"{coverage}__{AGENT_RECORD_BLOCK}", type=AGENT_RECORD_BLOCK, config={}, scope_override=None)
+    last = max(index for index, spec in enumerate(specs) if spec.id.startswith(f"{coverage}__"))
+    return [*specs[: last + 1], record, *specs[last + 1 :]]
 
 
 def _avg_and_peak_metric(section: Mapping[str, object]) -> str | None:
@@ -1306,4 +1382,6 @@ def expand_sections(
         specs = expand_one(section, entry, view, messages)
         all_specs.extend(specs)
 
+    if expand_one is _expand_one_section_v4:
+        all_specs = _with_agent_record(definition, resolved_sections, all_specs)
     return tuple(all_specs)

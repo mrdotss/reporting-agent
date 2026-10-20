@@ -115,6 +115,7 @@ __all__ = [
     "COMMAND_LIST_RESOURCES",
     "COMMAND_PREFLIGHT",
     "COMMAND_RENDER_PREVIEW",
+    "COMMAND_TRY_AGENT",
     "COMMAND_VERIFY_REPORT",
     "CONFIG",
     "FOUNDATION_TOOL_NAMES",
@@ -158,6 +159,10 @@ COMMAND_GENERATE_REPORT: Final[str] = "generate_report"
 COMMAND_PREFLIGHT: Final[str] = "preflight"
 COMMAND_VERIFY_REPORT: Final[str] = "verify_report"
 COMMAND_RENDER_PREVIEW: Final[str] = "render_preview"
+COMMAND_TRY_AGENT: Final[str] = "try_agent"
+"""One agent paragraph of an inline draft, written against a completed run's snapshot, for
+the builder's "Try it". Its words reach the model as a definition field the author typed,
+never as a `prompt`; it writes nothing, and the answer rides on `done`."""
 COMMAND_LIST_INVENTORY: Final[str] = "list_inventory"
 
 COMMAND_LIST_RESOURCES: Final[str] = "list_resources"
@@ -188,6 +193,7 @@ COMMANDS: Final[frozenset[str]] = frozenset(
         COMMAND_PREFLIGHT,
         COMMAND_VERIFY_REPORT,
         COMMAND_RENDER_PREVIEW,
+        COMMAND_TRY_AGENT,
         COMMAND_LIST_INVENTORY,
         COMMAND_LIST_RESOURCES,
         COMMAND_CHAT,
@@ -1032,6 +1038,31 @@ async def handle_render_preview(
         steps=steps,
         artifact_bucket=CONFIG.artifact_bucket,
         aws_region=CONFIG.aws_region,
+        prose_model_id=CONFIG.prose_model_id,
+    ):
+        yield event
+
+
+async def handle_try_agent(
+    invocation: Invocation, steps: StepTracker
+) -> AsyncIterator[Event]:
+    """Write one agent paragraph of an inline draft, for the builder's "Try it".
+
+    One step and one outcome, like `list_inventory`: the paragraph, whether it was kept and
+    why not ride on `done` as `agent`, and nothing is written. The model is reached through
+    `narrate/summary.py`, the narratives' own call — no tools, and an answer quoting a number
+    it was not shown is refused before it is returned.
+    """
+    from reporting_agent.report_pipeline import run_try_agent
+
+    async for event in run_try_agent(
+        payload=invocation.payload,
+        context=invocation.context,
+        steps=steps,
+        artifact_bucket=CONFIG.artifact_bucket,
+        outcome=invocation.outcome,
+        aws_region=CONFIG.aws_region,
+        prose_model_id=CONFIG.prose_model_id,
     ):
         yield event
 
@@ -1408,6 +1439,7 @@ COMMAND_HANDLERS: Final[dict[str, CommandHandler]] = {
     COMMAND_PREFLIGHT: handle_preflight,
     COMMAND_VERIFY_REPORT: handle_verify_report,
     COMMAND_RENDER_PREVIEW: handle_render_preview,
+    COMMAND_TRY_AGENT: handle_try_agent,
     COMMAND_LIST_INVENTORY: handle_list_inventory,
     COMMAND_LIST_RESOURCES: handle_list_resources,
     COMMAND_CHAT: handle_chat,

@@ -7,6 +7,7 @@ import {
   EyeSlashIcon,
   PlusIcon,
   RepeatIcon,
+  SparkleIcon,
   TrashIcon,
 } from "@phosphor-icons/react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
@@ -21,6 +22,8 @@ import {
 } from "@/lib/builder/catalogue"
 import { issuesForSection } from "@/lib/builder/issues"
 import {
+  agentCount,
+  isAddedEntry,
   orderedSections,
   sectionLayout,
   type LayoutItem,
@@ -28,6 +31,7 @@ import {
   type SectionV4,
 } from "@/lib/builder/model"
 import { sampleResources } from "@/lib/builder/sample"
+import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
 import { blockKey, type BlockRef, type Selection } from "@/lib/builder/store"
 import {
   DENSITY_SCALE,
@@ -404,6 +408,7 @@ function LayoutItemView({
   editing: boolean
 }>) {
   const definition = useBuilder((state) => state.definition)
+  const agentTries = useBuilder((state) => state.agentTries)
   const language = definition.identity.language
   const provider = definition.provider
 
@@ -423,6 +428,8 @@ function LayoutItemView({
           section={section}
           sectionEntry={entry}
           entry={item.entry}
+          lastTry={agentTries[`${section.id}__${item.id}`]}
+          editing={editing}
         />
       </Selectable>
     )
@@ -567,7 +574,10 @@ function Selectable({
   const toggleHidden = useBuilder((state) => state.toggleHidden)
   const removeAdded = useBuilder((state) => state.removeAdded)
   const addBlock = useBuilder((state) => state.addBlock)
+  const agents = useBuilder((state) => agentCount(state.definition))
   const selected = isSelected(selection, section.id, ref_)
+  // Any block can be asked about but an agent paragraph itself, and the page holds six.
+  const askable = !(ref_.kind === "added" && section.blocks?.some((b) => isAddedEntry(b) && b.id === ref_.id && b.kind === "agent"))
 
   if (!editing) return <div>{children}</div>
 
@@ -589,6 +599,15 @@ function Selectable({
             {label}
           </span>
           <span className="absolute -top-5 -right-2.5 z-[3] flex gap-px rounded-md bg-foreground p-0.5 shadow-lg">
+            {askable && (
+              <ToolbarButton
+                label={agents >= MAX_AGENT_BLOCKS ? `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs` : "Ask the agent about this block"}
+                disabled={agents >= MAX_AGENT_BLOCKS}
+                onClick={() => addBlock(section.id, "agent", ref_)}
+              >
+                <SparkleIcon className="size-3.5" />
+              </ToolbarButton>
+            )}
             <ToolbarButton label="Move up" disabled={index === 0} onClick={() => moveBlock(section.id, ref_, -1)}>
               <ArrowUpIcon className="size-3.5" />
             </ToolbarButton>

@@ -88,6 +88,14 @@ export function DataNote({
       case "page_break":
         lines.push("A page break carries no figure.")
         break
+      case "agent":
+        lines.push(
+          "Written by the model when the report runs, from the figures of the blocks it reads — their printed values, never a raw series. The instruction is sent with them and never printed."
+        )
+        lines.push(
+          "An answer holding a number it was not shown is refused before it reaches the document, and the delivery gate checks every number again. The report's appendix names the sections the agent wrote in."
+        )
+        break
       default:
         lines.push("Words you typed. Numbers are refused here, so every number in the report stays traceable to the snapshot.")
     }

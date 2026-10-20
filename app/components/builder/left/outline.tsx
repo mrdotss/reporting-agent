@@ -20,6 +20,7 @@ import {
   PlusIcon,
   RepeatIcon,
   ShieldCheckIcon,
+  SparkleIcon,
   TextTIcon,
 } from "@phosphor-icons/react"
 import { useState, type ReactNode } from "react"
@@ -426,5 +427,7 @@ export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
       return <ChartLineIcon aria-hidden className={className} />
     case "avg_vs_peak":
       return <ArrowsHorizontalIcon aria-hidden className={className} />
+    case "agent":
+      return <SparkleIcon aria-hidden className={className} />
   }
 }

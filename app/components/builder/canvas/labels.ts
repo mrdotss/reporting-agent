@@ -73,6 +73,8 @@ export function blockHint(entry: CatalogueSection, slot: string): string {
 }
 
 /** What the builder calls a block the author added, and one line on what it shows. */
+export { AGENT_REASONS } from "@/lib/builder/agent-reasons"
+
 export const ADDED_BLOCKS: Readonly<
   Record<AddedKind, { readonly label: string; readonly blurb: string; readonly needsMetrics: boolean }>
 > = {
@@ -114,7 +116,13 @@ export const ADDED_BLOCKS: Readonly<
     blurb: "One row per resource, from its average to its peak. Busiest first.",
     needsMetrics: true,
   },
+  agent: {
+    label: "Agent paragraph",
+    blurb: "Written by the agent from this section's figures, on your instruction. Every number checked.",
+    needsMetrics: false,
+  },
 }
+
 
 /** What each callout condition tests, per provider — the providers name the same idea differently. */
 export function calloutConditionLabel(when: CalloutCondition, provider: "aws" | "azure"): string {

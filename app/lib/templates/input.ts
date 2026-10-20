@@ -234,6 +234,25 @@ export const previewRequestSchema = z
 
 export type PreviewRequest = z.output<typeof previewRequestSchema>
 
+/** How long Try it waits for one agent paragraph: a compile and one model call. */
+export const AGENT_TRY_BUDGET_MS = 120_000
+
+/**
+ * `POST /api/report-profiles/[id]/agent-try` — one agent paragraph of the draft, written
+ * against a connection's latest report. `blockId` is `<sectionId>__<blockId>`, the id the
+ * runtime gives the paragraph; it travels as a value, never a path, so it is only bounded.
+ */
+export const agentTryRequestSchema = z
+  .object({
+    connectedSubscriptionId: previewRequestSchema.shape.connectedSubscriptionId,
+    definition: z.unknown(),
+    blockId: z
+      .string()
+      .trim()
+      .regex(/^[A-Za-z0-9_-]{1,24}__u_[a-z0-9]{1,12}$/, { error: "Name the agent paragraph to try." }),
+  })
+  .strict()
+
 /**
  * One connection the builder's Preview PDF can render a draft against, and the period of
  * its latest completed report — `null` where it has none yet, so the picker can say why it

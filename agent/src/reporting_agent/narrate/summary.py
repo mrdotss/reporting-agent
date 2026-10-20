@@ -39,10 +39,11 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Final, Protocol
 
 from reporting_agent.compile.blocks.base import (
+    PROSE_KIND_AGENT,
     PROSE_KIND_EXECUTIVE_SUMMARY,
     PROSE_KIND_RESOURCE,
     PROSE_KIND_TREND,
@@ -50,6 +51,8 @@ from reporting_agent.compile.blocks.base import (
 )
 
 __all__ = [
+    "AGENT_LENGTH_RULES",
+    "AGENT_VOICE_RULES",
     "MAX_OUTPUT_TOKENS",
     "PROSE_MAX_ATTEMPTS",
     "PROSE_READ_TIMEOUT_S",
@@ -61,6 +64,7 @@ __all__ = [
     "ProseGenerator",
     "build_messages",
     "generate",
+    "generate_with_reason",
     "inference_config",
     "prose_generator",
 ]
@@ -286,6 +290,68 @@ SYSTEM_PROMPT_RESOURCE_ID: Final[str] = (
 )
 """Indonesian variant of the per-resource instruction (Req 15.7)."""
 
+SYSTEM_PROMPT_AGENT: Final[str] = (
+    "You write one paragraph of an infrastructure utilization report, on the instruction "
+    "of the consultant who wrote the report. The paragraph sits beside the blocks whose "
+    "figures are listed below, each labelled with its resource, its metric and its window.\n"
+    "\n"
+    "Follow the instruction for what to look at and what to say. Use only the figures "
+    "below: write no number that is not in that list, and write a number you do use exactly "
+    "as it is printed there. The instruction may itself name a number, such as a threshold "
+    "to compare against; use it to decide what to say, and do not repeat it unless it is "
+    "also among the figures. Prefer describing a pattern in words to restating a figure. "
+    "Do not invent a measurement, a total, a percentage change, a rank, a price or a cause "
+    "you cannot see in the figures. Available Memory is memory available for use, not "
+    "memory used.\n"
+    "\n"
+    "Return the paragraph only: no heading, no preamble, no markdown."
+)
+"""The agent paragraph's instruction to the model. As with every narration here, the clauses
+about numbers are requests: the check in :func:`generate_with_reason` refuses an answer that
+quotes a number it was not shown, and the delivery gate is the backstop behind that."""
+
+SYSTEM_PROMPT_AGENT_ID: Final[str] = (
+    "Anda menulis satu paragraf dalam laporan pemanfaatan infrastruktur, atas instruksi "
+    "konsultan yang menyusun laporan. Paragraf itu berada di samping blok yang angkanya "
+    "tercantum di bawah, masing-masing diberi label sumber daya, metrik, dan jendelanya.\n"
+    "\n"
+    "Ikuti instruksi tentang apa yang perlu diperhatikan dan disampaikan. Gunakan hanya "
+    "angka di bawah ini: jangan menulis angka yang tidak ada dalam daftar itu, dan tulis "
+    "angka yang Anda gunakan persis seperti tercetak di sana. Instruksi itu sendiri mungkin "
+    "menyebut angka, misalnya ambang batas untuk pembanding; gunakan untuk menentukan apa "
+    "yang disampaikan, dan jangan mengulanginya kecuali angka itu juga ada dalam daftar. "
+    "Lebih baik menggambarkan pola dengan kata-kata daripada mengulang angka. Jangan "
+    "membuat pengukuran, total, perubahan persentase, peringkat, harga, atau penyebab yang "
+    "tidak terlihat dari angka. Available Memory adalah memori yang tersedia, bukan memori "
+    "yang digunakan.\n"
+    "\n"
+    "Kembalikan paragrafnya saja: tanpa judul, tanpa pembuka, tanpa markdown."
+)
+"""Indonesian variant of the agent instruction (Req 15.7)."""
+
+AGENT_LENGTH_RULES: Final[dict[str, dict[str, str]]] = {
+    "sentence": {"en": "Write one sentence.", "id": "Tulis satu kalimat."},
+    "short": {
+        "en": "Write one short paragraph of at most three sentences.",
+        "id": "Tulis satu paragraf pendek, paling banyak tiga kalimat.",
+    },
+    "bullets": {
+        "en": "Write two to four short points, each on its own line starting with \"• \".",
+        "id": "Tulis dua sampai empat poin pendek, masing-masing di barisnya sendiri dan diawali \"• \".",
+    },
+}
+AGENT_VOICE_RULES: Final[dict[str, dict[str, str]]] = {
+    "plain": {"en": "Use plain, everyday words.", "id": "Gunakan kata-kata yang sederhana."},
+    "executive": {
+        "en": "Write for an executive: lead with what matters and what to watch.",
+        "id": "Tulis untuk eksekutif: dahulukan hal yang penting dan yang perlu diwaspadai.",
+    },
+    "technical": {
+        "en": "Write for an engineer: be precise and name the metrics.",
+        "id": "Tulis untuk insinyur: tepat, dan sebutkan metriknya.",
+    },
+}
+
 _PROMPTS: Final[dict[tuple[str, str], str]] = {
     (PROSE_KIND_EXECUTIVE_SUMMARY, "en"): SYSTEM_PROMPT,
     (PROSE_KIND_EXECUTIVE_SUMMARY, "id"): SYSTEM_PROMPT_ID,
@@ -293,6 +359,8 @@ _PROMPTS: Final[dict[tuple[str, str], str]] = {
     (PROSE_KIND_TREND, "id"): SYSTEM_PROMPT_TREND_ID,
     (PROSE_KIND_RESOURCE, "en"): SYSTEM_PROMPT_RESOURCE,
     (PROSE_KIND_RESOURCE, "id"): SYSTEM_PROMPT_RESOURCE_ID,
+    (PROSE_KIND_AGENT, "en"): SYSTEM_PROMPT_AGENT,
+    (PROSE_KIND_AGENT, "id"): SYSTEM_PROMPT_AGENT_ID,
 }
 
 
@@ -335,9 +403,18 @@ class ProseGenerator:
     client: BedrockConverse
     model_id: str
     language: str = "en"
+    reasons: dict[str, str] = field(default_factory=dict, compare=False)
+    """Why each block's answer is what it is (see :func:`generate_with_reason`), by block id."""
 
     def narrate(self, request: ProseRequest) -> str:
-        return generate(request, client=self.client, model_id=self.model_id, language=self.language)
+        text, reason = generate_with_reason(
+            request, client=self.client, model_id=self.model_id, language=request.language or self.language
+        )
+        self.reasons[request.block_id] = reason
+        return text
+
+    def reason_for(self, block_id: str) -> str | None:
+        return self.reasons.get(block_id)
 
 
 def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
@@ -354,8 +431,16 @@ def build_messages(request: ProseRequest) -> list[dict[str, Any]]:
         f"Window: {request.window} at {request.grain}",
         f"Resources in scope: {request.resource_count}",
         "",
-        "Figures (label, as printed):",
     ]
+    if request.kind == PROSE_KIND_AGENT:
+        language = request.language if request.language == "id" else "en"
+        lines[-1:-1] = [
+            "",
+            f"Instruction: {request.instruction}",
+            AGENT_LENGTH_RULES.get(request.length, AGENT_LENGTH_RULES["short"])[language],
+            AGENT_VOICE_RULES.get(request.voice, AGENT_VOICE_RULES["plain"])[language],
+        ]
+    lines.append("Figures (label, as printed):")
     lines.extend(f"- {label}: {formatted}" for label, formatted in request.figures)
     if request.gap_counts:
         lines.append("")
@@ -393,7 +478,15 @@ def unprovable_figures_in(text: str, request: ProseRequest) -> tuple[str, ...]:
 def generate(
     request: ProseRequest, *, client: BedrockConverse, model_id: str, language: str = "en"
 ) -> str:
-    """One single-shot Converse call, with **no tool list**.
+    """The narration's text, or `""` — :func:`generate_with_reason` without the reason."""
+    return generate_with_reason(request, client=client, model_id=model_id, language=language)[0]
+
+
+def generate_with_reason(
+    request: ProseRequest, *, client: BedrockConverse, model_id: str, language: str = "en"
+) -> tuple[str, str]:
+    """One single-shot Converse call, with **no tool list**, and why its text is what it is:
+    `written`, `model_failed`, `unfinished`, `empty` or `unprovable_figures`.
 
     A failure of any kind returns `""`. Broad by intent: a throttle, an expired role, a
     model that has been retired and a malformed response are four exceptions and one
@@ -415,7 +508,7 @@ def generate(
             "compiler-placed figures with no narrative and the run continues",
             type(exc).__name__,
         )
-        return ""
+        return ("", "model_failed")
 
     # A narrative the model did not finish is not prose to ship. A reasoning model spends
     # part of its token budget thinking before it answers, so running out mid-sentence is a
@@ -427,11 +520,11 @@ def generate(
             "its compiler-placed figures with no prose and the run continues",
             MAX_OUTPUT_TOKENS,
         )
-        return ""
+        return ("", "unfinished")
 
     text = _text_of(response)
     if not text:
-        return text
+        return ("", "empty")
 
     # **The narrator's output is refused here, not withheld from the customer later.**
     #
@@ -455,8 +548,8 @@ def generate(
             len(unprovable),
             ", ".join(sorted(set(unprovable))[:5]),
         )
-        return ""
-    return text
+        return ("", "unprovable_figures")
+    return (text, "written")
 
 
 def _text_of(response: Mapping[str, Any]) -> str:

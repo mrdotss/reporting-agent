@@ -25,6 +25,7 @@ import {
   type SectionV4,
   type SlotEntry,
 } from "@/lib/builder/model"
+import type { AgentTry } from "@/lib/builder/store"
 import {
   SAMPLE_COUNTS,
   formatSample,
@@ -38,6 +39,8 @@ import {
 } from "@/lib/builder/sample"
 import { ATTENTION, DENSITY_SCALE, MARK, PT, TEXT_SIZE_FACTORS, tint, type PageDesign } from "@/lib/builder/theme"
 import { messageText, type MessageId } from "@/lib/messages/catalog"
+
+import { AGENT_REASONS } from "./labels"
 
 /**
  * One catalogue block drawn the way the report prints it, over the sample.
@@ -713,6 +716,69 @@ export function AddedText({ design, text }: Readonly<{ design: PageDesign; text:
 
 export { Heading, Caption, px }
 
+/**
+ * An agent paragraph on the page. What prints is written at run time, so the page shows the
+ * author's instruction and — once they have pressed Try it — the words the agent wrote from
+ * a real report's figures, marked as a try. In Preview only what would print is drawn.
+ */
+function AgentParagraphView({
+  design,
+  language,
+  entry,
+  lastTry,
+  editing,
+}: Readonly<{ design: PageDesign; language: Language; entry: AddedEntry; lastTry?: AgentTry; editing: boolean }>) {
+  const { spec } = design
+  const instruction = entry.instruction?.[language]?.trim()
+  const note = entry.fallback === "note" ? entry.note?.[language]?.trim() : undefined
+  const printed = lastTry?.outcome === "written" ? lastTry.text : lastTry?.outcome === "note" ? note : undefined
+  const paragraphs = (printed ?? "").split(entry.length === "bullets" ? /\n/ : /\n\n/).filter((part) => part.trim())
+
+  if (!editing) {
+    return paragraphs.length > 0 ? (
+      <div className="flex flex-col" style={{ gap: 6, color: lastTry?.outcome === "note" ? spec.muted : spec.ink }}>
+        {paragraphs.map((text, index) => (
+          <p key={index}>{text}</p>
+        ))}
+      </div>
+    ) : (
+      <p style={{ color: spec.muted, fontStyle: "italic" }}>The agent&rsquo;s paragraph prints here, written from this section&rsquo;s figures.</p>
+    )
+  }
+
+  return (
+    <div
+      className="flex flex-col gap-1.5 font-sans"
+      style={{ borderLeft: `2px dashed ${tint(spec.accent, 0.4)}`, paddingLeft: 10 }}
+    >
+      <span className="text-[10.5px] font-semibold tracking-wide uppercase" style={{ color: spec.accent }}>
+        Agent paragraph · {entry.length === "bullets" ? "points" : entry.length === "sentence" ? "one sentence" : "short"} · {entry.voice ?? "plain"}
+      </span>
+      <p className="text-[12px] leading-snug" style={{ color: instruction ? spec.ink : spec.muted, fontStyle: instruction ? undefined : "italic" }}>
+        {instruction ? `“${instruction}”` : "Write an instruction in the inspector: what should the agent say about these figures?"}
+      </p>
+      {lastTry && (
+        <div className="mt-1 flex flex-col gap-1 rounded-sm px-2 py-1.5" style={{ background: spec.band }}>
+          <span className="text-[10.5px] font-medium" style={{ color: spec.muted }}>
+            Last try · {lastTry.outcome === "written" ? `from ${lastTry.figures} figures, every number checked` : "not written"}
+          </span>
+          {paragraphs.length > 0 ? (
+            paragraphs.map((text, index) => (
+              <p key={index} className="text-[12.5px] leading-snug" style={{ color: lastTry.outcome === "note" ? spec.muted : spec.ink, fontFamily: spec.face }}>
+                {text}
+              </p>
+            ))
+          ) : (
+            <p className="text-[12px] leading-snug" style={{ color: spec.muted }}>
+              {AGENT_REASONS[lastTry.reason] ?? "Not written."} {entry.fallback === "note" ? "Your note prints instead." : "Nothing prints in its place."}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // --- Blocks the author placed -----------------------------------------------------------
 
 export function AddedBlockView({
@@ -722,6 +788,8 @@ export function AddedBlockView({
   section,
   sectionEntry: catalogueEntry,
   entry,
+  lastTry,
+  editing = true,
 }: Readonly<{
   provider: Provider
   design: PageDesign
@@ -729,6 +797,9 @@ export function AddedBlockView({
   section: SectionV4
   sectionEntry: CatalogueSection
   entry: AddedEntry
+  /** An agent paragraph's last Try it, if there was one this session. */
+  lastTry?: AgentTry
+  editing?: boolean
 }>) {
   const metrics = section.metrics ?? []
   const resources = sampleResources(provider)
@@ -878,6 +949,8 @@ export function AddedBlockView({
         </div>
       )
     }
+    case "agent":
+      return <AgentParagraphView design={design} language={language} entry={entry} lastTry={lastTry} editing={editing} />
     case "avg_vs_peak": {
       const metric = avgAndPeakMetric(section) ?? firstName
       const ranked = [...resources].sort((a, b) => valueOf(b, metric, "max") - valueOf(a, metric, "max"))

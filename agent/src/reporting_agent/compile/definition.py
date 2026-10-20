@@ -289,6 +289,11 @@ assert set(BLOCK_CONFIG.keys()) == set(BLOCK_TYPES), BLOCK_CONFIG.keys()
 
 __all__ = [
     "ACCENT_COLOR_MAX_LENGTH",
+    "AGENT_FALLBACKS",
+    "AGENT_INSTRUCTION_MAX_LENGTH",
+    "AGENT_LENGTHS",
+    "AGENT_MAX_READS",
+    "AGENT_VOICES",
     "APPROVER_ROLES",
     "BLOCK_CHART_HEIGHTS",
     "BLOCK_CONFIG",
@@ -316,6 +321,7 @@ __all__ = [
     "LANGUAGES",
     "LOCATION_MAX_LENGTH",
     "LOGO_MAX_LENGTH",
+    "MAX_AGENT_BLOCKS",
     "MAX_BLOCKS_TOTAL",
     "MAX_CHILDREN_PER_COLUMN",
     "MAX_DECIMAL_PLACES",
@@ -595,6 +601,7 @@ SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "heatmap",
     "sparklines",
     "avg_vs_peak",
+    "agent",
 )
 METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "key_figures",
@@ -617,6 +624,16 @@ CALLOUT_CONDITIONS: Final[tuple[str, ...]] = (
 CALLOUT_TONES: Final[tuple[str, ...]] = ("info", "attention")
 CALLOUT_THRESHOLD_MIN: Final[int] = 1
 CALLOUT_THRESHOLD_MAX: Final[int] = 100
+# An agent paragraph: words the agent writes, on the author's instruction, from the figures
+# of the blocks it reads. The instruction is a prompt and never printed, so it may name a
+# number — a threshold to look for. What prints is checked like any model prose: a number the
+# agent was not shown refuses the paragraph, and the preset's fallback stands in for it.
+AGENT_LENGTHS: Final[tuple[str, ...]] = ("sentence", "short", "bullets")
+AGENT_VOICES: Final[tuple[str, ...]] = ("plain", "executive", "technical")
+AGENT_FALLBACKS: Final[tuple[str, ...]] = ("omit", "note")
+AGENT_INSTRUCTION_MAX_LENGTH: Final[int] = 600
+AGENT_MAX_READS: Final[int] = 8
+MAX_AGENT_BLOCKS: Final[int] = 6
 MAX_LOCATIONS: Final[int] = 50
 LOCATION_MAX_LENGTH: Final[int] = 64
 # The trend depth a section may ask for, in months. `compile/blocks/charts.py` reads
@@ -3311,6 +3328,9 @@ def _validate_sections(
                     f"{', '.join(SECTION_PRESENTATIONS)}.",
                 )
 
+    if walk.version >= 4:
+        _validate_agent_count(sections, walk)
+
 
 # --- schema v4: a section's own layout --------------------------------------------
 
@@ -3336,9 +3356,10 @@ def contains_numeral(text: str) -> bool:
 
 
 def _validate_typed_text(
-    value: object, path: Path, walk: _Walk, *, max_length: int, what: str
+    value: object, path: Path, walk: _Walk, *, max_length: int, what: str, numerals: bool = False
 ) -> None:
-    """An `{en, id}` object of typed words: the document's language required, no numerals."""
+    """An `{en, id}` object of typed words: the document's language required, no numerals
+    unless `numerals` — an agent's instruction, which is a prompt and never printed."""
     if not _is_plain_object(value):
         walk.add(path, f"{what} must be an object with an `en` and/or `id` string.")
         return
@@ -3361,7 +3382,7 @@ def _validate_typed_text(
                 (*path, language),
                 f"{what} must be 1 to {max_length} characters.",
             )
-        elif contains_numeral(text):
+        elif not numerals and contains_numeral(text):
             walk.add(
                 (*path, language),
                 f"{what} cannot contain numbers. Every number in a report comes from the "
@@ -3434,6 +3455,8 @@ def _validate_user_block(
         if kind == "text"
         else ("kind", "id", "text", "when", "tone", "threshold")
         if kind == "callout"
+        else ("kind", "id", "instruction", "reads", "length", "voice", "fallback", "note")
+        if kind == "agent"
         else ("kind", "id")
     )
     for key in block:
@@ -3457,6 +3480,81 @@ def _validate_user_block(
         )
     if kind == "callout":
         _validate_callout(block, path, walk, metric_bearing)
+    if kind == "agent":
+        _validate_agent(block, path, walk)
+
+
+def _validate_agent(block: dict[str, object], path: Path, walk: _Walk) -> None:
+    """An agent paragraph's own settings. Its `reads` are checked against the section by
+    `_validate_agent_reads`, once every block of the section is known."""
+    _validate_typed_text(
+        block.get("instruction"), (*path, "instruction"), walk,
+        max_length=AGENT_INSTRUCTION_MAX_LENGTH, what="An instruction", numerals=True,
+    )
+    for key, allowed in (("length", AGENT_LENGTHS), ("voice", AGENT_VOICES), ("fallback", AGENT_FALLBACKS)):
+        if key in block and block.get(key) not in allowed:
+            walk.add((*path, key), f"{key} must be one of: {', '.join(allowed)}.")
+    if block.get("fallback") == "note" or "note" in block:
+        # The note prints in the paragraph's place, so it is typed text like any other.
+        _validate_typed_text(
+            block.get("note"), (*path, "note"), walk,
+            max_length=SECTION_TEXT_MAX_LENGTH, what="A note",
+        )
+    reads = block.get("reads", [])
+    if not _is_json_array(reads):
+        walk.add((*path, "reads"), "reads must be an array of the blocks it reads.")
+    elif len(reads) > AGENT_MAX_READS:
+        walk.add((*path, "reads"), f"An agent paragraph reads at most {AGENT_MAX_READS} blocks.")
+
+
+def _validate_agent_reads(
+    blocks: list[object],
+    path: Path,
+    walk: _Walk,
+    shapes: tuple[_SlotShape, ...] | None,
+) -> None:
+    """Each agent paragraph reads blocks of its own section: a catalogue slot, or a block the
+    author added there. An empty list reads the whole section."""
+    added = {
+        str(block.get("id"))
+        for block in blocks
+        if _is_plain_object(block) and "kind" in block and block.get("kind") != "agent"
+    }
+    slots = None if shapes is None else {shape.slot for shape in shapes}
+    for index, block in enumerate(blocks):
+        if not _is_plain_object(block) or block.get("kind") != "agent":
+            continue
+        reads = block.get("reads", [])
+        if not _is_json_array(reads):
+            continue
+        seen: set[str] = set()
+        for read_index, ref in enumerate(reads):
+            ref_path: Path = (*path, index, "reads", read_index)
+            if not isinstance(ref, str):
+                walk.add(ref_path, "Each entry names a block of this section.")
+            elif ref in seen:
+                walk.add(ref_path, f'"{ref}" appears twice.')
+            elif ref not in added and slots is not None and ref not in slots:
+                walk.add(ref_path, f'"{ref}" is not a block of this section.')
+            else:
+                seen.add(ref)
+
+
+def _validate_agent_count(sections: list[object], walk: _Walk) -> None:
+    """At most `MAX_AGENT_BLOCKS` agent paragraphs in one preset: each is a model call."""
+    found = 0
+    for index, entry in enumerate(sections):
+        blocks = entry.get("blocks") if _is_plain_object(entry) else None
+        if not _is_json_array(blocks):
+            continue
+        for block_index, block in enumerate(blocks):
+            if _is_plain_object(block) and block.get("kind") == "agent":
+                found += 1
+                if found == MAX_AGENT_BLOCKS + 1:
+                    walk.add(
+                        ("sections", index, "blocks", block_index),
+                        f"A preset holds at most {MAX_AGENT_BLOCKS} agent paragraphs.",
+                    )
 
 
 _CALLOUT_TOKENS: Final[dict[str, frozenset[str]]] = {
@@ -3595,6 +3693,8 @@ def _validate_section_blocks(
             walk.add((*block_path, "slot"), f'"{slot}" {reason}.')
             continue
         _validate_slot_entry(block, block_path, walk, shape)
+
+    _validate_agent_reads(blocks, path, walk, shapes)
 
 
 def _validate_section_v4(

@@ -175,6 +175,12 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
       }),
       fc.record({ op: fc.constant("avg_vs_peak"), pick: fc.nat() }),
       fc.record({
+        op: fc.constant("agent"),
+        pick: fc.nat(),
+        length: fc.constantFrom("sentence", "short", "bullets" as const),
+        fallback: fc.constantFrom("omit", "note" as const),
+      }),
+      fc.record({
         op: fc.constant("style"),
         pick: fc.nat(),
         slot: fc.nat(),
@@ -234,6 +240,17 @@ describe("property: any sequence of edits leaves a draft the validator accepts",
               // The Add panel offers it only where one metric is collected as both figures.
               if (section && avgAndPeakMetric(section) !== null) s.getState().addBlock(section.id, "avg_vs_peak")
               break
+            case "agent": {
+              // Placed after the selected block, with its instruction written and, where it
+              // falls back to a note, the note too — as the inspector asks for both.
+              if (!section) break
+              const id = s.getState().addBlock(section.id, "agent", ref)
+              if (!id) break
+              s.getState().setAgentText(section.id, id, "instruction", "en", "Say which resources ran above 80% at peak.")
+              s.getState().setAgent(section.id, id, { length: a.length, fallback: a.fallback })
+              if (a.fallback === "note") s.getState().setAgentText(section.id, id, "note", "en", "Not written this time.")
+              break
+            }
             case "style": {
               // The Style tab offers a chart's keys on a chart and a table's on a table.
               const block = shape?.block ?? ""
@@ -356,5 +373,52 @@ describe("a block's own look", () => {
     s.getState().addBlock(id, "avg_vs_peak")
     expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
     expect(avgAndPeakMetric({ metrics: [{ metric: "CPUUtilization", statistic: "avg" }] })).toBeNull()
+  })
+})
+
+
+describe("agent paragraphs", () => {
+  const chart: BlockRef = { kind: "slot", slot: "chart", inEach: true }
+  const agentsOf = (s: ReturnType<typeof store>) =>
+    definitionOf(s).sections.flatMap((section) => (section.blocks ?? []).filter((b) => "kind" in b && b.kind === "agent"))
+
+  test("asked about a block, it reads that block and waits for its instruction", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const agent = s.getState().addBlock(id, "agent", chart)!
+    expect(agentsOf(s)[0]).toMatchObject({ id: agent, reads: ["chart"], length: "short", voice: "plain", fallback: "omit" })
+    // An empty instruction is something to fix, not something to send.
+    expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.slice(-2).join("."))).toEqual(["instruction.en"])
+    s.getState().setAgentText(id, agent, "instruction", "en", "Flag anything above 80% at peak.")
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+  })
+
+  test("a note fallback starts an empty note, and a note with a number is refused", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const agent = s.getState().addBlock(id, "agent")!
+    s.getState().setAgentText(id, agent, "instruction", "en", "Summarise the section.")
+    expect(agentsOf(s)[0]).toMatchObject({ reads: [] })
+    s.getState().setAgent(id, agent, { fallback: "note" })
+    expect(agentsOf(s)[0]).toMatchObject({ fallback: "note", note: { en: "" } })
+    s.getState().setAgentText(id, agent, "note", "en", "Written in 2026.")
+    expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.slice(-2).join("."))).toEqual(["note.en"])
+  })
+
+  test("a preset holds six", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    for (let n = 0; n < 6; n += 1) expect(s.getState().addBlock(id, "agent")).not.toBeNull()
+    expect(s.getState().addBlock(id, "agent")).toBeNull()
+    expect(agentsOf(s)).toHaveLength(6)
+  })
+
+  test("a try is session state, outside the draft and its undo history", () => {
+    const s = store()
+    const before = definitionOf(s)
+    s.getState().setAgentTry("sec__u_a", { outcome: "written", reason: "written", text: "Quiet month.", figures: 4, instruction: "x", at: "2026-10-20T00:00:00Z" })
+    expect(definitionOf(s)).toBe(before)
+    expect(s.getState().agentTries["sec__u_a"]?.text).toBe("Quiet month.")
+    expect(s.temporal.getState().pastStates).toHaveLength(0)
   })
 })

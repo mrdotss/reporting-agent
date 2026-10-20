@@ -93,8 +93,11 @@ __all__ = [
     "NO_GAPS_TEXT",
     "OMITTED_ROW_LABEL",
     "PARAGRAPH_STYLES",
+    "PROSE_KIND_AGENT",
     "SKU_CAPABILITY_FIELDS",
     "TABLE_STYLES",
+    "AGENT_OUTCOMES",
+    "AgentOutcome",
     "BlockContext",
     "CHILD_SCOPE_CHILDREN",
     "CHILD_SCOPE_CONFIG_KEY",
@@ -532,11 +535,13 @@ class BlockSpec:
 PROSE_KIND_EXECUTIVE_SUMMARY: Final[str] = "executive_summary"
 PROSE_KIND_TREND: Final[str] = "trend"
 PROSE_KIND_RESOURCE: Final[str] = "resource"
+PROSE_KIND_AGENT: Final[str] = "agent"
 
 PROSE_KINDS: Final[tuple[str, ...]] = (
     PROSE_KIND_EXECUTIVE_SUMMARY,
     PROSE_KIND_TREND,
     PROSE_KIND_RESOURCE,
+    PROSE_KIND_AGENT,
 )
 """The narrations that exist. `narrate/summary.py` maps each to an instruction, and an
 unrecognised kind falls back to the executive summary's rather than raising — a report
@@ -574,6 +579,20 @@ class ProseRequest:
     argument threaded through `ProseProvider` would let the two drift — a trend block's
     figures arriving under the executive summary's instruction, which reads as a model
     that ignored its prompt rather than as a pipeline that handed it the wrong one."""
+
+    instruction: str = ""
+    """An agent paragraph's instruction, in the report's language, as the author typed it.
+    A prompt and never printed: it may name a number, which the model is told not to repeat
+    unless that number is among `figures`. Empty for every other narration."""
+
+    length: str = ""
+    """An agent paragraph's length (`AGENT_LENGTHS`); empty for every other narration."""
+
+    voice: str = ""
+    """An agent paragraph's voice (`AGENT_VOICES`); empty for every other narration."""
+
+    language: str = ""
+    """The language to write in, where the block knows it; empty means the provider's own."""
 
 
 class ProseProvider(Protocol):
@@ -634,6 +653,35 @@ class Deferred:
     block_id: str
     finish: Callable[[str | None], tuple[Block, ...]]
     prose_request: ProseRequest | None = None
+    request_for: Callable[[], ProseRequest | None] | None = None
+    """A request built when it is asked for, after every block has minted its figures —
+    an agent paragraph reads blocks below it as well as above. Used where `prose_request`
+    is `None`; `None` on both means the block wants no prose."""
+    after_others: bool = False
+    """Finished after every other deferred block, for a block that lists what they wrote
+    (`agent_record`). Assembly still follows document order; only `finish` is reordered,
+    and no `finish` mints a figure, so the order cannot reach the ledger."""
+
+
+AGENT_OUTCOMES: Final[tuple[str, ...]] = ("written", "note", "omitted")
+"""What became of one agent paragraph: the agent's words, the author's note in their place,
+or nothing."""
+
+
+@dataclass(frozen=True, slots=True)
+class AgentOutcome:
+    """One agent paragraph's result, for `agent.json` and the report's record of them."""
+
+    block_id: str
+    section_id: str
+    section_title: str
+    outcome: str
+    reason: str
+    """`written`, or why the agent's words are not in the report: `unprovable_figures`
+    (it wrote a number it was not shown), `unfinished`, `model_failed`, `empty`,
+    `no_model`, `over_budget`, `provider_failed` or `nothing_to_read`."""
+    text: str = ""
+    """The words as written, when they were — what `prose.json` stores for a recompile."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -732,6 +780,13 @@ class BlockContext:
     publishing a figure at a guessed precision.
     """
 
+    prose_reasons: dict[str, str] = field(default_factory=dict)
+    """Why each deferred block got the prose it got, by block id, written by the compile's
+    second phase. Only an agent paragraph reads it, to say why its words are missing."""
+    agent_paragraphs: dict[str, AgentOutcome] = field(default_factory=dict)
+    """Each agent paragraph's outcome, written as it finishes, read by `agent_record` and by
+    the pipeline for `agent.json`. The one mutable record a compile keeps: it holds no
+    figure and no node, so nothing in it reaches the ledger."""
     section_drift: tuple[object, ...] = ()
     """Every `SectionDrift` this compile's coverage appendix should report (task 3.11,
     Req 19.1-19.7) — `compile/sections.py::compute_section_drift`'s result, computed once

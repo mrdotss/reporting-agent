@@ -7,6 +7,7 @@ Every object a run produces beyond its snapshot lands under one prefix:
                               ledger.json
                               ast.json
                               prose.json
+                              agent.json            (only where the preset has agent paragraphs)
                               verification-<attemptId>.json
                               charts/<chartId>.png
                               charts/<chartId>.sidecar.json
@@ -289,6 +290,7 @@ async def write_report_artifacts(
     historical: object | None = None,
     actions: object | None = None,
     glance: object | None = None,
+    agent: object | None = None,
     proof: object | None = None,
     html: str,
     chart_images: Mapping[str, bytes] | None = None,
@@ -357,6 +359,12 @@ async def write_report_artifacts(
         # report (`compile/blocks/glance.py::glance_summary`).
         await write_json_artifact(
             store, reports_key(actor_id, run_id, "glance.json"), glance, actor_id=actor_id
+        )
+    if agent is not None:
+        # What became of each agent paragraph, which the app's report page reads to say
+        # which ones are missing and why (`report_pipeline._agent_bundle`).
+        await write_json_artifact(
+            store, reports_key(actor_id, run_id, "agent.json"), agent, actor_id=actor_id
         )
     if proof is not None:
         # The proof link as printed, which a re-verification prints again.
