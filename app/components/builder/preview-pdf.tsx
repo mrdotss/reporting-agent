@@ -136,7 +136,7 @@ export function PreviewPdf({ templateId }: Readonly<{ templateId: string }>) {
 
         {rendering && (
           <p role="status" className="text-xs text-muted-foreground">
-            Rendering — usually under a minute. Edits keep working meanwhile.
+            Rendering — usually a minute or two. Edits keep working meanwhile.
           </p>
         )}
         {phase.kind === "done" && (

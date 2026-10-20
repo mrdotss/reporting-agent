@@ -41,6 +41,14 @@
       "en": "lowest observed",
       "id": "terendah teramati"
     },
+    "doc.agent.record.title": {
+      "en": "Written by the agent",
+      "id": "Ditulis oleh agen"
+    },
+    "doc.agent.record.body": {
+      "en": "Paragraphs the agent wrote appear in: {sections}. Each was written from the figures of the blocks beside it, and checked: it quotes no number the report does not print.",
+      "id": "Paragraf yang ditulis agen terdapat di: {sections}. Masing-masing ditulis dari angka pada blok di sampingnya, lalu diperiksa: tidak mengutip angka yang tidak dicetak laporan ini."
+    },
     "doc.chart.series.average": {
       "en": "Average",
       "id": "Rata-rata"
@@ -980,6 +988,34 @@
     "doc.verification.status_pass": {
       "en": "Verified",
       "id": "Terverifikasi"
+    },
+    "ui.agent_notes.title_one": {
+      "en": "One agent paragraph isn’t in this report",
+      "id": "Satu paragraf agen tidak ada dalam laporan ini"
+    },
+    "ui.agent_notes.title_many": {
+      "en": "{count} agent paragraphs aren’t in this report",
+      "id": "{count} paragraf agen tidak ada dalam laporan ini"
+    },
+    "ui.agent_notes.body": {
+      "en": "The report was delivered and verified without them. Each run writes its paragraphs fresh, so the next report tries again.",
+      "id": "Laporan tetap dikirim dan terverifikasi tanpa paragraf tersebut. Setiap run menulis paragrafnya dari awal, jadi laporan berikutnya akan mencoba lagi."
+    },
+    "ui.agent_notes.written": {
+      "en": "{written} of {total} agent paragraphs were written.",
+      "id": "{written} dari {total} paragraf agen berhasil ditulis."
+    },
+    "ui.agent_notes.note_printed": {
+      "en": "Your note printed instead.",
+      "id": "Catatan Anda dicetak sebagai gantinya."
+    },
+    "ui.agent_notes.left_out": {
+      "en": "Left out.",
+      "id": "Dihilangkan."
+    },
+    "ui.agent_notes.untitled_section": {
+      "en": "A section",
+      "id": "Sebuah bagian"
     },
     "ui.activity.label": {
       "en": "Run activity",

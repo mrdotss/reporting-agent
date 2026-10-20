@@ -1408,6 +1408,138 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-agent-paragraphs.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "e01ff3c490573eabe2b104d2fcdcb07d04004a0ee4b0e1a31424e085f9f79ad4",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-agent-settings.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "eff0acd97a7db83d50c32a690cd81006e71dc3378cdf298ab20afe3b8ef5b9d8",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "length"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "voice"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "fallback"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-agent-reads.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "3bfcfa9e8ee66b4a04870be830aaf49141692ad99e6dbbcff1c09a0c0980e4e0",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "reads",
+            1
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "reads",
+            2
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "reads",
+            3
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-agent-note.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "77d45f3921a0cb4460d8190b7e4fed20f73f093ac53adb739805be819f3a3b43",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            3,
+            "note",
+            "en"
+          ]
+        },
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            2,
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "reject-v4-too-many-agent-paragraphs.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "10be53cded6c5c1a3e9760424dbd509a54a8874d285087f452bf91ce99b9f0e8",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            7
+          ]
+        }
+      ]
     }
   ]
 }

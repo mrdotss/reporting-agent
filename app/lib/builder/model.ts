@@ -1,4 +1,7 @@
 import {
+  AGENT_FALLBACKS,
+  AGENT_LENGTHS,
+  AGENT_VOICES,
   BLOCK_CHART_HEIGHTS,
   CHART_STYLES,
   EACH_RESOURCE_SLOT,
@@ -69,6 +72,7 @@ export type AddedKind =
   | "heatmap"
   | "sparklines"
   | "avg_vs_peak"
+  | "agent"
 
 export type CalloutCondition =
   | "peak_at_or_above"
@@ -79,7 +83,8 @@ export type CalloutCondition =
 
 /**
  * A block the author added. Text and callouts carry words; a callout also carries the
- * condition that prints it, and a peak callout its threshold.
+ * condition that prints it, and a peak callout its threshold. An agent paragraph carries
+ * the instruction the agent writes from, what it reads, and what stands in when it cannot.
  */
 export type AddedEntry = {
   readonly kind: AddedKind
@@ -88,6 +93,20 @@ export type AddedEntry = {
   readonly when?: CalloutCondition
   readonly tone?: "info" | "attention"
   readonly threshold?: number
+  readonly instruction?: TypedText
+  readonly reads?: readonly string[]
+  readonly length?: (typeof AGENT_LENGTHS)[number]
+  readonly voice?: (typeof AGENT_VOICES)[number]
+  readonly fallback?: (typeof AGENT_FALLBACKS)[number]
+  readonly note?: TypedText
+}
+
+/** How many agent paragraphs the preset holds — the validator allows `MAX_AGENT_BLOCKS`. */
+export function agentCount(definition: Pick<DefinitionV4, "sections">): number {
+  return definition.sections.reduce(
+    (count, section) => count + (section.blocks ?? []).filter((block) => isAddedEntry(block) && block.kind === "agent").length,
+    0
+  )
 }
 
 export type TextEntry = {

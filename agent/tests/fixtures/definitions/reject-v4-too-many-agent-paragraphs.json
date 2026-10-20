@@ -1,0 +1,253 @@
+{
+  "schema_version": 4,
+  "identity": {
+    "name": "Test v4 AWS",
+    "language": "en"
+  },
+  "provider": "aws",
+  "sections": [
+    {
+      "id": "sec_ec2",
+      "type": "ec2_utilization",
+      "position": 0,
+      "selection": {
+        "resource_types": [
+          "AWS::EC2::Instance"
+        ],
+        "resource_groups": [],
+        "tag_filters": [],
+        "top_n": null,
+        "sort": null,
+        "locations": [
+          "ap-southeast-1"
+        ]
+      },
+      "metrics": [
+        {
+          "metric": "CPUUtilization",
+          "statistic": "avg"
+        },
+        {
+          "metric": "CPUUtilization",
+          "statistic": "max"
+        }
+      ],
+      "blocks": [
+        {
+          "slot": "title"
+        },
+        {
+          "kind": "avg_vs_peak",
+          "id": "u_avp"
+        },
+        {
+          "slot": "each",
+          "blocks": [
+            {
+              "slot": "name"
+            },
+            {
+              "slot": "details",
+              "style": {
+                "header": "solid",
+                "rows": "bordered"
+              }
+            },
+            {
+              "slot": "chart",
+              "style": {
+                "look": "soft_area",
+                "height": "tall",
+                "values": "last",
+                "threshold": 90
+              }
+            },
+            {
+              "slot": "summary",
+              "style": {
+                "mark_at_or_above": 85
+              }
+            },
+            {
+              "slot": "narrative",
+              "hidden": true
+            }
+          ]
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag1",
+          "instruction": {
+            "en": "Say which machines ran above 80% at peak and whether that needs attention.",
+            "id": "Sebutkan mesin yang melampaui 80% saat puncak dan apakah perlu perhatian."
+          },
+          "reads": [
+            "chart",
+            "summary",
+            "u_avp"
+          ],
+          "length": "short",
+          "voice": "executive",
+          "fallback": "note",
+          "note": {
+            "en": "The agent's commentary was not written for this report.",
+            "id": "Komentar agen tidak ditulis untuk laporan ini."
+          }
+        },
+        {
+          "slot": "fleet",
+          "style": {
+            "header": "plain",
+            "rows": "open"
+          }
+        }
+      ]
+    },
+    {
+      "id": "sec_hist",
+      "type": "historical_ec2_utilization",
+      "position": 1,
+      "metrics": [
+        {
+          "metric": "CPUUtilization",
+          "statistic": "avg"
+        }
+      ],
+      "lookback": 6
+    },
+    {
+      "id": "sec_bak",
+      "type": "backups",
+      "position": 2,
+      "blocks": [
+        {
+          "slot": "title"
+        },
+        {
+          "kind": "callout",
+          "id": "u_stop",
+          "when": "stopped",
+          "text": {
+            "en": "Some machines are stopped."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag2",
+          "instruction": {
+            "en": "Summarise the backup position."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag3",
+          "instruction": {
+            "en": "Summarise."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag4",
+          "instruction": {
+            "en": "Summarise."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag5",
+          "instruction": {
+            "en": "Summarise."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag6",
+          "instruction": {
+            "en": "Summarise."
+          }
+        },
+        {
+          "kind": "agent",
+          "id": "u_ag7",
+          "instruction": {
+            "en": "Summarise."
+          }
+        }
+      ]
+    },
+    {
+      "id": "sec_cov",
+      "type": "coverage_and_verification",
+      "position": 3
+    }
+  ],
+  "period": {
+    "kind": "last_full_month"
+  },
+  "design": {
+    "preset": "editorial",
+    "accent_color": "oklch(0.52 0.105 223)",
+    "density": "normal",
+    "table_style": "open",
+    "page_size": "A4",
+    "number_format": {
+      "decimal_places": 1,
+      "group_thousands": true,
+      "decimal_separator": ".",
+      "grouping_separator": ","
+    },
+    "cover_page": true,
+    "logo": null,
+    "chart_style": "small_multiples",
+    "style": {
+      "heading_color": "ink",
+      "fonts": "source",
+      "text_size": "large",
+      "figures": "text",
+      "table_header": "tint",
+      "mark_at_or_above": 80,
+      "chart_palette": "shades",
+      "chart_line": "bold",
+      "chart_grid": "full",
+      "chart_values": "peak",
+      "chart_legend": "top",
+      "chart_threshold": 75,
+      "cover": "summary",
+      "section_numbers": "display",
+      "margins": "wide",
+      "running_header": "customer",
+      "callout": "banner"
+    }
+  },
+  "front_matter": {
+    "cover": {
+      "subtitle": "Test"
+    },
+    "document_control": {
+      "document_name": "Test",
+      "document_number_pattern": "RPT-{year}{month}-{run}",
+      "approvers": [
+        {
+          "role": "author",
+          "name": "A"
+        },
+        {
+          "role": "reviewer",
+          "name": "B"
+        },
+        {
+          "role": "approver",
+          "name": "C"
+        },
+        {
+          "role": "recipient",
+          "name": "D"
+        }
+      ]
+    },
+    "toc": {
+      "enabled": true,
+      "max_level": 3
+    }
+  }
+}

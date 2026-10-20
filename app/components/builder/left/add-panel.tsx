@@ -6,7 +6,8 @@ import { useMemo, useState } from "react"
 import { ADDED_BLOCKS, ADDED_KINDS } from "@/components/builder/canvas/labels"
 import { useBuilder, useEnvironment } from "@/components/builder/context"
 import { AddedIcon } from "@/components/builder/left/outline"
-import { avgAndPeakMetric } from "@/lib/builder/model"
+import { agentCount, avgAndPeakMetric } from "@/lib/builder/model"
+import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
 import {
   GROUP_ORDER,
   catalogueFor,
@@ -97,7 +98,8 @@ export function AddPanel() {
             // Average and peak draws one metric's two figures, so the section must collect both.
             const needsPair =
               !needsMetrics && kind === "avg_vs_peak" && targetSection !== undefined && avgAndPeakMetric(targetSection) === null
-            const disabled = !targetSection || needsMetrics || needsPair
+            const atAgentLimit = kind === "agent" && agentCount(definition) >= MAX_AGENT_BLOCKS
+            const disabled = !targetSection || needsMetrics || needsPair || atAgentLimit
             return (
               <button
                 key={kind}
@@ -108,7 +110,9 @@ export function AddPanel() {
                     ? "Reads metrics: add it to a section that reports some."
                     : needsPair
                       ? "Needs a metric this section collects as both an average and a maximum."
-                      : undefined
+                      : atAgentLimit
+                        ? `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs.`
+                        : undefined
                 }
                 onClick={() => {
                   if (!targetSectionId) return

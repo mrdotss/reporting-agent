@@ -443,6 +443,7 @@ export const SECTION_BLOCK_KINDS = [
   "heatmap",
   "sparklines",
   "avg_vs_peak",
+  "agent",
 ] as const
 export const METRIC_BLOCK_KINDS = [
   "key_figures",
@@ -468,6 +469,19 @@ export const CALLOUT_CONDITIONS = [
 export const CALLOUT_TONES = ["info", "attention"] as const
 export const CALLOUT_THRESHOLD_MIN = 1
 export const CALLOUT_THRESHOLD_MAX = 100
+
+/**
+ * An agent paragraph: words the agent writes, on the author's instruction, from the figures
+ * of the blocks it reads. The instruction is a prompt and never printed, so it may name a
+ * number — a threshold to look for. What prints is checked like any model prose: a number the
+ * agent was not shown refuses the paragraph, and the preset's fallback stands in for it.
+ */
+export const AGENT_LENGTHS = ["sentence", "short", "bullets"] as const
+export const AGENT_VOICES = ["plain", "executive", "technical"] as const
+export const AGENT_FALLBACKS = ["omit", "note"] as const
+export const AGENT_INSTRUCTION_MAX_LENGTH = 600
+export const AGENT_MAX_READS = 8
+export const MAX_AGENT_BLOCKS = 6
 
 export const MAX_LOCATIONS = 50
 export const LOCATION_MAX_LENGTH = 64
@@ -3434,7 +3448,8 @@ function validateTypedText(
   issues: IssueSink,
   language: (typeof LANGUAGES)[number] | null,
   maxLength: number,
-  what: string
+  what: string,
+  numerals = false
 ): void {
   if (!isPlainObject(value)) {
     addIssue(issues, path, `${what} must be an object with an \`en\` and/or \`id\` string.`)
@@ -3459,7 +3474,7 @@ function validateTypedText(
     const text = value[key]
     if (typeof text !== "string" || text.trim() === "" || text.length > maxLength) {
       addIssue(issues, [...path, key], `${what} must be 1 to ${maxLength} characters.`)
-    } else if (containsNumeral(text)) {
+    } else if (!numerals && containsNumeral(text)) {
       addIssue(
         issues,
         [...path, key],
@@ -3546,12 +3561,15 @@ function validateUserBlock(
 ): void {
   const isText = block.kind === "text"
   const isCallout = block.kind === "callout"
+  const isAgent = block.kind === "agent"
   const allowed = new Set(
     isText
       ? ["kind", "id", "text"]
       : isCallout
         ? ["kind", "id", "text", "when", "tone", "threshold"]
-        : ["kind", "id"]
+        : isAgent
+          ? ["kind", "id", "instruction", "reads", "length", "voice", "fallback", "note"]
+          : ["kind", "id"]
   )
   for (const key of Object.keys(block)) {
     if (!allowed.has(key)) {
@@ -3594,6 +3612,105 @@ function validateUserBlock(
     )
   }
   if (isCallout) validateCallout(block, path, issues, metricBearing)
+  if (isAgent) validateAgent(block, path, issues, language)
+}
+
+const AGENT_SETTINGS = [
+  ["length", AGENT_LENGTHS],
+  ["voice", AGENT_VOICES],
+  ["fallback", AGENT_FALLBACKS],
+] as const
+
+/**
+ * An agent paragraph's own settings. Its `reads` are checked against the section by
+ * {@link validateAgentReads}, once every block of the section is known.
+ */
+function validateAgent(
+  block: Record<string, unknown>,
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  language: (typeof LANGUAGES)[number] | null
+): void {
+  validateTypedText(
+    block.instruction,
+    [...path, "instruction"],
+    issues,
+    language,
+    AGENT_INSTRUCTION_MAX_LENGTH,
+    "An instruction",
+    true
+  )
+  for (const [key, allowed] of AGENT_SETTINGS) {
+    if (key in block && !(allowed as readonly unknown[]).includes(block[key])) {
+      addIssue(issues, [...path, key], `${key} must be one of: ${allowed.join(", ")}.`)
+    }
+  }
+  if (block.fallback === "note" || "note" in block) {
+    // The note prints in the paragraph's place, so it is typed text like any other.
+    validateTypedText(block.note, [...path, "note"], issues, language, SECTION_TEXT_MAX_LENGTH, "A note")
+  }
+  const reads = "reads" in block ? block.reads : []
+  if (!Array.isArray(reads)) {
+    addIssue(issues, [...path, "reads"], "reads must be an array of the blocks it reads.")
+  } else if (reads.length > AGENT_MAX_READS) {
+    addIssue(issues, [...path, "reads"], `An agent paragraph reads at most ${AGENT_MAX_READS} blocks.`)
+  }
+}
+
+/**
+ * Each agent paragraph reads blocks of its own section: a catalogue slot, or a block the
+ * author added there. An empty list reads the whole section.
+ */
+function validateAgentReads(
+  blocks: readonly unknown[],
+  path: readonly (string | number)[],
+  issues: IssueSink,
+  shapes: readonly SlotShape[] | undefined
+): void {
+  const added = new Set(
+    blocks.flatMap((block) =>
+      isPlainObject(block) && "kind" in block && block.kind !== "agent" ? [String(block.id)] : []
+    )
+  )
+  const slots = shapes === undefined ? null : new Set(shapes.map((shape) => shape.slot))
+  blocks.forEach((block, index) => {
+    if (!isPlainObject(block) || block.kind !== "agent") return
+    const reads = "reads" in block ? block.reads : []
+    if (!Array.isArray(reads)) return
+    const seen = new Set<string>()
+    reads.forEach((ref: unknown, readIndex: number) => {
+      const refPath = [...path, index, "reads", readIndex]
+      if (typeof ref !== "string") {
+        addIssue(issues, refPath, "Each entry names a block of this section.")
+      } else if (seen.has(ref)) {
+        addIssue(issues, refPath, `"${ref}" appears twice.`)
+      } else if (!added.has(ref) && slots !== null && !slots.has(ref)) {
+        addIssue(issues, refPath, `"${ref}" is not a block of this section.`)
+      } else {
+        seen.add(ref)
+      }
+    })
+  })
+}
+
+/** At most {@link MAX_AGENT_BLOCKS} agent paragraphs in one preset: each is a model call. */
+function validateAgentCount(sections: readonly unknown[], issues: IssueSink): void {
+  let found = 0
+  sections.forEach((entry, index) => {
+    const blocks = isPlainObject(entry) ? entry.blocks : undefined
+    if (!Array.isArray(blocks)) return
+    blocks.forEach((block: unknown, blockIndex: number) => {
+      if (!isPlainObject(block) || block.kind !== "agent") return
+      found += 1
+      if (found === MAX_AGENT_BLOCKS + 1) {
+        addIssue(
+          issues,
+          ["sections", index, "blocks", blockIndex],
+          `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs.`
+        )
+      }
+    })
+  })
 }
 
 /**
@@ -3786,6 +3903,7 @@ function validateSectionBlocks(
     }
     validateSlotEntry(block, blockPath, issues, shape, language)
   })
+  validateAgentReads(blocks, path, issues, shapes)
 }
 
 /** What schema v4 adds to a section entry: closed keys, `position`, `lookback`, `blocks`. */
@@ -4041,6 +4159,7 @@ function validateSections(
       }
     }
   })
+  if (version >= 4) validateAgentCount(sections, issues)
 }
 
 /**

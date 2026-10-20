@@ -1457,6 +1457,7 @@ async def _document_phases(
         historical=_historical_bundle(historical_selections, snapshot_sources),
         actions=actions_artifact,
         glance=glance_summary(compiled.nodes_by_block),
+        agent=_agent_bundle(compiled),
         proof=(
             {"schema_version": 1, "verify_url": verify_url}
             if (verify_url := str(getattr(run_facts, "verify_url", "") or ""))
@@ -1872,12 +1873,30 @@ def _prose_bundle(compiled: Any) -> dict[str, Any]:
     prose bundle). Re-asking the model on a re-verification would make the recompiled
     ledger depend on a model's determinism, which it does not have.
     """
-    return {
-        "schema_version": 1,
-        "blocks": {
-            event["block_id"]: event["text"] for event in _delta_events(compiled)
-        },
-    }
+    blocks = {event["block_id"]: event["text"] for event in _delta_events(compiled)}
+    # An agent paragraph's words, as written: a recompile replays them rather than asking
+    # the model again, exactly as it replays the summary's.
+    blocks.update(
+        (outcome.block_id, outcome.text)
+        for outcome in getattr(compiled, "agent_outcomes", ())
+        if outcome.outcome == "written"
+    )
+    return {"schema_version": 1, "blocks": blocks}
+
+
+def _agent_bundle(compiled: Any) -> dict[str, Any] | None:
+    """`agent.json` — what became of each agent paragraph, or `None` where there are none.
+
+    The report still delivers when one is missing; this is how the consultant learns which
+    one and why. The words are not here: they are in `prose.json`, and a paragraph that was
+    left out has none to keep.
+    """
+    from reporting_agent.compile.blocks.agent import outcome_plain
+
+    outcomes = tuple(getattr(compiled, "agent_outcomes", ()))
+    if not outcomes:
+        return None
+    return {"schema_version": 1, "paragraphs": [dict(outcome_plain(outcome)) for outcome in outcomes]}
 
 
 def _historical_bundle(
@@ -2530,6 +2549,8 @@ async def run_render_preview(
     artifact_bucket: str,
     aws_region: str | None = None,
     object_store: ObjectStore | None = None,
+    prose_model_id: str = "",
+    prose: Any | None = None,
 ) -> AsyncIterator[Event]:
     """Compile and render an **inline** definition against a completed run's snapshot.
 
@@ -2578,8 +2599,18 @@ async def run_render_preview(
         TOOL_RENDER_DOCUMENT, label="Preview", status="Rendering a draft page"
     )
     yield step
-    compiled = compile_document(
+    # A preview writes its agent paragraphs, so the consultant sees what the report will
+    # say — and only those: the per-resource narratives would multiply the wait by the
+    # estate, and the preview has always shown their figures without them.
+    compiled = await asyncio.to_thread(
+        compile_document,
         definition,
+        prose=(
+            _AgentOnlyProse(prose if prose is not None else _prose_provider(prose_model_id, aws_region))
+            if _has_agent_paragraph(definition)
+            else None
+        ),
+        prose_budget_s=PREVIEW_PROSE_BUDGET_S,
         view=build_snapshot_view(
             snapshot, child_resource_types=_child_resource_types()
         ),
@@ -2658,6 +2689,111 @@ async def run_render_preview(
         tags=tags,
     )
 
+    yield steps.end(step["id"])
+
+
+PREVIEW_PROSE_BUDGET_S: Final[float] = 45.0
+"""Seconds of narration a preview may spend before later agent paragraphs show their fallback.
+
+The app waits 180 seconds for a preview (Req 14.9), and a large draft spends most of that
+compiling, rendering and converting. A preview is for the layout; Try it writes any one
+paragraph on its own, and a delivered report narrates under the full `PROSE_BUDGET_S`."""
+
+
+def _has_agent_paragraph(definition: Mapping[str, Any]) -> bool:
+    sections = definition.get("sections")
+    if not isinstance(sections, Sequence) or isinstance(sections, str):
+        return False
+    return any(
+        isinstance(block, Mapping) and block.get("kind") == "agent"
+        for section in sections
+        if isinstance(section, Mapping) and isinstance(section.get("blocks"), Sequence)
+        for block in section["blocks"]
+    )
+
+
+class _AgentOnlyProse:
+    """A provider that writes agent paragraphs and declines every other narration."""
+
+    __slots__ = ("_inner", "_only", "requests")
+
+    def __init__(self, inner: Any | None, only: str | None = None) -> None:
+        self._inner = inner
+        self._only = only
+        self.requests: dict[str, Any] = {}
+
+    def narrate(self, request: Any) -> str:
+        from reporting_agent.compile.blocks.base import PROSE_KIND_AGENT
+
+        if request.kind != PROSE_KIND_AGENT or (self._only is not None and request.block_id != self._only):
+            return ""
+        self.requests[request.block_id] = request
+        if self._inner is None:
+            return ""
+        return self._inner.narrate(request)
+
+    def reason_for(self, block_id: str) -> str | None:
+        if self._inner is None:
+            return "no_model"
+        reason_for = getattr(self._inner, "reason_for", None)
+        return reason_for(block_id) if callable(reason_for) else None
+
+
+async def run_try_agent(
+    *,
+    payload: Mapping[str, PlainData],
+    context: Mapping[str, PlainData],
+    steps: StepEvents,
+    artifact_bucket: str,
+    outcome: dict[str, Any],
+    aws_region: str | None = None,
+    object_store: ObjectStore | None = None,
+    prose_model_id: str = "",
+    prose: Any | None = None,
+) -> AsyncIterator[Event]:
+    """Write one agent paragraph of an inline draft against a completed run's snapshot.
+
+    The builder's "Try it": the draft compiles as a preview does, and the model is asked for
+    the one paragraph named by `block_id` and nothing else. Nothing is written to S3. The
+    answer rides on `done` as `agent` — its words, whether they were kept, and why not — and
+    is the consultant's to read: a report run writes its own, fresh.
+    """
+    from reporting_agent.compile.blocks import compile_document
+    from reporting_agent.compile.snapshot_view import build_snapshot_view
+
+    actor_id = str(context.get("actor_id") or "")
+    definition = payload.get("definition")
+    block_id = str(payload.get("block_id") or "")
+    if not isinstance(definition, Mapping) or not block_id:
+        raise RenderFailedError("try_agent carries its definition inline and names the paragraph's block_id")
+    _assert_compilable(definition)
+
+    store = object_store or _s3_store(artifact_bucket, aws_region)
+    snapshot = await store.get_json(_snapshot_key(actor_id, str(payload.get("snapshot_run_id") or "")))
+
+    step = steps.start(TOOL_COMPILE_FIGURES, label="Agent", status="Writing the paragraph")
+    yield step
+    narrator = _AgentOnlyProse(
+        prose if prose is not None else _prose_provider(prose_model_id, aws_region), only=block_id
+    )
+    compiled = await asyncio.to_thread(
+        compile_document,
+        definition,
+        prose=narrator,
+        view=build_snapshot_view(snapshot, child_resource_types=_child_resource_types()),
+        catalogue=load_section_catalogue(provider=definition_provider(definition)),
+    )
+    found = next((item for item in compiled.agent_outcomes if item.block_id == block_id), None)
+    if found is None:
+        raise RenderFailedError(f"the draft has no agent paragraph {block_id!r}")
+    request = narrator.requests.get(block_id)
+    outcome["agent"] = {
+        "block_id": block_id,
+        "outcome": found.outcome,
+        "reason": found.reason,
+        "text": found.text,
+        "figures": len(request.figures) if request is not None else 0,
+    }
     yield steps.end(step["id"])
 
 

@@ -2,11 +2,12 @@ import { produce, type Draft } from "immer"
 import { temporal } from "zundo"
 import { createStore } from "zustand/vanilla"
 
-import { EACH_RESOURCE_SLOT, type MetricCatalogSnapshot } from "@/lib/templates/definition"
+import { EACH_RESOURCE_SLOT, MAX_AGENT_BLOCKS, type MetricCatalogSnapshot } from "@/lib/templates/definition"
 
 import { sectionEntry, type Language } from "./catalogue"
 import { newSection, newUserBlockId, settled } from "./draft"
 import {
+  agentCount,
   explicitBlocks,
   isEachEntry,
   isAddedEntry,
@@ -49,6 +50,20 @@ export type Selection =
   | null
 
 export type LeftTab = "outline" | "add" | "theme" | "document"
+
+/**
+ * The last "Try it" of one agent paragraph: what the runtime's `try_agent` returned against a
+ * real snapshot. Session-only — not saved, not in the undo history, and never what a report
+ * prints: every run writes its own.
+ */
+export type AgentTry = {
+  readonly outcome: "written" | "note" | "omitted"
+  readonly reason: string
+  readonly text: string
+  readonly figures: number
+  readonly instruction: string
+  readonly at: string
+}
 export type InspectorTab = "content" | "style" | "data"
 
 export type BuilderState = {
@@ -57,8 +72,11 @@ export type BuilderState = {
   readonly leftTab: LeftTab
   readonly inspectorTab: InspectorTab
   readonly mode: "edit" | "preview"
+  /** Each agent paragraph's last try, by `<sectionId>__<blockId>`. */
+  readonly agentTries: Readonly<Record<string, AgentTry>>
 
   select(selection: Selection): void
+  setAgentTry(blockId: string, result: AgentTry): void
   setLeftTab(tab: LeftTab): void
   setInspectorTab(tab: InspectorTab): void
   setMode(mode: "edit" | "preview"): void
@@ -78,6 +96,9 @@ export type BuilderState = {
   removeAdded(sectionId: string, id: string): void
   setText(sectionId: string, id: string, language: Language, text: string): void
   setCallout(sectionId: string, id: string, patch: Partial<Pick<AddedEntry, "when" | "tone" | "threshold">>): void
+  /** An agent paragraph's settings; choosing a note as the fallback starts an empty one. */
+  setAgent(sectionId: string, id: string, patch: Partial<Pick<AddedEntry, "reads" | "length" | "voice" | "fallback">>): void
+  setAgentText(sectionId: string, id: string, field: "instruction" | "note", language: Language, text: string): void
   setTitle(sectionId: string, slot: string, language: Language, text: string): void
   setColumns(sectionId: string, ref: BlockRef, columns: readonly string[] | null): void
   /** Sets (or, with `undefined`, clears) keys of a chart or table slot's own look; `null` clears it all. */
@@ -153,13 +174,31 @@ function locate(
   return index === -1 ? null : { list: blocks, index }
 }
 
-function setTyped(target: { text?: unknown } | { title?: unknown }, key: "text" | "title", language: Language, value: string) {
+function setTyped(
+  target: { text?: unknown } | { title?: unknown } | { instruction?: unknown } | { note?: unknown },
+  key: "text" | "title" | "instruction" | "note",
+  language: Language,
+  value: string
+) {
   const record = target as Record<string, Record<string, string> | undefined>
   const current = { ...(record[key] ?? {}) }
   if (value === "") delete current[language]
   else current[language] = value
   if (key === "title" && Object.keys(current).length === 0) delete record[key]
   else record[key] = current
+}
+
+/**
+ * What a new agent paragraph reads: the block it was asked about, or — placed with nothing
+ * selected, or after the per-resource group — the whole section.
+ */
+function readsOf(blocks: readonly Draft<BlockEntry>[], after: BlockRef | undefined): string[] {
+  if (after?.kind === "slot") return [after.slot]
+  if (after?.kind === "added") {
+    const target = blocks.find((block) => isAddedEntry(block as BlockEntry) && (block as AddedEntry).id === after.id)
+    return target && (target as AddedEntry).kind !== "agent" ? [after.id] : []
+  }
+  return []
 }
 
 export function createBuilderStore({ initial, catalog }: Options) {
@@ -171,6 +210,8 @@ export function createBuilderStore({ initial, catalog }: Options) {
         leftTab: "outline",
         inspectorTab: "content",
         mode: "edit",
+        agentTries: {},
+        setAgentTry: (blockId, result) => set({ agentTries: { ...get().agentTries, [blockId]: result } }),
 
         select: (selection) => set({ selection, inspectorTab: "content" }),
         setLeftTab: (leftTab) => set({ leftTab }),
@@ -298,12 +339,15 @@ export function createBuilderStore({ initial, catalog }: Options) {
               after?.kind === "slot" && after.inEach ? { kind: "each" } : after
             const found = anchor ? locate(blocks, anchor) : null
             const index = found && found.list === blocks ? found.index + 1 : blocks.length
+            if (kind === "agent" && agentCount(draft as DefinitionV4) >= MAX_AGENT_BLOCKS) return
             const entry: AddedEntry =
               kind === "text"
                 ? { kind, id, text: { [language]: "" } }
                 : kind === "callout"
                   ? { kind, id, when: "coverage_gaps", tone: "info", text: { [language]: "" } }
-                  : { kind, id }
+                  : kind === "agent"
+                    ? { kind, id, instruction: { [language]: "" }, reads: readsOf(blocks, after), length: "short", voice: "plain", fallback: "omit" }
+                    : { kind, id }
             blocks.splice(index, 0, entry as Draft<AddedEntry>)
             added = true
           })
@@ -343,6 +387,28 @@ export function createBuilderStore({ initial, catalog }: Options) {
             // A threshold belongs to a peak condition only; the validator refuses it elsewhere.
             if (callout.when !== "peak_at_or_above") delete callout.threshold
             else if (callout.threshold === undefined) callout.threshold = 80
+          }),
+
+        setAgent: (sectionId, id, patch) =>
+          get().edit((draft) => {
+            const section = findSection(draft, sectionId)
+            if (!section) return
+            const found = locate(materialise(draft, section), { kind: "added", id })
+            if (!found) return
+            const agent = found.list[found.index] as Draft<AddedEntry>
+            Object.assign(agent, patch)
+            if (agent.fallback === "note" && agent.note === undefined) {
+              agent.note = { [get().definition.identity.language]: "" }
+            }
+          }),
+
+        setAgentText: (sectionId, id, field, language, text) =>
+          get().edit((draft) => {
+            const section = findSection(draft, sectionId)
+            if (!section) return
+            const found = locate(materialise(draft, section), { kind: "added", id })
+            if (!found) return
+            setTyped(found.list[found.index] as Draft<AddedEntry>, field, language, text)
           }),
 
         setTitle: (sectionId, slot, language, text) =>

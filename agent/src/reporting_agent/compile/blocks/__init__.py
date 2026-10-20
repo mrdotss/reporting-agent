@@ -42,8 +42,9 @@ from typing import Final
 
 from reporting_agent.catalog.loader import LoadedSectionCatalogue
 from reporting_agent.compile.ast import Block, Document, compiling_against
-from reporting_agent.compile.blocks import charts, comparison, glance, layout, narrative, record, tables
+from reporting_agent.compile.blocks import agent, charts, comparison, glance, layout, narrative, record, tables
 from reporting_agent.compile.blocks.base import (
+    AgentOutcome,
     BlockContext,
     BlockOutput,
     apply_block_options,
@@ -79,6 +80,7 @@ from reporting_agent.messages import DEFAULT_LANGUAGE
 
 __all__ = [
     "BLOCK_COMPILERS",
+    "EXPANSION_COMPILERS",
     "FRONT_MATTER_SCHEMA_VERSION",
     "BlockCompiler",
     "CompiledDocument",
@@ -117,6 +119,13 @@ BLOCK_COMPILERS: Final[dict[str, BlockCompiler]] = {
 """Every declared block type but `row`, which needs the child compiler and is dispatched
 separately in :func:`compile_block`."""
 
+EXPANSION_COMPILERS: Final[dict[str, BlockCompiler]] = {
+    agent.AGENT_PARAGRAPH_BLOCK: agent.compile_agent_paragraph,
+    agent.AGENT_RECORD_BLOCK: agent.compile_agent_record,
+}
+"""Block types only the v4 section expander produces. Not declared types: no definition
+names them, so neither validator has to admit them in a v1 or v2 `blocks` array."""
+
 _ROW_TYPE: Final[str] = "row"
 
 FRONT_MATTER_SCHEMA_VERSION: Final[int] = 2
@@ -154,6 +163,8 @@ class CompiledDocument:
     ledger: FigureLedger
     nodes_by_block: Mapping[str, tuple[Block, ...]]
     figure_count: int
+    agent_outcomes: tuple[AgentOutcome, ...] = ()
+    """Each agent paragraph's result, in document order — for `agent.json` and `prose.json`."""
 
 
 def compile_block(
@@ -177,7 +188,7 @@ def compile_block(
         )
         return (output, {block.id: output.nodes, **child_nodes})
 
-    compiler = BLOCK_COMPILERS.get(block.type)
+    compiler = BLOCK_COMPILERS.get(block.type) or EXPANSION_COMPILERS.get(block.type)
     if compiler is None:
         raise CompileFailedError(
             f"block {block.id!r} declares the type {block.type!r}, for which this compiler "
@@ -219,6 +230,7 @@ def compile_document(
     catalog_scales: Mapping[str, int] | None = None,
     catalogue: LoadedSectionCatalogue | None = None,
     authored_matches: Mapping[str, object] | None = None,
+    prose_budget_s: float | None = None,
 ) -> CompiledDocument:
     """Compile a validated definition against one snapshot.
 
@@ -331,7 +343,9 @@ def compile_document(
         emitted, nodes_by_block, deferrals, factory_calls = _phase_one(
             context, specs, design, schema_version=schema_version
         )
-        prose_by_block = _phase_two(context, deferrals)
+        prose_by_block = _phase_two(
+            context, deferrals, budget_s=PROSE_BUDGET_S if prose_budget_s is None else prose_budget_s
+        )
         document, nodes_by_block = _phase_three(
             emitted, nodes_by_block, deferrals, prose_by_block
         )
@@ -343,6 +357,9 @@ def compile_document(
         ledger=ledger,
         nodes_by_block=nodes_by_block,
         figure_count=len(ledger),
+        agent_outcomes=tuple(
+            context.agent_paragraphs[spec.id] for spec in specs if spec.id in context.agent_paragraphs
+        ),
     )
 
 
@@ -447,10 +464,16 @@ def _phase_two(
     the compiling phase past its deadline and losing the whole report to the reaper.
     """
     answers: dict[str, str | None] = {}
+    reasons = context.prose_reasons
     started = clock()
     over_budget = False
     for deferred in deferrals:
-        if deferred.prose_request is None:
+        request = deferred.prose_request
+        if request is None and deferred.request_for is not None:
+            request = deferred.request_for()
+            if request is None:
+                reasons[deferred.block_id] = "nothing_to_read"
+        if request is None:
             answers[deferred.block_id] = None
             continue
         if not over_budget and context.prose is not None and clock() - started >= budget_s:
@@ -461,6 +484,7 @@ def _phase_two(
                 int(budget_s),
             )
         if over_budget:
+            reasons[deferred.block_id] = "over_budget"
             answers[deferred.block_id] = None
             continue
         if context.prose is None:
@@ -473,10 +497,15 @@ def _phase_two(
                 "figures without prose",
                 deferred.block_id,
             )
+            reasons[deferred.block_id] = "no_model"
             answers[deferred.block_id] = None
             continue
         try:
-            answers[deferred.block_id] = context.prose.narrate(deferred.prose_request)
+            answers[deferred.block_id] = context.prose.narrate(request)
+            reason_for = getattr(context.prose, "reason_for", None)
+            reasons[deferred.block_id] = (
+                reason_for(deferred.block_id) if callable(reason_for) else None
+            ) or ("written" if answers[deferred.block_id] else "empty")
         except Exception:
             logger.warning(
                 "the prose provider failed for block %s; the block will render its figures "
@@ -484,6 +513,7 @@ def _phase_two(
                 deferred.block_id,
                 exc_info=True,
             )
+            reasons[deferred.block_id] = "provider_failed"
             answers[deferred.block_id] = None
     return answers
 
@@ -494,15 +524,21 @@ def _phase_three(
     deferrals: Sequence[Deferred],
     prose_by_block: Mapping[str, str | None],
 ) -> tuple[Document, dict[str, tuple[Block, ...]]]:
-    """Assemble the tree **once**, from parts already built, mutating nothing."""
-    by_id = {deferred.block_id: deferred for deferred in deferrals}
+    """Assemble the tree **once**, from parts already built, mutating nothing.
+
+    Every deferred block finishes before it is placed, those marked `after_others` last —
+    a block that lists what the others wrote has to see them all. Placement is document
+    order either way."""
+    finished_by_id: dict[str, tuple[Block, ...]] = {}
+    for deferred in sorted(deferrals, key=lambda item: item.after_others):
+        finished_by_id[deferred.block_id] = deferred.finish(prose_by_block.get(deferred.block_id))
     blocks: list[Block] = []
 
     for entry in emitted:
         if entry.deferred is None:
             blocks.extend(entry.nodes)
             continue
-        finished = by_id[entry.block_id].finish(prose_by_block.get(entry.block_id))
+        finished = finished_by_id[entry.block_id]
         nodes_by_block[entry.block_id] = finished
         blocks.extend(finished)
 

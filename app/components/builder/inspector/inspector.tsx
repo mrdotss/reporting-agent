@@ -1,11 +1,22 @@
 "use client"
 
-import { ArrowDownIcon, ArrowUpIcon, CursorClickIcon, EyeIcon, EyeSlashIcon, TrashIcon, WarningIcon } from "@phosphor-icons/react"
-import { useId, useMemo, type ReactNode } from "react"
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CircleNotchIcon,
+  CursorClickIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  SparkleIcon,
+  TrashIcon,
+  WarningIcon,
+} from "@phosphor-icons/react"
+import { useId, useMemo, useState, type ReactNode } from "react"
 
-import { useBuilder, useEnvironment, useIssues } from "@/components/builder/context"
+import { useBuilder, useBuilderStore, useEnvironment, useIssues } from "@/components/builder/context"
 import {
   ADDED_BLOCKS,
+  AGENT_REASONS,
   CALLOUT_TOKENS,
   blockHint,
   blockLabel,
@@ -40,11 +51,12 @@ import {
   type SlotEntry,
   avgAndPeakMetric,
 } from "@/lib/builder/model"
-import type { BlockRef, InspectorTab } from "@/lib/builder/store"
+import type { AgentTry, BlockRef, InspectorTab } from "@/lib/builder/store"
 import { pageDesign } from "@/lib/builder/theme"
 import { expandPresets, matchPresetName } from "@/lib/profiles/presets"
 import { metricChoicesFor, toggleMetric, entryKey } from "@/lib/profiles/section-metrics"
 import {
+  AGENT_INSTRUCTION_MAX_LENGTH,
   BLOCK_CHART_HEIGHTS,
   CHART_SLOT_BLOCKS,
   CHART_STYLES,
@@ -569,6 +581,7 @@ function BlockContent({ section, entry, ref_ }: Readonly<{ section: SectionV4; e
   if (ref_.kind === "added") {
     const block = section.blocks?.find((b) => isAddedEntry(b) && b.id === ref_.id) as AddedEntry | undefined
     if (block?.kind === "callout") return <CalloutContent section={section} block={block} />
+    if (block?.kind === "agent") return <AgentContent section={section} entry={entry} block={block} />
     if (block && block.kind !== "text") return <AddedContent section={section} entry={entry} kind={block.kind} />
     const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
     return (
@@ -843,6 +856,7 @@ function AddedContent({
     avg_vs_peak: avgAndPeakMetric(section)
       ? `Each resource's average and peak ${avgAndPeakMetric(section)}, busiest by peak first, up to twelve rows. Both dots are figures from the snapshot.`
       : "Needs a metric the section collects both an average and a maximum of. Add the missing statistic under the section's metrics.",
+    agent: "",
   }
   const readsMetrics = kind !== "coverage" && kind !== "page_break"
   return (
@@ -945,6 +959,256 @@ function CalloutContent({ section, block }: Readonly<{ section: SectionV4; block
           />
         ))}
       </Field>
+    </div>
+  )
+}
+
+
+const LENGTH_NAMES = { sentence: "One sentence", short: "Short paragraph", bullets: "Points" } as const
+const VOICE_NAMES = { plain: "Plain", executive: "Executive", technical: "Technical" } as const
+
+/**
+ * An agent paragraph: what to ask, what it reads, how long, in what voice, and what stands
+ * in when its words are refused. Try it writes it against a connection's latest report.
+ */
+function AgentContent({
+  section,
+  entry,
+  block,
+}: Readonly<{ section: SectionV4; entry: CatalogueSection; block: AddedEntry }>) {
+  const definition = useBuilder((state) => state.definition)
+  const setAgent = useBuilder((state) => state.setAgent)
+  const setAgentText = useBuilder((state) => state.setAgentText)
+  const languages: Language[] = definition.identity.language === "id" ? ["id", "en"] : ["en", "id"]
+  const reads = block.reads ?? []
+  const layout = sectionLayout(section, entry)
+  // What it can read: the section's blocks, in print order, but not another agent paragraph.
+  const readable = [
+    ...layout.flatMap((item) =>
+      item.kind === "slot"
+        ? [{ ref: item.slot, label: blockLabel(entry, item.slot) }]
+        : item.kind === "each"
+          ? item.children.map((child) => ({ ref: child.slot, label: `${blockLabel(entry, child.slot)} · each ${resourceNoun(entry)}` }))
+          : item.kind === "added" && item.entry.kind !== "agent"
+            ? [{ ref: item.id, label: ADDED_BLOCKS[item.entry.kind].label }]
+            : []
+    ),
+  ].filter((option) => option.ref !== "title")
+  const toggle = (ref: string) =>
+    setAgent(section.id, block.id, {
+      reads: reads.includes(ref) ? reads.filter((value) => value !== ref) : [...reads, ref],
+    })
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Field
+        label="Instruction"
+        hint="What the agent should say about these figures. It may name a number, such as a threshold, but that number never prints — if the agent repeats it, or writes any number it was not shown, its words are refused. Try it shows you the result."
+      >
+        {languages.map((language) => (
+          <InstructionField
+            key={language}
+            label={language === "en" ? "English" : "Indonesian"}
+            value={block.instruction?.[language] ?? ""}
+            onChange={(value) => setAgentText(section.id, block.id, "instruction", language, value)}
+          />
+        ))}
+      </Field>
+      <Field label="Reads" hint={reads.length === 0 ? "Nothing chosen: it reads the whole section." : "Only these blocks' figures are shown to the agent."}>
+        <div className="flex flex-wrap gap-1.5">
+          {readable.map((option) => {
+            const on = reads.includes(option.ref)
+            return (
+              <button
+                key={option.ref}
+                type="button"
+                aria-pressed={on}
+                onClick={() => toggle(option.ref)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[12px]",
+                  on ? "border-primary bg-primary/10 font-medium text-primary" : "border-border text-muted-foreground hover:border-input"
+                )}
+              >
+                {option.label}
+              </button>
+            )
+          })}
+        </div>
+      </Field>
+      <Field label="Length">
+        <Segmented
+          label="Length"
+          value={block.length ?? "short"}
+          options={(["sentence", "short", "bullets"] as const).map((value) => ({ value, label: LENGTH_NAMES[value] }))}
+          onChange={(length) => setAgent(section.id, block.id, { length })}
+        />
+      </Field>
+      <Field label="Voice">
+        <Segmented
+          label="Voice"
+          value={block.voice ?? "plain"}
+          options={(["plain", "executive", "technical"] as const).map((value) => ({ value, label: VOICE_NAMES[value] }))}
+          onChange={(voice) => setAgent(section.id, block.id, { voice })}
+        />
+      </Field>
+      <Field
+        label="If it cannot be written"
+        hint="The report still delivers either way, and the report's page lists what was left out and why."
+      >
+        <Segmented
+          label="Fallback"
+          value={block.fallback ?? "omit"}
+          options={[
+            { value: "omit", label: "Leave it out" },
+            { value: "note", label: "Print a note" },
+          ]}
+          onChange={(fallback) => setAgent(section.id, block.id, { fallback })}
+        />
+        {block.fallback === "note" &&
+          languages.map((language) => (
+            <TypedField
+              key={language}
+              label={`Note · ${language === "en" ? "English" : "Indonesian"}`}
+              multiline
+              max={2000}
+              value={block.note?.[language] ?? ""}
+              onChange={(value) => setAgentText(section.id, block.id, "note", language, value)}
+            />
+          ))}
+      </Field>
+      <TryAgent section={section} block={block} />
+    </div>
+  )
+}
+
+/** An instruction: like typed text, but a number is allowed — it is a prompt, never printed. */
+function InstructionField({ label, value, onChange }: Readonly<{ label: string; value: string; onChange: (value: string) => void }>) {
+  const id = useId()
+  return (
+    <div className="flex flex-col gap-1">
+      <label htmlFor={id} className="text-xs font-medium text-muted-foreground">{label}</label>
+      <textarea
+        id={id}
+        value={value}
+        maxLength={AGENT_INSTRUCTION_MAX_LENGTH}
+        rows={3}
+        placeholder="e.g. Say which machines ran hot at peak and whether that needs attention."
+        onChange={(event) => onChange(event.target.value)}
+        className={cn(INPUT, "h-auto min-h-[72px] py-1.5 leading-relaxed")}
+      />
+    </div>
+  )
+}
+
+/** Try it: the one paragraph, written now against a connection's latest report. */
+function TryAgent({ section, block }: Readonly<{ section: SectionV4; block: AddedEntry }>) {
+  const store = useBuilderStore()
+  const { templateId, previewSources } = useEnvironment()
+  const language = useBuilder((state) => state.definition.identity.language)
+  const blockId = `${section.id}__${block.id}`
+  const lastTry = useBuilder((state) => state.agentTries[blockId])
+  const setAgentTry = useBuilder((state) => state.setAgentTry)
+  const ready = previewSources.filter((source) => source.period !== null)
+  const [sourceId, setSourceId] = useState<string | undefined>(ready[0]?.id)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+  const instruction = block.instruction?.[language]?.trim() ?? ""
+  const issues = useIssues()
+  const blocking = issues.length > 0
+
+  const run = async () => {
+    if (!sourceId) return
+    setBusy(true)
+    setProblem(null)
+    try {
+      const response = await fetch(`/api/report-profiles/${templateId}/agent-try`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectedSubscriptionId: sourceId, definition: store.getState().definition, blockId }),
+      })
+      const body = (await response.json()) as {
+        outcome?: AgentTry["outcome"]
+        reason?: string
+        text?: string
+        figures?: number
+        error?: { message?: string }
+      }
+      if (!response.ok || body.outcome === undefined) {
+        setProblem(body.error?.message ?? "The agent could not be asked just now. The draft is kept.")
+        return
+      }
+      setAgentTry(blockId, {
+        outcome: body.outcome,
+        reason: body.reason ?? "",
+        text: body.text ?? "",
+        figures: body.figures ?? 0,
+        instruction,
+        at: new Date().toISOString(),
+      })
+    } catch {
+      setProblem("The server could not be reached. The draft is kept.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-border p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs font-semibold">Try it with real figures</span>
+        <button
+          type="button"
+          onClick={() => void run()}
+          disabled={busy || !sourceId || !instruction || blocking}
+          title={blocking ? "Fix what the builder lists under “to fix” first." : undefined}
+          className="inline-flex h-7 items-center gap-1.5 rounded-md bg-primary px-2.5 text-[12.5px] font-medium text-primary-foreground disabled:opacity-50"
+        >
+          {busy ? <CircleNotchIcon className="size-3.5 animate-spin" /> : <SparkleIcon className="size-3.5" />}
+          {busy ? "Writing…" : lastTry ? "Try again" : "Try it"}
+        </button>
+      </div>
+      {ready.length === 0 ? (
+        <p className="text-[11.5px] leading-snug text-muted-foreground">
+          Needs a connection of this provider with a completed report. Run any preset against one first.
+        </p>
+      ) : (
+        ready.length > 1 && (
+          <select
+            aria-label="Connection to try against"
+            value={sourceId}
+            onChange={(event) => setSourceId(event.target.value)}
+            className={cn(INPUT, "h-8")}
+          >
+            {ready.map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.name}
+              </option>
+            ))}
+          </select>
+        )
+      )}
+      {problem && <p role="alert" className="text-[11.5px] text-destructive">{problem}</p>}
+      {lastTry && (
+        <div className="flex flex-col gap-1">
+          <span className="text-[11px] font-medium text-muted-foreground">
+            Last try ·{" "}
+            {lastTry.outcome === "written"
+              ? `from ${lastTry.figures} figures, every number checked`
+              : lastTry.outcome === "note"
+                ? "not written — your note prints instead"
+                : "not written — nothing prints in its place"}
+          </span>
+          <p className="text-[12.5px] leading-relaxed whitespace-pre-line">
+            {lastTry.outcome === "written" ? lastTry.text : AGENT_REASONS[lastTry.reason] ?? "Not written."}
+          </p>
+          {lastTry.instruction !== instruction && (
+            <span className="text-[11px] text-muted-foreground">The instruction changed since this try.</span>
+          )}
+          <span className="text-[11px] text-muted-foreground">
+            Not saved, and not what the report prints: every run writes its own.
+          </span>
+        </div>
+      )}
     </div>
   )
 }

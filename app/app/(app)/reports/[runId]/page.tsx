@@ -5,6 +5,7 @@ import { notFound } from "next/navigation"
 import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
+import { AgentNotes } from "@/components/reports/agent-notes"
 import { DownloadCard } from "@/components/reports/download-card"
 import { SendCard } from "@/components/delivery/send-card"
 import { latestDelivery, listContacts } from "@/lib/delivery/store"
@@ -30,6 +31,7 @@ import {
   readPinnedVersion,
   resolveRunExtras,
 } from "@/lib/runs/detail"
+import { loadAgentOutcomes } from "@/lib/runs/agent"
 import { loadRunGaps, loadRunProvenance } from "@/lib/runs/gaps"
 import { periodLine } from "@/lib/runs/presentation"
 import { findOwnedRun } from "@/lib/runs/state"
@@ -88,7 +90,7 @@ export default async function RunPage({ params }: RunPageProps) {
 
   const view = toRunView(run, await resolveRunExtras(run))
 
-  const [gaps, provenance, documentHtml, verification, pinned, machines] =
+  const [gaps, provenance, documentHtml, verification, pinned, machines, agentOutcomes] =
     await Promise.all([
       loadRunGaps(run),
       loadRunProvenance(run),
@@ -98,6 +100,7 @@ export default async function RunPage({ params }: RunPageProps) {
         ? Promise.resolve(null)
         : readPinnedVersion(run.templateVersionId),
       loadTopUtilization(run),
+      loadAgentOutcomes(run),
     ])
 
   const subscription = await getConnectedSubscription(
@@ -244,6 +247,8 @@ export default async function RunPage({ params }: RunPageProps) {
           {run.status === "failed" ? (
             <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
           ) : null}
+
+          {delivered && agentOutcomes !== null ? <AgentNotes outcomes={agentOutcomes} /> : null}
 
           {/* Requirement 39 — a verification that did not pass stays loud, above the detail. */}
           {verified ? null : (

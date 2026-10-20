@@ -59,7 +59,7 @@ def _deferrals(*ids: str) -> list[Deferred]:
 def test_blocks_after_the_budget_render_without_prose(caplog: pytest.LogCaptureFixture) -> None:
     clock = _Clock()
     provider = _SlowProvider(clock, seconds=70)
-    context = SimpleNamespace(prose=provider)
+    context = SimpleNamespace(prose=provider, prose_reasons={})
 
     with caplog.at_level(logging.WARNING):
         answers = _phase_two(
@@ -77,7 +77,7 @@ def test_a_quick_narrator_is_never_cut_short() -> None:
     clock = _Clock()
     provider = _SlowProvider(clock, seconds=6)
     answers = _phase_two(
-        SimpleNamespace(prose=provider), _deferrals("a", "b", "c"), clock=clock  # type: ignore[arg-type]
+        SimpleNamespace(prose=provider, prose_reasons={}), _deferrals("a", "b", "c"), clock=clock  # type: ignore[arg-type]
     )
     assert provider.asked == ["a", "b", "c"]
     assert all(answers[i] == f"prose for {i}" for i in "abc")

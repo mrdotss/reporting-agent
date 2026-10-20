@@ -38,6 +38,7 @@ constructs one.
 | `preflight` | yes | yes |
 | `verify_report` | yes | yes |
 | `render_preview` | yes | yes |
+| `try_agent` | yes | yes |
 | `list_inventory` | yes | yes |
 | `chat` | yes | **no — the one model-facing command** |
 | `compare_runs` | **no — declared and unrouted** | — |
@@ -182,6 +183,28 @@ artifact says what it is after it leaves the app. The verifier runs and its stat
 reported as **information** — it does not gate. A draft template must be previewable for
 layout before its figures verify, and a wizard that refused to show a page until every
 number was provable would be unusable at exactly the moment a consultant needs the page.
+
+Where the draft has agent paragraphs, the preview writes them — and only them: the
+per-resource narratives would multiply the wait by the estate.
+
+### `try_agent`
+
+```jsonc
+{ "command": "try_agent",
+  "snapshot_run_id": "run_…",               // a COMPLETED run the actor owns
+  "block_id": "<sectionId>__<blockId>",     // the agent paragraph to write
+  "definition": { /* carried INLINE, as for render_preview */ },
+  "context": { /* … */ } }
+```
+
+Compiles the draft against that snapshot and asks the model for the one agent paragraph
+named, through `narrate/summary.py` like every narrative. Writes nothing. `done` carries
+`agent: {block_id, outcome, reason, text, figures}` — `outcome` is `written`, `note` or
+`omitted`, and `reason` says why the words are missing when they are (`unprovable_figures`,
+`model_failed`, `unfinished`, `empty`, `no_model`, `nothing_to_read`, …).
+
+A delivered report writes its agent paragraphs fresh and records each outcome in
+`reports/<runId>/agent.json`; their words are in `prose.json` for re-verification.
 
 ### `list_inventory`
 
