@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import re
 import shutil
 import subprocess
+import time
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
@@ -15,6 +17,20 @@ from reporting_agent.compile.format import bytes_to_gib
 from reporting_agent.errors import RenderFailedError
 from reporting_agent.render import charts as legacy
 from reporting_agent.render import chartstyle
+
+logger = logging.getLogger(__name__)
+
+CHART_RENDER_TIMEOUT_S = 120
+"""How long one chart's renderer process may take, launch included.
+
+A chart renders in under a second once Node, ECharts and the rasterizer's font scan are warm.
+The first launch on a freshly started runtime machine is another matter: on 2026-10-21 a
+report failed `RENDER_FAILED` because its first chart passed the old 30-second limit, and the
+same chart rendered in 0.4 s locally and fine on the next preview. A hung renderer now costs
+two minutes before the report fails, rather than a slow start costing the report."""
+
+SLOW_CHART_S = 10
+"""A render slower than this is logged, so the cold-start cost stays visible."""
 
 LINE_WIDTHS = {"thin": 1.4, "regular": 2.3, "bold": 3.2}
 HEIGHT_SCALES = {"short": 0.75, "normal": 1.0, "tall": 1.3}
@@ -323,12 +339,13 @@ def render_chart(
     node_bin = shutil.which("node")
     if not node_bin:
         raise RenderFailedError("The chart renderer requires the packaged Node.js runtime")
+    started = time.monotonic()
     try:
         result = subprocess.run(
             [node_bin, str(root / "chart-renderer/render.mjs")],
             input=json.dumps(spec).encode(),
             capture_output=True,
-            timeout=30,
+            timeout=CHART_RENDER_TIMEOUT_S,
             check=True,
         )
         output = json.loads(result.stdout)
@@ -340,6 +357,9 @@ def render_chart(
         raise RenderFailedError(
             f"ECharts could not render chart {node.path!r}: {type(error).__name__}"
         ) from error
+    elapsed = time.monotonic() - started
+    if elapsed > SLOW_CHART_S:
+        logger.warning("chart %s took %.1f s to render, launch included", node.path, elapsed)
     data_hash = legacy.chart_data_hash(node, messages=messages)
     return legacy.ChartArtifacts(
         image_png=png,
