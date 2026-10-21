@@ -145,3 +145,29 @@ def test_top_level_chapters_start_separate_pdf_pages():
     assert "First content." in pages[0].extract_text()
     assert "Second content." in pages[1].extract_text()
     assert "Second content." not in pages[0].extract_text()
+
+
+def test_a_cold_first_launch_has_room_and_a_slow_render_is_logged(compiled, monkeypatch, caplog):
+    """The first chart on a freshly started runtime machine pays Node's launch, ECharts' load
+    and the rasterizer's font scan. On 2026-10-21 that passed the old 30-second limit and
+    failed a report whose chart rendered in 0.4 s warm, so the limit is two minutes — and a
+    slow render is logged so the cost stays visible."""
+    import logging
+    import subprocess
+
+    real_run = subprocess.run
+    seen: dict = {}
+    clock = iter([100.0, 100.0 + echarts.SLOW_CHART_S + 5])
+
+    def run(*args, **kwargs):
+        seen["timeout"] = kwargs["timeout"]
+        return real_run(*args, **kwargs)
+
+    monkeypatch.setattr(echarts.subprocess, "run", run)
+    monkeypatch.setattr(echarts.time, "monotonic", lambda: next(clock))
+    node = next(n for n in compiled.document.blocks if isinstance(n, Chart))
+    with caplog.at_level(logging.WARNING, logger="reporting_agent.render.echarts"):
+        echarts.render_chart(node, table_style="Table Hairline", preset="editorial", chart_style="stacked",
+                             chart_font="document", accent_color="#76558b", messages=M)
+    assert seen["timeout"] == echarts.CHART_RENDER_TIMEOUT_S >= 120
+    assert any("took 15.0 s to render" in record.getMessage() for record in caplog.records)
