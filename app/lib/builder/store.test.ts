@@ -405,6 +405,22 @@ describe("agent paragraphs", () => {
     expect(collectDefinitionIssues(definitionOf(s)).map((issue) => issue.path.slice(-2).join("."))).toEqual(["note.en"])
   })
 
+  test("going back to leaving it out takes the note away, so nothing hidden is left to fix", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const agent = s.getState().addBlock(id, "agent")!
+    s.getState().setAgentText(id, agent, "instruction", "en", "Summarise the chart.")
+    s.getState().setAgent(id, agent, { fallback: "note" })
+    s.getState().setAgent(id, agent, { fallback: "omit" })
+    expect(agentsOf(s)[0]).not.toHaveProperty("note")
+    expect(collectDefinitionIssues(definitionOf(s))).toEqual([])
+    // Changing another setting keeps a note the fallback still prints.
+    s.getState().setAgent(id, agent, { fallback: "note" })
+    s.getState().setAgentText(id, agent, "note", "en", "Not written this time.")
+    s.getState().setAgent(id, agent, { voice: "executive" })
+    expect(agentsOf(s)[0]).toMatchObject({ note: { en: "Not written this time." } })
+  })
+
   test("a preset holds six", () => {
     const s = store()
     const id = s.getState().addSection("ec2_utilization")!

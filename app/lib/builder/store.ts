@@ -397,8 +397,13 @@ export function createBuilderStore({ initial, catalog }: Options) {
             if (!found) return
             const agent = found.list[found.index] as Draft<AddedEntry>
             Object.assign(agent, patch)
+            // A note belongs to the note fallback only. Left behind under "Leave it out", an
+            // empty one is an issue the author can neither see nor edit, since the field is
+            // hidden; undo brings a removed note back.
             if (agent.fallback === "note" && agent.note === undefined) {
               agent.note = { [get().definition.identity.language]: "" }
+            } else if (agent.fallback !== "note") {
+              delete agent.note
             }
           }),
 
