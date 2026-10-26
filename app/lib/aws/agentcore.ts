@@ -526,6 +526,38 @@ export function resolveRuntimeArn(): string {
 }
 
 /**
+ * The ARN pattern {@link runtimeTarget} splits: account id and runtime id.
+ *
+ * Anchored and specific on purpose. Anything that does not match — a qualified
+ * ARN, an id already, a partition this was not written for — is sent through
+ * unchanged, so the split can only ever narrow how a value is sent, never
+ * misroute it.
+ */
+const RUNTIME_ARN_PATTERN =
+  /^arn:aws[a-z-]*:bedrock-agentcore:[a-z0-9-]+:(\d{12}):runtime\/([A-Za-z0-9_-]+)$/
+
+/**
+ * How the runtime is named on the wire: its **id** plus `accountId`, rather
+ * than the full ARN.
+ *
+ * The two are the same call to AgentCore. The difference is the request path:
+ * the SDK puts `agentRuntimeArn` into `/runtimes/{agentRuntimeArn}/invocations`,
+ * so a full ARN travels as `arn%3Aaws%3A…runtime%2F…`. An egress proxy that
+ * normalizes encoded separators (the one in front of Claude Code cloud
+ * sessions does) turns that into a path AgentCore does not route, and the 404
+ * `<UnknownOperationException/>` body then surfaces from the SDK as a bare
+ * `SyntaxError`. An id has no separator to normalize.
+ */
+export function runtimeTarget(arn: string): {
+  agentRuntimeArn: string
+  accountId?: string
+} {
+  const match = RUNTIME_ARN_PATTERN.exec(arn.trim())
+  if (match === null) return { agentRuntimeArn: arn }
+  return { agentRuntimeArn: match[2], accountId: match[1] }
+}
+
+/**
  * The bytes of one invoke payload: the command, flattened, plus the context
  * (Requirement 41.8).
  *
@@ -576,7 +608,7 @@ export async function invokeAgentRuntime(
 
   const response = await getClient().send(
     new InvokeAgentRuntimeCommand({
-      agentRuntimeArn,
+      ...runtimeTarget(agentRuntimeArn),
       runtimeSessionId: a.sessionId,
       contentType: INVOKE_CONTENT_TYPE,
       accept: INVOKE_ACCEPT,

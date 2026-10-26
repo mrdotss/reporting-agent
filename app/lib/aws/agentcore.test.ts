@@ -11,6 +11,7 @@ import {
   buildInvokePayload,
   invokeAgentRuntime,
   resolveRuntimeArn,
+  runtimeTarget,
 } from "@/lib/aws/agentcore"
 
 /**
@@ -73,6 +74,9 @@ vi.mock("@aws-sdk/client-bedrock-agentcore", () => {
 
 const ARN =
   "arn:aws:bedrock-agentcore:us-east-1:123456789012:runtime/reporting-abc123"
+
+const ACCOUNT_ID = "123456789012"
+const RUNTIME_ID = "reporting-abc123"
 
 const REGION = "us-east-1"
 
@@ -352,7 +356,8 @@ describe("Requirement 41.7 — the request the runtime receives", () => {
     const { region, input } = sent[0]
 
     expect(region).toBe(REGION)
-    expect(input.agentRuntimeArn).toBe(ARN)
+    expect(input.agentRuntimeArn).toBe(RUNTIME_ID)
+    expect(input.accountId).toBe(ACCOUNT_ID)
     expect(input.runtimeSessionId).toBe(SESSION_ID)
     expect(input.accept).toBe("text/event-stream")
     expect(input.contentType).toBe("application/json")
@@ -406,8 +411,25 @@ describe("Requirement 41.7 — the request the runtime receives", () => {
     })
 
     expect(sent.map(({ input }) => input.agentRuntimeArn)).toEqual([
-      ARN,
-      rotated,
+      RUNTIME_ID,
+      `${RUNTIME_ID}-v2`,
     ])
+  })
+})
+
+describe("the runtime is sent as an id plus accountId, never as an ARN in the path", () => {
+  test("a runtime ARN splits into its id and account", () => {
+    expect(runtimeTarget(ARN)).toEqual({
+      agentRuntimeArn: RUNTIME_ID,
+      accountId: ACCOUNT_ID,
+    })
+  })
+
+  test.each([
+    ["an id", RUNTIME_ID],
+    ["a qualified ARN", `${ARN}/endpoint/DEFAULT`],
+    ["another service's ARN", "arn:aws:lambda:us-east-1:123456789012:function/x"],
+  ])("%s is sent through unchanged", (_label, value) => {
+    expect(runtimeTarget(value)).toEqual({ agentRuntimeArn: value })
   })
 })
