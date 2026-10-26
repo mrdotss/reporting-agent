@@ -1,10 +1,10 @@
 import { PageBody } from "@/components/app-shell/page-body"
-import { selectedFilter } from "@/lib/workspaces/context"
+import { selectedContext } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 import Link from "next/link"
 import { PlusIcon, StackIcon } from "@phosphor-icons/react/ssr"
 
-import { NewTemplateButton } from "@/components/templates/new-template-button"
+import { NewPresetChooser, PresetQuickStarts } from "@/components/templates/new-preset-doors"
 import { ProfileTable } from "@/components/templates/profile-table"
 import {
   Empty,
@@ -54,9 +54,11 @@ export const metadata: Metadata = {
 
 export default async function TemplatesPage() {
   const user = await requireSession()
-  const projectScope = await selectedFilter(user.id)
+  const context = await selectedContext(user.id)
+  const projectScope = { workspaceId: context.workspace.id, projectId: context.project?.id }
 
   const rows = await listTemplates(user.id, projectScope)
+  const customers = new Map(context.projects.map((project) => [project.id, project.name]))
 
   // One resolve per template. A user holds three starters plus what they author
   // — single digits, not a page — and the alternative is a `DISTINCT ON` whose
@@ -92,9 +94,11 @@ export default async function TemplatesPage() {
               Open design lab
             </Link>
           ) : null}
-          <NewTemplateButton />
+          <NewPresetChooser />
         </div>
       </div>
+
+      <PresetQuickStarts />
 
       {templates.length === 0 ? (
         <Empty className="py-12">
@@ -109,11 +113,11 @@ export default async function TemplatesPage() {
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <NewTemplateButton />
+            <NewPresetChooser />
           </EmptyContent>
         </Empty>
       ) : (
-        <ProfileTable templates={templates} />
+        <ProfileTable templates={templates} customers={customers} />
       )}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">

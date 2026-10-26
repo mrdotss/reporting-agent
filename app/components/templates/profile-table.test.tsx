@@ -25,6 +25,7 @@ function profile(overrides: Partial<TemplateView> = {}): TemplateView {
   return {
     provider: "azure",
     hasIncidentReport: false,
+    sectionTypes: [],
     id: "t-1",
     name: "Enesis Monthly",
     description: "",

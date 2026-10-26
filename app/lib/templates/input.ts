@@ -2,6 +2,7 @@ import { scopeInput } from "@/lib/workspaces/input"
 import { z } from "zod"
 import { STARTER_KEYS_V4 } from "@/lib/builder/starters"
 import { DESIGN_PRESETS, SUPPORTED_PROVIDERS } from "@/lib/templates/definition"
+import { outlineCreateSchema } from "@/lib/presets/outline"
 
 /**
  * Every input the template routes parse — bodies, path parameters and search
@@ -121,8 +122,16 @@ export const templateCreateInputSchema = z
      */
     starter: z.enum(STARTER_KEYS_V4).optional(),
     theme: z.enum(DESIGN_PRESETS).optional(),
+    /**
+     * A Describe it outline instead of a starter: catalogue section keys, a period and
+     * whether there is a contents page. Built into a draft the way a starter is.
+     */
+    outline: outlineCreateSchema.optional(),
   })
   .strict()
+  .refine((body) => body.outline === undefined || body.starter === undefined, {
+    error: "Send a starter or an outline, not both.",
+  })
 
 export type TemplateCreateInput = z.output<typeof templateCreateInputSchema>
 

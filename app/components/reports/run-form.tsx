@@ -136,6 +136,7 @@ export function RunForm({
   templates,
   nowIso,
   schedule = null,
+  initialTemplateId,
 }: Readonly<{
   subscriptions: readonly ConnectedSubscriptionView[]
   /**
@@ -160,6 +161,11 @@ export function RunForm({
   nowIso: string
   /** This customer's monthly schedule, when it has one. */
   schedule?: ScheduleView | null
+  /**
+   * A preset to start on, from "Request a report" on the preset list. Honoured only when
+   * it is runnable; the connector then starts on the first one of that preset's source.
+   */
+  initialTemplateId?: string
 }>) {
   const workspace = useWorkspace()
   const projectScope = useCreationScope()
@@ -171,8 +177,16 @@ export function RunForm({
     (subscription) => blockedReason(subscription, now) === null
   )
 
+  const initialTemplate = templates.find(
+    (template) => template.id === initialTemplateId && template.currentVersion !== null
+  )
   const [connectedSubscriptionId, setConnectedSubscriptionId] = useState(
-    selectable[0]?.id ?? ""
+    (initialTemplate === undefined
+      ? undefined
+      : selectable.find((subscription) => subscription.provider === initialTemplate.provider)
+    )?.id ??
+      selectable[0]?.id ??
+      ""
   )
 
   // A preset is written for one source and a run pairs a connector only with presets
@@ -190,7 +204,11 @@ export function RunForm({
     (template) => template.currentVersion !== null
   )
 
-  const [templateId, setTemplateId] = useState(runnable[0]?.id ?? "")
+  const [templateId, setTemplateId] = useState(
+    initialTemplate !== undefined && initialTemplate.provider === selectedProvider
+      ? initialTemplate.id
+      : (runnable[0]?.id ?? "")
+  )
 
   /**
    * The AWS regions this run covers: `null` for every enabled region, otherwise the ones

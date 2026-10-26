@@ -40,6 +40,7 @@ than the build.
 | `AWS_REGION` · `RPT_RUNTIME_ARN` | which runtime to invoke |
 | `RPT_ARTIFACT_BUCKET` | a **bucket name**, not a bucket and prefix. It is passed straight into `Bucket=`, so `my-bucket/my-prefix` fails every S3 call. Keys are already namespaced `<actorId>/…`. |
 | `RPT_HISTORY_TABLE` · `RPT_TITLE_MODEL_ID` | chat history and thread titling |
+| `RPT_PRESET_MODEL_ID` (optional) | the model Describe it drafts preset outlines with. Unset, it uses `RPT_TITLE_MODEL_ID`. Optional, so it is not in `.env.example`'s required set. |
 | `RPT_CRON_SECRET` | bearer secret for `/api/cron/tick` |
 | `RPT_APP_BASE_URL` | HTTPS base the runtime calls back on. Behind a private CA, the **runtime** needs `RPT_CA_BUNDLE` — see `agent/README.md`. |
 

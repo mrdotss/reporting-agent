@@ -544,6 +544,11 @@ export type TemplateView = {
    * offers "Incidents this period" only where there is a table for them to print in.
    */
   hasIncidentReport: boolean
+  /**
+   * The pinned version's section types, in order, for the preset list's section marks.
+   * Empty before a first version. Catalogue keys only — the section tree stays in the row.
+   */
+  sectionTypes: readonly string[]
   createdAt: string
   updatedAt: string
   /** The source this preset is written for, set when it was created and locked. */
@@ -578,6 +583,7 @@ export type TemplateViewCurrentVersion = Pick<
 > & {
   readonly schemaVersion: number
   readonly hasIncidentReport: boolean
+  readonly sectionTypes: readonly string[]
 }
 
 /**
@@ -605,7 +611,22 @@ export function templateViewCurrentVersion(
     definitionSha256: row.definitionSha256,
     schemaVersion: declaredSchemaVersion(row.definition),
     hasIncidentReport: declaresIncidentReport(row.definition),
+    sectionTypes: declaredSectionTypes(row.definition),
   }
+}
+
+/** A definition's section types in order; anything that is not a typed section is skipped. */
+export function declaredSectionTypes(definition: unknown): string[] {
+  if (definition === null || typeof definition !== "object") return []
+  const sections = (definition as { sections?: unknown }).sections
+  if (!Array.isArray(sections)) return []
+  return sections.flatMap((section) =>
+    section !== null &&
+    typeof section === "object" &&
+    typeof (section as { type?: unknown }).type === "string"
+      ? [(section as { type: string }).type]
+      : []
+  )
 }
 
 /** The section type whose table the run form's incident entries print into. */
@@ -652,6 +673,8 @@ export function toTemplateView(
     hasDraft: row.draftDefinition !== null,
     schemaVersion: currentVersion?.schemaVersion ?? MIN_SCHEMA_VERSION,
     hasIncidentReport: currentVersion?.hasIncidentReport ?? false,
+    // The version a run would pin; a preset never saved shows its draft's outline instead.
+    sectionTypes: currentVersion?.sectionTypes ?? declaredSectionTypes(row.draftDefinition),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     provider: row.provider,

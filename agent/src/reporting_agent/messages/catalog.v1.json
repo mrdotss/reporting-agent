@@ -2020,6 +2020,338 @@
     "ui.report_decisions.source": {
       "en": "As printed in the report’s At a glance",
       "id": "Sebagaimana tercetak di Sekilas pada laporan"
+    },
+    "ui.presets.quick_describe_title": {
+      "en": "Describe it",
+      "id": "Jelaskan saja"
+    },
+    "ui.presets.quick_describe_body": {
+      "en": "Write a sentence about the report you need. We draft an outline from the existing sections.",
+      "id": "Tulis satu kalimat tentang laporan yang Anda perlukan. Kami menyusun kerangka dari bagian yang sudah ada."
+    },
+    "ui.presets.quick_new_badge": {
+      "en": "New",
+      "id": "Baru"
+    },
+    "ui.presets.quick_starter_title": {
+      "en": "Start from a starter",
+      "id": "Mulai dari templat awal"
+    },
+    "ui.presets.quick_starter_body": {
+      "en": "Monthly utilisation, executive brief, capacity planning and more.",
+      "id": "Utilisasi bulanan, ringkasan eksekutif, perencanaan kapasitas, dan lainnya."
+    },
+    "ui.presets.quick_blank_title": {
+      "en": "Blank in the builder",
+      "id": "Kosong di builder"
+    },
+    "ui.presets.quick_blank_body": {
+      "en": "Only the verification appendix. Add sections from the catalogue.",
+      "id": "Hanya lampiran verifikasi. Tambahkan bagian dari katalog."
+    },
+    "ui.presets.quick_unavailable": {
+      "en": "Choose a customer you can edit in the header to create a preset.",
+      "id": "Pilih pelanggan yang dapat Anda ubah di header untuk membuat preset."
+    },
+    "ui.presets.chooser_title": {
+      "en": "New preset",
+      "id": "Preset baru"
+    },
+    "ui.presets.chooser_body": {
+      "en": "Pick how you want to start. Every path ends in the same builder.",
+      "id": "Pilih cara memulai. Semua jalur berakhir di builder yang sama."
+    },
+    "ui.presets.col_sections": {
+      "en": "Sections",
+      "id": "Bagian"
+    },
+    "ui.presets.col_customer": {
+      "en": "Customer",
+      "id": "Pelanggan"
+    },
+    "ui.presets.section_count": {
+      "en": "{count} sections",
+      "id": "{count} bagian"
+    },
+    "ui.presets.section_count_one": {
+      "en": "1 section",
+      "id": "1 bagian"
+    },
+    "ui.presets.no_sections": {
+      "en": "No sections yet",
+      "id": "Belum ada bagian"
+    },
+    "ui.presets.no_customer": {
+      "en": "No customer",
+      "id": "Tanpa pelanggan"
+    },
+    "ui.presets.run": {
+      "en": "Run a report with {name}",
+      "id": "Jalankan laporan dengan {name}"
+    },
+    "ui.presets.run_unavailable": {
+      "en": "Save a version of {name} before running it",
+      "id": "Simpan versi {name} sebelum menjalankannya"
+    },
+    "ui.describe.title": {
+      "en": "Describe a preset",
+      "id": "Jelaskan preset"
+    },
+    "ui.describe.lead": {
+      "en": "Say what the report is for. We draft an outline from the existing sections, and you open it in the builder when it looks right.",
+      "id": "Jelaskan untuk apa laporan ini. Kami menyusun kerangka dari bagian yang sudah ada, lalu Anda membukanya di builder bila sudah sesuai."
+    },
+    "ui.describe.step_describe": {
+      "en": "Describe",
+      "id": "Jelaskan"
+    },
+    "ui.describe.step_refine": {
+      "en": "Refine",
+      "id": "Sempurnakan"
+    },
+    "ui.describe.step_save": {
+      "en": "Name and save",
+      "id": "Beri nama dan simpan"
+    },
+    "ui.describe.cloud": {
+      "en": "Cloud",
+      "id": "Penyedia cloud"
+    },
+    "ui.describe.cloud_fixed": {
+      "en": "The cloud is fixed once the preset exists.",
+      "id": "Cloud tidak dapat diubah setelah preset dibuat."
+    },
+    "ui.describe.description_label": {
+      "en": "What should the report show, and who reads it?",
+      "id": "Apa yang perlu ditampilkan laporan, dan siapa pembacanya?"
+    },
+    "ui.describe.description_placeholder": {
+      "en": "A monthly report for the finance team: what we run, what sits idle, and what has no backup. Keep it to a few pages.",
+      "id": "Laporan bulanan untuk tim keuangan: apa yang berjalan, apa yang menganggur, dan apa yang belum punya cadangan. Cukup beberapa halaman."
+    },
+    "ui.describe.audience": {
+      "en": "Audience",
+      "id": "Pembaca"
+    },
+    "ui.describe.audience_executive": {
+      "en": "Executive",
+      "id": "Eksekutif"
+    },
+    "ui.describe.audience_technical": {
+      "en": "Technical",
+      "id": "Teknis"
+    },
+    "ui.describe.audience_mixed": {
+      "en": "Mixed",
+      "id": "Campuran"
+    },
+    "ui.describe.length": {
+      "en": "Length",
+      "id": "Panjang"
+    },
+    "ui.describe.length_short": {
+      "en": "Short",
+      "id": "Singkat"
+    },
+    "ui.describe.length_standard": {
+      "en": "Standard",
+      "id": "Standar"
+    },
+    "ui.describe.length_detailed": {
+      "en": "Detailed",
+      "id": "Rinci"
+    },
+    "ui.describe.examples": {
+      "en": "Try one",
+      "id": "Coba salah satu"
+    },
+    "ui.describe.example_exec": {
+      "en": "One page for the board: headline counts and what needs a decision.",
+      "id": "Satu halaman untuk direksi: angka utama dan hal yang perlu diputuskan."
+    },
+    "ui.describe.example_capacity": {
+      "en": "Capacity review for engineers with peaks and a six-month trend.",
+      "id": "Tinjauan kapasitas untuk engineer dengan puncak beban dan tren enam bulan."
+    },
+    "ui.describe.example_backup": {
+      "en": "What has no backup and what is open to the internet.",
+      "id": "Apa yang belum punya cadangan dan apa yang terbuka ke internet."
+    },
+    "ui.describe.draft": {
+      "en": "Draft outline",
+      "id": "Susun kerangka"
+    },
+    "ui.describe.redraft": {
+      "en": "Draft again",
+      "id": "Susun ulang"
+    },
+    "ui.describe.drafting": {
+      "en": "Drafting…",
+      "id": "Menyusun…"
+    },
+    "ui.describe.progress_read": {
+      "en": "Reading your description",
+      "id": "Membaca deskripsi Anda"
+    },
+    "ui.describe.progress_choose": {
+      "en": "Choosing sections from the catalogue",
+      "id": "Memilih bagian dari katalog"
+    },
+    "ui.describe.progress_check": {
+      "en": "Checking the outline against the catalogue",
+      "id": "Memeriksa kerangka terhadap katalog"
+    },
+    "ui.describe.how_we_read": {
+      "en": "How we read it",
+      "id": "Cara kami memahaminya"
+    },
+    "ui.describe.not_applied": {
+      "en": "Not applied",
+      "id": "Tidak diterapkan"
+    },
+    "ui.describe.not_applied_note": {
+      "en": "No preset setting exists for these yet. You can add them by hand in the builder where possible.",
+      "id": "Belum ada pengaturan preset untuk hal ini. Bila memungkinkan, tambahkan secara manual di builder."
+    },
+    "ui.describe.refine_placeholder": {
+      "en": "Tell us what to change",
+      "id": "Sebutkan apa yang perlu diubah"
+    },
+    "ui.describe.refine_apply": {
+      "en": "Apply",
+      "id": "Terapkan"
+    },
+    "ui.describe.refine_shorter": {
+      "en": "Make it shorter",
+      "id": "Buat lebih singkat"
+    },
+    "ui.describe.refine_technical": {
+      "en": "More technical",
+      "id": "Lebih teknis"
+    },
+    "ui.describe.refine_backups": {
+      "en": "Add backups",
+      "id": "Tambahkan cadangan"
+    },
+    "ui.describe.refine_trend": {
+      "en": "Add a six-month trend",
+      "id": "Tambahkan tren enam bulan"
+    },
+    "ui.describe.history": {
+      "en": "Changes",
+      "id": "Perubahan"
+    },
+    "ui.describe.output": {
+      "en": "Outline",
+      "id": "Kerangka"
+    },
+    "ui.describe.output_preview": {
+      "en": "Page preview",
+      "id": "Pratinjau halaman"
+    },
+    "ui.describe.output_empty": {
+      "en": "Your outline appears here: the sections, why each is there, and a preview of the first page.",
+      "id": "Kerangka Anda muncul di sini: bagian-bagiannya, alasan tiap bagian, dan pratinjau halaman pertama."
+    },
+    "ui.describe.section_count": {
+      "en": "{count} sections",
+      "id": "{count} bagian"
+    },
+    "ui.describe.lookback": {
+      "en": "{count} months of history",
+      "id": "Riwayat {count} bulan"
+    },
+    "ui.describe.remove_section": {
+      "en": "Remove {name}",
+      "id": "Hapus {name}"
+    },
+    "ui.describe.always_included": {
+      "en": "Always included",
+      "id": "Selalu disertakan"
+    },
+    "ui.describe.period_last_full_month": {
+      "en": "Last full month",
+      "id": "Bulan penuh terakhir"
+    },
+    "ui.describe.period_last_30d": {
+      "en": "Last 30 days",
+      "id": "30 hari terakhir"
+    },
+    "ui.describe.contents_on": {
+      "en": "With a contents page",
+      "id": "Dengan daftar isi"
+    },
+    "ui.describe.contents_off": {
+      "en": "No contents page",
+      "id": "Tanpa daftar isi"
+    },
+    "ui.describe.from_starter": {
+      "en": "The drafting model was unavailable, so this outline is the {name} starter, matched from your description.",
+      "id": "Model penyusun tidak tersedia, jadi kerangka ini memakai templat awal {name} yang dicocokkan dari deskripsi Anda."
+    },
+    "ui.describe.name": {
+      "en": "Preset name",
+      "id": "Nama preset"
+    },
+    "ui.describe.theme": {
+      "en": "Look",
+      "id": "Tampilan"
+    },
+    "ui.describe.open_builder": {
+      "en": "Open in builder",
+      "id": "Buka di builder"
+    },
+    "ui.describe.save_draft": {
+      "en": "Save as draft",
+      "id": "Simpan sebagai draf"
+    },
+    "ui.describe.creating": {
+      "en": "Creating…",
+      "id": "Membuat…"
+    },
+    "ui.describe.save_note": {
+      "en": "Nothing runs until you save a version in the builder.",
+      "id": "Tidak ada yang berjalan sampai Anda menyimpan versi di builder."
+    },
+    "ui.describe.error_draft": {
+      "en": "The outline could not be drafted. Try again, or start from a starter.",
+      "id": "Kerangka tidak dapat disusun. Coba lagi, atau mulai dari templat awal."
+    },
+    "ui.describe.error_refine": {
+      "en": "The outline could not be changed just now. The current outline is kept.",
+      "id": "Kerangka tidak dapat diubah saat ini. Kerangka sekarang tetap dipakai."
+    },
+    "ui.describe.error_create": {
+      "en": "The preset could not be created.",
+      "id": "Preset tidak dapat dibuat."
+    },
+    "ui.describe.cannot_create": {
+      "en": "Choose a customer you can edit in the header to save a preset. You can still draft an outline.",
+      "id": "Pilih pelanggan yang dapat Anda ubah di header untuk menyimpan preset. Anda tetap dapat menyusun kerangka."
+    },
+    "ui.describe.group_summary": {
+      "en": "Summary",
+      "id": "Ringkasan"
+    },
+    "ui.describe.group_inventory": {
+      "en": "Inventory",
+      "id": "Inventaris"
+    },
+    "ui.describe.group_utilisation": {
+      "en": "Utilisation",
+      "id": "Utilisasi"
+    },
+    "ui.describe.group_closing": {
+      "en": "Closing",
+      "id": "Penutup"
+    },
+    "ui.describe.language_en": {
+      "en": "In English",
+      "id": "Dalam bahasa Inggris"
+    },
+    "ui.describe.language_id": {
+      "en": "In Indonesian",
+      "id": "Dalam bahasa Indonesia"
     }
   }
 }
