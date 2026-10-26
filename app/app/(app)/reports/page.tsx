@@ -1,5 +1,5 @@
 import { PageBody } from "@/components/app-shell/page-body"
-import { selectedFilter } from "@/lib/workspaces/context"
+import { selectedContext } from "@/lib/workspaces/context"
 import type { Metadata } from "next"
 
 import { LiveRefresh } from "@/components/reports/live-refresh"
@@ -7,6 +7,7 @@ import { RequestReportDialog } from "@/components/reports/request-report-dialog"
 import { RunFilters, RunPagination } from "@/components/reports/run-filters"
 import { RunTable } from "@/components/reports/run-table"
 import { requireSession } from "@/lib/auth/guard"
+import { latestDeliveries } from "@/lib/delivery/store"
 import type { RunStatus } from "@/lib/db/schema"
 import { NO_RUN_VIEW_EXTRAS, toRunView, toTemplateView } from "@/lib/db/views"
 import { resolveFigureCounts, resolveRunExtrasBatch } from "@/lib/runs/detail"
@@ -70,7 +71,9 @@ export default async function ReportsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>
 }>) {
   const user = await requireSession()
-  const projectScope = await selectedFilter(user.id)
+  const context = await selectedContext(user.id)
+  const projectScope = { workspaceId: context.workspace.id, projectId: context.project?.id }
+  const customers = new Map(context.projects.map((project) => [project.id, project.name]))
 
   // The filters live in the URL so the server can read them — this page's list pages
   // and filters in SQL.
@@ -126,9 +129,13 @@ export default async function ReportsPage({
   // Requirement 37.1 — the template name, the pinned version and the verification
   // status per run, plus the figures each passing verification proved; one query each
   // for the whole page.
-  const [runExtras, figures] = await Promise.all([
+  const [runExtras, figures, deliveries] = await Promise.all([
     resolveRunExtrasBatch(runs),
     resolveFigureCounts(runs),
+    latestDeliveries(
+      user.id,
+      runs.filter((run) => run.status === "completed").map((run) => run.id)
+    ),
   ])
 
   const now = new Date()
@@ -169,6 +176,8 @@ export default async function ReportsPage({
             )}
             subscriptions={subscriptions}
             figures={figures}
+            customers={customers}
+            deliveries={deliveries}
           />
         </div>
 

@@ -6,6 +6,7 @@ import {
   TemplateInvalidError,
 } from "@/lib/actions/templates"
 import {
+  badRequest,
   internalError,
   invalidInput,
   json,
@@ -24,7 +25,9 @@ import {
   templateQuerySchema,
 } from "@/lib/templates/input"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
+import { sectionEntry } from "@/lib/builder/catalogue"
 import { starterDraft, starterFor } from "@/lib/builder/starters"
+import { outlineStarter } from "@/lib/presets/outline"
 import { METRIC_CATALOG } from "@/lib/templates/catalog"
 
 /**
@@ -100,16 +103,33 @@ export async function POST(request: Request): Promise<Response> {
   const parsed = templateCreateInputSchema.safeParse(body)
   if (!parsed.success) return invalidInput(parsed.error)
 
+  const provider = parsed.data.provider === "aws" ? "aws" : "azure"
+  const outline = parsed.data.outline
+  // An outline names catalogue sections; one its provider does not have is refused
+  // rather than dropped, so what is saved is what the person saw.
+  const unknownSection = outline?.sections.find((section) => sectionEntry(provider, section.type) === undefined)
+  if (unknownSection !== undefined) {
+    return badRequest(`"${unknownSection.type}" is not a section of this source's catalogue.`, "OUTLINE_INVALID")
+  }
+
   try {
     // A starter is built here rather than sent by the client: the server holds the metric
     // catalogue the starter's presets expand against, and a client cannot name sections
-    // its preset's provider does not have.
-    const starter = parsed.data.starter === undefined ? undefined : starterFor(parsed.data.starter)
-    const provider = parsed.data.provider === "aws" ? "aws" : "azure"
-    const draftDefinition =
+    // its preset's provider does not have. A Describe it outline becomes a starter too.
+    const starter =
+      outline !== undefined
+        ? outlineStarter(provider, parsed.data.name, parsed.data.theme ?? "corporate", outline)
+        : parsed.data.starter === undefined
+          ? undefined
+          : starterFor(parsed.data.starter)
+    const drafted =
       starter === undefined
         ? undefined
         : starterDraft(starter, provider, parsed.data.name, parsed.data.theme ?? starter.theme, METRIC_CATALOG)
+    const draftDefinition =
+      drafted !== undefined && outline?.language !== undefined
+        ? { ...drafted, identity: { ...drafted.identity, language: outline.language } }
+        : drafted
 
     const template = await createTemplate(user.id, {
       workspaceId: parsed.data.workspaceId,

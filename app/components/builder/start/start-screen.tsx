@@ -30,14 +30,17 @@ const GROUP_LABELS: Readonly<Record<string, string>> = {
 export function StartScreen({
   defaultProvider,
   canCreate,
-}: Readonly<{ defaultProvider: Provider; canCreate: boolean }>) {
+  initialStarter,
+}: Readonly<{ defaultProvider: Provider; canCreate: boolean; initialStarter?: string }>) {
+  // The presets page's "Blank in the builder" door arrives with `?starter=blank`.
+  const first = STARTERS.find((option) => option.key === initialStarter) ?? STARTERS[0]!
   const router = useRouter()
   const scope = useCreationScope()
   const nameId = useId()
   const [provider, setProvider] = useState<Provider>(defaultProvider)
-  const [starter, setStarter] = useState<Starter>(STARTERS[0]!)
-  const [theme, setTheme] = useState<DesignPreset>(STARTERS[0]!.theme)
-  const [name, setName] = useState(`${STARTERS[0]!.name} — ${defaultProvider === "aws" ? "AWS" : "Azure"}`)
+  const [starter, setStarter] = useState<Starter>(first)
+  const [theme, setTheme] = useState<DesignPreset>(first.theme)
+  const [name, setName] = useState(`${first.name} — ${defaultProvider === "aws" ? "AWS" : "Azure"}`)
   const [named, setNamed] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)

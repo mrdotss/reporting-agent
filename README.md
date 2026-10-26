@@ -42,6 +42,7 @@ Browser ──▶ app/     Next.js 16 on our own server (systemd, behind Caddy)
 | Report narration, prose review, Ask answers | `us.moonshotai.kimi-k3` | `RPT_PROSE_MODEL_ID` on the agent runtime (`RPT_CHAT_MODEL_ID` overrides Ask only) |
 | Ask's "what I'm about to do" sentence | `us.moonshotai.kimi-k3` | `RPT_INTENT_MODEL_ID` on the agent runtime (unset: no sentence) |
 | Ask conversation titles | `moonshotai.kimi-k2.5` | `RPT_TITLE_MODEL_ID` in the app's environment |
+| Describe it preset outlines | `moonshotai.kimi-k2.5` | `RPT_PRESET_MODEL_ID` in the app's environment (unset: the title model) |
 
 In Ask, people pick the answer model beside the send button: **Kimi K3** (thinks first,
 the default) or **Kimi K2.5** (answers straight away). Only those two: the runtime maps the

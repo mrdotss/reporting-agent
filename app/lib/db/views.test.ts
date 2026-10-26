@@ -1353,6 +1353,7 @@ const TEMPLATE_CURRENT_VERSION: TemplateViewCurrentVersion = {
   definitionSha256: TEMPLATE_VERSION_SHA,
   schemaVersion: 2,
   hasIncidentReport: false,
+  sectionTypes: [],
 }
 
 /**
@@ -1391,6 +1392,9 @@ const TEMPLATE_VIEW_KEYS = [
   "provider",
 
   "schemaVersion",
+  // Reviewed and admitted: the pinned version's section types, catalogue keys only, for
+  // the preset list's section marks. Projected in SQL; the section tree is not.
+  "sectionTypes",
   "updatedAt",
   "workspaceId",
 ]
@@ -1429,6 +1433,7 @@ describe("toTemplateView — Requirement 43.9", () => {
       hasDraft: false,
       schemaVersion: 2,
       hasIncidentReport: false,
+      sectionTypes: [],
       createdAt: "2026-05-01T00:00:00.000Z",
 
       updatedAt: "2026-05-02T00:00:00.000Z",
@@ -1444,6 +1449,7 @@ describe("toTemplateView — Requirement 43.9", () => {
     const view = toTemplateView(reportTemplateRow(), {
       version: 1,
       hasIncidentReport: false,
+      sectionTypes: [],
       definitionSha256: TEMPLATE_VERSION_SHA,
       schemaVersion: 1,
     })

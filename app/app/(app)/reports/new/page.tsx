@@ -53,7 +53,11 @@ function BackToReports() {
   )
 }
 
-export default async function NewReportPage() {
+export default async function NewReportPage({
+  searchParams,
+}: Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>
+}>) {
   const user = await requireSession()
 
   const { workspace, projects, project } = await selectedContext(user.id)
@@ -121,6 +125,8 @@ export default async function NewReportPage() {
   }
 
   const scope = { workspaceId: workspace.id, projectId: project.id }
+  // `?template=` from the preset list's run action; the form ignores an id it cannot run.
+  const params = await searchParams
 
   const [subscriptions, rows, schedule] = await Promise.all([
     listConnectedSubscriptions(user.id, scope),
@@ -152,6 +158,7 @@ export default async function NewReportPage() {
         templates={templates}
         nowIso={new Date().toISOString()}
         schedule={schedule}
+        initialTemplateId={typeof params.template === "string" ? params.template : undefined}
       />
     </PageBody>
   )

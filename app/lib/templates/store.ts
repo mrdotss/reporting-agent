@@ -802,6 +802,8 @@ export async function readLatestVersionForView(
       >`${reportTemplateVersions.definition}->>'schema_version'`,
       // A boolean, also computed in SQL, for the same reason.
       hasIncidentReport: sql<boolean>`coalesce(jsonb_path_exists(${reportTemplateVersions.definition}, '$.sections[*] ? (@.type == "incident_report")'), false)`,
+      // The section types alone, in order, for the list's section marks.
+      sectionTypes: sql<unknown>`jsonb_path_query_array(${reportTemplateVersions.definition}, '$.sections[*].type')`,
     })
     .from(reportTemplateVersions)
     .where(eq(reportTemplateVersions.templateId, templateId))
@@ -820,6 +822,9 @@ export async function readLatestVersionForView(
         ? parsed
         : MIN_SCHEMA_VERSION,
     hasIncidentReport: row.hasIncidentReport === true,
+    sectionTypes: Array.isArray(row.sectionTypes)
+      ? row.sectionTypes.filter((type): type is string => typeof type === "string")
+      : [],
   }
 }
 

@@ -87,6 +87,7 @@ function template(over: Partial<TemplateView> = {}): TemplateView {
   return {
     provider: "azure",
     hasIncidentReport: false,
+    sectionTypes: [],
     id: "tmpl-v1",
     name: "Monthly utilization",
     description: "CPU, memory, disk and network.",

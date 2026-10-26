@@ -12,12 +12,14 @@ import {
   CopyIcon,
   MagnifyingGlassIcon,
   PencilSimpleIcon,
+  PlayIcon,
   TrashIcon,
 } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
+import { SectionMarks } from "@/components/templates/section-marks"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Dialog,
   DialogContent,
@@ -36,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import type { TemplateView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
 
 /**
  * The report-profile list, as a table (task 2.1).
@@ -65,6 +68,13 @@ import type { TemplateView } from "@/lib/db/views"
  * The confirm does not ask the consultant to type the name. The action is
  * reversible in the only sense that matters — a profile with runs cannot be
  * deleted at all, and one without runs has produced nothing to lose.
+ *
+ * ## What a row says about the preset
+ *
+ * Its sections as marks, read from the version a run would pin, so the outline is
+ * visible without opening the builder; the customer it belongs to; and a run action
+ * that opens the request form with the preset chosen. A draft that was never saved
+ * has no version to run, so its run action is disabled and says why.
  */
 
 type Filter = "all" | "published" | "drafts"
@@ -86,9 +96,20 @@ function formatEdited(iso: string): string {
   })
 }
 
+function sectionCount(count: number): string {
+  return count === 1
+    ? (messageText("ui.presets.section_count_one", "en") ?? "")
+    : (messageText("ui.presets.section_count", "en", { count }) ?? "")
+}
+
 export function ProfileTable({
   templates,
-}: Readonly<{ templates: readonly TemplateView[] }>) {
+  customers,
+}: Readonly<{
+  templates: readonly TemplateView[]
+  /** Customer names by project id, for the customer column. */
+  customers?: ReadonlyMap<string, string>
+}>) {
   const router = useRouter()
   const [query, setQuery] = useState("")
   const [filter, setFilter] = useState<Filter>("all")
@@ -226,9 +247,11 @@ export function ProfileTable({
         <TableHeader>
           <TableRow>
             <TableHead>Profile</TableHead>
+            <TableHead className="w-40">{messageText("ui.presets.col_sections", "en")}</TableHead>
+            <TableHead className="w-36">{messageText("ui.presets.col_customer", "en")}</TableHead>
             <TableHead className="w-40">Status</TableHead>
-            <TableHead className="w-36">Last edited</TableHead>
-            <TableHead className="w-28 text-right">Actions</TableHead>
+            <TableHead className="w-28">Last edited</TableHead>
+            <TableHead className="w-40 text-right">Actions</TableHead>
           </TableRow>
         </TableHeader>
 
@@ -251,6 +274,13 @@ export function ProfileTable({
                     {template.name}
                   </Link>
                   </span>
+                  <span className="line-clamp-2 max-w-md text-xs whitespace-normal text-muted-foreground">
+                    {template.description.trim() !== ""
+                      ? template.description
+                      : template.sectionTypes.length > 0
+                        ? sectionCount(template.sectionTypes.length)
+                        : null}
+                  </span>
                   {template.currentVersionSha256 === null ? null : (
                     <Identifier
                       value={template.currentVersionSha256}
@@ -260,6 +290,26 @@ export function ProfileTable({
                     />
                   )}
                   </div>
+                </TableCell>
+
+                <TableCell>
+                  {template.provider === "onprem" || template.sectionTypes.length === 0 ? (
+                    <span className="text-xs text-muted-foreground">
+                      {template.sectionTypes.length === 0
+                        ? messageText("ui.presets.no_sections", "en")
+                        : sectionCount(template.sectionTypes.length)}
+                    </span>
+                  ) : (
+                    <SectionMarks provider={template.provider} types={template.sectionTypes} />
+                  )}
+                </TableCell>
+
+                <TableCell className="text-sm">
+                  {template.projectId && customers?.has(template.projectId) ? (
+                    customers.get(template.projectId)
+                  ) : (
+                    <span className="text-muted-foreground">{messageText("ui.presets.no_customer", "en")}</span>
+                  )}
                 </TableCell>
 
                 <TableCell>
@@ -301,6 +351,27 @@ export function ProfileTable({
                     >
                       <PencilSimpleIcon aria-hidden="true" />
                     </Button>
+                    {template.currentVersion === null ? (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        disabled
+                        aria-label={messageText("ui.presets.run_unavailable", "en", { name: template.name })}
+                        title={messageText("ui.presets.run_unavailable", "en", { name: template.name })}
+                      >
+                        <PlayIcon aria-hidden="true" />
+                      </Button>
+                    ) : (
+                      <Link
+                        data-slot="button"
+                        href={`/reports/new?template=${template.id}`}
+                        aria-label={messageText("ui.presets.run", "en", { name: template.name })}
+                        title={messageText("ui.presets.run", "en", { name: template.name })}
+                        className={buttonVariants({ size: "icon-sm", variant: "ghost" })}
+                      >
+                        <PlayIcon aria-hidden="true" />
+                      </Link>
+                    )}
                     <Button
                       size="icon-sm"
                       variant="ghost"
@@ -329,7 +400,7 @@ export function ProfileTable({
 
           {rows.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={4} className="py-14 text-center">
+              <TableCell colSpan={6} className="py-14 text-center">
                 <p className="font-heading text-sm font-medium">
                   {query.trim() === ""
                     ? "No profile in this filter"

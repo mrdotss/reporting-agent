@@ -20,7 +20,10 @@ export const metadata: Metadata = {
   description: "Start a preset from a starter.",
 }
 
-export default async function NewPresetPage() {
+export default async function NewPresetPage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<{ starter?: string | string[] }> }>) {
+  const { starter } = await searchParams
   const user = await requireSession()
   const { workspace, project } = await selectedContext(user.id)
   const subscriptions = await listConnectedSubscriptions(user.id, {
@@ -41,7 +44,11 @@ export default async function NewPresetPage() {
         </p>
       </div>
       <div className={`contents ${THEME_FONT_VARIABLES}`}>
-        <StartScreen defaultProvider={defaultProvider} canCreate={canCreate} />
+        <StartScreen
+          defaultProvider={defaultProvider}
+          canCreate={canCreate}
+          initialStarter={typeof starter === "string" ? starter : undefined}
+        />
       </div>
     </PageBody>
   )
