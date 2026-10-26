@@ -43,6 +43,16 @@ matter and is not a rule to remember.
 is exactly what the image does: it copies `src/reporting_agent/` next to the entrypoint
 and runs `python -m reporting_agent.main`. One import path, two environments.
 
+The styled PDF's checks need the vendored faces the image installs. Outside the image, give
+fontconfig the same faces first, or the styled-report tests fail when a fallback face drops
+figures from the text layer:
+
+```bash
+mkdir -p ~/.local/share/fonts/reporting-agent && cp fonts/*.ttf ~/.local/share/fonts/reporting-agent/
+fc-cache -f ~/.local/share/fonts/reporting-agent
+(cd src && ../.venv/bin/python -m reporting_agent.render.themes --assert-fonts)  # "fonts ok"
+```
+
 ```bash
 .venv/bin/pytest                 # the suite
 .venv/bin/pytest tests/property  # the hypothesis properties, ≥100 examples each
