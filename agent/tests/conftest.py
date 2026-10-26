@@ -31,8 +31,15 @@ written. It is an addition to `@example`, never a substitute: `.hypothesis/` is
 git-ignored, so nothing in it is shared or reviewable.
 """
 
+import os
 from dataclasses import replace
 from pathlib import Path
+
+# Every module that imports `reporting_agent.main` defaults RPT_ARTIFACT_BUCKET to the test
+# bucket with `setdefault`, and the tests assert artifacts land there. A host that exports a
+# real bucket (a cloud dev session does) would win that default and fail them on its own
+# configuration, so the test bucket is assigned here, before any test module is imported.
+os.environ["RPT_ARTIFACT_BUCKET"] = "rpt-artifacts-test"
 
 import pytest
 from hypothesis import HealthCheck, settings

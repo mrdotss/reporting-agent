@@ -31,7 +31,7 @@ looser double would be testing the protocol rather than the pipeline.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import UTC, datetime
 import json
 import os
 from collections.abc import Mapping, Sequence
@@ -2445,10 +2445,18 @@ def test_the_reused_grain_is_the_snapshots_own() -> None:
 # report plots instead: the same estate, the same grain, one calendar month at a time.
 
 
+TREND_CLOCK = datetime(2026, 8, 5, tzinfo=UTC)
+
+
 def collect_with_trend(
     *, months: int, start: str, end: str, extra_batches: int
 ) -> dict[str, Any]:
-    """Drive `run_collection` with a trend seed and return the snapshot document."""
+    """Drive `run_collection` with a trend seed and return the snapshot document.
+
+    The clock is pinned a few days after the July periods these tests use. On the real
+    clock, May and June fall past Azure Monitor's 93-day horizon from October on and are
+    never asked for, so a test counting scripted batches would start failing by date.
+    """
     harness = one_vm_harness(
         # One scripted batch for the period pass, plus one per month that is not the
         # period's own window. A month whose window IS the run's window consumes none —
@@ -2469,6 +2477,7 @@ def collect_with_trend(
             object_store=harness.store,
             catalog=CATALOG,
             seed_trend_months=months,
+            now=lambda: TREND_CLOCK,
         ):
             pass
 
