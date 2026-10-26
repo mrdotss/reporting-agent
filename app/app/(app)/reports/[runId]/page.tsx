@@ -6,8 +6,10 @@ import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
 import { AgentNotes } from "@/components/reports/agent-notes"
+import { ReportDecisions } from "@/components/reports/report-decisions"
 import { DownloadCard } from "@/components/reports/download-card"
 import { SendCard } from "@/components/delivery/send-card"
+import { readGlance } from "@/lib/delivery/glance"
 import { latestDelivery, listContacts } from "@/lib/delivery/store"
 import { mailProblem } from "@/lib/mail/mailtrap"
 import { selectedContext } from "@/lib/workspaces/context"
@@ -90,7 +92,7 @@ export default async function RunPage({ params }: RunPageProps) {
 
   const view = toRunView(run, await resolveRunExtras(run))
 
-  const [gaps, provenance, documentHtml, verification, pinned, machines, agentOutcomes] =
+  const [gaps, provenance, documentHtml, verification, pinned, machines, agentOutcomes, glance] =
     await Promise.all([
       loadRunGaps(run),
       loadRunProvenance(run),
@@ -101,6 +103,8 @@ export default async function RunPage({ params }: RunPageProps) {
         : readPinnedVersion(run.templateVersionId),
       loadTopUtilization(run),
       loadAgentOutcomes(run),
+      // The decisions At a glance printed; only a completed run wrote them.
+      run.status === "completed" ? readGlance(run.userId, run.id) : Promise.resolve(null),
     ])
 
   const subscription = await getConnectedSubscription(
@@ -247,6 +251,8 @@ export default async function RunPage({ params }: RunPageProps) {
           {run.status === "failed" ? (
             <RunFailureNotice run={view} subscriptionLabel={subscriptionLabel} />
           ) : null}
+
+          {delivered ? <ReportDecisions glance={glance} /> : null}
 
           {delivered && agentOutcomes !== null ? <AgentNotes outcomes={agentOutcomes} /> : null}
 

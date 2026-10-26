@@ -2,7 +2,7 @@ import "server-only"
 
 import { createHash, randomBytes, randomUUID } from "node:crypto"
 
-import { and, desc, eq, sql } from "drizzle-orm"
+import { and, desc, eq, inArray, sql } from "drizzle-orm"
 
 import { getDb } from "@/lib/db"
 import {
@@ -150,6 +150,32 @@ export async function latestDelivery(userId: string, runId: string): Promise<Del
   if (run === undefined) return null
   const [row] = await db.select().from(reportDeliveries).where(eq(reportDeliveries.runId, runId)).orderBy(desc(reportDeliveries.createdAt)).limit(1)
   return row === undefined ? null : toDeliveryView(row)
+}
+
+/** Where a run stands with its customer, for the report list: the latest send, if any. */
+export type DeliveryState = { readonly status: DeliveryView["status"]; readonly approvedAt: string }
+
+/**
+ * The latest send of each run, one query for a page of runs. Runs the user cannot reach
+ * are dropped by the same access filter the report page uses; a run never sent is absent.
+ */
+export async function latestDeliveries(
+  userId: string,
+  runIds: readonly string[]
+): Promise<Map<string, DeliveryState>> {
+  const out = new Map<string, DeliveryState>()
+  if (runIds.length === 0) return out
+  const rows = await getDb()
+    .select({ runId: reportDeliveries.runId, status: reportDeliveries.status, approvedAt: reportDeliveries.approvedAt })
+    .from(reportDeliveries)
+    .innerJoin(reportRuns, eq(reportRuns.id, reportDeliveries.runId))
+    .where(and(inArray(reportDeliveries.runId, [...runIds]), accessWhere(reportRuns, userId)))
+    .orderBy(desc(reportDeliveries.createdAt))
+  for (const row of rows) {
+    if (out.has(row.runId)) continue
+    out.set(row.runId, { status: row.status as DeliveryView["status"], approvedAt: row.approvedAt.toISOString() })
+  }
+  return out
 }
 
 /**

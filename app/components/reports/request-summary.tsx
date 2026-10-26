@@ -85,9 +85,7 @@ export function RequestSummary({
             ["Connection", summary.connection],
             ["Profile version", String(summary.version)],
             ["Period", `${summary.periodStart} – ${summary.periodEnd}`],
-            ["Timezone", summary.timezone],
             ...(regions === undefined ? [] : [["Regions", regions]]),
-            ["Theme", summary.theme],
             [
               "Sections",
               summary.sections === null
@@ -104,6 +102,25 @@ export function RequestSummary({
             </div>
           ))}
         </dl>
+      )}
+      {error || !summary ? null : (
+        /* What a reviewer rarely needs to check, folded beneath the rest. */
+        <details data-slot="request-summary-details" className="border-t pt-3 text-sm">
+          <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30">
+            {messageText("ui.request_summary.details", "en")}
+          </summary>
+          <dl className="mt-2 flex flex-col gap-2">
+            {[
+              ["Timezone", summary.timezone],
+              ["Theme", summary.theme],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between gap-6">
+                <dt className="text-muted-foreground">{k}</dt>
+                <dd className="text-right font-medium break-words">{v}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
       )}
       <div className="flex flex-col gap-2">
         <Button

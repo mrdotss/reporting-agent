@@ -607,25 +607,6 @@ export function RunForm({
         )}
       </Field>
 
-      {selectedTemplate?.currentVersionSha256 == null ? null : (
-        <p
-          data-slot="run-form-pinned-version"
-          className="text-xs text-muted-foreground"
-        >
-          {/*
-            The digest of the definition this run would pin, so a consultant who
-            just saved can confirm the version they are about to run is the one
-            they were looking at. Truncated for the line and shown in the mono
-            face, the same treatment every other digest in the app gets.
-          */}
-          {messageText("ui.run_form.pinned_version_hint", "en", { version: String(selectedTemplate.currentVersion) })}{" "}
-          <Identifier
-            value={selectedTemplate.currentVersionSha256}
-            kind="digest"
-            label="Definition digest"
-          />
-        </p>
-      )}
 
       {!requiresFrontMatter ? null : (
         <fieldset
@@ -795,16 +776,6 @@ export function RunForm({
         </div>
       )}
 
-      <FieldDescription>
-        {/*
-          The period is the template's, not this form's, and it resolves at the
-          moment the run is enqueued rather than now (Requirement 4.3). Saying so
-          is what stops a consultant looking for the date fields that used to be
-          here.
-        */}
-        {messageText("ui.run_form.period_explanation", "en", { timezone })}
-      </FieldDescription>
-
       {error === null ? null : (
         <p
           data-slot="run-form-error"
@@ -824,9 +795,49 @@ export function RunForm({
         </Button>
       </div>
 
-      <p className="text-xs text-muted-foreground">
-        {messageText("ui.run_form.duration_hint", "en")}
-      </p>
+      {/*
+        The explanations a first request needs and a tenth does not: how the period
+        resolves, what the run pins, and how long it takes. Folded, so the form reads as
+        the three choices it is; one click away for whoever is checking.
+      */}
+      <details data-slot="run-form-details" className="group text-sm">
+        <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30">
+          {messageText("ui.run_form.details_summary", "en")}
+        </summary>
+        <div className="mt-3 flex flex-col gap-3">
+          <FieldDescription className="text-sm">
+            {/*
+              The period is the template's, not this form's, and it resolves at the
+              moment the run is enqueued rather than now (Requirement 4.3). Saying so
+              is what stops a consultant looking for the date fields that used to be
+              here.
+            */}
+            {messageText("ui.run_form.period_explanation", "en", { timezone })}
+          </FieldDescription>
+          {selectedTemplate?.currentVersionSha256 == null ? null : (
+            <p
+              data-slot="run-form-pinned-version"
+              className="text-xs text-muted-foreground"
+            >
+              {/*
+                The digest of the definition this run would pin, so a consultant who
+                just saved can confirm the version they are about to run is the one
+                they were looking at. Truncated for the line and shown in the mono
+                face, the same treatment every other digest in the app gets.
+              */}
+              {messageText("ui.run_form.pinned_version_hint", "en", { version: String(selectedTemplate.currentVersion) })}{" "}
+              <Identifier
+                value={selectedTemplate.currentVersionSha256}
+                kind="digest"
+                label="Definition digest"
+              />
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            {messageText("ui.run_form.duration_hint", "en")}
+          </p>
+        </div>
+      </details>
       </div>
       {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason} regions={offersRegions ? (pickedRegions === null ? (messageText("ui.request_summary.regions_all", "en", { count: String(enabledRegions.length) }) ?? undefined) : regions.join(", ")) : undefined}/>}
     </form>

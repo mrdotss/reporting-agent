@@ -2028,6 +2028,34 @@ export const MESSAGE_CATALOG = {
     en: "{count} selected resources answered nothing and are recorded as not re-queried rather than as agreeing.",
     id: "{count} sumber daya terpilih tidak menjawab apa pun dan dicatat sebagai tidak dikueri ulang alih-alih sebagai menyetujui.",
   },
+  "ui.run_table.delivery_not_sent": {
+    en: "Not sent yet",
+    id: "Belum dikirim",
+  },
+  "ui.run_table.delivery_sent": {
+    en: "Sent",
+    id: "Terkirim",
+  },
+  "ui.run_table.delivery_partial": {
+    en: "Partly sent",
+    id: "Terkirim sebagian",
+  },
+  "ui.run_table.delivery_failed": {
+    en: "Send failed",
+    id: "Gagal dikirim",
+  },
+  "ui.run_form.details_summary": {
+    en: "How the period and run time work",
+    id: "Cara kerja periode dan durasi proses",
+  },
+  "ui.request_summary.details": {
+    en: "Details",
+    id: "Rincian",
+  },
+  "ui.report_decisions.source": {
+    en: "As printed in the report’s At a glance",
+    id: "Sebagaimana tercetak di Sekilas pada laporan",
+  },
 } as const satisfies Record<string, Record<Language, string>>
 // --- END MESSAGE CATALOG ---
 

@@ -220,9 +220,15 @@ export function VerificationPanel({
           )}
         </div>
 
-        <div className="flex min-w-0 flex-col gap-2">
-          <h3 className="text-sm font-semibold">{messageText("ui.verification.fingerprints_heading", lang)}</h3>
-          <dl data-slot="verification-digests" className="flex flex-col">
+        {/*
+          The fingerprints are for whoever audits the report, not whoever reads it, so
+          inline they fold under their heading; the checks above stay open.
+        */}
+        <details data-slot="verification-fingerprints" className="flex min-w-0 flex-col gap-2">
+          <summary className="w-fit cursor-pointer rounded-sm text-sm font-semibold outline-none focus-visible:ring-3 focus-visible:ring-ring/30">
+            {messageText("ui.verification.fingerprints_heading", lang)}
+          </summary>
+          <dl data-slot="verification-digests" className="mt-2 flex flex-col">
             <DigestRow
               label={messageText("ui.verification.digest_snapshot", lang)}
               value={verification.snapshotSha256}
@@ -249,7 +255,7 @@ export function VerificationPanel({
               <DigestRow label={definition.label} value={definition.sha256} copyLabel="definition digest" />
             )}
           </dl>
-        </div>
+        </details>
       </div>
     )
   }
