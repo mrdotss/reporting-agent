@@ -1,6 +1,7 @@
 "use client"
 
 import { useBuilder } from "@/components/builder/context"
+import { FiguresSwitch } from "@/components/builder/figures-switch"
 import type { PageRun } from "@/lib/builder/store"
 import { cn } from "@/lib/utils"
 
@@ -10,7 +11,8 @@ import { cn } from "@/lib/utils"
  * One small page per printed page, grouped by what starts it (the cover, the front matter, a
  * section, a page break), with the estimated total. Clicking a section's pages selects that
  * section and brings it into view. The count is an estimate and says so: it measures the page as
- * drawn, with each repeated group counted once per sample resource.
+ * drawn, with each repeated group counted once per resource drawn. At the end, the switch
+ * between sample and real figures.
  */
 
 const MAX_TILES = 48
@@ -93,6 +95,7 @@ export function PageStrip() {
         })}
       </ol>
       {total > shown && <span className="shrink-0 text-xs text-muted-foreground">+{total - shown}</span>}
+      <FiguresSwitch />
     </nav>
   )
 }

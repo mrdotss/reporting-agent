@@ -4,6 +4,7 @@ import {
   type CatalogueSection,
 } from "@/lib/builder/catalogue"
 import type { AddedEntry, AddedKind, CalloutCondition } from "@/lib/builder/model"
+import type { ChartStyle } from "@/lib/templates/definition"
 
 /**
  * What the builder calls a block — in the outline, the selection tag and the inspector.
@@ -154,4 +155,15 @@ export function addedLabel(entry: AddedEntry, language: "en" | "id"): string {
   if (entry.kind !== "text") return ADDED_BLOCKS[entry.kind].label
   const text = entry.text?.[language]
   return text ? `“${text.slice(0, 28)}${text.length > 28 ? "…" : ""}”` : "Text (empty)"
+}
+
+/** A chart look's name, in the theme panel, the inspector and Ask. */
+export const CHART_STYLE_NAMES: Readonly<Record<ChartStyle, string>> = {
+  stacked: "Stacked",
+  soft_area: "Soft area",
+  flat_area: "Flat area",
+  range_band: "Range band",
+  columns: "Columns",
+  sparkline: "Sparkline",
+  small_multiples: "Small multiples",
 }

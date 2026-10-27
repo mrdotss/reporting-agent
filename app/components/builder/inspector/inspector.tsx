@@ -19,10 +19,11 @@ import {
   AGENT_REASONS,
   CALLOUT_TOKENS,
   blockHint,
+  CHART_STYLE_NAMES,
   blockLabel,
   calloutConditionLabel,
 } from "@/components/builder/canvas/labels"
-import { CHART_STYLE_NAMES, Field, Segmented } from "@/components/builder/left/theme-panel"
+import { Field, Segmented } from "@/components/builder/left/theme-panel"
 import {
   columnLabel,
   declaredColumns,
@@ -51,7 +52,7 @@ import {
   type SlotEntry,
   avgAndPeakMetric,
 } from "@/lib/builder/model"
-import type { AgentTry, BlockRef, InspectorTab } from "@/lib/builder/store"
+import { blockKey, type AgentTry, type BlockRef, type InspectorTab } from "@/lib/builder/store"
 import { pageDesign } from "@/lib/builder/theme"
 import { expandPresets, matchPresetName } from "@/lib/profiles/presets"
 import { metricChoicesFor, toggleMetric, entryKey } from "@/lib/profiles/section-metrics"
@@ -68,6 +69,7 @@ import {
 } from "@/lib/templates/definition"
 import { cn } from "@/lib/utils"
 
+import { AskPanel } from "./ask-panel"
 import { DataNote } from "./data-notes"
 
 /**
@@ -559,6 +561,7 @@ function BlockInspector({ section, entry, ref_ }: Readonly<{ section: SectionV4;
         </span>
       </Header>
       {hidden && <p className="rounded-md bg-muted px-2.5 py-1.5 text-xs text-muted-foreground">Hidden — it won&rsquo;t print.</p>}
+      <AskPanel key={`${section.id}|${blockKey(ref_)}`} sectionId={section.id} ref_={ref_} />
       <Tabs />
       {tab === "content" && <BlockContent section={section} entry={entry} ref_={ref_} />}
       {tab === "style" && <BlockLook section={section} entry={entry} ref_={ref_} />}

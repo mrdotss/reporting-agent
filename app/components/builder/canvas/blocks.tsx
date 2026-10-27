@@ -7,6 +7,7 @@ import {
   renderSVG,
   type ReportChartSpec,
 } from "../../../../agent/chart-renderer/svg.mjs"
+import { useCanvasData, useSectionResources } from "@/components/builder/context"
 import {
   columnLabel,
   declaredColumns,
@@ -25,14 +26,17 @@ import {
   type SectionV4,
   type SlotEntry,
 } from "@/lib/builder/model"
+import { readsMetrics } from "@/lib/builder/fit"
 import type { AgentTry } from "@/lib/builder/store"
 import {
-  SAMPLE_COUNTS,
+  byFigure,
+  figureOf,
+  formatFigure,
   formatSample,
+  periodFigures,
   sampleCell,
   sampleMetricSeries,
-  sampleResources,
-  sampleSummary,
+  seriesKey,
   sampleUnit,
   type SampleResource,
   type SampleUnit,
@@ -412,10 +416,21 @@ function columnsFor(expansion: CatalogueExpansion, settings: SlotEntry) {
   return settings.columns.flatMap((id) => declared.filter((column) => column.id === id))
 }
 
+/** Where the chosen report holds none of the resources a block draws. Builder chrome, not print. */
+function NoResources({ language }: Readonly<{ language: Language }>) {
+  return (
+    <p className="rounded-md border border-dashed border-border px-3 py-2 font-sans text-[12px] text-muted-foreground">
+      {language === "id"
+        ? "Laporan yang dipilih tidak memuat sumber daya untuk blok ini."
+        : "The chosen report holds no resources for this block."}
+    </p>
+  )
+}
+
 function ResourceTableView(props: BlockViewProps) {
-  const { design, language, expansion, settings, provider, resource } = props
+  const { design, language, expansion, settings, resource } = props
   const columns = columnsFor(expansion, settings)
-  const resources = sampleResources(provider)
+  const resources = useSectionResources(props.section)
   const layout = expansion.config.layout
   if (expansion.per === "resource" && layout === "pairs" && resource) {
     return (
@@ -436,7 +451,7 @@ function ResourceTableView(props: BlockViewProps) {
         head={[t("doc.table.resource", language, "Resource"), ...metrics.map((m) => `${metricLabel(m)} (${m.statistic})`)]}
         rows={(resource ? [resource] : resources).map((r) => [
           r.name,
-          ...metrics.map((m) => formatSample(m.statistic === "max" ? r.peak : r.avg, "percent")),
+          ...metrics.map((m) => formatFigure(figureOf(r, metricLabel(m), m.statistic), sampleUnit(metricLabel(m)))),
         ])}
         numeric={metrics.map((_, index) => index + 1)}
         own={settings.style}
@@ -455,8 +470,10 @@ function ResourceTableView(props: BlockViewProps) {
 }
 
 function ChartView(props: BlockViewProps) {
-  const { design, language, section, resource, provider } = props
-  const target = resource ?? sampleResources(provider)[0]!
+  const { design, language, section, resource } = props
+  const resources = useSectionResources(section)
+  const target = resource ?? resources[0]
+  if (!target) return <NoResources language={language} />
   const all = section.metrics ?? []
   // One chart holds one unit, as the runtime splits unlike metrics into separate figures.
   const unit = sampleUnit(all[0] ? metricLabel(all[0]) : "CPU")
@@ -479,8 +496,10 @@ function ChartView(props: BlockViewProps) {
 }
 
 function MetricSummaryView(props: BlockViewProps) {
-  const { design, language, section, resource, provider } = props
-  const target = resource ?? sampleResources(provider)[0]!
+  const { design, language, section, resource } = props
+  const resources = useSectionResources(section)
+  const target = resource ?? resources[0]
+  if (!target) return <NoResources language={language} />
   const names = (section.metrics ?? []).map(metricLabel).filter((v, i, a) => a.indexOf(v) === i)
   return (
     <Table
@@ -494,13 +513,14 @@ function MetricSummaryView(props: BlockViewProps) {
       ]}
       rows={(names.length ? names : ["CPU"]).map((name) => {
         const unit = sampleUnit(name)
-        const summary = sampleSummary(sampleMetricSeries(target, name, "max"))
+        const figures = periodFigures(target, name)
         return [
           name,
-          formatSample(summary.avg * 0.62, unit),
-          formatSample(summary.p95, unit),
-          formatSample(summary.peak, unit),
-          "14 Sep 10:00",
+          formatFigure(figures.avg, unit),
+          formatFigure(figures.p95, unit),
+          formatFigure(figures.peak, unit),
+          // When the peak fell is the report's own; real figures here do not carry it.
+          target.stats === undefined ? "14 Sep 10:00" : "–",
         ]
       })}
       numeric={[1, 2, 3]}
@@ -510,9 +530,10 @@ function MetricSummaryView(props: BlockViewProps) {
 }
 
 function TopNView(props: BlockViewProps) {
-  const { design, language, section, provider } = props
+  const { design, language, section } = props
   const metric = section.metrics?.[0]
-  const ranked = [...sampleResources(provider)].sort((a, b) => b.peak - a.peak)
+  const name = metric ? metricLabel(metric) : "CPU"
+  const ranked = [...useSectionResources(section)].sort(byFigure(name, "max"))
   return (
     <div>
       <Caption design={design}>{t("doc.section.fleet_summary", language, "Fleet summary")}</Caption>
@@ -523,7 +544,11 @@ function TopNView(props: BlockViewProps) {
           `${metric ? metricLabel(metric) : "CPU"} · ${t("doc.summary.avg", language, "Average")}`,
           `${metric ? metricLabel(metric) : "CPU"} · ${t("doc.summary.max", language, "Peak")}`,
         ]}
-        rows={ranked.map((r) => [r.name, formatSample(r.avg, "percent"), formatSample(r.peak, "percent")])}
+        rows={ranked.map((r) => [
+          r.name,
+          formatFigure(figureOf(r, name, "avg"), sampleUnit(name)),
+          formatFigure(figureOf(r, name, "max"), sampleUnit(name)),
+        ])}
         numeric={[1, 2]}
         own={props.settings.style}
       />
@@ -533,17 +558,18 @@ function TopNView(props: BlockViewProps) {
 
 function InventoryView(props: BlockViewProps) {
   const { design, language, provider } = props
-  const counts = SAMPLE_COUNTS[provider]
+  const data = useCanvasData()
+  const counts = data.counts
   const rows =
     provider === "aws"
       ? [
-          [t("doc.inventory.account_id", language, "Account ID"), "•••• •••• 4821"],
-          [t("doc.inventory.regions", language, "Regions"), "ap-southeast-1, ap-southeast-3"],
+          [t("doc.inventory.account_id", language, "Account ID"), `•••• •••• ${data.scope.idTail}`],
+          [t("doc.inventory.regions", language, "Regions"), data.scope.places.join(", ")],
           [t("doc.inventory.total_resources", language, "Total resources"), String(counts.resources)],
         ]
       : [
-          [t("doc.inventory.subscription_id", language, "Subscription ID"), "•••••••-••••-4c21"],
-          [t("doc.inventory.resource_groups", language, "Resource groups"), "rg-app-prod, rg-data-prod"],
+          [t("doc.inventory.subscription_id", language, "Subscription ID"), `•••••••-••••-${data.scope.idTail}`],
+          [t("doc.inventory.resource_groups", language, "Resource groups"), data.scope.places.join(", ")],
           [t("doc.inventory.total_resources", language, "Total resources"), String(counts.resources)],
         ]
   return (
@@ -557,17 +583,21 @@ function InventoryView(props: BlockViewProps) {
 }
 
 function TrendView(props: BlockViewProps) {
-  const { design, language, section, resource, provider } = props
+  const { design, language, section, resource } = props
   const months = Math.max(2, section.lookback ?? 3)
-  const target = resource ?? sampleResources(provider)[0]!
-  const values = Array.from({ length: months }, (_, index) =>
-    Number((target.avg * (0.7 + 0.3 * Math.sin(index + 1) ** 2)).toFixed(1))
-  )
-  const categories = Array.from({ length: months }, (_, index) => {
-    const date = new Date(2026, 8 - (months - 1 - index), 1)
-    return date.toLocaleString(language === "id" ? "id-ID" : "en-GB", { month: "short" })
-  })
+  const resources = useSectionResources(section)
+  const target = resource ?? resources[0]
+  if (!target) return <NoResources language={language} />
   const metric = section.metrics?.[0]
+  // Real figures carry the report's own months; the sample draws a shape of the right length.
+  const real = target.months?.[seriesKey(metric ? metricLabel(metric) : "", metric?.statistic ?? "avg")]?.slice(-months)
+  const monthName = (date: Date) => date.toLocaleString(language === "id" ? "id-ID" : "en-GB", { month: "short" })
+  const values = real
+    ? real.map((entry) => entry.value)
+    : Array.from({ length: months }, (_, index) => Number((target.avg * (0.7 + 0.3 * Math.sin(index + 1) ** 2)).toFixed(1)))
+  const categories = real
+    ? real.map((entry) => monthName(new Date(`${entry.month}-01T00:00:00`)))
+    : Array.from({ length: months }, (_, index) => monthName(new Date(2026, 8 - (months - 1 - index), 1)))
   return (
     <div>
       <Caption design={design}>
@@ -604,12 +634,13 @@ function BlankRowsView(props: BlockViewProps) {
 }
 
 function GlanceView(props: BlockViewProps) {
-  const { design, language, provider } = props
-  const counts = SAMPLE_COUNTS[provider]
+  const { design, language } = props
+  const data = useCanvasData()
+  const counts = data.counts
   const tiles = [
     [t("doc.glance.resources", language, "Resources in scope"), counts.resources],
     [t("doc.glance.stopped", language, "Stopped machines"), counts.stopped],
-    [t("doc.glance.no_backup", language, "Resources without a backup"), counts.unprotected],
+    [t("doc.glance.no_backup", language, "Resources without a backup"), counts.unprotected ?? "–"],
   ] as const
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -796,7 +827,6 @@ function AgentParagraphView({
 // --- Blocks the author placed -----------------------------------------------------------
 
 export function AddedBlockView({
-  provider,
   design,
   language,
   section,
@@ -816,14 +846,16 @@ export function AddedBlockView({
   editing?: boolean
 }>) {
   const metrics = section.metrics ?? []
-  const resources = sampleResources(provider)
+  const resources = useSectionResources(section)
   const ranking = rankingOf(section, catalogueEntry)
   const firstName = ranking?.metric ?? "CPU"
   const firstStat = ranking?.statistic ?? "avg"
-  const valueOf = (resource: SampleResource, name: string, statistic: string): number => {
-    const summary = sampleSummary(sampleMetricSeries(resource, name, statistic === "max" ? "max" : "avg"))
-    return statistic === "max" ? summary.peak : summary.avg
-  }
+  // Charts draw a missing real figure as zero; tables print a dash (`formatFigure`).
+  const valueOf = (resource: SampleResource, name: string, statistic: string): number =>
+    figureOf(resource, name, statistic === "max" ? "max" : "avg") ?? 0
+  const ranked = (name: string, statistic: string) => [...resources].sort(byFigure(name, statistic === "max" ? "max" : "avg"))
+
+  if (resources.length === 0 && readsMetrics(entry.kind)) return <NoResources language={language} />
 
   switch (entry.kind) {
     case "text":
@@ -851,12 +883,12 @@ export function AddedBlockView({
           rows={(metrics.length ? metrics : [{ metric: "CPU", statistic: "avg" }]).map((item) => {
             const name = metricLabel(item)
             const lowest = item.statistic === "min"
-            const sorted = [...resources].sort((a, b) => valueOf(b, name, item.statistic) - valueOf(a, name, item.statistic))
-            const pick = lowest ? sorted.at(-1)! : sorted[0]!
+            const sorted = ranked(name, item.statistic).filter((r) => figureOf(r, name, item.statistic === "max" ? "max" : "avg") !== null)
+            const pick = (lowest ? sorted.at(-1) : sorted[0]) ?? resources[0]!
             return [
               `${name} (${item.statistic})`,
               t(lowest ? "doc.basis.lowest_observed" : "doc.basis.highest_observed", language, lowest ? "lowest observed" : "highest observed"),
-              formatSample(valueOf(pick, name, item.statistic), sampleUnit(name)),
+              formatFigure(figureOf(pick, name, item.statistic === "max" ? "max" : "avg"), sampleUnit(name)),
               pick.name,
             ]
           })}
@@ -871,14 +903,14 @@ export function AddedBlockView({
           .map((m) => ({ metric: metricLabel(m), statistic: m.statistic }))
           .filter((m) => !(m.metric === firstName && m.statistic === firstStat)),
       ].slice(0, 4)
-      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
+      const rows = ranked(firstName, firstStat)
       return (
         <Table
           design={design}
           head={[t("doc.table.resource", language, "Resource"), ...ordered.map((m) => `${m.metric} (${m.statistic})`)]}
-          rows={ranked.map((r) => [
+          rows={rows.map((r) => [
             r.name,
-            ...ordered.map((m) => formatSample(valueOf(r, m.metric, m.statistic), sampleUnit(m.metric))),
+            ...ordered.map((m) => formatFigure(figureOf(r, m.metric, m.statistic === "max" ? "max" : "avg"), sampleUnit(m.metric))),
           ])}
           numeric={ordered.map((_, index) => index + 1)}
         />
@@ -887,8 +919,8 @@ export function AddedBlockView({
     case "callout": {
       const fills: Record<string, string> = {
         count: "3",
-        resource: [...resources].sort((a, b) => b.peak - a.peak)[0]!.name,
-        value: formatSample([...resources].sort((a, b) => b.peak - a.peak)[0]!.peak, sampleUnit(firstName)),
+        resource: ranked(firstName, "max")[0]!.name,
+        value: formatFigure(figureOf(ranked(firstName, "max")[0]!, firstName, "max"), sampleUnit(firstName)),
       }
       const words = entry.text?.[language] ?? ""
       const attention = entry.tone === "attention"
@@ -910,8 +942,7 @@ export function AddedBlockView({
       )
     }
     case "heatmap": {
-      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
-      const rows = ranked.map((r) => ({
+      const rows = ranked(firstName, firstStat).map((r) => ({
         label: r.name,
         values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg"),
       }))
@@ -932,17 +963,17 @@ export function AddedBlockView({
       )
     }
     case "sparklines": {
-      const ranked = [...resources].sort((a, b) => valueOf(b, firstName, firstStat) - valueOf(a, firstName, firstStat))
+      const order = ranked(firstName, firstStat)
       return (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           <SampleChart
             design={design}
             style="sparkline"
-            series={ranked.map((r) => ({
+            series={order.map((r) => ({
               label: r.name,
               values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg"),
             }))}
-            categories={sampleMetricSeries(ranked[0]!, firstName, "avg").map((_, index) => String(index + 1))}
+            categories={sampleMetricSeries(order[0]!, firstName, "avg").map((_, index) => String(index + 1))}
             unit={sampleUnit(firstName)}
           />
           <Table
@@ -953,10 +984,10 @@ export function AddedBlockView({
               t("doc.summary.p95", language, "P95 (est.)"),
               t("doc.summary.max", language, "Peak"),
             ]}
-            rows={ranked.map((r) => {
-              const summary = sampleSummary(sampleMetricSeries(r, firstName, "max"))
+            rows={order.map((r) => {
+              const figures = periodFigures(r, firstName)
               const unit = sampleUnit(firstName)
-              return [r.name, formatSample(summary.avg * 0.62, unit), formatSample(summary.p95, unit), formatSample(summary.peak, unit)]
+              return [r.name, formatFigure(figures.avg, unit), formatFigure(figures.p95, unit), formatFigure(figures.peak, unit)]
             })}
             numeric={[1, 2, 3]}
           />
@@ -967,7 +998,7 @@ export function AddedBlockView({
       return <AgentParagraphView design={design} language={language} entry={entry} lastTry={lastTry} editing={editing} />
     case "avg_vs_peak": {
       const metric = avgAndPeakMetric(section) ?? firstName
-      const ranked = [...resources].sort((a, b) => valueOf(b, metric, "max") - valueOf(a, metric, "max"))
+      const byPeak = ranked(metric, "max")
       return (
         <div>
           <Caption design={design}>
@@ -977,10 +1008,10 @@ export function AddedBlockView({
             design={design}
             type="dumbbell"
             series={[
-              { label: t("doc.chart.series.average", language, "Average"), values: ranked.map((r) => valueOf(r, metric, "avg")) },
-              { label: t("doc.chart.series.peak", language, "Peak"), values: ranked.map((r) => valueOf(r, metric, "max")) },
+              { label: t("doc.chart.series.average", language, "Average"), values: byPeak.map((r) => valueOf(r, metric, "avg")) },
+              { label: t("doc.chart.series.peak", language, "Peak"), values: byPeak.map((r) => valueOf(r, metric, "max")) },
             ]}
-            categories={ranked.map((r) => r.name)}
+            categories={byPeak.map((r) => r.name)}
             unit={sampleUnit(metric)}
           />
         </div>

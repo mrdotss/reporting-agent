@@ -3,6 +3,7 @@
 import { CaretDownIcon } from "@phosphor-icons/react"
 import { useId, useState } from "react"
 
+import { CHART_STYLE_NAMES } from "@/components/builder/canvas/labels"
 import { useBuilder } from "@/components/builder/context"
 import { CHART_STYLE_NOTES } from "@/lib/profiles/chart-styles"
 import { PRESET_HEADING_FACES } from "@/lib/profiles/preview-sample"
@@ -22,7 +23,6 @@ import {
   DESIGN_PRESETS,
   STYLE_THRESHOLD_MAX,
   STYLE_THRESHOLD_MIN,
-  type ChartStyle,
 } from "@/lib/templates/definition"
 import { cn } from "@/lib/utils"
 
@@ -36,15 +36,6 @@ import { cn } from "@/lib/utils"
  * inspector's Style tab.
  */
 
-export const CHART_STYLE_NAMES: Readonly<Record<ChartStyle, string>> = {
-  stacked: "Stacked",
-  soft_area: "Soft area",
-  flat_area: "Flat area",
-  range_band: "Range band",
-  columns: "Columns",
-  sparkline: "Sparkline",
-  small_multiples: "Small multiples",
-}
 
 export function Segmented<T extends string>({
   label,

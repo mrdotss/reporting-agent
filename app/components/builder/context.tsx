@@ -5,7 +5,8 @@ import { useStore } from "zustand"
 import { useStoreWithEqualityFn } from "zustand/traditional"
 
 import { builderIssues, type BuilderIssue } from "@/lib/builder/issues"
-import type { DefinitionV4 } from "@/lib/builder/model"
+import type { DefinitionV4, SectionV4 } from "@/lib/builder/model"
+import { sampleData, type CanvasData, type SampleResource } from "@/lib/builder/sample"
 import { createBuilderStore, type BuilderState, type BuilderStore } from "@/lib/builder/store"
 import type { MetricCatalogSnapshot } from "@/lib/templates/definition"
 import type { PreviewSource } from "@/lib/templates/input"
@@ -59,6 +60,24 @@ export function useBuilder<T>(selector: (state: BuilderState) => T): T {
 
 export function useBuilderStore(): BuilderStore {
   return useContextValue().store
+}
+
+/** What the canvas draws its figures from: the chosen report's, or the sample. */
+export function useCanvasData(): CanvasData {
+  const real = useBuilder((state) => state.canvasData)
+  const provider = useBuilder((state) => state.definition.provider)
+  return real ?? sampleData(provider)
+}
+
+/**
+ * The resources a section draws: the sample's, or the real report's of the types the
+ * section selects. Real figures can hold none of a kind; the sample always holds some.
+ */
+export function useSectionResources(section: SectionV4): readonly SampleResource[] {
+  const data = useCanvasData()
+  const types = (section.selection?.resource_types ?? []).map((type) => type.toLowerCase())
+  if (data.kind === "sample" || types.length === 0) return data.resources
+  return data.resources.filter((resource) => types.includes((resource.type ?? "").toLowerCase()))
 }
 
 export function useEnvironment(): BuilderEnvironment {

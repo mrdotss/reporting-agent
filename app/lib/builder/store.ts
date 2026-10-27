@@ -22,6 +22,7 @@ import {
   type AddedKind,
   type TextEntry,
 } from "./model"
+import type { CanvasData } from "./sample"
 
 /**
  * The builder's state: the draft being edited, what is selected, and which panels are open.
@@ -93,6 +94,8 @@ export type BuilderState = {
   readonly insertAt: InsertPoint | null
   /** The canvas's measured page runs, `null` until it has been drawn once. */
   readonly pageRuns: readonly PageRun[] | null
+  /** Real figures the canvas draws instead of the sample, `null` for the sample. Never saved. */
+  readonly canvasData: CanvasData | null
 
   select(selection: Selection): void
   setAgentTry(blockId: string, result: AgentTry): void
@@ -101,6 +104,7 @@ export type BuilderState = {
   setMode(mode: "edit" | "preview"): void
   openInsert(at: InsertPoint | null): void
   setPageRuns(runs: readonly PageRun[]): void
+  setCanvasData(data: CanvasData | null): void
 
   /** Any edit to the draft, as an immer recipe. Every named action below goes through it. */
   edit(recipe: (draft: Draft<DefinitionV4>) => void): void
@@ -234,8 +238,10 @@ export function createBuilderStore({ initial, catalog }: Options) {
         agentTries: {},
         insertAt: null,
         pageRuns: null,
+        canvasData: null,
         openInsert: (insertAt) => set({ insertAt }),
         setPageRuns: (pageRuns) => set({ pageRuns }),
+        setCanvasData: (canvasData) => set({ canvasData }),
         setAgentTry: (blockId, result) => set({ agentTries: { ...get().agentTries, [blockId]: result } }),
 
         select: (selection) => set({ selection, inspectorTab: "content" }),

@@ -1674,6 +1674,8 @@ const VERIFICATION_STORE = path.join("lib", "verifications", "store.ts")
 const SPEC_SERVER_ONLY_MODULES = [
   TEMPLATE_STORE,
   VERIFICATION_STORE,
+  // Reads a run's snapshot from S3 for the builder's Real figures.
+  path.join("lib", "templates", "canvas-data.ts"),
   path.join("lib", "templates", "catalog.ts"),
   // Fetches a profile's cover logo URL and writes the bytes to S3 when a version is
   // saved. Marked for the fetch as much as for the write: it is the one module that

@@ -1,11 +1,6 @@
 import "server-only"
 
-import {
-  BedrockRuntimeClient,
-  ConverseCommand,
-} from "@aws-sdk/client-bedrock-runtime"
-
-import { requireEnv } from "@/lib/env"
+import { converse } from "@/lib/presets/converse"
 import {
   catalogueBrief,
   currentOutline,
@@ -23,32 +18,12 @@ import {
  * data — only the description and the section catalogue — so it needs none of the
  * runtime's credentials or verification, and adding it costs no runtime release.
  *
- * The model is `RPT_PRESET_MODEL_ID` when set, otherwise the title model.
+ * The model is `RPT_PRESET_MODEL_ID` when set, otherwise the title model (`converse`).
  *
  * What comes back is checked by `validateOutline` before anyone sees it. A first draft
  * the model cannot produce falls back to the starter the description names, and says
  * so; a refine has no such fallback, so it fails and the outline on screen stays.
  */
-
-const cache = globalThis as typeof globalThis & {
-  __rptPresetClient?: BedrockRuntimeClient
-  __rptPresetRegion?: string
-}
-
-function client(): BedrockRuntimeClient {
-  const region = requireEnv("AWS_REGION")
-  if (cache.__rptPresetClient !== undefined && cache.__rptPresetRegion === region) {
-    return cache.__rptPresetClient
-  }
-  cache.__rptPresetClient = new BedrockRuntimeClient({ region })
-  cache.__rptPresetRegion = region
-  return cache.__rptPresetClient
-}
-
-function modelId(): string {
-  const preset = process.env.RPT_PRESET_MODEL_ID?.trim()
-  return preset ? preset : requireEnv("RPT_TITLE_MODEL_ID")
-}
 
 const LENGTH_GUIDE: Readonly<Record<DescribeInput["length"], string>> = {
   short: "3 to 5 sections, a brief a reader finishes in a few minutes",
@@ -123,17 +98,7 @@ export class DescribeUnavailableError extends Error {
 }
 
 async function ask(input: DescribeInput, current: Outline | null): Promise<Outline | null> {
-  const response = await client().send(
-    new ConverseCommand({
-      modelId: modelId(),
-      system: [{ text: systemPrompt(input) }],
-      messages: [{ role: "user", content: [{ text: userPrompt(input, current) }] }],
-      inferenceConfig: { maxTokens: 1600, temperature: 0.2 },
-    })
-  )
-  const text = (response.output?.message?.content ?? [])
-    .map((block) => ("text" in block && typeof block.text === "string" ? block.text : ""))
-    .join("")
+  const text = await converse(systemPrompt(input), userPrompt(input, current), 1600)
   return validateOutline(parseModelJson(text), input)
 }
 
