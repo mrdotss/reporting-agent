@@ -94,6 +94,7 @@ function template(over: Partial<TemplateView> = {}): TemplateView {
     currentVersion: 3,
     currentVersionSha256: "a".repeat(64),
     hasDraft: false,
+    hasUnpublishedEdits: false,
     schemaVersion: 1,
     createdAt: "2026-05-01T00:00:00.000Z",
     updatedAt: "2026-05-02T00:00:00.000Z",

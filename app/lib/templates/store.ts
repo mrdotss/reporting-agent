@@ -4,7 +4,7 @@ import { accessWhere, DraftConflictError, type ProjectScope } from "@/lib/worksp
 
 import { randomUUID } from "node:crypto"
 
-import { and, asc, desc, eq, sql } from "drizzle-orm"
+import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm"
 import { z } from "zod"
 
 import { getDb } from "@/lib/db"
@@ -781,6 +781,12 @@ export async function readLatestVersion(
  * toward the conservative version rather than toward an error, the same choice
  * `resolveSchemaVersion` makes for the validation walk.
  *
+ * `draftDiffers` is computed in SQL too, for the same reason: whether the template's
+ * draft says something the version does not. The draft is never cleared by a publish,
+ * so "a draft exists" is true of nearly every preset ever opened in the builder and
+ * cannot tell the list which ones have edits waiting. The two trees are compared
+ * after {@link comparableDefinition} removes what a save adds on its own.
+ *
  * Scoped by `user_id` through {@link readOwnedTemplate}, like every read here
  * (Requirement 1.5).
  */
@@ -804,6 +810,13 @@ export async function readLatestVersionForView(
       hasIncidentReport: sql<boolean>`coalesce(jsonb_path_exists(${reportTemplateVersions.definition}, '$.sections[*] ? (@.type == "incident_report")'), false)`,
       // The section types alone, in order, for the list's section marks.
       sectionTypes: sql<unknown>`jsonb_path_query_array(${reportTemplateVersions.definition}, '$.sections[*].type')`,
+      // Whether the draft differs from this version, compared in SQL so neither tree
+      // crosses. No draft means nothing pending.
+      draftDiffers: sql<boolean>`coalesce((select case
+          when ${reportTemplates.draftDefinition} is null then false
+          when jsonb_typeof(${reportTemplates.draftDefinition}) <> 'object' or jsonb_typeof(${reportTemplateVersions.definition}) <> 'object' then true
+          else ${comparableDefinition(sql`${reportTemplates.draftDefinition}`)} is distinct from ${comparableDefinition(sql`${reportTemplateVersions.definition}`)}
+        end from ${reportTemplates} where ${reportTemplates.id} = ${reportTemplateVersions.templateId}), false)`,
     })
     .from(reportTemplateVersions)
     .where(eq(reportTemplateVersions.templateId, templateId))
@@ -825,7 +838,27 @@ export async function readLatestVersionForView(
     sectionTypes: Array.isArray(row.sectionTypes)
       ? row.sectionTypes.filter((type): type is string => typeof type === "string")
       : [],
+    draftDiffers: row.draftDiffers === true,
   }
+}
+
+/**
+ * A definition with what a save adds on its own taken out, so a draft and the version
+ * published from it compare equal when the author changed nothing.
+ *
+ * A save pins the display format (`currentDisplayFormat`: `trim_trailing_zeros` and
+ * `bytes_as_gib` on `design.number_format`) and stores the cover images
+ * (`front_matter.cover.logo_key` and `background_key`, see `resolveLogoIntoDefinition`).
+ * Neither is an edit. Everything else is compared as jsonb, where key order and
+ * number spelling do not count.
+ */
+function comparableDefinition(definition: SQL) {
+  return sql`((case when jsonb_typeof(${definition}->'design') = 'object'
+      then jsonb_set(${definition}, '{design,number_format}', case
+        when jsonb_typeof(${definition}->'design'->'number_format') = 'object'
+          then (${definition}->'design'->'number_format') - 'trim_trailing_zeros' - 'bytes_as_gib'
+        else '{}'::jsonb end)
+      else ${definition} end) #- '{front_matter,cover,logo_key}' #- '{front_matter,cover,background_key}')`
 }
 
 /**

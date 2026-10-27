@@ -91,6 +91,13 @@ export const SOURCE_NAMES: Readonly<Record<SourceKind, string>> = {
   onprem: "On-premises",
 }
 
+/** The short names, for a chip or a pill where the full name would not fit. */
+export const SOURCE_SHORT_NAMES: Readonly<Record<SourceKind, string>> = {
+  azure: "Azure",
+  aws: "AWS",
+  onprem: "On-prem",
+}
+
 /**
  * One source's mark at the size a list row wants, labelled for a screen reader.
  *

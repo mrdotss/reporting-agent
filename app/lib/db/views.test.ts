@@ -1381,6 +1381,9 @@ const TEMPLATE_VIEW_KEYS = [
   // so the run form knows to offer incident entries. A yes/no about the template's own
   // outline, derived in SQL like `schemaVersion` — the definition itself is not projected.
   "hasIncidentReport",
+  // Reviewed and admitted: whether the draft says something the live version does not,
+  // for the preset list's "edits pending". A yes/no compared in SQL; neither tree crosses.
+  "hasUnpublishedEdits",
   "id",
   "name",
   "projectId",
@@ -1431,6 +1434,7 @@ describe("toTemplateView — Requirement 43.9", () => {
       currentVersion: 3,
       currentVersionSha256: TEMPLATE_VERSION_SHA,
       hasDraft: false,
+      hasUnpublishedEdits: false,
       schemaVersion: 2,
       hasIncidentReport: false,
       sectionTypes: [],
@@ -1486,6 +1490,32 @@ describe("toTemplateView — Requirement 43.9", () => {
     expect(withDraft.hasDraft).toBe(true)
     expect(withoutDraft.hasDraft).toBe(false)
     expect(JSON.stringify(withDraft)).not.toContain("kpi_row")
+  })
+
+  test("hasUnpublishedEdits follows the version's comparison, not the draft's presence", () => {
+    const draft = { draftDefinition: { blocks: ["kpi_row"] } }
+    const same = toTemplateView(reportTemplateRow(draft), {
+      ...TEMPLATE_CURRENT_VERSION,
+      draftDiffers: false,
+    })
+    const changed = toTemplateView(reportTemplateRow(draft), {
+      ...TEMPLATE_CURRENT_VERSION,
+      draftDiffers: true,
+    })
+    // A caller that did not compare falls back to "a draft exists".
+    const unknown = toTemplateView(reportTemplateRow(draft), TEMPLATE_CURRENT_VERSION)
+    const neverPublished = toTemplateView(reportTemplateRow(draft), null)
+    const noDraft = toTemplateView(reportTemplateRow({ draftDefinition: null }), {
+      ...TEMPLATE_CURRENT_VERSION,
+      draftDiffers: true,
+    })
+
+    expect(same.hasDraft).toBe(true)
+    expect(same.hasUnpublishedEdits).toBe(false)
+    expect(changed.hasUnpublishedEdits).toBe(true)
+    expect(unknown.hasUnpublishedEdits).toBe(true)
+    expect(neverPublished.hasUnpublishedEdits).toBe(true)
+    expect(noDraft.hasUnpublishedEdits).toBe(false)
   })
 
   test("serializes createdAt and updatedAt as ISO 8601 instants in UTC", () => {

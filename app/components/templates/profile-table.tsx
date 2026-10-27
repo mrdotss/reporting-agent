@@ -1,34 +1,26 @@
 "use client"
 
 import Link from "next/link"
-import { useMemo, useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
 import {
   ProviderMark,
   SOURCE_NAMES,
-  type SourceKind,
 } from "@/components/subscriptions/provider-mark"
 import {
   CopyIcon,
-  MagnifyingGlassIcon,
   PencilSimpleIcon,
   PlayIcon,
   TrashIcon,
 } from "@phosphor-icons/react/ssr"
 
 import { Identifier } from "@/components/identifier"
-import { SectionMarks } from "@/components/templates/section-marks"
-import { Badge } from "@/components/ui/badge"
-import { Button, buttonVariants } from "@/components/ui/button"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
+  formatEdited,
+  presetStatus,
+  sectionCount,
+  TONE_CLASS,
+} from "@/components/templates/preset-status"
+import { SectionMarks } from "@/components/templates/section-marks"
+import { Button, buttonVariants } from "@/components/ui/button"
 import {
   Table,
   TableBody,
@@ -39,9 +31,12 @@ import {
 } from "@/components/ui/table"
 import type { TemplateView } from "@/lib/db/views"
 import { messageText } from "@/lib/messages/catalog"
+import { cn } from "@/lib/utils"
 
 /**
- * The report-profile list, as a table (task 2.1).
+ * The report-profile list, as a table (task 2.1). Since the card gallery it is the
+ * List view of `PresetLibrary`, which owns search, filters and the delete dialog; this
+ * component draws the rows it is handed.
  *
  * ## Why a table rather than the cards it replaces
  *
@@ -56,200 +51,38 @@ import { messageText } from "@/lib/messages/catalog"
  * per-row and refusable per-row (see below) — and a checkbox column that leads
  * nowhere is a control that has to be explained.
  *
- * ## Deleting, and the refusal that is not an error
- *
- * `DELETE /api/report-profiles/[id]` answers `204`, or `409 TEMPLATE_PINNED`
- * when a run pinned one of the profile's versions. That refusal is a **fact
- * about the account**, not a failure of the request: reports exist, and they
- * stay replayable against the exact definition they were rendered from. So the
- * dialog states it in those terms rather than as an error, and leaves the
- * profile alone.
- *
- * The confirm does not ask the consultant to type the name. The action is
- * reversible in the only sense that matters — a profile with runs cannot be
- * deleted at all, and one without runs has produced nothing to lose.
- *
  * ## What a row says about the preset
  *
  * Its sections as marks, read from the version a run would pin, so the outline is
- * visible without opening the builder; the customer it belongs to; and a run action
- * that opens the request form with the preset chosen. A draft that was never saved
- * has no version to run, so its run action is disabled and says why.
+ * visible without opening the builder; the customer it belongs to, where more than one
+ * customer's presets are shown; its state as the same pill the cards use; and a run
+ * action that opens the request form with the preset chosen. A draft that was never
+ * saved has no version to run, so its run action is disabled and says why.
  */
 
-type Filter = "all" | "published" | "drafts"
-
-/** A profile's state, as the one column that carries it. */
-function statusOf(template: TemplateView): {
-  label: string
-  published: boolean
-} {
-  if (template.currentVersion === null) return { label: "Draft", published: false }
-  return { label: `Version ${template.currentVersion}`, published: true }
-}
-
-function formatEdited(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  })
-}
-
-function sectionCount(count: number): string {
-  return count === 1
-    ? (messageText("ui.presets.section_count_one", "en") ?? "")
-    : (messageText("ui.presets.section_count", "en", { count }) ?? "")
-}
-
 export function ProfileTable({
-  templates,
+  rows,
   customers,
+  showCustomer = true,
+  onDelete,
 }: Readonly<{
-  templates: readonly TemplateView[]
+  rows: readonly TemplateView[]
   /** Customer names by project id, for the customer column. */
   customers?: ReadonlyMap<string, string>
+  /** False inside one customer, and for a team with one customer: the column would repeat itself. */
+  showCustomer?: boolean
+  onDelete: (template: TemplateView) => void
 }>) {
-  const router = useRouter()
-  const [query, setQuery] = useState("")
-  const [filter, setFilter] = useState<Filter>("all")
-  // Which source's presets are shown. A preset belongs to one source, and a consultant
-  // looking for the AWS one should not scan past every Azure one to find it.
-  const [provider, setProvider] = useState<"all" | SourceKind>("all")
-  const providers = useMemo(() => {
-    const seen = new Map<SourceKind, number>()
-    for (const template of templates) {
-      seen.set(template.provider, (seen.get(template.provider) ?? 0) + 1)
-    }
-    return [...seen]
-  }, [templates])
-  const [pending, startTransition] = useTransition()
-
-  /** The profile the confirm dialog is about, or `null` when it is closed. */
-  const [target, setTarget] = useState<TemplateView | null>(null)
-  /** A refusal from the server, shown in place of the confirm. */
-  const [refusal, setRefusal] = useState<string | null>(null)
-
-  const counts = useMemo(() => {
-    const published = templates.filter((t) => t.currentVersion !== null).length
-    return { all: templates.length, published, drafts: templates.length - published }
-  }, [templates])
-
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return templates
-      .filter((t) => provider === "all" || t.provider === provider)
-      .filter((t) =>
-        filter === "all"
-          ? true
-          : filter === "published"
-            ? t.currentVersion !== null
-            : t.currentVersion === null
-      )
-      .filter(
-        (t) =>
-          needle === "" ||
-          t.name.toLowerCase().includes(needle) ||
-          t.description.toLowerCase().includes(needle)
-      )
-  }, [templates, query, filter, provider])
-
-  async function confirmDelete(template: TemplateView) {
-    const response = await fetch(`/api/report-profiles/${template.id}`, {
-      method: "DELETE",
-    })
-
-    if (response.status === 204) {
-      setTarget(null)
-      startTransition(() => router.refresh())
-      return
-    }
-
-    // 409 TEMPLATE_PINNED carries the reason in its own body; anything else is
-    // reported as itself rather than as a guess at what went wrong.
-    const body = await response.json().catch(() => null)
-    setRefusal(
-      typeof body?.message === "string"
-        ? body.message
-        : `The profile could not be deleted (${response.status}).`
-    )
-  }
-
   return (
-    <div className="flex flex-col gap-4">
-      {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative w-full max-w-xs">
-          <MagnifyingGlassIcon
-            aria-hidden="true"
-            className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search profiles…"
-            aria-label="Search profiles by name or description"
-            className="pl-9"
-          />
-        </div>
-
-        <div className="flex gap-1.5" role="group" aria-label="Filter by state">
-          {(
-            [
-              ["all", "All", counts.all],
-              ["published", "Published", counts.published],
-              ["drafts", "Drafts", counts.drafts],
-            ] as const
-          ).map(([value, label, count]) => (
-            <Button
-              key={value}
-              size="sm"
-              variant={filter === value ? "secondary" : "ghost"}
-              aria-pressed={filter === value}
-              onClick={() => setFilter(value)}
-            >
-              {label}{" "}
-              <span className="font-mono tabular-nums opacity-65">{count}</span>
-            </Button>
-          ))}
-        </div>
-
-        <div className="flex gap-1.5" role="group" aria-label="Filter by source">
-          {(
-            [["all", "All sources", templates.length], ...providers.map(([kind, count]) => [kind, SOURCE_NAMES[kind], count])] as const
-          ).map(([value, sourceLabel, count]) => (
-            <Button
-              key={value}
-              size="sm"
-              variant={provider === value ? "secondary" : "ghost"}
-              aria-pressed={provider === value}
-              onClick={() => setProvider(value as "all" | SourceKind)}
-            >
-              {value === "all" ? null : (
-                <ProviderMark kind={value as SourceKind} className="[&_svg]:size-3.5" />
-              )}
-              {sourceLabel}{" "}
-              <span className="font-mono tabular-nums opacity-65">{count}</span>
-            </Button>
-          ))}
-        </div>
-
-        <p
-          aria-live="polite"
-          className="ms-auto text-xs text-muted-foreground"
-        >
-          {rows.length} of {templates.length} shown
-        </p>
-      </div>
-
-      {/* Table */}
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Profile</TableHead>
             <TableHead className="w-40">{messageText("ui.presets.col_sections", "en")}</TableHead>
-            <TableHead className="w-36">{messageText("ui.presets.col_customer", "en")}</TableHead>
-            <TableHead className="w-40">Status</TableHead>
+            {showCustomer ? (
+              <TableHead className="w-36">{messageText("ui.presets.col_customer", "en")}</TableHead>
+            ) : null}
+            <TableHead className="w-48">Status</TableHead>
             <TableHead className="w-28">Last edited</TableHead>
             <TableHead className="w-40 text-right">Actions</TableHead>
           </TableRow>
@@ -257,7 +90,7 @@ export function ProfileTable({
 
         <TableBody>
           {rows.map((template) => {
-            const status = statusOf(template)
+            const status = presetStatus(template)
             return (
               <TableRow key={template.id}>
                 <TableCell>
@@ -304,23 +137,27 @@ export function ProfileTable({
                   )}
                 </TableCell>
 
-                <TableCell className="text-sm">
-                  {template.projectId && customers?.has(template.projectId) ? (
-                    customers.get(template.projectId)
-                  ) : (
-                    <span className="text-muted-foreground">{messageText("ui.presets.no_customer", "en")}</span>
-                  )}
-                </TableCell>
+                {showCustomer ? (
+                  <TableCell className="text-sm">
+                    {template.projectId && customers?.has(template.projectId) ? (
+                      customers.get(template.projectId)
+                    ) : (
+                      <span className="text-muted-foreground">{messageText("ui.presets.no_customer", "en")}</span>
+                    )}
+                  </TableCell>
+                ) : null}
 
                 <TableCell>
-                  <Badge variant={status.published ? "outline" : "secondary"}>
+                  <span
+                    data-slot="preset-status"
+                    data-tone={status.tone}
+                    className={cn(
+                      "inline-flex h-6 items-center rounded-full px-2 text-[11px] font-semibold",
+                      TONE_CLASS[status.tone]
+                    )}
+                  >
                     {status.label}
-                  </Badge>
-                  {template.hasDraft ? (
-                    <span className="ms-2 text-xs text-muted-foreground">
-                      unsaved draft
-                    </span>
-                  ) : null}
+                  </span>
                 </TableCell>
 
                 <TableCell className="text-sm text-muted-foreground">
@@ -341,16 +178,14 @@ export function ProfileTable({
                     bigger change than this pass.
                   */}
                   <div className="flex justify-end gap-1">
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
+                    <Link
+                      data-slot="button"
+                      href={`/report-profiles/${template.id}/edit`}
                       aria-label={`Edit ${template.name}`}
-                      render={
-                        <Link href={`/report-profiles/${template.id}/edit`} />
-                      }
+                      className={buttonVariants({ size: "icon-sm", variant: "ghost" })}
                     >
                       <PencilSimpleIcon aria-hidden="true" />
-                    </Button>
+                    </Link>
                     {template.currentVersion === null ? (
                       <Button
                         size="icon-sm"
@@ -385,10 +220,7 @@ export function ProfileTable({
                       size="icon-sm"
                       variant="ghost"
                       aria-label={`Delete ${template.name}`}
-                      onClick={() => {
-                        setRefusal(null)
-                        setTarget(template)
-                      }}
+                      onClick={() => onDelete(template)}
                     >
                       <TrashIcon aria-hidden="true" />
                     </Button>
@@ -398,71 +230,7 @@ export function ProfileTable({
             )
           })}
 
-          {rows.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={6} className="py-14 text-center">
-                <p className="font-heading text-sm font-medium">
-                  {query.trim() === ""
-                    ? "No profile in this filter"
-                    : `No profile matches “${query.trim()}”`}
-                </p>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Try a shorter search, or a different filter.
-                </p>
-              </TableCell>
-            </TableRow>
-          ) : null}
         </TableBody>
       </Table>
-
-      {/* Delete confirmation, or the server's refusal in its place */}
-      <Dialog
-        open={target !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setTarget(null)
-            setRefusal(null)
-          }
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {refusal === null
-                ? `Delete “${target?.name}”?`
-                : `“${target?.name}” cannot be deleted`}
-            </DialogTitle>
-            <DialogDescription>
-              {refusal ??
-                "The profile stops being offered for new runs. Versions no run " +
-                  "pinned are removed with it."}
-            </DialogDescription>
-          </DialogHeader>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setTarget(null)
-                setRefusal(null)
-              }}
-            >
-              {refusal === null ? "Cancel" : "Close"}
-            </Button>
-            {refusal === null ? (
-              <Button
-                variant="destructive"
-                disabled={pending}
-                onClick={() => {
-                  if (target !== null) void confirmDelete(target)
-                }}
-              >
-                Delete profile
-              </Button>
-            ) : null}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </div>
   )
 }
