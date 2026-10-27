@@ -84,6 +84,9 @@ function statisticLabel(statistic: string, language: Language): string {
 
 // --- Shared pieces ------------------------------------------------------------------
 
+/** A value longer than this may break inside a word, so one long token cannot widen its table. */
+const LONG_TOKEN_CHARS = 24
+
 /**
  * A table drawn as the theme draws it, with the design's look — header, rows, marked values —
  * or a block's own (`own`) where it has one.
@@ -136,11 +139,15 @@ function Table({
     value.endsWith("%") &&
     Number.parseFloat(value) >= mark
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: px(size) }}>
+    // Headers wrap at their spaces, so a table with many columns (RDS's eight) narrows to its
+    // longest words and stays inside the page frame. A long unbroken value (an ARM id) may
+    // break anywhere, or it alone would push the table past the page; a short resource name
+    // stays on one line.
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: px(size), overflowWrap: "break-word" }}>
       <thead>
         <tr>
           {head.map((label, index) => (
-            <th key={`${label}-${index}`} style={{ ...cell(index), fontWeight: 700, whiteSpace: "nowrap", fontFamily: spec.headingFace, ...headLook }}>
+            <th key={`${label}-${index}`} style={{ ...cell(index), fontWeight: 700, fontFamily: spec.headingFace, ...headLook }}>
               {label}
             </th>
           ))}
@@ -154,6 +161,13 @@ function Table({
                 key={index}
                 style={{
                   ...cell(index, rowIndex),
+                  ...(typeof value === "string"
+                    ? value.length > LONG_TOKEN_CHARS
+                      ? { overflowWrap: "anywhere" }
+                      : index === 0
+                        ? { whiteSpace: "nowrap" }
+                        : {}
+                    : {}),
                   ...(marked(value, index) ? { background: MARK.fill, color: MARK.ink, fontWeight: 700 } : {}),
                 }}
               >
