@@ -66,6 +66,13 @@ export default async function EditPresetPage({ params }: PageProps) {
       ? emptyDraftV4(template.name, provider)
       : (currentDisplayFormat(opened) as DefinitionV4)
 
+  // The live version, for Compare. An older-format version has nothing to line up with.
+  const live = loaded.version?.definition ?? null
+  const liveDefinition =
+    live !== null && (live as { schema_version?: unknown }).schema_version === 4
+      ? (currentDisplayFormat(live) as DefinitionV4)
+      : null
+
   // The first active connection of the preset's own provider: what the Add panel's "found
   // in the account" hint and the lookback note read from. A preset is not tied to a
   // connection — one is chosen when a report runs — so this describes, never constrains.
@@ -90,6 +97,7 @@ export default async function EditPresetPage({ params }: PageProps) {
         collectedFactSources: [...COLLECTED_FACT_SOURCES],
         metricsHistorySince: connection?.metricsHistorySince ?? null,
         latestVersion: loaded.version?.version ?? null,
+        liveDefinition,
         previewSources: sources,
       }}
     />

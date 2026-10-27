@@ -10,11 +10,13 @@ import {
   type BuilderEnvironment,
 } from "@/components/builder/context"
 import { Inspector } from "@/components/builder/inspector/inspector"
+import { Readiness } from "@/components/builder/inspector/readiness"
 import { Segmented } from "@/components/builder/left/theme-panel"
 import { AddPanel } from "@/components/builder/left/add-panel"
 import { DocumentPanel } from "@/components/builder/left/document-panel"
 import { Outline } from "@/components/builder/left/outline"
 import { ThemePanel } from "@/components/builder/left/theme-panel"
+import { PageStrip } from "@/components/builder/page-strip"
 import { TopBar } from "@/components/builder/top-bar"
 import { useAutosave } from "@/components/builder/use-autosave"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
@@ -23,7 +25,8 @@ import type { LeftTab } from "@/lib/builder/store"
 
 /**
  * The preset builder: an outline and its panels on the left, the live page in the middle,
- * the selected block's settings on the right.
+ * what is left before publishing and the selected block's settings on the right, and a
+ * strip of the document's pages under the top bar.
  *
  * The one client boundary on the screen. Every panel reads the same store through
  * `BuilderProvider`, so a block selected on the page is the one the outline highlights and
@@ -72,6 +75,14 @@ function BuilderScreen({
     store.temporal.getState().redo()
   })
   useHotkeys("escape", () => store.getState().select(null))
+  // The block menu, after the selected block. Typing "/" in a text field types a slash:
+  // `useHotkeys` ignores form fields by default.
+  useHotkeys("slash", (event) => {
+    const { selection, openInsert } = store.getState()
+    if (selection?.kind !== "block") return
+    event.preventDefault()
+    openInsert({ sectionId: selection.sectionId, after: selection.ref })
+  })
   useHotkeys(["alt+up", "alt+down"], (event, handler) => {
     const { selection, moveBlock, moveSection } = store.getState()
     const offset = handler.keys?.includes("up") ? -1 : 1
@@ -95,6 +106,7 @@ function BuilderScreen({
         saveState={autosave.state}
         revisionRef={autosave.revisionRef}
       />
+      <PageStrip />
       <ResizablePanelGroup orientation="horizontal" className="min-h-0 flex-1">
         {mode === "edit" && (
           <>
@@ -130,6 +142,7 @@ function BuilderScreen({
             <ResizableHandle />
             <ResizablePanel defaultSize={320} minSize={280} maxSize={460} className="min-h-0">
               <aside aria-label="Inspector" className="h-full overflow-auto p-3.5">
+                <Readiness />
                 <Inspector />
               </aside>
             </ResizablePanel>

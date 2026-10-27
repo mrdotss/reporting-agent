@@ -32,7 +32,7 @@ import {
 } from "@/lib/builder/model"
 import { sampleResources } from "@/lib/builder/sample"
 import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
-import { blockKey, type BlockRef, type Selection } from "@/lib/builder/store"
+import { blockKey, type BlockRef, type PageRun, type Selection } from "@/lib/builder/store"
 import {
   DENSITY_SCALE,
   MARGIN_FACTORS,
@@ -45,6 +45,7 @@ import {
 import { cn } from "@/lib/utils"
 
 import { AddedBlockView, CatalogueBlock, Heading, px } from "./blocks"
+import { InsertBetween } from "./insert-menu"
 import { ADDED_BLOCKS, blockLabel } from "./labels"
 
 /**
@@ -107,6 +108,8 @@ export function Canvas() {
   const sections = orderedSections(definition)
   const language = definition.identity.language
   const margin = MARGIN_FACTORS[design.look.margins]
+  const sheet = useRef<HTMLElement | null>(null)
+  usePageRuns(sheet, design, page.height - 2 * 72 * DENSITY_SCALE[design.density] * margin)
   const firstTitle = sections[0]
     ? sectionTitle(sectionEntry(definition.provider, sections[0].type), language)
     : undefined
@@ -131,6 +134,7 @@ export function Canvas() {
       <div className="flex flex-col items-center gap-6 px-6 py-8" style={{ zoom }}>
         {design.cover && <CoverSheet design={design} />}
         <article
+          ref={sheet}
           aria-label="Report page"
           className="relative bg-white shadow-[0_1px_3px_rgba(20,20,30,0.12),0_8px_24px_rgba(20,20,30,0.06)]"
           style={{
@@ -194,6 +198,78 @@ export function Canvas() {
       </div>
     </div>
   )
+}
+
+/**
+ * Measures the drawn page into runs of printed pages for the page strip: the cover, the
+ * front matter, then each section, which starts on a new page, split again at each page
+ * break. A run's height over the page's usable height gives its page count.
+ *
+ * An estimate, and the strip says "about": the canvas draws sample rows and, while editing,
+ * the hidden-block rows and the repeat frame, so a real report can be shorter or longer.
+ */
+function usePageRuns(sheet: React.RefObject<HTMLElement | null>, design: PageDesign, usable: number) {
+  const definition = useBuilder((state) => state.definition)
+  const setPageRuns = useBuilder((state) => state.setPageRuns)
+  const last = useRef("")
+
+  useEffect(() => {
+    const element = sheet.current
+    if (!element || usable <= 0) return
+    const language = definition.identity.language
+    const measure = () => {
+      const runs: PageRun[] = []
+      if (design.cover && design.look.cover !== "summary") runs.push({ key: "cover", label: "Cover", pages: 1 })
+      const strip = design.cover && design.look.cover === "summary"
+      runs.push({ key: "control", label: strip ? "Title strip and document control" : "Document control", pages: 1 })
+      if ((definition.front_matter.toc as { enabled?: boolean } | undefined)?.enabled !== false) {
+        runs.push({ key: "toc", label: "Contents", pages: 1 })
+      }
+      const ordered = orderedSections(definition)
+      element.querySelectorAll<HTMLElement>("[data-section-id]").forEach((node) => {
+        const sectionId = node.dataset.sectionId ?? ""
+        const number = ordered.findIndex((section) => section.id === sectionId) + 1
+        const section = ordered[number - 1]
+        if (!section) return
+        const title = `${number}. ${sectionTitle(sectionEntry(definition.provider, section.type), language)}`
+        const box = node.getBoundingClientRect()
+        // The pane is zoomed to fit; bring every height back to printed pixels.
+        const scale = node.offsetHeight > 0 ? box.height / node.offsetHeight : 1
+        const cuts = [...node.querySelectorAll<HTMLElement>("[data-page-break]")].map(
+          (pageBreak) => (pageBreak.getBoundingClientRect().bottom - box.top) / scale
+        )
+        const edges = [0, ...cuts, box.height / scale]
+        // The page draws one resource of a repeated group; the report prints one per resource.
+        const repeats = [...node.querySelectorAll<HTMLElement>("[data-repeat]")].map((group) => {
+          const rect = group.getBoundingClientRect()
+          return { top: (rect.top - box.top) / scale, extra: (rect.height / scale) * (Number(group.dataset.repeat) - 1) }
+        })
+        for (let piece = 0; piece < edges.length - 1; piece += 1) {
+          const extra = repeats
+            .filter((group) => group.top >= edges[piece]! && group.top < edges[piece + 1]!)
+            .reduce((sum, group) => sum + group.extra, 0)
+          const height = edges[piece + 1]! - edges[piece]! + extra
+          runs.push({
+            key: `${sectionId}:${piece}`,
+            label: piece === 0 ? title : `${title}, after page break ${piece}`,
+            pages: Math.max(1, Math.ceil(height / usable)),
+            sectionId,
+          })
+        }
+      })
+      const signature = JSON.stringify(runs)
+      if (signature === last.current) return
+      last.current = signature
+      setPageRuns(runs)
+    }
+    const frame = requestAnimationFrame(measure)
+    const observer = new ResizeObserver(() => measure())
+    observer.observe(element)
+    return () => {
+      cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [sheet, definition, design, usable, setPageRuns])
 }
 
 function SampleBadge() {
@@ -420,6 +496,7 @@ function LayoutItemView({
         label={ADDED_BLOCKS[item.entry.kind].label}
         editing={editing}
         index={index}
+        pageBreak={item.entry.kind === "page_break"}
       >
         <AddedBlockView
           provider={provider}
@@ -443,6 +520,7 @@ function LayoutItemView({
     const count = sampleResources(provider).length
     return (
       <div
+        data-repeat={count}
         className="relative rounded-lg border border-dashed px-4 pt-6 pb-3"
         style={{ borderColor: editing ? "rgba(47,60,126,.45)" : "transparent", padding: editing ? undefined : 0 }}
       >
@@ -558,6 +636,7 @@ function Selectable({
   editing,
   index,
   required = false,
+  pageBreak = false,
   children,
 }: Readonly<{
   section: SectionV4
@@ -566,6 +645,8 @@ function Selectable({
   editing: boolean
   index: number
   required?: boolean
+  /** Marks the block for the page strip, which starts a new page after it. */
+  pageBreak?: boolean
   children: ReactNode
 }>) {
   const selection = useBuilder((state) => state.selection)
@@ -574,15 +655,20 @@ function Selectable({
   const toggleHidden = useBuilder((state) => state.toggleHidden)
   const removeAdded = useBuilder((state) => state.removeAdded)
   const addBlock = useBuilder((state) => state.addBlock)
+  const openInsert = useBuilder((state) => state.openInsert)
   const agents = useBuilder((state) => agentCount(state.definition))
   const selected = isSelected(selection, section.id, ref_)
   // Any block can be asked about but an agent paragraph itself, and the page holds six.
   const askable = !(ref_.kind === "added" && section.blocks?.some((b) => isAddedEntry(b) && b.id === ref_.id && b.kind === "agent"))
 
-  if (!editing) return <div>{children}</div>
+  if (!editing) return <div data-page-break={pageBreak ? "" : undefined}>{children}</div>
 
   return (
-    <div className="group/block relative" data-block-key={`${section.id}|${blockKey(ref_)}`}>
+    <div
+      className="group/block relative"
+      data-block-key={`${section.id}|${blockKey(ref_)}`}
+      data-page-break={pageBreak ? "" : undefined}
+    >
       <button
         type="button"
         aria-label={`Select ${label}`}
@@ -608,6 +694,9 @@ function Selectable({
                 <SparkleIcon className="size-3.5" />
               </ToolbarButton>
             )}
+            <ToolbarButton label="Add a block after this one (/)" onClick={() => openInsert({ sectionId: section.id, after: ref_ })}>
+              <PlusIcon className="size-3.5" />
+            </ToolbarButton>
             <ToolbarButton label="Move up" disabled={index === 0} onClick={() => moveBlock(section.id, ref_, -1)}>
               <ArrowUpIcon className="size-3.5" />
             </ToolbarButton>
@@ -627,7 +716,7 @@ function Selectable({
         </>
       )}
       <div className="relative">{children}</div>
-      <InsertLine onAdd={() => addBlock(section.id, "text", ref_)} />
+      <InsertBetween section={section} after={ref_} />
     </div>
   )
 }
@@ -652,26 +741,6 @@ function ToolbarButton({
     >
       {children}
     </button>
-  )
-}
-
-function InsertLine({ onAdd }: Readonly<{ onAdd: () => void }>) {
-  return (
-    <div className="pointer-events-none absolute inset-x-0 -bottom-[11px] z-[4] flex h-3.5 items-center gap-2 opacity-0 transition-opacity group-hover/block:pointer-events-auto group-hover/block:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100">
-      <span className="h-px flex-1 bg-primary/35" />
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation()
-          onAdd()
-        }}
-        className="inline-flex h-5 items-center gap-1 rounded-full border border-primary/40 bg-white px-2 font-sans text-[11px] font-semibold text-primary"
-      >
-        <PlusIcon aria-hidden className="size-3" />
-        Add text
-      </button>
-      <span className="h-px flex-1 bg-primary/35" />
-    </div>
   )
 }
 

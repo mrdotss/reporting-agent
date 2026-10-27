@@ -3,11 +3,11 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react"
 import { useMemo, useState } from "react"
 
-import { ADDED_BLOCKS, ADDED_KINDS } from "@/components/builder/canvas/labels"
+import { ADDED_BLOCKS } from "@/components/builder/canvas/labels"
 import { useBuilder, useEnvironment } from "@/components/builder/context"
-import { AddedIcon } from "@/components/builder/left/outline"
-import { agentCount, avgAndPeakMetric } from "@/lib/builder/model"
-import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
+import { BlockDrawing } from "@/components/builder/left/block-drawing"
+import { BLOCK_INTENTS, blockFit } from "@/lib/builder/fit"
+import { orderedSections } from "@/lib/builder/model"
 import {
   GROUP_ORDER,
   catalogueFor,
@@ -19,14 +19,15 @@ import { offerable, missingInputs } from "@/lib/profiles/offerability"
 import { cn } from "@/lib/utils"
 
 /**
- * What can be put on the page: blocks into the selected section, and sections from the
- * provider's catalogue.
+ * What can be put on the page: blocks into a section, and sections from the provider's
+ * catalogue.
  *
- * Blocks go into the selected section, after the selected block: text, a callout, and
- * catalogue blocks that read the section — key figures, a top list, month vs month, a
- * heatmap, sparklines, coverage, a page break. Those that read metrics are offered only to a
- * section that reports some. A section's
- * own blocks are already on the page; hidden ones come back from the outline.
+ * Blocks are a gallery grouped by what the author wants the page to do (show a number,
+ * rank, over time, compare, status, words, layout), each with a small drawing of its shape.
+ * They go into the section chosen at the top, the selected one by default, after the
+ * selected block. A block that does not fit that section stays in the gallery, greyed, with
+ * the reason (`blockFit`). A section's own blocks are already on the page; hidden ones come
+ * back from the outline.
  *
  * Only this provider's sections are listed: an AWS preset is offered Compute Optimizer's
  * rightsizing, an Azure one Advisor's recommendations, never the other's.
@@ -44,15 +45,23 @@ export function AddPanel() {
   const selection = useBuilder((state) => state.selection)
   const addSection = useBuilder((state) => state.addSection)
   const addBlock = useBuilder((state) => state.addBlock)
+  const select = useBuilder((state) => state.select)
   const setLeftTab = useBuilder((state) => state.setLeftTab)
   const { scanTypeCounts, collectedFactSources } = useEnvironment()
   const [query, setQuery] = useState("")
   const language = definition.identity.language
   const sources = useMemo(() => new Set(collectedFactSources), [collectedFactSources])
 
-  const targetSectionId = selection !== null && "sectionId" in selection ? selection.sectionId : null
-  const targetSection = definition.sections.find((section) => section.id === targetSectionId)
-  const targetEntry = targetSection ? sectionEntry(definition.provider, targetSection.type) : undefined
+  // The section a block goes into: the one picked here, else the one selected on the page,
+  // else the first. Nothing has to be selected before a block can be added. A pick holds
+  // until something else is selected on the page.
+  const selectedSectionId = selection !== null && "sectionId" in selection ? selection.sectionId : null
+  const [picked, setPicked] = useState<{ readonly id: string; readonly while: string | null } | null>(null)
+  const chosen = picked !== null && picked.while === selectedSectionId ? picked.id : null
+  const targetSection =
+    definition.sections.find((section) => section.id === (chosen ?? selectedSectionId)) ??
+    orderedSections(definition)[0]
+  const targetSectionId = targetSection?.id ?? null
   const used = new Set(definition.sections.map((section) => section.type))
 
   const available = catalogueFor(definition.provider).filter(
@@ -80,58 +89,80 @@ export function AddPanel() {
 
       <div className="flex flex-col gap-2">
         <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">Blocks</span>
-        <p className="text-xs text-muted-foreground">
-          {targetSection ? (
-            <>Adds to the selected section, after the selected block.</>
-          ) : (
-            <>Select a section or block on the page first.</>
-          )}
-        </p>
-        <div className="grid grid-cols-2 gap-2">
-          {ADDED_KINDS.filter(
+        {definition.sections.length === 0 ? (
+          <p className="text-xs text-muted-foreground">Add a section below first. Blocks go inside a section.</p>
+        ) : (
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="shrink-0">Adds into</span>
+            <select
+              aria-label="Section the block goes into"
+              value={targetSection?.id ?? ""}
+              onChange={(event) => setPicked({ id: event.target.value, while: selectedSectionId })}
+              className="h-7 min-w-0 flex-1 rounded-md border border-border bg-card px-1.5 text-[12.5px] text-foreground"
+            >
+              {orderedSections(definition).map((section) => (
+                <option key={section.id} value={section.id}>
+                  {sectionTitle(sectionEntry(definition.provider, section.type), language)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {BLOCK_INTENTS.map((intent) => {
+          const kinds = intent.kinds.filter(
             (kind) =>
               folded === "" ||
+              intent.label.toLowerCase().includes(folded) ||
               ADDED_BLOCKS[kind].label.toLowerCase().includes(folded) ||
               ADDED_BLOCKS[kind].blurb.toLowerCase().includes(folded)
-          ).map((kind) => {
-            const needsMetrics = ADDED_BLOCKS[kind].needsMetrics && !targetEntry?.metricBearing
-            // Average and peak draws one metric's two figures, so the section must collect both.
-            const needsPair =
-              !needsMetrics && kind === "avg_vs_peak" && targetSection !== undefined && avgAndPeakMetric(targetSection) === null
-            const atAgentLimit = kind === "agent" && agentCount(definition) >= MAX_AGENT_BLOCKS
-            const disabled = !targetSection || needsMetrics || needsPair || atAgentLimit
-            return (
-              <button
-                key={kind}
-                type="button"
-                disabled={disabled}
-                title={
-                  needsMetrics && targetSection
-                    ? "Reads metrics: add it to a section that reports some."
-                    : needsPair
-                      ? "Needs a metric this section collects as both an average and a maximum."
-                      : atAgentLimit
-                        ? `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs.`
-                        : undefined
-                }
-                onClick={() => {
-                  if (!targetSectionId) return
-                  addBlock(targetSectionId, kind, selection?.kind === "block" ? selection.ref : undefined)
-                  setLeftTab("outline")
-                }}
-                className="flex flex-col items-start gap-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-[12.5px] font-medium hover:border-input disabled:opacity-50"
-              >
-                <span className="grid h-8 w-full place-items-center rounded bg-muted text-muted-foreground">
-                  <AddedIcon kind={kind} />
-                </span>
-                {ADDED_BLOCKS[kind].label}
-                <span className="text-[11px] leading-snug font-normal text-muted-foreground">
-                  {ADDED_BLOCKS[kind].blurb}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+          )
+          if (kinds.length === 0) return null
+          return (
+            <div key={intent.label} className="flex flex-col gap-1.5">
+              <span className="px-0.5 pt-1 text-[11px] text-muted-foreground">{intent.label}</span>
+              <div className="grid grid-cols-2 gap-2">
+                {kinds.map((kind) => {
+                  const fit = blockFit(definition, targetSection, kind)
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      disabled={!fit.ok}
+                      aria-describedby={fit.ok ? undefined : `fit-${kind}`}
+                      onClick={() => {
+                        if (!targetSection) return
+                        const id = addBlock(
+                          targetSection.id,
+                          kind,
+                          selection?.kind === "block" && selection.sectionId === targetSection.id ? selection.ref : undefined
+                        )
+                        if (id !== null) select({ kind: "block", sectionId: targetSection.id, ref: { kind: "added", id } })
+                        setLeftTab("outline")
+                      }}
+                      className="flex flex-col items-start gap-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-[12.5px] font-medium hover:border-input disabled:cursor-not-allowed"
+                    >
+                      <span className={cn("w-full rounded bg-muted px-1.5 py-1", !fit.ok && "opacity-45")}>
+                        <BlockDrawing kind={kind} />
+                      </span>
+                      <span className={cn(!fit.ok && "text-muted-foreground")}>{ADDED_BLOCKS[kind].label}</span>
+                      <span className="text-[11px] leading-snug font-normal text-muted-foreground">
+                        {ADDED_BLOCKS[kind].blurb}
+                      </span>
+                      {!fit.ok && (
+                        <span id={`fit-${kind}`} className="text-[11px] leading-snug font-normal text-[var(--status-attention)]">
+                          {fit.reason}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })}
+        <p className="text-[11px] text-muted-foreground">
+          On the page, use + between blocks, or press / with a block selected.
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">

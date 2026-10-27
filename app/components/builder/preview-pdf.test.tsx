@@ -20,6 +20,7 @@ function mount(previewSources: readonly PreviewSource[], provider: "aws" | "azur
     collectedFactSources: [],
     metricsHistorySince: null,
     latestVersion: null,
+    liveDefinition: null,
     previewSources,
   }
   render(
