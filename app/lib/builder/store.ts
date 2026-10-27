@@ -66,6 +66,21 @@ export type AgentTry = {
 }
 export type InspectorTab = "content" | "style" | "data"
 
+/** Where the block menu is open: after one block of one section. */
+export type InsertPoint = { readonly sectionId: string; readonly after: BlockRef }
+
+/**
+ * The page's estimated length, measured from the canvas: one entry per run of pages that
+ * starts on a fresh page (the cover, the front matter, each section and each page break).
+ */
+export type PageRun = {
+  readonly key: string
+  readonly label: string
+  readonly pages: number
+  /** The section this run belongs to, for jumping to it; absent for the cover and front matter. */
+  readonly sectionId?: string
+}
+
 export type BuilderState = {
   readonly definition: DefinitionV4
   readonly selection: Selection
@@ -74,12 +89,18 @@ export type BuilderState = {
   readonly mode: "edit" | "preview"
   /** Each agent paragraph's last try, by `<sectionId>__<blockId>`. */
   readonly agentTries: Readonly<Record<string, AgentTry>>
+  /** The open block menu, from a + between blocks or / on a selected block. */
+  readonly insertAt: InsertPoint | null
+  /** The canvas's measured page runs, `null` until it has been drawn once. */
+  readonly pageRuns: readonly PageRun[] | null
 
   select(selection: Selection): void
   setAgentTry(blockId: string, result: AgentTry): void
   setLeftTab(tab: LeftTab): void
   setInspectorTab(tab: InspectorTab): void
   setMode(mode: "edit" | "preview"): void
+  openInsert(at: InsertPoint | null): void
+  setPageRuns(runs: readonly PageRun[]): void
 
   /** Any edit to the draft, as an immer recipe. Every named action below goes through it. */
   edit(recipe: (draft: Draft<DefinitionV4>) => void): void
@@ -211,6 +232,10 @@ export function createBuilderStore({ initial, catalog }: Options) {
         inspectorTab: "content",
         mode: "edit",
         agentTries: {},
+        insertAt: null,
+        pageRuns: null,
+        openInsert: (insertAt) => set({ insertAt }),
+        setPageRuns: (pageRuns) => set({ pageRuns }),
         setAgentTry: (blockId, result) => set({ agentTries: { ...get().agentTries, [blockId]: result } }),
 
         select: (selection) => set({ selection, inspectorTab: "content" }),

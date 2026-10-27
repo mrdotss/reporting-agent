@@ -27,6 +27,8 @@ export type BuilderEnvironment = {
   /** How far back exported metrics reach on that connection (Azure), ISO date or null. */
   readonly metricsHistorySince: string | null
   readonly latestVersion: number | null
+  /** The latest version's definition when it is v4, what Compare shows the draft against. */
+  readonly liveDefinition: DefinitionV4 | null
   /** The connections Preview PDF can render against: this provider's, with their latest report. */
   readonly previewSources: readonly PreviewSource[]
 }

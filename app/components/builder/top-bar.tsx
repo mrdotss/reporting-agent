@@ -5,6 +5,7 @@ import {
   ArrowCounterClockwiseIcon,
   CaretLeftIcon,
   CheckCircleIcon,
+  GitDiffIcon,
   WarningIcon,
 } from "@phosphor-icons/react"
 import Link from "next/link"
@@ -12,17 +13,21 @@ import { useRouter } from "next/navigation"
 import { useState } from "react"
 import { toast } from "sonner"
 
-import { useBuilder, useBuilderStore, useHistory, useIssues } from "@/components/builder/context"
+import { compareToLive, type OutlineChange } from "@/components/builder/compare"
+import { useBuilder, useBuilderStore, useEnvironment, useHistory, useIssues } from "@/components/builder/context"
+import { useGoToIssue } from "@/components/builder/inspector/readiness"
 import { Segmented } from "@/components/builder/left/theme-panel"
 import { PreviewPdf } from "@/components/builder/preview-pdf"
 import type { SaveState } from "@/components/builder/use-autosave"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import type { BuilderIssue } from "@/lib/builder/issues"
+import type { DefinitionV4 } from "@/lib/builder/model"
 import { cn } from "@/lib/utils"
 
 /**
- * Name, save state and the version that is live; edit or preview; undo; a real-figures PDF
- * of the draft; what is left to fix; publish.
+ * Name, save state and the version that is live; edit or preview; undo; what the draft
+ * changes against the live version; a real-figures PDF of the draft; what is left to fix;
+ * publish.
  *
  * Publishing refuses while anything is left to fix and opens the list instead — each entry
  * goes to the section, block or panel that fixes it.
@@ -54,22 +59,20 @@ export function TopBar({
   const provider = useBuilder((state) => state.definition.provider)
   const mode = useBuilder((state) => state.mode)
   const setMode = useBuilder((state) => state.setMode)
-  const select = useBuilder((state) => state.select)
-  const setLeftTab = useBuilder((state) => state.setLeftTab)
   const { canUndo, canRedo, undo, redo } = useHistory()
   const issues = useIssues()
   const [open, setOpen] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [live, setLive] = useState(latestVersion)
+  // What was just published, until the page reloads with it as the live version.
+  const environment = useEnvironment()
+  const [published, setPublished] = useState<DefinitionV4 | null>(null)
+  const liveDefinition = published ?? environment.liveDefinition
 
+  const goToIssue = useGoToIssue()
   const go = (issue: BuilderIssue) => {
     setOpen(false)
-    setMode("edit")
-    if ("tab" in issue.target) setLeftTab(issue.target.tab)
-    else {
-      setLeftTab("outline")
-      select(issue.target.selection)
-    }
+    goToIssue(issue)
   }
 
   const publish = async () => {
@@ -103,6 +106,7 @@ export function TopBar({
       }
       if (body.draftRevision !== undefined) revisionRef.current = body.draftRevision
       setLive(body.version.version)
+      setPublished(store.getState().definition)
       toast.success(
         body.created ? `Published v${body.version.version}` : `Nothing changed since v${body.version.version}`
       )
@@ -162,6 +166,7 @@ export function TopBar({
         <button type="button" aria-label="Redo" title="Redo (⇧⌘Z)" disabled={!canRedo} onClick={() => redo()} className="grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-35">
           <ArrowClockwiseIcon className="size-4" />
         </button>
+        {live !== null && liveDefinition !== null && <CompareToLive live={live} definition={liveDefinition} />}
         <PreviewPdf templateId={templateId} />
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
@@ -202,5 +207,78 @@ export function TopBar({
         </button>
       </div>
     </header>
+  )
+}
+
+const CHANGE_MARK: Record<OutlineChange["kind"], string> = {
+  added: "+",
+  removed: "−",
+  moved: "↕",
+  changed: "~",
+}
+
+/** The draft against the live version, as a list; a change inside a section opens it. */
+function CompareToLive({ live, definition }: Readonly<{ live: number; definition: DefinitionV4 }>) {
+  const draft = useBuilder((state) => state.definition)
+  const select = useBuilder((state) => state.select)
+  const setMode = useBuilder((state) => state.setMode)
+  const setLeftTab = useBuilder((state) => state.setLeftTab)
+  const [open, setOpen] = useState(false)
+  const changes = open ? compareToLive(definition, draft) : []
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        title={`What this draft changes against v${live}`}
+        className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
+      >
+        <GitDiffIcon aria-hidden className="size-3.5" />
+        Compare to v{live}
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-96 gap-2 p-2">
+        <p className="px-2 pt-1 text-[13px] font-semibold">
+          {changes.length === 0
+            ? `No changes since v${live}`
+            : `${changes.length} ${changes.length === 1 ? "change" : "changes"} since v${live}`}
+        </p>
+        {changes.length === 0 ? (
+          <p className="px-2 pb-1 text-[13px] text-muted-foreground">Publishing now would keep v{live}.</p>
+        ) : (
+          <ul className="flex max-h-80 flex-col gap-0.5 overflow-auto">
+            {changes.map((change, index) => (
+              <li key={`${change.kind}-${index}`}>
+                <button
+                  type="button"
+                  disabled={change.sectionId === undefined}
+                  onClick={() => {
+                    if (change.sectionId === undefined) return
+                    setOpen(false)
+                    setMode("edit")
+                    setLeftTab("outline")
+                    select({ kind: "section", sectionId: change.sectionId })
+                  }}
+                  className="flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted disabled:cursor-default disabled:hover:bg-transparent"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-px w-3 shrink-0 text-center font-mono text-[13px] font-semibold",
+                      change.kind === "added" && "text-[var(--status-verified)]",
+                      change.kind === "removed" && "text-[var(--status-failed)]",
+                      change.kind === "moved" && "text-[var(--status-inflight)]",
+                      change.kind === "changed" && "text-[var(--status-attention)]"
+                    )}
+                  >
+                    {CHANGE_MARK[change.kind]}
+                  </span>
+                  <span className="sr-only">{change.kind}: </span>
+                  <span className="text-[13px] leading-snug">{change.text}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </PopoverContent>
+    </Popover>
   )
 }
