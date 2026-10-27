@@ -527,6 +527,13 @@ export type TemplateView = {
   /** Whether `draft_definition` is non-null — never the draft's own content. */
   hasDraft: boolean
   /**
+   * Whether the draft holds edits the live version does not: a preset never published
+   * with a draft, or one whose draft differs from its latest version. Not `hasDraft`,
+   * which stays true after a publish because a publish does not clear the draft.
+   * A yes/no worked out in SQL; neither tree is projected.
+   */
+  hasUnpublishedEdits: boolean
+  /**
    * The `schema_version` the pinned version's definition declares, or
    * {@link MIN_SCHEMA_VERSION} when there is no version yet.
    *
@@ -584,6 +591,12 @@ export type TemplateViewCurrentVersion = Pick<
   readonly schemaVersion: number
   readonly hasIncidentReport: boolean
   readonly sectionTypes: readonly string[]
+  /**
+   * Whether the template's draft differs from this version, from
+   * `readLatestVersionForView`. Absent where the caller did not compare, and the view
+   * then falls back to "a draft exists".
+   */
+  readonly draftDiffers?: boolean
 }
 
 /**
@@ -671,6 +684,8 @@ export function toTemplateView(
     currentVersion: currentVersion?.version ?? null,
     currentVersionSha256: currentVersion?.definitionSha256 ?? null,
     hasDraft: row.draftDefinition !== null,
+    hasUnpublishedEdits:
+      row.draftDefinition !== null && (currentVersion?.draftDiffers ?? true),
     schemaVersion: currentVersion?.schemaVersion ?? MIN_SCHEMA_VERSION,
     hasIncidentReport: currentVersion?.hasIncidentReport ?? false,
     // The version a run would pin; a preset never saved shows its draft's outline instead.

@@ -49,6 +49,7 @@ import {
   insertVersion as insertVersionAtRevision,
   listTemplates,
   readLatestVersion,
+  readLatestVersionForView,
   readVersion,
   saveDraft,
   TemplateNotFoundError,
@@ -505,6 +506,63 @@ describe("readLatestVersion", () => {
     await expect(readLatestVersion(ownerId, theirs.id)).rejects.toBeInstanceOf(
       TemplateNotFoundError
     )
+  })
+})
+
+describe("readLatestVersionForView — draftDiffers", () => {
+  const published = {
+    schema_version: 4,
+    design: { number_format: { decimals: 1, trim_trailing_zeros: true, bytes_as_gib: true } },
+    front_matter: { cover: { logo: "https://example.com/logo.png", logo_key: "logos/abc.png" } },
+    sections: [{ type: "regions" }, { type: "ec2_instances" }],
+  }
+
+  test("no draft means nothing pending", async () => {
+    const template = await createTemplate(ownerId, { name: "Clean" })
+    await insertVersion(ownerId, template.id, versionInput(published))
+
+    const view = await readLatestVersionForView(ownerId, template.id)
+    expect(view?.draftDiffers).toBe(false)
+  })
+
+  test("a draft that only lacks what a save adds is not an edit", async () => {
+    const template = await createTemplate(ownerId, { name: "Unchanged" })
+    await insertVersion(ownerId, template.id, versionInput(published))
+    // What the builder keeps after a publish: the logo URL without the stored key, the
+    // display format unpinned, and keys in another order.
+    await saveDraft(ownerId, template.id, {
+      sections: [{ type: "regions" }, { type: "ec2_instances" }],
+      front_matter: { cover: { logo: "https://example.com/logo.png" } },
+      design: { number_format: { decimals: 1.0 } },
+      schema_version: 4,
+    })
+
+    const view = await readLatestVersionForView(ownerId, template.id)
+    expect(view?.draftDiffers).toBe(false)
+  })
+
+  test("a draft with another section is an edit", async () => {
+    const template = await createTemplate(ownerId, { name: "Changed" })
+    await insertVersion(ownerId, template.id, versionInput(published))
+    await saveDraft(ownerId, template.id, {
+      ...published,
+      sections: [...published.sections, { type: "housekeeping" }],
+    })
+
+    const view = await readLatestVersionForView(ownerId, template.id)
+    expect(view?.draftDiffers).toBe(true)
+  })
+
+  test("a draft with another number format is an edit", async () => {
+    const template = await createTemplate(ownerId, { name: "Format" })
+    await insertVersion(ownerId, template.id, versionInput(published))
+    await saveDraft(ownerId, template.id, {
+      ...published,
+      design: { number_format: { decimals: 2 } },
+    })
+
+    const view = await readLatestVersionForView(ownerId, template.id)
+    expect(view?.draftDiffers).toBe(true)
   })
 })
 

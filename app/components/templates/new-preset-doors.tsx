@@ -131,12 +131,29 @@ export function PresetQuickStarts() {
   )
 }
 
-/** "New preset", opening a chooser with the same three doors. */
-export function NewPresetChooser() {
+const NEW_CARD_CLASS =
+  "flex min-h-72 flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-border text-primary"
+
+/**
+ * "New preset", opening a chooser with the same three doors. As `card`, the trigger is
+ * the dashed last tile of the presets gallery rather than a button.
+ */
+export function NewPresetChooser({ variant = "button" }: Readonly<{ variant?: "button" | "card" }>) {
   const canCreate = useCanCreate()
   const label = messageText("ui.presets.chooser_title", "en")
+  const cardContent = (
+    <>
+      <PlusIcon aria-hidden="true" className="size-7" />
+      <span className="text-sm font-semibold">{label}</span>
+      <span className="text-xs text-muted-foreground">{messageText("ui.presets.new_card_body", "en")}</span>
+    </>
+  )
   if (!canCreate) {
-    return (
+    return variant === "card" ? (
+      <span aria-disabled="true" className={cn(NEW_CARD_CLASS, "opacity-50")}>
+        {cardContent}
+      </span>
+    ) : (
       <span aria-disabled="true" className={cn(buttonVariants(), "pointer-events-none opacity-50")}>
         <PlusIcon aria-hidden="true" />
         {label}
@@ -145,10 +162,26 @@ export function NewPresetChooser() {
   }
   return (
     <Dialog>
-      <DialogTrigger render={<Button />}>
-        <PlusIcon aria-hidden="true" />
-        {label}
-      </DialogTrigger>
+      {variant === "card" ? (
+        <DialogTrigger
+          render={
+            <button
+              type="button"
+              className={cn(
+                NEW_CARD_CLASS,
+                "cursor-pointer hover:border-primary hover:bg-primary/5 focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:outline-none"
+              )}
+            />
+          }
+        >
+          {cardContent}
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger render={<Button />}>
+          <PlusIcon aria-hidden="true" />
+          {label}
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{label}</DialogTitle>

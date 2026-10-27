@@ -5,7 +5,7 @@ import Link from "next/link"
 import { PlusIcon, StackIcon } from "@phosphor-icons/react/ssr"
 
 import { NewPresetChooser, PresetQuickStarts } from "@/components/templates/new-preset-doors"
-import { ProfileTable } from "@/components/templates/profile-table"
+import { PresetLibrary } from "@/components/templates/preset-library"
 import {
   Empty,
   EmptyContent,
@@ -31,7 +31,7 @@ import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
  * because Requirement 10.6 allows starter seeding to fail and leave a user with
  * none, and a blank page is not an explanation.
  *
- * The list itself is a client component (`ProfileTable`): search and filtering
+ * The list itself is a client component (`PresetLibrary`): search and filtering
  * are interactions over a set this page has already read, and round-tripping a
  * keystroke to the server to hide rows already in the browser would be slower and
  * no more correct. This component stays the one that reads the database.
@@ -59,6 +59,9 @@ export default async function TemplatesPage() {
 
   const rows = await listTemplates(user.id, projectScope)
   const customers = new Map(context.projects.map((project) => [project.id, project.name]))
+  // Inside one customer every preset is that customer's, and a team with one customer
+  // only ever has the one: either way a customer on each preset repeats itself.
+  const showCustomer = context.project === undefined && context.projects.length > 1
 
   // One resolve per template. A user holds three starters plus what they author
   // — single digits, not a page — and the alternative is a `DISTINCT ON` whose
@@ -117,7 +120,7 @@ export default async function TemplatesPage() {
           </EmptyContent>
         </Empty>
       ) : (
-        <ProfileTable templates={templates} customers={customers} />
+        <PresetLibrary templates={templates} customers={customers} showCustomer={showCustomer} />
       )}
 
       <p className="flex items-center gap-2 text-xs text-muted-foreground">

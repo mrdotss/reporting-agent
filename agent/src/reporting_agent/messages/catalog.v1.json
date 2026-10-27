@@ -2093,6 +2093,118 @@
       "en": "Save a version of {name} before running it",
       "id": "Simpan versi {name} sebelum menjalankannya"
     },
+    "ui.presets.search": {
+      "en": "Search presets",
+      "id": "Cari preset"
+    },
+    "ui.presets.shown": {
+      "en": "{shown} of {total} shown",
+      "id": "{shown} dari {total} ditampilkan"
+    },
+    "ui.presets.filter_label": {
+      "en": "Filter presets",
+      "id": "Saring preset"
+    },
+    "ui.presets.filter_all": {
+      "en": "All",
+      "id": "Semua"
+    },
+    "ui.presets.filter_pending": {
+      "en": "Edits pending",
+      "id": "Perubahan tertunda"
+    },
+    "ui.presets.filter_empty": {
+      "en": "Empty",
+      "id": "Kosong"
+    },
+    "ui.presets.view_label": {
+      "en": "View",
+      "id": "Tampilan"
+    },
+    "ui.presets.view_cards": {
+      "en": "Cards",
+      "id": "Kartu"
+    },
+    "ui.presets.view_list": {
+      "en": "List",
+      "id": "Daftar"
+    },
+    "ui.presets.status_draft": {
+      "en": "Draft",
+      "id": "Draf"
+    },
+    "ui.presets.status_live": {
+      "en": "Live v{version}",
+      "id": "Aktif v{version}"
+    },
+    "ui.presets.status_pending": {
+      "en": "Live v{version} · edits pending",
+      "id": "Aktif v{version} · ada perubahan tertunda"
+    },
+    "ui.presets.status_empty": {
+      "en": "Live v{version} · empty",
+      "id": "Aktif v{version} · kosong"
+    },
+    "ui.presets.edited": {
+      "en": "Edited {date}",
+      "id": "Diubah {date}"
+    },
+    "ui.presets.edit": {
+      "en": "Edit",
+      "id": "Ubah"
+    },
+    "ui.presets.edit_named": {
+      "en": "Edit {name}",
+      "id": "Ubah {name}"
+    },
+    "ui.presets.more": {
+      "en": "More actions for {name}",
+      "id": "Tindakan lain untuk {name}"
+    },
+    "ui.presets.copy_digest": {
+      "en": "Copy version digest",
+      "id": "Salin digest versi"
+    },
+    "ui.presets.duplicate": {
+      "en": "Duplicate",
+      "id": "Duplikat"
+    },
+    "ui.presets.duplicate_unavailable": {
+      "en": "Duplicating a preset is not built yet",
+      "id": "Duplikat preset belum tersedia"
+    },
+    "ui.presets.delete": {
+      "en": "Delete",
+      "id": "Hapus"
+    },
+    "ui.presets.empty_card": {
+      "en": "Open it to add sections",
+      "id": "Buka untuk menambahkan bagian"
+    },
+    "ui.presets.sketch": {
+      "en": "Layout sketch",
+      "id": "Sketsa tata letak"
+    },
+    "ui.presets.sketch_label": {
+      "en": "Layout sketch of {name}, drawn from its sections. Not a rendered page.",
+      "id": "Sketsa tata letak {name}, digambar dari bagian-bagiannya. Bukan halaman hasil render."
+    },
+    "ui.presets.new_card_body": {
+      "en": "Describe it, a starter, or blank",
+      "id": "Jelaskan saja, templat awal, atau kosong"
+    },
+    "ui.presets.none_in_filter": {
+      "en": "No preset in this filter",
+      "id": "Tidak ada preset di filter ini"
+    },
+    "ui.presets.none_match": {
+      "en": "No preset matches “{query}”",
+      "id": "Tidak ada preset yang cocok dengan “{query}”"
+    },
+    "ui.presets.none_hint": {
+      "en": "Try a shorter search, or a different filter.",
+      "id": "Coba pencarian yang lebih pendek, atau filter lain."
+    },
     "ui.describe.title": {
       "en": "Describe a preset",
       "id": "Jelaskan preset"
