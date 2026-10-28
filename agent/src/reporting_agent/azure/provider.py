@@ -108,7 +108,7 @@ from reporting_agent.collect.buckets import (
     FALLBACK_GRAIN,
     resolve_timezone,
 )
-from reporting_agent.collect.dayfold import DayFold
+from reporting_agent.collect.dayfold import DayFold, week_declared, week_pairs
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import GAP_TYPE_METRIC_NOT_EMITTED, record_gap
 from reporting_agent.collect.snapshot import (
@@ -688,7 +688,11 @@ class AzureProvider:
         # One fold for the whole run, across every group. Keyed by resource id, so a
         # per-group fold would work too — but the timezone belongs to the run and giving
         # each group its own would be one more place for two of them to differ.
-        day_fold = DayFold(tz=resolve_timezone(request["timezone"]))
+        week_metrics = request.get("week_metrics_by_resource_type") or {}
+        day_fold = DayFold(
+            tz=resolve_timezone(request["timezone"]),
+            week=week_pairs(request["resources"], week_metrics),
+        )
 
         # The collector this pass writes through. Identical to the run's own except for
         # the archive, which the historical trend does not use: its windows are not this
@@ -739,6 +743,13 @@ class AzureProvider:
             # on the protocol, so a provider with no per-day fold simply omits it and the
             # snapshot keeps the day geometry with no statistics under it.
             day_statistics=day_statistics,
+            # The hour-by-weekday cells a heatmap by hour asked for, across the fleet.
+            week_statistics=[
+                bucket.to_plain_data()
+                for bucket in day_fold.week_buckets(
+                    declared=week_declared(self.catalog, week_metrics), grain=grain
+                )
+            ],
             # Req 35.3 — the capacity actually used, per resource. Reported here because
             # nothing downstream of this boundary can ask the SKU catalog itself.
             sku_capacities=capacities,

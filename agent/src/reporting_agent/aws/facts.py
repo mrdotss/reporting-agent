@@ -19,13 +19,14 @@ instance with forty security groups costs a cell rather than the run.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import UTC, date, datetime, tzinfo
 from decimal import Decimal
 from typing import Any, Final
 
 __all__ = [
     "AWS_BACKUP_SOURCE",
     "AWS_FACT_SOURCE",
+    "AWS_RECOVERY_POINTS_SOURCE",
     "COMPUTE_OPTIMIZER_SOURCE",
     "HOUSEKEEPING_CLEAR",
     "MAX_TEXT",
@@ -33,10 +34,16 @@ __all__ = [
     "fact_items",
     "instance_types_needed",
     "optimizer_items",
+    "recovery_point_days",
+    "recovery_point_items",
 ]
 
 AWS_FACT_SOURCE: Final[str] = "aws"
 AWS_BACKUP_SOURCE: Final[str] = "aws_backup"
+AWS_RECOVERY_POINTS_SOURCE: Final[str] = "aws_recovery_points"
+RECOVERY_POINT_MONTHS: Final[int] = 3
+"""How many local months, back from the newest recovery point, `recovery_point_days` keeps:
+enough for any one report's period and the month before it, short enough to read."""
 COMPUTE_OPTIMIZER_SOURCE: Final[str] = "compute_optimizer"
 MAX_TEXT: Final[int] = 240
 
@@ -271,6 +278,71 @@ def backup_items(protected: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
         _put(item, "backup_vault", vault.rsplit(":", 1)[-1] if isinstance(vault, str) else None)
         items.append(item)
     return items
+
+
+def recovery_point_items(
+    points_by_arn: Mapping[str, Sequence[Mapping[str, Any]]], tz: tzinfo
+) -> list[dict[str, Any]]:
+    """Each protected resource's recovery points as one `recovery_point_days` fact. **Pure.**
+
+    `points_by_arn` holds every protected resource asked about, including one AWS Backup
+    answered with no recovery point, which reads `none` rather than being absent: the source
+    did answer. Days are local to `tz`, so a strip lines up with the report's own days.
+    """
+    items = []
+    for arn in sorted(points_by_arn):
+        item: dict[str, Any] = {"resource_id": arn}
+        item["recovery_point_days"] = recovery_point_days(points_by_arn[arn], tz)
+        items.append(item)
+    return items
+
+
+def recovery_point_days(points: Sequence[Mapping[str, Any]], tz: tzinfo) -> str:
+    """The local days a resource has a recovery point on, compactly. **Pure.**
+
+    `2026-09 1-14,~15,16-30; 2026-10 1`: one group per month, newest
+    :data:`RECOVERY_POINT_MONTHS` only, days and runs of days, and `~` before a day whose only
+    recovery point is `PARTIAL`. An expired or deleting point still records a backup that ran.
+    `none` when there is no point at all. Never over :data:`MAX_TEXT`; see the end.
+    """
+    days: dict[date, bool] = {}
+    for point in points:
+        created = point.get("CreationDate")
+        if isinstance(created, str):
+            try:
+                created = datetime.fromisoformat(created.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+        if not isinstance(created, datetime):
+            continue
+        aware = created if created.tzinfo is not None else created.replace(tzinfo=UTC)
+        day = aware.astimezone(tz).date()
+        complete = str(point.get("Status") or "").upper() != "PARTIAL"
+        days[day] = days.get(day, False) or complete
+    if not days:
+        return "none"
+    newest = max(days)
+    first_month = (newest.year * 12 + newest.month - 1) - (RECOVERY_POINT_MONTHS - 1)
+    groups: list[str] = []
+    for month_index in range(first_month, newest.year * 12 + newest.month):
+        year, month = divmod(month_index, 12)
+        in_month = sorted((day.day, days[day]) for day in days if (day.year, day.month) == (year, month + 1))
+        if not in_month:
+            continue
+        parts: list[str] = []
+        for number, complete in in_month:
+            if not complete:
+                parts.append(f"~{number}")
+            elif parts and not parts[-1].startswith("~") and int(parts[-1].split("-")[-1]) == number - 1:
+                parts[-1] = f"{parts[-1].split('-')[0]}-{number}"
+            else:
+                parts.append(str(number))
+        groups.append(f"{year:04d}-{month + 1:02d} {','.join(parts)}")
+    # Over the text bound, the oldest month goes first: cutting the end would lose the
+    # newest days, which are the ones a report's period reads.
+    while len(groups) > 1 and len("; ".join(groups)) > MAX_TEXT:
+        groups.pop(0)
+    return "; ".join(groups)
 
 
 def optimizer_items(recommendations: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:

@@ -178,3 +178,48 @@ test("bars end rounded and the grid recedes", () => {
   const hbar = chartOptions({ ...base, type: "hbar", style: "columns" });
   assert.deepEqual(hbar.series[0].itemStyle.borderRadius, [0, 3, 3, 0]);
 });
+
+test("small multiples draw one panel per resource on one shared scale, each with its peak", () => {
+  const spec = {
+    ...base,
+    type: "multiples",
+    style: "multiples",
+    height: 232,
+    columns: 4,
+    series: ["web-01", "api-02", "batch-01", "worker-03", "cache-01"].map((name, i) => ({
+      ...base.series[0],
+      key: name,
+      label: name,
+      values: ["10", String(20 + i * 10), null, "15"],
+      pointLabels: ["10%", `${20 + i * 10}%`, null, "15%"],
+    })),
+  };
+  const options = chartOptions(spec);
+  assert.equal(options.grid.length, 5);
+  assert(options.yAxis.every((axis) => axis.max === 100));
+  assert.equal(options.grid[4].top > options.grid[0].top, true); // the fifth wraps to a second row
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /cache-01/);
+  assert.match(svg, /60%/);
+  new Resvg(svg).render();
+});
+
+test("an annotated line marks the incidents on their days beside the threshold", () => {
+  const spec = {
+    ...base,
+    type: "annotated",
+    style: "stacked",
+    categories: ["2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04"],
+    threshold: 80,
+    thresholdLabel: "Threshold",
+    markers: [{ x: "2026-09-03", label: "INC-1042 disk full" }, { x: "2026-10-01", label: "outside" }],
+  };
+  const options = chartOptions(spec);
+  const lines = options.series[0].markLine.data;
+  assert.deepEqual(lines.map((d) => d.xAxis ?? `y${d.yAxis}`), ["y80", "2026-09-03"]);
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /INC-1042 disk full/);
+  assert.match(svg, /Threshold/);
+  assert(!svg.includes("outside"));
+  new Resvg(svg).render();
+});

@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 from reporting_agent.compile.ast import (
+    ChartMarker,
     PRIOR_RUNS_POINTER_PREFIX,
     Chart,
     ChartPoint,
@@ -71,11 +72,18 @@ from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue, S
 from reporting_agent.errors import CompileFailedError
 
 __all__ = [
+    "ANNOTATED_LAYOUT",
+    "ANNOTATED_LINES",
     "FLEET_MIX_BLOCK",
+    "MAX_MULTIPLES",
+    "MULTIPLES_LAYOUT",
+    "WEEK_HEATMAP_BLOCK",
+    "incident_day",
     "compile_distribution_chart",
     "compile_fleet_mix",
     "compile_historical_trend",
     "compile_timeseries_chart",
+    "compile_week_heatmap",
 ]
 
 ENCODING_CATEGORICAL = "categorical"
@@ -84,6 +92,7 @@ ENCODING_SEQUENTIAL = "sequential"
 # --- Historical trend ---
 
 PRIOR_RUN_NAMESPACE: str = "prior_runs"
+"""The namespace prefix for prior-run pointers in the historical trend block."""
 
 HEATMAP_LAYOUT: str = "heatmap"
 """`config.layout` for a v4 heatmap: the time-series compile, drawn as one row per resource
@@ -91,7 +100,85 @@ and one cell per day instead of one line per resource."""
 
 MAX_HEATMAP_ROWS: int = 12
 """The resources a heatmap draws, ranked by the section's scope."""
-"""The namespace prefix for prior-run pointers in the historical trend block."""
+
+MULTIPLES_LAYOUT: str = "multiples"
+"""`config.layout` for a v4 `small_multiples` block: the time-series compile, drawn as one
+small panel per resource on one shared scale."""
+
+MAX_MULTIPLES: int = 24
+"""The panels small multiples draw, ranked by the section's scope."""
+
+ANNOTATED_LAYOUT: str = "annotated"
+"""`config.layout` for a v4 `annotated_line` block: the time-series compile, with the design's
+threshold and the run's incidents marked on their days."""
+
+ANNOTATED_LINES: int = 3
+"""The resources an annotated line draws: the busiest few, so a marked day reads clearly."""
+
+ANNOTATED_DEFAULT_THRESHOLD: str = "80"
+"""The line an annotated chart draws where the design sets no threshold of its own."""
+
+_MONTHS: dict[str, int] = {
+    name: number
+    for number, names in enumerate(
+        (("jan",), ("feb", "peb"), ("mar",), ("apr",), ("may", "mei"), ("jun",), ("jul",),
+         ("aug", "agu", "agt"), ("sep",), ("oct", "okt"), ("nov", "nop"), ("dec", "des")),
+        start=1,
+    )
+    for name in names
+}
+
+
+def incident_day(text: str) -> str | None:
+    """The day an incident's typed date names, as `YYYY-MM-DD`, or `None` where it cannot be
+    read with certainty. **Pure.**
+
+    The date is free text on the run form, so only unambiguous shapes are read: ISO
+    (`2026-09-14`, `2026/09/14`), day-first with numbers (`14/09/2026`, `14-09-2026`, the
+    form a consultant in Indonesia types) and a named month either way round (`14 Sep 2026`,
+    `Sep 14, 2026`, `14 Agustus 2026`). Anything else marks nothing rather than a guess.
+    """
+    import re
+    from datetime import date
+
+    value = text.strip().casefold()
+    shapes = (
+        (r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b", ("y", "m", "d")),
+        (r"^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})\b", ("d", "m", "y")),
+        (r"^(\d{1,2})\s+([a-z]+)\.?,?\s+(\d{4})\b", ("d", "M", "y")),
+        (r"^([a-z]+)\.?\s+(\d{1,2}),?\s+(\d{4})\b", ("M", "d", "y")),
+    )
+    for pattern, order in shapes:
+        found = re.match(pattern, value)
+        if found is None:
+            continue
+        parts = dict(zip(order, found.groups(), strict=True))
+        month = _MONTHS.get(parts["M"][:3]) if "M" in parts else int(parts["m"])
+        if month is None:
+            return None
+        try:
+            return date(int(parts["y"]), month, int(parts["d"])).isoformat()
+        except ValueError:
+            return None
+    return None
+
+
+def _markers(config: Mapping[str, object], days: set[str]) -> tuple[ChartMarker, ...]:
+    """The incidents an annotated line marks: each row whose date reads as a plotted day,
+    named by its case, else its description. Rows are `[case, date, solution, description]`,
+    the incident report's columns."""
+    rows = config.get("markers")
+    if not isinstance(rows, Sequence) or isinstance(rows, str):
+        return ()
+    marked: list[ChartMarker] = []
+    for row in rows:
+        if not isinstance(row, Sequence) or isinstance(row, str) or len(row) < 2:
+            continue
+        day = incident_day(str(row[1]))
+        name = next((str(cell).strip() for cell in (row[0], row[-1]) if str(cell).strip()), "")
+        if day is not None and day in days and name:
+            marked.append(ChartMarker(x=day, label=name[:40]))
+    return tuple(sorted(marked, key=lambda marker: marker.x))
 
 
 
@@ -448,12 +535,21 @@ def compile_timeseries_chart(
 
     # A v4 heatmap draws one row per resource, so it can hold more rows than a line chart
     # can hold lines before they stop being readable.
-    heatmap = block.config.get("layout") == HEATMAP_LAYOUT
+    layout = block.config.get("layout")
+    heatmap = layout == HEATMAP_LAYOUT
+    multiples = layout == MULTIPLES_LAYOUT
+    annotated = layout == ANNOTATED_LAYOUT
+    limit = (
+        MAX_HEATMAP_ROWS if heatmap
+        else MAX_MULTIPLES if multiples
+        else ANNOTATED_LINES if annotated
+        else MAX_CHART_SERIES
+    )
     planned = [
         (resource, ref)
         for resource in matched
         for ref in refs
-    ][: MAX_HEATMAP_ROWS if heatmap else MAX_CHART_SERIES]
+    ][:limit]
 
     series: list[Series] = []
     for ordinal, (resource, ref) in enumerate(planned):
@@ -472,7 +568,8 @@ def compile_timeseries_chart(
             Series(
                 path=series_cursor.path,
                 key=f"{resource.resource_id}|{ref.key}",
-                label=f"{resource.name} — {ref.label}",
+                # A small multiple's panel is titled by its resource; the chart names the metric.
+                label=resource.name if multiples else f"{resource.name} — {ref.label}",
                 points=points,
             )
         )
@@ -517,10 +614,14 @@ def compile_timeseries_chart(
         title = context.messages.text(
             "doc.chart.title.for_resource", resource=matched[0].name, title=title
         )
+    if (multiples or annotated) and not caption:
+        title = context.messages.text(
+            "doc.chart.title.multiples" if multiples else "doc.chart.title.annotated", metrics=metric_names
+        )
     style = block.config.get("style")
     chart = Chart(
         path=chart_cursor.path,
-        chart_type="heatmap" if heatmap else "line",
+        chart_type="heatmap" if heatmap else "multiples" if multiples else "annotated" if annotated else "line",
         title=title,
         unit=unit,
         # One series is one ordered quantity over time; two or more are peers. A heatmap's
@@ -529,7 +630,8 @@ def compile_timeseries_chart(
         series=tuple(series),
         caption=caption,
         style=style if isinstance(style, str) else "",
-        panels=() if heatmap else panel_groups(tuple(series)),
+        panels=() if heatmap or multiples else panel_groups(tuple(series)),
+        markers=_markers(block.config, {point.x for s in series for point in s.points}) if annotated else (),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))
@@ -866,6 +968,73 @@ def compile_fleet_mix(context: BlockContext, block: BlockSpec, cursor: BlockCurs
         caption=caption,
         period_label=messages.text("doc.chart.note.fleet_mix"),
         panels=(tuple(entry.key for entry in series),),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
+
+
+WEEK_HEATMAP_BLOCK: str = "week_heatmap"
+"""The block a v4 `week_heatmap` entry expands to. Not a declared type, like
+:data:`FLEET_MIX_BLOCK`."""
+
+WEEKDAY_IDS: tuple[str, ...] = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+"""The `doc.weekday.*` message ids, by ISO weekday from Monday."""
+
+
+def compile_week_heatmap(context: BlockContext, block: BlockSpec, cursor: BlockCursor) -> BlockOutput:
+    """A section's fleet by hour of the day and weekday: one row per weekday, one cell per hour.
+
+    Each cell is a snapshot figure the collector folded across every running resource of the
+    type (`/week/buckets/<i>/statistics/<k>/value`), so the chart is of the type's fleet, not
+    the section's narrower scope — the note says so. The section's first type with any cell
+    is drawn; an hour nothing reported in stays empty, never zero.
+    """
+    chart_cursor = cursor.child("nodes", 0)
+    caption = caption_of(block)
+    messages = context.messages
+    metric = str(block.config.get("metric") or "")
+    statistic = str(block.config.get("statistic") or "avg")
+    matched = context.resources_for(block)
+    if not matched:
+        return BlockOutput(nodes=(empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=messages),))
+
+    types = sorted({resource.resource_type for resource in matched if resource.resource_type}, key=str.casefold)
+    for resource_type in types:
+        cells = {
+            (weekday, hour): value
+            for weekday in range(1, 8)
+            for hour in range(24)
+            if (value := context.view.week_stat(resource_type, metric, statistic, weekday, hour)) is not None
+        }
+        if cells:
+            break
+    else:
+        return BlockOutput(nodes=(no_data_table(chart_cursor, context.design.table_style_name, caption, messages=messages),))
+
+    series: list[Series] = []
+    for weekday in range(1, 8):
+        hours = [(hour, cells[(weekday, hour)]) for hour in range(24) if (weekday, hour) in cells]
+        if not hours:
+            continue
+        series_cursor = chart_cursor.child("series", len(series))
+        points = tuple(
+            _point(series_cursor.child("points", position), context, f"{hour:02d}:00", value)
+            for position, (hour, value) in enumerate(hours)
+        )
+        series.append(
+            Series(path=series_cursor.path, key=str(weekday), label=messages.text(f"doc.weekday.{WEEKDAY_IDS[weekday - 1]}"), points=points)
+        )
+
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="week",
+        title=caption or messages.text("doc.chart.title.week", metric=MetricRef(name=metric, statistic=statistic).label),
+        unit=_unit_of(series),
+        encoding=ENCODING_SEQUENTIAL,
+        series=tuple(series),
+        caption=caption,
+        period_label=messages.text("doc.chart.note.week"),
+        panels=(),
     )
     cursor.anchor_chart(chart_cursor.path)
     return BlockOutput(nodes=(chart,))

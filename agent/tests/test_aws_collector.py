@@ -349,6 +349,14 @@ class FakeBackup:
         self.region = region
 
     def get_paginator(self, operation: str) -> Pages:
+        if operation == "list_recovery_points_by_resource":
+            # Only the database is protected: a nightly point at 02:00 UTC (09:00 in Jakarta),
+            # the last night's partial.
+            return Pages("RecoveryPoints", [
+                {"RecoveryPointArn": f"rp-{day}", "CreationDate": datetime(2026, 8, day, 2, tzinfo=UTC),
+                 "Status": "PARTIAL" if day == 31 else "COMPLETED"}
+                for day in range(28, 32)
+            ])
         assert operation == "list_protected_resources"
         protected = (
             [{"ResourceArn": DATABASE, "ResourceType": "RDS", "LastBackupTime": datetime(2026, 9, 1, 2, tzinfo=UTC),
@@ -507,8 +515,9 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     keys = sorted(key for key in store.keys() if "/raw/" in key)
     archived = [(index, asyncio.run(store.get_bytes(key))) for index, key in enumerate(keys)]
     kinds = sorted(json.loads(gzip.decompress(body))["kind"] for _, body in archived)
-    # Every CloudWatch call, and one facts object per source: describe, AWS Backup, Compute Optimizer.
-    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 3
+    # Every CloudWatch call, and one facts object per source: describe, AWS Backup, its
+    # recovery points and Compute Optimizer.
+    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 4
 
     facts = {
         resource["resource_id"]: {fact["key"]: fact["value"] for fact in resource.get("facts") or []}
@@ -524,6 +533,9 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     assert facts[DATABASE]["backup_retention_days"] == "0" and facts[DATABASE]["publicly_accessible"] == "yes"
     # AWS Backup protects the database only; Compute Optimizer is not enrolled.
     assert facts[DATABASE]["last_backup"] == "2026-09-01" and facts[DATABASE]["backup_vault"] == "Default"
+    # Its recovery points by local day (the run's zone is UTC here), the partial one marked.
+    assert facts[DATABASE]["recovery_point_days"] == "2026-08 28-30,~31"
+    assert "recovery_point_days" not in facts[INSTANCE]
     assert "last_backup" not in facts[INSTANCE] and "rightsizing_finding" not in facts[INSTANCE]
     gap_pairs = {(gap["gap_type"], gap["resource_id"], gap["metric"]) for gap in outcome.gaps}
     assert ("backup_not_configured", INSTANCE, "last_backup") in gap_pairs

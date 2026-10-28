@@ -193,6 +193,7 @@ __all__ = [
     "ResourceDayBucket",
     "ResourceMonthBucket",
     "ResourceSnapshot",
+    "WeekBucket",
     "SkuCapacity",
     "StatisticEntry",
     "assert_no_bare_percentile_keys",
@@ -220,7 +221,7 @@ logger = logging.getLogger(__name__)
 
 # --- what a reader needs to identify the producer (Req 35.8) -------------------------
 
-SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.3.0"
+SNAPSHOT_SCHEMA_VERSION: Final[str] = "1.4.0"
 """The version of the snapshot *shape* — this module's output contract, distinct from
 the agent's own version and from the catalog's. A later reader tells which producer
 wrote a snapshot from `schema_version` plus `producer`, without consulting the run
@@ -257,7 +258,12 @@ runs' snapshots would make that ledger depend on what else happens to be in the 
 store at replay time — a report that verified in March and failed in June because a
 neighbouring run was deleted. So a month a run did not measure itself is **copied into
 this snapshot at collection time**, carrying the run it came from, and the compiler stays
-pure over the one document it is given."""
+pure over the one document it is given.
+
+`1.4.0` adds the top-level `week` object (the hour-by-weekday heatmap): the fleet's
+`(resource type, metric)` pairs a profile asked for, folded by local weekday and hour, and
+the request itself. Emitted always, `{"metrics_by_resource_type": {}, "buckets": []}` when
+nothing asked, so every digest changes at this bump on the terms the two before it set."""
 
 
 def _agent_version() -> str:
@@ -849,7 +855,7 @@ satisfy an `^…$` pattern and land in a snapshot carrying whitespace the requir
 
 DECLARED_FACT_VALUE_KINDS: Final[frozenset[str]] = frozenset({"numeric", "text"})
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "compute_optimizer"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "aws_recovery_points", "compute_optimizer"}
 )
 """Req 4.2 and 4.11's vocabularies, mirrored from `catalog/loader.py` **by value**.
 
@@ -1576,6 +1582,45 @@ def fact_from_plain(record: FactRecord) -> FactEntry:
 
 
 @dataclass(frozen=True, slots=True)
+class WeekBucket:
+    """One local weekday-and-hour cell of one resource type's metrics, across the fleet.
+
+    The hour-by-weekday heatmap's data. **Per type, not per resource**: one cell folds every
+    interval any resource of `resource_type` reported in that hour of that weekday, across
+    the window, so its `avg` is the count-weighted mean over all of them and its `max` the
+    largest interval maximum. A per-resource fold would put 168 cells per resource per
+    metric in the document, which for an estate of hundreds of machines is the order of
+    magnitude Req 26.2 exists to prevent; one heatmap reads the fleet anyway.
+
+    `weekday` is ISO (1 is Monday) and `hour` is 0 to 23, both in the run's own timezone,
+    and an interval belongs to the hour its start falls in (`collect/buckets.py`).
+    """
+
+    resource_type: str
+    weekday: int
+    hour: int
+    statistics: tuple[StatisticEntry, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.weekday <= 7:
+            raise ValueError(f"weekday must be an ISO weekday 1-7, got {self.weekday!r}")
+        if not 0 <= self.hour <= 23:
+            raise ValueError(f"hour must be 0-23, got {self.hour!r}")
+
+    @property
+    def sort_key(self) -> tuple[str, int, int]:
+        return (self.resource_type, self.weekday, self.hour)
+
+    def to_plain_data(self) -> dict[str, PlainData]:
+        return {
+            "resource_type": self.resource_type,
+            "weekday": int(self.weekday),
+            "hour": int(self.hour),
+            "statistics": _statistics_to_plain_data(self.statistics),
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class ResourceSnapshot:
     """One resource's contribution to a snapshot: its inventory record, the SKU
     capacity resolved for it, its window statistics and its day buckets.
@@ -1772,6 +1817,8 @@ def build_snapshot(
     invocation_started_at: datetime | None,
     agent_version: str = AGENT_VERSION,
     schema_version: str = SNAPSHOT_SCHEMA_VERSION,
+    week_metrics_by_resource_type: Mapping[str, Sequence[str]] | None = None,
+    week_buckets: Iterable[WeekBucket] = (),
 ) -> dict[str, PlainData]:
     """Build one complete, scrubbed, content-addressed snapshot document.
 
@@ -1840,6 +1887,21 @@ def build_snapshot(
             for resource in sorted(resource_list, key=lambda item: item.resource_id)
         ],
         "gaps": _gaps_to_plain_data(gaps),
+        # `1.4.0` — emitted **always**, including empty, on the terms `facts` and
+        # `month_buckets` set: the request travels with the cells so a replay folds the
+        # same pairs, and a key that appeared only when a profile asked would make the
+        # document's shape depend on the profile.
+        "week": {
+            "metrics_by_resource_type": {
+                resource_type: sorted(set(metrics))
+                for resource_type, metrics in sorted((week_metrics_by_resource_type or {}).items())
+                if metrics
+            },
+            "buckets": [
+                bucket.to_plain_data()
+                for bucket in sorted(week_buckets, key=lambda item: item.sort_key)
+            ],
+        },
     }
 
     scrubbed = cast("dict[str, PlainData]", scrub_deep(body))

@@ -73,7 +73,7 @@ from reporting_agent.collect.archive import (
     archive_kind_of,
 )
 from reporting_agent.collect.buckets import Window, day_buckets, resolve_window
-from reporting_agent.collect.dayfold import DayFold
+from reporting_agent.collect.dayfold import DayFold, week_declared, week_pairs
 from reporting_agent.collect.factfold import fold_fact_response
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
@@ -250,6 +250,13 @@ class ReplayPlan:
     needs no argument — and an empty declaration folds nothing, which is the same outcome a
     metric-only catalog produces."""
 
+    week_metrics_by_resource_type: Mapping[str, Sequence[str]] = field(default_factory=dict)
+    """The hour-by-weekday pairs the run folded, from the stored `week` — structural, like
+    `metrics_by_resource_type`: what was asked for, never a folded value."""
+
+    week_declared: Mapping[str, Mapping[str, MetricEntry]] = field(default_factory=dict)
+    """Those pairs' catalog entries, from the catalog the snapshot names (`week_declared`)."""
+
     resource_types: Mapping[str, str] = field(default_factory=dict)
     """Resource id to resource type, from the **stored snapshot's inventory records**, plus
     the subscription id under `Microsoft.Advisor/recommendations`.
@@ -307,7 +314,12 @@ def replay(archived: Iterable[tuple[int, bytes]], *, plan: ReplayPlan) -> Replay
     # what this replay is checking, so reading their statistics back in and re-emitting
     # them would make a mutated day value reproduce itself — the digest would match a
     # snapshot nobody can derive from the archive.
-    day_fold = DayFold(tz=plan.tz)
+    day_fold = DayFold(
+        tz=plan.tz,
+        week=week_pairs(
+            [resource.record for resource in plan.resources], plan.week_metrics_by_resource_type
+        ),
+    )
     fold_gaps: list[GapRecord] = []
     # Req 7.3 — re-derived facts, per resource, accumulated across the objects that carry
     # them. A resource's facts arrive from several objects: one per non-projectable source
@@ -742,6 +754,9 @@ def _assemble(
         catalog_version=plan.catalog_version,
         raw_archive_complete=plan.archive_complete,
         raw_archive_object_count=plan.archive_object_count,
+        # Re-derived by the same fold as the day cells, for the same reason.
+        week_metrics_by_resource_type=plan.week_metrics_by_resource_type,
+        week_buckets=day_fold.week_buckets(declared=plan.week_declared, grain=plan.grain),
     )
 
 
@@ -800,6 +815,7 @@ def plan_from_snapshot(
     )
 
     object_count = int(archive_map.get("object_count") or 0)
+    week_metrics = _week_metrics(document)
     return ReplayPlan(
         stored_snapshot_id=str(document.get("snapshot_id") or ""),
         run_id=str(document.get("run_id") or ""),
@@ -818,6 +834,8 @@ def plan_from_snapshot(
         archive_object_count=object_count,
         objects_named=object_count if objects_named is None else objects_named,
         fact_declaration=catalog.facts,
+        week_metrics_by_resource_type=week_metrics,
+        week_declared=week_declared(catalog, week_metrics),
         resource_types={
             # The subscription itself, under the recommendation type.
             #
@@ -837,6 +855,19 @@ def plan_from_snapshot(
             },
         },
     )
+
+
+def _week_metrics(document: Mapping[str, object]) -> dict[str, tuple[str, ...]]:
+    """The stored `week.metrics_by_resource_type`, spelled as stored; `{}` before `1.4.0`."""
+    week = document.get("week")
+    raw = week.get("metrics_by_resource_type") if isinstance(week, Mapping) else None
+    if not isinstance(raw, Mapping):
+        return {}
+    return {
+        str(resource_type): tuple(str(metric) for metric in metrics)
+        for resource_type, metrics in raw.items()
+        if isinstance(metrics, list)
+    }
 
 
 def _not_requested_by_resource(

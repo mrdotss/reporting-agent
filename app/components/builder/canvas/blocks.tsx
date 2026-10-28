@@ -20,6 +20,7 @@ import {
 import {
   avgAndPeakMetric,
   rankingOf,
+  weekMetricOf,
   type AddedEntry,
   type BlockStyle,
   type MetricItem,
@@ -290,6 +291,8 @@ function SampleChart({
   style,
   panelLabel,
   own,
+  markers,
+  defaultThreshold,
 }: Readonly<{
   design: PageDesign
   series: readonly { label: string; values: readonly number[]; dashed?: boolean }[]
@@ -297,6 +300,10 @@ function SampleChart({
   unit: SampleUnit
   height?: number
   type?: "line" | "heatmap" | "dumbbell"
+  /** An annotated line's incident markers, on categories it plots. */
+  markers?: readonly { x: string; label: string }[]
+  /** The threshold drawn where neither the block nor the design sets one — an annotated line's 80. */
+  defaultThreshold?: number
   /** A chart slot's own look, over the design's. */
   own?: BlockStyle
   /** A style this chart draws in whatever the document's is — a sparkline table's. */
@@ -307,7 +314,7 @@ function SampleChart({
   const { spec, chartFace, look } = design
   const chartStyle = style ?? own?.look ?? design.chartStyle
   const values = own?.values ?? look.chartValues
-  const threshold = own?.threshold ?? look.chartThreshold
+  const threshold = own?.threshold ?? look.chartThreshold ?? defaultThreshold ?? null
   const heightScale = own?.height === "short" ? 0.75 : own?.height === "tall" ? 1.3 : 1
   // ECharts numbers its clip paths per instance, so two charts on one page would share ids.
   const prefix = `builder${useId().replace(/[^a-zA-Z0-9]/g, "")}`
@@ -376,11 +383,12 @@ function SampleChart({
         pointLabels: s.values.map((v) => formatSample(v, unit)),
       })),
       bands: chartStyle === "range_band" && series.length > 1 ? [{ lower: 1, upper: 0 }] : [],
+      ...(markers?.length ? { markers: [...markers] } : {}),
     }
     return renderSVG(chartSpec, false, init)
       .replace(/zr\d+/g, prefix)
       .replace(/<svg /, '<svg style="width:100%;height:auto;display:block" ')
-  }, [categories, chartFace, chartStyle, height, heightScale, look, panelLabel, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, threshold, type, unit, values])
+  }, [categories, chartFace, chartStyle, height, heightScale, look, markers, panelLabel, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, threshold, type, unit, values])
   // The chart renderer's own SVG, the same drawing the runtime embeds in the report. Drawn
   // in the browser only: ECharts measures text, and the server's measurements differ from
   // the browser's, so a server-drawn chart would never match the one that hydrates it.
@@ -462,6 +470,63 @@ function RowChart({
   }, [categories, chartFace, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, threshold, title, type, unit])
   const inBrowser = useSyncExternalStore(subscribeNever, () => true, () => false)
   if (!inBrowser) return <div aria-hidden style={{ aspectRatio: "640 / 160", width: "100%" }} />
+  return <div dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+/**
+ * Small multiples from the spec the runtime sends the renderer (`render/echarts.py::_multiples_spec`):
+ * one panel per resource on one shared scale, four to a row past four panels.
+ */
+function MultiplesChart({
+  design,
+  title,
+  series,
+  categories,
+  unit,
+}: Readonly<{
+  design: PageDesign
+  title: string
+  series: readonly { label: string; values: readonly number[] }[]
+  categories: readonly string[]
+  unit: SampleUnit
+}>) {
+  const { spec, chartFace } = design
+  const prefix = `builder${useId().replace(/[^a-zA-Z0-9]/g, "")}`
+  const svg = useMemo(() => {
+    const top = Math.max(0, ...series.flatMap((s) => s.values))
+    const max = unit === "percent" && top > 1 && top <= 100 ? 100 : top > 0 ? niceCeiling(top * 1.1) : 1
+    const columns = series.length > 4 ? 4 : Math.max(1, Math.min(series.length, 2))
+    const rows = Math.max(1, Math.ceil(series.length / columns))
+    const chartSpec: ReportChartSpec = {
+      style: "multiples",
+      type: "multiples",
+      width: 640,
+      height: Math.min(1100, 40 + 96 * rows),
+      columns,
+      font: chartFace.split(",")[0]!.replaceAll('"', ""),
+      ink: spec.ink,
+      muted: spec.muted,
+      rule: spec.rule,
+      emptyLabel: "",
+      categories: [...categories],
+      panels: [{ label: title, unit, min: 0, max }],
+      series: series.map((s) => ({
+        key: s.label,
+        label: s.label,
+        last: formatSample(s.values.at(-1) ?? 0, unit),
+        panel: 0,
+        color: spec.accent,
+        dashed: false,
+        values: s.values.map(String),
+        pointLabels: s.values.map((v) => formatSample(v, unit)),
+      })),
+    }
+    return renderSVG(chartSpec, false, init)
+      .replace(/zr\d+/g, prefix)
+      .replace(/<svg /, '<svg style="width:100%;height:auto;display:block" ')
+  }, [categories, chartFace, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, title, unit])
+  const inBrowser = useSyncExternalStore(subscribeNever, () => true, () => false)
+  if (!inBrowser) return <div aria-hidden style={{ aspectRatio: "640 / 240", width: "100%" }} />
   return <div dangerouslySetInnerHTML={{ __html: svg }} />
 }
 
@@ -1260,6 +1325,113 @@ export function AddedBlockView({
           />
           <Caption design={design}>{t("doc.chart.title.fleet_mix", language, "Fleet mix")}</Caption>
           <Caption design={design}>{t("doc.chart.note.fleet_mix", language, "")}</Caption>
+        </div>
+      )
+    }
+    case "small_multiples": {
+      const order = ranked(firstName, firstStat).slice(0, 24)
+      const title = t("doc.chart.title.multiples", language, "By resource, day by day", { metrics: `${firstName} (${firstStat})` })
+      return (
+        <div>
+          <MultiplesChart
+            design={design}
+            title={title}
+            series={order.map((r) => ({ label: r.name, values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg") }))}
+            categories={sampleMetricSeries(order[0]!, firstName, "avg").map((_, index) => String(index + 1))}
+            unit={sampleUnit(firstName)}
+          />
+          <Caption design={design}>{title}</Caption>
+        </div>
+      )
+    }
+    case "annotated_line": {
+      const order = ranked(firstName, firstStat).slice(0, 3)
+      const days = sampleMetricSeries(order[0]!, firstName, "avg").map((_, index) => String(index + 1))
+      // Where an incident typed on the run form lands: a sample, since the builder has no run.
+      const marked = days[Math.floor(days.length / 3)]
+      return (
+        <div>
+          <Caption design={design}>
+            {t("doc.chart.title.annotated", language, "Against the threshold, with incidents", { metrics: `${firstName} (${firstStat})` })}
+          </Caption>
+          <SampleChart
+            design={design}
+            style="stacked"
+            series={order.map((r) => ({ label: r.name, values: sampleMetricSeries(r, firstName, firstStat === "max" ? "max" : "avg") }))}
+            categories={days}
+            unit={sampleUnit(firstName)}
+            defaultThreshold={80}
+            markers={marked ? [{ x: marked, label: "Incident from the run form" }] : []}
+          />
+        </div>
+      )
+    }
+    case "week_heatmap": {
+      const week = weekMetricOf(section, catalogueEntry)
+      const name = week?.metric ?? firstName
+      const statistic = week?.statistic ?? "avg"
+      const level = valueOf(ranked(name, statistic)[0]!, name, statistic)
+      const hours = Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, "0")}:00`)
+      // A sample shape, not anybody's figures: busier in weekday working hours.
+      const rows = (["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const).map((day, index) => ({
+        label: t(`doc.weekday.${day}` as MessageId, language, day),
+        values: hours.map((_, hour) => {
+          const working = index < 5 && hour >= 8 && hour < 18
+          return Number((level * (working ? 0.9 + ((hour * 7 + index) % 5) * 0.05 : 0.15 + ((hour + index) % 3) * 0.05)).toFixed(2))
+        }),
+      }))
+      return (
+        <div>
+          <Caption design={design}>
+            {t("doc.chart.title.week", language, "By hour and weekday", { metric: `${name} (${statistic})` })}
+          </Caption>
+          <SampleChart
+            design={design}
+            type="heatmap"
+            panelLabel={t("doc.chart.title.week", language, "By hour and weekday", { metric: `${name} (${statistic})` })}
+            series={rows}
+            categories={hours}
+            unit={sampleUnit(name)}
+          />
+          <Caption design={design}>{t("doc.chart.note.week", language, "")}</Caption>
+        </div>
+      )
+    }
+    case "backup_tracker": {
+      if (resources.length === 0) return <NoResources language={language} />
+      const shown = resources.slice(0, 6)
+      if (provider === "azure") {
+        return (
+          <Table
+            design={design}
+            head={[t("doc.table.resource", language, "Resource"), "Last backup status", "Last restore point"]}
+            rows={shown.map((r, index) => [r.name, index === 2 ? "Failed" : "Completed", "Sample date"])}
+          />
+        )
+      }
+      // A sample month, not anybody's backups: a missed day or two on some rows.
+      const strip = (index: number): ReactNode =>
+        Array.from({ length: 30 }, (_, day) => {
+          const status = index === 1 && day > 17 && day < 20 ? "none" : index === 3 && day === 9 ? "partial" : "full"
+          return (
+            <span key={day} style={{ color: status === "full" ? design.spec.accent : status === "partial" ? "#B26A00" : undefined, opacity: status === "none" ? 0.35 : 1 }}>
+              {status === "full" ? "●" : status === "partial" ? "◐" : "○"}
+              {day % 7 === 6 ? " " : ""}
+            </span>
+          )
+        })
+      return (
+        <div>
+          <Table
+            design={design}
+            head={[
+              t("doc.table.resource", language, "Resource"),
+              t("doc.backup.days", language, "Each day", { start: "first day", end: "last day" }),
+              t("doc.backup.recovery_points", language, "Recovery points"),
+            ]}
+            rows={shown.map((r, index) => [r.name, strip(index), "As AWS Backup lists them"])}
+          />
+          <Caption design={design}>{t("doc.backup.legend", language, "")}</Caption>
         </div>
       )
     }

@@ -180,7 +180,7 @@ def plotted_series(node: Chart, *, messages: Messages) -> tuple[Series, ...]:
     # "Other" row — each row is its own resource, and the compiler already capped them.
     # A fleet mix's parts are a closed set the compiler already chose, and a bullet's three
     # series are one resource's figures: neither folds into "Other".
-    if node.chart_type in ("heatmap", "mix", "bullet") or len(node.series) <= style.CATEGORICAL_LIMIT:
+    if node.chart_type in ("heatmap", "week", "mix", "bullet", "multiples") or len(node.series) <= style.CATEGORICAL_LIMIT:
         return node.series
 
     plotted = node.series[: style.CATEGORICAL_PLOTTED_LIMIT]

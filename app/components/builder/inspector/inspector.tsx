@@ -51,6 +51,7 @@ import {
   type BlockStyle,
   type SlotEntry,
   avgAndPeakMetric,
+  weekMetricOf,
 } from "@/lib/builder/model"
 import { blockKey, type AgentTry, type BlockRef, type InspectorTab } from "@/lib/builder/store"
 import { pageDesign } from "@/lib/builder/theme"
@@ -872,8 +873,17 @@ function AddedContent({
       provider === "aws"
         ? "One bar per type, EC2 instances and RDS databases, split by size family (general purpose, compute, memory, burstable and so on), with stopped ones last. Counts every one the report collected."
         : "One bar for the virtual machines, split by size family (general purpose, compute, memory, burstable and so on), with deallocated ones last. Counts every one the report collected.",
+    backup_tracker:
+      provider === "aws"
+        ? "One row per resource the section holds and one mark per day of the period, up to the last 31: a filled dot for a day with a complete recovery point, a half dot for only a partial one, an empty dot for none. The recovery points AWS Backup lists sit beside it, as collected. A resource AWS Backup does not protect is a blank row."
+        : "One row per protected virtual machine: the status of its last backup job and its last restore point, as Recovery Services reports them. Azure keeps no day-by-day history, so there is no strip.",
+    small_multiples: `One small chart per resource for ${ranking}, the section's top resources up to twenty-four, all on one shared scale so their shapes compare. Each panel names its peak.`,
+    annotated_line: `The three busiest resources by ${ranking} over the period, with the design's threshold (80 where it sets none) and a marker on each day an incident typed on the run form names. An incident needs an incident report section in this preset and a date the report can read, such as 14 Sep 2026 or 2026-09-14.`,
+    week_heatmap: weekMetricOf(section, entry)
+      ? `${weekMetricOf(section, entry)!.metric} (${weekMetricOf(section, entry)!.statistic}) for every running resource of the section's type, one row per weekday and one cell per hour in the report's time zone. A darker cell is busier, so quiet nights and weekends stand out.`
+      : "Needs a platform metric the section collects. Add one under the section's metrics.",
   }
-  const readsMetrics = kind !== "coverage" && kind !== "page_break" && kind !== "fleet_mix"
+  const readsMetrics = kind !== "coverage" && kind !== "page_break" && kind !== "fleet_mix" && kind !== "backup_tracker"
   return (
     <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted-foreground">
       <p>{lines[kind]}</p>

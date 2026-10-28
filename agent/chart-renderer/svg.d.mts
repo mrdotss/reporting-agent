@@ -36,6 +36,10 @@ export type ReportChartSpec = {
   legend?: "top" | "bottom";
   threshold?: number;
   thresholdLabel?: string;
+  // Small multiples: panels per row.
+  columns?: number;
+  // An annotated line's incident markers, each on a category it plots.
+  markers?: { x: string; label: string }[];
 };
 export function renderSVG(
   spec: ReportChartSpec,

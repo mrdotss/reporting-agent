@@ -626,6 +626,7 @@ input.rpt-fill {{
             css += "\n.rpt-grid tbody tr:nth-child(even), table.rpt-table tbody tr:nth-child(even) { background: var(--band); }"
     css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
     css += _TILES_CSS
+    css += _STRIP_CSS
     css += _treatments(
         spec,
         h1=h1,
@@ -636,6 +637,15 @@ input.rpt-fill {{
     css += _style_rules(spec, style, accent=accent, h_sizes=(h1, h2, h3, h4), running_text=running_text)
     return css
 
+
+_STRIP_CSS: Final[str] = """
+/* A backup strip (`Table.look`): one glyph per day, coloured by status, weeks a space apart so
+   a narrow column breaks on a week. The amber is `render/docx.py`'s STRIP_PARTIAL_INK. */
+table.rpt-table[data-look="strip"] td[data-column-key="days"] { letter-spacing: 0.08em; font-size: 1.1em; }
+table.rpt-table[data-look="strip"] [data-status="full"] { color: var(--accent); }
+table.rpt-table[data-look="strip"] [data-status="partial"] { color: #B26A00; }
+table.rpt-table[data-look="strip"] [data-status="none"] { color: var(--muted); }
+"""
 
 _TILES_CSS: Final[str] = """
 /* Key figures set as tiles (`Table.look`): the same table, its rows laid out as cards side

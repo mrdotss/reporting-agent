@@ -89,15 +89,17 @@ INTERVAL_START: Final[str] = "2026-07-01T03:00:00Z"
 #   1.3.0  d3048e78…  /  89cf243c…   `resources[].month_buckets` (the historical trend), on
 #                                    the identical terms — emitted always, including empty,
 #                                    so every digest moved again by design
+#   1.4.0  73f4a7fc…  /  24b3c398…   the top-level `week` (the hour-by-weekday heatmap), on
+#                                    the identical terms once more
 #
 # `test_omitting_a_field_is_digest_neutral_whatever_the_schema_version` below asserts the part
 # of this that must hold forever, without a literal: the omission itself changes nothing.
-PINNED_AT_SCHEMA_VERSION: Final[str] = "1.3.0"
+PINNED_AT_SCHEMA_VERSION: Final[str] = "1.4.0"
 TWO_VM_DIGEST: Final[str] = (
-    "d3048e7877ad02301a9ba4db37b4916f57974887754b4984e29969ece646e00e"
+    "73f4a7fcdc109895daa16809610d708c9492ded9ac6bec90143a90738418b4e9"
 )
 EVERY_GAP_TYPE_DIGEST: Final[str] = (
-    "89cf243cc5c807b91051fe9f36449120d73621bdaab0e4b304f8458b36e890af"
+    "24b3c398fbcddc82f9e139fad8c93f92dde2d18d41313555f50fb1b09805acfe"
 )
 
 
@@ -218,7 +220,7 @@ def test_the_pinned_digests_are_pinned_at_the_current_schema_version() -> None:
 
 def test_the_two_vm_snapshot_digest_is_unchanged_by_the_new_field() -> None:
     """The literal was computed before `interval_start` existed and has moved only at the
-    two declared shape bumps, `1.2.0` and `1.3.0`. See the constants above for the history."""
+    declared shape bumps, `1.2.0`, `1.3.0` and `1.4.0`. See the constants above for the history."""
     document = two_vm_snapshot()
 
     assert document[CONTENT_HASH_FIELD] == TWO_VM_DIGEST

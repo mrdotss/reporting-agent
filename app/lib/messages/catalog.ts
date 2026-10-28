@@ -138,6 +138,62 @@ export const MESSAGE_CATALOG = {
     en: "Fleet mix",
     id: "Komposisi armada",
   },
+  "doc.chart.title.multiples": {
+    en: "{metrics} by resource, day by day",
+    id: "{metrics} per sumber daya, hari demi hari",
+  },
+  "doc.chart.title.annotated": {
+    en: "{metrics} against the threshold, with incidents",
+    id: "{metrics} terhadap ambang batas, dengan insiden",
+  },
+  "doc.chart.title.week": {
+    en: "{metric} by hour and weekday",
+    id: "{metric} per jam dan hari",
+  },
+  "doc.chart.note.week": {
+    en: "Every running resource of this type the report collected, by hour of the day in the report's time zone, across the period. A darker cell is busier.",
+    id: "Setiap sumber daya bertipe ini yang berjalan dan dikumpulkan laporan, per jam dalam zona waktu laporan, sepanjang periode. Sel yang lebih gelap lebih sibuk.",
+  },
+  "doc.backup.days": {
+    en: "Each day, {start} to {end}",
+    id: "Setiap hari, {start} sampai {end}",
+  },
+  "doc.backup.recovery_points": {
+    en: "Recovery points",
+    id: "Titik pemulihan",
+  },
+  "doc.backup.legend": {
+    en: "● a complete recovery point that day, ◐ only a partial one, ○ none. A blank row is a resource AWS Backup does not protect.",
+    id: "● titik pemulihan lengkap pada hari itu, ◐ hanya sebagian, ○ tidak ada. Baris kosong adalah sumber daya yang tidak dilindungi AWS Backup.",
+  },
+  "doc.weekday.mon": {
+    en: "Mon",
+    id: "Sen",
+  },
+  "doc.weekday.tue": {
+    en: "Tue",
+    id: "Sel",
+  },
+  "doc.weekday.wed": {
+    en: "Wed",
+    id: "Rab",
+  },
+  "doc.weekday.thu": {
+    en: "Thu",
+    id: "Kam",
+  },
+  "doc.weekday.fri": {
+    en: "Fri",
+    id: "Jum",
+  },
+  "doc.weekday.sat": {
+    en: "Sat",
+    id: "Sab",
+  },
+  "doc.weekday.sun": {
+    en: "Sun",
+    id: "Min",
+  },
   "doc.chart.note.fleet_mix": {
     en: "Counts every machine or database of these types the report collected: running ones by size family, then stopped ones.",
     id: "Menghitung setiap mesin atau basis data dengan tipe ini yang dikumpulkan laporan: yang berjalan menurut keluarga ukurannya, lalu yang berhenti.",

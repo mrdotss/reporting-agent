@@ -50,6 +50,7 @@ __all__ = [
     "compute_section_drift",
     "expand_sections",
     "historical_trend_keys",
+    "week_heatmap_metrics",
 ]
 
 # The canonical group ordering.  Every section declares one of these.
@@ -620,6 +621,7 @@ def _expand_one_section_v4(
     entry: SectionCatalogueEntry,
     view: SnapshotView,
     messages: Messages,
+    incidents: Sequence[Sequence[str]] = (),
 ) -> tuple[BlockSpec, ...]:
     """Expand one v4 section into its BlockSpec sequence, in the author's layout.
 
@@ -642,7 +644,9 @@ def _expand_one_section_v4(
             continue
 
         if item.expansion is None:
-            result.extend(_added_blocks(section_id, section, entry, item.settings, scope_override, messages))
+            result.extend(
+                _added_blocks(section_id, section, entry, item.settings, scope_override, messages, incidents)
+            )
             continue
 
         expansion = item.expansion
@@ -710,6 +714,55 @@ def _ranking_of(section: Mapping[str, object], entry: SectionCatalogueEntry) -> 
     return _first_metric(section)
 
 
+def _week_metric_of(section: Mapping[str, object], entry: SectionCatalogueEntry) -> tuple[str, str] | None:
+    """The metric an hour-by-weekday heatmap reads, and at which statistic.
+
+    A collected platform metric only — the collector folds the hours of what it fetched,
+    and a derived figure has no intervals of its own: the section's ranking where it is one,
+    else its first. Its average, unless the section ranks by the peak.
+    """
+    platform = [
+        (str(item["metric"]), str(item["statistic"]))
+        for item in _section_metric_refs(section)
+        if isinstance(item.get("metric"), str) and item["metric"] and isinstance(item.get("statistic"), str)
+    ]
+    ranking = _ranking_of(section, entry)
+    chosen = ranking if ranking is not None and ranking[0] in {name for name, _ in platform} else None
+    if chosen is None and platform:
+        chosen = platform[0]
+    if chosen is None:
+        return None
+    return chosen[0], "max" if chosen[1] == "max" else "avg"
+
+
+def week_heatmap_metrics(
+    definition: Mapping[str, object],
+    *,
+    catalogue: LoadedSectionCatalogue,
+) -> dict[str, list[str]]:
+    """The `(resource type, metric)` pairs a v4 definition's hour-by-weekday heatmaps read,
+    for the collector to fold by hour. **Pure** and view-free, like
+    :func:`historical_trend_keys`, and from the same `_week_metric_of` the expansion calls.
+    """
+    version = definition.get("schema_version")
+    if not isinstance(version, int) or version < 4:
+        return {}
+    pairs: dict[str, set[str]] = {}
+    for section in _listed(definition.get("sections")):
+        entry = catalogue.by_key(str(section.get("type") or ""))
+        if entry is None or not any(item.get("kind") == "week_heatmap" for item in _listed(section.get("blocks"))):
+            continue
+        week = _week_metric_of(section, entry)
+        if week is None:
+            continue
+        selection = section.get("selection")
+        chosen = selection.get("resource_types") if isinstance(selection, Mapping) else None
+        types = [str(t) for t in chosen] if isinstance(chosen, list) and chosen else list(entry.needs_resource_types)
+        for resource_type in types:
+            pairs.setdefault(resource_type, set()).add(week[0])
+    return {resource_type: sorted(metrics) for resource_type, metrics in sorted(pairs.items())}
+
+
 TOP_LIST_DEFAULT_COUNT: Final[int] = 10
 """How many resources an added top list ranks when the section sets no top-N of its own."""
 
@@ -739,15 +792,19 @@ def _added_blocks(
     settings: Mapping[str, object],
     scope_override: ScopeRules | None,
     messages: Messages,
+    incidents: Sequence[Sequence[str]] = (),
 ) -> list[BlockSpec]:
-    """The block — or, for a sparkline table, the two — an added entry compiles to."""
+    """The block — or, for a sparkline table, the two — an added entry compiles to.
+
+    `incidents` are the rows typed on the run form for the definition's author-filled
+    sections, which an annotated line marks on its days."""
     kind = settings.get("kind")
     block_id = f"{section_id}__{settings.get('id')}"
     if kind == "callout":
         return [_callout_block(block_id, section, entry, settings, scope_override, messages)]
     if kind == "agent":
         return [_agent_block(block_id, section_id, section, entry, settings, messages)]
-    if kind in ("heatmap", "sparklines"):
+    if kind in ("heatmap", "sparklines", "small_multiples", "annotated_line"):
         ranking = _ranking_of(section, entry)
         if ranking is None:
             raise CompileFailedError(
@@ -756,6 +813,28 @@ def _added_blocks(
             )
         metric, statistic = ranking
         ref = {"metric": metric, "statistic": statistic}
+        if kind == "small_multiples":
+            from reporting_agent.compile.blocks.charts import MAX_MULTIPLES, MULTIPLES_LAYOUT
+
+            return [BlockSpec(
+                id=block_id,
+                type="timeseries_chart",
+                config={"metrics": [ref], "layout": MULTIPLES_LAYOUT},
+                scope_override=_ranked_scope(scope_override, metric, statistic, MAX_MULTIPLES),
+            )]
+        if kind == "annotated_line":
+            from reporting_agent.compile.blocks.charts import ANNOTATED_LAYOUT, ANNOTATED_LINES
+
+            return [BlockSpec(
+                id=block_id,
+                type="timeseries_chart",
+                config={
+                    "metrics": [ref],
+                    "layout": ANNOTATED_LAYOUT,
+                    "markers": [list(row) for row in incidents],
+                },
+                scope_override=_ranked_scope(scope_override, metric, statistic, ANNOTATED_LINES),
+            )]
         if kind == "heatmap":
             from reporting_agent.compile.blocks.charts import HEATMAP_LAYOUT, MAX_HEATMAP_ROWS
 
@@ -939,6 +1018,30 @@ def _added_block(
         from reporting_agent.compile.blocks.charts import FLEET_MIX_BLOCK
 
         return BlockSpec(id=block_id, type=FLEET_MIX_BLOCK, config={}, scope_override=scope_override)
+
+    if kind == "week_heatmap":
+        from reporting_agent.compile.blocks.charts import WEEK_HEATMAP_BLOCK
+
+        week = _week_metric_of(section, entry)
+        if week is None:
+            raise CompileFailedError(
+                f"section {section_id!r}: block {settings.get('id')!r} needs a collected metric "
+                f"to draw by hour"
+            )
+        return BlockSpec(
+            id=block_id,
+            type=WEEK_HEATMAP_BLOCK,
+            config={"metric": week[0], "statistic": week[1]},
+            scope_override=scope_override,
+        )
+
+    if kind == "backup_tracker":
+        from reporting_agent.compile.blocks.backup import BACKUP_TRACKER_BLOCK, MODE_STATUS, MODE_STRIP
+
+        # AWS Backup lists recovery points, so a day can be drawn; Recovery Services reports
+        # the last job only, so the block is its status.
+        mode = MODE_STRIP if "aws_backup" in entry.needs_fact_sources else MODE_STATUS
+        return BlockSpec(id=block_id, type=BACKUP_TRACKER_BLOCK, config={"mode": mode}, scope_override=scope_override)
 
     metrics = _section_metric_refs(section)
     if kind == "key_figures":
@@ -1433,9 +1536,21 @@ def expand_sections(
         else _expand_one_section
     )
     all_specs: list[BlockSpec] = []
-    for section, entry in resolved_sections:
-        specs = expand_one(section, entry, view, messages)
-        all_specs.extend(specs)
+    if expand_one is _expand_one_section_v4:
+        # The incidents typed on the run form, for an annotated line in any section to mark.
+        # Rows land on every section of the type, so a repeated section repeats them: once each.
+        incidents = tuple(dict.fromkeys(
+            tuple(str(cell) for cell in row)
+            for section, entry in resolved_sections
+            if entry.author_filled
+            for row in (section.get(SUPPLIED_ROWS_KEY) or ())
+            if isinstance(row, (list, tuple))
+        ))
+        for section, entry in resolved_sections:
+            all_specs.extend(_expand_one_section_v4(section, entry, view, messages, incidents))
+    else:
+        for section, entry in resolved_sections:
+            all_specs.extend(expand_one(section, entry, view, messages))
 
     if expand_one is _expand_one_section_v4:
         all_specs = _with_agent_record(definition, resolved_sections, all_specs)

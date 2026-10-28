@@ -23,6 +23,9 @@ const READS_METRICS: ReadonlySet<AddedKind> = new Set([
   "kpi_tiles",
   "bar_list",
   "utilization_bullet",
+  "small_multiples",
+  "annotated_line",
+  "week_heatmap",
 ])
 
 /**
@@ -40,6 +43,15 @@ function holdsFleetMixTypes(definition: DefinitionV4, section: SectionV4): boole
     ? section.selection.resource_types
     : (sectionEntry(definition.provider, section.type)?.needsResourceTypes ?? [])
   return types.some((type) => FLEET_MIX_TYPES.has(type.toLowerCase()))
+}
+
+/** The fact sources a backup tracker reads: AWS Backup's recovery points, or Recovery Services. */
+const BACKUP_FACT_SOURCES: ReadonlySet<string> = new Set(["aws_backup", "recovery_services"])
+
+function readsBackups(definition: DefinitionV4, section: SectionV4): boolean {
+  return (sectionEntry(definition.provider, section.type)?.needsFactSources ?? []).some((source) =>
+    BACKUP_FACT_SOURCES.has(source)
+  )
 }
 
 export function readsMetrics(kind: AddedKind): boolean {
@@ -65,6 +77,9 @@ export function blockFit(
   if (kind === "fleet_mix" && !holdsFleetMixTypes(definition, section)) {
     return { ok: false, reason: "Counts machines and databases. This section holds neither." }
   }
+  if (kind === "backup_tracker" && !readsBackups(definition, section)) {
+    return { ok: false, reason: "Reads backups. Add it to the backups section." }
+  }
   return { ok: true }
 }
 
@@ -77,9 +92,9 @@ export function blockFit(
 export const BLOCK_INTENTS: readonly { readonly label: string; readonly kinds: readonly AddedKind[] }[] = [
   { label: "Show a number", kinds: ["key_figures", "kpi_tiles", "avg_vs_peak", "utilization_bullet"] },
   { label: "Rank", kinds: ["top_list", "bar_list"] },
-  { label: "Over time", kinds: ["heatmap", "sparklines"] },
+  { label: "Over time", kinds: ["heatmap", "sparklines", "small_multiples", "annotated_line", "week_heatmap"] },
   { label: "Compare", kinds: ["month_vs_month", "fleet_mix"] },
-  { label: "Status", kinds: ["coverage", "callout"] },
+  { label: "Status", kinds: ["coverage", "callout", "backup_tracker"] },
   { label: "Words", kinds: ["text", "agent"] },
   { label: "Layout", kinds: ["page_break"] },
 ]

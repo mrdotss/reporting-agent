@@ -104,6 +104,7 @@ __all__ = [
     "Block",
     "Cell",
     "Chart",
+    "ChartMarker",
     "ChartPoint",
     "Column",
     "DecimalString",
@@ -197,6 +198,7 @@ eventually differs in one of the two places."""
 
 CHART_TYPES: Final[tuple[str, ...]] = (
     "bar", "hbar", "line", "area", "heatmap", "dumbbell", "bar_list", "bullet", "mix",
+    "multiples", "annotated", "week",
 )
 CHART_ENCODINGS: Final[tuple[str, ...]] = ("categorical", "sequential")
 """Req 16.14 — the compiler decides the encoding from whether the series are peers or
@@ -1072,6 +1074,20 @@ class Series:
 
 
 @dataclass(frozen=True, slots=True)
+class ChartMarker:
+    """A day an annotated line marks, named by the author's own words — an incident typed on
+    the run form, at the day its date names. Presentation only: it carries no figure, enters
+    no ledger, and the chart's data hash does not read it."""
+
+    x: str
+    label: str
+
+    def __post_init__(self) -> None:
+        _require_text(self.x, "x", "chart marker")
+        _require_text(self.label, "label", "chart marker")
+
+
+@dataclass(frozen=True, slots=True)
 class Chart:
     """A chart: type, title, unit, encoding, and ordered series.
 
@@ -1113,6 +1129,8 @@ class Chart:
     threshold: str = ""
     """The percentage this chart draws a dashed line at, as the setting's digits; empty means
     the design's. Drawn and named in words, never printed as a number."""
+    markers: tuple[ChartMarker, ...] = field(default_factory=tuple)
+    """An annotated line's marked days, in date order. Presentation only, like `style`."""
 
     def __post_init__(self) -> None:
         at = f"chart {self.path!r}"
