@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 
 import type { PageRun } from "@/lib/builder/store"
 
-import { layoutTiles } from "./page-strip"
+import { layoutTiles, readMinutes } from "./page-strip"
 
 /** The page strip's numbering: each run's first and last page, and the tile cap. */
 
@@ -21,5 +21,11 @@ describe("layoutTiles", () => {
     const rows = layoutTiles([run("a", 40), run("b", 20), run("c", 5)])
     expect(rows.map((row) => row.tiles)).toEqual([40, 8, 0])
     expect(rows.at(-1)?.last).toBe(65)
+  })
+})
+
+describe("readMinutes", () => {
+  test("about half a minute a page, never under one", () => {
+    expect([1, 7, 18].map(readMinutes)).toEqual([1, 4, 10])
   })
 })
