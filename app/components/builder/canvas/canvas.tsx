@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
-import { useBuilder, useIssues } from "@/components/builder/context"
+import { useBuilder, useIssues, useSectionResources } from "@/components/builder/context"
 import {
   expansionFor,
   resourceNoun,
@@ -30,7 +30,7 @@ import {
   type LayoutSlot,
   type SectionV4,
 } from "@/lib/builder/model"
-import { sampleResources } from "@/lib/builder/sample"
+import type { SampleResource } from "@/lib/builder/sample"
 import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
 import { blockKey, type BlockRef, type PageRun, type Selection } from "@/lib/builder/store"
 import {
@@ -50,11 +50,11 @@ import { ADDED_BLOCKS, blockLabel } from "./labels"
 
 /**
  * The live page: every section in the order the report prints it, every visible block drawn
- * over the sample, each one selectable.
+ * over the sample or over a real report's figures (Sample or Real), each one selectable.
  *
  * Drawn at the printed size and scaled to fit the pane, so a line that wraps here wraps at
  * the same width on paper. It is not the delivered document — that is the runtime's — and
- * the sheet says "Sample data" so nobody reads these figures as theirs.
+ * the sheet says so: "Sample data", or "Real figures … not a deliverable".
  */
 
 function sameRef(a: BlockRef, b: BlockRef): boolean {
@@ -89,6 +89,7 @@ export function Canvas() {
   const mode = useBuilder((state) => state.mode)
   const select = useBuilder((state) => state.select)
   const selection = useBuilder((state) => state.selection)
+  const real = useBuilder((state) => state.canvasData !== null)
   const design = pageDesign(definition)
   const page = PAGE_PX[design.pageSize]
   const [desk, zoom] = useFitZoom(page.width)
@@ -192,7 +193,7 @@ export function Canvas() {
           </div>
         </article>
         <p className="font-sans text-xs text-muted-foreground">
-          {language === "id" ? "Contoh data" : "Sample data"} · {design.pageSize} ·{" "}
+          {real ? (language === "id" ? "Data nyata, bukan dokumen akhir" : "Real figures, not a deliverable") : language === "id" ? "Contoh data" : "Sample data"} · {design.pageSize} ·{" "}
           {Math.round(zoom * 100)}%
         </p>
       </div>
@@ -272,7 +273,16 @@ function usePageRuns(sheet: React.RefObject<HTMLElement | null>, design: PageDes
   }, [sheet, definition, design, usable, setPageRuns])
 }
 
+/** What the figures are: the sample, or a real report's, which are never the deliverable. */
 function SampleBadge() {
+  const source = useBuilder((state) => state.canvasData?.source)
+  if (source !== undefined) {
+    return (
+      <span className="absolute top-3 right-4 rounded-full bg-[var(--status-attention-soft)] px-2 py-0.5 font-sans text-[10.5px] font-medium text-[var(--status-attention)]">
+        Real figures · {source.name} · {source.start} to {source.end} · not a deliverable
+      </span>
+    )
+  }
   return (
     <span className="absolute top-3 right-4 rounded-full bg-muted px-2 py-0.5 font-sans text-[10.5px] font-medium text-muted-foreground">
       Sample data
@@ -485,6 +495,7 @@ function LayoutItemView({
 }>) {
   const definition = useBuilder((state) => state.definition)
   const agentTries = useBuilder((state) => state.agentTries)
+  const resources = useSectionResources(section)
   const language = definition.identity.language
   const provider = definition.provider
 
@@ -516,8 +527,8 @@ function LayoutItemView({
     if (item.hidden) {
       return editing ? <HiddenRow section={section} ref_={{ kind: "each" }} label={`Each ${resourceNoun(entry)}`} /> : null
     }
-    const resource = sampleResources(provider)[0]!
-    const count = sampleResources(provider).length
+    const resource = resources[0]
+    const count = resources.length
     return (
       <div
         data-repeat={count}
@@ -527,7 +538,7 @@ function LayoutItemView({
         {editing && (
           <span className="absolute -top-2.5 left-3 inline-flex h-5 items-center gap-1.5 rounded-full bg-primary/10 px-2 font-sans text-[11px] font-semibold text-primary">
             <RepeatIcon aria-hidden className="size-3" />
-            Repeats for each {resourceNoun(entry)} · 1 of {count} shown
+            Repeats for each {resourceNoun(entry)} · {count === 0 ? "none in the chosen report" : `1 of ${count} shown`}
           </span>
         )}
         <div className="flex flex-col" style={{ gap: 10 * DENSITY_SCALE[design.density] }}>
@@ -583,7 +594,7 @@ function SlotView({
   number: number
   design: PageDesign
   editing: boolean
-  resource?: ReturnType<typeof sampleResources>[number]
+  resource?: SampleResource
 }>) {
   const definition = useBuilder((state) => state.definition)
   const ref: BlockRef = { kind: "slot", slot: child.slot, inEach }
