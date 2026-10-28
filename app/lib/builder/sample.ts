@@ -50,6 +50,11 @@ export type CanvasData = {
   readonly scope: { readonly idTail: string; readonly places: readonly string[] }
   /** Real figures only: where they came from. */
   readonly source?: { readonly name: string; readonly start: string; readonly end: string }
+  /**
+   * Real figures only: the fleet's hour-by-weekday cells by `type|metric|statistic` (lower
+   * case), seven rows from Monday of 24 hours each, `null` where nothing was folded.
+   */
+  readonly week?: Readonly<Record<string, readonly (readonly (number | null)[])[]>>
 }
 
 const AWS_RESOURCES: readonly SampleResource[] = [

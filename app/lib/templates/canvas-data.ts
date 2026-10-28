@@ -77,9 +77,31 @@ const resourceSchema = z
   .nullable()
   .catch(null)
 
+const weekSchema = z
+  .object({
+    buckets: z
+      .array(
+        z
+          .object({
+            resource_type: z.string(),
+            weekday: z.number().int().min(1).max(7),
+            hour: z.number().int().min(0).max(23),
+            statistics: statisticsSchema,
+          })
+          .nullable()
+          .catch(null)
+      )
+      .optional()
+      .catch(undefined),
+  })
+  .nullable()
+  .optional()
+  .catch(undefined)
+
 const snapshotSchema = z.object({
   subscription_id: z.string().nullable().optional().catch(undefined),
   resources: z.array(resourceSchema).optional().catch(undefined),
+  week: weekSchema,
 })
 
 type Statistic = NonNullable<z.output<typeof statisticSchema>>
@@ -176,6 +198,26 @@ function kept(all: readonly SampleResource[]): SampleResource[] {
     .slice(0, MAX_RESOURCES)
 }
 
+/**
+ * The fleet's hour-by-weekday cells (`week.buckets`, snapshot 1.4.0), as seven rows of 24
+ * hours per `type|metric|statistic`, so the hour-of-week heatmap draws the report's own cells.
+ * An hour nothing was folded in stays `null`.
+ */
+function weekGrids(week: z.output<typeof weekSchema>): Record<string, (number | null)[][]> {
+  const grids: Record<string, (number | null)[][]> = {}
+  for (const bucket of week?.buckets ?? []) {
+    if (bucket === null) continue
+    for (const entry of (bucket.statistics ?? []).filter(wanted)) {
+      const value = canvasValue(entry)
+      if (value === null) continue
+      const key = `${bucket.resource_type.toLowerCase()}|${seriesKey(entry.metric, entry.statistic.toLowerCase())}`
+      const grid = (grids[key] ??= Array.from({ length: 7 }, () => Array<number | null>(24).fill(null)))
+      grid[bucket.weekday - 1]![bucket.hour] = value
+    }
+  }
+  return grids
+}
+
 export class CanvasDataUnreadableError extends Error {
   constructor() {
     super("That report's figures could not be read. The page keeps the sample.")
@@ -223,5 +265,6 @@ export async function loadCanvasData(
     },
     scope: { idTail: (parsed.subscription_id ?? "").slice(-4), places },
     source: { name: source.name, start: run.periodStart, end: run.periodEnd },
+    week: weekGrids(parsed.week),
   }
 }

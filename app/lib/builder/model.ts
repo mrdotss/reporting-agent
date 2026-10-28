@@ -1,6 +1,7 @@
 import {
   AGENT_FALLBACKS,
   AGENT_LENGTHS,
+  KPI_TILES_LOOKS,
   AGENT_VOICES,
   BLOCK_CHART_HEIGHTS,
   CHART_STYLES,
@@ -107,6 +108,8 @@ export type AddedEntry = {
   readonly voice?: (typeof AGENT_VOICES)[number]
   readonly fallback?: (typeof AGENT_FALLBACKS)[number]
   readonly note?: TypedText
+  /** KPI tiles only: `chart` draws them; absent, the table the first tiles printed. */
+  readonly look?: (typeof KPI_TILES_LOOKS)[number]
 }
 
 /** How many agent paragraphs the preset holds — the validator allows `MAX_AGENT_BLOCKS`. */

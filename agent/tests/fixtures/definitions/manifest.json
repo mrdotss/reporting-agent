@@ -1590,6 +1590,31 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-drawn-tiles.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "c1b7e513a74a90092398b29849044caf71d9560683b98029cd18fc6f3b9f079c",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-tiles-look-unknown.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "da4eaa01bf839668ae7ac507ec5e184c2ab042e4480aabe2b78c2a30b0ae708c",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            0,
+            "blocks",
+            1,
+            "look"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -53,7 +53,9 @@ from typing import Final
 from reporting_agent.compile.ast import Column, FigureCell, Row, Table, TextFactCell
 from reporting_agent.compile.blocks.base import (
     EMPTY_MESSAGE_CONFIG_KEY,
+    MAX_CHART_POINTS,
     MAX_TABLE_ROWS,
+    NOT_COMPARABLE_TEXT,
     BlockContext,
     BlockOutput,
     BlockSpec,
@@ -302,6 +304,11 @@ def read_column_entries(block: BlockSpec, field_name: str) -> tuple[ColumnEntry,
 KPI_TILES_LAYOUT: Final[str] = "tiles"
 """`config.layout` for a v4 `kpi_tiles` block: a `kpi_row` set as tiles, each with the
 previous verified report's figure for the same metric and which way it moved."""
+
+KPI_TILES_CHART_LOOK: Final[str] = "chart"
+"""A `kpi_tiles` block's `look` that draws its tiles as one picture: each tile's name, figure,
+change since the previous verified report and a sparkline. Absent, the tiles are the data
+table agent 0.1.3 printed, so a report delivered then recompiles to the same ledger."""
 
 MAX_KPI_TILES: Final[int] = 4
 """The tiles one block sets in a row: the section's first metrics, as many as fit a page."""
@@ -1062,6 +1069,8 @@ def compile_kpi_row(
         ),))
 
     if block.config.get("layout") == KPI_TILES_LAYOUT:
+        if block.config.get("look") == KPI_TILES_CHART_LOOK:
+            return _kpi_tile_chart(context, block, cursor, refs, matched, caption)
         return _kpi_tiles(context, block, cursor, refs, matched, caption)
 
     rows: list[Row] = []
@@ -1224,6 +1233,163 @@ def _kpi_tiles(
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))
+
+
+def _kpi_tile_chart(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    refs: Sequence[MetricRef],
+    matched: Sequence[ResourceView],
+    caption: str | None,
+) -> BlockOutput:
+    """Key figures drawn as tiles: a name, the figure, the change since the previous verified
+    report, and the selected resource's days as a sparkline.
+
+    Per tile, up to three series, every point a figure:
+
+    * `<metric>|value` — the extreme across the scope, as a `kpi_row` selects it, its x the
+      resource holding it;
+    * `<metric>|change` — `later - earlier` against the previous verified report's same
+      selection, a `/$delta/...` figure naming both operands (`compare/delta.py`), the
+      previous run recorded so the `historical` gate proves it verified. Left out on a first
+      month, or where the two were measured at different fidelity tiers or in different units;
+    * `<metric>|spark` — the selected resource's local days, as a line chart plots them.
+
+    The direction word is chosen by comparing the two values, as month-vs-month does; the
+    picture draws it as a mark beside the change's own figure.
+    """
+    from reporting_agent.compare.delta import DeltaResolver, _difference
+    from reporting_agent.compile.ast import Chart, ChartPoint, Series, compiling_against
+    from reporting_agent.compile.blocks.base import friendly_label
+    from reporting_agent.compile.blocks.charts import ENCODING_SEQUENTIAL, HistoricalResolver
+    from reporting_agent.compile.blocks.comparison import _direction
+    from reporting_agent.compile.historical import Selection
+    from reporting_agent.compile.scope import resolve
+
+    chart_cursor = cursor.child("nodes", 0)
+    lookback = block.config.get("lookback")
+    lookback = lookback if isinstance(lookback, int) and not isinstance(lookback, bool) else 1
+    messages = context.messages
+    selections = context.historical_selections or {}
+    scope = context.scope_for(block)
+
+    planned = []
+    for ref in refs[:MAX_KPI_TILES]:
+        selected = _extreme(context, matched, ref)
+        selection = selections.get((ref.name, ref.statistic, lookback)) or Selection(selected=(), exclusions=())
+        previous = selection.selected[-1] if selection.selected else None
+        prior_view = (
+            context.historical.snapshot_view_for(previous.run_id)
+            if previous is not None and context.historical is not None
+            else None
+        )
+        earlier: SnapshotValue | None = None
+        if prior_view is not None:
+            lowest = ref.statistic == "min"
+            candidates = [
+                (value.value, resource.resource_id, value)
+                for resource in resolve(scope, prior_view)
+                if (value := prior_view.stat(resource.resource_id, ref.name, ref.statistic)) is not None
+            ]
+            candidates.sort(key=lambda entry: (entry[0], entry[1]) if lowest else (-entry[0], entry[1]))
+            earlier = candidates[0][2] if candidates else None
+        change: SnapshotValue | None = None
+        if (
+            selected is not None
+            and earlier is not None
+            and prior_view is not None
+            and earlier.unit == selected[1].unit
+            and earlier.fidelity_tier == selected[1].fidelity_tier
+        ):
+            change = _difference(
+                earlier,
+                selected[1],
+                earlier_snapshot=prior_view.snapshot_id,
+                later_snapshot=context.view.snapshot_id,
+            )
+        planned.append((ref, selected, previous, prior_view, earlier, change))
+
+    if all(selected is None for _, selected, *_ in planned):
+        return BlockOutput(nodes=(no_data_table(
+            chart_cursor, context.design.table_style_name, caption, messages=messages,
+        ),))
+
+    resolver = DeltaResolver(
+        base=HistoricalResolver(
+            base=context.view,
+            prior_views={
+                previous.run_id: prior_view  # type: ignore[attr-defined]
+                for _, _, previous, prior_view, _, _ in planned
+                if previous is not None and prior_view is not None
+            },
+        ),
+        deltas={change.pointer: change for *_, change in planned if change is not None},
+    )
+    series: list[Series] = []
+    panels: list[tuple[str, ...]] = []
+    notes: list[str] = []
+
+    def add(key: str, label: str, points: Sequence[tuple[str, SnapshotValue]], **provenance: str) -> str:
+        series_cursor = chart_cursor.child("series", len(series))
+        series.append(Series(
+            path=series_cursor.path,
+            key=key,
+            label=label,
+            points=tuple(
+                ChartPoint(
+                    path=series_cursor.child("points", position).path,
+                    x=x,
+                    y=series_cursor.child("points", position).child("y", 0).figure(
+                        value, catalog_scale=context.catalog_scale(value), **provenance  # type: ignore[arg-type]
+                    ),
+                )
+                for position, (x, value) in enumerate(points)
+            ),
+        ))
+        return key
+
+    with compiling_against(resolver):  # type: ignore[arg-type]
+        for ref, selected, previous, prior_view, earlier, change in planned:
+            if selected is None:
+                continue
+            resource, value = selected
+            keys = [add(f"{ref.key}|value", friendly_label(ref, messages), [(resource.name, value)])]
+            if change is not None and previous is not None:
+                keys.append(add(
+                    f"{ref.key}|change",
+                    messages.text(_direction(earlier, value)),
+                    [(messages.text("doc.tiles.vs_previous"), change)],
+                    source_run_id=previous.run_id,  # type: ignore[attr-defined]
+                    source_snapshot_sha256=previous.snapshot_sha256 or "",  # type: ignore[attr-defined]
+                ))
+            days = context.view.day_series(resource.resource_id, ref.name, ref.statistic)[:MAX_CHART_POINTS]
+            if days:
+                keys.append(add(f"{ref.key}|spark", resource.name, days))
+            panels.append(tuple(keys))
+            # A tile with no change says why in words: a first month, or a previous report
+            # whose figure was measured differently.
+            notes.append(
+                ""
+                if change is not None
+                else messages.text("doc.tiles.no_earlier_report")
+                if previous is None or prior_view is None
+                else messages.text(NOT_COMPARABLE_TEXT)
+            )
+
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="tiles",
+        title=caption or messages.text("doc.chart.title.tiles"),
+        unit=series[0].points[0].y.unit,
+        encoding=ENCODING_SEQUENTIAL,
+        series=tuple(series),
+        caption=caption,
+        panels=tuple(panels),
+        panel_notes=tuple(notes),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
 
 
 def _basis(ref: MetricRef) -> str:

@@ -481,9 +481,9 @@ class _Emitter:
         # that has no provenance to distinguish it from.
         caption_inner = html.escape(node.caption) if node.caption else ""
         if node.note:
-            caption_inner += (
-                f'<span data-role="note">{html.escape(node.note)}</span>'
-            )
+            # A strip's legend names its glyphs, so they are drawn as the cells draw them.
+            note = _strip_glyphs(node.note) if node.look == "strip" else html.escape(node.note)
+            caption_inner += f'<span data-role="note">{note}</span>'
         caption = f"<caption>{caption_inner}</caption>" if caption_inner else ""
         # A table's own header look, where it leaves the design's; the stylesheet styles the
         # design's for every other table.

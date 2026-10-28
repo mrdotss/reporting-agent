@@ -114,23 +114,27 @@ const rows = (type, series, extra = {}) => ({
   ...extra,
 });
 
-test("a bar list keeps the ranking's order and labels each bar with its own figure", () => {
+test("a bar list keeps the ranking's order, names each bar inside its track and prints its own figure", () => {
   const spec = rows(
     "bar_list",
-    [{ ...base.series[0], values: ["97.2", "71.5", null], pointLabels: ["97.2%", "71.5%", null] }],
+    [{ ...base.series[0], values: ["97.2", "71.5", null], pointLabels: ["97.2%", "71.5%", null], shades: ["#111111", "#222222", "#333333"] }],
   );
   const options = chartOptions(spec);
   assert.deepEqual(options.yAxis.data, spec.categories);
   assert.equal(options.yAxis.inverse, true);
-  assert.deepEqual(options.series[0].data, [97.2, 71.5, null]);
-  assert.equal(options.series[0].label.formatter({ dataIndex: 1 }), "71.5%");
+  assert.deepEqual(options.series[0].data.map((d) => d && d.value), [97.2, 71.5, null]);
+  assert.equal(options.series[0].data[1].itemStyle.color, "#222222"); // a step paler down the ranking
+  assert.equal(options.series[0].label.formatter({ dataIndex: 1 }), "app-api-02");
+  assert.equal(options.yAxis.axisLabel.formatter("app-api-02", 1), "71.5%");
+  assert.equal(options.series[0].showBackground, true);
   const svg = renderSVG(spec, false, init);
   assert.match(svg, /97\.2%/);
+  assert.match(svg, /app-web-01/);
   assert(!svg.includes("NaN"));
   new Resvg(svg).render();
 });
 
-test("a bullet draws P95 behind the average, a peak tick with its figure, and the threshold", () => {
+test("a bullet draws P95 behind the average, a peak tick, the threshold on every row, and says which is which", () => {
   const spec = rows(
     "bullet",
     [
@@ -138,15 +142,16 @@ test("a bullet draws P95 behind the average, a peak tick with its figure, and th
       { ...base.series[0], key: "p95", label: "P95 (est.)", values: ["90.1", null, "40.2"] },
       { ...base.series[0], key: "max", label: "Peak", values: ["97.2", "71.5", "44"], pointLabels: ["97.2%", "71.5%", "44.0%"] },
     ],
-    { threshold: 80, thresholdLabel: "Threshold 80%" },
+    { threshold: 80, thresholdLabel: "Threshold", legendText: "Dark = average · orange = 80% line" },
   );
   const options = chartOptions(spec);
-  assert.deepEqual(options.series.map((s) => s.name), ["p95", "avg", "max"]);
+  assert.deepEqual(options.series.map((s) => s.name), ["p95", "avg", "threshold", "max"]);
   assert.equal(options.series[0].barGap, "-100%");
   assert.equal(options.series[0].data[1], null); // no P95 is drawn as none, not zero
-  assert.deepEqual(options.series[2].markLine.data, [{ xAxis: 80 }]);
+  assert.deepEqual(options.series[2].data, [[80, 0], [80, 1], [80, 2]]);
+  assert.equal(options.yAxis[1].axisLabel.formatter("", 2), "44.0%");
   const svg = renderSVG(spec, false, init);
-  assert.match(svg, /Threshold 80%/);
+  assert.match(svg, /orange = 80% line/);
   assert.match(svg, /44\.0%/);
   new Resvg(svg).render();
 });
@@ -155,19 +160,44 @@ test("a fleet mix splits each row in proportion and prints the counts, not the s
   const spec = rows(
     "mix",
     [
-      { ...base.series[0], key: "general", label: "General purpose", values: ["3", "1", null], pointLabels: ["3", "1", null] },
-      { ...base.series[1], key: "stopped", label: "Stopped", values: ["1", null, "2"], pointLabels: ["1", null, "2"] },
+      { ...base.series[0], key: "general", label: "general purpose", values: ["3", "1", null], pointLabels: ["3", "1", null] },
+      { ...base.series[1], key: "stopped", label: "stopped", values: ["1", null, "2"], pointLabels: ["1", null, "2"] },
     ],
     { categories: ["EC2 instances", "RDS databases", "Virtual machines"] },
   );
   const options = chartOptions(spec);
-  assert.equal(options.series[0].data[0].value, 0.75);
-  assert.equal(options.series[1].data[2].value, 1);
-  assert.equal(options.series[0].data[2], null);
-  assert.equal(options.series[0].label.formatter({ value: 0.75, dataIndex: 0 }), "3");
+  const parts = options.graphic.filter((g) => g.type === "rect");
+  assert.equal(parts.length, 4); // two parts, one, one: a part holding none is left out
+  assert.equal(Math.round(parts[0].shape.width / parts[1].shape.width), 3);
   const svg = renderSVG(spec, false, init);
-  assert.match(svg, /General purpose/);
+  assert.match(svg, /general purpose/);
+  assert.match(svg, /EC2 instances/);
   assert(!svg.includes("0.75"));
+  new Resvg(svg).render();
+});
+
+test("KPI tiles print each figure and its change as given, and draw a sparkline from the days", () => {
+  const spec = {
+    ...base,
+    type: "tiles",
+    style: "tiles",
+    height: 172,
+    accent: "#2b3a7a",
+    title: "Key figures",
+    subtitle: "change since the previous report",
+    tiles: [
+      { label: "Peak CPU", value: "88.00%", resource: "web-01", change: { text: "4.20 pts", direction: "up", ink: "#7a4a0c" }, note: "", spark: ["10", "30", "20"] },
+      { label: "Average CPU", value: "41.00%", resource: "web-01", change: null, note: "No earlier report", spark: [] },
+    ],
+  };
+  const options = chartOptions(spec);
+  const lines = options.graphic.filter((g) => g.type === "polyline");
+  assert.equal(lines.length, 1); // a tile with no days draws no line
+  assert.equal(lines[0].shape.points.length, 3);
+  assert.equal(options.graphic.filter((g) => g.type === "polygon").length, 1); // the one change's mark
+  const svg = renderSVG(spec, false, init);
+  for (const text of ["88.00%", "4.20 pts", "No earlier report", "web-01", "Peak CPU"]) assert(svg.includes(text), text);
+  assert(!svg.includes("NaN"));
   new Resvg(svg).render();
 });
 

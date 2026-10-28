@@ -179,8 +179,9 @@ def plotted_series(node: Chart, *, messages: Messages) -> tuple[Series, ...]:
     # A heatmap's rows are drawn side by side on one colour scale, never folded into an
     # "Other" row — each row is its own resource, and the compiler already capped them.
     # A fleet mix's parts are a closed set the compiler already chose, and a bullet's three
-    # series are one resource's figures: neither folds into "Other".
-    if node.chart_type in ("heatmap", "week", "mix", "bullet", "multiples") or len(node.series) <= style.CATEGORICAL_LIMIT:
+    # series are one resource's figures: neither folds into "Other". Nor does a KPI tile's,
+    # whose series are one tile's figure, change and days.
+    if node.chart_type in ("heatmap", "week", "mix", "bullet", "multiples", "tiles") or len(node.series) <= style.CATEGORICAL_LIMIT:
         return node.series
 
     plotted = node.series[: style.CATEGORICAL_PLOTTED_LIMIT]

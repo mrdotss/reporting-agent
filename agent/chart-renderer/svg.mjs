@@ -12,6 +12,9 @@ function heatmapOptions(spec, compact) {
     }),
   );
   const color = spec.series[0]?.color ?? "#2f3c7e";
+  // The hour-of-week grid: small rounded cells with gaps, an hour per column, and a line of
+  // words under it in place of a colour scale.
+  const week = Boolean(spec.week);
   const format = (v) =>
     panel.unit === "percent" ? `${Number(v.toPrecision(3))}%` : String(Number(v.toPrecision(3)));
   return {
@@ -19,16 +22,16 @@ function heatmapOptions(spec, compact) {
     backgroundColor: "#ffffff",
     textStyle: { fontFamily: spec.font, color: spec.ink },
     grid: {
-      left: compact ? 70 : 150,
+      left: compact ? 70 : week ? 48 : 150,
       right: compact ? 10 : 24,
-      top: compact ? 8 : 40,
-      bottom: compact ? 18 : 30,
+      top: compact ? 8 : week ? 32 : 40,
+      bottom: compact ? 18 : week ? 44 : 30,
     },
     title: compact
       ? []
       : [
           {
-            text: panel.label + " · " + (spec.yTitle || panel.unit),
+            text: week ? panel.label : panel.label + " · " + (spec.yTitle || panel.unit),
             left: 8,
             top: 3,
             textStyle: { fontFamily: spec.font, fontSize: 12, fontWeight: 500, color: spec.ink },
@@ -44,7 +47,7 @@ function heatmapOptions(spec, compact) {
         fontSize: compact ? 8 : 10,
         color: spec.muted,
         fontFamily: spec.font,
-        interval: Math.max(0, Math.ceil(spec.categories.length / 8) - 1),
+        interval: week ? 5 : Math.max(0, Math.ceil(spec.categories.length / 8) - 1),
         formatter: (v) => (/^\d{4}-\d{2}-\d{2}$/.test(v) ? v.slice(8) + "/" + v.slice(5, 7) : v),
       },
     },
@@ -65,7 +68,7 @@ function heatmapOptions(spec, compact) {
     visualMap: {
       min: panel.min,
       max: panel.max === panel.min ? panel.min + 1 : panel.max,
-      show: !compact,
+      show: !compact && !week,
       orient: "horizontal",
       right: 24,
       top: 4,
@@ -74,19 +77,19 @@ function heatmapOptions(spec, compact) {
       calculable: false,
       text: [format(panel.max), format(panel.min)],
       textStyle: { fontSize: 10, color: spec.muted, fontFamily: spec.font },
-      inRange: { color: ["#f3f4f6", color] },
+      inRange: { color: [week ? "#f1f3f9" : "#f3f4f6", color] },
     },
     series: [
       {
         type: "heatmap",
         data,
-        itemStyle: { borderColor: "#ffffff", borderWidth: 1 },
+        itemStyle: { borderColor: "#ffffff", borderWidth: week ? 2.5 : 1.5, borderRadius: week ? 3 : 2 },
         emphasis: { disabled: true },
         animation: false,
       },
     ],
     graphic: data.length
-      ? []
+      ? compact ? [] : legendLine(spec, spec.legendText)
       : [
           {
             type: "text",
@@ -257,39 +260,58 @@ const rowAxis = (spec, compact) => ({
 });
 
 /**
- * A bar list: one labelled bar per resource in the section's ranking order, on a pale track,
- * the figure at the bar's end.
+ * A bar list: one bar per resource in the section's ranking order, each inside a pale track
+ * with the resource's name set in it, busiest darkest, and the figure past the track's end.
  */
 function barListOptions(spec, compact) {
   const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
   const s = spec.series[0];
+  const track = mixWhite(spec.accent ?? s?.color ?? "#2b3a7a", 0.95);
   return {
     animation: false,
     backgroundColor: "#ffffff",
     textStyle: { fontFamily: spec.font, color: spec.ink },
-    grid: { left: compact ? 70 : 170, right: compact ? 30 : 76, top: compact ? 6 : 34, bottom: compact ? 6 : 12 },
+    grid: { left: 8, right: compact ? 34 : 78, top: compact ? 4 : 34, bottom: compact ? 4 : 8 },
     title: rowTitle(spec, panel, compact),
     xAxis: { type: "value", min: 0, max: panel.max, show: false },
-    yAxis: rowAxis(spec, compact),
+    yAxis: {
+      type: "category",
+      data: spec.categories,
+      inverse: true,
+      position: "right",
+      axisTick: { show: false },
+      axisLine: { show: false },
+      axisLabel: {
+        show: !compact,
+        margin: 12,
+        align: "left",
+        fontSize: 12,
+        fontWeight: 600,
+        color: spec.ink,
+        fontFamily: spec.font,
+        formatter: (_value, index) => s?.pointLabels?.[index] ?? "",
+      },
+    },
     series: s
       ? [
           {
             type: "bar",
-            data: s.values.map((v) => (v == null ? null : Number(v))),
-            barWidth: compact ? 7 : 12,
+            data: s.values.map((v, i) =>
+              v == null ? null : { value: Number(v), itemStyle: { color: s.shades?.[i] ?? s.color } },
+            ),
+            barWidth: compact ? 10 : 26,
             showBackground: true,
-            backgroundStyle: { color: "#F1F2F4", borderRadius: 6 },
-            itemStyle: { color: s.color, borderRadius: [0, 6, 6, 0] },
+            backgroundStyle: { color: track, borderRadius: 6 },
+            itemStyle: { color: s.color, borderRadius: 6 },
             emphasis: { disabled: true },
             animation: false,
             label: {
               show: !compact,
-              position: "right",
-              distance: 8,
-              formatter: (p) => s.pointLabels?.[p.dataIndex] ?? "",
-              fontFamily: spec.font,
+              position: "insideLeft",
+              distance: 10,
+              formatter: (p) => spec.categories[p.dataIndex] ?? "",
+              fontFamily: spec.mono ?? spec.font,
               fontSize: 11,
-              fontWeight: 600,
               color: spec.ink,
             },
           },
@@ -299,225 +321,230 @@ function barListOptions(spec, compact) {
   };
 }
 
+/** `hex` stepped toward white by `amount`, for a shade of the accent. */
+function mixWhite(hex, amount) {
+  const c = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  return "#" + c.map((v) => Math.round(v + (255 - v) * amount).toString(16).padStart(2, "0")).join("");
+}
+
+const THRESHOLD_INK = "#c2410c";
+
+/** A muted line of words under a chart: what its marks mean. */
+function legendLine(spec, text) {
+  return text
+    ? [
+        {
+          type: "text",
+          left: 8,
+          bottom: 6,
+          style: { text, fill: spec.muted, fontFamily: spec.font, fontSize: 10 },
+        },
+      ]
+    : [];
+}
+
 /**
- * A utilisation bullet per resource: the estimated P95 as a pale bar, the average as a dark
- * bar inside it, a tick at the peak with its figure, and the design's threshold as a line.
+ * A utilisation bullet per resource: a grey track, the estimated P95 pale along it, the
+ * average dark inside that, a tick at the peak with its figure at the row's end, and the
+ * threshold as a short orange mark on every row. A line of words says which is which.
  */
 function bulletOptions(spec, compact) {
   const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
   const [avg, p95, peak] = spec.series;
-  const tick = (v) =>
-    panel.unit === "percent" ? `${Number(v.toPrecision(6))}%` : String(Number(v.toPrecision(6)));
-  const bar = (s, width, z) => ({
+  const width = compact ? 5 : 8;
+  const bar = (s, z) => ({
     name: s.key,
     type: "bar",
     data: s.values.map((v) => (v == null ? null : Number(v))),
     barWidth: width,
     barGap: "-100%",
     z,
-    itemStyle: { color: s.color, borderRadius: [0, 3, 3, 0] },
+    itemStyle: { color: s.color, borderRadius: width / 2 },
     emphasis: { disabled: true },
     animation: false,
   });
   const series = [];
-  if (p95) series.push(bar(p95, compact ? 9 : 16, 1));
-  if (avg) series.push(bar(avg, compact ? 4 : 6, 2));
+  if (p95) series.push({ ...bar(p95, 1), showBackground: true, backgroundStyle: { color: "#eef0f1", borderRadius: width / 2 } });
+  if (avg) series.push(bar(avg, 2));
+  const threshold = spec.threshold != null && panel.unit === "percent" ? spec.threshold : null;
+  if (threshold != null)
+    series.push({
+      name: "threshold",
+      type: "scatter",
+      symbol: "rect",
+      symbolSize: compact ? [1.5, 10] : [2, 16],
+      z: 3,
+      silent: true,
+      itemStyle: { color: THRESHOLD_INK },
+      emphasis: { disabled: true },
+      animation: false,
+      data: spec.categories.map((_, i) => [threshold, i]),
+    });
   if (peak)
     series.push({
       name: peak.key,
       type: "scatter",
       symbol: "rect",
-      symbolSize: compact ? [2, 12] : [3, 22],
-      z: 3,
+      symbolSize: compact ? [2, 10] : [2.5, 16],
+      z: 4,
       itemStyle: { color: spec.ink },
       emphasis: { disabled: true },
       animation: false,
       data: peak.values.map((v, i) => (v == null ? null : [Number(v), i])),
-      label: {
-        show: !compact,
-        position: "right",
-        distance: 6,
-        formatter: (p) => peak.pointLabels?.[p.dataIndex] ?? "",
-        fontFamily: spec.font,
-        fontSize: 10,
-        fontWeight: 600,
-        color: spec.ink,
-      },
-      ...(spec.threshold != null && panel.unit === "percent" && !compact
-        ? {
-            markLine: {
-              silent: true,
-              symbol: "none",
-              animation: false,
-              data: [{ xAxis: spec.threshold }],
-              lineStyle: { type: "dashed", color: "#B45309", width: 1.2 },
-              label: {
-                formatter: () => spec.thresholdLabel ?? "",
-                position: "end",
-                color: "#9A4507",
-                fontFamily: spec.font,
-                fontSize: 10,
-              },
-            },
-          }
-        : {}),
     });
   return {
     animation: false,
     backgroundColor: "#ffffff",
     textStyle: { fontFamily: spec.font, color: spec.ink },
-    grid: { left: compact ? 70 : 170, right: compact ? 16 : 70, top: compact ? 8 : 48, bottom: compact ? 14 : 30 },
+    grid: { left: compact ? 70 : 150, right: compact ? 16 : 78, top: compact ? 6 : 34, bottom: compact ? 6 : 30 },
     title: rowTitle(spec, panel, compact),
-    ...(compact
-      ? {}
-      : {
-          legend: {
-            top: 24,
-            left: 8,
-            icon: "roundRect",
-            itemGap: 16,
-            itemWidth: 12,
-            itemHeight: 6,
-            textStyle: { fontFamily: spec.font, fontSize: 10, color: spec.muted },
-            data: spec.series.map((s) => s.key),
-            formatter: (name) => spec.series.find((s) => s.key === name)?.label ?? name,
-          },
-        }),
-    xAxis: {
-      type: "value",
-      min: 0,
-      max: panel.max,
-      interval: panel.max / 4,
-      axisLabel: { fontSize: compact ? 8 : 10, color: spec.muted, fontFamily: spec.font, formatter: tick },
-      splitLine: { show: true, lineStyle: { color: spec.rule, opacity: GRID_OPACITY } },
-      axisLine: { show: false },
-      axisTick: { show: false },
-    },
-    yAxis: rowAxis(spec, compact),
+    xAxis: { type: "value", min: 0, max: panel.max, show: false },
+    yAxis: [
+      { ...rowAxis(spec, compact), axisLabel: { ...rowAxis(spec, compact).axisLabel, fontFamily: spec.mono ?? spec.font } },
+      {
+        type: "category",
+        data: spec.categories,
+        inverse: true,
+        position: "right",
+        axisTick: { show: false },
+        axisLine: { show: false },
+        axisLabel: {
+          show: !compact,
+          margin: 12,
+          align: "left",
+          fontSize: 11,
+          fontWeight: 600,
+          color: spec.ink,
+          fontFamily: spec.font,
+          formatter: (_value, index) => peak?.pointLabels?.[index] ?? "",
+        },
+      },
+    ],
     series,
-    graphic: emptyGraphic(spec, spec.categories.length === 0),
+    graphic: [
+      ...emptyGraphic(spec, spec.categories.length === 0),
+      ...(compact ? [] : legendLine(spec, spec.legendText)),
+    ],
   };
 }
 
 /**
- * A fleet mix: one bar per resource type, its parts side by side in proportion, each part
- * labelled with its count. Widths are positions only — each part's share of its row.
+ * A fleet mix: per resource type, one bar of its parts side by side in proportion, then a
+ * line naming each part with its count ("14 general purpose"). Widths are positions only.
  */
 function mixOptions(spec, compact) {
   const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
-  const totals = spec.categories.map((_, i) =>
-    spec.series.reduce((sum, s) => sum + (s.values[i] == null ? 0 : Number(s.values[i])), 0),
-  );
-  const last = spec.categories.map((_, i) => {
-    let at = -1;
-    spec.series.forEach((s, j) => {
-      if (s.values[i] != null) at = j;
-    });
-    return at;
-  });
-  const first = spec.categories.map((_, i) => spec.series.findIndex((s) => s.values[i] != null));
-  return {
-    animation: false,
-    backgroundColor: "#ffffff",
-    textStyle: { fontFamily: spec.font, color: spec.ink },
-    grid: { left: compact ? 60 : 130, right: compact ? 8 : 20, top: compact ? 6 : 34, bottom: compact ? 6 : 34 },
-    title: rowTitle(spec, panel, compact),
-    ...(compact
-      ? {}
-      : {
-          legend: {
-            bottom: 4,
-            left: 8,
-            icon: "roundRect",
-            itemGap: 16,
-            itemWidth: 12,
-            itemHeight: 8,
-            textStyle: { fontFamily: spec.font, fontSize: 10, color: spec.ink },
-            data: spec.series.map((s) => s.key),
-            formatter: (name) => spec.series.find((s) => s.key === name)?.label ?? name,
-          },
-        }),
-    xAxis: { type: "value", min: 0, max: 1, show: false },
-    yAxis: rowAxis(spec, compact),
-    series: spec.series.map((s, j) => ({
-      name: s.key,
-      type: "bar",
-      stack: "mix",
-      barWidth: compact ? 12 : 24,
-      data: s.values.map((v, i) =>
-        v == null || !totals[i]
-          ? null
-          : {
-              value: Number(v) / totals[i],
-              itemStyle: {
-                color: s.color,
-                borderRadius: [first[i] === j ? 5 : 0, last[i] === j ? 5 : 0, last[i] === j ? 5 : 0, first[i] === j ? 5 : 0],
-              },
-            },
-      ),
-      itemStyle: { color: s.color, borderColor: "#ffffff", borderWidth: 1 },
-      emphasis: { disabled: true },
-      animation: false,
-      label: {
-        show: !compact,
-        position: "inside",
-        formatter: (p) => (p.value >= 0.06 ? s.pointLabels?.[p.dataIndex] ?? "" : ""),
-        fontFamily: spec.font,
-        fontSize: 11,
-        fontWeight: 600,
-        color: s.key === "other" ? spec.ink : "#ffffff",
-      },
-    })),
-    graphic: emptyGraphic(spec, spec.series.length === 0),
+  const top = compact ? 4 : 30;
+  const rowHeight = compact ? 30 : 64;
+  const barHeight = compact ? 10 : 22;
+  const left = 8;
+  const width = spec.width - 16;
+  const graphic = compact ? [] : [...rowTitle(spec, panel, compact).map((t) => ({ type: "text", left: t.left, top: t.top, style: { text: t.text, fill: spec.ink, fontFamily: spec.font, fontSize: 12, fontWeight: 500 } }))];
+  const rich = {
+    n: { fontWeight: 700, fontSize: 11, fontFamily: spec.font, color: spec.ink },
+    t: { fontSize: 11, fontFamily: spec.font, color: spec.muted },
+    g: { width: 6 },
+    w: { width: 22 },
   };
+  spec.series.forEach((s, j) => {
+    rich[`c${j}`] = { width: 8, height: 8, backgroundColor: s.color, borderRadius: 2 };
+  });
+  spec.categories.forEach((category, i) => {
+    const y = top + i * rowHeight + (spec.categories.length > 1 && !compact ? 16 : 0);
+    if (spec.categories.length > 1 && !compact)
+      graphic.push({ type: "text", left, top: y - 16, style: { text: category, fill: spec.muted, fontFamily: spec.font, fontSize: 10 } });
+    const parts = spec.series.map((s, j) => ({ j, s, v: s.values[i] == null ? 0 : Number(s.values[i]) })).filter((p) => p.v > 0);
+    const total = parts.reduce((sum, p) => sum + p.v, 0);
+    const gap = 2;
+    let x = left;
+    const usable = width - gap * Math.max(0, parts.length - 1);
+    parts.forEach((p, k) => {
+      const w = total ? (usable * p.v) / total : 0;
+      graphic.push({
+        type: "rect",
+        shape: { x, y, width: Math.max(w, 1), height: barHeight, r: [k === 0 ? 6 : 0, k === parts.length - 1 ? 6 : 0, k === parts.length - 1 ? 6 : 0, k === 0 ? 6 : 0] },
+        style: { fill: p.s.color },
+      });
+      x += w + gap;
+    });
+    if (!compact && parts.length)
+      graphic.push({
+        type: "text",
+        left,
+        top: y + barHeight + 10,
+        style: {
+          text: parts.map((p) => `{c${p.j}|}{g|}{n|${p.s.pointLabels?.[i] ?? ""}}{g|}{t|${p.s.label}}`).join("{w|}"),
+          rich,
+          fontFamily: spec.font,
+          fontSize: 11,
+        },
+      });
+  });
+  if (!spec.series.length) graphic.push(...emptyGraphic(spec, true));
+  return { animation: false, backgroundColor: "#ffffff", textStyle: { fontFamily: spec.font, color: spec.ink }, graphic };
 }
 
 /**
- * Small multiples: one small panel per resource in a grid, every panel on the one shared
- * scale, so a taller shape is a busier resource. Each panel names its resource and prints its
- * peak's own figure.
+ * Small multiples: one card per resource in a grid, every panel on the one shared scale, so a
+ * taller shape is a busier resource. Each card names its resource, prints its peak's own
+ * figure and, on a percentage scale, draws the threshold dashed. A resource measured on one
+ * day draws a dot, since a line needs two.
  */
 function multiplesOptions(spec, compact) {
   const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
   const columns = Math.max(1, spec.columns ?? 4);
   const top = compact ? 4 : 30;
-  const gapX = compact ? 8 : 18;
-  const gapY = compact ? 8 : 28;
+  const gapX = compact ? 6 : 12;
+  const gapY = compact ? 6 : 12;
+  const pad = compact ? 4 : 10;
+  const head = compact ? 0 : 20;
   const cellW = (spec.width - 16 - gapX * (columns - 1)) / columns;
   const rows = Math.max(1, Math.ceil(spec.series.length / columns));
   const cellH = (spec.height - top - 8 - gapY * (rows - 1)) / rows;
-  const grid = [], xAxis = [], yAxis = [], series = [], title = compact ? [] : [rowTitle(spec, panel, compact)[0]];
+  const threshold = spec.threshold != null && panel.unit === "percent" ? spec.threshold : null;
+  const grid = [], xAxis = [], yAxis = [], series = [], graphic = [];
+  const title = compact ? [] : [rowTitle(spec, panel, compact)[0]];
   spec.series.forEach((s, i) => {
     const left = 8 + (i % columns) * (cellW + gapX);
     const y = top + Math.floor(i / columns) * (cellH + gapY);
-    grid.push({ left, top: y + (compact ? 0 : 16), width: cellW, height: cellH - (compact ? 0 : 16) });
-    xAxis.push({ type: "category", gridIndex: i, data: spec.categories, show: false, boundaryGap: false });
-    yAxis.push({
-      type: "value", gridIndex: i, min: 0, max: panel.max, show: false,
-      splitLine: { show: false },
+    graphic.push({
+      type: "rect",
+      z: -1,
+      shape: { x: left, y, width: cellW, height: cellH, r: compact ? 4 : 8 },
+      style: { fill: "#ffffff", stroke: "#e6eaee", lineWidth: 1 },
     });
+    grid.push({ left: left + pad, top: y + pad + head, width: cellW - pad * 2, height: cellH - pad * 2 - head });
+    const single = s.values.filter((v) => v != null).length === 1;
+    xAxis.push({ type: "category", gridIndex: i, data: spec.categories, show: false, boundaryGap: single });
+    yAxis.push({ type: "value", gridIndex: i, min: 0, max: panel.max, show: false, splitLine: { show: false } });
     let peak = -1;
     s.values.forEach((v, j) => {
       if (v != null && (peak < 0 || Number(v) > Number(s.values[peak]))) peak = j;
     });
     series.push({
       name: s.key, type: "line", xAxisIndex: i, yAxisIndex: i, data: s.values, connectNulls: false,
-      smooth: false, showSymbol: false, animation: false, emphasis: { disabled: true },
+      smooth: false, showSymbol: single, symbol: "circle", symbolSize: compact ? 4 : 6, animation: false,
+      emphasis: { disabled: true },
       lineStyle: { width: compact ? 1.2 : 1.6, color: s.color }, itemStyle: { color: s.color },
-      areaStyle: { color: s.color + "22" },
-      markLine: {
-        silent: true, symbol: "none", animation: false, label: { show: false },
-        lineStyle: { color: spec.rule, opacity: GRID_OPACITY, type: "solid", width: 1 },
-        data: [{ yAxis: 0 }],
-      },
+      areaStyle: { color: s.color, opacity: 0.1 },
+      ...(threshold != null && !compact
+        ? {
+            markLine: {
+              silent: true, symbol: "none", animation: false, label: { show: false },
+              lineStyle: { color: "#e8b4a0", type: "dashed", width: 1 },
+              data: [{ yAxis: threshold }],
+            },
+          }
+        : {}),
     });
     if (!compact) {
       title.push({
-        text: s.label, left, top: y, textStyle: { fontFamily: spec.font, fontSize: 10, fontWeight: 500, color: spec.ink, width: cellW - 50, overflow: "truncate" },
+        text: s.label, left: left + pad, top: y + pad - 1,
+        textStyle: { fontFamily: spec.mono ?? spec.font, fontSize: 10, color: spec.ink, width: cellW - pad * 2 - 54, overflow: "truncate" },
       });
       if (peak >= 0)
         title.push({
-          text: s.pointLabels?.[peak] ?? "", left: left + cellW, top: y, textAlign: "right",
+          text: s.pointLabels?.[peak] ?? "", left: left + cellW - pad, top: y + pad - 1, textAlign: "right",
           textStyle: { fontFamily: spec.font, fontSize: 10, fontWeight: 600, color: spec.muted },
         });
     }
@@ -527,7 +554,7 @@ function multiplesOptions(spec, compact) {
     backgroundColor: "#ffffff",
     textStyle: { fontFamily: spec.font, color: spec.ink },
     title, grid, xAxis, yAxis, series,
-    graphic: emptyGraphic(spec, spec.series.length === 0),
+    graphic: [...graphic, ...emptyGraphic(spec, spec.series.length === 0)],
   };
 }
 
@@ -555,11 +582,123 @@ function markerLines(spec, thresholdLine) {
           .filter((m) => spec.categories.includes(m.x))
           .map((m) => ({
             xAxis: m.x,
-            lineStyle: { type: "solid", color: spec.ink, opacity: 0.55, width: 1 },
-            label: { formatter: () => m.label, position: "insideEndTop", rotate: 0, color: spec.ink, fontFamily: spec.font, fontSize: 9, backgroundColor: "#ffffff", padding: [1, 3] },
+            lineStyle: { type: "dashed", color: THRESHOLD_INK, opacity: 0.7, width: 1 },
+            label: { formatter: () => m.label, position: "insideEndTop", rotate: 0, color: THRESHOLD_INK, fontFamily: spec.font, fontSize: 10, backgroundColor: "#ffffff", padding: [1, 3] },
           })),
       ],
     },
+    // An orange dot where each marked day meets the highest line, so the eye lands on it.
+    markPoint: {
+      symbol: "circle",
+      symbolSize: 8,
+      silent: true,
+      animation: false,
+      label: { show: false },
+      itemStyle: { color: THRESHOLD_INK, borderColor: "#ffffff", borderWidth: 1.5 },
+      data: spec.markers
+        .filter((m) => spec.categories.includes(m.x))
+        .flatMap((m) => {
+          const i = spec.categories.indexOf(m.x);
+          const top = Math.max(...spec.series.filter((s) => s.panel === 0).map((s) => (s.values[i] == null ? -Infinity : Number(s.values[i]))));
+          return Number.isFinite(top) ? [{ coord: [i, top] }] : [];
+        }),
+    },
+  };
+}
+
+/**
+ * KPI tiles: one card per figure with its name, the figure, the change since the previous
+ * report beside a mark for its direction, the resource holding it, and its days as a
+ * sparkline. Every number printed arrives formatted; the sparkline's values only place points.
+ */
+function tilesOptions(spec, compact) {
+  const tiles = spec.tiles ?? [];
+  const gap = compact ? 6 : 10;
+  const top = compact ? 4 : 32;
+  const slots = 4;
+  const width = (spec.width - 16 - gap * (slots - 1)) / slots;
+  const height = spec.height - top - 8;
+  const pad = compact ? 8 : 12;
+  const graphic = [];
+  if (!compact) {
+    graphic.push({
+      type: "text",
+      left: 8,
+      top: 6,
+      style: {
+        text: `{a|${spec.title}}` + (spec.subtitle ? `{b|\u00a0\u00a0\u00b7\u00a0\u00a0${spec.subtitle}}` : ""),
+        rich: {
+          a: { fontFamily: spec.font, fontSize: 12, fontWeight: 500, color: spec.ink },
+          b: { fontFamily: spec.font, fontSize: 11, color: spec.muted },
+        },
+      },
+    });
+  }
+  tiles.forEach((tile, i) => {
+    const x = 8 + i * (width + gap);
+    const inner = width - pad * 2;
+    graphic.push({
+      type: "rect",
+      shape: { x, y: top, width, height, r: 8 },
+      style: { fill: "#ffffff", stroke: spec.rule, lineWidth: 1 },
+    });
+    const text = (value, y, size, fill, weight = 400, left = x + pad, limit = inner) => ({
+      type: "text",
+      left,
+      top: top + y,
+      style: { text: value, fill, fontFamily: spec.font, fontSize: size, fontWeight: weight, width: limit, overflow: "truncate" },
+    });
+    graphic.push(text(tile.label, pad, compact ? 8 : 11, spec.muted));
+    graphic.push(text(tile.value, pad + (compact ? 12 : 17), compact ? 15 : 24, spec.ink, 600));
+    const changeY = top + pad + (compact ? 32 : 50);
+    if (tile.change) {
+      let left = x + pad;
+      if (tile.change.direction !== "flat") {
+        const s = compact ? 6 : 8;
+        const y = changeY + (compact ? 1 : 2);
+        graphic.push({
+          type: "polygon",
+          shape: {
+            points:
+              tile.change.direction === "up"
+                ? [[left, y + s], [left + s, y + s], [left + s / 2, y]]
+                : [[left, y], [left + s, y], [left + s / 2, y + s]],
+          },
+          style: { fill: tile.change.ink },
+        });
+        left += s + 4;
+      }
+      graphic.push(text(tile.change.text, changeY - top, compact ? 8 : 11, tile.change.ink, 600, left, inner - (left - x - pad)));
+    } else if (tile.note) {
+      graphic.push(text(tile.note, changeY - top, compact ? 8 : 11, spec.muted));
+    }
+    graphic.push(text(tile.resource, changeY - top + (compact ? 11 : 16), compact ? 7 : 10, spec.muted));
+    const values = tile.spark.map(Number);
+    if (values.length > 1) {
+      // Never stretched past half the figure's size: a month that barely moved draws flat.
+      const high = Math.max(...values);
+      const low = Math.min(Math.min(...values), high - Math.abs(high) * 0.5);
+      const span = high - low || 1;
+      const bottom = top + height - pad;
+      const rise = compact ? 14 : 24;
+      graphic.push({
+        type: "polyline",
+        shape: {
+          points: values.map((v, j) => [
+            x + pad + (inner * j) / (values.length - 1),
+            bottom - ((v - low) / span) * rise,
+          ]),
+        },
+        style: { stroke: spec.accent, lineWidth: compact ? 1.2 : 1.8, fill: null, lineJoin: "round" },
+      });
+    }
+  });
+  if (!tiles.length) graphic.push(...emptyGraphic(spec, true));
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    graphic,
   };
 }
 
@@ -573,6 +712,7 @@ export function chartOptions(spec, compact = false) {
   if (spec.type === "bullet") return bulletOptions(spec, compact);
   if (spec.type === "mix") return mixOptions(spec, compact);
   if (spec.type === "multiples") return multiplesOptions(spec, compact);
+  if (spec.type === "tiles") return tilesOptions(spec, compact);
   const bare = spec.style === "sparkline";
   // A design's look. Every one is absent at its default, so a spec without them draws
   // exactly the chart it always drew: names and last values at the line ends, a light grid.
@@ -653,10 +793,10 @@ export function chartOptions(spec, compact = false) {
               symbol: "none",
               animation: false,
               data: [{ yAxis: spec.threshold }],
-              lineStyle: { type: "dashed", color: "#B45309", width: 1.2 },
+              lineStyle: { type: "dashed", color: spec.type === "annotated" ? THRESHOLD_INK : "#B45309", width: 1.2 },
               label: {
                 formatter: () => spec.thresholdLabel ?? "",
-                position: "insideStartTop",
+                position: spec.type === "annotated" ? "insideEndTop" : "insideStartTop",
                 color: "#9A4507",
                 fontFamily: spec.font,
                 fontSize: 10,

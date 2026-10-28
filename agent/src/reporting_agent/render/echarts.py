@@ -39,6 +39,14 @@ LEGEND_SPACE = 24
 panels keep their size."""
 
 _SHADE_STEPS = (0.0, 0.32, 0.5, 0.64, 0.75, 0.83)
+THRESHOLD_INK = "#C2410C"
+"""The orange a threshold is drawn in on every chart that draws one."""
+
+
+def _mono(furniture):
+    """The theme's figure face, which resource names are set in where a chart prints them."""
+    face = getattr(furniture, "figure_face", "") or "monospace"
+    return chartstyle.chart_font_face("monospace", body_face=face) if face == "monospace" else face
 _GREYS = ("#6F747C", "#9599A0", "#B5B8BD", "#CFD1D4", "#E0E1E3")
 
 
@@ -107,6 +115,8 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
     if node.chart_type == "week":
         # Every hour of the day, so a quiet hour no weekday reported in keeps its column.
         categories = [f"{hour:02d}:00" for hour in range(24)]
+    if node.chart_type == "tiles":
+        return _tiles_spec(node, selected, face=face, accent=accent, furniture=furniture, messages=messages)
     if node.chart_type in ("heatmap", "week"):
         return _heatmap_spec(node, selected, categories, face=face, accent=accent, furniture=furniture, messages=messages)
     if node.chart_type in ("bar_list", "bullet", "mix"):
@@ -114,7 +124,10 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
             node, selected, categories, options=options, face=face, accent=accent, furniture=furniture, messages=messages
         )
     if node.chart_type == "multiples":
-        return _multiples_spec(node, selected, categories, face=face, accent=accent, furniture=furniture)
+        return _multiples_spec(
+            node, selected, categories, face=face, accent=accent, furniture=furniture,
+            threshold=options["threshold"] if options["threshold"] is not None else int(_default_threshold()),
+        )
     if node.chart_type == "annotated":
         # A line chart whatever the document's look, with a threshold it always draws.
         if chart_style not in ("stacked", "soft_area", "flat_area"):
@@ -230,7 +243,19 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         look["legend"] = options["legend"]
     if options["threshold"] is not None:
         look["threshold"] = options["threshold"]
-        look["thresholdLabel"] = messages.text("doc.chart.threshold")
+        look["thresholdLabel"] = (
+            messages.text("doc.chart.threshold_at", threshold=options["threshold"])
+            if node.chart_type == "annotated"
+            else messages.text("doc.chart.threshold")
+        )
+    if node.chart_type == "annotated":
+        # A line is named by its resource at its end; the title already names the metric.
+        # The busiest line leads in the accent, the others step paler behind it.
+        for index, entry in enumerate(series):
+            entry["label"] = entry["label"].split(" \u2014 ", 1)[0]
+            entry["color"] = _mix_with_white(accent, (0.0, 0.45, 0.7)[min(index, 2)])
+        if panels:
+            panels[0]["label"] = node.title
     if node.chart_type == "dumbbell" and len(series) == 2:
         # Average and peak of one metric per resource: the average muted, the peak in the
         # accent, joined row by row by the renderer.
@@ -253,6 +278,8 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         "width": 720,
         "height": height,
         "font": face,
+        "mono": _mono(furniture),
+        "accent": accent,
         "ink": furniture.value_label,
         "muted": furniture.axis_label,
         "rule": furniture.grid,
@@ -300,12 +327,17 @@ def _heatmap_spec(node, selected, categories, *, face, accent, furniture, messag
             "values": row,
         })
     unit = "GiB" if gib else next((p.y.unit for s in selected for p in s.points), node.unit)
+    week = node.chart_type == "week"
     return {
         "style": "heatmap",
         "type": "heatmap",
+        "week": week,
+        "legendText": messages.text("doc.chart.legend.week") if week else "",
         "width": 720,
-        "height": max(140, 34 * len(rows) + 90),
+        "height": max(140, (26 if week else 34) * len(rows) + (70 if week else 90)),
         "font": face,
+        "mono": _mono(furniture),
+        "accent": accent,
         "ink": furniture.value_label,
         "muted": furniture.axis_label,
         "rule": furniture.grid,
@@ -325,9 +357,83 @@ def _heatmap_spec(node, selected, categories, *, face, accent, furniture, messag
 
 
 _MIX_GREYS = ("#6F747C", "#B5B8BD")
+MIX_STOPPED_INK = "#E8B4A0"
+
+TILE_UP_INK = "#7A4A0C"
+TILE_DOWN_INK = "#1D5C4A"
+HIGHER_IS_BETTER = frozenset({
+    "FreeableMemory", "Available Memory Bytes", "FreeStorageSpace", "storage_free",
+    "Availability", "availability",
+})
+"""Metrics where a rise is good news: their change is drawn green going up, amber going
+down. Every other metric reads as load, where a rise is the one to look at."""
 
 
-def _multiples_spec(node, selected, categories, *, face, accent, furniture):
+def _tiles_spec(node, selected, *, face, accent, furniture, messages):
+    """KPI tiles: per panel, its name, the figure, the change since the previous report and a
+    sparkline. Every printed number is a plotted figure's own `formatted` string; the change
+    is drawn without its sign, which the mark beside it carries."""
+    by_key = {s.key: s for s in selected}
+    notes = list(node.panel_notes)
+    tiles = []
+    vs_previous = ""
+    for index, group in enumerate(node.panels):
+        members = [by_key[key] for key in group if key in by_key]
+        value = next((s for s in members if s.key.endswith("|value") and s.points), None)
+        if value is None:
+            continue
+        figure = value.points[0].y
+        tile = {
+            "label": value.label,
+            "value": figure.formatted,
+            "resource": value.points[0].x,
+            "change": None,
+            "note": notes[index] if index < len(notes) else "",
+            "spark": [],
+        }
+        change = next((s for s in members if s.key.endswith("|change") and s.points), None)
+        if change is not None:
+            delta = change.points[0].y
+            vs_previous = change.points[0].x
+            amount = Decimal(str(delta.value))
+            text = delta.formatted.lstrip("+-\u2212 ")
+            if delta.unit == "percent" and text.endswith("%"):
+                text = f"{text[:-1].rstrip()} {messages.text('doc.tiles.points')}"
+            direction = "up" if amount > 0 else "down" if amount < 0 else "flat"
+            good = (direction == "up") == (figure.metric in HIGHER_IS_BETTER)
+            tile["change"] = {
+                "text": text if direction != "flat" else change.label,
+                "direction": direction,
+                "ink": furniture.axis_label if direction == "flat" else TILE_DOWN_INK if good else TILE_UP_INK,
+            }
+        spark = next((s for s in members if s.key.endswith("|spark")), None)
+        if spark is not None and len(spark.points) > 1:
+            tile["spark"] = [str(Decimal(str(point.y.value))) for point in spark.points]
+        tiles.append(tile)
+    return {
+        "style": "tiles",
+        "type": "tiles",
+        "width": 720,
+        "height": 172,
+        "font": face,
+        "ink": furniture.value_label,
+        "muted": furniture.axis_label,
+        "rule": furniture.grid,
+        "accent": accent,
+        "title": node.title,
+        "subtitle": vs_previous,
+        "tiles": tiles,
+        "categories": [],
+        "panels": [],
+        "series": [],
+        "bands": [],
+        "xTitle": "",
+        "yTitle": "",
+        "emptyLabel": messages.text(legacy.EMPTY_CHART_TEXT_ID),
+    }
+
+
+def _multiples_spec(node, selected, categories, *, face, accent, furniture, threshold=None):
     """Small multiples: one small panel per resource, every panel on one shared scale so a
     taller shape is a busier resource. Values plot as drawn coordinates only; the one label
     each panel prints is its peak's own `formatted` string."""
@@ -373,9 +479,12 @@ def _multiples_spec(node, selected, categories, *, face, accent, furniture):
         "style": "multiples",
         "type": "multiples",
         "width": 720,
-        "height": min(1100, 40 + 96 * rows),
+        "height": min(1100, 40 + 104 * rows),
         "columns": columns,
         "font": face,
+        "mono": _mono(furniture),
+        "accent": accent,
+        **({"threshold": threshold} if threshold is not None and unit == "percent" else {}),
         "ink": furniture.value_label,
         "muted": furniture.axis_label,
         "rule": furniture.grid,
@@ -388,6 +497,12 @@ def _multiples_spec(node, selected, categories, *, face, accent, furniture):
 
 MULTIPLES_COLUMNS = 4
 """How many small panels sit side by side once there are more than four."""
+
+
+def _default_threshold():
+    from reporting_agent.compile.blocks.charts import ANNOTATED_DEFAULT_THRESHOLD
+
+    return ANNOTATED_DEFAULT_THRESHOLD
 
 
 def _row_chart_spec(node, selected, categories, *, options, face, accent, furniture, messages):
@@ -412,15 +527,17 @@ def _row_chart_spec(node, selected, categories, *, options, face, accent, furnit
             else:
                 row.append(None)
         if node.chart_type == "bullet":
-            # Average darkest, the P95 lighter behind it, the peak a tick in the accent.
-            color = (_mix_with_white(accent, 0.0), _mix_with_white(accent, 0.6), accent)[min(index, 2)]
+            # Average darkest, the P95 pale behind it, the peak a tick in the ink.
+            color = (accent, _mix_with_white(accent, 0.72), furniture.value_label)[min(index, 2)]
         elif node.chart_type == "mix":
+            # Running families step from the accent toward white; stopped machines are the
+            # one warm part, the ones a reader asks about.
             color = (
-                _MIX_GREYS[0]
+                MIX_STOPPED_INK
                 if s.key == "stopped"
                 else _MIX_GREYS[1]
                 if s.key == "other"
-                else _mix_with_white(accent, _SHADE_STEPS[min(index, len(_SHADE_STEPS) - 1)])
+                else _mix_with_white(accent, (0.0, 0.32, 0.72, 0.82, 0.88)[min(index, 4)])
             )
         else:
             color = accent
@@ -447,14 +564,28 @@ def _row_chart_spec(node, selected, categories, *, options, face, accent, furnit
         upper = Decimal(1)
     rows = len(categories)
     height = {
-        "bar_list": 56 + 28 * rows,
-        "bullet": 84 + 30 * rows,
-        "mix": 70 + 58 * rows,
+        "bar_list": 44 + 36 * rows,
+        "bullet": 72 + 28 * rows,
+        "mix": 36 + 64 * rows,
     }[node.chart_type]
     look = {}
-    if options["threshold"] is not None and node.chart_type == "bullet":
-        look["threshold"] = options["threshold"]
+    if node.chart_type == "bullet":
+        # A bullet always draws its line, the design's or the default, and says so below.
+        threshold = options["threshold"] if options["threshold"] is not None else int(_default_threshold())
+        look["threshold"] = threshold
         look["thresholdLabel"] = messages.text("doc.chart.threshold")
+        look["legendText"] = messages.text("doc.chart.legend.bullet", threshold=threshold)
+    if node.chart_type == "mix":
+        # The legend reads as a sentence: "14 general purpose".
+        for entry in series:
+            label = entry["label"]
+            entry["label"] = label if label[1:2].isupper() else label[:1].lower() + label[1:]
+    if node.chart_type == "bar_list":
+        # Busiest first, darkest first, each bar a step paler.
+        for entry in series:
+            entry["shades"] = [
+                _mix_with_white(accent, min(0.3 + 0.12 * position, 0.72)) for position in range(len(categories))
+            ]
     return {
         **look,
         "style": node.chart_type,
@@ -462,6 +593,8 @@ def _row_chart_spec(node, selected, categories, *, options, face, accent, furnit
         "width": 720,
         "height": min(1100, height),
         "font": face,
+        "mono": _mono(furniture),
+        "accent": accent,
         "ink": furniture.value_label,
         "muted": furniture.axis_label,
         "rule": furniture.grid,
