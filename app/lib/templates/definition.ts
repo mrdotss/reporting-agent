@@ -481,6 +481,12 @@ export const CALLOUT_CONDITIONS = [
   "coverage_gaps",
 ] as const
 export const CALLOUT_TONES = ["info", "attention"] as const
+/**
+ * How KPI tiles print. `chart` draws them as one picture with a change and a sparkline per
+ * tile; absent, they are the data table the first tiles printed, kept so a report delivered
+ * with that table re-verifies by recompiling. The builder writes `chart` on every new block.
+ */
+export const KPI_TILES_LOOKS = ["chart"] as const
 export const CALLOUT_THRESHOLD_MIN = 1
 export const CALLOUT_THRESHOLD_MAX = 100
 
@@ -3583,7 +3589,9 @@ function validateUserBlock(
         ? ["kind", "id", "text", "when", "tone", "threshold"]
         : isAgent
           ? ["kind", "id", "instruction", "reads", "length", "voice", "fallback", "note"]
-          : ["kind", "id"]
+          : block.kind === "kpi_tiles"
+            ? ["kind", "id", "look"]
+            : ["kind", "id"]
   )
   for (const key of Object.keys(block)) {
     if (!allowed.has(key)) {
@@ -3627,6 +3635,13 @@ function validateUserBlock(
   }
   if (isCallout) validateCallout(block, path, issues, metricBearing)
   if (isAgent) validateAgent(block, path, issues, language)
+  if (
+    block.kind === "kpi_tiles" &&
+    "look" in block &&
+    !(KPI_TILES_LOOKS as readonly unknown[]).includes(block.look)
+  ) {
+    addIssue(issues, [...path, "look"], `look must be one of: ${KPI_TILES_LOOKS.join(", ")}.`)
+  }
 }
 
 const AGENT_SETTINGS = [

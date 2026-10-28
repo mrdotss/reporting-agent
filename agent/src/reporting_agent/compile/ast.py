@@ -198,7 +198,7 @@ eventually differs in one of the two places."""
 
 CHART_TYPES: Final[tuple[str, ...]] = (
     "bar", "hbar", "line", "area", "heatmap", "dumbbell", "bar_list", "bullet", "mix",
-    "multiples", "annotated", "week",
+    "multiples", "annotated", "week", "tiles",
 )
 CHART_ENCODINGS: Final[tuple[str, ...]] = ("categorical", "sequential")
 """Req 16.14 — the compiler decides the encoding from whether the series are peers or
@@ -1131,6 +1131,9 @@ class Chart:
     the design's. Drawn and named in words, never printed as a number."""
     markers: tuple[ChartMarker, ...] = field(default_factory=tuple)
     """An annotated line's marked days, in date order. Presentation only, like `style`."""
+    panel_notes: tuple[str, ...] = field(default_factory=tuple)
+    """Words for each panel, in `panels` order: a KPI tile's reason it shows no change.
+    Empty for every other chart. Presentation only, like `style`."""
 
     def __post_init__(self) -> None:
         at = f"chart {self.path!r}"

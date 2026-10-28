@@ -114,12 +114,15 @@ export function AddPanel() {
               folded === "" ||
               intent.label.toLowerCase().includes(folded) ||
               ADDED_BLOCKS[kind].label.toLowerCase().includes(folded) ||
+              ADDED_BLOCKS[kind].hint.toLowerCase().includes(folded) ||
               ADDED_BLOCKS[kind].blurb.toLowerCase().includes(folded)
           )
           if (kinds.length === 0) return null
           return (
             <div key={intent.label} className="flex flex-col gap-1.5">
-              <span className="px-0.5 pt-1 text-[11px] text-muted-foreground">{intent.label}</span>
+              <span className="px-0.5 pt-1.5 text-[11px] font-semibold tracking-[0.06em] text-muted-foreground uppercase">
+                {intent.label}
+              </span>
               <div className="grid grid-cols-2 gap-2">
                 {kinds.map((kind) => {
                   const fit = blockFit(definition, targetSection, kind)
@@ -128,6 +131,7 @@ export function AddPanel() {
                       key={kind}
                       type="button"
                       disabled={!fit.ok}
+                      title={fit.ok ? undefined : fit.reason}
                       aria-describedby={fit.ok ? undefined : `fit-${kind}`}
                       onClick={() => {
                         if (!targetSection) return
@@ -139,18 +143,19 @@ export function AddPanel() {
                         if (id !== null) select({ kind: "block", sectionId: targetSection.id, ref: { kind: "added", id } })
                         setLeftTab("outline")
                       }}
-                      className="flex flex-col items-start gap-1.5 rounded-lg border border-border bg-card p-2.5 text-left text-[12.5px] font-medium hover:border-input disabled:cursor-not-allowed"
+                      className={cn(
+                        "flex flex-col items-start gap-1.5 rounded-[10px] border border-border bg-card p-2 text-left hover:border-input",
+                        !fit.ok && "cursor-not-allowed border-dashed bg-muted/40 text-muted-foreground hover:border-border"
+                      )}
                     >
-                      <span className={cn("w-full rounded bg-muted px-1.5 py-1", !fit.ok && "opacity-45")}>
-                        <BlockDrawing kind={kind} />
-                      </span>
-                      <span className={cn(!fit.ok && "text-muted-foreground")}>{ADDED_BLOCKS[kind].label}</span>
-                      <span className="text-[11px] leading-snug font-normal text-muted-foreground">
-                        {ADDED_BLOCKS[kind].blurb}
-                      </span>
-                      {!fit.ok && (
-                        <span id={`fit-${kind}`} className="text-[11px] leading-snug font-normal text-[var(--status-attention)]">
-                          {fit.reason}
+                      <BlockDrawing kind={kind} muted={!fit.ok} />
+                      <span className="text-[13px] leading-tight font-semibold">{ADDED_BLOCKS[kind].label}</span>
+                      {fit.ok ? (
+                        <span className="text-[11px] leading-snug text-muted-foreground">{ADDED_BLOCKS[kind].hint}</span>
+                      ) : (
+                        <span id={`fit-${kind}`} className="text-[11px] leading-snug">
+                          <span className="sr-only">{fit.reason}</span>
+                          <span aria-hidden>{fit.short}</span>
                         </span>
                       )}
                     </button>
@@ -160,8 +165,9 @@ export function AddPanel() {
             </div>
           )
         })}
-        <p className="text-[11px] text-muted-foreground">
-          On the page, use + between blocks, or press / with a block selected.
+        <p className="text-[11px] leading-normal text-muted-foreground">
+          Drawings are sample shapes, not your figures. A block that doesn&apos;t fit the chosen section stays
+          here with the reason. On the page, use + between blocks, or press / with a block selected.
         </p>
       </div>
 

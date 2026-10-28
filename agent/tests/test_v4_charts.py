@@ -30,6 +30,7 @@ PRIOR_AWS_RUN = "run-prior-charts"
 
 CHART_BLOCKS = [
     {"kind": "kpi_tiles", "id": "u_tiles"},
+    {"kind": "kpi_tiles", "id": "u_drawn", "look": "chart"},
     {"kind": "bar_list", "id": "u_bars"},
     {"kind": "utilization_bullet", "id": "u_bullet"},
     {"kind": "fleet_mix", "id": "u_mix"},
@@ -176,6 +177,25 @@ def test_the_first_month_has_no_earlier_report_and_the_second_reads_it(aws_walk)
     assert any(point.get("run_id") == PRIOR_AWS_RUN for point in points), points
 
 
+def test_drawn_tiles_are_a_chart_whose_change_names_the_previous_report(aws_walk) -> None:
+    _, first_store, _, store, records = aws_walk
+    assert 'data-chart-type="tiles"' in _text(first_store, "/document.html")
+    first = json.loads(_text(first_store, "/ledger.json"))
+    drawn = [path for path in _ledger_paths(first) if "__u_drawn:" in path]
+    assert drawn, "the drawn tiles minted no figure"
+    # A first month has nothing to compare against: figures and days, no change.
+    assert "/$delta/" not in _text(first_store, "/ledger.json")
+    second = _text(store, "/ledger.json")
+    assert "/$delta/" in second, "the second month's tiles printed no change"
+    points = records[-1].get("historical_points") or records[-1].get("historicalPoints") or []
+    assert any(point.get("run_id") == PRIOR_AWS_RUN for point in points), points
+
+
+def _ledger_paths(ledger: object) -> list[str]:
+    entries = ledger.get("entries", ledger) if isinstance(ledger, dict) else ledger
+    return list(entries) if isinstance(entries, dict) else [str(entry.get("path")) for entry in entries]  # type: ignore[union-attr]
+
+
 def test_the_fleet_mix_counts_the_instances_by_family(aws_walk) -> None:
     _, _, _, store, _ = aws_walk
     ledger = _text(store, "/ledger.json")
@@ -191,6 +211,7 @@ def test_the_azure_chart_blocks_verify_and_reach_the_document(azure_walk) -> Non
     assert 'data-look="tiles"' in page
     rows = [row for row in _docx_rows(store) if len(row) == 6]
     assert any(row[-1] == "No earlier report" for row in rows)
+    assert 'data-chart-type="tiles"' in page
 
 
 def test_the_azure_fleet_mix_counts_virtual_machines_and_reads_deallocated(azure_walk) -> None:

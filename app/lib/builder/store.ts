@@ -226,11 +226,29 @@ function readsOf(blocks: readonly Draft<BlockEntry>[], after: BlockRef | undefin
   return []
 }
 
+/**
+ * KPI tiles saved before they were drawn carry no `look` and print as a table. Opening the
+ * preset gives them today's drawing; the versions already published keep theirs, so their
+ * reports still re-verify.
+ */
+function withDrawnTiles(definition: DefinitionV4): DefinitionV4 {
+  const stale = (block: BlockEntry) => isAddedEntry(block) && block.kind === "kpi_tiles" && block.look === undefined
+  if (!definition.sections.some((section) => (section.blocks ?? []).some(stale))) return definition
+  return {
+    ...definition,
+    sections: definition.sections.map((section) =>
+      section.blocks?.some(stale)
+        ? { ...section, blocks: section.blocks.map((block) => (stale(block) ? { ...block, look: "chart" as const } : block)) }
+        : section
+    ),
+  }
+}
+
 export function createBuilderStore({ initial, catalog }: Options) {
   return createStore<BuilderState>()(
     temporal(
       (set, get) => ({
-        definition: initial,
+        definition: withDrawnTiles(initial),
         selection: null,
         leftTab: "outline",
         inspectorTab: "content",
@@ -378,7 +396,9 @@ export function createBuilderStore({ initial, catalog }: Options) {
                   ? { kind, id, when: "coverage_gaps", tone: "info", text: { [language]: "" } }
                   : kind === "agent"
                     ? { kind, id, instruction: { [language]: "" }, reads: readsOf(blocks, after), length: "short", voice: "plain", fallback: "omit" }
-                    : { kind, id }
+                    : kind === "kpi_tiles"
+                      ? { kind, id, look: "chart" }
+                      : { kind, id }
             blocks.splice(index, 0, entry as Draft<AddedEntry>)
             added = true
           })

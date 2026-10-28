@@ -318,6 +318,7 @@ __all__ = [
     "HISTORICAL_LOOKBACK_MAX",
     "HISTORICAL_LOOKBACK_MIN",
     "IDENTITY_KEYS",
+    "KPI_TILES_LOOKS",
     "LANGUAGES",
     "LOCATION_MAX_LENGTH",
     "LOGO_MAX_LENGTH",
@@ -636,6 +637,10 @@ CALLOUT_CONDITIONS: Final[tuple[str, ...]] = (
     "coverage_gaps",
 )
 CALLOUT_TONES: Final[tuple[str, ...]] = ("info", "attention")
+# How KPI tiles print. `chart` draws them as one picture with a change and a sparkline per
+# tile; absent, they are the data table the first tiles printed, kept so a report delivered
+# with that table re-verifies by recompiling. The builder writes `chart` on every new block.
+KPI_TILES_LOOKS: Final[tuple[str, ...]] = ("chart",)
 CALLOUT_THRESHOLD_MIN: Final[int] = 1
 CALLOUT_THRESHOLD_MAX: Final[int] = 100
 # An agent paragraph: words the agent writes, on the author's instruction, from the figures
@@ -3471,6 +3476,8 @@ def _validate_user_block(
         if kind == "callout"
         else ("kind", "id", "instruction", "reads", "length", "voice", "fallback", "note")
         if kind == "agent"
+        else ("kind", "id", "look")
+        if kind == "kpi_tiles"
         else ("kind", "id")
     )
     for key in block:
@@ -3496,6 +3503,8 @@ def _validate_user_block(
         _validate_callout(block, path, walk, metric_bearing)
     if kind == "agent":
         _validate_agent(block, path, walk)
+    if kind == "kpi_tiles" and "look" in block and block.get("look") not in KPI_TILES_LOOKS:
+        walk.add((*path, "look"), f"look must be one of: {', '.join(KPI_TILES_LOOKS)}.")
 
 
 def _validate_agent(block: dict[str, object], path: Path, walk: _Walk) -> None:

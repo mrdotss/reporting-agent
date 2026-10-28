@@ -61,6 +61,18 @@
       "en": "Threshold",
       "id": "Ambang batas"
     },
+    "doc.chart.legend.bullet": {
+      "en": "Dark = average \u00b7 light = P95 (est.) \u00b7 tick = peak \u00b7 orange = {threshold}% line",
+      "id": "Gelap = rata-rata \u00b7 terang = P95 (perkiraan) \u00b7 garis tegak = puncak \u00b7 oranye = garis {threshold}%"
+    },
+    "doc.chart.legend.week": {
+      "en": "One column per hour, 00:00 to 23:00 \u00b7 darker = busier",
+      "id": "Satu kolom per jam, 00:00 sampai 23:00 \u00b7 lebih gelap = lebih sibuk"
+    },
+    "doc.chart.threshold_at": {
+      "en": "{threshold}% threshold",
+      "id": "Ambang batas {threshold}%"
+    },
     "doc.chart.title.avg_vs_peak": {
       "en": "{metric}: average and peak by resource",
       "id": "{metric}: rata-rata dan puncak per sumber daya"
@@ -196,6 +208,90 @@
     "doc.tiles.no_earlier_report": {
       "en": "No earlier report",
       "id": "Belum ada laporan sebelumnya"
+    },
+    "doc.metric.friendly": {
+      "en": "{statistic} {metric}",
+      "id": "{metric} {statistic}"
+    },
+    "doc.metric.cpu": {
+      "en": "CPU",
+      "id": "CPU"
+    },
+    "doc.metric.memory": {
+      "en": "memory",
+      "id": "memori"
+    },
+    "doc.metric.free_memory": {
+      "en": "free memory",
+      "id": "memori bebas"
+    },
+    "doc.metric.network_in": {
+      "en": "network in",
+      "id": "jaringan masuk"
+    },
+    "doc.metric.network_out": {
+      "en": "network out",
+      "id": "jaringan keluar"
+    },
+    "doc.metric.read_iops": {
+      "en": "read IOPS",
+      "id": "IOPS baca"
+    },
+    "doc.metric.write_iops": {
+      "en": "write IOPS",
+      "id": "IOPS tulis"
+    },
+    "doc.metric.free_storage": {
+      "en": "free storage",
+      "id": "penyimpanan bebas"
+    },
+    "doc.metric.storage": {
+      "en": "storage",
+      "id": "penyimpanan"
+    },
+    "doc.metric.dtu": {
+      "en": "DTU",
+      "id": "DTU"
+    },
+    "doc.metric.disk_read": {
+      "en": "disk read",
+      "id": "baca disk"
+    },
+    "doc.metric.disk_write": {
+      "en": "disk write",
+      "id": "tulis disk"
+    },
+    "doc.metric.availability": {
+      "en": "availability",
+      "id": "ketersediaan"
+    },
+    "doc.statistic.max": {
+      "en": "peak",
+      "id": "puncak"
+    },
+    "doc.statistic.avg": {
+      "en": "average",
+      "id": "rata-rata"
+    },
+    "doc.statistic.min": {
+      "en": "lowest",
+      "id": "terendah"
+    },
+    "doc.statistic.sum": {
+      "en": "total",
+      "id": "total"
+    },
+    "doc.chart.title.tiles": {
+      "en": "Key figures",
+      "id": "Angka utama"
+    },
+    "doc.tiles.vs_previous": {
+      "en": "change since the previous report",
+      "id": "perubahan sejak laporan sebelumnya"
+    },
+    "doc.tiles.points": {
+      "en": "pts",
+      "id": "poin"
     },
     "doc.comparison.caption": {
       "en": "{metric} ({statistic}) against the previous verified report",

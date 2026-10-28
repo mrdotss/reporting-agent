@@ -639,12 +639,18 @@ input.rpt-fill {{
 
 
 _STRIP_CSS: Final[str] = """
-/* A backup strip (`Table.look`): one glyph per day, coloured by status, weeks a space apart so
-   a narrow column breaks on a week. The amber is `render/docx.py`'s STRIP_PARTIAL_INK. */
-table.rpt-table[data-look="strip"] td[data-column-key="days"] { letter-spacing: 0.08em; font-size: 1.1em; }
-table.rpt-table[data-look="strip"] [data-status="full"] { color: var(--accent); }
-table.rpt-table[data-look="strip"] [data-status="partial"] { color: #B26A00; }
-table.rpt-table[data-look="strip"] [data-status="none"] { color: var(--muted); }
+/* A backup strip (`Table.look`): one pill per day, coloured by status, weeks a space apart so
+   a narrow column breaks on a week. The glyph stays inside each pill, unpainted, so the text
+   is the cell's own; the legend's glyphs are drawn the same way. The amber is
+   `render/docx.py`'s STRIP_PARTIAL_INK. */
+table.rpt-table[data-look="strip"] td[data-column-key="days"] { letter-spacing: 0; font-size: 1em; line-height: 1.5; }
+table.rpt-table[data-look="strip"] [data-status] {
+  display: inline-block; width: 0.45em; height: 1.1em; margin-right: 0.14em; border-radius: 0.16em;
+  overflow: hidden; color: transparent; vertical-align: -0.2em; line-height: 1.1em;
+}
+table.rpt-table[data-look="strip"] [data-status="full"] { background: var(--accent); }
+table.rpt-table[data-look="strip"] [data-status="partial"] { background: #B26A00; }
+table.rpt-table[data-look="strip"] [data-status="none"] { background: #D6DCE0; }
 """
 
 _TILES_CSS: Final[str] = """

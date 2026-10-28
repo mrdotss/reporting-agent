@@ -138,6 +138,11 @@ def test_the_two_languages_are_actually_different_copy() -> None:
         "doc.table.attr.sku_name",
         # "CPU" likewise: the report page's short bar label is the initialism.
         "ui.utilization.cpu_short",
+        # The friendly metric names: "CPU" and "DTU" are initialisms, and "total" is the
+        # Indonesian word too, so a tile reads "CPU total" in both languages.
+        "doc.metric.cpu",
+        "doc.metric.dtu",
+        "doc.statistic.sum",
         "ui.fidelity.baseline",
         "ui.fidelity.enhanced",
         "ui.run_list.utc_suffix",

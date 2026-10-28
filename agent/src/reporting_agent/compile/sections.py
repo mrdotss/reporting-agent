@@ -1050,6 +1050,9 @@ def _added_block(
         # Each tile is a key figure with the previous verified report's figure beside it.
         from reporting_agent.compile.blocks.tables import KPI_TILES_LAYOUT, MAX_KPI_TILES
 
+        # `look` is pinned in the definition: a block saved before tiles were drawn keeps the
+        # table it was delivered with, so its report recompiles to the same ledger.
+        look = settings.get("look")
         return BlockSpec(
             id=block_id,
             type="kpi_row",
@@ -1057,6 +1060,7 @@ def _added_block(
                 "metrics": metrics[:MAX_KPI_TILES],
                 "layout": KPI_TILES_LAYOUT,
                 "lookback": PREVIOUS_PERIOD_LOOKBACK,
+                **({"look": look} if isinstance(look, str) else {}),
             },
             scope_override=scope_override,
         )

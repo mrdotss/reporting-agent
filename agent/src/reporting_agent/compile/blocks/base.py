@@ -1013,6 +1013,69 @@ class MetricRef:
         return f"{self.name} ({self.statistic})"
 
 
+FRIENDLY_METRICS: Final[dict[str, str]] = {
+    "CPUUtilization": "cpu",
+    "Percentage CPU": "cpu",
+    "cpu_percent": "cpu",
+    "avg_cpu_percent": "cpu",
+    "memory_percent": "memory",
+    "memory_usage_percent": "memory",
+    "FreeableMemory": "free_memory",
+    "Available Memory Bytes": "free_memory",
+    "NetworkIn": "network_in",
+    "Network In Total": "network_in",
+    "NetworkOut": "network_out",
+    "Network Out Total": "network_out",
+    "ReadIOPS": "read_iops",
+    "WriteIOPS": "write_iops",
+    "FreeStorageSpace": "free_storage",
+    "storage_percent": "storage",
+    "dtu_consumption_percent": "dtu",
+    "EBSReadBytes": "disk_read",
+    "EBSWriteBytes": "disk_write",
+    "VolumeReadBytes": "disk_read",
+    "VolumeWriteBytes": "disk_write",
+    "Disk Read Bytes": "disk_read",
+    "Disk Write Bytes": "disk_write",
+    "Availability": "availability",
+    "availability": "availability",
+}
+"""Metrics a chart can name in words (`doc.metric.<id>`): "Peak CPU" for `CPUUtilization (max)`.
+Any other metric keeps its catalogue name."""
+
+FRIENDLY_STATISTICS: Final[frozenset[str]] = frozenset({"max", "avg", "min", "sum"})
+"""Statistics with a word (`doc.statistic.<id>`). A percentile keeps its catalogue label: its
+digits are part of the name, and a chart title is not the place to introduce new ones."""
+
+
+def friendly_metric(name: str, messages: Messages) -> str:
+    """A metric's name in words without its statistic ("CPU"), for a chart that draws several
+    statistics of it. Any metric without a word keeps its catalogue name."""
+    metric = FRIENDLY_METRICS.get(name)
+    if metric is None:
+        return name
+    words = messages.text(f"doc.metric.{metric}")
+    return words[:1].upper() + words[1:]
+
+
+def friendly_label(ref: MetricRef, messages: Messages) -> str:
+    """A metric as a chart names it, in the report's language: "Peak CPU", "CPU puncak".
+
+    Presentation only. A chart's title and series labels are absent from its data hash, so a
+    friendlier name changes no verified figure; a table keeps `MetricRef.label`, which its
+    header and row keys were verified by.
+    """
+    metric = FRIENDLY_METRICS.get(ref.name)
+    if ref.derived or metric is None or ref.statistic not in FRIENDLY_STATISTICS:
+        return ref.label
+    words = messages.text(
+        "doc.metric.friendly",
+        metric=messages.text(f"doc.metric.{metric}"),
+        statistic=messages.text(f"doc.statistic.{ref.statistic}"),
+    )
+    return words[:1].upper() + words[1:]
+
+
 @dataclass(frozen=True, slots=True)
 class CapacityRef:
     """A `{"sku_capability": name}` reference from a `capacity_vs_usage` config."""

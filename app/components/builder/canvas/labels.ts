@@ -77,88 +77,91 @@ export function blockHint(entry: CatalogueSection, slot: string): string {
 export { AGENT_REASONS } from "@/lib/builder/agent-reasons"
 
 export const ADDED_BLOCKS: Readonly<
-  Record<AddedKind, { readonly label: string; readonly blurb: string; readonly needsMetrics: boolean }>
+  Record<
+    AddedKind,
+    { readonly label: string; readonly hint: string; readonly blurb: string; readonly needsMetrics: boolean }
+  >
 > = {
-  text: { label: "Text", blurb: "Words only, in English and Indonesian.", needsMetrics: false },
+  text: { label: "Text", hint: "Your words, EN and ID", blurb: "Words only, in English and Indonesian.", needsMetrics: false },
   key_figures: {
-    label: "Key figures",
+    label: "Key figures", hint: "Highest value per metric",
     blurb: "Each metric's highest value, and which resource reached it.",
     needsMetrics: true,
   },
   top_list: {
-    label: "Top list",
+    label: "Top list", hint: "Today's ranked table",
     blurb: "The resources ranked by the section's ranking metric.",
     needsMetrics: true,
   },
   month_vs_month: {
-    label: "Month vs month",
+    label: "Month vs month", hint: "Against the last report",
     blurb: "Each resource against the previous verified report.",
     needsMetrics: true,
   },
-  coverage: { label: "Coverage", blurb: "What could not be measured, and for which resources.", needsMetrics: false },
-  page_break: { label: "Page break", blurb: "Starts the next block on a new page.", needsMetrics: false },
+  coverage: { label: "Coverage", hint: "What couldn't be measured", blurb: "What could not be measured, and for which resources.", needsMetrics: false },
+  page_break: { label: "Page break", hint: "Next block on a new page", blurb: "Starts the next block on a new page.", needsMetrics: false },
   callout: {
-    label: "Callout",
+    label: "Callout", hint: "Words when a condition holds",
     blurb: "Your words, printed only when a condition holds.",
     needsMetrics: false,
   },
   heatmap: {
-    label: "Heatmap",
+    label: "Heatmap", hint: "Resource by day, shaded",
     blurb: "One row per resource, one cell per day, shaded by the ranking metric.",
     needsMetrics: true,
   },
   sparklines: {
-    label: "Sparkline table",
+    label: "Sparkline table", hint: "Shapes with their numbers",
     blurb: "Each resource's shape over the period, with its numbers beside it.",
     needsMetrics: true,
   },
   avg_vs_peak: {
-    label: "Average and peak",
+    label: "Average and peak", hint: "From average to peak",
     blurb: "One row per resource, from its average to its peak. Busiest first.",
     needsMetrics: true,
   },
   kpi_tiles: {
-    label: "KPI tiles",
+    label: "KPI tiles", hint: "Figure, change, sparkline",
     blurb: "Up to four metrics as large figures, each beside the previous report's.",
     needsMetrics: true,
   },
   bar_list: {
-    label: "Bar list",
+    label: "Bar list", hint: "Busiest first, value at end",
     blurb: "The ranked resources as labelled bars, each with its figure.",
     needsMetrics: true,
   },
   utilization_bullet: {
-    label: "Utilisation bullet",
+    label: "Utilisation bullet", hint: "Avg, P95, peak vs line",
     blurb: "Average, estimated P95 and peak on one bar per resource, against your threshold.",
     needsMetrics: true,
   },
   fleet_mix: {
-    label: "Fleet mix",
+    label: "Fleet mix", hint: "Size families, stopped",
     blurb: "How the machines or databases split by size family, and how many are stopped.",
     needsMetrics: false,
   },
   backup_tracker: {
-    label: "Backup tracker",
+    label: "Backup tracker", hint: "A mark per day backed up",
     blurb: "Which days each resource was backed up on (AWS), or its last backup status (Azure).",
     needsMetrics: false,
   },
   small_multiples: {
-    label: "Small multiples",
+    label: "Small multiples", hint: "One mini chart each",
     blurb: "One small chart per resource on one shared scale, to compare their shapes.",
     needsMetrics: true,
   },
   annotated_line: {
-    label: "Annotated line",
+    label: "Annotated line", hint: "Threshold and incidents",
     blurb: "The busiest resources over the period, with your threshold and the incidents you type on the run form.",
     needsMetrics: true,
   },
   week_heatmap: {
-    label: "Hour by weekday",
+    label: "Hour by weekday", hint: "Busy hours of the week",
     blurb: "The fleet's busy hours: one row per weekday, one cell per hour. Shows when it could be switched off.",
     needsMetrics: true,
   },
   agent: {
-    label: "Agent paragraph",
+    label: "Agent paragraph", hint: "Written for you, checked",
     blurb: "Written by the agent from this section's figures, on your instruction. Every number checked.",
     needsMetrics: false,
   },

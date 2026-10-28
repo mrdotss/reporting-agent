@@ -57,6 +57,8 @@ from reporting_agent.compile.blocks.base import (
     MetricRef,
     caption_of,
     empty_scope_table,
+    friendly_label,
+    friendly_metric,
     no_data_table,
     read_metric_refs,
     resolve_stat,
@@ -616,7 +618,8 @@ def compile_timeseries_chart(
         )
     if (multiples or annotated) and not caption:
         title = context.messages.text(
-            "doc.chart.title.multiples" if multiples else "doc.chart.title.annotated", metrics=metric_names
+            "doc.chart.title.multiples" if multiples else "doc.chart.title.annotated",
+            metrics=", ".join(dict.fromkeys(friendly_label(ref, context.messages) for ref in refs)),
         )
     style = block.config.get("style")
     chart = Chart(
@@ -782,7 +785,7 @@ def _avg_vs_peak(
     chart = Chart(
         path=chart_cursor.path,
         chart_type="dumbbell",
-        title=caption or messages.text("doc.chart.title.avg_vs_peak", metric=average.name),
+        title=caption or messages.text("doc.chart.title.avg_vs_peak", metric=friendly_metric(average.name, messages)),
         unit=rows[0][3].unit,
         encoding=ENCODING_SEQUENTIAL,
         series=series,
@@ -822,11 +825,12 @@ def _bar_list(
         _point(series_cursor.child("points", position), context, resource.name, value)
         for position, (resource, value) in enumerate(measured)
     )
-    series = (Series(path=series_cursor.path, key=ref.key, label=ref.label, points=points),)
+    label = friendly_label(ref, context.messages)
+    series = (Series(path=series_cursor.path, key=ref.key, label=label, points=points),)
     chart = Chart(
         path=chart_cursor.path,
         chart_type="bar_list",
-        title=caption or context.messages.text("doc.chart.title.bar_list", metric=ref.label),
+        title=caption or context.messages.text("doc.chart.title.bar_list", metric=label),
         unit=measured[0][1].unit,
         encoding=ENCODING_SEQUENTIAL,
         series=series,
@@ -887,7 +891,7 @@ def _bullet(
     chart = Chart(
         path=chart_cursor.path,
         chart_type="bullet",
-        title=caption or messages.text("doc.chart.title.bullet", metric=average.name),
+        title=caption or messages.text("doc.chart.title.bullet", metric=friendly_metric(average.name, messages)),
         unit=rows[0][3].unit,
         encoding=ENCODING_SEQUENTIAL,
         series=series,
@@ -1028,7 +1032,9 @@ def compile_week_heatmap(context: BlockContext, block: BlockSpec, cursor: BlockC
     chart = Chart(
         path=chart_cursor.path,
         chart_type="week",
-        title=caption or messages.text("doc.chart.title.week", metric=MetricRef(name=metric, statistic=statistic).label),
+        title=caption or messages.text(
+            "doc.chart.title.week", metric=friendly_label(MetricRef(name=metric, statistic=statistic), messages)
+        ),
         unit=_unit_of(series),
         encoding=ENCODING_SEQUENTIAL,
         series=tuple(series),

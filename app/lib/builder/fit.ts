@@ -9,9 +9,12 @@ import { agentCount, avgAndPeakMetric, type AddedKind, type DefinitionV4, type S
  * One answer for every place a block is offered: the Add panel's gallery, the + between
  * blocks and the / menu. A block that does not fit stays on offer, greyed, with this reason
  * beside it, so an author learns what the block needs instead of wondering where it went.
+ * `short` fits under a gallery card's name; `reason` is the full sentence, shown on hover.
  */
 
-export type BlockFit = { readonly ok: true } | { readonly ok: false; readonly reason: string }
+export type BlockFit =
+  | { readonly ok: true }
+  | { readonly ok: false; readonly reason: string; readonly short: string }
 
 const READS_METRICS: ReadonlySet<AddedKind> = new Set([
   "key_figures",
@@ -63,22 +66,34 @@ export function blockFit(
   section: SectionV4 | undefined,
   kind: AddedKind
 ): BlockFit {
-  if (section === undefined) return { ok: false, reason: "Choose a section to add it to." }
+  if (section === undefined) return { ok: false, reason: "Choose a section to add it to.", short: "Choose a section" }
   if (kind === "agent" && agentCount(definition) >= MAX_AGENT_BLOCKS) {
-    return { ok: false, reason: `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs.` }
+    return {
+      ok: false,
+      reason: `A preset holds at most ${MAX_AGENT_BLOCKS} agent paragraphs.`,
+      short: `At most ${MAX_AGENT_BLOCKS} per preset`,
+    }
   }
   if (readsMetrics(kind) && !sectionEntry(definition.provider, section.type)?.metricBearing) {
-    return { ok: false, reason: "Reads metrics. This section reports none." }
+    return { ok: false, reason: "Reads metrics. This section reports none.", short: "Needs a metrics section" }
   }
   // Average and peak draws one metric's two figures, so the section must collect both.
   if ((kind === "avg_vs_peak" || kind === "utilization_bullet") && avgAndPeakMetric(section) === null) {
-    return { ok: false, reason: "Needs a metric this section collects as both an average and a maximum." }
+    return {
+      ok: false,
+      reason: "Needs a metric this section collects as both an average and a maximum.",
+      short: "Needs average and maximum",
+    }
   }
   if (kind === "fleet_mix" && !holdsFleetMixTypes(definition, section)) {
-    return { ok: false, reason: "Counts machines and databases. This section holds neither." }
+    return {
+      ok: false,
+      reason: "Counts machines and databases. This section holds neither.",
+      short: "Needs machines or databases",
+    }
   }
   if (kind === "backup_tracker" && !readsBackups(definition, section)) {
-    return { ok: false, reason: "Reads backups. Add it to the backups section." }
+    return { ok: false, reason: "Reads backups. Add it to the backups section.", short: "Needs Backups section" }
   }
   return { ok: true }
 }

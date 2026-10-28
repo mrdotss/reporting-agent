@@ -27,6 +27,8 @@ export type ReportChartSpec = {
     dashed: boolean;
     values: (string | null)[];
     pointLabels?: (string | null)[];
+    // A bar list's colour per bar, busiest darkest.
+    shades?: string[];
   }[];
   bands?: { lower: number; upper: number }[];
   // A design's chart look; each is present only where it leaves the default.
@@ -40,6 +42,24 @@ export type ReportChartSpec = {
   columns?: number;
   // An annotated line's incident markers, each on a category it plots.
   markers?: { x: string; label: string }[];
+  // The theme's figure face, for resource names; the accent, for drawn marks.
+  mono?: string;
+  accent?: string;
+  // A line of words under the chart saying what its marks mean.
+  legendText?: string;
+  // The hour-of-week grid: rounded cells with gaps and no colour scale.
+  week?: boolean;
+  // KPI tiles: a title and subtitle, and one tile per figure.
+  title?: string;
+  subtitle?: string;
+  tiles?: {
+    label: string;
+    value: string;
+    resource: string;
+    change: { text: string; direction: "up" | "down" | "flat"; ink: string } | null;
+    note: string;
+    spark: string[];
+  }[];
 };
 export function renderSVG(
   spec: ReportChartSpec,
