@@ -34,6 +34,7 @@ describe("blockFit", () => {
       expect(blockFit(s.getState().definition, undefined, kind)).toEqual({
         ok: false,
         reason: "Choose a section to add it to.",
+        short: "Choose a section",
       })
     }
   })
@@ -47,7 +48,11 @@ describe("blockFit", () => {
       const fit = blockFit(definition, section, kind)
       if (kind === "avg_vs_peak") expect(fit.ok).toBe(s.getState().addBlock(id, "avg_vs_peak") !== null)
       else if (kind === "backup_tracker")
-        expect(fit).toEqual({ ok: false, reason: "Reads backups. Add it to the backups section." })
+        expect(fit).toEqual({
+          ok: false,
+          reason: "Reads backups. Add it to the backups section.",
+          short: "Needs Backups section",
+        })
       else expect(fit).toEqual({ ok: true })
     }
   })
@@ -60,7 +65,12 @@ describe("blockFit", () => {
     expect(sectionEntry("aws", section.type)?.metricBearing).toBe(false)
     for (const kind of ADDED_KINDS) {
       const fit = blockFit(definition, section, kind)
-      if (readsMetrics(kind)) expect(fit).toEqual({ ok: false, reason: "Reads metrics. This section reports none." })
+      if (readsMetrics(kind))
+        expect(fit).toEqual({
+          ok: false,
+          reason: "Reads metrics. This section reports none.",
+          short: "Needs a metrics section",
+        })
       else expect(fit).toEqual({ ok: true })
     }
   })
@@ -75,6 +85,7 @@ describe("blockFit", () => {
     expect(blockFit(definition, avgOnly, "utilization_bullet")).toEqual({
       ok: false,
       reason: "Needs a metric this section collects as both an average and a maximum.",
+      short: "Needs average and maximum",
     })
     expect(blockFit(definition, avgOnly, "bar_list")).toEqual({ ok: true })
   })
@@ -91,6 +102,7 @@ describe("blockFit", () => {
     expect(blockFit(definition, section(volumes), "fleet_mix")).toEqual({
       ok: false,
       reason: "Counts machines and databases. This section holds neither.",
+      short: "Needs machines or databases",
     })
   })
 
@@ -106,6 +118,7 @@ describe("blockFit", () => {
     const fit = blockFit(definition, definition.sections[0], "agent")
     expect(fit.ok).toBe(false)
     expect(fit.ok === false && fit.reason).toContain(String(MAX_AGENT_BLOCKS))
+    expect(fit.ok === false && fit.short).toBe(`At most ${MAX_AGENT_BLOCKS} per preset`)
   })
 })
 
