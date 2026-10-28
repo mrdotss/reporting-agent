@@ -122,6 +122,7 @@ separately in :func:`compile_block`."""
 EXPANSION_COMPILERS: Final[dict[str, BlockCompiler]] = {
     agent.AGENT_PARAGRAPH_BLOCK: agent.compile_agent_paragraph,
     agent.AGENT_RECORD_BLOCK: agent.compile_agent_record,
+    charts.FLEET_MIX_BLOCK: charts.compile_fleet_mix,
 }
 """Block types only the v4 section expander produces. Not declared types: no definition
 names them, so neither validator has to admit them in a v1 or v2 `blocks` array."""

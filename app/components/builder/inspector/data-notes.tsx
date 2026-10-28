@@ -85,6 +85,23 @@ export function DataNote({
         lines.push(METRIC_SOURCE[provider])
         lines.push("Every cell and point is a day's value for one resource, each a figure traced to its snapshot path.")
         break
+      case "bar_list":
+      case "utilization_bullet":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push("Every bar, tick and label is one statistic over the period for one resource, a figure traced to its snapshot path.")
+        break
+      case "kpi_tiles":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push(
+          "This month's figure and the previous verified report's, each traced to its own snapshot. The direction is a word, never a computed change."
+        )
+        break
+      case "fleet_mix":
+        lines.push("Counts from the snapshot's inventory: each machine or database by its size family, or as stopped.")
+        lines.push(
+          "Every count is of all resources of that type the report collected, so it re-derives from the snapshot. A narrower section scope does not narrow it, and the chart says so."
+        )
+        break
       case "page_break":
         lines.push("A page break carries no figure.")
         break

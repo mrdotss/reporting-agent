@@ -91,8 +91,11 @@ __all__ = [
     "SnapshotValue",
     "SnapshotView",
     "WindowView",
+    "FLEET_MIX_SEGMENTS",
+    "FLEET_MIX_TYPES",
     "build_snapshot_view",
     "escape_pointer_token",
+    "fleet_mix_segment",
     "parse_decimal_string",
     "pointer",
 ]
@@ -152,6 +155,69 @@ HOUSEKEEPING_CLEAR_VALUE: Final[str] = "none"
 
 GLANCE_GAP_TYPES: Final[tuple[str, ...]] = ("backup_not_configured", "deallocated", "optimizer_not_available")
 """The gap types At a glance counts by **resource**, each indexed even at zero."""
+
+FLEET_MIX_SEGMENTS: Final[tuple[str, ...]] = (
+    "general",
+    "compute",
+    "memory",
+    "burstable",
+    "storage",
+    "accelerated",
+    "other",
+    "stopped",
+)
+"""The parts a fleet mix splits a resource type into, in the order the bar draws them: the
+running resources by size family, then the stopped ones, whatever their size."""
+
+FLEET_MIX_TYPES: Final[frozenset[str]] = frozenset(
+    {"aws::ec2::instance", "aws::rds::dbinstance", "microsoft.compute/virtualmachines"}
+)
+"""The resource types a fleet mix counts, compared case-insensitively: machines and
+databases, whose sizes have families. A volume's `gp3` is a size with no family to mix."""
+
+_STOPPED_STATES: Final[frozenset[str]] = frozenset({"stopped", "stopping", "deallocated", "deallocating"})
+
+# A size's family, read from its name by a fixed rule: the letters an AWS instance type or
+# RDS class starts with, and the letter after `Standard_` in an Azure VM size. Longer
+# prefixes first, so `inf2` is accelerated and not `i` storage.
+_AWS_FAMILIES: Final[tuple[tuple[str, str], ...]] = (
+    ("mac", "general"), ("inf", "accelerated"), ("trn", "accelerated"), ("dl", "accelerated"),
+    ("vt", "accelerated"), ("im", "storage"), ("is", "storage"), ("hpc", "compute"),
+    ("t", "burstable"), ("m", "general"), ("a", "general"), ("c", "compute"), ("r", "memory"),
+    ("x", "memory"), ("z", "memory"), ("u", "memory"), ("i", "storage"), ("d", "storage"),
+    ("h", "storage"), ("p", "accelerated"), ("g", "accelerated"), ("f", "accelerated"),
+)
+_AZURE_FAMILIES: Final[Mapping[str, str]] = MappingProxyType({
+    "b": "burstable", "a": "general", "d": "general", "f": "compute", "h": "compute",
+    "e": "memory", "m": "memory", "g": "memory", "l": "storage", "n": "accelerated",
+})
+
+
+def fleet_mix_segment(resource_type: str, sku_name: str, power_state: str) -> str:
+    """Which part of a fleet mix one resource counts in. **Pure.**
+
+    A stopped or deallocated resource counts as stopped, whatever its size. A running one by
+    its size's family; a size the rule does not know, or none, is `other` rather than a
+    guess.
+    """
+    if power_state.casefold() in _STOPPED_STATES:
+        return "stopped"
+    name = sku_name.strip().casefold()
+    if resource_type.casefold().startswith("microsoft."):
+        for prefix in ("standard_", "basic_"):
+            if name.startswith(prefix):
+                name = name[len(prefix):]
+        return _AZURE_FAMILIES.get(name[:1], "other") if name else "other"
+    if name.startswith("db."):
+        name = name[3:]
+    family = name.split(".", 1)[0]
+    letters = re.match(r"[a-z]+", family)
+    if letters is None:
+        return "other"
+    for prefix, segment in _AWS_FAMILIES:
+        if letters.group(0).startswith(prefix):
+            return segment
+    return "other"
 
 
 SKU_CAPABILITIES: Final[tuple[tuple[str, str], ...]] = (
@@ -1196,6 +1262,22 @@ def build_snapshot_view(
                 type_counts.get(resource.resource_type, 0) + 1
             )
 
+    # The fleet mix: each machine or database type's resources by size family, and its
+    # stopped ones — every segment indexed, at zero too, so each part of the bar is a figure.
+    sized_types = {
+        resource.resource_type for resource in resources if resource.resource_type.casefold() in FLEET_MIX_TYPES
+    }
+    mix_counts: dict[tuple[str, str], int] = {
+        (resource_type, segment): 0 for resource_type in sized_types for segment in FLEET_MIX_SEGMENTS
+    }
+    for resource in resources:
+        if resource.resource_type in sized_types:
+            key = (
+                resource.resource_type,
+                fleet_mix_segment(resource.resource_type, resource.sku.name, resource.power_state),
+            )
+            mix_counts[key] += 1
+
     # The At a glance counts: how many **distinct** resources a finding or a gap names.
     # A gap is recorded per fact or per metric — a resource with no backup carries two
     # `backup_not_configured` gaps on AWS — so the per-type gap count above counts entries,
@@ -1252,6 +1334,10 @@ def build_snapshot_view(
         *(
             (("resource_type", "by_name", name), total)
             for name, total in sorted(type_counts.items())
+        ),
+        *(
+            (("resource_type", "by_name", name, "mix", segment), total)
+            for (name, segment), total in sorted(mix_counts.items())
         ),
     ]
     for tokens, total in cardinalities:

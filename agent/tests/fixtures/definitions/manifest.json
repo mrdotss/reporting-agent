@@ -1540,6 +1540,31 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-chart-blocks.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "d9667b65a6c238530fef51b30dac0476c8e0e6858d87962e78a888dd43e12201",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-chart-block-without-metrics.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "a4d7c8bdaf330ae504e72aaaaacb277d30393bcc9fdab751e9d46094257cb794",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            2,
+            "kind"
+          ]
+        }
+      ]
     }
   ]
 }

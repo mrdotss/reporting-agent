@@ -62,6 +62,35 @@ describe("blockFit", () => {
     }
   })
 
+  test("a bullet needs an average and a maximum of one metric, like average and peak", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const definition = s.getState().definition
+    const section = definition.sections.find((candidate) => candidate.id === id)!
+    expect(blockFit(definition, section, "utilization_bullet")).toEqual({ ok: true })
+    const avgOnly = { ...section, metrics: [{ metric: "CPUUtilization", statistic: "avg" }] }
+    expect(blockFit(definition, avgOnly, "utilization_bullet")).toEqual({
+      ok: false,
+      reason: "Needs a metric this section collects as both an average and a maximum.",
+    })
+    expect(blockFit(definition, avgOnly, "bar_list")).toEqual({ ok: true })
+  })
+
+  test("a fleet mix fits sections of machines or databases, metrics or not", () => {
+    const s = store()
+    const ec2 = s.getState().addSection("ec2_utilization")!
+    const backups = s.getState().addSection("backups")!
+    const volumes = s.getState().addSection("ebs_activity")!
+    const definition = s.getState().definition
+    const section = (id: string) => definition.sections.find((candidate) => candidate.id === id)!
+    expect(blockFit(definition, section(ec2), "fleet_mix")).toEqual({ ok: true })
+    expect(blockFit(definition, section(backups), "fleet_mix")).toEqual({ ok: true })
+    expect(blockFit(definition, section(volumes), "fleet_mix")).toEqual({
+      ok: false,
+      reason: "Counts machines and databases. This section holds neither.",
+    })
+  })
+
   test("agent paragraphs stop fitting at the limit", () => {
     const s = store()
     const id = s.getState().addSection("ec2_utilization")!

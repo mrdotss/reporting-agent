@@ -106,6 +106,10 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         categories = [f"{index // 12:04d}-{index % 12 + 1:02d}" for index in range(min(month_indexes), max(month_indexes) + 1)]
     if node.chart_type == "heatmap":
         return _heatmap_spec(node, selected, categories, face=face, accent=accent, furniture=furniture, messages=messages)
+    if node.chart_type in ("bar_list", "bullet", "mix"):
+        return _row_chart_spec(
+            node, selected, categories, options=options, face=face, accent=accent, furniture=furniture, messages=messages
+        )
     groups = legacy._panel_groups_for(node, selected)
     if chart_style == "sparkline":
         groups = tuple((s.key,) for s in selected) or ((),)
@@ -297,6 +301,94 @@ def _heatmap_spec(node, selected, categories, *, face, accent, furniture, messag
             "max": float(max(values)) if values else 1.0,
         }],
         "series": rows,
+        "bands": [],
+        "xTitle": "",
+        "yTitle": "",
+        "emptyLabel": messages.text(legacy.EMPTY_CHART_TEXT_ID),
+    }
+
+
+_MIX_GREYS = ("#6F747C", "#B5B8BD")
+
+
+def _row_chart_spec(node, selected, categories, *, options, face, accent, furniture, messages):
+    """A chart of one row per category: a bar list's resources, a bullet's resources, or a
+    fleet mix's resource types. Values plot as drawn coordinates only; every label printed is
+    a plotted figure's own `formatted` string."""
+    gib = all(" GiB" in p.y.formatted for s in selected for p in s.points) and any(
+        p.y.unit == "bytes" for s in selected for p in s.points
+    )
+    unit = "GiB" if gib else next((p.y.unit for s in selected for p in s.points), node.unit)
+    values = []
+    series = []
+    for index, s in enumerate(selected):
+        points = {p.x: p.y for p in s.points}
+        row = []
+        for c in categories:
+            if c in points:
+                value = Decimal(str(points[c].value))
+                value = bytes_to_gib(value) if gib else value
+                values.append(value)
+                row.append(str(value))
+            else:
+                row.append(None)
+        if node.chart_type == "bullet":
+            # Average darkest, the P95 lighter behind it, the peak a tick in the accent.
+            color = (_mix_with_white(accent, 0.0), _mix_with_white(accent, 0.6), accent)[min(index, 2)]
+        elif node.chart_type == "mix":
+            color = (
+                _MIX_GREYS[0]
+                if s.key == "stopped"
+                else _MIX_GREYS[1]
+                if s.key == "other"
+                else _mix_with_white(accent, _SHADE_STEPS[min(index, len(_SHADE_STEPS) - 1)])
+            )
+        else:
+            color = accent
+        series.append({
+            "key": s.key,
+            "label": s.label,
+            "last": s.points[-1].y.formatted if s.points else "",
+            "panel": 0,
+            "color": color,
+            "dashed": False,
+            "pointLabels": [points[c].formatted if c in points else None for c in categories],
+            "values": row,
+        })
+    upper = max([Decimal(0), *values])
+    if node.chart_type == "mix":
+        upper = Decimal(1)
+    elif unit == "percent" and 1 < upper <= 100:
+        upper = Decimal(100)
+    elif upper > 0:
+        upper = upper * Decimal("1.1")
+        step = Decimal(10) ** upper.adjusted()
+        upper = (upper / step).to_integral_value(rounding=ROUND_CEILING) * step
+    else:
+        upper = Decimal(1)
+    rows = len(categories)
+    height = {
+        "bar_list": 56 + 28 * rows,
+        "bullet": 84 + 30 * rows,
+        "mix": 70 + 58 * rows,
+    }[node.chart_type]
+    look = {}
+    if options["threshold"] is not None and node.chart_type == "bullet":
+        look["threshold"] = options["threshold"]
+        look["thresholdLabel"] = messages.text("doc.chart.threshold")
+    return {
+        **look,
+        "style": node.chart_type,
+        "type": node.chart_type,
+        "width": 720,
+        "height": min(1100, height),
+        "font": face,
+        "ink": furniture.value_label,
+        "muted": furniture.axis_label,
+        "rule": furniture.grid,
+        "categories": categories,
+        "panels": [{"label": node.title, "unit": unit, "min": 0.0, "max": float(upper)}],
+        "series": series,
         "bands": [],
         "xTitle": "",
         "yTitle": "",

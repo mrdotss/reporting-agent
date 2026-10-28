@@ -602,6 +602,10 @@ SECTION_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "sparklines",
     "avg_vs_peak",
     "agent",
+    "kpi_tiles",
+    "bar_list",
+    "utilization_bullet",
+    "fleet_mix",
 )
 METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "key_figures",
@@ -610,6 +614,9 @@ METRIC_BLOCK_KINDS: Final[tuple[str, ...]] = (
     "heatmap",
     "sparklines",
     "avg_vs_peak",
+    "kpi_tiles",
+    "bar_list",
+    "utilization_bullet",
 )
 # A callout prints the author's words only when its condition holds in the snapshot. The
 # conditions are a closed set, each a fixed rule; `peak_at_or_above` compares the section's

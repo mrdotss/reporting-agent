@@ -117,6 +117,26 @@ export const ADDED_BLOCKS: Readonly<
     blurb: "One row per resource, from its average to its peak. Busiest first.",
     needsMetrics: true,
   },
+  kpi_tiles: {
+    label: "KPI tiles",
+    blurb: "Up to four metrics as large figures, each beside the previous report's.",
+    needsMetrics: true,
+  },
+  bar_list: {
+    label: "Bar list",
+    blurb: "The ranked resources as labelled bars, each with its figure.",
+    needsMetrics: true,
+  },
+  utilization_bullet: {
+    label: "Utilisation bullet",
+    blurb: "Average, estimated P95 and peak on one bar per resource, against your threshold.",
+    needsMetrics: true,
+  },
+  fleet_mix: {
+    label: "Fleet mix",
+    blurb: "How the machines or databases split by size family, and how many are stopped.",
+    needsMetrics: false,
+  },
   agent: {
     label: "Agent paragraph",
     blurb: "Written by the agent from this section's figures, on your instruction. Every number checked.",
