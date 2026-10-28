@@ -137,6 +137,26 @@ export const ADDED_BLOCKS: Readonly<
     blurb: "How the machines or databases split by size family, and how many are stopped.",
     needsMetrics: false,
   },
+  backup_tracker: {
+    label: "Backup tracker",
+    blurb: "Which days each resource was backed up on (AWS), or its last backup status (Azure).",
+    needsMetrics: false,
+  },
+  small_multiples: {
+    label: "Small multiples",
+    blurb: "One small chart per resource on one shared scale, to compare their shapes.",
+    needsMetrics: true,
+  },
+  annotated_line: {
+    label: "Annotated line",
+    blurb: "The busiest resources over the period, with your threshold and the incidents you type on the run form.",
+    needsMetrics: true,
+  },
+  week_heatmap: {
+    label: "Hour by weekday",
+    blurb: "The fleet's busy hours: one row per weekday, one cell per hour. Shows when it could be switched off.",
+    needsMetrics: true,
+  },
   agent: {
     label: "Agent paragraph",
     blurb: "Written by the agent from this section's figures, on your instruction. Every number checked.",

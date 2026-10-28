@@ -79,6 +79,7 @@ DECLARED_EMITTING_SITES: Final[frozenset[tuple[str, str | int]]] = frozenset(
         ("Series", "label"),
         ("Chart", "title"),
         ("Chart", "caption"),
+        ("ChartMarker", "label"),
         ("add_paragraph", 0),
         ("add_run", 0),
         # Assignment to `.text` on a python-docx run is handled separately.

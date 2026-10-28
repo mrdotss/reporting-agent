@@ -77,6 +77,10 @@ export type AddedKind =
   | "bar_list"
   | "utilization_bullet"
   | "fleet_mix"
+  | "small_multiples"
+  | "annotated_line"
+  | "week_heatmap"
+  | "backup_tracker"
 
 export type CalloutCondition =
   | "peak_at_or_above"
@@ -350,6 +354,25 @@ export function rankingOf(
   }
   const first = metrics.find((m) => (m.metric ?? m.derived) && m.statistic)
   return first ? { metric: (first.metric ?? first.derived)!, statistic: first.statistic } : null
+}
+
+/**
+ * The metric an hour-by-weekday heatmap reads (`compile/sections.py::_week_metric_of`): a
+ * collected platform metric — the section's ranking where it is one, else its first — at
+ * its average unless the section ranks by the peak. `null` when the section collects none.
+ */
+export function weekMetricOf(
+  section: SectionV4,
+  entry: CatalogueSection | undefined
+): { metric: string; statistic: "avg" | "max" } | null {
+  const platform = (section.metrics ?? []).filter(
+    (m): m is typeof m & { metric: string; statistic: string } => typeof m.metric === "string" && !!m.metric && typeof m.statistic === "string"
+  )
+  const rank = rankingOf(section, entry)
+  const chosen =
+    (rank && platform.some((m) => m.metric === rank.metric) ? rank : null) ??
+    (platform[0] ? { metric: platform[0].metric, statistic: platform[0].statistic } : null)
+  return chosen ? { metric: chosen.metric, statistic: chosen.statistic === "max" ? "max" : "avg" } : null
 }
 
 /**

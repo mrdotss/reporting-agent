@@ -11,11 +11,15 @@ import {
   ChartLineIcon,
   ChartPieSliceIcon,
   CaretRightIcon,
+  CalendarDotsIcon,
+  ClockCounterClockwiseIcon,
   DotsSixVerticalIcon,
   EyeIcon,
   EyeSlashIcon,
   FileDashedIcon,
+  FlagIcon,
   GridFourIcon,
+  GridNineIcon,
   ListNumbersIcon,
   LockSimpleIcon,
   MegaphoneSimpleIcon,
@@ -441,5 +445,13 @@ export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
       return <SlidersHorizontalIcon aria-hidden className={className} />
     case "fleet_mix":
       return <ChartPieSliceIcon aria-hidden className={className} />
+    case "small_multiples":
+      return <GridNineIcon aria-hidden className={className} />
+    case "annotated_line":
+      return <FlagIcon aria-hidden className={className} />
+    case "week_heatmap":
+      return <CalendarDotsIcon aria-hidden className={className} />
+    case "backup_tracker":
+      return <ClockCounterClockwiseIcon aria-hidden className={className} />
   }
 }

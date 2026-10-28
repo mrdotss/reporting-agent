@@ -67,6 +67,7 @@ from reporting_agent.compile.ast import (
     TextFact,
     TextFactCell,
 )
+from reporting_agent.compile.blocks.backup import BACKUP_STRIP_LOOK, STRIP_GLYPHS
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
 from reporting_agent.compile.messages import Messages
 from reporting_agent.render.toc import (
@@ -187,6 +188,18 @@ indicator to the preview because it looks incomplete without one."""
 _NOTICE_ROW_KEYS: Final[frozenset[str]] = frozenset({"empty-scope", "no-gaps"})
 """Matched by the compiler's row key, not by the row's text — the same rule
 `render/docx.py` applies, so a wording change cannot restyle one surface and not the other."""
+
+
+_STRIP_STATUS: Final[dict[str, str]] = {glyph: status for status, glyph in STRIP_GLYPHS.items()}
+
+
+def _strip_glyphs(text: str) -> str:
+    """A backup strip's day glyphs, each in a span naming its status so the stylesheet can
+    colour it. The text is the cell's own, glyph for glyph; a space between weeks stays."""
+    return "".join(
+        f'<span data-status="{_STRIP_STATUS[ch]}">{ch}</span>' if ch in _STRIP_STATUS else html.escape(ch)
+        for ch in text
+    )
 
 
 class HtmlEmitFailed(Exception):
@@ -515,6 +528,8 @@ class _Emitter:
                 cells.append(f"<td{attribute}{mark}>{self.figure(cell.figure)}</td>")
             elif isinstance(cell, TextFactCell):
                 cells.append(f"<td{attribute}>{self.text_fact(cell.fact)}</td>")
+            elif isinstance(cell, TextCell) and node.look == BACKUP_STRIP_LOOK and column.key == "days":
+                cells.append(f"<td{attribute}>{_strip_glyphs(cell.text)}</td>")
             elif isinstance(cell, TextCell):
                 cells.append(f"<td{attribute}>{html.escape(cell.text)}</td>")
             elif isinstance(cell, EmptyCell) and cell.fill_in and self.form_fields:

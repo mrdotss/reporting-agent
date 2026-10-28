@@ -65,6 +65,7 @@ __all__ = [
     "choose_grain",
     "day_buckets",
     "local_day",
+    "local_hour_of_week",
     "month_name",
     "resolve_timezone",
     "resolve_window",
@@ -292,6 +293,17 @@ def local_day(instant_utc: datetime, tz: TzInfo) -> date:
     """
     aware = instant_utc if instant_utc.tzinfo is not None else instant_utc.replace(tzinfo=UTC)
     return aware.astimezone(tz).date()
+
+
+def local_hour_of_week(instant_utc: datetime, tz: TzInfo) -> tuple[int, int]:
+    """The local ISO weekday (1 is Monday) and hour, in `tz`, containing `instant_utc`.
+
+    On the terms :func:`local_day` sets: a naive instant is read as UTC, and an interval
+    belongs to the hour its **start** falls in.
+    """
+    aware = instant_utc if instant_utc.tzinfo is not None else instant_utc.replace(tzinfo=UTC)
+    local = aware.astimezone(tz)
+    return local.isoweekday(), local.hour
 
 
 # --- local-day buckets over a window, slot counts retained (Req 25.11) -------------

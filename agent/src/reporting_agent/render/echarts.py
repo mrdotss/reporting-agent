@@ -104,12 +104,25 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
     if categories and all(re.fullmatch(r"\d{4}-\d{2}", c) for c in categories):
         month_indexes = [int(c[:4]) * 12 + int(c[5:]) - 1 for c in categories]
         categories = [f"{index // 12:04d}-{index % 12 + 1:02d}" for index in range(min(month_indexes), max(month_indexes) + 1)]
-    if node.chart_type == "heatmap":
+    if node.chart_type == "week":
+        # Every hour of the day, so a quiet hour no weekday reported in keeps its column.
+        categories = [f"{hour:02d}:00" for hour in range(24)]
+    if node.chart_type in ("heatmap", "week"):
         return _heatmap_spec(node, selected, categories, face=face, accent=accent, furniture=furniture, messages=messages)
     if node.chart_type in ("bar_list", "bullet", "mix"):
         return _row_chart_spec(
             node, selected, categories, options=options, face=face, accent=accent, furniture=furniture, messages=messages
         )
+    if node.chart_type == "multiples":
+        return _multiples_spec(node, selected, categories, face=face, accent=accent, furniture=furniture)
+    if node.chart_type == "annotated":
+        # A line chart whatever the document's look, with a threshold it always draws.
+        if chart_style not in ("stacked", "soft_area", "flat_area"):
+            chart_style = "stacked"
+        if options["threshold"] is None:
+            from reporting_agent.compile.blocks.charts import ANNOTATED_DEFAULT_THRESHOLD
+
+            options["threshold"] = int(ANNOTATED_DEFAULT_THRESHOLD)
     groups = legacy._panel_groups_for(node, selected)
     if chart_style == "sparkline":
         groups = tuple((s.key,) for s in selected) or ((),)
@@ -126,9 +139,10 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
             resource = (s.points[0].y.resource_id or s.key) if s.points else s.key
             by_resource.setdefault(resource, []).append(s.key)
         groups = tuple(tuple(g) for g in by_resource.values()) or ((),)
-    if node.chart_type == "dumbbell":
+    if node.chart_type in ("dumbbell", "annotated"):
         # Average and peak share one scale, whatever the document's chart style: the
-        # renderer draws the dumbbell on the first panel alone.
+        # renderer draws the dumbbell on the first panel alone. An annotated line keeps its
+        # few lines on one panel so a marked day reads across all of them.
         groups = (tuple(s.key for s in selected),)
     facets = {(p.y.resource_id, p.y.metric) for s in selected for p in s.points}
     single_metric = len(facets) == 1
@@ -230,6 +244,8 @@ def chart_spec(node, *, preset, chart_style, chart_font, accent_color, theme, me
         height = min(1100, max(100, round(height * scale)))
     if "legend" in look:
         height += LEGEND_SPACE
+    if node.markers:
+        look["markers"] = [{"x": marker.x, "label": marker.label} for marker in node.markers]
     return {
         **look,
         "style": chart_style,
@@ -309,6 +325,69 @@ def _heatmap_spec(node, selected, categories, *, face, accent, furniture, messag
 
 
 _MIX_GREYS = ("#6F747C", "#B5B8BD")
+
+
+def _multiples_spec(node, selected, categories, *, face, accent, furniture):
+    """Small multiples: one small panel per resource, every panel on one shared scale so a
+    taller shape is a busier resource. Values plot as drawn coordinates only; the one label
+    each panel prints is its peak's own `formatted` string."""
+    gib = all(" GiB" in p.y.formatted for s in selected for p in s.points) and any(
+        p.y.unit == "bytes" for s in selected for p in s.points
+    )
+    unit = "GiB" if gib else next((p.y.unit for s in selected for p in s.points), node.unit)
+    values = []
+    series = []
+    for s in selected:
+        points = {p.x: p.y for p in s.points}
+        row = []
+        for c in categories:
+            if c in points:
+                value = Decimal(str(points[c].value))
+                value = bytes_to_gib(value) if gib else value
+                values.append(value)
+                row.append(str(value))
+            else:
+                row.append(None)
+        series.append({
+            "key": s.key,
+            "label": s.label,
+            "last": s.points[-1].y.formatted if s.points else "",
+            "panel": 0,
+            "color": accent,
+            "dashed": False,
+            "pointLabels": [points[c].formatted if c in points else None for c in categories],
+            "values": row,
+        })
+    upper = max([Decimal(0), *values])
+    if unit == "percent" and 1 < upper <= 100:
+        upper = Decimal(100)
+    elif upper > 0:
+        upper = upper * Decimal("1.1")
+        step = Decimal(10) ** upper.adjusted()
+        upper = (upper / step).to_integral_value(rounding=ROUND_CEILING) * step
+    else:
+        upper = Decimal(1)
+    columns = MULTIPLES_COLUMNS if len(series) > 4 else max(1, min(len(series), 2))
+    rows = -(-len(series) // columns) if series else 1
+    return {
+        "style": "multiples",
+        "type": "multiples",
+        "width": 720,
+        "height": min(1100, 40 + 96 * rows),
+        "columns": columns,
+        "font": face,
+        "ink": furniture.value_label,
+        "muted": furniture.axis_label,
+        "rule": furniture.grid,
+        "categories": categories,
+        "panels": [{"label": node.title, "unit": unit, "min": 0.0, "max": float(upper)}],
+        "series": series,
+        "emptyLabel": "",
+    }
+
+
+MULTIPLES_COLUMNS = 4
+"""How many small panels sit side by side once there are more than four."""
 
 
 def _row_chart_spec(node, selected, categories, *, options, face, accent, furniture, messages):

@@ -472,11 +472,96 @@ function mixOptions(spec, compact) {
   };
 }
 
+/**
+ * Small multiples: one small panel per resource in a grid, every panel on the one shared
+ * scale, so a taller shape is a busier resource. Each panel names its resource and prints its
+ * peak's own figure.
+ */
+function multiplesOptions(spec, compact) {
+  const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
+  const columns = Math.max(1, spec.columns ?? 4);
+  const top = compact ? 4 : 30;
+  const gapX = compact ? 8 : 18;
+  const gapY = compact ? 8 : 28;
+  const cellW = (spec.width - 16 - gapX * (columns - 1)) / columns;
+  const rows = Math.max(1, Math.ceil(spec.series.length / columns));
+  const cellH = (spec.height - top - 8 - gapY * (rows - 1)) / rows;
+  const grid = [], xAxis = [], yAxis = [], series = [], title = compact ? [] : [rowTitle(spec, panel, compact)[0]];
+  spec.series.forEach((s, i) => {
+    const left = 8 + (i % columns) * (cellW + gapX);
+    const y = top + Math.floor(i / columns) * (cellH + gapY);
+    grid.push({ left, top: y + (compact ? 0 : 16), width: cellW, height: cellH - (compact ? 0 : 16) });
+    xAxis.push({ type: "category", gridIndex: i, data: spec.categories, show: false, boundaryGap: false });
+    yAxis.push({
+      type: "value", gridIndex: i, min: 0, max: panel.max, show: false,
+      splitLine: { show: false },
+    });
+    let peak = -1;
+    s.values.forEach((v, j) => {
+      if (v != null && (peak < 0 || Number(v) > Number(s.values[peak]))) peak = j;
+    });
+    series.push({
+      name: s.key, type: "line", xAxisIndex: i, yAxisIndex: i, data: s.values, connectNulls: false,
+      smooth: false, showSymbol: false, animation: false, emphasis: { disabled: true },
+      lineStyle: { width: compact ? 1.2 : 1.6, color: s.color }, itemStyle: { color: s.color },
+      areaStyle: { color: s.color + "22" },
+      markLine: {
+        silent: true, symbol: "none", animation: false, label: { show: false },
+        lineStyle: { color: spec.rule, opacity: GRID_OPACITY, type: "solid", width: 1 },
+        data: [{ yAxis: 0 }],
+      },
+    });
+    if (!compact) {
+      title.push({
+        text: s.label, left, top: y, textStyle: { fontFamily: spec.font, fontSize: 10, fontWeight: 500, color: spec.ink, width: cellW - 50, overflow: "truncate" },
+      });
+      if (peak >= 0)
+        title.push({
+          text: s.pointLabels?.[peak] ?? "", left: left + cellW, top: y, textAlign: "right",
+          textStyle: { fontFamily: spec.font, fontSize: 10, fontWeight: 600, color: spec.muted },
+        });
+    }
+  });
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    title, grid, xAxis, yAxis, series,
+    graphic: emptyGraphic(spec, spec.series.length === 0),
+  };
+}
+
 /** The shared look (C9): grid lines recede behind the data, bars end rounded. Tabular figures
  * need no feature switch, which resvg would not apply: every face a chart is set in (DejaVu,
  * Liberation Sans, IBM Plex, Source Sans and Serif) draws its digits at one width. */
 const GRID_OPACITY = 0.55;
 const BAR_RADIUS = 3;
+
+/**
+ * An annotated line's marked days: a thin vertical rule at each, named by the author's own
+ * words. Merged with the threshold's line when both are on the first series.
+ */
+function markerLines(spec, thresholdLine) {
+  return {
+    markLine: {
+      silent: true,
+      symbol: "none",
+      animation: false,
+      data: [
+        ...(thresholdLine
+          ? [{ ...thresholdLine.data[0], lineStyle: thresholdLine.lineStyle, label: thresholdLine.label }]
+          : []),
+        ...spec.markers
+          .filter((m) => spec.categories.includes(m.x))
+          .map((m) => ({
+            xAxis: m.x,
+            lineStyle: { type: "solid", color: spec.ink, opacity: 0.55, width: 1 },
+            label: { formatter: () => m.label, position: "insideEndTop", rotate: 0, color: spec.ink, fontFamily: spec.font, fontSize: 9, backgroundColor: "#ffffff", padding: [1, 3] },
+          })),
+      ],
+    },
+  };
+}
 
 /** The legend band a design asks for above or below the plot, inside `spec.height`. */
 const LEGEND_SPACE = 24;
@@ -487,6 +572,7 @@ export function chartOptions(spec, compact = false) {
   if (spec.type === "bar_list") return barListOptions(spec, compact);
   if (spec.type === "bullet") return bulletOptions(spec, compact);
   if (spec.type === "mix") return mixOptions(spec, compact);
+  if (spec.type === "multiples") return multiplesOptions(spec, compact);
   const bare = spec.style === "sparkline";
   // A design's look. Every one is absent at its default, so a spec without them draws
   // exactly the chart it always drew: names and last values at the line ends, a light grid.
@@ -655,6 +741,7 @@ export function chartOptions(spec, compact = false) {
       },
       ...threshold,
       ...peakMark,
+      ...(leads && s.panel === 0 && !compact && spec.markers?.length ? markerLines(spec, threshold.markLine) : {}),
       // Rounded at the bar's free end only, so a bar still stands on its axis.
       itemStyle: bars
         ? { color: s.color, borderRadius: spec.type === "hbar" ? [0, BAR_RADIUS, BAR_RADIUS, 0] : [BAR_RADIUS, BAR_RADIUS, 0, 0] }

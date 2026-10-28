@@ -1135,6 +1135,7 @@ def test_the_document_carries_every_declared_top_level_field(catalog: LoadedCata
         "raw_archive",
         "resources",
         "gaps",
+        "week",
     }
     producer = document["producer"]
     assert isinstance(producer, dict)

@@ -7,6 +7,7 @@ import { MAX_AGENT_BLOCKS } from "@/lib/templates/definition"
 import { sectionEntry } from "./catalogue"
 import { emptyDraftV4 } from "./draft"
 import { BLOCK_INTENTS, blockFit, readsMetrics } from "./fit"
+import { weekMetricOf, type SectionV4 } from "./model"
 import { createBuilderStore } from "./store"
 
 /**
@@ -45,6 +46,8 @@ describe("blockFit", () => {
     for (const kind of ADDED_KINDS) {
       const fit = blockFit(definition, section, kind)
       if (kind === "avg_vs_peak") expect(fit.ok).toBe(s.getState().addBlock(id, "avg_vs_peak") !== null)
+      else if (kind === "backup_tracker")
+        expect(fit).toEqual({ ok: false, reason: "Reads backups. Add it to the backups section." })
       else expect(fit).toEqual({ ok: true })
     }
   })
@@ -103,5 +106,19 @@ describe("blockFit", () => {
     const fit = blockFit(definition, definition.sections[0], "agent")
     expect(fit.ok).toBe(false)
     expect(fit.ok === false && fit.reason).toContain(String(MAX_AGENT_BLOCKS))
+  })
+})
+
+describe("weekMetricOf", () => {
+  test("an hour heatmap reads a collected metric: the ranking at its average, or its peak", () => {
+    const s = store()
+    const id = s.getState().addSection("ec2_utilization")!
+    const section = s.getState().definition.sections.find((candidate) => candidate.id === id)!
+    const entry = sectionEntry("aws", section.type)
+    const withMetrics = (metrics: SectionV4["metrics"]) => ({ ...section, metrics, selection: { ...section.selection!, top_n: null } })
+
+    expect(weekMetricOf(withMetrics([{ metric: "CPUUtilization", statistic: "max" }]), entry)).toEqual({ metric: "CPUUtilization", statistic: "max" })
+    expect(weekMetricOf(withMetrics([{ metric: "CPUUtilization", statistic: "p95" }]), entry)).toEqual({ metric: "CPUUtilization", statistic: "avg" })
+    expect(weekMetricOf(withMetrics([]), entry)).toBeNull()
   })
 })

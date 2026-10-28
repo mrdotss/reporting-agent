@@ -73,6 +73,7 @@ from reporting_agent.compile.ast import (
     TextFact,
     TextFactCell,
 )
+from reporting_agent.compile.blocks.backup import BACKUP_STRIP_LOOK, STRIP_GLYPHS
 from reporting_agent.compile.blocks.base import (
     CAPTION_STYLE,
     LAYOUT_TABLE_STYLE,
@@ -297,6 +298,43 @@ def _emphasise_tile_values(table: DocxTable, node: Table, design: DesignSettings
             for run in paragraph.runs:
                 run.font.bold = True
                 run.font.color.rgb = accent
+
+
+STRIP_PARTIAL_INK: Final[str] = "B26A00"
+
+
+def _colour_strip_glyphs(table: DocxTable, node: Table, design: DesignSettings) -> None:
+    """A backup strip in Word: each day's glyph its own run, a complete day in the accent, a
+    partial one in amber, a day with none in the theme's muted ink. The cell's text is the
+    same characters in the same order, so the verifier reads it unchanged."""
+    from reporting_agent.render.themes import accent_for
+
+    keys = [column.key for column in node.columns]
+    if "days" not in keys:
+        return
+    ordinal = keys.index("days")
+    status = {glyph: name for name, glyph in STRIP_GLYPHS.items()}
+    ink = {
+        "full": accent_for(design),
+        "partial": STRIP_PARTIAL_INK,
+        "none": THEME_SPECS[design.preset].palette.muted,
+    }
+    for row in table.rows[1:]:
+        if ordinal >= len(row.cells):
+            continue
+        paragraph = row.cells[ordinal].paragraphs[0]
+        runs = list(paragraph.runs)
+        if not runs:
+            continue
+        text = "".join(run.text for run in runs)
+        size = runs[0].font.size
+        for run in runs:
+            run._r.getparent().remove(run._r)
+        for glyph in text:
+            run = paragraph.add_run(glyph)
+            run.font.size = size
+            if glyph in status:
+                run.font.color.rgb = RGBColor.from_string(ink[status[glyph]])
 
 
 MARK_FILL: Final[str] = "FDF1E2"
@@ -703,6 +741,8 @@ class _Emitter:
         _polish_data_table(table, self.design, header=node.header_look)
         if node.look == KPI_TILES_LAYOUT:
             _emphasise_tile_values(table, node, self.design)
+        elif node.look == BACKUP_STRIP_LOOK:
+            _colour_strip_glyphs(table, node, self.design)
 
         if node.caption:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))

@@ -128,7 +128,11 @@ from reporting_agent.compile.actions import (
     resolved_keys,
     section_present,
 )
-from reporting_agent.compile.sections import AUTHOR_ROWS_PAYLOAD_KEY, apply_author_rows
+from reporting_agent.compile.sections import (
+    AUTHOR_ROWS_PAYLOAD_KEY,
+    apply_author_rows,
+    week_heatmap_metrics,
+)
 from reporting_agent.errors import (
     AgentError,
     CompileFailedError,
@@ -272,6 +276,12 @@ async def run_generate_report(
     # could not draw. These months are the seed for that case, and they cost a pass over
     # the estate each, so a profile that declares no trend collects none.
     seed_trend_months = _seed_trend_months(definition, catalogue=section_catalogue)
+    # The pairs an hour-by-weekday heatmap reads, which the collector folds by hour.
+    week_metrics = (
+        week_heatmap_metrics(definition, catalogue=section_catalogue)
+        if section_catalogue is not None
+        else {}
+    )
 
     # --- reuse, when the caller offered a snapshot ------------------------------------
     #
@@ -315,6 +325,7 @@ async def run_generate_report(
         collection = CollectionSink()
         async for event in run_collection(
             seed_trend_months=seed_trend_months,
+            week_metrics_by_resource_type=week_metrics,
             payload=payload,
             context=context,
             steps=steps,

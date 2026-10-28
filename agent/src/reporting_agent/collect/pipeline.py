@@ -98,7 +98,7 @@ from datetime import UTC, date, datetime, timedelta
 from datetime import tzinfo as TzInfo
 from decimal import Decimal, InvalidOperation
 from types import MappingProxyType
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, cast, runtime_checkable
 
 from reporting_agent.catalog.loader import (
     EnhancedCounterEntry,
@@ -122,6 +122,7 @@ from reporting_agent.collect.buckets import (
     resolve_window,
     trend_months,
 )
+from reporting_agent.collect.dayfold import WEEK_FIDELITY_TIER
 from reporting_agent.collect.log import (
     GAP_TYPE_INSTANCE_NAME_COLLAPSED,
     GAP_TYPE_METRIC_ERROR,
@@ -138,6 +139,7 @@ from reporting_agent.collect.snapshot import (
     ResourceSnapshot,
     SkuCapacity,
     StatisticEntry,
+    WeekBucket,
     build_snapshot,
     # Moved out of this module in task 4.4, and re-exported below so its existing callers
     # and their tests are untouched: `verify/replay.py` re-derives facts from the archive and
@@ -1256,6 +1258,7 @@ async def run_collection(
     catalog: LoadedCatalog | None = None,
     metric_selection: Mapping[str, Sequence[str]] | None = None,
     seed_trend_months: int = 0,
+    week_metrics_by_resource_type: Mapping[str, Sequence[str]] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> AsyncIterator[Event]:
     """Collect one run into an immutable snapshot, yielding its non-terminal events.
@@ -1287,6 +1290,9 @@ async def run_collection(
     the pinned template version selected, already expanded from its derived statistics and
     already carrying every top-N ranking metric. It is `None` for a snapshot-only run, which
     has no pinned version to narrow by; see :func:`_requested_metrics`.
+
+    `week_metrics_by_resource_type` names the `(resource type, metric)` pairs an
+    hour-by-weekday heatmap reads, folded across the fleet into the snapshot's `week`.
     """
     plan = resolve_run_plan(payload, context)
     loaded = catalog if catalog is not None else load_catalog()
@@ -1306,6 +1312,7 @@ async def run_collection(
             catalog=loaded,
             metric_selection=metric_selection,
             seed_trend_months=seed_trend_months,
+            week_metrics_by_resource_type=week_metrics_by_resource_type,
             steps=steps,
             progress=progress,
             now=now,
@@ -1329,6 +1336,7 @@ async def run_collection(
             catalog=loaded,
             metric_selection=metric_selection,
             seed_trend_months=seed_trend_months,
+            week_metrics_by_resource_type=week_metrics_by_resource_type,
             steps=steps,
             progress=progress,
             now=now,
@@ -1356,6 +1364,7 @@ async def _drive(
     now: Callable[[], datetime],
     sink: CollectionSink,
     seed_trend_months: int = 0,
+    week_metrics_by_resource_type: Mapping[str, Sequence[str]] | None = None,
 ) -> AsyncIterator[Event]:
     """The orchestration itself, over an already-resolved plan and an already-built provider.
 
@@ -1426,17 +1435,19 @@ async def _drive(
     yield steps.progress(
         metrics_step["id"], done=0, total=total, unit=PROGRESS_UNIT_RESOURCES
     )
-    collected = await active.collect(
-        CollectRequest(
-            scope=plan.scope,
-            resources=resources,
-            metrics_by_resource_type=metrics_by_resource_type,
-            grain=plan.grain,
-            window=window_to_plain(plan.window),
-            timezone=plan.timezone_name,
-            utc_offset=_utc_offset_text(plan),
-        )
+    week_metrics = _week_metrics(week_metrics_by_resource_type, metrics_by_resource_type)
+    request = CollectRequest(
+        scope=plan.scope,
+        resources=resources,
+        metrics_by_resource_type=metrics_by_resource_type,
+        grain=plan.grain,
+        window=window_to_plain(plan.window),
+        timezone=plan.timezone_name,
+        utc_offset=_utc_offset_text(plan),
     )
+    if week_metrics:
+        request["week_metrics_by_resource_type"] = week_metrics
+    collected = await active.collect(request)
     gaps.extend(collected["gaps"])
 
     tiers, guest_entries, guest_gaps = await _resolve_fidelity(
@@ -1520,6 +1531,8 @@ async def _drive(
             month_sources=month_sources,
         ),
         gaps=gaps,
+        week_metrics_by_resource_type=week_metrics,
+        week_buckets=_week_buckets(collected.get("week_statistics") or []),
         catalog_version=loaded.catalog_version,
         raw_archive_complete=archive_complete,
         raw_archive_object_count=_archive_object_count(archive),
@@ -1614,6 +1627,7 @@ async def _collect_facts(
             resources=list(resources),
             inventory_pages=list(discovered.get("inventory_pages") or ()),
             subscription_id=plan.scope["subscription_id"],
+            timezone=plan.timezone_name,
         )
     )
 
@@ -1797,6 +1811,45 @@ async def _collect_trend(
         absorb(month.local_month, collected["statistics"])
 
     return statistics, slots, sources
+
+
+def _week_metrics(
+    asked: Mapping[str, Sequence[str]] | None,
+    requested: Mapping[str, Sequence[str]],
+) -> dict[str, list[str]]:
+    """The hour-by-weekday pairs this run folds: those asked for that the run also requests.
+
+    A pair the window pass does not fetch has no intervals to fold, so asking for it would
+    record a request the snapshot could never answer. Matched case-insensitively and spelled
+    as the request spells the type, which is how the providers group resources.
+    """
+    by_folded = {resource_type.casefold(): resource_type for resource_type in requested}
+    week: dict[str, list[str]] = {}
+    for resource_type, metrics in (asked or {}).items():
+        spelled = by_folded.get(resource_type.casefold())
+        if spelled is None:
+            continue
+        fetched = set(requested[spelled])
+        kept = sorted({metric for metric in metrics if metric in fetched})
+        if kept:
+            week[spelled] = sorted({*week.get(spelled, ()), *kept})
+    return week
+
+
+def _week_buckets(raw: Sequence[Mapping[str, PlainData]]) -> list[WeekBucket]:
+    """The provider's plain-data cells as the snapshot builder takes them."""
+    return [
+        WeekBucket(
+            resource_type=str(cell["resource_type"]),
+            weekday=int(cast("int", cell["weekday"])),
+            hour=int(cast("int", cell["hour"])),
+            statistics=tuple(
+                statistic_from_plain(value, fidelity_tier=WEEK_FIDELITY_TIER)
+                for value in cast("list[StatValue]", cell.get("statistics") or [])
+            ),
+        )
+        for cell in raw
+    ]
 
 
 def _resource_snapshots(

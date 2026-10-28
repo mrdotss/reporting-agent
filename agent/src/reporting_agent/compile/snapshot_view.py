@@ -664,6 +664,9 @@ class SnapshotView:
     _statistic_count: int
     _day_bucket_count: int
     _month_bucket_count: int
+    _week_stats: Mapping[tuple[str, str, str, int, int], SnapshotValue] = field(default_factory=dict)
+    """The fleet's hour-by-weekday cells (`week.buckets`), keyed by the case-folded type,
+    metric, statistic, ISO weekday and hour."""
     _facts_by_pointer: Mapping[str, FactTextValue] = field(default_factory=dict)
     """Every **fact** the snapshot carries, keyed by the JSON pointer of its `value`
     (Req 6.2).
@@ -813,6 +816,12 @@ class SnapshotView:
             if value is not None:
                 found.append((local_month, value))
         return tuple(found)
+
+    def week_stat(
+        self, resource_type: str, metric: str, statistic: str, weekday: int, hour: int
+    ) -> SnapshotValue | None:
+        """One hour-by-weekday cell of a type's fleet, or `None` where nothing was folded."""
+        return self._week_stats.get((resource_type.casefold(), metric, statistic, weekday, hour))
 
     def month_source(self, resource_id: str, local_month: str) -> tuple[str, str] | None:
         """How this resource's month was obtained: `(source, source_run_id)`, or `None`.
@@ -1202,6 +1211,31 @@ def build_snapshot_view(
                 ] = value
                 statistic_count += 1
 
+    # The fleet's hour-by-weekday cells (`1.4.0`), addressable on the day buckets' terms —
+    # `week.buckets[i].statistics[k].value` — so a heatmap cell is a figure like any other.
+    # The type stands in for the resource and `<weekday>T<hour>` for the window.
+    week_stats: dict[tuple[str, str, str, int, int], SnapshotValue] = {}
+    raw_week = document.get("week")
+    for bucket_position, raw_bucket in enumerate(
+        _list_at(raw_week, "buckets", pointer("week")) if isinstance(raw_week, dict) else ()
+    ):
+        bucket_at = pointer("week", "buckets", bucket_position)
+        if not isinstance(raw_bucket, dict):
+            raise CompileFailedError(f"{bucket_at} is not an object")
+        resource_type = _require_str(raw_bucket, "resource_type", bucket_at)
+        weekday, hour = raw_bucket.get("weekday"), raw_bucket.get("hour")
+        if not isinstance(weekday, int) or not isinstance(hour, int):
+            raise CompileFailedError(f"{bucket_at} needs an integer weekday and hour")
+        for position, raw_stat in enumerate(_list_at(raw_bucket, "statistics", bucket_at)):
+            value = _build_value(
+                raw_stat,
+                at=pointer("week", "buckets", bucket_position, "statistics", position, "value"),
+                resource_id=resource_type,
+                window=f"{weekday}T{hour:02d}",
+            )
+            _record(by_pointer, value)
+            week_stats[(resource_type.casefold(), value.metric, value.statistic, weekday, hour)] = value
+
     gaps = tuple(
         _build_gap(raw_gap, position, pointer("gaps", position))
         for position, raw_gap in enumerate(gaps_raw)
@@ -1372,6 +1406,7 @@ def build_snapshot_view(
         _statistic_count=statistic_count,
         _day_bucket_count=day_bucket_count,
         _month_bucket_count=month_bucket_count,
+        _week_stats=MappingProxyType(week_stats),
     )
 
 

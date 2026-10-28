@@ -720,6 +720,13 @@
           "absent_gap_type": "backup_not_configured"
         },
         {
+          "key": "recovery_point_days",
+          "value_kind": "text",
+          "source": "aws_recovery_points",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
           "key": "rightsizing_finding",
           "value_kind": "text",
           "source": "compute_optimizer",
@@ -799,6 +806,13 @@
           "source": "aws_backup",
           "projectable": false,
           "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "recovery_point_days",
+          "value_kind": "text",
+          "source": "aws_recovery_points",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
         }
       ]
     },
@@ -876,6 +890,13 @@
           "key": "backup_vault",
           "value_kind": "text",
           "source": "aws_backup",
+          "projectable": false,
+          "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "recovery_point_days",
+          "value_kind": "text",
+          "source": "aws_recovery_points",
           "projectable": false,
           "absent_gap_type": "backup_not_configured"
         }

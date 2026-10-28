@@ -361,7 +361,7 @@ class ScopeSpec(TypedDict):
 
 
 class _CollectRequestExtras(TypedDict, total=False):
-    """The one optional key a collect request may carry."""
+    """The optional keys a collect request may carry."""
 
     archive: bool
     """Whether this pass's responses belong in the run's raw archive. Defaults to `True`.
@@ -372,6 +372,10 @@ class _CollectRequestExtras(TypedDict, total=False):
     so a trend response in the archive is a June interval folded into August — see
     `collect/archive.py::ArchiveWriter.records` for what that cost.
     """
+
+    week_metrics_by_resource_type: dict[str, list[str]]
+    """The `(resource type, metric)` pairs to fold by local weekday and hour across the
+    fleet, for an hour-by-weekday heatmap. Absent or empty folds none."""
 
 
 class CollectRequest(_CollectRequestExtras):
@@ -511,6 +515,7 @@ class _CollectResultExtras(TypedDict, total=False):
     raw_archive: RawArchiveState
     locations: LocationRouting
     day_statistics: dict[str, dict[str, list[StatValue]]]
+    week_statistics: list[dict[str, PlainData]]
 
 
 class CollectResult(_CollectResultExtras):
@@ -539,6 +544,9 @@ class CollectResult(_CollectResultExtras):
       per-day fold should report no day values rather than an array of zeros, and because
       the day *geometry* comes from the run's window either way — a provider that omits
       this leaves every bucket present with an empty `statistics` array.
+    * `week_statistics` — the hour-by-weekday cells the request's
+      `week_metrics_by_resource_type` asked for, each `resource_type`, `weekday`, `hour`
+      and its `statistics` (`collect/snapshot.py::WeekBucket` as plain data).
 
     All three stay plain data (Req 18.3), so nothing about them widens what crosses this
     boundary; `assert_plain_data` covers them with no change.
@@ -822,7 +830,14 @@ class FactCollectingProvider(Protocol):
         ...
 
 
-class FactRequest(TypedDict):
+class _FactRequestExtras(TypedDict, total=False):
+    """The optional key a fact request may carry."""
+
+    timezone: str
+    """The run's IANA zone, for a fact that names local days (AWS's recovery-point days)."""
+
+
+class FactRequest(_FactRequestExtras):
     """What a fact pass needs, and nothing more.
 
     `inventory_pages` are the pages `discover` already returned, so the projectable facts cost

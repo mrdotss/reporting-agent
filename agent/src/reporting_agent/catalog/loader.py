@@ -175,7 +175,7 @@ satisfies a decimal grammar and is an operating-system version, while `10.0.0.4`
 version with a grouping separator."""
 
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "compute_optimizer"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "aws_recovery_points", "compute_optimizer"}
 )
 """Req 4.2's five sources, recorded from the request that produced the fact rather than
 derived from its key — so a fact's provenance is an observation about where it came from

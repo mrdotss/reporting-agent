@@ -42,7 +42,7 @@ from typing import Final
 
 from reporting_agent.catalog.loader import LoadedSectionCatalogue
 from reporting_agent.compile.ast import Block, Document, compiling_against
-from reporting_agent.compile.blocks import agent, charts, comparison, glance, layout, narrative, record, tables
+from reporting_agent.compile.blocks import agent, backup, charts, comparison, glance, layout, narrative, record, tables
 from reporting_agent.compile.blocks.base import (
     AgentOutcome,
     BlockContext,
@@ -123,6 +123,8 @@ EXPANSION_COMPILERS: Final[dict[str, BlockCompiler]] = {
     agent.AGENT_PARAGRAPH_BLOCK: agent.compile_agent_paragraph,
     agent.AGENT_RECORD_BLOCK: agent.compile_agent_record,
     charts.FLEET_MIX_BLOCK: charts.compile_fleet_mix,
+    charts.WEEK_HEATMAP_BLOCK: charts.compile_week_heatmap,
+    backup.BACKUP_TRACKER_BLOCK: backup.compile_backup_tracker,
 }
 """Block types only the v4 section expander produces. Not declared types: no definition
 names them, so neither validator has to admit them in a v1 or v2 `blocks` array."""

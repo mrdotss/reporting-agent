@@ -30,11 +30,13 @@ from typing import Any, Final
 from reporting_agent.aws.facts import (
     AWS_BACKUP_SOURCE,
     AWS_FACT_SOURCE,
+    AWS_RECOVERY_POINTS_SOURCE,
     COMPUTE_OPTIMIZER_SOURCE,
     backup_items,
     fact_items,
     instance_types_needed,
     optimizer_items,
+    recovery_point_items,
 )
 from reporting_agent.aws.metrics import DIMENSION_BY_TYPE, CloudWatchCollector
 from reporting_agent.catalog.loader import (
@@ -46,7 +48,7 @@ from reporting_agent.catalog.loader import (
 from reporting_agent.collect.accumulate import MetricAccumulator, new_accumulator
 from reporting_agent.collect.archive import ArchiveWriter
 from reporting_agent.collect.buckets import BASE_GRAIN, FALLBACK_GRAIN, resolve_timezone
-from reporting_agent.collect.dayfold import DayFold
+from reporting_agent.collect.dayfold import DayFold, week_declared, week_pairs
 from reporting_agent.collect.factfold import FACT_KIND_FACTS, fold_fact_response
 from reporting_agent.collect.finalize import finalize_resource
 from reporting_agent.collect.log import (
@@ -134,9 +136,9 @@ def _tags(raw: Iterable[Mapping[str, Any]] | None) -> dict[str, str]:
     return {str(tag["Key"]): str(tag.get("Value", "")) for tag in raw or () if tag.get("Key")}
 
 
-def _paged(client: Any, operation: str, key: str) -> list[dict[str, Any]]:
+def _paged(client: Any, operation: str, key: str, **kwargs: Any) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for page in client.get_paginator(operation).paginate():
+    for page in client.get_paginator(operation).paginate(**kwargs):
         items.extend(page.get(key, []))
     return items
 
@@ -538,6 +540,32 @@ class AwsProvider:
             )
             await fold(AWS_BACKUP_SOURCE, backed_up, body)
 
+            # The days each protected resource has a recovery point on, for the backup
+            # tracker. Asked only of what AWS Backup protects: for anything else the answer
+            # is already `backup_not_configured`, and asking would cost a call per resource.
+            listed = set() if body is None else {
+                str(entry.get("ResourceArn")) for answer in answers for entry in answer["Results"]
+            }
+            protected = [rid for rid in backed_up if rid in listed]
+            if protected:
+                points = await asyncio.gather(
+                    *(
+                        self._optional_call(
+                            "backup", location[rid], "list_recovery_points_by_resource",
+                            paged="RecoveryPoints", ResourceArn=rid,
+                        )
+                        for rid in protected
+                    )
+                )
+                tz = resolve_timezone(request.get("timezone") or "UTC")
+                body = (
+                    None if any(answer is None for answer in points)
+                    else {"value": recovery_point_items(
+                        {rid: answer["RecoveryPoints"] for rid, answer in zip(protected, points, strict=True)}, tz
+                    )}
+                )
+                await fold(AWS_RECOVERY_POINTS_SOURCE, protected, body)
+
         instances = [rid for rid in resource_ids if types_by_id[rid] == TYPE_INSTANCE]
         if instances:
             answers = await asyncio.gather(
@@ -577,7 +605,7 @@ class AwsProvider:
         def call() -> dict[str, Any]:
             client = self.clients(service, region)
             if paged:
-                return {paged: _paged(client, operation, paged)}
+                return {paged: _paged(client, operation, paged, **kwargs)}
             return getattr(client, operation)(**kwargs)
 
         try:
@@ -598,7 +626,11 @@ class AwsProvider:
         grain = request["grain"]
         window = dict(request["window"])
         metrics_by_type = request["metrics_by_resource_type"]
-        day_fold = DayFold(tz=resolve_timezone(request["timezone"]))
+        week_metrics = request.get("week_metrics_by_resource_type") or {}
+        day_fold = DayFold(
+            tz=resolve_timezone(request["timezone"]),
+            week=week_pairs(request["resources"], week_metrics),
+        )
         archive = self.archive if request.get("archive", True) is not False else ArchiveWriter(
             store=self.object_store, records=False
         )
@@ -642,6 +674,10 @@ class AwsProvider:
             statistics=statistics,
             gaps=gaps,
             day_statistics=day_statistics,
+            week_statistics=[
+                bucket.to_plain_data()
+                for bucket in day_fold.week_buckets(declared=week_declared(self.catalog, week_metrics), grain=grain)
+            ],
             sku_capacities={},
             raw_archive=RawArchiveState(complete=not archive.archive_incomplete, object_count=archive.object_count),
             locations=LocationRouting(requested=sorted({region for region, _ in groups}), unreachable=sorted(unreachable)),

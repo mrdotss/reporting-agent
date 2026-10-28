@@ -52,13 +52,16 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
-from reporting_agent.catalog.loader import DECLARED_AGGREGATIONS, MetricEntry
+from reporting_agent.catalog.loader import DECLARED_AGGREGATIONS, LoadedCatalog, MetricEntry
 from reporting_agent.collect.accumulate import MetricAccumulator
-from reporting_agent.collect.buckets import TzInfo, local_day
-from reporting_agent.collect.snapshot import StatisticEntry, exact_statistics
-from reporting_agent.providers.base import PlainData
+from reporting_agent.collect.buckets import TzInfo, local_day, local_hour_of_week
+from reporting_agent.collect.snapshot import StatisticEntry, WeekBucket, exact_statistics
+from reporting_agent.providers.base import PlainData, ResourceRecord, is_excluded_from_averages
 
-__all__ = ["DayFold"]
+__all__ = ["WEEK_FIDELITY_TIER", "DayFold", "week_declared", "week_pairs"]
+
+WEEK_FIDELITY_TIER = "baseline"
+"""The tier every hour-by-weekday cell carries; see :meth:`DayFold.week_buckets`."""
 
 
 @dataclass(slots=True)
@@ -93,7 +96,16 @@ class DayFold:
 
     tz: TzInfo
     excluded: frozenset[str] = frozenset()
+    week: Mapping[str, tuple[str, frozenset[str]]] = field(default_factory=dict)
+    """The hour-by-weekday fold's pairs: resource id -> its type and the metrics to fold.
+
+    Empty unless a profile asked for a heatmap by hour (:func:`week_pairs` builds it from
+    the request). Each cell folds **across the type's resources**, so it is keyed by type,
+    not resource — see `collect/snapshot.py::WeekBucket` on why."""
     _by_day: dict[tuple[str, str, date], MetricAccumulator] = field(
+        default_factory=dict, repr=False
+    )
+    _by_hour: dict[tuple[str, str, int, int], MetricAccumulator] = field(
         default_factory=dict, repr=False
     )
 
@@ -130,9 +142,10 @@ class DayFold:
         if resource_id in self.excluded:
             return
 
-        day = self._day_of(timestamp)
-        if day is None:
+        instant = self._instant_of(timestamp)
+        if instant is None:
             return
+        day = local_day(instant, self.tz)
 
         key = (resource_id, metric, day)
         accumulator = self._by_day.get(key)
@@ -152,21 +165,38 @@ class DayFold:
             metric=metric,
         )
 
-    def _day_of(self, timestamp: object) -> date | None:
-        """The run-local day an interval's **start** instant falls in (Req 25.3, 25.10).
+        pair = self.week.get(resource_id)
+        if pair is None or metric not in pair[1]:
+            return
+        weekday, hour = local_hour_of_week(instant, self.tz)
+        cell = (pair[0], metric, weekday, hour)
+        week_accumulator = self._by_hour.get(cell)
+        if week_accumulator is None:
+            week_accumulator = MetricAccumulator(sketch=None, aggregations=aggregations)
+            self._by_hour[cell] = week_accumulator
+        week_accumulator.fold_interval(
+            total=total,
+            count=count,
+            minimum=minimum,
+            maximum=maximum,
+            resource_id=resource_id,
+            metric=metric,
+        )
 
-        Through `collect/buckets.py#local_day`, so the assignment here and the window's
-        day geometry cannot disagree about which day an hour belongs to — the one
+    def _instant_of(self, timestamp: object) -> datetime | None:
+        """An interval's **start** instant (Req 25.3, 25.10), for its local day and hour.
+
+        Placed through `collect/buckets.py#local_day`, so the assignment here and the
+        window's day geometry cannot disagree about which day an hour belongs to — the one
         disagreement that would put a figure under the wrong date while every total stayed
         correct.
         """
         if not isinstance(timestamp, str) or not timestamp:
             return None
         try:
-            instant = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            return datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return local_day(instant, self.tz)
 
     # --- finalizing ------------------------------------------------------------------
 
@@ -240,6 +270,36 @@ class DayFold:
             )
         return tuple(entries)
 
+    def week_buckets(
+        self,
+        *,
+        declared: Mapping[str, Mapping[str, MetricEntry]],
+        grain: str,
+    ) -> tuple[WeekBucket, ...]:
+        """Every hour-by-weekday cell that folded a value, finalized. **Only** those: a cell
+        nobody reported in is absent rather than zero, as a day is.
+
+        `declared` is resource type -> metric name -> entry. Every cell is at the baseline
+        tier: it folds platform metrics only, across resources whose own tiers may differ,
+        so no one resource's tier describes it.
+        """
+        cells: dict[tuple[str, int, int], list[StatisticEntry]] = {}
+        for (resource_type, metric_name, weekday, hour), accumulator in sorted(self._by_hour.items()):
+            metric = declared.get(resource_type, {}).get(metric_name)
+            if metric is None:
+                continue
+            result, _ = accumulator.finalize(resource_type, metric_name)
+            if result is None:  # as for a day: the window fold recorded any gap already
+                continue
+            cells.setdefault((resource_type, weekday, hour), []).extend(
+                exact_statistics(result, metric=metric, fidelity_tier=WEEK_FIDELITY_TIER, grain=grain)
+            )
+        return tuple(
+            WeekBucket(resource_type=key[0], weekday=key[1], hour=key[2], statistics=tuple(entries))
+            for key, entries in sorted(cells.items())
+            if entries
+        )
+
     # --- inspection ------------------------------------------------------------------
 
     def __len__(self) -> int:
@@ -254,3 +314,40 @@ class DayFold:
         """One cell's accumulated total, for tests that assert the fold's arithmetic."""
         accumulator = self._by_day.get((resource_id, metric, day))
         return None if accumulator is None else accumulator.total
+
+
+def week_pairs(
+    resources: Sequence[ResourceRecord],
+    metrics_by_resource_type: Mapping[str, Sequence[str]],
+) -> dict[str, tuple[str, frozenset[str]]]:
+    """:attr:`DayFold.week` for one run: each resource of a type the request names, with
+    that type's metrics. Types compare case-insensitively, as everywhere a type is matched.
+
+    A stopped or deallocated machine is left out (`is_excluded_from_averages`), as the
+    window's averages leave it out: a fleet's 3 a.m. mean is the running machines' mean.
+    Read off the records alone, so a replay builds the same pairs from the stored ones.
+    """
+    wanted = {
+        resource_type.casefold(): (resource_type, frozenset(metrics))
+        for resource_type, metrics in metrics_by_resource_type.items()
+        if metrics
+    }
+    pairs: dict[str, tuple[str, frozenset[str]]] = {}
+    for resource in resources:
+        match = wanted.get(resource["resource_type"].casefold())
+        if match is not None and not is_excluded_from_averages(resource):
+            pairs[resource["resource_id"]] = match
+    return pairs
+
+
+def week_declared(
+    catalog: LoadedCatalog, metrics_by_resource_type: Mapping[str, Sequence[str]]
+) -> dict[str, dict[str, MetricEntry]]:
+    """:meth:`DayFold.week_buckets`' `declared` for the requested types, from the catalog the
+    window fold reads, so a cell and a window value finalize one metric on one entry."""
+    declared: dict[str, dict[str, MetricEntry]] = {}
+    for resource_type in metrics_by_resource_type:
+        entry = catalog.for_resource_type(resource_type)
+        if entry is not None:
+            declared[resource_type] = {metric.name: metric for metric in entry.metrics}
+    return declared

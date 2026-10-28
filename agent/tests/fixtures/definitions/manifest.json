@@ -1565,6 +1565,31 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-time-charts.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "9020658ae2b3bfaf472ce2b7f67ec4c5e167e1deb9f8a24bdf72a3e97e30ab0f",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-time-chart-without-metrics.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "a23a34ffb94dfa1eb35208dd9831939e725b90ab8e81d20c853117f4c10f0d81",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "sections",
+            2,
+            "blocks",
+            2,
+            "kind"
+          ]
+        }
+      ]
     }
   ]
 }

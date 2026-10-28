@@ -97,6 +97,64 @@ export function BlockDrawing({ kind }: Readonly<{ kind: AddedKind }>) {
             />
           ))
         )}
+      {kind === "small_multiples" &&
+        [0, 1].map((row) =>
+          [0, 1, 2, 3].map((panel) => (
+            <g key={`${row}-${panel}`}>
+              <rect x={4 + panel * 23} y={3 + row * 18} width="21" height="16" rx="2" fill={INK} opacity="0.08" />
+              <polyline
+                points={[0, 1, 2, 3, 4]
+                  .map((step) => `${6 + panel * 23 + step * 4},${15 + row * 18 - (((panel + row * 2 + step * 3) % 4) * 2.5)}`)
+                  .join(" ")}
+                fill="none"
+                stroke={INK}
+                strokeWidth="1.2"
+                opacity="0.8"
+              />
+            </g>
+          ))
+        )}
+      {kind === "annotated_line" && (
+        <>
+          <line x1="4" y1="12" x2="92" y2="12" stroke={INK} strokeDasharray="3 2" opacity="0.45" />
+          <polyline points="4,30 16,27 28,29 40,14 52,26 64,24 76,28 92,25" fill="none" stroke={INK} strokeWidth="1.5" opacity="0.85" />
+          <polyline points="4,34 16,33 28,32 40,31 52,33 64,30 76,32 92,31" fill="none" stroke={INK} strokeWidth="1.2" opacity="0.35" />
+          <line x1="40" y1="5" x2="40" y2="36" stroke={INK} opacity="0.6" />
+          <rect x="42" y="4" width="18" height="4" rx="1" fill={INK} opacity="0.5" />
+        </>
+      )}
+      {kind === "backup_tracker" &&
+        [0, 1, 2, 3].map((row) => (
+          <g key={row}>
+            <rect x="4" y={4 + row * 9} width="14" height="4" rx="1" fill={INK} opacity="0.25" />
+            {Array.from({ length: 14 }, (_, day) => (
+              <circle
+                key={day}
+                cx={24 + day * 4.6}
+                cy={6 + row * 9}
+                r="1.7"
+                fill={INK}
+                // A missed day or two in a row, the pattern the strip exists to show.
+                opacity={(row === 1 && day > 8 && day < 11) || (row === 3 && day === 4) ? 0.15 : 0.85}
+              />
+            ))}
+          </g>
+        ))}
+      {kind === "week_heatmap" &&
+        [0, 1, 2, 3, 4, 5, 6].map((row) =>
+          Array.from({ length: 16 }, (_, cell) => (
+            <rect
+              key={`${row}-${cell}`}
+              x={4 + cell * 5.5}
+              y={3 + row * 5}
+              width="5"
+              height="4.4"
+              fill={INK}
+              // Busier in weekday working hours, which is the pattern the block exists to show.
+              opacity={row < 5 && cell > 4 && cell < 12 ? 0.75 : 0.12}
+            />
+          ))
+        )}
       {kind === "sparklines" &&
         [0, 1, 2].map((row) => (
           <g key={row}>

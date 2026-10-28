@@ -448,6 +448,10 @@ export const SECTION_BLOCK_KINDS = [
   "bar_list",
   "utilization_bullet",
   "fleet_mix",
+  "small_multiples",
+  "annotated_line",
+  "week_heatmap",
+  "backup_tracker",
 ] as const
 export const METRIC_BLOCK_KINDS = [
   "key_figures",
@@ -459,6 +463,9 @@ export const METRIC_BLOCK_KINDS = [
   "kpi_tiles",
   "bar_list",
   "utilization_bullet",
+  "small_multiples",
+  "annotated_line",
+  "week_heatmap",
 ] as const
 
 /**

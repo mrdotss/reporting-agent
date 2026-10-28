@@ -85,6 +85,21 @@ export function DataNote({
         lines.push(METRIC_SOURCE[provider])
         lines.push("Every cell and point is a day's value for one resource, each a figure traced to its snapshot path.")
         break
+      case "small_multiples":
+      case "annotated_line":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push("Every point is a day's value for one resource, each a figure traced to its snapshot path.")
+        if (added === "annotated_line") {
+          lines.push("Incident markers are your own words from the run form, drawn on their days. They print no number of their own.")
+        }
+        break
+      case "week_heatmap":
+        lines.push(METRIC_SOURCE[provider])
+        lines.push(
+          "Each cell is folded when the report runs: every interval any running resource of the type reported in that hour of that weekday. It is a figure in the snapshot, re-derived by the replay check."
+        )
+        lines.push("The cells cover the whole type the report collected, so a narrower section scope does not narrow them, and the chart says so.")
+        break
       case "bar_list":
       case "utilization_bullet":
         lines.push(METRIC_SOURCE[provider])
@@ -101,6 +116,14 @@ export function DataNote({
         lines.push(
           "Every count is of all resources of that type the report collected, so it re-derives from the snapshot. A narrower section scope does not narrow it, and the chart says so."
         )
+        break
+      case "backup_tracker":
+        lines.push(
+          provider === "aws"
+            ? "Facts from AWS Backup: every recovery point each protected resource has, by day in the report's time zone."
+            : "Facts from Recovery Services: each protected machine's last backup status and last restore point."
+        )
+        lines.push("It prints no number. Each mark is read from the collected value printed beside it.")
         break
       case "page_break":
         lines.push("A page break carries no figure.")
