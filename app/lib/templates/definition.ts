@@ -444,6 +444,10 @@ export const SECTION_BLOCK_KINDS = [
   "sparklines",
   "avg_vs_peak",
   "agent",
+  "kpi_tiles",
+  "bar_list",
+  "utilization_bullet",
+  "fleet_mix",
 ] as const
 export const METRIC_BLOCK_KINDS = [
   "key_figures",
@@ -452,6 +456,9 @@ export const METRIC_BLOCK_KINDS = [
   "heatmap",
   "sparklines",
   "avg_vs_peak",
+  "kpi_tiles",
+  "bar_list",
+  "utilization_bullet",
 ] as const
 
 /**

@@ -475,9 +475,11 @@ class _Emitter:
         # A table's own header look, where it leaves the design's; the stylesheet styles the
         # design's for every other table.
         header = f' data-header="{html.escape(node.header_look, quote=True)}"' if node.header_look else ""
+        # A table set as tiles keeps its markup: the stylesheet lays its rows out as cards.
+        look = f' data-look="{html.escape(node.look, quote=True)}"' if node.look else ""
         self.write(
             f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
-            f'{header} data-path="{html.escape(str(node.path), quote=True)}">{caption}'
+            f'{header}{look} data-path="{html.escape(str(node.path), quote=True)}">{caption}'
             f"{_colgroup(node)}{''.join(rows)}</table>"
         )
 
@@ -505,6 +507,9 @@ class _Emitter:
 
             cell = row.cells[ordinal]
             attribute = f' data-column-key="{html.escape(column.key, quote=True)}"'
+            if node.look:
+                # A tile names its own parts, since its header row is not shown.
+                attribute += f' data-label="{html.escape(column.header, quote=True)}"'
             if isinstance(cell, FigureCell):
                 mark = ' data-mark="at-or-above"' if self._marked(cell.figure, node) else ""
                 cells.append(f"<td{attribute}{mark}>{self.figure(cell.figure)}</td>")

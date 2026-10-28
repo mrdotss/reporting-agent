@@ -70,7 +70,13 @@ from reporting_agent.compile.messages import Messages
 from reporting_agent.compile.snapshot_view import ResourceView, SnapshotValue, SnapshotView
 from reporting_agent.errors import CompileFailedError
 
-__all__ = ["compile_distribution_chart", "compile_historical_trend", "compile_timeseries_chart"]
+__all__ = [
+    "FLEET_MIX_BLOCK",
+    "compile_distribution_chart",
+    "compile_fleet_mix",
+    "compile_historical_trend",
+    "compile_timeseries_chart",
+]
 
 ENCODING_CATEGORICAL = "categorical"
 ENCODING_SEQUENTIAL = "sequential"
@@ -535,6 +541,18 @@ from its average to its peak, drawn as a dumbbell."""
 
 AVG_VS_PEAK_ROWS: int = 12
 
+BAR_LIST_LAYOUT: str = "bar_list"
+"""A distribution chart's config `layout` for a v4 `bar_list` block: the section's ranking
+metric, one labelled bar per resource, in the section's ranking order."""
+
+BAR_LIST_ROWS: int = 10
+
+BULLET_LAYOUT: str = "bullet"
+"""A distribution chart's config `layout` for a v4 `utilization_bullet` block: one row per
+resource with its average, its estimated P95 and a tick at its peak."""
+
+BULLET_ROWS: int = 12
+
 
 def compile_distribution_chart(
     context: BlockContext, block: BlockSpec, cursor: BlockCursor
@@ -555,8 +573,13 @@ def compile_distribution_chart(
     matched = context.resources_for(block)
     caption = caption_of(block)
 
-    if block.config.get("layout") == AVG_VS_PEAK_LAYOUT and len(refs) >= 2:
+    layout = block.config.get("layout")
+    if layout == AVG_VS_PEAK_LAYOUT and len(refs) >= 2:
         return _avg_vs_peak(context, block, cursor, refs[0], refs[1], matched, caption)
+    if layout == BULLET_LAYOUT and len(refs) >= 3:
+        return _bullet(context, block, cursor, refs[0], refs[1], refs[2], matched, caption)
+    if layout == BAR_LIST_LAYOUT:
+        return _bar_list(context, block, cursor, ref, matched, caption)
 
     # Req 3.7, ahead of the metric lookup. Without this guard the two outcomes below
     # collapse into one, and an empty scope would be reported as missing data — the same
@@ -662,6 +685,186 @@ def _avg_vs_peak(
         encoding=ENCODING_SEQUENTIAL,
         series=series,
         caption=caption,
+        panels=(tuple(entry.key for entry in series),),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
+
+
+def _bar_list(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    ref: MetricRef,
+    matched: Sequence[ResourceView],
+    caption: str | None,
+) -> BlockOutput:
+    """One bar per resource for the ranking metric, in the order the section ranks them.
+
+    The scope already holds the ranking — the section's own top-N, or the top ten by this
+    metric — so the bars keep its order rather than sorting again: a lowest-first ranking
+    stays lowest first. A resource without the figure is left out, never drawn as zero.
+    """
+    chart_cursor = cursor.child("nodes", 0)
+    if not matched:
+        return BlockOutput(nodes=(empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    measured = [
+        (resource, value)
+        for resource in matched
+        if (value := resolve_stat(context.view, resource, ref)) is not None
+    ][:BAR_LIST_ROWS]
+    if not measured:
+        return BlockOutput(nodes=(no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    series_cursor = chart_cursor.child("series", 0)
+    points = tuple(
+        _point(series_cursor.child("points", position), context, resource.name, value)
+        for position, (resource, value) in enumerate(measured)
+    )
+    series = (Series(path=series_cursor.path, key=ref.key, label=ref.label, points=points),)
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="bar_list",
+        title=caption or context.messages.text("doc.chart.title.bar_list", metric=ref.label),
+        unit=measured[0][1].unit,
+        encoding=ENCODING_SEQUENTIAL,
+        series=series,
+        caption=caption,
+        panels=panel_groups(series),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
+
+
+def _bullet(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    average: MetricRef,
+    p95: MetricRef,
+    peak: MetricRef,
+    matched: Sequence[ResourceView],
+    caption: str | None,
+) -> BlockOutput:
+    """Each resource's average, estimated P95 and peak of one metric, busiest by peak first.
+
+    Three series over the same resources, every point a figure. The average and the peak are
+    required, as on Average and peak; the P95 is the estimated one the metric summary prints,
+    and a resource without it keeps its row with that bar left out.
+    """
+    chart_cursor = cursor.child("nodes", 0)
+    if not matched:
+        return BlockOutput(nodes=(empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    rows: list[tuple[Decimal, str, ResourceView, SnapshotValue, SnapshotValue | None, SnapshotValue]] = []
+    for resource in matched:
+        low = resolve_stat(context.view, resource, average)
+        high = resolve_stat(context.view, resource, peak)
+        if low is not None and high is not None:
+            rows.append((high.value, resource.resource_id, resource, low, resolve_stat(context.view, resource, p95), high))
+    if not rows:
+        return BlockOutput(nodes=(no_data_table(chart_cursor, context.design.table_style_name, caption, messages=context.messages),))
+    rows.sort(key=lambda entry: (-entry[0], entry[1]))
+    rows = rows[:BULLET_ROWS]
+
+    messages = context.messages
+    series_list: list[Series] = []
+    for ordinal, (ref, label_id, pick) in enumerate(
+        (
+            (average, "doc.chart.series.average", 3),
+            (p95, "doc.chart.series.p95", 4),
+            (peak, "doc.chart.series.peak", 5),
+        )
+    ):
+        series_cursor = chart_cursor.child("series", ordinal)
+        present = [row for row in rows if row[pick] is not None]
+        points = tuple(
+            _point(series_cursor.child("points", position), context, row[2].name, row[pick])  # type: ignore[arg-type]
+            for position, row in enumerate(present)
+        )
+        series_list.append(Series(path=series_cursor.path, key=ref.key, label=messages.text(label_id), points=points))
+    series = tuple(series_list)
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="bullet",
+        title=caption or messages.text("doc.chart.title.bullet", metric=average.name),
+        unit=rows[0][3].unit,
+        encoding=ENCODING_SEQUENTIAL,
+        series=series,
+        caption=caption,
+        panels=(tuple(entry.key for entry in series),),
+    )
+    cursor.anchor_chart(chart_cursor.path)
+    return BlockOutput(nodes=(chart,))
+
+
+FLEET_MIX_BLOCK: str = "fleet_mix"
+"""The block a v4 `fleet_mix` entry expands to. Not a declared type: only the section expander
+produces it, from a block the author added."""
+
+FLEET_MIX_TYPE_LABELS: dict[str, str] = {
+    "aws::ec2::instance": "doc.mix.type.ec2",
+    "aws::rds::dbinstance": "doc.mix.type.rds",
+    "microsoft.compute/virtualmachines": "doc.mix.type.vm",
+}
+
+
+def compile_fleet_mix(context: BlockContext, block: BlockSpec, cursor: BlockCursor) -> BlockOutput:
+    """How a section's machines or databases split: running by size family, and stopped.
+
+    One bar per resource type the section holds, one part per segment, each part a count the
+    snapshot view derived (`/$counts/resource_type/by_name/<type>/mix/<segment>/count`). The
+    counts are of every resource of that type the report collected — a count of the section's
+    own narrower scope would have no address to verify — and the chart's note says so. A
+    segment holding none is left out of its bar.
+    """
+    from reporting_agent.compile.snapshot_view import FLEET_MIX_SEGMENTS, FLEET_MIX_TYPES
+
+    chart_cursor = cursor.child("nodes", 0)
+    caption = caption_of(block)
+    messages = context.messages
+    matched = context.resources_for(block)
+    types = sorted(
+        {resource.resource_type for resource in matched if resource.resource_type.casefold() in FLEET_MIX_TYPES},
+        key=str.casefold,
+    )
+    if not types:
+        return BlockOutput(nodes=(empty_scope_table(chart_cursor, context.design.table_style_name, caption, messages=messages),))
+
+    azure = any(resource_type.casefold().startswith("microsoft.") for resource_type in types)
+    series: list[Series] = []
+    for segment in FLEET_MIX_SEGMENTS:
+        counted = [
+            (resource_type, value)
+            for resource_type in types
+            if (value := context.view.cardinality("resource_type", "by_name", resource_type, "mix", segment)) is not None
+            and value.value > 0
+        ]
+        if not counted:
+            continue
+        series_cursor = chart_cursor.child("series", len(series))
+        label_id = "doc.mix.deallocated" if segment == "stopped" and azure else f"doc.mix.{segment}"
+        points = tuple(
+            _point(
+                series_cursor.child("points", position),
+                context,
+                messages.text(FLEET_MIX_TYPE_LABELS.get(resource_type.casefold(), "doc.mix.type.other")),
+                value,
+            )
+            for position, (resource_type, value) in enumerate(counted)
+        )
+        series.append(Series(path=series_cursor.path, key=segment, label=messages.text(label_id), points=points))
+    if not series:
+        return BlockOutput(nodes=(no_data_table(chart_cursor, context.design.table_style_name, caption, messages=messages),))
+
+    chart = Chart(
+        path=chart_cursor.path,
+        chart_type="mix",
+        title=caption or messages.text("doc.chart.title.fleet_mix"),
+        unit="count",
+        # The parts are peers: a compute machine is not "more" than a burstable one.
+        encoding=ENCODING_CATEGORICAL,
+        series=tuple(series),
+        caption=caption,
+        period_label=messages.text("doc.chart.note.fleet_mix"),
         panels=(tuple(entry.key for entry in series),),
     )
     cursor.anchor_chart(chart_cursor.path)

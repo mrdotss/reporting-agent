@@ -27,6 +27,7 @@ import {
   type SlotEntry,
 } from "@/lib/builder/model"
 import { readsMetrics } from "@/lib/builder/fit"
+import { FLEET_MIX_SEGMENTS, fleetMix } from "@/lib/builder/fleet-mix"
 import type { AgentTry } from "@/lib/builder/store"
 import {
   byFigure,
@@ -386,6 +387,124 @@ function SampleChart({
   const inBrowser = useSyncExternalStore(subscribeNever, () => true, () => false)
   if (!inBrowser) return <div aria-hidden style={{ aspectRatio: "640 / 190", width: "100%" }} />
   return <div dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+/**
+ * A chart of one row per category — a bar list, a bullet, a fleet mix — from the spec the
+ * runtime sends the same renderer (`render/echarts.py::_row_chart_spec`): its colours, its
+ * row heights and its scale.
+ */
+function RowChart({
+  design,
+  title,
+  type,
+  categories,
+  series,
+  unit,
+}: Readonly<{
+  design: PageDesign
+  /** Drawn inside the chart, as the runtime draws a chart's title; the caption goes below. */
+  title: string
+  type: "bar_list" | "bullet" | "mix"
+  categories: readonly string[]
+  series: readonly { key: string; label: string; values: readonly (number | null)[]; labels: readonly (string | null)[] }[]
+  unit: SampleUnit | "count"
+}>) {
+  const { spec, chartFace, look } = design
+  const prefix = `builder${useId().replace(/[^a-zA-Z0-9]/g, "")}`
+  const threshold = look.chartThreshold
+  const svg = useMemo(() => {
+    const all = series.flatMap((s) => s.values.filter((v): v is number => v !== null))
+    const top = Math.max(0, ...all)
+    const max =
+      type === "mix" ? 1 : unit === "percent" && top > 1 && top <= 100 ? 100 : top > 0 ? niceCeiling(top * 1.1) : 1
+    const color = (key: string, index: number) =>
+      type === "bullet"
+        ? [spec.accent, tint(spec.accent, 0.6), spec.accent][Math.min(index, 2)]!
+        : type === "mix"
+          ? key === "stopped"
+            ? "#6F747C"
+            : key === "other"
+              ? "#B5B8BD"
+              : tint(spec.accent, [0, 0.32, 0.5, 0.64, 0.75, 0.83][Math.min(index, 5)]!)
+          : spec.accent
+    const rows = categories.length
+    const height = { bar_list: 56 + 28 * rows, bullet: 84 + 30 * rows, mix: 70 + 58 * rows }[type]
+    const chartSpec: ReportChartSpec = {
+      ...(type === "bullet" && threshold !== null && unit === "percent"
+        ? { threshold, thresholdLabel: t("doc.chart.threshold", "en", "Threshold") }
+        : {}),
+      style: type,
+      type,
+      width: 640,
+      height: Math.min(1100, height),
+      font: chartFace.split(",")[0]!.replaceAll('"', ""),
+      ink: spec.ink,
+      muted: spec.muted,
+      rule: spec.rule,
+      emptyLabel: "",
+      categories: [...categories],
+      panels: [{ label: title, unit, min: 0, max }],
+      series: series.map((s, index) => ({
+        key: s.key,
+        label: s.label,
+        last: s.labels.at(-1) ?? "",
+        panel: 0,
+        color: color(s.key, index),
+        dashed: false,
+        values: s.values.map((v) => (v === null ? null : String(v))),
+        pointLabels: [...s.labels],
+      })),
+    }
+    return renderSVG(chartSpec, false, init)
+      .replace(/zr\d+/g, prefix)
+      .replace(/<svg /, '<svg style="width:100%;height:auto;display:block" ')
+  }, [categories, chartFace, prefix, series, spec.accent, spec.ink, spec.muted, spec.rule, threshold, title, type, unit])
+  const inBrowser = useSyncExternalStore(subscribeNever, () => true, () => false)
+  if (!inBrowser) return <div aria-hidden style={{ aspectRatio: "640 / 160", width: "100%" }} />
+  return <div dangerouslySetInnerHTML={{ __html: svg }} />
+}
+
+/** The runtime's scale for a row chart: one significant step above the value. */
+function niceCeiling(value: number): number {
+  const step = 10 ** Math.floor(Math.log10(value))
+  return Math.ceil(value / step) * step
+}
+
+/**
+ * Key figures as tiles, the way `printcss._TILES_CSS` sets them: the figure large in the
+ * accent, then what it is, who reached it and the previous report's figure with a direction.
+ */
+function KpiTiles({
+  design,
+  tiles,
+}: Readonly<{
+  design: PageDesign
+  tiles: readonly { value: string; metric: string; basis: string; resource: string; previous: string | null; previousLabel: string; direction: string }[]
+}>) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 6 }}>
+      {tiles.map((tile) => (
+        <div
+          key={tile.metric}
+          style={{ border: `0.5pt solid ${design.spec.rule}`, borderRadius: 4, padding: "6px 8px", display: "flex", flexDirection: "column" }}
+        >
+          <span style={{ fontSize: "2em", fontWeight: 700, color: design.spec.accent, lineHeight: 1.15, fontVariantNumeric: "tabular-nums" }}>
+            {tile.value}
+          </span>
+          <span style={{ fontWeight: 700 }}>{tile.metric}</span>
+          <span style={{ color: design.spec.muted, fontSize: "0.9em" }}>{tile.basis}</span>
+          <span style={{ color: design.spec.muted, fontSize: "0.9em" }}>{tile.resource}</span>
+          {tile.previous !== null && (
+            <span style={{ color: design.spec.muted, fontSize: "0.9em" }}>
+              {tile.previousLabel} {tile.previous}
+            </span>
+          )}
+          <span style={{ marginTop: 4, fontWeight: 700 }}>{tile.direction}</span>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 function Narrative({ design, language, children }: Readonly<{ design: PageDesign; language: Language; children: ReactNode }>) {
@@ -827,6 +946,7 @@ function AgentParagraphView({
 // --- Blocks the author placed -----------------------------------------------------------
 
 export function AddedBlockView({
+  provider,
   design,
   language,
   section,
@@ -1014,6 +1134,132 @@ export function AddedBlockView({
             categories={byPeak.map((r) => r.name)}
             unit={sampleUnit(metric)}
           />
+        </div>
+      )
+    }
+    case "kpi_tiles": {
+      const items = (metrics.length ? metrics : [{ metric: "CPU", statistic: "avg" }]).slice(0, 4)
+      return (
+        <KpiTiles
+          design={design}
+          tiles={items.map((item, index) => {
+            const name = metricLabel(item)
+            const statistic = item.statistic === "max" ? "max" : "avg"
+            const lowest = item.statistic === "min"
+            const unit = sampleUnit(name)
+            const sorted = ranked(name, item.statistic).filter((r) => figureOf(r, name, statistic) !== null)
+            const pick = (lowest ? sorted.at(-1) : sorted[0]) ?? resources[0]!
+            const now = figureOf(pick, name, statistic)
+            // The previous report's figure: the month before on real figures, a sample's otherwise.
+            const months = pick.months?.[seriesKey(name, statistic)]
+            const before =
+              pick.months !== undefined
+                ? (months && months.length > 1 ? months.at(-2)!.value : null)
+                : now === null ? null : now * (index % 2 ? 0.93 : 0.88)
+            const direction =
+              before === null || now === null
+                ? t("doc.tiles.no_earlier_report", language, "No earlier report")
+                : before < now
+                  ? t("doc.comparison.direction.higher", language, "Higher")
+                  : before > now
+                    ? t("doc.comparison.direction.lower", language, "Lower")
+                    : t("doc.comparison.direction.same", language, "Same")
+            return {
+              value: formatFigure(now, unit),
+              metric: `${name} (${item.statistic})`,
+              basis: t(lowest ? "doc.basis.lowest_observed" : "doc.basis.highest_observed", language, lowest ? "lowest observed" : "highest observed"),
+              resource: pick.name,
+              previous: before === null ? null : formatSample(before, unit),
+              previousLabel: t("doc.table.previous_report", language, "Previous report"),
+              direction,
+            }
+          })}
+        />
+      )
+    }
+    case "bar_list": {
+      const statistic = firstStat === "max" ? "max" : "avg"
+      const unit = sampleUnit(firstName)
+      const rows = ranked(firstName, firstStat)
+        .filter((r) => figureOf(r, firstName, statistic) !== null)
+        .slice(0, section.selection?.top_n?.count ?? 10)
+      const values = rows.map((r) => figureOf(r, firstName, statistic))
+      return (
+        <div>
+          <RowChart
+            design={design}
+            title={t("doc.chart.title.bar_list", language, "By resource", { metric: `${firstName} (${firstStat})` })}
+            type="bar_list"
+            categories={rows.map((r) => r.name)}
+            series={[{ key: "value", label: firstName, values, labels: values.map((v) => formatFigure(v, unit)) }]}
+            unit={unit}
+          />
+          <Caption design={design}>
+            {t("doc.chart.title.bar_list", language, "By resource", { metric: `${firstName} (${firstStat})` })}
+          </Caption>
+        </div>
+      )
+    }
+    case "utilization_bullet": {
+      const metric = avgAndPeakMetric(section) ?? firstName
+      const unit = sampleUnit(metric)
+      const rows = ranked(metric, "max")
+        .filter((r) => periodFigures(r, metric).avg !== null && periodFigures(r, metric).peak !== null)
+        .slice(0, 12)
+      const figures = rows.map((r) => periodFigures(r, metric))
+      const part = (key: "avg" | "p95" | "peak", id: MessageId, fallback: string) => {
+        const values = figures.map((f) => f[key])
+        return { key, label: t(id, language, fallback), values, labels: values.map((v) => formatFigure(v, unit)) }
+      }
+      return (
+        <div>
+          <RowChart
+            design={design}
+            title={t("doc.chart.title.bullet", language, "Average, estimated P95 and peak by resource", { metric })}
+            type="bullet"
+            categories={rows.map((r) => r.name)}
+            series={[
+              part("avg", "doc.chart.series.average", "Average"),
+              part("p95", "doc.chart.series.p95", "P95 (est.)"),
+              part("peak", "doc.chart.series.peak", "Peak"),
+            ]}
+            unit={unit}
+          />
+          <Caption design={design}>
+            {t("doc.chart.title.bullet", language, "Average, estimated P95 and peak by resource", { metric })}
+          </Caption>
+        </div>
+      )
+    }
+    case "fleet_mix": {
+      const mix = fleetMix(resources, provider)
+      if (mix.length === 0) return <NoResources language={language} />
+      const typeLabel = (type: string): string => {
+        const key = type.toLowerCase()
+        return key === "aws::ec2::instance"
+          ? t("doc.mix.type.ec2", language, "EC2 instances")
+          : key === "aws::rds::dbinstance"
+            ? t("doc.mix.type.rds", language, "RDS databases")
+            : t("doc.mix.type.vm", language, "Virtual machines")
+      }
+      const segments = FLEET_MIX_SEGMENTS.filter((segment) => mix.some((row) => (row.counts[segment] ?? 0) > 0))
+      return (
+        <div>
+          <RowChart
+            design={design}
+            title={t("doc.chart.title.fleet_mix", language, "Fleet mix")}
+            type="mix"
+            categories={mix.map((row) => typeLabel(row.type))}
+            series={segments.map((segment) => {
+              const values = mix.map((row) => row.counts[segment] ?? null)
+              const label =
+                segment === "stopped" && provider === "azure" ? "doc.mix.deallocated" : (`doc.mix.${segment}` as MessageId)
+              return { key: segment, label: t(label, language, segment), values, labels: values.map((v) => (v === null ? null : String(v))) }
+            })}
+            unit="count"
+          />
+          <Caption design={design}>{t("doc.chart.title.fleet_mix", language, "Fleet mix")}</Caption>
+          <Caption design={design}>{t("doc.chart.note.fleet_mix", language, "")}</Caption>
         </div>
       )
     }

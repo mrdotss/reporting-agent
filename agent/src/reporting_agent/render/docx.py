@@ -79,6 +79,7 @@ from reporting_agent.compile.blocks.base import (
     NOTICE_STYLE,
     DesignSettings,
 )
+from reporting_agent.compile.blocks.tables import KPI_TILES_LAYOUT
 from reporting_agent.compile.figures import ANCHOR_CHART, ANCHOR_TABLE, FigureLedger
 from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import RenderFailedError
@@ -277,6 +278,25 @@ def _polish_data_table(table: DocxTable, design: DesignSettings, *, header: str 
                     # The Figure character style is essential to verification, but its
                     # body size must not override the table's smaller type scale.
                     run.font.size = Pt(spec.small_pt)
+
+
+def _emphasise_tile_values(table: DocxTable, node: Table, design: DesignSettings) -> None:
+    """KPI tiles in Word: the same data table the verifier resolves by header and row key,
+    with each tile's figure bold in the accent, as the reading copy's tile sets it. Weight
+    and colour only — the run and its style are untouched, and a larger size would wrap the
+    figure in a column measured at the table's own size."""
+    from reporting_agent.render.themes import accent_for
+
+    keys = [column.key for column in node.columns]
+    if "value" not in keys:
+        return
+    ordinal = keys.index("value")
+    accent = RGBColor.from_string(accent_for(design))
+    for row in table.rows[1:]:
+        for paragraph in row.cells[ordinal].paragraphs:
+            for run in paragraph.runs:
+                run.font.bold = True
+                run.font.color.rgb = accent
 
 
 MARK_FILL: Final[str] = "FDF1E2"
@@ -681,6 +701,8 @@ class _Emitter:
         # actually carries rather than from its declaration.
         _apply_column_widths(table, node, text_width=self.available_width(container))
         _polish_data_table(table, self.design, header=node.header_look)
+        if node.look == KPI_TILES_LAYOUT:
+            _emphasise_tile_values(table, node, self.design)
 
         if node.caption:
             caption = self._new_paragraph(container, self.style(CAPTION_STYLE, at=at))

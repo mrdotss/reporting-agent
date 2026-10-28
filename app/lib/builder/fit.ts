@@ -20,7 +20,27 @@ const READS_METRICS: ReadonlySet<AddedKind> = new Set([
   "heatmap",
   "sparklines",
   "avg_vs_peak",
+  "kpi_tiles",
+  "bar_list",
+  "utilization_bullet",
 ])
+
+/**
+ * The types a fleet mix counts (`compile/snapshot_view.py::FLEET_MIX_TYPES`): the machines and
+ * databases whose sizes name a family.
+ */
+const FLEET_MIX_TYPES: ReadonlySet<string> = new Set([
+  "aws::ec2::instance",
+  "aws::rds::dbinstance",
+  "microsoft.compute/virtualmachines",
+])
+
+function holdsFleetMixTypes(definition: DefinitionV4, section: SectionV4): boolean {
+  const types = section.selection?.resource_types?.length
+    ? section.selection.resource_types
+    : (sectionEntry(definition.provider, section.type)?.needsResourceTypes ?? [])
+  return types.some((type) => FLEET_MIX_TYPES.has(type.toLowerCase()))
+}
 
 export function readsMetrics(kind: AddedKind): boolean {
   return READS_METRICS.has(kind)
@@ -39,8 +59,11 @@ export function blockFit(
     return { ok: false, reason: "Reads metrics. This section reports none." }
   }
   // Average and peak draws one metric's two figures, so the section must collect both.
-  if (kind === "avg_vs_peak" && avgAndPeakMetric(section) === null) {
+  if ((kind === "avg_vs_peak" || kind === "utilization_bullet") && avgAndPeakMetric(section) === null) {
     return { ok: false, reason: "Needs a metric this section collects as both an average and a maximum." }
+  }
+  if (kind === "fleet_mix" && !holdsFleetMixTypes(definition, section)) {
+    return { ok: false, reason: "Counts machines and databases. This section holds neither." }
   }
   return { ok: true }
 }
@@ -52,10 +75,10 @@ export function blockFit(
  * is not placed here fails a test rather than disappearing from the gallery.
  */
 export const BLOCK_INTENTS: readonly { readonly label: string; readonly kinds: readonly AddedKind[] }[] = [
-  { label: "Show a number", kinds: ["key_figures", "avg_vs_peak"] },
-  { label: "Rank", kinds: ["top_list"] },
+  { label: "Show a number", kinds: ["key_figures", "kpi_tiles", "avg_vs_peak", "utilization_bullet"] },
+  { label: "Rank", kinds: ["top_list", "bar_list"] },
   { label: "Over time", kinds: ["heatmap", "sparklines"] },
-  { label: "Compare", kinds: ["month_vs_month"] },
+  { label: "Compare", kinds: ["month_vs_month", "fleet_mix"] },
   { label: "Status", kinds: ["coverage", "callout"] },
   { label: "Words", kinds: ["text", "agent"] },
   { label: "Layout", kinds: ["page_break"] },

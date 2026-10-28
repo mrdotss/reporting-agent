@@ -73,6 +73,10 @@ export type AddedKind =
   | "sparklines"
   | "avg_vs_peak"
   | "agent"
+  | "kpi_tiles"
+  | "bar_list"
+  | "utilization_bullet"
+  | "fleet_mix"
 
 export type CalloutCondition =
   | "peak_at_or_above"

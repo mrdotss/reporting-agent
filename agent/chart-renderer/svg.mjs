@@ -165,7 +165,7 @@ function dumbbellOptions(spec, compact) {
       max: panel.max,
       interval: (panel.max - panel.min) / 4,
       axisLabel: { fontSize: compact ? 8 : 10, color: spec.muted, fontFamily: spec.font, formatter: tick },
-      splitLine: { show: spec.gridLines !== "none", lineStyle: { color: spec.rule } },
+      splitLine: { show: spec.gridLines !== "none", lineStyle: { color: spec.rule, opacity: GRID_OPACITY } },
       axisLine: { show: false },
       axisTick: { show: false },
     },
@@ -214,12 +214,279 @@ function dumbbellOptions(spec, compact) {
   };
 }
 
+/** The title every row chart carries, top left, as the other charts set theirs. */
+function rowTitle(spec, panel, compact) {
+  return compact
+    ? []
+    : [
+        {
+          text: panel.label,
+          left: 8,
+          top: 3,
+          textStyle: { fontFamily: spec.font, fontSize: 12, fontWeight: 500, color: spec.ink },
+        },
+      ];
+}
+
+function emptyGraphic(spec, empty) {
+  return empty
+    ? [
+        {
+          type: "text",
+          left: "center",
+          top: "middle",
+          style: { text: spec.emptyLabel, fill: spec.muted, fontFamily: spec.font, fontSize: 12 },
+        },
+      ]
+    : [];
+}
+
+const rowAxis = (spec, compact) => ({
+  type: "category",
+  data: spec.categories,
+  inverse: true,
+  axisTick: { show: false },
+  axisLine: { show: false },
+  axisLabel: {
+    fontSize: compact ? 8 : 11,
+    color: spec.ink,
+    fontFamily: spec.font,
+    width: compact ? 62 : 150,
+    overflow: "truncate",
+  },
+});
+
+/**
+ * A bar list: one labelled bar per resource in the section's ranking order, on a pale track,
+ * the figure at the bar's end.
+ */
+function barListOptions(spec, compact) {
+  const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
+  const s = spec.series[0];
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    grid: { left: compact ? 70 : 170, right: compact ? 30 : 76, top: compact ? 6 : 34, bottom: compact ? 6 : 12 },
+    title: rowTitle(spec, panel, compact),
+    xAxis: { type: "value", min: 0, max: panel.max, show: false },
+    yAxis: rowAxis(spec, compact),
+    series: s
+      ? [
+          {
+            type: "bar",
+            data: s.values.map((v) => (v == null ? null : Number(v))),
+            barWidth: compact ? 7 : 12,
+            showBackground: true,
+            backgroundStyle: { color: "#F1F2F4", borderRadius: 6 },
+            itemStyle: { color: s.color, borderRadius: [0, 6, 6, 0] },
+            emphasis: { disabled: true },
+            animation: false,
+            label: {
+              show: !compact,
+              position: "right",
+              distance: 8,
+              formatter: (p) => s.pointLabels?.[p.dataIndex] ?? "",
+              fontFamily: spec.font,
+              fontSize: 11,
+              fontWeight: 600,
+              color: spec.ink,
+            },
+          },
+        ]
+      : [],
+    graphic: emptyGraphic(spec, !s || s.values.every((v) => v == null)),
+  };
+}
+
+/**
+ * A utilisation bullet per resource: the estimated P95 as a pale bar, the average as a dark
+ * bar inside it, a tick at the peak with its figure, and the design's threshold as a line.
+ */
+function bulletOptions(spec, compact) {
+  const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
+  const [avg, p95, peak] = spec.series;
+  const tick = (v) =>
+    panel.unit === "percent" ? `${Number(v.toPrecision(6))}%` : String(Number(v.toPrecision(6)));
+  const bar = (s, width, z) => ({
+    name: s.key,
+    type: "bar",
+    data: s.values.map((v) => (v == null ? null : Number(v))),
+    barWidth: width,
+    barGap: "-100%",
+    z,
+    itemStyle: { color: s.color, borderRadius: [0, 3, 3, 0] },
+    emphasis: { disabled: true },
+    animation: false,
+  });
+  const series = [];
+  if (p95) series.push(bar(p95, compact ? 9 : 16, 1));
+  if (avg) series.push(bar(avg, compact ? 4 : 6, 2));
+  if (peak)
+    series.push({
+      name: peak.key,
+      type: "scatter",
+      symbol: "rect",
+      symbolSize: compact ? [2, 12] : [3, 22],
+      z: 3,
+      itemStyle: { color: spec.ink },
+      emphasis: { disabled: true },
+      animation: false,
+      data: peak.values.map((v, i) => (v == null ? null : [Number(v), i])),
+      label: {
+        show: !compact,
+        position: "right",
+        distance: 6,
+        formatter: (p) => peak.pointLabels?.[p.dataIndex] ?? "",
+        fontFamily: spec.font,
+        fontSize: 10,
+        fontWeight: 600,
+        color: spec.ink,
+      },
+      ...(spec.threshold != null && panel.unit === "percent" && !compact
+        ? {
+            markLine: {
+              silent: true,
+              symbol: "none",
+              animation: false,
+              data: [{ xAxis: spec.threshold }],
+              lineStyle: { type: "dashed", color: "#B45309", width: 1.2 },
+              label: {
+                formatter: () => spec.thresholdLabel ?? "",
+                position: "end",
+                color: "#9A4507",
+                fontFamily: spec.font,
+                fontSize: 10,
+              },
+            },
+          }
+        : {}),
+    });
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    grid: { left: compact ? 70 : 170, right: compact ? 16 : 70, top: compact ? 8 : 48, bottom: compact ? 14 : 30 },
+    title: rowTitle(spec, panel, compact),
+    ...(compact
+      ? {}
+      : {
+          legend: {
+            top: 24,
+            left: 8,
+            icon: "roundRect",
+            itemGap: 16,
+            itemWidth: 12,
+            itemHeight: 6,
+            textStyle: { fontFamily: spec.font, fontSize: 10, color: spec.muted },
+            data: spec.series.map((s) => s.key),
+            formatter: (name) => spec.series.find((s) => s.key === name)?.label ?? name,
+          },
+        }),
+    xAxis: {
+      type: "value",
+      min: 0,
+      max: panel.max,
+      interval: panel.max / 4,
+      axisLabel: { fontSize: compact ? 8 : 10, color: spec.muted, fontFamily: spec.font, formatter: tick },
+      splitLine: { show: true, lineStyle: { color: spec.rule, opacity: GRID_OPACITY } },
+      axisLine: { show: false },
+      axisTick: { show: false },
+    },
+    yAxis: rowAxis(spec, compact),
+    series,
+    graphic: emptyGraphic(spec, spec.categories.length === 0),
+  };
+}
+
+/**
+ * A fleet mix: one bar per resource type, its parts side by side in proportion, each part
+ * labelled with its count. Widths are positions only — each part's share of its row.
+ */
+function mixOptions(spec, compact) {
+  const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
+  const totals = spec.categories.map((_, i) =>
+    spec.series.reduce((sum, s) => sum + (s.values[i] == null ? 0 : Number(s.values[i])), 0),
+  );
+  const last = spec.categories.map((_, i) => {
+    let at = -1;
+    spec.series.forEach((s, j) => {
+      if (s.values[i] != null) at = j;
+    });
+    return at;
+  });
+  const first = spec.categories.map((_, i) => spec.series.findIndex((s) => s.values[i] != null));
+  return {
+    animation: false,
+    backgroundColor: "#ffffff",
+    textStyle: { fontFamily: spec.font, color: spec.ink },
+    grid: { left: compact ? 60 : 130, right: compact ? 8 : 20, top: compact ? 6 : 34, bottom: compact ? 6 : 34 },
+    title: rowTitle(spec, panel, compact),
+    ...(compact
+      ? {}
+      : {
+          legend: {
+            bottom: 4,
+            left: 8,
+            icon: "roundRect",
+            itemGap: 16,
+            itemWidth: 12,
+            itemHeight: 8,
+            textStyle: { fontFamily: spec.font, fontSize: 10, color: spec.ink },
+            data: spec.series.map((s) => s.key),
+            formatter: (name) => spec.series.find((s) => s.key === name)?.label ?? name,
+          },
+        }),
+    xAxis: { type: "value", min: 0, max: 1, show: false },
+    yAxis: rowAxis(spec, compact),
+    series: spec.series.map((s, j) => ({
+      name: s.key,
+      type: "bar",
+      stack: "mix",
+      barWidth: compact ? 12 : 24,
+      data: s.values.map((v, i) =>
+        v == null || !totals[i]
+          ? null
+          : {
+              value: Number(v) / totals[i],
+              itemStyle: {
+                color: s.color,
+                borderRadius: [first[i] === j ? 5 : 0, last[i] === j ? 5 : 0, last[i] === j ? 5 : 0, first[i] === j ? 5 : 0],
+              },
+            },
+      ),
+      itemStyle: { color: s.color, borderColor: "#ffffff", borderWidth: 1 },
+      emphasis: { disabled: true },
+      animation: false,
+      label: {
+        show: !compact,
+        position: "inside",
+        formatter: (p) => (p.value >= 0.06 ? s.pointLabels?.[p.dataIndex] ?? "" : ""),
+        fontFamily: spec.font,
+        fontSize: 11,
+        fontWeight: 600,
+        color: s.key === "other" ? spec.ink : "#ffffff",
+      },
+    })),
+    graphic: emptyGraphic(spec, spec.series.length === 0),
+  };
+}
+
+/** The shared look (C9): grid lines recede behind the data, bars end rounded. Tabular figures
+ * need no feature switch, which resvg would not apply: every face a chart is set in (DejaVu,
+ * Liberation Sans, IBM Plex, Source Sans and Serif) draws its digits at one width. */
+const GRID_OPACITY = 0.55;
+const BAR_RADIUS = 3;
+
 /** The legend band a design asks for above or below the plot, inside `spec.height`. */
 const LEGEND_SPACE = 24;
 
 export function chartOptions(spec, compact = false) {
   if (spec.type === "heatmap") return heatmapOptions(spec, compact);
   if (spec.type === "dumbbell") return dumbbellOptions(spec, compact);
+  if (spec.type === "bar_list") return barListOptions(spec, compact);
+  if (spec.type === "bullet") return bulletOptions(spec, compact);
+  if (spec.type === "mix") return mixOptions(spec, compact);
   const bare = spec.style === "sparkline";
   // A design's look. Every one is absent at its default, so a spec without them draws
   // exactly the chart it always drew: names and last values at the line ends, a light grid.
@@ -248,7 +515,7 @@ export function chartOptions(spec, compact = false) {
           axisTick: { show: false },
           axisLine: { show: false },
           ...(spec.gridLines === "full"
-            ? { splitLine: { show: true, lineStyle: { color: spec.rule } } }
+            ? { splitLine: { show: true, lineStyle: { color: spec.rule, opacity: GRID_OPACITY } } }
             : {}),
           axisLabel: {
             fontSize: 11,
@@ -279,7 +546,7 @@ export function chartOptions(spec, compact = false) {
                 ? `${Number(v.toPrecision(6))}%`
                 : String(Number(v.toPrecision(6))),
           },
-          splitLine: { show: !bare && spec.gridLines !== "none", lineStyle: { color: spec.rule } },
+          splitLine: { show: !bare && spec.gridLines !== "none", lineStyle: { color: spec.rule, opacity: GRID_OPACITY } },
           axisLine: { show: false },
           axisTick: { show: false },
         };
@@ -388,7 +655,10 @@ export function chartOptions(spec, compact = false) {
       },
       ...threshold,
       ...peakMark,
-      itemStyle: { color: s.color },
+      // Rounded at the bar's free end only, so a bar still stands on its axis.
+      itemStyle: bars
+        ? { color: s.color, borderRadius: spec.type === "hbar" ? [0, BAR_RADIUS, BAR_RADIUS, 0] : [BAR_RADIUS, BAR_RADIUS, 0, 0] }
+        : { color: s.color },
       emphasis: { disabled: true },
       ...(area && !bars
         ? {

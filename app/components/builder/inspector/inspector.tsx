@@ -843,6 +843,7 @@ function AddedContent({
 }: Readonly<{ section: SectionV4; entry: CatalogueSection; kind: Exclude<AddedKind, "text"> }>) {
   const select = useBuilder((state) => state.select)
   const setInspectorTab = useBuilder((state) => state.setInspectorTab)
+  const provider = useBuilder((state) => state.definition.provider)
   const rank = rankingOf(section, entry)
   const ranking = rank ? `${rank.metric} (${rank.statistic})` : "the section's first metric"
   const lines: Record<Exclude<AddedKind, "text">, string> = {
@@ -860,8 +861,19 @@ function AddedContent({
       ? `Each resource's average and peak ${avgAndPeakMetric(section)}, busiest by peak first, up to twelve rows. Both dots are figures from the snapshot.`
       : "Needs a metric the section collects both an average and a maximum of. Add the missing statistic under the section's metrics.",
     agent: "",
+    kpi_tiles: `Each of the section's first four metrics as a tile: its highest value this period, which resource reached it, and the same figure in the previous verified report with the direction it moved. The first report has no earlier one, and says so.`,
+    bar_list: section.selection?.top_n
+      ? `The section's own top ${section.selection.top_n.count} as bars, ranked by ${ranking}, each labelled with its figure.`
+      : `The top ten resources as bars, ranked by ${ranking}, each labelled with its figure.`,
+    utilization_bullet: avgAndPeakMetric(section)
+      ? `One bar per resource for ${avgAndPeakMetric(section)}: the average inside the estimated P95, a tick at the peak with its figure, and the design's threshold as a line. Busiest by peak first, up to twelve rows.`
+      : "Needs a metric the section collects both an average and a maximum of. Add the missing statistic under the section's metrics.",
+    fleet_mix:
+      provider === "aws"
+        ? "One bar per type, EC2 instances and RDS databases, split by size family (general purpose, compute, memory, burstable and so on), with stopped ones last. Counts every one the report collected."
+        : "One bar for the virtual machines, split by size family (general purpose, compute, memory, burstable and so on), with deallocated ones last. Counts every one the report collected.",
   }
-  const readsMetrics = kind !== "coverage" && kind !== "page_break"
+  const readsMetrics = kind !== "coverage" && kind !== "page_break" && kind !== "fleet_mix"
   return (
     <div className="flex flex-col gap-3 text-[13px] leading-relaxed text-muted-foreground">
       <p>{lines[kind]}</p>

@@ -935,9 +935,28 @@ def _added_block(
     if kind == "coverage":
         return BlockSpec(id=block_id, type="gaps_and_coverage", config={}, scope_override=None)
 
+    if kind == "fleet_mix":
+        from reporting_agent.compile.blocks.charts import FLEET_MIX_BLOCK
+
+        return BlockSpec(id=block_id, type=FLEET_MIX_BLOCK, config={}, scope_override=scope_override)
+
     metrics = _section_metric_refs(section)
     if kind == "key_figures":
         return BlockSpec(id=block_id, type="kpi_row", config={"metrics": metrics}, scope_override=scope_override)
+    if kind == "kpi_tiles":
+        # Each tile is a key figure with the previous verified report's figure beside it.
+        from reporting_agent.compile.blocks.tables import KPI_TILES_LAYOUT, MAX_KPI_TILES
+
+        return BlockSpec(
+            id=block_id,
+            type="kpi_row",
+            config={
+                "metrics": metrics[:MAX_KPI_TILES],
+                "layout": KPI_TILES_LAYOUT,
+                "lookback": PREVIOUS_PERIOD_LOOKBACK,
+            },
+            scope_override=scope_override,
+        )
 
     ranking = _ranking_of(section, entry)
     if ranking is None:
@@ -961,6 +980,35 @@ def _added_block(
                 "layout": AVG_VS_PEAK_LAYOUT,
             },
             scope_override=_ranked_scope(scope_override, pair, "max", AVG_VS_PEAK_ROWS),
+        )
+
+    if kind == "utilization_bullet":
+        # Average, estimated P95 and peak of the metric Average and peak would draw.
+        from reporting_agent.compile.blocks.charts import BULLET_LAYOUT, BULLET_ROWS
+
+        pair = _avg_and_peak_metric(section) or metric
+        return BlockSpec(
+            id=block_id,
+            type="distribution_chart",
+            config={
+                "metrics": [
+                    {"metric": pair, "statistic": "avg"},
+                    {"metric": pair, "statistic": "p95"},
+                    {"metric": pair, "statistic": "max"},
+                ],
+                "layout": BULLET_LAYOUT,
+            },
+            scope_override=_ranked_scope(scope_override, pair, "max", BULLET_ROWS),
+        )
+
+    if kind == "bar_list":
+        from reporting_agent.compile.blocks.charts import BAR_LIST_LAYOUT, BAR_LIST_ROWS
+
+        return BlockSpec(
+            id=block_id,
+            type="distribution_chart",
+            config={"metrics": [{"metric": metric, "statistic": statistic}], "layout": BAR_LIST_LAYOUT},
+            scope_override=_ranked_scope(scope_override, metric, statistic, BAR_LIST_ROWS),
         )
 
     if kind == "top_list":
@@ -1206,6 +1254,13 @@ def historical_trend_keys(
                     ranking = _ranking_of(section, entry)
                     if ranking is not None:
                         keys.add((*ranking, PREVIOUS_PERIOD_LOOKBACK))
+                if item.get("kind") == "kpi_tiles":
+                    from reporting_agent.compile.blocks.tables import MAX_KPI_TILES
+
+                    for ref in _section_metric_refs(section)[:MAX_KPI_TILES]:
+                        name = ref.get("metric") or ref.get("derived")
+                        if isinstance(name, str) and name and isinstance(ref.get("statistic"), str):
+                            keys.add((name, str(ref["statistic"]), PREVIOUS_PERIOD_LOOKBACK))
         for expansion in _visible_expansions(section, entry, version):
             if expansion.block != "historical_trend":
                 continue

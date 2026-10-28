@@ -583,7 +583,8 @@ caption {{
   height: auto;
 }}
 .rpt-chart svg {{ width: 100%; }}
-.rpt-chart figcaption {{
+.rpt-chart figcaption,
+.rpt-chart .rpt-chart-period {{
   font-family: var(--body-face);
   font-size: {small - 1}pt;
   color: var(--muted);
@@ -624,6 +625,7 @@ input.rpt-fill {{
         if table_style == "banded":
             css += "\n.rpt-grid tbody tr:nth-child(even), table.rpt-table tbody tr:nth-child(even) { background: var(--band); }"
     css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
+    css += _TILES_CSS
     css += _treatments(
         spec,
         h1=h1,
@@ -633,6 +635,39 @@ input.rpt-fill {{
     )
     css += _style_rules(spec, style, accent=accent, h_sizes=(h1, h2, h3, h4), running_text=running_text)
     return css
+
+
+_TILES_CSS: Final[str] = """
+/* Key figures set as tiles (`Table.look`): the same table, its rows laid out as cards side
+   by side and its header row hidden, so each cell names itself from `data-label`. After the
+   table-style rules above, which would otherwise draw a grid's borders on every cell.
+   Grid, not flex: WeasyPrint laid nested flex boxes out in minutes on a page with several. */
+table.rpt-table[data-look="tiles"] { display: block; table-layout: auto; }
+table.rpt-table[data-look="tiles"] colgroup,
+table.rpt-table[data-look="tiles"] thead { display: none; }
+table.rpt-table[data-look="tiles"] caption { display: block; text-align: left; }
+table.rpt-table[data-look="tiles"] tbody { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6pt; }
+table.rpt-table[data-look="tiles"] tbody tr {
+  display: grid; min-width: 0;
+  border: 0.5pt solid var(--rule); border-radius: 4pt; padding: 6pt 8pt; background: transparent;
+}
+table.rpt-table[data-look="tiles"] td {
+  display: block; border: 0; padding: 0; background: transparent; text-align: left;
+}
+table.rpt-table[data-look="tiles"] td[data-column-key="metric"] { font-family: var(--heading-face); font-weight: 700; }
+table.rpt-table[data-look="tiles"] td[data-column-key="basis"],
+table.rpt-table[data-look="tiles"] td[data-column-key="resource"] { color: var(--muted); font-size: 0.9em; }
+table.rpt-table[data-look="tiles"] td[data-column-key="value"] {
+  order: -1; font-size: 2em; font-weight: 700; color: var(--accent); line-height: 1.15;
+}
+table.rpt-table[data-look="tiles"] td[data-column-key="value"] .rpt-figure { font-size: inherit; }
+table.rpt-table[data-look="tiles"] td[data-column-key="direction"] { margin-top: 4pt; font-weight: 700; }
+table.rpt-table[data-look="tiles"] td[data-column-key="previous"] { color: var(--muted); font-size: 0.9em; }
+table.rpt-table[data-look="tiles"] td[data-column-key="previous"]::before {
+  content: attr(data-label) " ";
+}
+table.rpt-table[data-look="tiles"] td[data-column-key="previous"]:empty { display: none; }
+"""
 
 
 def _tint_css(hex_colour: str, amount: float) -> str:

@@ -65,6 +65,82 @@
       "en": "{metric}: average and peak by resource",
       "id": "{metric}: rata-rata dan puncak per sumber daya"
     },
+    "doc.chart.series.p95": {
+      "en": "P95 (est.)",
+      "id": "P95 (perkiraan)"
+    },
+    "doc.chart.title.bar_list": {
+      "en": "{metric} by resource",
+      "id": "{metric} per sumber daya"
+    },
+    "doc.chart.title.bullet": {
+      "en": "{metric}: average, estimated P95 and peak by resource",
+      "id": "{metric}: rata-rata, perkiraan P95 dan puncak per sumber daya"
+    },
+    "doc.chart.title.fleet_mix": {
+      "en": "Fleet mix",
+      "id": "Komposisi armada"
+    },
+    "doc.chart.note.fleet_mix": {
+      "en": "Counts every machine or database of these types the report collected: running ones by size family, then stopped ones.",
+      "id": "Menghitung setiap mesin atau basis data dengan tipe ini yang dikumpulkan laporan: yang berjalan menurut keluarga ukurannya, lalu yang berhenti."
+    },
+    "doc.mix.general": {
+      "en": "General purpose",
+      "id": "Serbaguna"
+    },
+    "doc.mix.compute": {
+      "en": "Compute optimized",
+      "id": "Optimasi komputasi"
+    },
+    "doc.mix.memory": {
+      "en": "Memory optimized",
+      "id": "Optimasi memori"
+    },
+    "doc.mix.burstable": {
+      "en": "Burstable",
+      "id": "Dapat melonjak"
+    },
+    "doc.mix.storage": {
+      "en": "Storage optimized",
+      "id": "Optimasi penyimpanan"
+    },
+    "doc.mix.accelerated": {
+      "en": "Accelerated",
+      "id": "Terakselerasi"
+    },
+    "doc.mix.other": {
+      "en": "Other sizes",
+      "id": "Ukuran lain"
+    },
+    "doc.mix.stopped": {
+      "en": "Stopped",
+      "id": "Berhenti"
+    },
+    "doc.mix.deallocated": {
+      "en": "Deallocated",
+      "id": "Dealokasi"
+    },
+    "doc.mix.type.ec2": {
+      "en": "EC2 instances",
+      "id": "Instans EC2"
+    },
+    "doc.mix.type.rds": {
+      "en": "RDS databases",
+      "id": "Basis data RDS"
+    },
+    "doc.mix.type.vm": {
+      "en": "Virtual machines",
+      "id": "Mesin virtual"
+    },
+    "doc.mix.type.other": {
+      "en": "Machines",
+      "id": "Mesin"
+    },
+    "doc.tiles.no_earlier_report": {
+      "en": "No earlier report",
+      "id": "Belum ada laporan sebelumnya"
+    },
     "doc.comparison.caption": {
       "en": "{metric} ({statistic}) against the previous verified report",
       "id": "{metric} ({statistic}) dibandingkan dengan laporan terverifikasi sebelumnya"

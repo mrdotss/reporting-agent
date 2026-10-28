@@ -75,7 +75,7 @@ from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.definition import BLOCK_CONFIG
 from reporting_agent.compile.messages import Messages
 from reporting_agent.errors import CompileFailedError
-from reporting_agent.compile.snapshot_view import FactTextValue, ResourceView, SnapshotValue
+from reporting_agent.compile.snapshot_view import FactTextValue, ResourceView, SnapshotValue, SnapshotView
 
 __all__ = [
     "COLUMN_ATTRIBUTES",
@@ -298,6 +298,13 @@ def read_column_entries(block: BlockSpec, field_name: str) -> tuple[ColumnEntry,
         )
     return tuple(entries)
 
+
+KPI_TILES_LAYOUT: Final[str] = "tiles"
+"""`config.layout` for a v4 `kpi_tiles` block: a `kpi_row` set as tiles, each with the
+previous verified report's figure for the same metric and which way it moved."""
+
+MAX_KPI_TILES: Final[int] = 4
+"""The tiles one block sets in a row: the section's first metrics, as many as fit a page."""
 
 _LOWEST = "doc.basis.lowest_observed"
 _HIGHEST = "doc.basis.highest_observed"
@@ -1054,6 +1061,9 @@ def compile_kpi_row(
             message_id=_empty_message_id(block),
         ),))
 
+    if block.config.get("layout") == KPI_TILES_LAYOUT:
+        return _kpi_tiles(context, block, cursor, refs, matched, caption)
+
     rows: list[Row] = []
     for ordinal, ref in enumerate(refs):
         row_cursor = table_cursor.child("rows", ordinal)
@@ -1086,6 +1096,131 @@ def compile_kpi_row(
         ),
         rows=tuple(rows),
         caption=caption,
+    )
+    cursor.anchor_table(table_cursor.path)
+    return BlockOutput(nodes=(table,))
+
+
+def _kpi_tiles(
+    context: BlockContext,
+    block: BlockSpec,
+    cursor: BlockCursor,
+    refs: Sequence[MetricRef],
+    matched: Sequence[ResourceView],
+    caption: str | None,
+) -> BlockOutput:
+    """Key figures set as tiles, each beside the previous verified report's figure.
+
+    A tile's value is the row a `kpi_row` would print: the extreme across the scope and the
+    resource holding it. Its previous figure is the same selection in the previous verified
+    report of this preset — the one the pipeline chose for `(metric, statistic, 1)`, as
+    month-vs-month reads it — at `/prior_runs/<run>/…`, so it verifies against that report's
+    snapshot. No change is computed: the direction is a word chosen by comparing the two, and
+    a first month says there is no earlier report.
+    """
+    from dataclasses import replace as dc_replace
+
+    from reporting_agent.compile.ast import PRIOR_RUNS_POINTER_PREFIX, compiling_against
+    from reporting_agent.compile.blocks.charts import HistoricalResolver
+    from reporting_agent.compile.blocks.comparison import _direction
+    from reporting_agent.compile.historical import Selection
+    from reporting_agent.compile.scope import resolve
+
+    table_cursor = cursor.child("nodes", 0)
+    lookback = block.config.get("lookback")
+    lookback = lookback if isinstance(lookback, int) and not isinstance(lookback, bool) else 1
+    messages = context.messages
+    selections = context.historical_selections or {}
+
+    def previous_of(ref: MetricRef) -> tuple[object, SnapshotView | None]:
+        selection = selections.get((ref.name, ref.statistic, lookback)) or Selection(selected=(), exclusions=())
+        previous = selection.selected[-1] if selection.selected else None
+        view = (
+            context.historical.snapshot_view_for(previous.run_id)
+            if previous is not None and context.historical is not None
+            else None
+        )
+        return (previous, view)
+
+    picked = [(ref, *previous_of(ref)) for ref in refs[:MAX_KPI_TILES]]
+    resolver = HistoricalResolver(
+        base=context.view,
+        prior_views={
+            previous.run_id: view  # type: ignore[attr-defined]
+            for _, previous, view in picked
+            if previous is not None and view is not None
+        },
+    )
+    scope = context.scope_for(block)
+    rows: list[Row] = []
+    with compiling_against(resolver):
+        for ordinal, (ref, previous, prior_view) in enumerate(picked):
+            row_cursor = table_cursor.child("rows", ordinal)
+            selected = _extreme(context, matched, ref)
+            earlier: SnapshotValue | None = None
+            if prior_view is not None:
+                lowest = ref.statistic == "min"
+                candidates = [
+                    (value.value, resource.resource_id, value)
+                    for resource in resolve(scope, prior_view)
+                    if (value := prior_view.stat(resource.resource_id, ref.name, ref.statistic)) is not None
+                ]
+                candidates.sort(key=lambda entry: (entry[0], entry[1]) if lowest else (-entry[0], entry[1]))
+                earlier = candidates[0][2] if candidates else None
+
+            cells: list[object] = [
+                text_cell(row_cursor.child("cells", 0), ref.label),
+                text_cell(row_cursor.child("cells", 1), messages.text(_basis(ref))),
+            ]
+            later = selected[1] if selected is not None else None
+            if selected is None:
+                cells.append(empty_cell(row_cursor.child("cells", 2)))
+                cells.append(text_cell(row_cursor.child("cells", 3), ""))
+            else:
+                cells.append(_figure_cell(row_cursor.child("cells", 2), context, selected[1]))
+                cells.append(text_cell(row_cursor.child("cells", 3), selected[0].name))
+
+            earlier_cursor = row_cursor.child("cells", 4)
+            if earlier is None or previous is None:
+                cells.append(empty_cell(earlier_cursor))
+            else:
+                prefixed = dc_replace(
+                    earlier,
+                    pointer=f"{PRIOR_RUNS_POINTER_PREFIX}/{previous.run_id}{earlier.pointer}",  # type: ignore[attr-defined]
+                )
+                cells.append(
+                    FigureCell(
+                        path=earlier_cursor.path,
+                        figure=earlier_cursor.child("figure", 0).figure(
+                            prefixed,
+                            catalog_scale=context.catalog_scale(earlier),
+                            source_run_id=previous.run_id,  # type: ignore[attr-defined]
+                            source_snapshot_sha256=previous.snapshot_sha256 or "",  # type: ignore[attr-defined]
+                        ),
+                    )
+                )
+            direction = (
+                "doc.tiles.no_earlier_report"
+                if previous is None or prior_view is None
+                else _direction(earlier, later)
+            )
+            cells.append(text_cell(row_cursor.child("cells", 5), messages.text(direction)))
+            rows.append(Row(path=row_cursor.path, key=ref.key, cells=tuple(cells)))  # type: ignore[arg-type]
+
+    table = Table(
+        path=table_cursor.path,
+        style=context.design.table_style_name,
+        columns=(
+            Column(key="metric", header=messages.text("doc.table.metric")),
+            Column(key="basis", header=messages.text("doc.table.basis")),
+            Column(key="value", header=messages.text("doc.table.value")),
+            Column(key="resource", header=messages.text("doc.table.resource")),
+            Column(key="previous", header=messages.text("doc.table.previous_report")),
+            Column(key="direction", header=messages.text("doc.table.direction")),
+        ),
+        rows=tuple(rows),
+        caption=caption,
+        look=KPI_TILES_LAYOUT,
     )
     cursor.anchor_table(table_cursor.path)
     return BlockOutput(nodes=(table,))

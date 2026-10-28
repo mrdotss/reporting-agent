@@ -195,7 +195,9 @@ Declared as a constant because two things compare against it — `Figure.__post_
 resolver that indexes a prior run's values — and a prefix spelled twice is a prefix that
 eventually differs in one of the two places."""
 
-CHART_TYPES: Final[tuple[str, ...]] = ("bar", "hbar", "line", "area", "heatmap", "dumbbell")
+CHART_TYPES: Final[tuple[str, ...]] = (
+    "bar", "hbar", "line", "area", "heatmap", "dumbbell", "bar_list", "bullet", "mix",
+)
 CHART_ENCODINGS: Final[tuple[str, ...]] = ("categorical", "sequential")
 """Req 16.14 — the compiler decides the encoding from whether the series are peers or
 one ordered quantity, and the client must not infer it from the series count. A closed
@@ -1011,6 +1013,10 @@ class Table:
     """The percentage at or above which this table's percentage figures are marked, as the
     setting's digits; empty means the design's. A setting, never printed: marking colours a
     cell and adds no text."""
+    look: str = ""
+    """How the table is laid out on the page, where it is not a grid: `tiles` sets each row
+    as a card, its value large. Presentation only — the rows, cells and figures are the
+    table's whatever its look, so the verifier and the Word grid read them unchanged."""
 
     def __post_init__(self) -> None:
         at = f"table {self.path!r}"

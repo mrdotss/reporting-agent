@@ -42,6 +42,46 @@ export function BlockDrawing({ kind }: Readonly<{ kind: AddedKind }>) {
           </g>
         ))}
       {kind === "top_list" && <Bars />}
+      {kind === "kpi_tiles" &&
+        [0, 1, 2, 3].map((tile) => (
+          <g key={tile}>
+            <rect x={3 + tile * 23} y="4" width="21" height="32" rx="3" fill="none" stroke={INK} opacity="0.35" />
+            <rect x={6 + tile * 23} y="9" width="14" height="7" rx="1" fill={INK} opacity="0.85" />
+            <rect x={6 + tile * 23} y="20" width="11" height="3" rx="1" fill={INK} opacity="0.35" />
+            <rect x={6 + tile * 23} y="28" width="8" height="3" rx="1" fill={INK} opacity="0.55" />
+          </g>
+        ))}
+      {kind === "bar_list" &&
+        [40, 32, 22, 15].map((width, row) => (
+          <g key={row}>
+            <rect x="4" y={5 + row * 8} width="14" height="4" rx="1" fill={INK} opacity="0.25" />
+            <rect x="22" y={5 + row * 8} width="70" height="4" rx="2" fill={INK} opacity="0.1" />
+            <rect x="22" y={5 + row * 8} width={width} height="4" rx="2" fill={INK} opacity="0.75" />
+          </g>
+        ))}
+      {kind === "utilization_bullet" &&
+        [0, 1, 2, 3].map((row) => (
+          <g key={row}>
+            <rect x="4" y={5 + row * 8} width="14" height="4" rx="1" fill={INK} opacity="0.25" />
+            <rect x="22" y={4 + row * 8} width={44 - row * 7} height="6" rx="1" fill={INK} opacity="0.25" />
+            <rect x="22" y={6 + row * 8} width={26 - row * 5} height="2" rx="1" fill={INK} opacity="0.85" />
+            <rect x={74 - row * 8} y={3 + row * 8} width="1.6" height="8" fill={INK} />
+          </g>
+        ))}
+      {kind === "fleet_mix" &&
+        [
+          [34, 22, 14, 16],
+          [46, 18, 0, 22],
+        ].map((parts, row) => (
+          <g key={row}>
+            {parts.map((width, part) => {
+              const x = 4 + parts.slice(0, part).reduce((sum, w) => sum + w, 0)
+              return width ? (
+                <rect key={part} x={x} y={8 + row * 14} width={width - 1} height="9" rx="2" fill={INK} opacity={part === 3 ? 0.2 : 0.85 - part * 0.22} />
+              ) : null
+            })}
+          </g>
+        ))}
       {kind === "heatmap" &&
         [0, 1, 2, 3].map((row) =>
           [0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map((cell) => (

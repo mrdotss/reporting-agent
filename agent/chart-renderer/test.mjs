@@ -104,3 +104,77 @@ test("a heatmap draws one row per resource and skips the days with no value", ()
   assert.match(svg, /app-web-01/);
   new Resvg(svg).render();
 });
+
+const rows = (type, series, extra = {}) => ({
+  ...base,
+  type,
+  style: "stacked",
+  categories: ["app-web-01", "app-api-02", "batch-worker-03"],
+  series,
+  ...extra,
+});
+
+test("a bar list keeps the ranking's order and labels each bar with its own figure", () => {
+  const spec = rows(
+    "bar_list",
+    [{ ...base.series[0], values: ["97.2", "71.5", null], pointLabels: ["97.2%", "71.5%", null] }],
+  );
+  const options = chartOptions(spec);
+  assert.deepEqual(options.yAxis.data, spec.categories);
+  assert.equal(options.yAxis.inverse, true);
+  assert.deepEqual(options.series[0].data, [97.2, 71.5, null]);
+  assert.equal(options.series[0].label.formatter({ dataIndex: 1 }), "71.5%");
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /97\.2%/);
+  assert(!svg.includes("NaN"));
+  new Resvg(svg).render();
+});
+
+test("a bullet draws P95 behind the average, a peak tick with its figure, and the threshold", () => {
+  const spec = rows(
+    "bullet",
+    [
+      { ...base.series[0], key: "avg", label: "Average", values: ["61.4", "38.9", "12.7"] },
+      { ...base.series[0], key: "p95", label: "P95 (est.)", values: ["90.1", null, "40.2"] },
+      { ...base.series[0], key: "max", label: "Peak", values: ["97.2", "71.5", "44"], pointLabels: ["97.2%", "71.5%", "44.0%"] },
+    ],
+    { threshold: 80, thresholdLabel: "Threshold 80%" },
+  );
+  const options = chartOptions(spec);
+  assert.deepEqual(options.series.map((s) => s.name), ["p95", "avg", "max"]);
+  assert.equal(options.series[0].barGap, "-100%");
+  assert.equal(options.series[0].data[1], null); // no P95 is drawn as none, not zero
+  assert.deepEqual(options.series[2].markLine.data, [{ xAxis: 80 }]);
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /Threshold 80%/);
+  assert.match(svg, /44\.0%/);
+  new Resvg(svg).render();
+});
+
+test("a fleet mix splits each row in proportion and prints the counts, not the shares", () => {
+  const spec = rows(
+    "mix",
+    [
+      { ...base.series[0], key: "general", label: "General purpose", values: ["3", "1", null], pointLabels: ["3", "1", null] },
+      { ...base.series[1], key: "stopped", label: "Stopped", values: ["1", null, "2"], pointLabels: ["1", null, "2"] },
+    ],
+    { categories: ["EC2 instances", "RDS databases", "Virtual machines"] },
+  );
+  const options = chartOptions(spec);
+  assert.equal(options.series[0].data[0].value, 0.75);
+  assert.equal(options.series[1].data[2].value, 1);
+  assert.equal(options.series[0].data[2], null);
+  assert.equal(options.series[0].label.formatter({ value: 0.75, dataIndex: 0 }), "3");
+  const svg = renderSVG(spec, false, init);
+  assert.match(svg, /General purpose/);
+  assert(!svg.includes("0.75"));
+  new Resvg(svg).render();
+});
+
+test("bars end rounded and the grid recedes", () => {
+  const options = chartOptions({ ...base, type: "bar", style: "columns" });
+  assert.deepEqual(options.series[0].itemStyle.borderRadius, [3, 3, 0, 0]);
+  assert(options.yAxis[0].splitLine.lineStyle.opacity < 1);
+  const hbar = chartOptions({ ...base, type: "hbar", style: "columns" });
+  assert.deepEqual(hbar.series[0].itemStyle.borderRadius, [0, 3, 3, 0]);
+});

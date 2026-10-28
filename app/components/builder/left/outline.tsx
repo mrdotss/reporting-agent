@@ -7,7 +7,9 @@ import {
   ArrowsHorizontalIcon,
   CaretDownIcon,
   ChartBarHorizontalIcon,
+  ChartBarIcon,
   ChartLineIcon,
+  ChartPieSliceIcon,
   CaretRightIcon,
   DotsSixVerticalIcon,
   EyeIcon,
@@ -20,7 +22,9 @@ import {
   PlusIcon,
   RepeatIcon,
   ShieldCheckIcon,
+  SlidersHorizontalIcon,
   SparkleIcon,
+  SquaresFourIcon,
   TextTIcon,
 } from "@phosphor-icons/react"
 import { useState, type ReactNode } from "react"
@@ -429,5 +433,13 @@ export function AddedIcon({ kind }: Readonly<{ kind: AddedKind }>) {
       return <ArrowsHorizontalIcon aria-hidden className={className} />
     case "agent":
       return <SparkleIcon aria-hidden className={className} />
+    case "kpi_tiles":
+      return <SquaresFourIcon aria-hidden className={className} />
+    case "bar_list":
+      return <ChartBarIcon aria-hidden className={className} />
+    case "utilization_bullet":
+      return <SlidersHorizontalIcon aria-hidden className={className} />
+    case "fleet_mix":
+      return <ChartPieSliceIcon aria-hidden className={className} />
   }
 }
