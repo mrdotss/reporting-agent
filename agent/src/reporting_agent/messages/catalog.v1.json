@@ -2405,6 +2405,38 @@
       "en": "Delete",
       "id": "Hapus"
     },
+    "ui.presets.archive": {
+      "en": "Archive",
+      "id": "Arsipkan"
+    },
+    "ui.presets.archive_named": {
+      "en": "Archive {name}",
+      "id": "Arsipkan {name}"
+    },
+    "ui.presets.restore": {
+      "en": "Restore",
+      "id": "Pulihkan"
+    },
+    "ui.presets.restore_named": {
+      "en": "Restore {name}",
+      "id": "Pulihkan {name}"
+    },
+    "ui.presets.filter_archived": {
+      "en": "Archived",
+      "id": "Diarsipkan"
+    },
+    "ui.presets.archive_instead": {
+      "en": "Archive instead",
+      "id": "Arsipkan saja"
+    },
+    "ui.presets.archive_failed": {
+      "en": "The preset could not be archived ({status}). Try again.",
+      "id": "Preset tidak dapat diarsipkan ({status}). Coba lagi."
+    },
+    "ui.presets.delete_pinned": {
+      "en": "This preset has already been used to make reports, so it can’t be deleted: every report stays tied to the exact preset version it was built from. Archive it instead. It leaves this page, the Overview and the run pickers, its reports keep working, and you can restore it from the Archived filter.",
+      "id": "Preset ini sudah dipakai untuk membuat laporan, jadi tidak bisa dihapus: setiap laporan tetap terikat pada versi preset yang dipakai untuk membuatnya. Arsipkan saja. Preset akan hilang dari halaman ini, Ringkasan, dan pilihan preset saat meminta laporan, laporannya tetap berfungsi, dan Anda bisa memulihkannya dari filter Diarsipkan."
+    },
     "ui.presets.empty_card": {
       "en": "Open it to add sections",
       "id": "Buka untuk menambahkan bagian"

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { MagnifyingGlassIcon, RowsIcon, SquaresFourIcon } from "@phosphor-icons/react"
+import { ArchiveIcon, MagnifyingGlassIcon, RowsIcon, SquaresFourIcon } from "@phosphor-icons/react"
 
 import {
   SOURCE_SHORT_NAMES,
@@ -45,26 +45,24 @@ import { cn } from "@/lib/utils"
  * when a run pinned one of the profile's versions. That refusal is a **fact
  * about the account**, not a failure of the request: reports exist, and they
  * stay replayable against the exact definition they were rendered from. So the
- * dialog states it in those terms rather than as an error, and leaves the
- * profile alone.
+ * dialog states it in those terms rather than as an error, and offers to archive
+ * the preset instead: archiving removes nothing, and hides the preset here, on the
+ * Overview and in every preset picker until it is restored from the Archived filter.
  *
  * The confirm does not ask the consultant to type the name. The action is
  * reversible in the only sense that matters — a profile with runs cannot be
  * deleted at all, and one without runs has produced nothing to lose.
  */
 
-type Filter = "all" | SourceKind | "pending" | "empty"
+type Filter = "all" | SourceKind | "pending" | "empty" | "archived"
 type View = "cards" | "list"
 
 const VIEW_KEY = "presets.view"
 
-/** Why a preset that already made reports stays, and what still works. */
-export const PINNED_REASON =
-  "This preset has already been used to make reports, so it is kept: every report " +
-  "stays tied to the exact preset version it was built from, and deleting the " +
-  "preset would break re-checking those reports. You can still rename it or edit it."
-
 function matches(template: TemplateView, filter: Filter): boolean {
+  // Archived presets show under their own filter and nowhere else.
+  if (filter === "archived") return template.archivedAt !== null
+  if (template.archivedAt !== null) return false
   if (filter === "all") return true
   if (filter === "pending") return hasPendingWork(template)
   if (filter === "empty") return isEmptyPreset(template)
@@ -90,8 +88,13 @@ export function PresetLibrary({
 
   /** The profile the confirm dialog is about, or `null` when it is closed. */
   const [target, setTarget] = useState<TemplateView | null>(null)
-  /** A refusal from the server, shown in place of the confirm. */
-  const [refusal, setRefusal] = useState<string | null>(null)
+  /**
+   * A refusal from the server, shown in place of the confirm. `pinned` when the preset
+   * made reports, which offers archiving instead.
+   */
+  const [refusal, setRefusal] = useState<{ text: string; pinned: boolean } | null>(null)
+  /** Why the last archive or restore failed, shown above the list. */
+  const [archiveError, setArchiveError] = useState<string | null>(null)
 
   // The last view is a per-browser convenience; without storage the cards stand.
   useEffect(() => {
@@ -113,13 +116,16 @@ export function PresetLibrary({
     }
   }
 
+  const active = useMemo(() => templates.filter((t) => t.archivedAt === null), [templates])
+  const archivedCount = templates.length - active.length
+
   const filters = useMemo(() => {
     const providers = new Map<SourceKind, number>()
-    for (const template of templates) {
+    for (const template of active) {
       providers.set(template.provider, (providers.get(template.provider) ?? 0) + 1)
     }
     const all: { value: Filter; label: string; count: number }[] = [
-      { value: "all", label: messageText("ui.presets.filter_all", "en") ?? "", count: templates.length },
+      { value: "all", label: messageText("ui.presets.filter_all", "en") ?? "", count: active.length },
     ]
     // One source's chip would only repeat "All".
     if (providers.size > 1) {
@@ -129,16 +135,24 @@ export function PresetLibrary({
       {
         value: "pending",
         label: messageText("ui.presets.filter_pending", "en") ?? "",
-        count: templates.filter(hasPendingWork).length,
+        count: active.filter(hasPendingWork).length,
       },
       {
         value: "empty",
         label: messageText("ui.presets.filter_empty", "en") ?? "",
-        count: templates.filter(isEmptyPreset).length,
+        count: active.filter(isEmptyPreset).length,
       }
     )
+    // Only once something is archived: an empty chip would be a filter for nothing.
+    if (archivedCount > 0) {
+      all.push({
+        value: "archived",
+        label: messageText("ui.presets.filter_archived", "en") ?? "",
+        count: archivedCount,
+      })
+    }
     return all
-  }, [templates])
+  }, [active, archivedCount])
 
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
@@ -174,14 +188,36 @@ export function PresetLibrary({
     const body = await response.json().catch(() => null)
     const error = body?.error
     if (error?.code === "TEMPLATE_PINNED") {
-      setRefusal(PINNED_REASON)
+      setRefusal({ text: messageText("ui.presets.delete_pinned", "en") ?? "", pinned: true })
     } else {
-      setRefusal(
-        typeof error?.message === "string"
-          ? error.message
-          : `The profile could not be deleted (${response.status}).`
-      )
+      setRefusal({
+        text:
+          typeof error?.message === "string"
+            ? error.message
+            : `The profile could not be deleted (${response.status}).`,
+        pinned: false,
+      })
     }
+  }
+
+  async function setArchived(template: TemplateView, archived: boolean) {
+    setArchiveError(null)
+    const response = await fetch(`/api/report-profiles/${template.id}/archive`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ archived }),
+    })
+    if (!response.ok) {
+      setArchiveError(
+        messageText("ui.presets.archive_failed", "en", { status: response.status }) ?? ""
+      )
+      return
+    }
+    setTarget(null)
+    setRefusal(null)
+    // Restoring the last archived preset would leave the Archived filter empty.
+    if (!archived && filter === "archived" && archivedCount <= 1) setFilter("all")
+    startTransition(() => router.refresh())
   }
 
   const trimmed = query.trim()
@@ -225,7 +261,10 @@ export function PresetLibrary({
 
         <div className="ms-auto flex items-center gap-3">
           <p aria-live="polite" className="text-xs text-muted-foreground">
-            {messageText("ui.presets.shown", "en", { shown: rows.length, total: templates.length })}
+            {messageText("ui.presets.shown", "en", {
+              shown: rows.length,
+              total: filter === "archived" ? archivedCount : active.length,
+            })}
           </p>
           <div
             role="group"
@@ -258,6 +297,12 @@ export function PresetLibrary({
         </div>
       </div>
 
+      {archiveError === null ? null : (
+        <p role="alert" className="text-sm text-destructive">
+          {archiveError}
+        </p>
+      )}
+
       {rows.length === 0 ? (
         <div className="rounded-xl border border-dashed border-border py-14 text-center">
           <p className="font-heading text-sm font-medium">
@@ -280,12 +325,19 @@ export function PresetLibrary({
                   : undefined
               }
               onDelete={askDelete}
+              onArchive={(preset, archived) => void setArchived(preset, archived)}
             />
           ))}
           {trimmed === "" && filter === "all" ? <NewPresetChooser variant="card" /> : null}
         </div>
       ) : (
-        <ProfileTable rows={rows} customers={customers} showCustomer={showCustomer} onDelete={askDelete} />
+        <ProfileTable
+          rows={rows}
+          customers={customers}
+          showCustomer={showCustomer}
+          onDelete={askDelete}
+          onArchive={(preset, archived) => void setArchived(preset, archived)}
+        />
       )}
 
       {/* Delete confirmation, or the server's refusal in its place */}
@@ -306,7 +358,7 @@ export function PresetLibrary({
                 : `“${target?.name}” cannot be deleted`}
             </DialogTitle>
             <DialogDescription>
-              {refusal ??
+              {refusal?.text ??
                 "The profile stops being offered for new runs. Versions no run " +
                   "pinned are removed with it."}
             </DialogDescription>
@@ -322,6 +374,15 @@ export function PresetLibrary({
             >
               {refusal === null ? "Cancel" : "Close"}
             </Button>
+            {refusal?.pinned && target !== null && target.archivedAt === null ? (
+              <Button
+                disabled={pending}
+                onClick={() => void setArchived(target, true)}
+              >
+                <ArchiveIcon aria-hidden="true" />
+                {messageText("ui.presets.archive_instead", "en")}
+              </Button>
+            ) : null}
             {refusal === null ? (
               <Button
                 variant="destructive"

@@ -917,6 +917,14 @@ export const reportTemplates = pgTable(
      */
     provider: sourceProvider("provider").notNull().default("azure"),
 
+    /**
+     * When the preset was archived, or `null` while it is in use. An archived preset is
+     * hidden from the Presets page, the Overview and every "pick a preset" list, but its
+     * versions stay: a preset that made reports cannot be deleted, and archiving is how it
+     * is put away. Restoring clears it.
+     */
+    archivedAt: instant("archived_at"),
+
     createdAt: instant("created_at").notNull().defaultNow(),
 
     /** Set on every write that changes another column on this row. */

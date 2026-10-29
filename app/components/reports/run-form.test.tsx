@@ -86,6 +86,7 @@ function subscription(
 function template(over: Partial<TemplateView> = {}): TemplateView {
   return {
     provider: "azure",
+    archivedAt: null,
     hasIncidentReport: false,
     sectionTypes: [],
     id: "tmpl-v1",

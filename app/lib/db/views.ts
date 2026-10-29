@@ -560,6 +560,8 @@ export type TemplateView = {
   updatedAt: string
   /** The source this preset is written for, set when it was created and locked. */
   provider: ReportTemplate["provider"]
+  /** When the preset was archived, or `null` while it is in use. */
+  archivedAt: string | null
 }
 
 /**
@@ -693,6 +695,7 @@ export function toTemplateView(
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     provider: row.provider,
+    archivedAt: row.archivedAt?.toISOString() ?? null,
   }
 }
 

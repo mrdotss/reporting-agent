@@ -40,7 +40,7 @@ export async function loadClose(
               (select c.display_name from connected_subscriptions c
                 where c.project_id = p.id order by c.display_name limit 1) as connector,
               (select t.name from report_templates t
-                where t.project_id = p.id order by t.name limit 1) as preset
+                where t.project_id = p.id and t.archived_at is null order by t.name limit 1) as preset
          from projects p
          join workspace_members m on m.workspace_id = p.workspace_id and m.user_id = $1
          left join run_schedules s on s.project_id = p.id and s.enabled
