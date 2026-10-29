@@ -245,7 +245,7 @@ export function SubscriptionList({
     <ul
       data-slot="subscription-list"
       aria-label="Connected subscriptions"
-      className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2.5"
+      className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,22rem),1fr))] gap-2.5"
     >
       {subscriptions.map((view) => {
         const state = resolveSubscriptionState(view, now)
@@ -294,7 +294,7 @@ export function SubscriptionList({
                 </span>
               </header>
 
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                 <span data-slot="masked-subscription-id" className="flex min-w-0 items-center gap-1.5">
                   {view.provider === "aws" ? "Account" : "Subscription"}
                   <Identifier
