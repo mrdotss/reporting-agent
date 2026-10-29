@@ -41,7 +41,7 @@ import { cn } from "@/lib/utils"
  *
  * ## Deleting, and the refusal that is not an error
  *
- * `DELETE /api/report-profiles/[id]` answers `204`, or `409 TEMPLATE_PINNED`
+ * `DELETE /api/report-profiles/[id]` answers `204`, or `409` with `error.code` `TEMPLATE_PINNED`
  * when a run pinned one of the profile's versions. That refusal is a **fact
  * about the account**, not a failure of the request: reports exist, and they
  * stay replayable against the exact definition they were rendered from. So the
@@ -57,6 +57,12 @@ type Filter = "all" | SourceKind | "pending" | "empty"
 type View = "cards" | "list"
 
 const VIEW_KEY = "presets.view"
+
+/** Why a preset that already made reports stays, and what still works. */
+export const PINNED_REASON =
+  "This preset has already been used to make reports, so it is kept: every report " +
+  "stays tied to the exact preset version it was built from, and deleting the " +
+  "preset would break re-checking those reports. You can still rename it or edit it."
 
 function matches(template: TemplateView, filter: Filter): boolean {
   if (filter === "all") return true
@@ -162,14 +168,20 @@ export function PresetLibrary({
       return
     }
 
-    // 409 TEMPLATE_PINNED carries the reason in its own body; anything else is
-    // reported as itself rather than as a guess at what went wrong.
+    // Errors arrive as `{ error: { message, code } }` (lib/api/response.ts). A pinned
+    // preset gets its reason in plain words; anything else is reported as the
+    // server's own message rather than as a guess at what went wrong.
     const body = await response.json().catch(() => null)
-    setRefusal(
-      typeof body?.message === "string"
-        ? body.message
-        : `The profile could not be deleted (${response.status}).`
-    )
+    const error = body?.error
+    if (error?.code === "TEMPLATE_PINNED") {
+      setRefusal(PINNED_REASON)
+    } else {
+      setRefusal(
+        typeof error?.message === "string"
+          ? error.message
+          : `The profile could not be deleted (${response.status}).`
+      )
+    }
   }
 
   const trimmed = query.trim()
