@@ -17,12 +17,13 @@ import { can } from "@/lib/workspaces/policy"
 /**
  * `/subscriptions` — the connectors, and what the selected one can see.
  *
- * The selection is in the URL (`?c=<id>`) so the detail beside the list is a server
+ * The selection is in the URL (`?c=<id>`) so the detail under the list is a server
  * render of the latest scan, and a link can land on one connector. With no selection the
- * first connector is shown, so the right-hand side is never an empty column.
+ * first connector is shown, so the detail is never empty.
  *
- * The page is capped at 80rem: a narrow list of connectors, and the selected one's tabs
- * beside it, rather than two columns stretched across a wide screen.
+ * The connectors are a row of cards across the top and the selected one's detail takes
+ * the full width under them, so its summary cards (the tabs) sit side by side. The page
+ * is capped at 80rem.
  *
  * Every member sees the connectors; only Owners and Admins get the controls that change
  * or scan one (roles-and-ask-access Req 5).
@@ -67,8 +68,8 @@ export default async function SubscriptionsPage({
         <div className="flex flex-col gap-1.5">
           <h1 className="text-title">Connectors</h1>
           <p className="max-w-[62ch] text-meta text-muted-foreground">
-            Read-only access to each customer&rsquo;s AWS account or Azure subscription.
-            A connector that can&rsquo;t read fails its next run instead of delivering an
+            Read-only access to each environment you report on: an AWS account or an
+            Azure subscription. A connector that can&rsquo;t read fails its next run instead of delivering an
             empty report.
           </p>
         </div>
@@ -88,15 +89,13 @@ export default async function SubscriptionsPage({
       {subscriptions.length === 0 || selected === undefined ? (
         <SubscriptionList subscriptions={subscriptions} now={now} canConnect={canConnect} />
       ) : (
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          <div className="lg:w-[22.5rem] lg:shrink-0">
-            <SubscriptionList
-              subscriptions={subscriptions}
-              now={now}
-              selectedId={selected.id}
-              canConnect={canConnect}
-            />
-          </div>
+        <div className="flex flex-col gap-5">
+          <SubscriptionList
+            subscriptions={subscriptions}
+            now={now}
+            selectedId={selected.id}
+            canConnect={canConnect}
+          />
           <ConnectorDetail
             subscription={selected}
             scan={scan}

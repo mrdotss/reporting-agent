@@ -508,6 +508,14 @@
   --status-failed: #962029;     --status-failed-soft: #f8e4e5;
 
   --soga: #8e5b2a;                /* the second data hue: memory beside CPU */
+
+  /* The sign-in panel: a deep nila ground with its own ink, so it stays navy in both
+     themes without borrowing the sidebar tokens. */
+  --auth-panel: #1f2858;
+  --auth-panel-foreground: #eef0fa;
+  --auth-panel-muted: #c3c8e6;
+  --auth-panel-accent: #8d9bea;
+  --auth-panel-verified: #a8e4c3;
 }
 
 /* Dark: re-derived, not inverted. Indigo is lifted to clear the ground and the
@@ -542,6 +550,12 @@
   --status-failed: #f4a1a7;     --status-failed-soft: #2e1a1c;
 
   --soga: #cf9a63;
+
+  --auth-panel: #161a33;
+  --auth-panel-foreground: #eef0fa;
+  --auth-panel-muted: #b3b9de;
+  --auth-panel-accent: #8d9bea;
+  --auth-panel-verified: #a8e4c3;
 }
 @media(prefers-reduced-motion:reduce){.workspace-design *{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 
@@ -735,3 +749,39 @@
 @keyframes describe-slide { from { transform: translateX(-120%); } to { transform: translateX(320%); } }
 .describe-slide { opacity: 0; animation: describe-slide 1.3s ease-in-out infinite; }
 @media (prefers-reduced-motion: no-preference) { .describe-line, .describe-slide { opacity: 1; } }
+
+/* ==========================================================================
+   Ask: an answer being made.
+
+   Steps rise in and tick off, the running one's label shimmers, the intent ends in a
+   caret, and a just-arrived answer pops its figure chips in and draws its chart from
+   the left (the arrival is set on the answer itself, in conversation.tsx). As above, every resting state is the end state, so reduced motion shows
+   the finished answer with nothing moving.
+   ========================================================================== */
+@keyframes ask-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.ask-rise { animation: ask-rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+@keyframes ask-pop { 0% { opacity: 0; transform: scale(0.5); } 70% { opacity: 1; transform: scale(1.12); } 100% { transform: scale(1); } }
+.ask-pop { animation: ask-pop 0.35s cubic-bezier(0.2, 0.8, 0.2, 1.2) both; }
+@keyframes ask-shimmer { from { background-position: -300px 0; } to { background-position: 300px 0; } }
+.ask-shimmer {
+  background: linear-gradient(90deg, var(--foreground) 0, var(--foreground) 40%, var(--muted-foreground) 50%, var(--foreground) 60%, var(--foreground) 100%);
+  background-size: 600px 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: ask-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) { .ask-shimmer { background: none; color: var(--foreground); } }
+@keyframes ask-caret { 0%, 49% { opacity: 1; } 50%, 100% { opacity: 0; } }
+.ask-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--primary);
+  animation: ask-caret 1s steps(1) infinite;
+}
+@keyframes ask-reveal { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes ask-pulse { 0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 35%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+.ask-pulse { animation: ask-pulse 1.3s ease-out infinite; }

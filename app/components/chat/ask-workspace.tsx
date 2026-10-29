@@ -6,6 +6,7 @@ import {
   CheckIcon,
   LinkSimpleIcon,
   PlusIcon,
+  SidebarSimpleIcon,
 } from "@phosphor-icons/react"
 
 import { AttachDialog, MAX_LIVE } from "@/components/chat/attach-dialog"
@@ -38,6 +39,7 @@ import {
   type FigureTally,
 } from "@/lib/chat/figures"
 import type { AttachableLive, ChatSources } from "@/lib/chat/sources"
+import { cn } from "@/lib/utils"
 import type {
   ChatAttachments,
   ChatMessageView,
@@ -49,7 +51,8 @@ import type {
  * The Ask page (ask-chat): conversations, the conversation, and what it is grounded in.
  *
  * Three panes on a wide screen: the conversations, the conversation, and the trace of one
- * figure. What the conversation rests on is not a pane — it is a row of chips under the title.
+ * figure. The conversation list is slim and can be hidden, leaving the conversation the
+ * whole width. What the conversation rests on is not a pane — it is a row of chips under the title.
  * Under `2xl` the trace opens as a sheet on a figure's selection (from the bottom on a phone),
  * and under `lg` the conversation list becomes a sheet too, so the conversation itself always
  * has the width.
@@ -126,11 +129,13 @@ export function AskWorkspace({
     "reports"
   )
   const [threadsOpen, setThreadsOpen] = useState(false)
+  const [listHidden, setListHidden] = useState(false)
   const [selected, setSelected] = useState<FigureSelection | null>(null)
   const [linkCopied, setLinkCopied] = useState(false)
   const [error, setError] = useState("")
   const wide = useMediaQuery("(min-width: 96rem)")
   const phone = useMediaQuery("(max-width: 47.99rem)")
+  const desk = useMediaQuery("(min-width: 64rem)")
   const accepted = useRef(false)
 
   const onUserMessage = useCallback((message: ChatMessageView) => {
@@ -351,6 +356,8 @@ export function AskWorkspace({
   const attachedCount =
     attachedRuns.length + attachedConnectors.length + attachedLive.length
   const hasConversation = messages.length > 0 || live !== null
+  // A new question puts its composer in the middle of the page instead of docking it.
+  const startPage = canChat && !hasConversation
   const showTrace = hasConversation && thread !== null
 
   const customerOf = useCallback(
@@ -473,17 +480,32 @@ export function AskWorkspace({
   return (
     <div
       data-slot="ask-workspace"
-      className={
-        "grid h-[calc(100dvh-8.5rem)] min-h-[32rem] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-[16rem_minmax(0,1fr)] " +
-        (showTrace ? "2xl:grid-cols-[16rem_minmax(0,1fr)_19rem]" : "")
-      }
+      className={cn(
+        "grid h-[calc(100dvh-8.5rem)] min-h-[32rem] grid-cols-1 overflow-hidden rounded-xl border border-border bg-card",
+        listHidden
+          ? showTrace && "2xl:grid-cols-[minmax(0,1fr)_19rem]"
+          : cn(
+              "lg:grid-cols-[15rem_minmax(0,1fr)]",
+              showTrace && "2xl:grid-cols-[15rem_minmax(0,1fr)_19rem]"
+            )
+      )}
     >
-      <aside
-        aria-label="Conversations"
-        className="hidden min-h-0 flex-col border-r border-border lg:flex"
-      >
-        {threadList}
-      </aside>
+      {listHidden ? null : (
+        <aside
+          aria-label="Conversations"
+          className="hidden min-h-0 flex-col border-r border-border bg-muted/30 lg:flex"
+        >
+          {threadList}
+          <button
+            type="button"
+            onClick={() => setListHidden(true)}
+            className="flex h-10 shrink-0 items-center gap-2 border-t border-border px-4 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30 focus-visible:ring-inset"
+          >
+            <SidebarSimpleIcon aria-hidden="true" className="size-4" />
+            Hide conversations
+          </button>
+        </aside>
+      )}
 
       <section
         aria-labelledby="ask-title"
@@ -495,8 +517,10 @@ export function AskWorkspace({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="-ml-2 lg:hidden"
-                onClick={() => setThreadsOpen(true)}
+                className={listHidden ? "-ml-2" : "-ml-2 lg:hidden"}
+                onClick={() =>
+                  desk ? setListHidden(false) : setThreadsOpen(true)
+                }
                 aria-label="Show conversations"
               >
                 <ChatsCircleIcon aria-hidden="true" />
@@ -586,6 +610,17 @@ export function AskWorkspace({
                 attachedLive.length
               )}
               onAsk={(question) => void ask(question)}
+              composer={
+                startPage ? (
+                  <Composer
+                    centered
+                    attachedCount={attachedCount}
+                    busy={live !== null}
+                    onSend={ask}
+                    onAttach={() => openDialog()}
+                  />
+                ) : undefined
+              }
             />
           }
         />
@@ -599,7 +634,7 @@ export function AskWorkspace({
           </p>
         ) : null}
 
-        {canChat ? (
+        {startPage ? null : canChat ? (
           <Composer
             attachedCount={attachedCount}
             busy={live !== null}

@@ -245,7 +245,7 @@ export function SubscriptionList({
     <ul
       data-slot="subscription-list"
       aria-label="Connected subscriptions"
-      className="flex flex-col gap-2.5"
+      className="grid grid-cols-[repeat(auto-fill,minmax(17rem,1fr))] gap-2.5"
     >
       {subscriptions.map((view) => {
         const state = resolveSubscriptionState(view, now)

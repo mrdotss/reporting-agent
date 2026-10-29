@@ -11,6 +11,7 @@ import {
   type ChatModelId,
 } from "@/lib/chat/models"
 import { CHAT_PROMPT_MAX } from "@/lib/chat/views"
+import { cn } from "@/lib/utils"
 
 const MODEL_KEY = "rpt.ask.model"
 
@@ -30,7 +31,10 @@ export function Composer({
   busy,
   onSend,
   onAttach,
+  centered = false,
 }: Readonly<{
+  /** In the middle of a new question's page, rather than docked under a conversation. */
+  centered?: boolean
   attachedCount: number
   busy: boolean
   onSend: (question: string, model: ChatModelId) => Promise<boolean>
@@ -84,10 +88,21 @@ export function Composer({
         event.preventDefault()
         void submit()
       }}
-      className="pt-2 pb-3"
+      className={centered ? "" : "pt-2 pb-3"}
     >
-      <div className="mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 md:px-7">
-        <div className="rounded-xl border border-input bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20">
+      <div
+        className={
+          centered
+            ? "flex w-full flex-col gap-2"
+            : "mx-auto flex w-full max-w-3xl flex-col gap-2 px-4 md:px-7"
+        }
+      >
+        <div
+          className={cn(
+            "rounded-xl border border-input bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/20",
+            centered && "rounded-2xl shadow-[0_10px_30px_-18px_rgb(23_24_28/0.35)]"
+          )}
+        >
           <label htmlFor="chat-prompt" className="sr-only">
             Ask about the attached usage
           </label>
@@ -113,7 +128,10 @@ export function Composer({
                 ? "Choose at least one source to start"
                 : "Ask about the attached usage — e.g. which VMs could move down a size?"
             }
-            className="block [field-sizing:content] max-h-44 min-h-14 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[0.9375rem] leading-relaxed outline-none placeholder:text-muted-foreground"
+            className={cn(
+              "block [field-sizing:content] max-h-44 w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[0.9375rem] leading-relaxed outline-none placeholder:text-muted-foreground",
+              centered ? "min-h-20 px-4 pt-3.5" : "min-h-14"
+            )}
           />
           <div className="flex items-center gap-2 px-2 pt-1 pb-2">
             <Button type="button" variant="ghost" size="sm" onClick={onAttach}>

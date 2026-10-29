@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState, useId, useState } from "react"
-import { CircleNotchIcon } from "@phosphor-icons/react"
+import { CheckIcon, CircleNotchIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +11,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
+import { PasswordInput } from "@/components/auth/password-input"
 import { Input } from "@/components/ui/input"
 import { registerAction } from "@/lib/actions/auth"
 import { PASSWORD_MIN } from "@/lib/validation"
@@ -57,6 +58,15 @@ export function RegisterForm() {
     undefined
   )
   const [email, setEmail] = useState("")
+  // Only the length is kept, so the password itself stays uncontrolled and clears
+  // after a rejection; a new form state zeroes the meter when it does.
+  const [passwordLength, setPasswordLength] = useState(0)
+  const [seenState, setSeenState] = useState(state)
+  if (seenState !== state) {
+    setSeenState(state)
+    setPasswordLength(0)
+  }
+  const longEnough = passwordLength >= PASSWORD_MIN
 
   const emailId = useId()
   const emailHintId = useId()
@@ -97,6 +107,7 @@ export function RegisterForm() {
             spellCheck={false}
             value={email}
             onChange={(event) => setEmail(event.target.value)}
+            className="h-11"
             aria-invalid={emailMessage === null ? undefined : true}
             aria-describedby={
               emailMessage === null ? emailHintId : `${emailErrorId} ${emailHintId}`
@@ -104,7 +115,7 @@ export function RegisterForm() {
           />
 
           <FieldDescription id={emailHintId}>
-            Use the address you&apos;ll sign in with.
+            You sign in with this address.
           </FieldDescription>
           <FieldError id={emailErrorId}>{emailMessage}</FieldError>
         </Field>
@@ -112,11 +123,11 @@ export function RegisterForm() {
         <Field data-invalid={passwordMessage === null ? undefined : true}>
           <FieldLabel htmlFor={passwordId}>Password</FieldLabel>
 
-          <Input
+          <PasswordInput
             id={passwordId}
             name="password"
-            type="password"
             autoComplete="new-password"
+            onChange={(event) => setPasswordLength(event.target.value.length)}
             aria-invalid={passwordMessage === null ? undefined : true}
             aria-describedby={
               passwordMessage === null
@@ -125,14 +136,38 @@ export function RegisterForm() {
             }
           />
 
-          <FieldDescription id={passwordHintId}>
-            At least {PASSWORD_MIN} characters.
-          </FieldDescription>
+          <div className="flex items-center gap-3">
+            <div aria-hidden="true" className="grid flex-1 grid-cols-12 gap-[3px]">
+              {Array.from({ length: PASSWORD_MIN }, (_, index) => (
+                <span
+                  key={index}
+                  className={
+                    index < passwordLength
+                      ? longEnough
+                        ? "h-1 rounded-full bg-(--status-verified)"
+                        : "h-1 rounded-full bg-primary"
+                      : "h-1 rounded-full bg-border"
+                  }
+                />
+              ))}
+            </div>
+            <FieldDescription
+              id={passwordHintId}
+              className={
+                longEnough
+                  ? "flex shrink-0 items-center gap-1 text-xs font-medium text-(--status-verified)"
+                  : "shrink-0 text-xs"
+              }
+            >
+              {longEnough ? <CheckIcon aria-hidden="true" weight="bold" className="size-3" /> : null}
+              At least {PASSWORD_MIN} characters.
+            </FieldDescription>
+          </div>
           <FieldError id={passwordErrorId}>{passwordMessage}</FieldError>
         </Field>
       </FieldGroup>
 
-      <Button type="submit" disabled={isPending} className="w-full">
+      <Button type="submit" disabled={isPending} className="h-11 w-full text-[15px]">
         {isPending ? (
           <CircleNotchIcon
             aria-hidden="true"

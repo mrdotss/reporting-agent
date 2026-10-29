@@ -3,14 +3,8 @@ import Link from "next/link"
 import { z } from "zod"
 
 import { LoginForm } from "@/components/auth/login-form"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { AuthFormColumn } from "@/components/auth/auth-form-column"
+import { AuthPanel } from "@/components/auth/auth-panel"
 import { RETURN_TO_PARAM } from "@/lib/auth/guard"
 import { safeReturnTo } from "@/lib/validation"
 
@@ -66,32 +60,22 @@ export default async function LoginPage({
   )
 
   return (
-    <Card className="w-full max-w-sm rounded-xl border border-border shadow-none ring-0">
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2}>
-          Sign in
-        </CardTitle>
-
-        <CardDescription>
-          Use the email address and password you registered with.
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent>
+    <>
+      <AuthPanel kind="signin" />
+      <AuthFormColumn
+        title="Welcome back"
+        description="Sign in with the email and password you registered with."
+        footer={
+          <>
+            New to Utilize Space?{" "}
+            <Link href="/register" className="rounded-sm font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30">
+              Create an account
+            </Link>
+          </>
+        }
+      >
         <LoginForm returnToParam={RETURN_TO_PARAM} returnTo={returnTo} />
-      </CardContent>
-
-      <CardFooter>
-        <p className="text-sm text-muted-foreground">
-          No account yet?{" "}
-          <Link
-            href="/register"
-            className="rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/30 dark:hover:text-sidebar-primary"
-          >
-            Create one
-          </Link>
-        </p>
-      </CardFooter>
-    </Card>
+      </AuthFormColumn>
+    </>
   )
 }

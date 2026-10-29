@@ -3,7 +3,8 @@ import { UsersThreeIcon } from "@phosphor-icons/react/ssr"
 
 import { CloseProgress } from "@/components/close/close-progress"
 import { NeedsYou } from "@/components/close/needs-you"
-import { PeriodBoard } from "@/components/close/period-board"
+import { OverviewBlocks } from "@/components/close/overview-blocks"
+import { MonthStripLegend, PeriodBoard } from "@/components/close/period-board"
 import { buttonVariants } from "@/components/ui/button"
 import {
   Empty,
@@ -15,7 +16,9 @@ import {
 } from "@/components/ui/empty"
 import { loadAttention } from "@/lib/close/attention"
 import { outstanding, type BoardRow } from "@/lib/close/board"
+import { actionTally, deliveredByMonth, upcomingRuns } from "@/lib/close/blocks"
 import { loadClose } from "@/lib/close/load"
+import { loadOverview } from "@/lib/close/overview"
 import { monthName } from "@/lib/close/period"
 import { selectedContext } from "@/lib/workspaces/context"
 import { can } from "@/lib/workspaces/policy"
@@ -26,12 +29,17 @@ import { can } from "@/lib/workspaces/policy"
  * One question leads, in the largest type on the page: how many customers have their
  * report for the open month proven and delivered. The sentence under it names exactly
  * who is left and why, so the board below is for scanning rather than for finding out.
+ * Under the board, the blocks answer what it does not: what runs next, whether each
+ * connector can still read, what happened lately, and six months of delivery.
  */
 export async function CloseBoard({ userId }: Readonly<{ userId: string }>) {
   const { workspace } = await selectedContext(userId)
   const now = new Date()
   const { period, board } = await loadClose(userId, workspace, now)
-  const attention = await loadAttention(userId, workspace.id, board, now)
+  const [attention, overview] = await Promise.all([
+    loadAttention(userId, workspace.id, board, now),
+    loadOverview(userId, workspace.id),
+  ])
   const canRequest = can(workspace.role, "edit")
 
   const due = new Intl.DateTimeFormat("en-GB", {
@@ -110,14 +118,17 @@ export async function CloseBoard({ userId }: Readonly<{ userId: string }>) {
           aria-labelledby="period-board-title"
           className="min-w-0 rounded-xl border border-border bg-card"
         >
-          <div className="flex flex-col gap-0.5 p-4 pb-3">
-            <h2 id="period-board-title" className="text-section">
-              Period board
-            </h2>
-            <p className="text-meta text-muted-foreground">
-              Each customer’s report, month by month. {monthName(period.month, "short")}{" "}
-              is the one still open.
-            </p>
+          <div className="flex flex-wrap items-end justify-between gap-3 p-4 pb-3">
+            <div className="flex flex-col gap-0.5">
+              <h2 id="period-board-title" className="text-section">
+                Customers this period
+              </h2>
+              <p className="text-meta text-muted-foreground">
+                Six months at a glance. The last square is {monthName(period.month, "short")},
+                still open.
+              </p>
+            </div>
+            <MonthStripLegend />
           </div>
           <PeriodBoard
             board={board}
@@ -133,6 +144,15 @@ export async function CloseBoard({ userId }: Readonly<{ userId: string }>) {
           canRequest={canRequest}
         />
       </div>
+
+      <OverviewBlocks
+        upcoming={upcomingRuns(board)}
+        connectors={overview.connectors}
+        activity={overview.activity}
+        delivered={deliveredByMonth(board)}
+        actions={actionTally(board)}
+        now={now}
+      />
     </div>
   )
 }

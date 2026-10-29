@@ -167,6 +167,10 @@ export function ProposalCard({
         ) : null}
       </div>
 
+      {proposal.state === "requested" && runStatus !== null ? (
+        <RunSteps status={runStatus} />
+      ) : null}
+
       {proposal.state === "requested" ? (
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
           {runStatus === null
@@ -293,5 +297,56 @@ function SmallField({
         className="h-8 min-w-0 rounded-lg border border-input bg-card px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
       />
     </div>
+  )
+}
+
+const RUN_STEPS = [
+  { label: "Queued", statuses: ["queued", "claimed"] },
+  { label: "Collecting", statuses: ["collecting"] },
+  { label: "Compiling", statuses: ["compiling"] },
+  { label: "Rendering", statuses: ["rendering"] },
+  { label: "Verifying", statuses: ["verifying"] },
+] as const satisfies readonly { label: string; statuses: readonly RunStatus[] }[]
+
+/**
+ * The run's pipeline as a row of steps: done ones ticked, the current one pulsing, the
+ * rest waiting. A completed run ticks them all; a failed one stops where it is.
+ */
+function RunSteps({ status }: Readonly<{ status: RunStatus }>) {
+  const current =
+    status === "completed" || status === "failed"
+      ? RUN_STEPS.length
+      : RUN_STEPS.findIndex((step) => (step.statuses as readonly RunStatus[]).includes(status))
+  return (
+    <ol aria-label="Run progress" className="grid grid-cols-5 gap-1.5">
+      {RUN_STEPS.map((step, index) => {
+        const done = index < current && status !== "failed"
+        const now = index === current
+        return (
+          <li key={step.label} className="flex min-w-0 flex-col gap-1.5">
+            <span
+              aria-hidden="true"
+              className={
+                done
+                  ? "h-1 rounded-full bg-(--status-verified)"
+                  : now
+                    ? "ask-pulse h-1 rounded-full bg-primary"
+                    : "h-1 rounded-full bg-border"
+              }
+            />
+            <span
+              className={
+                now
+                  ? "truncate text-[0.6875rem] font-medium text-primary"
+                  : "truncate text-[0.6875rem] text-muted-foreground"
+              }
+            >
+              {step.label}
+              <span className="sr-only">{done ? ", done" : now ? ", in progress" : ""}</span>
+            </span>
+          </li>
+        )
+      })}
+    </ol>
   )
 }

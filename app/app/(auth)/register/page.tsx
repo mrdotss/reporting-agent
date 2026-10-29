@@ -2,14 +2,8 @@ import type { Metadata } from "next"
 import Link from "next/link"
 
 import { RegisterForm } from "@/components/auth/register-form"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { AuthFormColumn } from "@/components/auth/auth-form-column"
+import { AuthPanel } from "@/components/auth/auth-panel"
 
 /**
  * `/register` (Requirements 7.1, 7.2, 7.8, 7.11).
@@ -24,38 +18,28 @@ import {
 export const metadata: Metadata = {
   title: "Create an account",
   description:
-    "Create an account to connect an Azure subscription and produce verified " +
+    "Create an account to connect your environment and produce verified " +
     "utilization reports.",
 }
 
 export default function RegisterPage() {
   return (
-    <Card className="w-full max-w-sm rounded-xl border border-border shadow-none ring-0">
-      <CardHeader>
-        <CardTitle role="heading" aria-level={2}>
-          Create an account
-        </CardTitle>
-
-        <CardDescription>
-          One account, then connect an Azure subscription read-only.
-        </CardDescription>
-      </CardHeader>
-
-      <CardContent>
+    <>
+      <AuthPanel kind="register" />
+      <AuthFormColumn
+        title="Create your account"
+        description="Then connect your environment, read-only."
+        footer={
+          <>
+            Already have an account?{" "}
+            <Link href="/login" className="rounded-sm font-semibold text-primary underline-offset-4 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30">
+              Sign in
+            </Link>
+          </>
+        }
+      >
         <RegisterForm />
-      </CardContent>
-
-      <CardFooter>
-        <p className="text-sm text-muted-foreground">
-          Already registered?{" "}
-          <Link
-            href="/login"
-            className="rounded-sm text-foreground underline underline-offset-4 outline-none hover:text-primary focus-visible:ring-3 focus-visible:ring-ring/30 dark:hover:text-sidebar-primary"
-          >
-            Sign in
-          </Link>
-        </p>
-      </CardFooter>
-    </Card>
+      </AuthFormColumn>
+    </>
   )
 }
