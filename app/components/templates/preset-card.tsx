@@ -2,6 +2,8 @@
 
 import Link from "next/link"
 import {
+  ArchiveIcon,
+  ArrowCounterClockwiseIcon,
   CopyIcon,
   DotsThreeIcon,
   PlayIcon,
@@ -70,11 +72,14 @@ export function PresetCard({
   template,
   customer,
   onDelete,
+  onArchive,
 }: Readonly<{
   template: TemplateView
   /** The customer's name, or `undefined` when the page shows one customer's presets only. */
   customer?: string
   onDelete: (template: TemplateView) => void
+  /** Archive (`true`) or restore (`false`) the preset. */
+  onArchive: (template: TemplateView, archived: boolean) => void
 }>) {
   const status = presetStatus(template)
   const empty = isEmptyPreset(template)
@@ -154,7 +159,8 @@ export function PresetCard({
             {messageText("ui.presets.edited", "en", { date: formatEditedShort(template.updatedAt) })}
           </span>
 
-          {template.currentVersion === null ? (
+          {/* An archived preset is out of the run pickers, so it offers no run. */}
+          {template.archivedAt !== null ? null : template.currentVersion === null ? (
             <Button
               size="icon-sm"
               variant="outline"
@@ -211,6 +217,17 @@ export function PresetCard({
                 <StackPlusIcon aria-hidden="true" />
                 {messageText("ui.presets.duplicate", "en")}
               </DropdownMenuItem>
+              {template.archivedAt === null ? (
+                <DropdownMenuItem onClick={() => onArchive(template, true)}>
+                  <ArchiveIcon aria-hidden="true" />
+                  {messageText("ui.presets.archive", "en")}
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem onClick={() => onArchive(template, false)}>
+                  <ArrowCounterClockwiseIcon aria-hidden="true" />
+                  {messageText("ui.presets.restore", "en")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={() => onDelete(template)}>
                 <TrashIcon aria-hidden="true" />

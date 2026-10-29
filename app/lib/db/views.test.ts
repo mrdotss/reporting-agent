@@ -1332,6 +1332,7 @@ function reportTemplateRow(
 ): ReportTemplate {
   return {
     provider: "azure",
+    archivedAt: null,
     workspaceId: null,
     projectId: null,
     draftRevision: 0,
@@ -1371,6 +1372,9 @@ const TEMPLATE_CURRENT_VERSION: TemplateViewCurrentVersion = {
  * that excludes it.
  */
 const TEMPLATE_VIEW_KEYS = [
+  // Reviewed and admitted: when the preset was archived, or null. A timestamp about the
+  // preset's own row; it names no resource and carries no secret.
+  "archivedAt",
   "createdAt",
   "currentVersion",
   "currentVersionSha256",
@@ -1443,6 +1447,7 @@ describe("toTemplateView — Requirement 43.9", () => {
       updatedAt: "2026-05-02T00:00:00.000Z",
 
       provider: "azure",
+      archivedAt: null,
     })
   })
 

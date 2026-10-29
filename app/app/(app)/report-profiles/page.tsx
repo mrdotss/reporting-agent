@@ -57,7 +57,7 @@ export default async function TemplatesPage() {
   const context = await selectedContext(user.id)
   const projectScope = { workspaceId: context.workspace.id, projectId: context.project?.id }
 
-  const rows = await listTemplates(user.id, projectScope)
+  const rows = await listTemplates(user.id, projectScope, { includeArchived: true })
   const customers = new Map(context.projects.map((project) => [project.id, project.name]))
   // Inside one customer every preset is that customer's, and a team with one customer
   // only ever has the one: either way a customer on each preset repeats itself.

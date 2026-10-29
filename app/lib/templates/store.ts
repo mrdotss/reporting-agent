@@ -4,7 +4,7 @@ import { accessWhere, DraftConflictError, type ProjectScope } from "@/lib/worksp
 
 import { randomUUID } from "node:crypto"
 
-import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm"
+import { and, asc, desc, eq, isNull, sql, type SQL } from "drizzle-orm"
 import { z } from "zod"
 
 import { getDb } from "@/lib/db"
@@ -368,11 +368,22 @@ export async function createTemplate(
  * created them in, and the id breaks a tie so two rows written in the same
  * transaction do not swap places between renders.
  */
-export async function listTemplates(userId: string, scope?: Partial<ProjectScope>): Promise<ReportTemplate[]> {
+export async function listTemplates(
+  userId: string,
+  scope?: Partial<ProjectScope>,
+  options: { readonly includeArchived?: boolean } = {}
+): Promise<ReportTemplate[]> {
+  // Archived presets are left out of every "pick a preset" list; only the Presets
+  // page asks for them, to show them under its Archived filter.
   return await getDb()
     .select()
     .from(reportTemplates)
-    .where(accessWhere(reportTemplates, userId, "read", scope))
+    .where(
+      and(
+        accessWhere(reportTemplates, userId, "read", scope),
+        options.includeArchived ? undefined : isNull(reportTemplates.archivedAt)
+      )
+    )
     .orderBy(asc(reportTemplates.createdAt), asc(reportTemplates.id))
 }
 
@@ -894,6 +905,29 @@ export async function readVersionById(
 }
 
 /** One atomic draft/name update, guarded by the revision read by the editor. */
+/**
+ * Archive a preset, or restore one (`archived: false`).
+ *
+ * The way to put away a preset that made reports, which {@link deleteTemplate} refuses:
+ * nothing is removed, so every report stays tied to the version it was built from. It
+ * writes no draft and leaves `draft_revision` alone, so an editor open on the preset
+ * is not told its draft conflicts.
+ */
+export async function setTemplateArchived(
+  userId: string,
+  id: string,
+  archived: boolean
+): Promise<ReportTemplate> {
+  const [row] = await getDb()
+    .update(reportTemplates)
+    // Archiving is not an edit: keep "Edited <date>" where it was.
+    .set({ archivedAt: archived ? new Date() : null, updatedAt: sql`${reportTemplates.updatedAt}` })
+    .where(and(eq(reportTemplates.id, id), accessWhere(reportTemplates, userId, "edit")))
+    .returning()
+  if (!row) throw new TemplateNotFoundError()
+  return row
+}
+
 export async function patchTemplate(userId: string, id: string, input: {name?: string; draftDefinition?: unknown; expectedRevision?: number}): Promise<ReportTemplate> {
   const [row] = await getDb().update(reportTemplates).set({
     ...(input.name !== undefined ? {name:input.name} : {}),

@@ -75,6 +75,7 @@ export async function loadAttention(
          join workspace_members m on m.workspace_id = t.workspace_id and m.user_id = $1
          join report_template_versions v on v.id = t.current_version_id
         where t.workspace_id = $2
+          and t.archived_at is null
           and coalesce(v.definition -> 'identity' ->> 'customer_name', '') = ''
         order by t.name`,
       [userId, workspaceId]

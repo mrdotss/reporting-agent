@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 
-import { PINNED_REASON, PresetLibrary } from "./preset-library"
+import { PresetLibrary } from "./preset-library"
 import type { TemplateView } from "@/lib/db/views"
+import { messageText } from "@/lib/messages/catalog"
 
 afterEach(() => {
   cleanup()
@@ -26,6 +27,7 @@ vi.mock("next/navigation", () => ({
 function profile(overrides: Partial<TemplateView> = {}): TemplateView {
   return {
     provider: "azure",
+    archivedAt: null,
     hasIncidentReport: false,
     sectionTypes: ["at_a_glance", "virtual_machines", "vm_utilization", "backup_report"],
     id: "t-1",
@@ -259,7 +261,7 @@ describe("deleting", () => {
           )
       )
     )
-    const reason = PINNED_REASON
+    const reason = messageText("ui.presets.delete_pinned", "en") ?? ""
     render(<PresetLibrary templates={[PUBLISHED]} />)
     openList()
 
@@ -300,5 +302,68 @@ describe("deleting", () => {
     await vi.waitFor(() =>
       expect(screen.getByText("Something specific happened.")).toBeInTheDocument()
     )
+  })
+
+  test("a pinned refusal offers to archive the preset instead", async () => {
+    const calls: { url: string; init?: RequestInit }[] = []
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, init })
+        if (init?.method === "DELETE") {
+          return new Response(
+            JSON.stringify({ error: { message: "pinned", code: "TEMPLATE_PINNED" } }),
+            { status: 409 }
+          )
+        }
+        return new Response(JSON.stringify({ template: {} }), { status: 200 })
+      })
+    )
+    render(<PresetLibrary templates={[PUBLISHED]} />)
+    openList()
+
+    fireEvent.click(screen.getByLabelText("Delete Enesis Monthly"))
+    fireEvent.click(screen.getByRole("button", { name: "Delete profile" }))
+    const archive = await screen.findByRole("button", { name: "Archive instead" })
+    fireEvent.click(archive)
+
+    await vi.waitFor(() =>
+      expect(screen.queryByRole("button", { name: "Archive instead" })).not.toBeInTheDocument()
+    )
+    expect(calls[1]).toMatchObject({ url: "/api/report-profiles/t-1/archive" })
+    expect(JSON.parse(String(calls[1]?.init?.body))).toEqual({ archived: true })
+  })
+
+  test("archived presets leave All and show only under Archived, with Restore", async () => {
+    const ARCHIVED = profile({
+      id: "t-9",
+      name: "Old Standard",
+      archivedAt: "2026-10-29T11:00:00.000Z",
+    })
+    const fetchMock = vi.fn(async () => new Response("{}", { status: 200 }))
+    vi.stubGlobal("fetch", fetchMock)
+    render(<PresetLibrary templates={[PUBLISHED, ARCHIVED]} />)
+
+    expect(cards().map((card) => within(card).getAllByRole("link")[0]?.textContent)).not.toContain(
+      "Old Standard"
+    )
+    expect(screen.getByRole("button", { name: /^All\s*1$/ })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: /^Archived\s*1$/ }))
+    expect(cardOf("Old Standard")).toBeInTheDocument()
+    expect(within(cardOf("Old Standard")).getByText("Archived")).toBeInTheDocument()
+
+    openList()
+    fireEvent.click(screen.getByLabelText("Restore Old Standard"))
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled())
+    expect(fetchMock.mock.calls[0]).toMatchObject([
+      "/api/report-profiles/t-9/archive",
+      { method: "POST", body: JSON.stringify({ archived: false }) },
+    ])
+  })
+
+  test("no Archived filter while nothing is archived", () => {
+    render(<PresetLibrary templates={[PUBLISHED]} />)
+    expect(screen.queryByRole("button", { name: /^Archived/ })).not.toBeInTheDocument()
   })
 })

@@ -6,6 +6,8 @@ import {
   SOURCE_NAMES,
 } from "@/components/subscriptions/provider-mark"
 import {
+  ArchiveIcon,
+  ArrowCounterClockwiseIcon,
   CopyIcon,
   PencilSimpleIcon,
   PlayIcon,
@@ -65,6 +67,7 @@ export function ProfileTable({
   customers,
   showCustomer = true,
   onDelete,
+  onArchive,
 }: Readonly<{
   rows: readonly TemplateView[]
   /** Customer names by project id, for the customer column. */
@@ -72,6 +75,8 @@ export function ProfileTable({
   /** False inside one customer, and for a team with one customer: the column would repeat itself. */
   showCustomer?: boolean
   onDelete: (template: TemplateView) => void
+  /** Archive (`true`) or restore (`false`) the preset. */
+  onArchive: (template: TemplateView, archived: boolean) => void
 }>) {
   return (
       <Table>
@@ -186,7 +191,7 @@ export function ProfileTable({
                     >
                       <PencilSimpleIcon aria-hidden="true" />
                     </Link>
-                    {template.currentVersion === null ? (
+                    {template.archivedAt !== null ? null : template.currentVersion === null ? (
                       <Button
                         size="icon-sm"
                         variant="ghost"
@@ -216,6 +221,27 @@ export function ProfileTable({
                     >
                       <CopyIcon aria-hidden="true" />
                     </Button>
+                    {template.archivedAt === null ? (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={messageText("ui.presets.archive_named", "en", { name: template.name })}
+                        title={messageText("ui.presets.archive", "en")}
+                        onClick={() => onArchive(template, true)}
+                      >
+                        <ArchiveIcon aria-hidden="true" />
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        aria-label={messageText("ui.presets.restore_named", "en", { name: template.name })}
+                        title={messageText("ui.presets.restore", "en")}
+                        onClick={() => onArchive(template, false)}
+                      >
+                        <ArrowCounterClockwiseIcon aria-hidden="true" />
+                      </Button>
+                    )}
                     <Button
                       size="icon-sm"
                       variant="ghost"

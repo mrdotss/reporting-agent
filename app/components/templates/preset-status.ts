@@ -10,9 +10,12 @@ import { messageText } from "@/lib/messages/catalog"
  * version (`hasUnpublishedEdits`), and an empty preset says it is empty.
  */
 
-export type PresetTone = "draft" | "pending" | "empty" | "live"
+export type PresetTone = "draft" | "pending" | "empty" | "live" | "archived"
 
 export function presetStatus(template: TemplateView): { label: string; tone: PresetTone } {
+  if (template.archivedAt !== null) {
+    return { label: messageText("ui.presets.filter_archived", "en") ?? "", tone: "archived" }
+  }
   const version = template.currentVersion
   if (version === null) {
     return { label: messageText("ui.presets.status_draft", "en") ?? "", tone: "draft" }
@@ -32,6 +35,7 @@ export const TONE_CLASS: Readonly<Record<PresetTone, string>> = {
   pending: "bg-(--status-attention-soft) text-(--status-attention) border border-dashed border-current",
   draft: "bg-(--status-inflight-soft) text-(--status-inflight) border border-dashed border-current",
   empty: "bg-muted text-muted-foreground",
+  archived: "bg-muted text-muted-foreground border border-current/30",
 }
 
 /** Work not yet live: a preset never published, or one whose draft differs from the live version. */
