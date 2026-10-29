@@ -2625,8 +2625,8 @@ export const MESSAGE_CATALOG = {
     id: "Pratinjau halaman",
   },
   "ui.describe.output_empty": {
-    en: "Your outline appears here: the sections, why each is there, and a preview of the first page.",
-    id: "Kerangka Anda muncul di sini: bagian-bagiannya, alasan tiap bagian, dan pratinjau halaman pertama.",
+    en: "The sections, grouped as the document is, why each one is there, and a preview of the first page.",
+    id: "Bagian-bagiannya, dikelompokkan seperti dokumennya, alasan tiap bagian, dan pratinjau halaman pertama.",
   },
   "ui.describe.section_count": {
     en: "{count} sections",
@@ -2727,6 +2727,114 @@ export const MESSAGE_CATALOG = {
   "ui.describe.language_id": {
     en: "In Indonesian",
     id: "Dalam bahasa Indonesia",
+  },
+  "ui.describe.eyebrow": {
+    en: "New preset",
+    id: "Preset baru",
+  },
+  "ui.describe.steps": {
+    en: "Steps",
+    id: "Langkah",
+  },
+  "ui.describe.example_exec_title": {
+    en: "Board one-pager",
+    id: "Satu halaman untuk direksi",
+  },
+  "ui.describe.example_capacity_title": {
+    en: "Capacity review",
+    id: "Tinjauan kapasitas",
+  },
+  "ui.describe.example_backup_title": {
+    en: "Exposure check",
+    id: "Cek celah perlindungan",
+  },
+  "ui.describe.audience_executive_hint": {
+    en: "Headlines and the decisions they need.",
+    id: "Angka utama dan keputusan yang dibutuhkan.",
+  },
+  "ui.describe.audience_technical_hint": {
+    en: "Every figure, resource by resource.",
+    id: "Setiap angka, per sumber daya.",
+  },
+  "ui.describe.audience_mixed_hint": {
+    en: "Headlines first, then the detail behind them.",
+    id: "Angka utama dulu, lalu rincian di baliknya.",
+  },
+  "ui.describe.length_short_hint": {
+    en: "Only the sections that answer the question.",
+    id: "Hanya bagian yang menjawab pertanyaannya.",
+  },
+  "ui.describe.length_standard_hint": {
+    en: "The usual set for a report like this.",
+    id: "Susunan umum untuk laporan seperti ini.",
+  },
+  "ui.describe.length_detailed_hint": {
+    en: "Every section that fits, with history.",
+    id: "Semua bagian yang cocok, beserta riwayatnya.",
+  },
+  "ui.describe.char_count": {
+    en: "{count} / {max}",
+    id: "{count} dari {max}",
+  },
+  "ui.describe.clear": {
+    en: "Clear",
+    id: "Kosongkan",
+  },
+  "ui.describe.draft_hint_empty": {
+    en: "Write a sentence or pick one above to start.",
+    id: "Tulis satu kalimat atau pilih salah satu di atas untuk mulai.",
+  },
+  "ui.describe.draft_hint_ready": {
+    en: "Takes a few seconds. Nothing is saved yet.",
+    id: "Butuh beberapa detik. Belum ada yang disimpan.",
+  },
+  "ui.describe.draft_hint_again": {
+    en: "Drafting again replaces the outline on the right.",
+    id: "Menyusun ulang mengganti kerangka di sebelah kanan.",
+  },
+  "ui.describe.output_empty_title": {
+    en: "Your outline appears here",
+    id: "Kerangka Anda muncul di sini",
+  },
+  "ui.describe.progress_read_note": {
+    en: "What it asks for, and for whom",
+    id: "Apa yang diminta, dan untuk siapa",
+  },
+  "ui.describe.progress_choose_note": {
+    en: "{count} {cloud} sections",
+    id: "{count} bagian {cloud}",
+  },
+  "ui.describe.progress_check_note": {
+    en: "Each section fits this cloud",
+    id: "Setiap bagian cocok untuk cloud ini",
+  },
+  "ui.describe.stage_read_title": {
+    en: "Your description",
+    id: "Deskripsi Anda",
+  },
+  "ui.describe.stage_read_note": {
+    en: "Words we noticed are marked as we read.",
+    id: "Kata yang kami perhatikan ditandai saat dibaca.",
+  },
+  "ui.describe.stage_choose_title": {
+    en: "Looking through {count} {cloud} sections",
+    id: "Menelusuri {count} bagian {cloud}",
+  },
+  "ui.describe.stage_choose_note": {
+    en: "Outlines only use sections that exist for this cloud.",
+    id: "Kerangka hanya memakai bagian yang tersedia untuk cloud ini.",
+  },
+  "ui.describe.drafting_note": {
+    en: "Usually a few seconds. Nothing is saved until you choose to.",
+    id: "Biasanya beberapa detik. Tidak ada yang disimpan sampai Anda memilihnya.",
+  },
+  "ui.describe.preview_note": {
+    en: "First page in the {name} look. Change the look in the bar below.",
+    id: "Halaman pertama dengan tampilan {name}. Ubah tampilan di bilah bawah.",
+  },
+  "ui.describe.refining": {
+    en: "Applying your change…",
+    id: "Menerapkan perubahan Anda…",
   },
 } as const satisfies Record<string, Record<Language, string>>
 // --- END MESSAGE CATALOG ---
