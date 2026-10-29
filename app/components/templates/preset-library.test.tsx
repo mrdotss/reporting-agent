@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react"
 
-import { PresetLibrary } from "./preset-library"
+import { PINNED_REASON, PresetLibrary } from "./preset-library"
 import type { TemplateView } from "@/lib/db/views"
 
 afterEach(() => {
@@ -242,17 +242,24 @@ describe("deleting", () => {
     )
   })
 
-  test("a 409 shows the server's reason instead of an error", async () => {
-    const reason =
-      "That template has produced at least one report, so its versions are " +
-      "pinned and it cannot be deleted."
+  test("a 409 TEMPLATE_PINNED explains why instead of showing a status code", async () => {
+    // The body shape the route really sends (lib/api/response.ts `conflict`).
     vi.stubGlobal(
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ message: reason }), { status: 409 })
+          new Response(
+            JSON.stringify({
+              error: {
+                message: "That template has produced at least one report…",
+                code: "TEMPLATE_PINNED",
+              },
+            }),
+            { status: 409 }
+          )
       )
     )
+    const reason = PINNED_REASON
     render(<PresetLibrary templates={[PUBLISHED]} />)
     openList()
 
@@ -270,5 +277,28 @@ describe("deleting", () => {
     expect(
       screen.queryByRole("button", { name: "Delete profile" })
     ).not.toBeInTheDocument()
+    expect(screen.queryByText(/\(409\)/)).not.toBeInTheDocument()
+  })
+
+  test("any other refusal shows the server's own message", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ error: { message: "Something specific happened." } }),
+            { status: 409 }
+          )
+      )
+    )
+    render(<PresetLibrary templates={[PUBLISHED]} />)
+    openList()
+
+    fireEvent.click(screen.getByLabelText("Delete Enesis Monthly"))
+    fireEvent.click(screen.getByRole("button", { name: "Delete profile" }))
+
+    await vi.waitFor(() =>
+      expect(screen.getByText("Something specific happened.")).toBeInTheDocument()
+    )
   })
 })
