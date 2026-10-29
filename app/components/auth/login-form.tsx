@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState, useId } from "react"
-import { CircleNotchIcon } from "@phosphor-icons/react"
+import { ArrowRightIcon, CircleNotchIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -10,6 +10,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field"
+import { PasswordInput } from "@/components/auth/password-input"
 import { Input } from "@/components/ui/input"
 import { loginAction } from "@/lib/actions/auth"
 
@@ -116,16 +117,16 @@ export function LoginForm({ returnToParam, returnTo }: LoginFormProps) {
             autoComplete="email"
             autoCapitalize="none"
             spellCheck={false}
+            className="h-11"
           />
         </Field>
 
         <Field>
           <FieldLabel htmlFor={passwordId}>Password</FieldLabel>
 
-          <Input
+          <PasswordInput
             id={passwordId}
             name="password"
-            type="password"
             autoComplete="current-password"
           />
         </Field>
@@ -133,7 +134,7 @@ export function LoginForm({ returnToParam, returnTo }: LoginFormProps) {
 
       <input type="hidden" name={returnToParam} value={returnTo} />
 
-      <Button type="submit" disabled={isPending} className="w-full">
+      <Button type="submit" disabled={isPending} className="h-11 w-full text-[15px]">
         {isPending ? (
           <CircleNotchIcon
             aria-hidden="true"
@@ -142,6 +143,8 @@ export function LoginForm({ returnToParam, returnTo }: LoginFormProps) {
         ) : null}
 
         {isPending ? "Signing in…" : "Sign in"}
+
+        {isPending ? null : <ArrowRightIcon aria-hidden="true" />}
       </Button>
     </form>
   )

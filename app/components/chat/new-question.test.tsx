@@ -29,9 +29,9 @@ function renderPicker(overrides: Partial<Parameters<typeof NewQuestion>[0]> = {}
 }
 
 describe("NewQuestion", () => {
-  test("asks what the answer should rest on and lists the verified reports", () => {
+  test("asks what you want to know and lists the verified reports", () => {
     renderPicker()
-    expect(screen.getByRole("heading", { name: "What should the answer rest on?" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "What do you want to know?" })).toBeTruthy()
     expect(screen.getAllByText("FATechID")).toHaveLength(2)
     expect(screen.getByText("409 figures · 58 resources · 92 gaps recorded")).toBeTruthy()
     expect(screen.getByText("Only reports whose latest verification passed are listed.")).toBeTruthy()

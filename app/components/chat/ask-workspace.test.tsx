@@ -81,7 +81,7 @@ describe("AskWorkspace, a new question", () => {
     renderAsk({ initialThread: null, initialMessages: [] })
 
     expect(screen.getByRole("heading", { level: 1, name: "New question" })).toBeTruthy()
-    expect(screen.getByRole("heading", { name: "What should the answer rest on?" })).toBeTruthy()
+    expect(screen.getByRole("heading", { name: "What do you want to know?" })).toBeTruthy()
     expect(document.querySelector("[data-slot='source-docket']")).toBeNull()
     expect(screen.getByLabelText("Ask about the attached usage").getAttribute("placeholder")).toBe(
       "Choose at least one source to start"

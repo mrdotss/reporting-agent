@@ -24,6 +24,7 @@ import {
   tallyFigures,
 } from "@/lib/chat/figures"
 import { chatModelLabel } from "@/lib/chat/models"
+import { cn } from "@/lib/utils"
 import {
   answerPlainText,
   type ChatKnowledgeSource,
@@ -72,6 +73,7 @@ export function Conversation({
   onProposalChange: (messageId: string, proposal: ChatProposal) => void
 }>) {
   const end = useRef<HTMLDivElement>(null)
+  const fresh = useFreshAnswer(messages, live)
 
   useEffect(() => {
     end.current?.scrollIntoView({ block: "end" })
@@ -100,6 +102,7 @@ export function Conversation({
             <AssistantMessage
               key={message.id}
               message={message}
+              fresh={message.id === fresh}
               selectedFactId={
                 selectedFigure?.messageId === message.id
                   ? selectedFigure.factId
@@ -147,8 +150,8 @@ export function Conversation({
             className="flex min-w-0 flex-col gap-3"
           >
             <AnswerHeader />
-            {live.intent ? <Intent text={live.intent} /> : null}
-            <Steps steps={live.steps} working />
+            {live.intent ? <Intent text={live.intent} typing={!live.text} /> : null}
+            <Steps steps={live.steps} working={!live.text} />
             {live.thinking ? (
               <Thinking
                 text={live.thinking}
@@ -159,7 +162,10 @@ export function Conversation({
             {live.text ? (
               <MessageText text={live.text} citations={{}} streaming />
             ) : live.steps.length === 0 && !live.intent ? (
-              <p className="text-sm text-muted-foreground">Starting…</p>
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span aria-hidden="true" className="size-2 rounded-full bg-primary ask-pulse" />
+                <span className="ask-shimmer">Starting…</span>
+              </p>
             ) : null}
           </article>
         ) : null}
@@ -215,11 +221,14 @@ function AnswerHeader({
 
 function AssistantMessage({
   message,
+  fresh,
   selectedFactId,
   onSelectFigure,
   children,
 }: Readonly<{
   message: ChatMessageView
+  /** Just replaced the live answer: its figures pop in and its charts draw once. */
+  fresh: boolean
   selectedFactId: string | null
   onSelectFigure: (factId: string) => void
   children: React.ReactNode
@@ -244,7 +253,15 @@ function AssistantMessage({
   const answered = !message.failed && !message.refused
 
   return (
-    <article aria-label="Answer" className="flex min-w-0 flex-col gap-3.5">
+    <article
+      aria-label="Answer"
+      data-fresh={fresh || undefined}
+      className={cn(
+        "flex min-w-0 flex-col gap-3.5",
+        fresh &&
+          "[&_[data-slot=answer-chart]_svg]:animate-[ask-reveal_1.6s_cubic-bezier(0.4,0,0.2,1)_both] [&_[data-slot=figure-chip]]:animate-[ask-pop_0.35s_cubic-bezier(0.2,0.8,0.2,1.2)_both]"
+      )}
+    >
       <AnswerHeader
         model={answered ? message.model : undefined}
         thoughtSeconds={answered ? message.thoughtSeconds : undefined}
@@ -337,6 +354,14 @@ function AssistantMessage({
   )
 }
 
+/**
+ * What the answer is doing, one line per step.
+ *
+ * While the answer is being made each step rises in with a spinner, its label
+ * shimmering, and ticks to a check when it is done. Once the answer starts streaming the
+ * list folds to one line, "N steps", so the answer has the room; it opens again on a
+ * click. A stored answer shows the folded line from the start.
+ */
 function Steps({
   steps,
   working = false,
@@ -346,49 +371,99 @@ function Steps({
 }>) {
   if (steps.length === 0) return null
   const finished = steps.every((step) => step.done)
+  const running = working && !finished
   return (
-    <details open={working} className="group rounded-xl border border-border">
+    <details open={working} className="group rounded-xl border border-border bg-card">
       <summary className="flex min-h-9 cursor-pointer list-none items-center gap-2 px-3 text-xs text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/30 [&::-webkit-details-marker]:hidden">
-        {working && !finished ? (
+        {running ? (
           <CircleNotchIcon
             aria-hidden="true"
-            className="size-3.5 animate-spin motion-reduce:animate-none"
+            className="size-3.5 animate-spin text-primary motion-reduce:animate-none"
           />
         ) : (
           <CheckIcon
             aria-hidden="true"
+            weight="bold"
             className="size-3.5 text-(--status-verified)"
           />
         )}
-        {working && !finished
-          ? steps[steps.length - 1]?.status || "Working…"
+        {running
+          ? `Working · ${steps.filter((step) => step.done).length} of ${steps.length} done`
           : `${steps.length} ${steps.length === 1 ? "step" : "steps"}`}
         <CaretDownIcon
           aria-hidden="true"
           className="ml-auto size-3.5 transition-transform group-open:rotate-180"
         />
       </summary>
-      <ol className="flex flex-col gap-1 px-3 pb-2.5 pl-8">
+      <ol className="flex flex-col gap-1.5 px-3 pb-3">
         {steps.map((step, index) => (
           <li
             key={`${step.name}-${index}`}
-            className="relative text-xs text-muted-foreground"
+            className={
+              working
+                ? "ask-rise flex items-start gap-2.5 text-xs"
+                : "flex items-start gap-2.5 text-xs"
+            }
           >
-            <span
-              aria-hidden="true"
-              className={
-                step.done
-                  ? "absolute top-1.5 -left-4 size-1.5 rounded-full bg-(--status-verified)"
-                  : "absolute top-1 -left-4 size-2 animate-pulse rounded-full bg-(--status-inflight) motion-reduce:animate-none"
-              }
-            />
-            <span className="font-medium text-foreground">{step.label}</span>
-            {step.status ? ` — ${step.status}` : ""}
+            <span aria-hidden="true" className="mt-px grid size-4 shrink-0 place-items-center">
+              {step.done ? (
+                <span className={working ? "ask-pop grid size-4 place-items-center rounded-full bg-(--status-verified-soft)" : "grid size-4 place-items-center rounded-full bg-(--status-verified-soft)"}>
+                  <CheckIcon weight="bold" className="size-2.5 text-(--status-verified)" />
+                </span>
+              ) : (
+                <CircleNotchIcon className="size-3.5 animate-spin text-primary motion-reduce:animate-none" />
+              )}
+            </span>
+            <span className="min-w-0 leading-relaxed">
+              <span
+                className={
+                  step.done || !working
+                    ? "font-medium text-foreground"
+                    : "ask-shimmer font-medium"
+                }
+              >
+                {step.label}
+              </span>
+              {step.status ? (
+                <span className="text-muted-foreground"> · {step.status}</span>
+              ) : null}
+            </span>
           </li>
         ))}
       </ol>
     </details>
   )
+}
+
+/**
+ * The id of the stored answer that has just replaced the live one, for a few seconds.
+ *
+ * A conversation opened later, or an answer already on the page, is never fresh: only
+ * the turn from "being made" to "made" plays the arrival.
+ */
+function useFreshAnswer(
+  messages: readonly ChatMessageView[],
+  live: LiveTurn | null
+): string | null {
+  const [fresh, setFresh] = useState<string | null>(null)
+  const wasLive = useRef(false)
+
+  useEffect(() => {
+    if (live !== null) {
+      wasLive.current = true
+      return
+    }
+    if (!wasLive.current) return
+    wasLive.current = false
+    const last = messages.at(-1)
+    if (last?.role !== "assistant") return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- marking the answer that just arrived
+    setFresh(last.id)
+    const timer = setTimeout(() => setFresh(null), 4000)
+    return () => clearTimeout(timer)
+  }, [live, messages])
+
+  return fresh
 }
 
 /**
@@ -437,11 +512,15 @@ function KnowledgeSources({
   )
 }
 
-/** What the assistant set out to do, in its own words, ahead of the answer. */
-function Intent({ text }: Readonly<{ text: string }>) {
+/**
+ * What the assistant set out to do, in its own words, ahead of the answer. While the
+ * answer is still being worked out the line ends in a caret, as if being typed.
+ */
+function Intent({ text, typing = false }: Readonly<{ text: string; typing?: boolean }>) {
   return (
     <p className="text-[0.9375rem] leading-relaxed text-muted-foreground">
       {text}
+      {typing ? <span aria-hidden="true" className="ask-caret" /> : null}
     </p>
   )
 }
@@ -498,9 +577,14 @@ function Thinking({
               : "size-3.5 animate-pulse text-(--status-inflight) motion-reduce:animate-none"
           }
         />
-        {done
-          ? `Thought for ${formatSeconds(elapsed)}`
-          : `Thinking… ${formatSeconds(elapsed)}`}
+        {done ? (
+          `Thought for ${formatSeconds(elapsed)}`
+        ) : (
+          <>
+            <span className="ask-shimmer">Thinking…</span>
+            <span className="font-mono tabular-nums">{formatSeconds(elapsed)}</span>
+          </>
+        )}
         <CaretDownIcon
           aria-hidden="true"
           className="ml-auto size-3.5 transition-transform group-open:rotate-180"

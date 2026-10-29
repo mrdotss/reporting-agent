@@ -17,13 +17,20 @@ import type { ChatAttachments } from "@/lib/chat/views"
 import { cn } from "@/lib/utils"
 
 /**
- * What a new question is asked of. It used to be an empty page with one button that opened
- * a dialog; the choice is the whole first step of using Ask, so it is the page.
+ * The start of a new question: one line of greeting, the composer in the middle of the
+ * page, and under it what the answer may rest on.
  *
- * The three kinds of source are tabs, as in the attach dialog, and tick the same draft
- * attachments. The dialog stays for what does not fit here: searching a long list, and
- * collecting new live metrics.
+ * The three kinds of source are chips, which are tabs, as in the attach dialog, and tick
+ * the same draft attachments in the list under them. The dialog stays for what does not
+ * fit here: searching a long list, and collecting new live metrics.
  */
+
+const CHIP = cn(
+  "h-8! flex-none! gap-1.5 rounded-full! border! border-border! bg-card px-3! text-[0.8125rem] font-medium text-muted-foreground!",
+  "transition-[border-color,background-color,color] hover:border-input! hover:text-foreground!",
+  "data-active:border-primary! data-active:bg-primary/[0.06] data-active:text-primary!",
+  "after:hidden"
+)
 
 const SHOWN_AT_FIRST = 5
 const DAY = new Intl.DateTimeFormat("en-GB", {
@@ -40,6 +47,7 @@ export function NewQuestion({
   onOpenDialog,
   suggestions,
   onAsk,
+  composer,
 }: Readonly<{
   canChat: boolean
   sources: ChatSources
@@ -48,6 +56,8 @@ export function NewQuestion({
   onOpenDialog: (tab: "reports" | "connectors" | "live") => void
   suggestions: readonly string[]
   onAsk: (question: string) => void
+  /** The question box, set in the middle of the page under the greeting. */
+  composer?: React.ReactNode
 }>) {
   const [showAll, setShowAll] = useState(false)
   const liveIds = attachments.liveIds ?? []
@@ -93,27 +103,40 @@ export function NewQuestion({
   const runs = showAll ? sources.runs : sources.runs.slice(0, SHOWN_AT_FIRST)
 
   return (
-    <div className="flex flex-col gap-7 pt-4 md:pt-8">
-      <div className="flex flex-col gap-2">
-        <h2 className="text-title text-balance">
-          What should the answer rest on?
+    <div className="flex flex-col gap-6 pt-6 md:pt-[8vh]">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h2 className="text-[1.75rem] leading-tight font-semibold tracking-[-0.02em] text-balance">
+          What do you want to know?
         </h2>
-        <p className="max-w-[60ch] text-[0.9375rem] leading-relaxed text-muted-foreground">
-          Ask quotes figures only from what you choose here, and shows where
-          each one came from. Anything it works out on top, like a monthly cost,
-          is marked as an estimate.
+        <p className="max-w-[52ch] text-[0.9375rem] leading-relaxed text-muted-foreground">
+          Answers quote only the sources you pick, and show where each figure
+          came from. Anything worked out on top is marked as an estimate.
         </p>
       </div>
 
-      <Tabs
-        defaultValue="reports"
-        className="gap-0 overflow-hidden rounded-xl border border-border"
-      >
-        <TabsList
-          variant="line"
-          className="h-auto w-full justify-start gap-5 border-b border-border px-4 py-0"
-        >
-          <TabsTrigger value="reports" className="h-11 flex-none px-0">
+      {composer}
+
+      {chosen > 0 && suggestions.length > 0 ? (
+        <ul aria-label="Start with" className="flex flex-wrap justify-center gap-2">
+          {suggestions.map((suggestion) => (
+            <li key={suggestion}>
+              <button
+                type="button"
+                onClick={() => onAsk(suggestion)}
+                className="ask-rise h-9 rounded-full border border-input bg-card px-4 text-sm text-foreground transition-colors outline-none hover:border-ring/60 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+              >
+                {suggestion}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      <Tabs defaultValue="reports" className="gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-micro text-muted-foreground uppercase">Answer from</span>
+          <TabsList className="h-auto flex-wrap gap-2 bg-transparent p-0">
+          <TabsTrigger value="reports" className={CHIP}>
             <SealCheckIcon
               aria-hidden="true"
               className="text-(--status-verified)"
@@ -121,19 +144,20 @@ export function NewQuestion({
             Verified reports
             <Count n={attachments.runIds.length} />
           </TabsTrigger>
-          <TabsTrigger value="live" className="h-11 flex-none px-0">
+          <TabsTrigger value="live" className={CHIP}>
             <LightningIcon aria-hidden="true" />
             Live metrics
             <Count n={liveIds.length} />
           </TabsTrigger>
-          <TabsTrigger value="connectors" className="h-11 flex-none px-0">
+          <TabsTrigger value="connectors" className={CHIP}>
             <PlugsIcon aria-hidden="true" />
             Connector inventory
             <Count n={attachments.connectorIds.length} />
           </TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
 
-        <TabsContent value="reports" className="flex flex-col">
+        <TabsContent value="reports" className={PANEL}>
           {sources.runs.length === 0 ? (
             <Empty>
               No verified report in this workspace yet.{" "}
@@ -215,7 +239,7 @@ export function NewQuestion({
           </Footnote>
         </TabsContent>
 
-        <TabsContent value="live" className="flex flex-col">
+        <TabsContent value="live" className={PANEL}>
           {sources.live.length === 0 ? (
             <Empty>
               No live pull yet. Collect metrics for a few machines and ask about
@@ -274,7 +298,7 @@ export function NewQuestion({
           </Footnote>
         </TabsContent>
 
-        <TabsContent value="connectors" className="flex flex-col">
+        <TabsContent value="connectors" className={PANEL}>
           {sources.connectors.length === 0 ? (
             <Empty>No connector in this workspace yet.</Empty>
           ) : (
@@ -327,34 +351,15 @@ export function NewQuestion({
           </Footnote>
         </TabsContent>
       </Tabs>
-
-      {chosen > 0 && suggestions.length > 0 ? (
-        <div className="flex flex-col gap-2.5">
-          <span className="text-micro text-muted-foreground uppercase">
-            Start with
-          </span>
-          <ul className="flex flex-wrap gap-2">
-            {suggestions.map((suggestion) => (
-              <li key={suggestion}>
-                <button
-                  type="button"
-                  onClick={() => onAsk(suggestion)}
-                  className="h-9 rounded-lg border border-input bg-card px-3.5 text-sm text-foreground transition-colors outline-none hover:border-ring/60 hover:bg-muted hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
-                >
-                  {suggestion}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
     </div>
   )
 }
 
+const PANEL = "flex flex-col overflow-hidden rounded-xl border border-border bg-card"
+
 function Count({ n }: Readonly<{ n: number }>) {
   return n > 0 ? (
-    <span className="font-mono text-xs font-normal text-muted-foreground">
+    <span className="ask-pop grid h-4.5 min-w-4.5 place-items-center rounded-full bg-primary px-1 font-mono text-[0.6875rem] font-medium text-primary-foreground">
       {n}
     </span>
   ) : null
