@@ -138,6 +138,7 @@ describe("the migration applies", () => {
       "ask_access",
       "connected_subscriptions",
       "customer_contacts",
+      "feedback",
       "live_metric_pulls",
       "login_attempts",
       "projects",

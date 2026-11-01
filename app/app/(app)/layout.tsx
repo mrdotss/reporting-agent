@@ -102,6 +102,7 @@ export default async function AppLayout({
             )}
             askAvailable={askAvailable}
             platformAdmin={platformAdmin}
+            userEmail={user.email}
             userMenu={<UserMenu email={user.email} />}
           />
 

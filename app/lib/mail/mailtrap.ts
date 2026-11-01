@@ -8,8 +8,9 @@ import "server-only"
  * (`RPT_MAILTRAP_TOKEN`, `RPT_MAIL_FROM`); neither is ever logged, and the token only ever
  * travels in the `Authorization` header.
  *
- * Every message carries the category `report-delivery`, so Mailtrap's logs and stats group
- * the report emails apart from anything else sent from the domain.
+ * Every message carries a category — `report-delivery` unless the caller names another —
+ * so Mailtrap's logs and stats group the report emails apart from anything else sent from
+ * the domain. Feedback goes out from the same sender under `feedback`.
  */
 
 export const MAILTRAP_SEND_URL = "https://send.api.mailtrap.io/api/send"
@@ -29,6 +30,10 @@ export type MailMessage = {
   readonly subject: string
   readonly text: string
   readonly html: string
+  /** Where a reply goes, when not to the sender (a Reply-To header). */
+  readonly replyTo?: string
+  /** Mailtrap's category for this message; {@link MAIL_CATEGORY} when absent. */
+  readonly category?: string
 }
 
 export type MailResult = { readonly ok: true; readonly messageId: string } | { readonly ok: false; readonly error: string }
@@ -86,7 +91,8 @@ export async function sendMail(
         subject: message.subject,
         text: message.text,
         html: message.html,
-        category: MAIL_CATEGORY,
+        category: message.category ?? MAIL_CATEGORY,
+        ...(message.replyTo ? { headers: { "Reply-To": message.replyTo } } : {}),
       }),
       signal: AbortSignal.timeout(15_000),
     })

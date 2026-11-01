@@ -34,6 +34,20 @@ describe("Mailtrap", () => {
     })
   })
 
+  test("a caller may name another category and a Reply-To address", async () => {
+    const fetchImpl = answering(200, { success: true, message_ids: ["m-2"] })
+    await sendMail(
+      { ...MESSAGE, category: "feedback", replyTo: "dana@acme.co" },
+      { fetchImpl: fetchImpl as unknown as typeof fetch, env: ENV }
+    )
+    const [, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      from: { email: "reports@fatechid.com", name: "FATechID Reports" },
+      category: "feedback",
+      headers: { "Reply-To": "dana@acme.co" },
+    })
+  })
+
   test("a refusal is a result naming why, never a throw", async () => {
     const env = { env: ENV }
     expect(await sendMail(MESSAGE, { ...env, fetchImpl: answering(401, { errors: ["Unauthorized"] }) as unknown as typeof fetch })).toEqual({

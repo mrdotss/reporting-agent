@@ -9,6 +9,7 @@ import {
   CheckIcon,
   FileTextIcon,
   ListChecksIcon,
+  ChatTextIcon,
   GearSixIcon,
   PlugsIcon,
   PlusIcon,
@@ -19,6 +20,7 @@ import {
 } from "@phosphor-icons/react"
 
 import { PeriodChip } from "@/components/app-shell/period-chip"
+import { FeedbackDialog } from "@/components/feedback/feedback-dialog"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -92,6 +94,8 @@ export type AppSidebarProps = Readonly<{
   askAvailable: boolean
   /** Whether this account administers Ask (roles-and-ask-access Req 7). */
   platformAdmin: boolean
+  /** The signed-in member's address, for the Send feedback dialog. */
+  userEmail: string
   userMenu: ReactNode
 }>
 
@@ -120,6 +124,7 @@ export function AppSidebar({
   connectorsNeedAttention,
   askAvailable,
   platformAdmin,
+  userEmail,
   userMenu,
 }: AppSidebarProps) {
   const pathname = usePathname()
@@ -128,6 +133,7 @@ export function AppSidebar({
   const [error, setError] = useState("")
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState("")
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   async function select(workspaceId: string, projectId?: string) {
     setBusy(true)
@@ -300,6 +306,12 @@ export function AppSidebar({
 
         <SidebarFooter>
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton tooltip="Send feedback" onClick={() => setFeedbackOpen(true)}>
+                <ChatTextIcon aria-hidden="true" />
+                <span>Send feedback</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             {platformAdmin && (
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -331,6 +343,8 @@ export function AppSidebar({
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
+
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} email={userEmail} />
 
       <Dialog open={creating} onOpenChange={setCreating}>
         <DialogContent>
