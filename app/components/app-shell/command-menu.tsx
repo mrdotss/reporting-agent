@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useTheme } from "next-themes"
 import {
+  ChatTextIcon,
   ChatsCircleIcon,
   FileTextIcon,
   GearSixIcon,
@@ -16,6 +17,7 @@ import {
   StackIcon,
 } from "@phosphor-icons/react"
 
+import { openFeedback } from "@/components/feedback/feedback-dialog"
 import {
   Command,
   CommandDialog,
@@ -161,6 +163,10 @@ export function CommandMenu({
                 Request a report
               </CommandItem>
             )}
+            <CommandItem onSelect={() => run(openFeedback)}>
+              <ChatTextIcon aria-hidden="true" />
+              Send feedback
+            </CommandItem>
             <CommandItem
               onSelect={() =>
                 run(() => setTheme(resolvedTheme === "dark" ? "light" : "dark"))

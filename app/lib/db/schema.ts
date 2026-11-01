@@ -1339,6 +1339,41 @@ export const reportDeliveries = pgTable(
 )
 
 /**
+ * One message sent from the app's Send feedback dialog.
+ *
+ * Saved before it is emailed, so a refused or failed send loses nothing: the Admin page
+ * lists every row with how its email went and can send it again. Who sent it, and from
+ * which workspace, is copied at the time, so the row still reads once the account or the
+ * workspace is gone; the foreign keys only clear.
+ */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    userEmail: text("user_email").notNull(),
+    workspaceId: text("workspace_id").references(() => workspaces.id, { onDelete: "set null" }),
+    workspaceName: text("workspace_name"),
+    role: text("role"),
+    kind: text("kind").notNull(),
+    message: text("message").notNull(),
+    pagePath: text("page_path"),
+    canReply: boolean("can_reply").notNull(),
+    emailStatus: text("email_status").notNull().default("pending"),
+    emailError: text("email_error"),
+    emailedAt: instant("emailed_at"),
+    resolvedAt: instant("resolved_at"),
+    createdAt: instant("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("feedback_created_idx").on(t.createdAt),
+    index("feedback_user_created_idx").on(t.userId, t.createdAt),
+    check("feedback_kind_ck", sql`${t.kind} in ('idea', 'problem', 'question', 'praise')`),
+    check("feedback_email_status_ck", sql`${t.emailStatus} in ('pending', 'sent', 'failed')`),
+  ]
+)
+
+/**
  * The Action register: one row per finding on one connector — a Housekeeping finding, a
  * missing backup, a rightsizing recommendation, an Advisor recommendation — carried from
  * month to month with an owner and a status.
@@ -1529,6 +1564,7 @@ export type RunSchedule = typeof runSchedules.$inferSelect
 export type ActionItem = typeof actionItems.$inferSelect
 export type CustomerContact = typeof customerContacts.$inferSelect
 export type ReportDelivery = typeof reportDeliveries.$inferSelect
+export type Feedback = typeof feedback.$inferSelect
 export type LiveMetricPull = typeof liveMetricPulls.$inferSelect
 export type NewReportRun = typeof reportRuns.$inferInsert
 
