@@ -253,3 +253,9 @@ test("an annotated line marks the incidents on their days beside the threshold",
   assert(!svg.includes("outside"));
   new Resvg(svg).render();
 });
+
+test("a small-multiples card name too long for its card is cut with an ellipsis", async () => {
+  const { fitLabel } = await import("./svg.mjs");
+  assert.equal(fitLabel("rf-bills-automation", 12), "rf-bills-au…");
+  assert.equal(fitLabel("ST-MCP", 12), "ST-MCP");
+});

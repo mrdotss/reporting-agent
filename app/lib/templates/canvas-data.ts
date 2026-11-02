@@ -4,7 +4,7 @@ import { z } from "zod"
 
 import { getSnapshotJson } from "@/lib/aws/s3"
 import { snapshotArtifactKey } from "@/lib/db/views"
-import { sampleUnit, seriesKey, type CanvasData, type SampleResource } from "@/lib/builder/sample"
+import { sampleUnit, seriesKey, type CanvasData, type InventoryGroup, type InventoryRollup, type SampleResource } from "@/lib/builder/sample"
 import type { SnapshotRun } from "@/lib/templates/preview"
 
 /**
@@ -183,6 +183,38 @@ function toResource(raw: NonNullable<z.output<typeof resourceSchema>>): SampleRe
 }
 
 /** The busiest {@link MAX_PER_TYPE} of each type, resources with figures ahead of those without. */
+/**
+ * Every resource counted by region, resource group and type, as `_dimension_rollup_table`
+ * in `compile/blocks/tables.py` orders them: count descending, then name.
+ */
+function rollupsOf(
+  raw: readonly { readonly location?: string | null; readonly resource_group?: string | null; readonly resource_type?: string | null }[]
+): Record<InventoryGroup, InventoryRollup[]> {
+  const count = (key: (resource: (typeof raw)[number]) => string | null | undefined, withRegions = false) => {
+    const groups = new Map<string, { count: number; regions: Set<string> }>()
+    for (const resource of raw) {
+      const name = key(resource)
+      if (!name) continue
+      const group = groups.get(name) ?? { count: 0, regions: new Set<string>() }
+      group.count += 1
+      if (resource.location) group.regions.add(resource.location)
+      groups.set(name, group)
+    }
+    return [...groups.entries()]
+      .sort(([a, x], [b, y]) => y.count - x.count || a.localeCompare(b))
+      .map(([name, group]) => ({
+        name,
+        count: group.count,
+        ...(withRegions ? { regions: [...group.regions].sort().join(", ") } : {}),
+      }))
+  }
+  return {
+    region: count((resource) => resource.location),
+    resource_group: count((resource) => resource.resource_group, true),
+    resource_type: count((resource) => resource.resource_type),
+  }
+}
+
 function kept(all: readonly SampleResource[]): SampleResource[] {
   const busiest = [...all].sort(
     (a, b) => Number(Object.keys(b.stats ?? {}).length > 0) - Number(Object.keys(a.stats ?? {}).length > 0) || b.peak - a.peak
@@ -263,7 +295,7 @@ export async function loadCanvasData(
       stopped: raw.filter((resource) => STOPPED.has((resource.power_state ?? "").toLowerCase())).length,
       unprotected: null,
     },
-    scope: { idTail: (parsed.subscription_id ?? "").slice(-4), places },
+    scope: { idTail: (parsed.subscription_id ?? "").slice(-4), places, rollups: rollupsOf(raw) },
     source: { name: source.name, start: run.periodStart, end: run.periodEnd },
     week: weekGrids(parsed.week),
   }

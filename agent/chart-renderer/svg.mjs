@@ -490,6 +490,13 @@ function mixOptions(spec, compact) {
  * figure and, on a percentage scale, draws the threshold dashed. A resource measured on one
  * day draws a dot, since a line needs two.
  */
+/** `text` cut to at most `chars` characters, ending in an ellipsis when cut. */
+export function fitLabel(text, chars) {
+  const max = Math.max(1, Math.floor(chars));
+  const value = String(text ?? "");
+  return value.length <= max ? value : `${value.slice(0, Math.max(1, max - 1))}…`;
+}
+
 function multiplesOptions(spec, compact) {
   const panel = spec.panels[0] ?? { label: "", unit: "", min: 0, max: 1 };
   const columns = Math.max(1, spec.columns ?? 4);
@@ -539,8 +546,11 @@ function multiplesOptions(spec, compact) {
     });
     if (!compact) {
       title.push({
-        text: s.label, left: left + pad, top: y + pad - 1,
-        textStyle: { fontFamily: spec.mono ?? spec.font, fontSize: 10, color: spec.ink, width: cellW - pad * 2 - 54, overflow: "truncate" },
+        // Clipped here rather than by ECharts' `overflow: "truncate"`, which the server-side
+        // SVG renderer ignores on a title: a long name ran into the peak beside it
+        // ("rf-bills-automation99.46%", seen 2026-11-02). 0.62em is a mono glyph's advance.
+        text: fitLabel(s.label, (cellW - pad * 2 - 54) / (10 * 0.62)), left: left + pad, top: y + pad - 1,
+        textStyle: { fontFamily: spec.mono ?? spec.font, fontSize: 10, color: spec.ink },
       });
       if (peak >= 0)
         title.push({
