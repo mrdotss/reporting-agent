@@ -195,7 +195,10 @@ export const LOOK_KEYS: Readonly<Record<keyof Look, (typeof STYLE_KEYS)[number]>
 export function themeLook(preset: DesignPreset): Look {
   const spec = SPECS[preset]
   return {
-    headingColor: "accent",
+    // The print stylesheet sets headings in ink, and only the `line` rule (Brief) colours
+    // them with the accent (`render/printcss.py`). An accent default here drew every other
+    // theme's headings in a colour the report never prints (seen 2026-11-02).
+    headingColor: spec.headingRule === "line" ? "accent" : "ink",
     fonts: "theme",
     textSize: "normal",
     figures: "mono",

@@ -12,7 +12,7 @@ import {
 } from "@phosphor-icons/react"
 import { useEffect, useRef, useState, type ReactNode } from "react"
 
-import { useBuilder, useIssues, useSectionResources } from "@/components/builder/context"
+import { useBuilder, useCanvasData, useIssues, useSectionResources } from "@/components/builder/context"
 import {
   expansionFor,
   resourceNoun,
@@ -297,7 +297,12 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
   const page = PAGE_PX[design.pageSize]
   const { spec } = design
   const title = definition.identity.report_title?.trim() || definition.identity.name
-  const customer = definition.identity.customer_name?.trim()
+  const data = useCanvasData()
+  // The cover prints what `render/front_matter.py` puts there: the document name (when one
+  // is set) above the title, the report's period under it, then the subtitle. The
+  // customer's name is not on the cover; it is on the document control page.
+  const documentName = (definition.front_matter.document_control as { document_name?: string } | undefined)?.document_name?.trim()
+  const period = coverPeriod(definition.period, definition.identity.language, data.source)
   const subtitle = (definition.front_matter.cover as { subtitle?: string } | undefined)?.subtitle
   const selected = selection?.kind === "front" && selection.part === "cover"
   // `signal` fills the page with its accent; `brief` sets a title strip on page one.
@@ -327,18 +332,26 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
       )}
       <span
         className="absolute flex flex-col"
-        style={strip ? { left: 76, right: 76, top: 56, gap: 6 } : { left: 76, right: 76, bottom: 96, gap: 12 }}
+        // Where the print stylesheet sets it: a full-bleed cover's title 62 mm down the page,
+        // a banded cover's at the top under the band (`render/printcss.py`).
+        style={
+          strip
+            ? { left: 76, right: 76, top: 56, gap: 6 }
+            : { left: 76, right: 76, top: bleed ? Math.round(page.height * (62 / 297)) : 40, gap: 12 }
+        }
       >
-        <span
-          style={{
-            fontSize: px(spec.smallPt + 1),
-            letterSpacing: "0.14em",
-            textTransform: "uppercase",
-            color: bleed ? "rgba(255,255,255,0.85)" : spec.muted,
-          }}
-        >
-          {customer || "Customer name"} · {periodLabel(definition.period.kind, definition.identity.language)}
-        </span>
+        {documentName && (
+          <span
+            style={{
+              fontSize: px(spec.smallPt + 1),
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: bleed ? "rgba(255,255,255,0.85)" : spec.muted,
+            }}
+          >
+            {documentName}
+          </span>
+        )}
         <span
           style={{
             fontSize: px(spec.titlePt * (bleed ? 1.6 : strip ? 1.15 : 1)),
@@ -349,6 +362,16 @@ function CoverSheet({ design }: Readonly<{ design: PageDesign }>) {
           }}
         >
           {title}
+        </span>
+        <span
+          style={{
+            fontSize: px(spec.smallPt + 1),
+            letterSpacing: "0.14em",
+            textTransform: "uppercase",
+            color: bleed ? "rgba(255,255,255,0.85)" : spec.muted,
+          }}
+        >
+          {period}
         </span>
         {subtitle && (
           <span style={{ fontSize: px(spec.subtitlePt), color: bleed ? "rgba(255,255,255,0.85)" : spec.muted }}>
@@ -376,6 +399,56 @@ const PERIODS: Readonly<Record<string, [string, string]>> = {
   last_full_month: ["Last full month", "Bulan penuh terakhir"],
   mtd: ["Month to date", "Bulan berjalan"],
   custom: ["A fixed window", "Rentang tetap"],
+}
+
+/**
+ * The period as the cover prints it (`formatPeriodDisplay` in `lib/runs/invoke.ts`): a whole
+ * calendar month as "October 2026", any other span as both ends. Drawn from the chosen
+ * report's window in Real mode, and otherwise from what the preset's period rule would
+ * resolve to today.
+ */
+export function coverPeriod(
+  period: { readonly kind: string; readonly start?: unknown; readonly end?: unknown },
+  language: "en" | "id",
+  source?: { readonly start: string; readonly end: string },
+  today: Date = new Date()
+): string {
+  const day = 24 * 60 * 60 * 1000
+  const iso = (date: Date) => date.toISOString().slice(0, 10)
+  const utc = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+  let range: [string, string] | null = source ? [source.start, source.end] : null
+  if (!range) {
+    const first = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1))
+    switch (period.kind) {
+      case "last_full_month":
+        range = [iso(new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 1, 1))), iso(new Date(first.getTime() - day))]
+        break
+      case "mtd":
+        range = [iso(first), iso(new Date(utc))]
+        break
+      case "last_7d":
+      case "last_30d":
+      case "last_24h": {
+        const days = period.kind === "last_7d" ? 7 : period.kind === "last_30d" ? 30 : 1
+        range = [iso(new Date(utc - days * day)), iso(new Date(utc - day))]
+        break
+      }
+      default:
+        range =
+          typeof period.start === "string" && typeof period.end === "string"
+            ? [period.start.slice(0, 10), period.end.slice(0, 10)]
+            : null
+    }
+  }
+  if (!range) return periodLabel(period.kind, language)
+  const locale = language === "id" ? "id-ID" : "en-US"
+  const start = new Date(`${range[0]}T00:00:00Z`)
+  const end = new Date(`${range[1]}T00:00:00Z`)
+  if (start.getUTCFullYear() === end.getUTCFullYear() && start.getUTCMonth() === end.getUTCMonth()) {
+    return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric", timeZone: "UTC" }).format(start)
+  }
+  const dayFormat = new Intl.DateTimeFormat(locale, { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+  return `${dayFormat.format(start)}–${dayFormat.format(end)}`
 }
 
 export function periodLabel(kind: string, language: "en" | "id"): string {

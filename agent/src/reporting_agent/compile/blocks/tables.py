@@ -345,6 +345,25 @@ def _metric_columns(
     return tuple(columns)
 
 
+def _ordered_columns(
+    parts: Sequence[tuple[str, object]],
+    context: BlockContext,
+    resources: Sequence[ResourceView],
+    *,
+    with_observed_at: bool,
+) -> tuple[Column, ...]:
+    """The header for :func:`_column_parts`' order, one kind's builder per column."""
+    columns: list[Column] = []
+    for kind, item in parts:
+        if kind == "attr":
+            columns.append(_attribute_column(item, context.messages))  # type: ignore[arg-type]
+        elif kind == "metric":
+            columns.extend(_metric_columns((item,), context, resources))  # type: ignore[arg-type]
+        else:
+            columns.extend(_fact_columns((item,), with_observed_at=with_observed_at))  # type: ignore[arg-type]
+    return tuple(columns)
+
+
 def _fact_columns(
     fact_keys: Sequence[str], *, with_observed_at: bool
 ) -> tuple[Column, ...]:
@@ -520,6 +539,47 @@ def _observed_at_fact_value(fact: FactTextValue) -> FactTextValue:
     )
 
 
+def _column_parts(
+    attributes: Sequence[str],
+    refs: Sequence[MetricRef],
+    fact_keys: Sequence[str],
+    parts: Sequence[ColumnEntry] | None,
+) -> list[tuple[str, object]]:
+    """The table's non-key columns in print order, as `(kind, item)` pairs.
+
+    With `parts` — the block's own column entries — in the order they were **declared**,
+    which is the order the builder's "Columns, in print order" list writes: an EC2 table
+    authored Instance type, Platform, vCPUs, Memory, Location, Power state prints in that
+    order. Grouping every attribute ahead of every fact instead (what this did before)
+    moved Location and Power state to the front whatever the author chose, and the builder
+    drew the table one way while the report printed it another (seen 2026-11-02).
+
+    Only what `attributes`, `refs` and `fact_keys` admit is kept, so a fact no resource
+    answered still drops its column, and the header and every row are built from this one
+    list and cannot disagree. Without `parts` (a caller with no declared columns, such as
+    the backup table), the old grouping: attributes, then metrics, then facts.
+    """
+    if parts is None:
+        return [
+            *(("attr", a) for a in attributes),
+            *(("metric", r) for r in refs),
+            *(("fact", k) for k in fact_keys),
+        ]
+    wanted_attributes, wanted_facts = set(attributes), set(fact_keys)
+    wanted_refs = {ref.key: ref for ref in refs}
+    ordered: list[tuple[str, object]] = []
+    for entry in parts:
+        if entry.kind == "attribute" and entry.attribute in wanted_attributes:
+            ordered.append(("attr", entry.attribute))
+            wanted_attributes.discard(entry.attribute)
+        elif entry.kind == "fact" and entry.fact_key in wanted_facts:
+            ordered.append(("fact", entry.fact_key))
+            wanted_facts.discard(entry.fact_key)
+        elif entry.kind == "metric" and entry.metric_ref is not None and entry.metric_ref.key in wanted_refs:
+            ordered.append(("metric", wanted_refs.pop(entry.metric_ref.key)))
+    return ordered
+
+
 def _resource_row(
     cursor: BlockCursor,
     context: BlockContext,
@@ -530,10 +590,11 @@ def _resource_row(
     attributes: Sequence[str] = (),
     fact_keys: Sequence[str] = (),
     with_observed_at: bool = True,
+    parts: Sequence[ColumnEntry] | None = None,
 ) -> Row:
     """One resource's row: its name, optionally its tier, then a cell per declared
-    attribute, then one cell per metric, then a cell per fact key — plus its instant when
-    the table's facts disagree about theirs.
+    attribute, metric and fact key — plus a fact's instant when the table's facts disagree
+    about theirs. In `parts`' order where it is given (see :func:`_column_parts`).
 
     `with_observed_at` must match what `_fact_columns` was given for the same table, or the
     row would carry a different number of cells than the header declares. Both come from
@@ -546,32 +607,28 @@ def _resource_row(
     if with_tier:
         cells.append(text_cell(cursor.child("cells", len(cells)), resource.fidelity_tier))
 
-    # Attributes before metrics: they are what the inventory already knew about the
-    # resource, and a reader identifies the row from them before reading its numbers.
-    for attribute in attributes:
-        cells.append(
-            text_cell(
-                cursor.child("cells", len(cells)),
-                resource_attribute_text(resource, attribute),
+    resource_facts: dict[str, object] | None = None
+    for kind, item in _column_parts(attributes, refs, fact_keys, parts):
+        if kind == "attr":
+            cells.append(
+                text_cell(
+                    cursor.child("cells", len(cells)),
+                    resource_attribute_text(resource, item),  # type: ignore[arg-type]
+                )
             )
-        )
-
-    for ref in refs:
-        cell_cursor = cursor.child("cells", len(cells))
-        value = resolve_stat(context.view, resource, ref)
-        cells.append(
-            empty_cell(cell_cursor)
-            if value is None
-            else _figure_cell(cell_cursor, context, value)
-        )
-
-    if fact_keys:
-        # Resolve all facts for this resource once; index by key for O(1) lookup.
-        resource_facts = {
-            f.key: f for f in context.view.facts_for(resource.resource_id)
-        }
-        for key in fact_keys:
-            fact = resource_facts.get(key)
+        elif kind == "metric":
+            cell_cursor = cursor.child("cells", len(cells))
+            value = resolve_stat(context.view, resource, item)  # type: ignore[arg-type]
+            cells.append(
+                empty_cell(cell_cursor)
+                if value is None
+                else _figure_cell(cell_cursor, context, value)
+            )
+        else:
+            if resource_facts is None:
+                # Resolve all facts for this resource once; index by key for O(1) lookup.
+                resource_facts = {f.key: f for f in context.view.facts_for(resource.resource_id)}
+            fact = resource_facts.get(item)  # type: ignore[call-overload]
             if fact is None:
                 # fact_unavailable: the resource does not carry this fact. EmptyCell,
                 # never a zero, never a raise (Req 4.3).
@@ -602,8 +659,10 @@ def _resource_rows_table(
     *,
     attributes: Sequence[str] = (),
     fact_keys: Sequence[str] = (),
+    parts: Sequence[ColumnEntry] | None = None,
 ) -> BlockOutput:
-    """The shared body of `resource_table` and `top_n_table`."""
+    """The shared body of `resource_table` and `top_n_table`. `parts`, where given, is the
+    block's declared column order (see :func:`_column_parts`)."""
     table_cursor = cursor.child("nodes", 0)
     matched = context.resources_for(block)
     style = context.design.table_style_name
@@ -675,7 +734,7 @@ def _resource_rows_table(
         _resource_row(
             table_cursor.child("rows", ordinal), context, resource, refs,
             with_tier=with_tier, attributes=attributes, fact_keys=answered,
-            with_observed_at=with_observed_at,
+            with_observed_at=with_observed_at, parts=parts,
         )
         for ordinal, resource in enumerate(shown)
     ]
@@ -690,9 +749,10 @@ def _resource_rows_table(
     columns = (
         _resource_column(context.messages, _resource_header_id(block)),
         *((_tier_column(context.messages),) if with_tier else ()),
-        *(_attribute_column(a, context.messages) for a in attributes),
-        *_metric_columns(refs, context, shown),
-        *_fact_columns(answered, with_observed_at=with_observed_at),
+        *_ordered_columns(
+            _column_parts(attributes, refs, answered, parts), context, shown,
+            with_observed_at=with_observed_at,
+        ),
     )
     table = Table(
         path=table_cursor.path,
@@ -727,7 +787,7 @@ def compile_resource_table(
             context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys
         )
     return _resource_rows_table(
-        context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys,
+        context, block, cursor, refs, attributes=attributes, fact_keys=fact_keys, parts=entries,
     )
 
 
@@ -929,14 +989,24 @@ def compile_metric_summary(
 
     if str(block.config.get("orientation") or "resource_major") == "statistic_major":
         nodes: list[Table] = []
-        for ordinal, name in enumerate(names):
-            table_cursor = cursor.child("nodes", ordinal)
+        for name in names:
+            # By the nodes emitted, not the metric's ordinal: a metric skipped below emits no
+            # node, and a figure's path must be its position in the tree.
+            table_cursor = cursor.child("nodes", len(nodes))
             if not matched:
                 nodes.append(
                     empty_scope_table(
                         table_cursor, style, caption, messages=context.messages
                     )
                 )
+                continue
+            if not any(
+                context.view.stat(matched[0].resource_id, name, statistic) is not None
+                for statistic in SUMMARY_STATISTICS
+            ):
+                # Stopped all window: the chart beside this already says no values were
+                # recorded, and a second notice (or an empty "Statistic | CPUUtilization"
+                # header, which is what printed until 2026-11-02) adds nothing.
                 continue
             nodes.append(
                 _statistic_major_table(
@@ -1527,6 +1597,12 @@ def _statistic_major_table(
         for statistic in SUMMARY_STATISTICS
         if context.view.stat(resource.resource_id, metric, statistic) is not None
     )
+    if not present:
+        # A machine stopped for the whole window has no statistic at all. A "Statistic |
+        # CPUUtilization" header over no rows read as a table that failed to print (seen
+        # 2026-11-02 on every stopped EC2 instance); say there were no values instead,
+        # the way the chart beside it already does.
+        return no_data_table(table_cursor, style, caption, messages=messages)
     with_samples = show_samples and any(
         context.view.sample_count_of(resource.resource_id, metric, statistic) is not None
         for statistic in present

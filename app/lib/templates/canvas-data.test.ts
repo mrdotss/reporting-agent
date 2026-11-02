@@ -74,7 +74,9 @@ describe("loadCanvasData", () => {
     expect(store.keys).toEqual(["user-1/snapshots/run-1/snapshot.json"])
     expect(data.kind).toBe("real")
     expect(data.source).toEqual({ name: "MSDN", start: "2026-09-01", end: "2026-09-30" })
-    expect(data.scope).toEqual({ idTail: "95a4", places: ["rg-a", "rg-b"] })
+    expect(data.scope).toMatchObject({ idTail: "95a4", places: ["rg-a", "rg-b"] })
+    // The inventory roll-ups count every resource, largest first, as the runtime prints them.
+    expect(data.scope.rollups?.resource_group?.map((group) => [group.name, group.count])).toEqual([["rg-a", 3], ["rg-b", 1]])
     expect(data.counts).toEqual({ resources: 4, stopped: 1, unprotected: null })
 
     const busy = data.resources[0]!
@@ -110,7 +112,7 @@ describe("loadCanvasData", () => {
     expect(data.resources.some((resource) => resource.name === "stopped")).toBe(false)
     expect(data.resources.length).toBeLessThanOrEqual(MAX_RESOURCES)
     expect(data.counts.resources).toBe(2 * (MAX_PER_TYPE + 5) + 1)
-    expect(data.scope).toEqual({ idTail: "9012", places: ["ap-southeast-1", "indonesiacentral"] })
+    expect(data.scope).toMatchObject({ idTail: "9012", places: ["ap-southeast-1", "indonesiacentral"] })
   })
 
   test.each([

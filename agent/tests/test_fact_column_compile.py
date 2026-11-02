@@ -502,3 +502,39 @@ class TestFactOnlyTableWithNothingCollected:
         # Named, because it answered nothing — and it is the only key that did.
         assert "disk_size_gb" in table.note
         assert "disk_type" not in table.note
+
+
+class TestDeclaredColumnOrder:
+    """A table prints its columns in the order they were declared, not grouped by kind.
+
+    The builder's "Columns, in print order" list writes this order; on 2026-11-02 an EC2
+    table authored Instance type … Location, Power state printed Location and Power state
+    first, because every attribute went ahead of every fact.
+    """
+
+    def test_a_fact_declared_before_an_attribute_prints_before_it(self) -> None:
+        rid = f"/subscriptions/{sf.SUBSCRIPTION_ID}/resourceGroups/rg-prod/providers/Microsoft.Compute/virtualMachines/vm-01"
+        view = _view(_vm_with_fact(rid, "vm-01"))
+
+        document = compile_document(
+            df.definition(
+                [df.block("ordered", "resource_table", {
+                    "columns": [
+                        _fact_column(FACT_KEY),
+                        df.CPU_AVG,
+                        {"kind": "attribute", "attribute": "location"},
+                    ],
+                })],
+                metrics={VM: [df.CPU_AVG]},
+            ),
+            view=view,
+        )
+
+        table = _table_named(document.document, "ordered")
+        keys = [column.key for column in table.columns]
+        assert keys[1] == FACT_KEY
+        assert keys[3].startswith("attr") or keys[3] == "location"
+        row = table.rows[0]
+        assert isinstance(row.cells[1], TextFactCell)
+        assert isinstance(row.cells[2], FigureCell)
+        assert isinstance(row.cells[3], TextCell)

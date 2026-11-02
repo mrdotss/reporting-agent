@@ -461,3 +461,38 @@ def test_the_agent_is_told_to_copy_numbers_exactly_in_either_language() -> None:
     assert "character for character" in SYSTEM_PROMPT_AGENT
     assert "never reformatted for the language you write in" in SYSTEM_PROMPT_AGENT
     assert "karakter demi karakter" in SYSTEM_PROMPT_AGENT_ID
+
+
+class _Sequence:
+    """Answers in turn, recording each request's messages."""
+
+    def __init__(self, *texts: str) -> None:
+        self.texts = list(texts)
+        self.calls: list[list[dict[str, Any]]] = []
+
+    def converse(self, **kwargs: Any) -> dict[str, Any]:
+        self.calls.append(kwargs["messages"])
+        text = self.texts.pop(0)
+        return {"stopReason": "end_turn", "output": {"message": {"content": [{"text": text}]}}}
+
+
+def test_a_rounded_number_is_asked_for_once_more_naming_it() -> None:
+    """Seen live on 2026-11-02: shown `2.01%`, the model wrote `2%` and the paragraph was lost."""
+    client = _Sequence("• web averaged 97%", "• web peaked at 97.2%")
+    assert generate_with_reason(_request(), client=client, model_id="test.model") == ("• web peaked at 97.2%", "written")
+    assert len(client.calls) == 2
+    retry = client.calls[1]
+    assert retry[1] == {"role": "assistant", "content": [{"text": "• web averaged 97%"}]}
+    assert "97%" in retry[2]["content"][0]["text"]
+
+
+def test_a_second_unprovable_answer_is_refused_and_no_third_is_asked() -> None:
+    client = _Sequence("• web averaged 97%", "• still 97%", "never asked")
+    assert generate_with_reason(_request(), client=client, model_id="test.model") == ("", "unprovable_figures")
+    assert len(client.calls) == 2
+
+
+def test_the_retry_is_asked_in_the_reports_language() -> None:
+    client = _Sequence("• web 97%", "• web memuncak 97.2%")
+    generate_with_reason(_request(language="id"), client=client, model_id="test.model", language="id")
+    assert client.calls[1][2]["content"][0]["text"].startswith("Jawaban Anda ditolak")

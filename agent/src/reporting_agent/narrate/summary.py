@@ -495,29 +495,84 @@ def generate(
     return generate_with_reason(request, client=client, model_id=model_id, language=language)[0]
 
 
+RETRY_UNPROVABLE: Final[dict[str, str]] = {
+    "en": (
+        "Your answer was refused because it wrote {tokens}, which is not among the figures "
+        "as printed. Write the answer again. Copy any number you use character for character "
+        "from the list, or describe the pattern in words instead of quoting a number."
+    ),
+    "id": (
+        "Jawaban Anda ditolak karena menulis {tokens}, yang tidak ada di antara angka yang "
+        "tercetak. Tulis ulang jawabannya. Salin setiap angka yang Anda gunakan karakter demi "
+        "karakter dari daftar, atau gambarkan polanya dengan kata-kata tanpa menyebut angka."
+    ),
+}
+"""The one follow-up a narrator gets when it quoted a number it was not shown.
+
+A model told to copy `2.01%` sometimes writes `2%` (seen on the deployed runtime on
+2026-11-02, which cost a customer's report its EC2 utilisation paragraph). Naming the token
+and asking once more recovers most of those; an answer that still quotes an unshown number
+is refused exactly as before, so nothing unprovable reaches the document either way."""
+
+
 def generate_with_reason(
     request: ProseRequest, *, client: BedrockConverse, model_id: str, language: str = "en"
 ) -> tuple[str, str]:
-    """One single-shot Converse call, with **no tool list**, and why its text is what it is:
+    """A single-shot Converse call, with **no tool list**, and why its text is what it is:
     `written`, `model_failed`, `unfinished`, `empty` or `unprovable_figures`.
+
+    An answer that quotes a number it was not shown is asked for **once** more, with the
+    offending tokens named (:data:`RETRY_UNPROVABLE`). The second answer is checked by the
+    same rule and refused if it still fails.
 
     A failure of any kind returns `""`. Broad by intent: a throttle, an expired role, a
     model that has been retired and a malformed response are four exceptions and one
     outcome — this report has no narrative — and none of them is a reason to withhold a
     document whose figures all verified.
     """
+    messages = build_messages(request)
+    text, reason = _ask(request, messages, client=client, model_id=model_id, language=language)
+    if reason != "unprovable_figures":
+        return (text, reason)
+
+    resolved = language if language == "id" else "en"
+    tokens = ", ".join(sorted(set(unprovable_figures_in(text, request)))[:5])
+    retry = [
+        *messages,
+        {"role": "assistant", "content": [{"text": text}]},
+        {"role": "user", "content": [{"text": RETRY_UNPROVABLE[resolved].format(tokens=tokens)}]},
+    ]
+    second, second_reason = _ask(request, retry, client=client, model_id=model_id, language=language)
+    if second_reason == "written":
+        logger.info("the narrator's second answer quoted only figures it was shown; it is used")
+        return (second, "written")
+    # Whatever went wrong the second time, the first answer's fault is the one to report:
+    # the author reads "it wrote a number it was not shown", which is what happened.
+    return ("", "unprovable_figures")
+
+
+def _ask(
+    request: ProseRequest,
+    messages: list[dict[str, Any]],
+    *,
+    client: BedrockConverse,
+    model_id: str,
+    language: str,
+) -> tuple[str, str]:
+    """One Converse call and its verdict. On `unprovable_figures` the text is returned as
+    well, so the caller can show the model what it wrote; it never reaches a document."""
     try:
         response = client.converse(
             modelId=model_id,
             system=[{"text": _system_prompt_for(language, request.kind)}],
-            messages=build_messages(request),
+            messages=messages,
             inferenceConfig=inference_config(
                 model_id, max_tokens=MAX_OUTPUT_TOKENS, temperature=0.2
             ),
         )
     except Exception as exc:
         logger.warning(
-            "the executive summary's model call failed (%s); the block renders its "
+            "the narrator's model call failed (%s); the block renders its "
             "compiler-placed figures with no narrative and the run continues",
             type(exc).__name__,
         )
@@ -556,12 +611,11 @@ def generate_with_reason(
     unprovable = unprovable_figures_in(text, request)
     if unprovable:
         logger.warning(
-            "the narrator wrote %d figure(s) it was not shown (%s); this block renders "
-            "its compiler-placed figures with no prose and the run continues",
+            "the narrator wrote %d figure(s) it was not shown (%s)",
             len(unprovable),
             ", ".join(sorted(set(unprovable))[:5]),
         )
-        return ("", "unprovable_figures")
+        return (text, "unprovable_figures")
     return (text, "written")
 
 

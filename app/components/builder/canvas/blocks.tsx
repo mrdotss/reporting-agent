@@ -41,6 +41,8 @@ import {
   sampleMetricSeries,
   seriesKey,
   sampleUnit,
+  type InventoryGroup,
+  type InventoryRollup,
   type SampleResource,
   type SampleUnit,
 } from "@/lib/builder/sample"
@@ -206,7 +208,8 @@ function sectionRule(spec: PageDesign["spec"]): string | undefined {
     case "none":
       return undefined
     default:
-      return `1px solid ${spec.rule}`
+      // `rule` draws no line across the page: a short accent bar under the heading.
+      return undefined
   }
 }
 
@@ -240,6 +243,8 @@ function Heading({
         gap: display ? 4 : 10,
         paddingBottom: rule ? 6 : 0,
         borderBottom: rule,
+        position: "relative",
+        marginBottom: (spec.headingRule ?? "rule") === "rule" && level <= 2 ? 10 : undefined,
       }}
     >
       {numbered &&
@@ -259,10 +264,14 @@ function Heading({
           </span>
         ) : (
           <span style={{ color: spec.muted, fontWeight: 400, fontVariantNumeric: "tabular-nums" }}>
-            {String(number).padStart(2, "0")}
+            {number}
           </span>
         ))}
       <span>{children}</span>
+      {/* `rule`: the 9 mm accent bar `printcss.py` sets under a section heading. */}
+      {level <= 2 && (spec.headingRule ?? "rule") === "rule" && (
+        <span aria-hidden style={{ position: "absolute", left: 0, bottom: -8, width: 34, height: 2, background: spec.accent }} />
+      )}
     </div>
   )
 }
@@ -801,37 +810,76 @@ function ChartView(props: BlockViewProps) {
   )
 }
 
+/**
+ * The metric summary as `compile/blocks/tables.py` prints it: one table per metric. On a
+ * resource's own page (`orientation: statistic_major`) the statistics run down the rows
+ * beside the metric's values; otherwise each resource is a row with Average, P95 (est.),
+ * Peak, Minimum and when the peak fell. A statistic no resource has prints no row or column.
+ */
 function MetricSummaryView(props: BlockViewProps) {
-  const { design, language, section, resource } = props
+  const { design, language, section, resource, expansion } = props
   const resources = useSectionResources(section)
   const target = resource ?? resources[0]
   if (!target) return <NoResources language={language} />
   const names = (section.metrics ?? []).map(metricLabel).filter((v, i, a) => a.indexOf(v) === i)
+  const statistics = [
+    ["avg", t("doc.summary.avg", language, "Average")],
+    ["p95", t("doc.summary.p95", language, "P95 (est.)")],
+    ["peak", t("doc.summary.max", language, "Peak")],
+    ["min", t("doc.summary.min", language, "Minimum")],
+  ] as const
+  const tables = names.length ? names : ["CPU"]
+
+  if (expansion.config.orientation === "statistic_major") {
+    return (
+      <div className="flex flex-col" style={{ gap: 10 }}>
+        {tables.map((name) => {
+          const unit = sampleUnit(name)
+          const figures = periodFigures(target, name)
+          const present = statistics.filter(([key]) => figures[key] !== null)
+          return (
+            <Table
+              key={name}
+              design={design}
+              head={[t("doc.table.statistic", language, "Statistic"), name]}
+              rows={present.map(([key, label]) => [label, formatFigure(figures[key], unit)])}
+              numeric={[1]}
+              own={props.settings.style}
+            />
+          )
+        })}
+      </div>
+    )
+  }
+
+  const rowsFor = resource ? [resource] : resources
   return (
-    <Table
-      design={design}
-      head={[
-        t("doc.table.metric", language, "Metric"),
-        t("doc.summary.avg", language, "Average"),
-        t("doc.summary.p95", language, "P95 (est.)"),
-        t("doc.summary.max", language, "Peak"),
-        t("doc.summary.peak_at", language, "Peak at"),
-      ]}
-      rows={(names.length ? names : ["CPU"]).map((name) => {
+    <div className="flex flex-col" style={{ gap: 10 }}>
+      {tables.map((name) => {
         const unit = sampleUnit(name)
-        const figures = periodFigures(target, name)
-        return [
-          name,
-          formatFigure(figures.avg, unit),
-          formatFigure(figures.p95, unit),
-          formatFigure(figures.peak, unit),
-          // When the peak fell is the report's own; real figures here do not carry it.
-          target.stats === undefined ? "14 Sep 10:00" : "–",
-        ]
+        const figures = rowsFor.map((r) => [r, periodFigures(r, name)] as const)
+        const present = statistics.filter(([key]) => figures.some(([, f]) => f[key] !== null))
+        return (
+          <Table
+            key={name}
+            design={design}
+            head={[
+              t("doc.table.resource", language, "Resource"),
+              ...present.map(([, label]) => label),
+              t("doc.summary.peak_at", language, "Peak at"),
+            ]}
+            rows={figures.map(([r, f]) => [
+              r.name,
+              ...present.map(([key]) => formatFigure(f[key], unit)),
+              // When the peak fell is the report's own; real figures here do not carry it.
+              r.stats === undefined ? "14 Sep 10:00" : "–",
+            ])}
+            numeric={present.map((_, index) => index + 1)}
+            own={props.settings.style}
+          />
+        )
       })}
-      numeric={[1, 2, 3]}
-      own={props.settings.style}
-    />
+    </div>
   )
 }
 
@@ -862,27 +910,65 @@ function TopNView(props: BlockViewProps) {
   )
 }
 
+/**
+ * The inventory summary as `compile/blocks/tables.py` prints it. Grouped by subscription, a
+ * Field / Value table: the account or subscription id, the resource count, (on Azure) the
+ * number of resource groups, and the number of regions — counts, not lists. Grouped by
+ * region, resource group or type, one row per value with its resource count, largest first;
+ * a resource group also names its regions.
+ */
 function InventoryView(props: BlockViewProps) {
-  const { design, language, provider } = props
+  const { design, language, provider, expansion } = props
   const data = useCanvasData()
-  const counts = data.counts
-  const rows =
+  const groupBy = String(expansion.config.group_by ?? "subscription")
+  const rollups = data.scope.rollups
+  const rollup = (group: InventoryGroup): readonly InventoryRollup[] => {
+    if (rollups?.[group]) return rollups[group]!
+    const key = group === "region" ? "location" : group
+    const counts = new Map<string, number>()
+    for (const resource of data.resources) {
+      const name = resource.cells[key]
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+    }
+    return [...counts.entries()].sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([name, count]) => ({ name, count }))
+  }
+
+  if (groupBy === "region" || groupBy === "resource_group" || groupBy === "resource_type") {
+    const rows = rollup(groupBy)
+    const withRegion = groupBy === "resource_group"
+    return (
+      <Table
+        design={design}
+        head={[
+          t("doc.inventory.name", language, "Name"),
+          ...(withRegion ? [t("doc.inventory.region", language, "Region")] : []),
+          t("doc.inventory.resources", language, "Resources"),
+        ]}
+        rows={rows.map((row) => [row.name, ...(withRegion ? [row.regions ?? ""] : []), String(row.count)])}
+        numeric={[withRegion ? 2 : 1]}
+        own={props.settings.style}
+      />
+    )
+  }
+
+  const id =
     provider === "aws"
-      ? [
-          [t("doc.inventory.account_id", language, "Account ID"), `•••• •••• ${data.scope.idTail}`],
-          [t("doc.inventory.regions", language, "Regions"), data.scope.places.join(", ")],
-          [t("doc.inventory.total_resources", language, "Total resources"), String(counts.resources)],
-        ]
-      : [
-          [t("doc.inventory.subscription_id", language, "Subscription ID"), `•••••••-••••-${data.scope.idTail}`],
-          [t("doc.inventory.resource_groups", language, "Resource groups"), data.scope.places.join(", ")],
-          [t("doc.inventory.total_resources", language, "Total resources"), String(counts.resources)],
-        ]
+      ? [t("doc.inventory.account_id", language, "Account ID"), `•••• •••• ${data.scope.idTail}`]
+      : [t("doc.inventory.subscription_id", language, "Subscription ID"), `•••••••-••••-${data.scope.idTail}`]
+  const rows = [
+    id,
+    [t("doc.inventory.total_resources", language, "Total resources"), String(data.counts.resources)],
+    ...(provider === "azure"
+      ? [[t("doc.inventory.resource_groups", language, "Resource groups"), String(rollup("resource_group").length)]]
+      : []),
+    [t("doc.inventory.regions", language, "Regions"), String(rollup("region").length)],
+  ]
   return (
     <Table
       design={design}
       head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
       rows={rows}
+      numeric={[]}
       own={props.settings.style}
     />
   )
@@ -939,34 +1025,41 @@ function BlankRowsView(props: BlockViewProps) {
   )
 }
 
+/**
+ * At a glance as `compile/blocks/glance.py` prints it: a Field / Value table of four
+ * headline counts, then "Decisions for you" as body paragraphs, each the whole sentence.
+ * It is not drawn as tiles, because the report does not print tiles here.
+ */
 function GlanceView(props: BlockViewProps) {
   const { design, language } = props
   const data = useCanvasData()
   const counts = data.counts
-  const tiles = [
-    [t("doc.glance.resources", language, "Resources in scope"), counts.resources],
-    [t("doc.glance.stopped", language, "Stopped machines"), counts.stopped],
-    [t("doc.glance.no_backup", language, "Resources without a backup"), counts.unprotected ?? "–"],
-  ] as const
+  const shown = (value: number | null | undefined) => (value === null || value === undefined ? "–" : String(value))
+  const rows = [
+    [t("doc.glance.resources", language, "Resources in scope"), shown(counts.resources)],
+    [t("doc.glance.housekeeping", language, "Resources to tidy up"), shown(counts.housekeeping)],
+    [t("doc.glance.no_backup", language, "Resources without a backup"), shown(counts.unprotected)],
+    [t("doc.glance.stopped", language, "Stopped machines"), shown(counts.stopped)],
+  ]
+  // The runtime chooses up to three by fixed rules from the snapshot; these are the two a
+  // typical month prints, in the order the runtime puts them.
+  const decisions = [
+    t("doc.glance.decision.housekeeping", language, "Review the resources listed under Housekeeping."),
+    t("doc.glance.decision.backup", language, "Decide which of the resources without a backup need one."),
+  ]
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-        {tiles.map(([label, value]) => (
-          <div key={label} style={{ border: `1px solid ${design.spec.rule}`, borderRadius: 4, padding: "10px 12px" }}>
-            <div style={{ fontSize: px(design.spec.smallPt), color: design.spec.muted }}>{label}</div>
-            <div style={{ fontSize: px(design.spec.headingPt[0] + 4), fontWeight: 700, color: design.spec.accent, fontVariantNumeric: "tabular-nums" }}>
-              {value}
-            </div>
-          </div>
-        ))}
-      </div>
-      <div>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>{t("doc.glance.decisions", language, "Decisions for you")}</div>
-        <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 3 }}>
-          <li>{t("doc.glance.decision.backup", language, "Decide which resources without a backup need one.").split(". ")[0]}.</li>
-          <li>{t("doc.glance.decision.housekeeping", language, "Review the resources listed under Housekeeping.").split(". ")[0]}.</li>
-        </ol>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <Table
+        design={design}
+        head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
+        rows={rows}
+        numeric={[1]}
+        own={props.settings.style}
+      />
+      <Heading design={design} level={2}>{t("doc.glance.decisions", language, "Decisions for you")}</Heading>
+      {decisions.map((text) => (
+        <p key={text} style={{ margin: 0, color: design.spec.ink }}>{text}</p>
+      ))}
     </div>
   )
 }

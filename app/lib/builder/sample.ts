@@ -32,6 +32,11 @@ export type SampleResource = {
   readonly months?: Readonly<Record<string, readonly { readonly month: string; readonly value: number }[]>>
 }
 
+export type InventoryGroup = "region" | "resource_group" | "resource_type"
+
+/** One row of an inventory roll-up: a name, its resource count and, for a group, its regions. */
+export type InventoryRollup = { readonly name: string; readonly count: number; readonly regions?: string }
+
 /** The key a real resource's series are stored under. */
 export function seriesKey(metric: string, statistic: string): string {
   return `${metric.trim().toLowerCase()}|${statistic === "maximum" ? "max" : statistic}`
@@ -45,9 +50,24 @@ export function seriesKey(metric: string, statistic: string): string {
 export type CanvasData = {
   readonly kind: "sample" | "real"
   readonly resources: readonly SampleResource[]
-  readonly counts: { readonly resources: number; readonly stopped: number; readonly unprotected: number | null }
+  readonly counts: {
+    readonly resources: number
+    readonly stopped: number
+    readonly unprotected: number | null
+    /** Resources with a housekeeping finding; `null` where the figures cannot say. */
+    readonly housekeeping?: number | null
+  }
   /** The account or subscription, shown masked to its last four characters, and its places. */
-  readonly scope: { readonly idTail: string; readonly places: readonly string[] }
+  readonly scope: {
+    readonly idTail: string
+    readonly places: readonly string[]
+    /**
+     * Resources counted by region, resource group and type, largest first, as the
+     * inventory summary's roll-up tables print them. Absent, the canvas counts the
+     * resources it holds.
+     */
+    readonly rollups?: Readonly<Partial<Record<InventoryGroup, readonly InventoryRollup[]>>>
+  }
   /** Real figures only: where they came from. */
   readonly source?: { readonly name: string; readonly start: string; readonly end: string }
   /**
@@ -147,8 +167,8 @@ export function sampleSeries(resource: SampleResource, statistic: string): numbe
 }
 
 export const SAMPLE_COUNTS = {
-  aws: { resources: 24, stopped: 3, unprotected: 5 },
-  azure: { resources: 23, stopped: 2, unprotected: 4 },
+  aws: { resources: 24, stopped: 3, unprotected: 5, housekeeping: 4 },
+  azure: { resources: 23, stopped: 2, unprotected: 4, housekeeping: 3 },
 } as const
 
 const SAMPLE_DATA: Readonly<Record<Provider, CanvasData>> = {
@@ -156,13 +176,41 @@ const SAMPLE_DATA: Readonly<Record<Provider, CanvasData>> = {
     kind: "sample",
     resources: AWS_RESOURCES,
     counts: SAMPLE_COUNTS.aws,
-    scope: { idTail: "4821", places: ["ap-southeast-1", "ap-southeast-3"] },
+    scope: {
+      idTail: "4821",
+      places: ["ap-southeast-1", "ap-southeast-3"],
+      rollups: {
+        region: [{ name: "ap-southeast-1", count: 16 }, { name: "ap-southeast-3", count: 8 }],
+        resource_type: [
+          { name: "AWS::EC2::Volume", count: 9 },
+          { name: "AWS::EC2::Instance", count: 7 },
+          { name: "AWS::EC2::SecurityGroup", count: 5 },
+          { name: "AWS::RDS::DBInstance", count: 3 },
+        ],
+      },
+    },
   },
   azure: {
     kind: "sample",
     resources: AZURE_RESOURCES,
     counts: SAMPLE_COUNTS.azure,
-    scope: { idTail: "4c21", places: ["rg-app-prod", "rg-data-prod"] },
+    scope: {
+      idTail: "4c21",
+      places: ["rg-app-prod", "rg-data-prod"],
+      rollups: {
+        region: [{ name: "southeastasia", count: 15 }, { name: "indonesiacentral", count: 8 }],
+        resource_group: [
+          { name: "rg-app-prod", count: 14, regions: "indonesiacentral, southeastasia" },
+          { name: "rg-data-prod", count: 9, regions: "southeastasia" },
+        ],
+        resource_type: [
+          { name: "microsoft.compute/disks", count: 8 },
+          { name: "microsoft.compute/virtualmachines", count: 6 },
+          { name: "microsoft.network/networkinterfaces", count: 6 },
+          { name: "microsoft.dbforpostgresql/flexibleservers", count: 3 },
+        ],
+      },
+    },
   },
 }
 
@@ -204,13 +252,19 @@ export function sampleSummary(values: readonly number[]): { avg: number; p95: nu
 export function periodFigures(
   resource: SampleResource,
   metric: string
-): { readonly avg: number | null; readonly p95: number | null; readonly peak: number | null } {
+): {
+  readonly avg: number | null
+  readonly p95: number | null
+  readonly peak: number | null
+  readonly min: number | null
+} {
   if (resource.stats !== undefined) {
     const stat = (statistic: string) => resource.stats?.[seriesKey(metric, statistic)] ?? null
-    return { avg: stat("avg"), p95: stat("p95"), peak: stat("max") }
+    return { avg: stat("avg"), p95: stat("p95"), peak: stat("max"), min: stat("min") }
   }
   const summary = sampleSummary(sampleMetricSeries(resource, metric, "max"))
-  return { avg: summary.avg * 0.62, p95: summary.p95, peak: summary.peak }
+  const low = Math.min(...sampleMetricSeries(resource, metric, "avg"))
+  return { avg: summary.avg * 0.62, p95: summary.p95, peak: summary.peak, min: Number.isFinite(low) ? low * 0.5 : null }
 }
 
 /**
