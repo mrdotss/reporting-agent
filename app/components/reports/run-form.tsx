@@ -5,7 +5,8 @@ import { can } from "@/lib/workspaces/policy"
 
 import { useCallback, useEffect, useId, useState } from "react"
 import { useRouter } from "next/navigation"
-import { PlayIcon } from "@phosphor-icons/react"
+import Link from "next/link"
+import { ArrowCounterClockwiseIcon, CheckCircleIcon, PlayIcon } from "@phosphor-icons/react"
 
 import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field"
@@ -14,13 +15,6 @@ import { IncidentsFieldset } from "@/components/reports/incidents-fieldset"
 import { RegionsFieldset } from "@/components/reports/regions-fieldset"
 import { SchedulePanel } from "@/components/schedules/schedule-panel"
 import { Identifier } from "@/components/identifier"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import type {
   ConnectedSubscriptionView,
   RunView,
@@ -36,7 +30,14 @@ import {
 } from "@/lib/runs/input"
 import type { ScheduleView } from "@/lib/schedules/view"
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
-import { SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
+import {
+  ProviderMark,
+  SOURCE_NAMES,
+  SOURCE_SHORT_NAMES,
+} from "@/components/subscriptions/provider-mark"
+import { sectionCount } from "@/components/templates/preset-status"
+import { sectionEntry, sectionTitle } from "@/lib/builder/catalogue"
+import { cn } from "@/lib/utils"
 
 /**
  * Request a report run (Requirements 37.1, 37.2, 37.4, 37.9, 37.10).
@@ -247,9 +248,7 @@ export function RunForm({
   const [revisionNote, setRevisionNote] = useState("")
   const [revisionAuthor, setRevisionAuthor] = useState("")
 
-  const subscriptionFieldId = useId()
   const reuseFieldId = useId()
-  const templateFieldId = useId()
   const revisionFieldId = useId()
   const revisionNoteFieldId = useId()
   const revisionAuthorFieldId = useId()
@@ -467,171 +466,190 @@ export function RunForm({
   // reaching `messageText` on one line rather than wrapped across four inside a map.
   const noVersionLabel = messageText("ui.run_form.no_version", "en") ?? ""
 
+  /** Select a connector, moving the preset to one for its source when it has to. */
+  const chooseConnection = (value: string) => {
+    setConnectedSubscriptionId(value)
+    setPickedRegions(null)
+    // A preset for another source is no longer a valid choice; move to the first
+    // runnable preset for this connector's source instead.
+    const nextProvider = providerOf(value)
+    if (templates.find((entry) => entry.id === templateId)?.provider !== nextProvider) {
+      setTemplateId(
+        templates.find(
+          (entry) => entry.provider === nextProvider && entry.currentVersion !== null
+        )?.id ?? ""
+      )
+    }
+  }
+
+  const presetsHint =
+    templates.length === 0
+      ? messageText("ui.run_form.no_templates_hint", "en")
+      : forProvider.length === 0
+        ? messageText("ui.run_form.no_provider_presets", "en", { provider: providerName })
+        : runnable.length === 0
+          ? messageText("ui.run_form.no_template_versions_hint", "en")
+          : messageText("ui.run_form.provider_presets", "en", { provider: providerName })
+
   return (
     <form
       data-slot="run-form"
       onSubmit={submit}
-      className={workspace ? "grid items-start gap-6 lg:grid-cols-[minmax(0,1.5fr)_minmax(280px,1fr)]" : "flex flex-col gap-4 rounded-xl border border-border px-4 py-4"}
+      className={workspace ? "grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]" : "flex flex-col gap-4"}
     >
-      <div className={workspace ? "flex flex-col gap-5 rounded-xl border bg-card p-6" : "contents"}>
-      <Field>
-        <FieldLabel htmlFor={subscriptionFieldId}>{messageText("ui.run_form.subscription_label", "en")}</FieldLabel>
-
+      <div className="flex min-w-0 flex-col">
         {/*
-          The registry's Select rather than a native one. A native `<select>` paints its
-          own popup from the OS, so its options ignored every token this app declares and
-          inverted on a theme change — the one control on the page whose colours were not
-          ours. This is also where the option can carry two lines: the connection's name
-          and, under it, the reason it cannot be chosen.
-        */}
-        <Select
-          value={connectedSubscriptionId}
-          onValueChange={(value) => {
-            if (!value) return
-            setConnectedSubscriptionId(value)
-            setPickedRegions(null)
-            // A preset for another source is no longer a valid choice; move to the
-            // first runnable preset for this connector's source instead.
-            const nextProvider = providerOf(value)
-            if (templates.find((entry) => entry.id === templateId)?.provider !== nextProvider) {
-              setTemplateId(
-                templates.find(
-                  (entry) => entry.provider === nextProvider && entry.currentVersion !== null
-                )?.id ?? ""
-              )
-            }
-          }}
-        >
-          <SelectTrigger
-            id={subscriptionFieldId}
-            className="w-full"
-            aria-label={
-              messageText("ui.run_form.subscription_label", "en") ?? undefined
-            }
-          >
-            {/*
-              A function child, because the default renders the item's *value* — and the
-              value here is a uuid. The trigger read `1e43c9d7-b90c-…` where the
-              connection's name belongs, which is the one string on this control nobody
-              can act on. It cannot derive a label from the option's markup either: the
-              option is two lines, and there is no single text node to lift.
-            */}
-            <SelectValue>
-              {(value) =>
-                subscriptions.find((entry) => entry.id === value)?.displayName ??
-                ""
-              }
-            </SelectValue>
-          </SelectTrigger>
+          Three numbered steps down a rail: where to read from, what to print, and the
+          optional rest. The first two are the whole request for a normal month; the
+          third is everything a consultant reaches for only sometimes.
 
-          <SelectContent>
+          Cards rather than selects, because each choice carries more than a name — the
+          connector's source, its masked id and whether it can run; the preset's version,
+          size and description — and a select collapsed all of that into one line.
+          Native radios underneath, so arrow keys move between cards and a screen reader
+          hears a group of options with one checked.
+        */}
+        <RunFormStep number={1} done={connectedSubscriptionId !== ""} title={messageText("ui.run_form.step_connection", "en")} hint={messageText("ui.run_form.step_connection_hint", "en")}>
+          <fieldset data-slot="run-form-connections" className="grid gap-3 sm:grid-cols-2">
+            <legend className="sr-only">{messageText("ui.run_form.subscription_label", "en")}</legend>
             {subscriptions.map((subscription) => {
               const reason = blockedReason(subscription, now)
-
+              const checked = subscription.id === connectedSubscriptionId
               return (
-                <SelectItem
+                <label
                   key={subscription.id}
-                  value={subscription.id}
-                  // Typeahead matches on this. Absent, it matches on the uuid.
-                  label={subscription.displayName}
-                  disabled={reason !== null}
+                  data-slot="run-form-connection"
+                  data-checked={checked ? "true" : "false"}
+                  className={cn(
+                    "relative flex min-w-0 items-center gap-3.5 rounded-xl border border-border bg-card p-4 transition-colors has-focus-visible:ring-3 has-focus-visible:ring-ring/40",
+                    reason === null ? "cursor-pointer hover:border-ring" : "cursor-not-allowed opacity-60",
+                    checked && "border-primary bg-primary/6 ring-3 ring-primary/15 hover:border-primary"
+                  )}
                 >
-                  <span className="flex flex-col gap-0.5">
-                    <span>{subscription.displayName}</span>
+                  <input
+                    type="radio"
+                    name="connectedSubscriptionId"
+                    value={subscription.id}
+                    checked={checked}
+                    disabled={reason !== null}
+                    onChange={() => chooseConnection(subscription.id)}
+                    className="sr-only"
+                  />
+                  <span className="grid size-10 shrink-0 place-items-center rounded-lg border border-border bg-background">
+                    <ProviderMark kind={subscription.provider} className="size-6" />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[15px] font-semibold">{subscription.displayName}</span>
                     <Identifier
                       value={subscription.maskedSubscriptionId}
                       kind="mask"
                       label="Subscription"
                       className="text-muted-foreground"
                     />
-                    {/* Disabled *and* the reason, so the control never just refuses. */}
-                    {reason === null ? null : (
-                      <span className="text-xs text-muted-foreground">
-                        {reason}
+                    {/* Disabled *and* the reason, so the card never just refuses. */}
+                    {reason === null ? (
+                      <span className="flex items-center gap-1.5 text-xs text-(--status-verified)">
+                        <span aria-hidden="true" className="size-1.5 rounded-full bg-(--status-verified)" />
+                        {messageText("ui.run_form.connection_ready", "en")}
                       </span>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{reason}</span>
                     )}
                   </span>
-                </SelectItem>
+                  {checked ? (
+                    <CheckCircleIcon aria-hidden="true" weight="fill" className="size-5 shrink-0 text-primary" />
+                  ) : null}
+                </label>
               )
             })}
-          </SelectContent>
-        </Select>
+          </fieldset>
 
-        {selectable.length === 0 ? (
-          <FieldDescription>
-            {messageText("ui.run_form.no_selectable_hint", "en")}
-          </FieldDescription>
-        ) : null}
-      </Field>
+          {selectable.length === 0 ? (
+            <FieldDescription className="mt-3">
+              {messageText("ui.run_form.no_selectable_hint", "en")}
+            </FieldDescription>
+          ) : null}
+        </RunFormStep>
 
-      <Field>
-        <FieldLabel htmlFor={templateFieldId}>{messageText("ui.run_form.template_label", "en")}</FieldLabel>
-
-        <Select
-          value={templateId}
-          onValueChange={(value) => value && setTemplateId(value)}
+        <RunFormStep
+          number={2}
+          done={templateId !== ""}
+          title={messageText("ui.run_form.step_preset", "en")}
+          hint={presetsHint}
+          aside={
+            <Link
+              href="/report-profiles"
+              className="rounded-sm text-sm font-medium text-primary outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/30"
+            >
+              {messageText("ui.run_form.browse_presets", "en")}
+            </Link>
+          }
         >
-          <SelectTrigger
-            id={templateFieldId}
-            className="w-full"
-            aria-label={
-              messageText("ui.run_form.template_label", "en") ?? undefined
-            }
-          >
-            <SelectValue>
-              {(value) =>
-                templates.find((entry) => entry.id === value)?.name ?? ""
-              }
-            </SelectValue>
-          </SelectTrigger>
+          {forProvider.length === 0 ? null : (
+            <fieldset data-slot="run-form-presets" className="flex flex-col gap-2.5">
+              <legend className="sr-only">{messageText("ui.run_form.template_label", "en")}</legend>
+              {forProvider.map((template) => {
+                const checked = template.id === templateId
+                const unrunnable = template.currentVersion === null
+                return (
+                  <label
+                    key={template.id}
+                    data-slot="run-form-preset"
+                    data-checked={checked ? "true" : "false"}
+                    className={cn(
+                      "relative flex min-w-0 items-start gap-4 rounded-xl border border-border bg-card p-4 transition-colors has-focus-visible:ring-3 has-focus-visible:ring-ring/40",
+                      unrunnable ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-ring",
+                      checked && "border-primary bg-primary/6 ring-3 ring-primary/15 hover:border-primary"
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="templateId"
+                      value={template.id}
+                      checked={checked}
+                      disabled={unrunnable}
+                      onChange={() => setTemplateId(template.id)}
+                      className="sr-only"
+                    />
+                    <PageGlyph />
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span data-slot="run-form-preset-name" className="text-[15px] font-semibold">{template.name}</span>
+                        <span className="rounded-md border border-border px-1.5 font-mono text-[11px] text-muted-foreground tabular-nums">
+                          {unrunnable ? noVersionLabel : `v${template.currentVersion}`}
+                        </span>
+                      </span>
+                      {template.description.trim() === "" ? null : (
+                        <span className="line-clamp-2 text-sm text-muted-foreground">{template.description}</span>
+                      )}
+                      {template.sectionTypes.length === 0 ? null : (
+                        <span className="text-xs text-muted-foreground">{sectionCount(template.sectionTypes.length)}</span>
+                      )}
+                    </span>
+                    {checked ? (
+                      <CheckCircleIcon aria-hidden="true" weight="fill" className="size-5 shrink-0 text-primary" />
+                    ) : null}
+                  </label>
+                )
+              })}
+            </fieldset>
+          )}
+        </RunFormStep>
 
-          <SelectContent>
-            {forProvider.map((template) => (
-              <SelectItem
-                key={template.id}
-                value={template.id}
-                label={template.name}
-                disabled={template.currentVersion === null}
-              >
-                <span className="flex flex-col gap-0.5">
-                  <span>{template.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                    {template.currentVersion === null
-                      ? noVersionLabel
-                      : `v${template.currentVersion}`}
-                  </span>
-                </span>
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {templates.length === 0 ? (
-          <FieldDescription>
-            {messageText("ui.run_form.no_templates_hint", "en")}
-          </FieldDescription>
-        ) : forProvider.length === 0 ? (
-          <FieldDescription>
-            {messageText("ui.run_form.no_provider_presets", "en", { provider: providerName })}
-          </FieldDescription>
-        ) : runnable.length === 0 ? (
-          <FieldDescription>
-            {messageText("ui.run_form.no_template_versions_hint", "en")}
-          </FieldDescription>
-        ) : (
-          <FieldDescription>
-            {messageText("ui.run_form.provider_presets", "en", { provider: providerName })}
-          </FieldDescription>
-        )}
-      </Field>
-
-
+        <RunFormStep
+          number={3}
+          last
+          title={messageText("ui.run_form.step_options", "en")}
+          optional={messageText("ui.run_form.step_options_optional", "en")}
+          hint={messageText("ui.run_form.step_options_hint", "en")}
+        >
+          <div className="flex flex-col gap-3">
       {!requiresFrontMatter ? null : (
         <fieldset
           data-slot="run-form-front-matter"
-          className="flex flex-col gap-4 rounded-lg border border-border px-3 py-3"
+          className="flex flex-col gap-4 rounded-xl border border-border bg-card px-4 pt-3.5 pb-4"
         >
-          <legend className="px-1 font-heading text-sm font-medium tracking-tight">
+          <legend className="float-left mb-1 w-full text-sm font-semibold">
             {messageText("ui.run_form.front_matter_heading", "en")}
           </legend>
 
@@ -752,22 +770,15 @@ export function RunForm({
       {reusable === null || reusable === undefined ? null : (
         <div
           data-slot="run-form-reuse"
-          className="flex flex-col gap-1.5 rounded-lg border border-border px-3.5 py-3"
+          className="rounded-xl border border-border bg-card px-4 py-3.5"
         >
-          <label className="flex items-start gap-2.5 text-sm">
-            <input
-              id={reuseFieldId}
-              type="checkbox"
-              name="reuseSnapshot"
-              checked={reuse}
-              onChange={(event) => setReuse(event.target.checked)}
-              className="mt-0.5"
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="font-medium">
+          <label className="flex cursor-pointer items-start gap-3 text-sm">
+            <ArrowCounterClockwiseIcon aria-hidden="true" className="mt-0.5 size-[18px] shrink-0 text-primary" />
+            <span className="flex flex-1 flex-col gap-0.5">
+              <span className="font-semibold">
                 {messageText("ui.run_form.reuse_label", "en")}
               </span>
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs leading-relaxed text-muted-foreground">
                 {messageText("ui.run_form.reuse_detail", "en", {
                   collected: new Date(reusable.collectedAt)
                     .toISOString()
@@ -790,35 +801,24 @@ export function RunForm({
                 })}
               </span>
             </span>
+            <input
+              id={reuseFieldId}
+              type="checkbox"
+              name="reuseSnapshot"
+              checked={reuse}
+              onChange={(event) => setReuse(event.target.checked)}
+              className="mt-1 size-4 shrink-0 accent-primary"
+            />
           </label>
         </div>
       )}
-
-      {error === null ? null : (
-        <p
-          data-slot="run-form-error"
-          // Announced, because the submit button returning to rest is otherwise the only
-          // change on the page and a screen-reader user would not know the request failed.
-          aria-live="polite"
-          className="text-sm text-destructive"
-        >
-          {error}
-        </p>
-      )}
-
-      <div className={workspace ? "hidden" : "flex justify-start"}>
-        <Button type="submit" disabled={!canSubmit}>
-          <PlayIcon aria-hidden="true" />
-          {submitting ? messageText("ui.run_form.submitting", "en") : messageText("ui.run_form.submit", "en")}
-        </Button>
-      </div>
 
       {/*
         The explanations a first request needs and a tenth does not: how the period
         resolves, what the run pins, and how long it takes. Folded, so the form reads as
         the three choices it is; one click away for whoever is checking.
       */}
-      <details data-slot="run-form-details" className="group text-sm">
+      <details data-slot="run-form-details" className="group mt-1 text-sm">
         <summary className="w-fit cursor-pointer rounded-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30">
           {messageText("ui.run_form.details_summary", "en")}
         </summary>
@@ -856,8 +856,134 @@ export function RunForm({
           </p>
         </div>
       </details>
+          </div>
+        </RunFormStep>
+
+      {error === null ? null : (
+        <p
+          data-slot="run-form-error"
+          // Announced, because the submit button returning to rest is otherwise the only
+          // change on the page and a screen-reader user would not know the request failed.
+          aria-live="polite"
+          className="mt-4 text-sm text-destructive"
+        >
+          {error}
+        </p>
+      )}
+
+      <div className={workspace ? "hidden" : "mt-4 flex justify-start"}>
+        <Button type="submit" disabled={!canSubmit}>
+          <PlayIcon aria-hidden="true" />
+          {submitting ? messageText("ui.run_form.submitting", "en") : messageText("ui.run_form.submit", "en")}
+        </Button>
       </div>
-      {workspace && <RequestSummary key={`${connectedSubscriptionId}:${templateId}:${timezone}`} connectionId={connectedSubscriptionId} templateId={templateId} timezone={timezone} disabled={!canSubmit} submitting={submitting} blockedReason={submitBlockedReason} regions={offersRegions ? (pickedRegions === null ? (messageText("ui.request_summary.regions_all", "en", { count: String(enabledRegions.length) }) ?? undefined) : regions.join(", ")) : undefined}/>}
+      </div>
+      {workspace && (
+        <RequestSummary
+          key={`${connectedSubscriptionId}:${templateId}:${timezone}`}
+          connectionId={connectedSubscriptionId}
+          templateId={templateId}
+          timezone={timezone}
+          disabled={!canSubmit}
+          submitting={submitting}
+          blockedReason={submitBlockedReason}
+          cover={
+            selectedTemplate === undefined
+              ? null
+              : {
+                  title: selectedTemplate.name,
+                  customer: workspace.projectName ?? null,
+                  kicker: [SOURCE_SHORT_NAMES[selectedProvider], subscriptions.find((entry) => entry.id === connectedSubscriptionId)?.displayName]
+                    .filter(Boolean)
+                    .join(" · "),
+                }
+          }
+          sectionTitles={
+            selectedTemplate === undefined || selectedTemplate.provider === "onprem"
+              ? []
+              : selectedTemplate.sectionTypes.map((type) =>
+                  sectionTitle(sectionEntry(selectedTemplate.provider as "azure" | "aws", type), "en")
+                )
+          }
+          regions={offersRegions ? (pickedRegions === null ? (messageText("ui.request_summary.regions_all", "en", { count: String(enabledRegions.length) }) ?? undefined) : regions.join(", ")) : undefined}
+        />
+      )}
     </form>
+  )
+}
+
+/**
+ * One numbered step on the form's rail: a numbered dot, a line down to the next step,
+ * and the step's heading, hint and controls. The dot fills once the step has a choice.
+ */
+function RunFormStep({
+  number,
+  title,
+  hint,
+  optional,
+  aside,
+  done = false,
+  last = false,
+  children,
+}: Readonly<{
+  number: number
+  title: string | undefined
+  hint?: string
+  optional?: string
+  aside?: React.ReactNode
+  done?: boolean
+  last?: boolean
+  children: React.ReactNode
+}>) {
+  return (
+    <section data-slot="run-form-step" className="flex gap-4 sm:gap-5">
+      <div className="flex flex-col items-center">
+        <span
+          aria-hidden="true"
+          className={cn(
+            "grid size-8 shrink-0 place-items-center rounded-full border text-sm font-semibold tabular-nums",
+            done ? "border-primary bg-primary text-primary-foreground" : "border-input bg-card text-foreground"
+          )}
+        >
+          {number}
+        </span>
+        {last ? null : <span aria-hidden="true" className="mt-1.5 w-px flex-1 bg-border" />}
+      </div>
+      <div className={cn("flex min-w-0 flex-1 flex-col", last ? "pb-2" : "pb-8")}>
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 pt-1">
+          <h2 className="text-[17px] font-semibold">
+            {title}
+            {optional === undefined ? null : (
+              <span className="ml-2 text-sm font-normal text-muted-foreground">{optional}</span>
+            )}
+          </h2>
+          {aside}
+        </div>
+        {hint === undefined ? null : (
+          <p className="mt-0.5 mb-4 text-sm text-muted-foreground">{hint}</p>
+        )}
+        {children}
+      </div>
+    </section>
+  )
+}
+
+/** A small page with a header band, lines and a chart: what a preset prints, in miniature. */
+function PageGlyph() {
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-[60px] w-[46px] shrink-0 flex-col gap-[3px] rounded-[4px] border border-border bg-background p-[5px]"
+    >
+      <span className="h-2 rounded-[1px] bg-primary/70" />
+      <span className="h-[3px] w-4/5 rounded-full bg-muted-foreground/40" />
+      <span className="flex h-3 items-end gap-[2px]">
+        <span className="h-1/2 flex-1 bg-primary/45" />
+        <span className="h-[90%] flex-1 bg-primary/45" />
+        <span className="h-[70%] flex-1 bg-primary/45" />
+      </span>
+      <span className="h-[3px] rounded-full bg-muted-foreground/40" />
+      <span className="h-[3px] w-3/4 rounded-full bg-muted-foreground/40" />
+    </span>
   )
 }

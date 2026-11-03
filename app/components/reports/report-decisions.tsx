@@ -19,7 +19,7 @@ export function ReportDecisions({ glance }: Readonly<{ glance: Glance | null }>)
     <section
       aria-labelledby="report-decisions-title"
       data-slot="report-decisions"
-      className="flex flex-col gap-2.5 rounded-xl border border-border bg-card p-4 md:px-6 md:py-5"
+      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 md:px-6 md:py-5"
     >
       <div className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
         <ListChecksIcon aria-hidden="true" className="size-4 shrink-0 self-center text-primary" />
@@ -30,11 +30,19 @@ export function ReportDecisions({ glance }: Readonly<{ glance: Glance | null }>)
           {messageText("ui.report_decisions.source", "en")}
         </p>
       </div>
-      <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed marker:text-muted-foreground">
-        {glance.decisions.map((decision) => (
-          <li key={decision}>{decision}</li>
+      <ol className="flex flex-col gap-2">
+        {glance.decisions.map((decision, index) => (
+          <li
+            key={decision}
+            className="flex gap-3.5 rounded-lg bg-muted/50 px-3.5 py-2.5 text-sm leading-relaxed"
+          >
+            <span aria-hidden="true" className="pt-px font-mono text-xs text-primary tabular-nums">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="min-w-0">{decision}</span>
+          </li>
         ))}
-      </ul>
+      </ol>
     </section>
   )
 }

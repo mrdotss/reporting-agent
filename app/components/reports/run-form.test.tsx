@@ -302,66 +302,55 @@ describe("RunForm — a v1 template answers for no page it does not have", () =>
 })
 
 /**
- * Choose a report profile from the registry Select.
+ * Choose a report profile from its card.
  *
- * The control used to be a native `<select>`, which a test drove with one
- * `fireEvent.change`. It is a button plus a portalled listbox now — the native popup
- * painted its own colours from the OS and inverted on a theme change, which is the one
- * thing this app's palette could not reach. Driving it the way a person does is also
- * the only way to find out that the listbox actually opens.
+ * Each preset is a card over a native radio, named by the card's text, so a test picks
+ * one the way a keyboard or screen-reader user does: by the radio's accessible name.
+ * Matched on the preset's name at the start, exactly, so "Monthly utilization" cannot
+ * resolve to whichever of two similarly named presets rendered first.
  */
-function chooseProfile(name: string) {
-  fireEvent.click(screen.getByLabelText("Report profile"))
-
-  // Matched on the option's own name line, exactly. `textContent.includes` would
-  // resolve "Monthly utilization" to whichever of the two profiles React rendered
-  // first, and the whole point of these tests is which one is selected.
-  const option = screen
-    .getAllByRole("option")
-    .find((element) => within(element).queryByText(name) !== null)
-
-  if (option === undefined) {
-    throw new Error(`No profile option whose name is exactly "${name}"`)
+function profileRadio(name: string): HTMLInputElement {
+  const group = screen.getByRole("group", { name: "Report profile" })
+  const radio = within(group)
+    .getAllByRole("radio")
+    .find((element) => element.closest("label")?.querySelector("[data-slot=run-form-preset-name]")?.textContent === name)
+  if (radio === undefined) {
+    throw new Error(`No profile card whose name is exactly "${name}"`)
   }
+  return radio as HTMLInputElement
+}
 
-  // Committed with Enter rather than a click. The listbox opens and the options are in
-  // the tree either way, but a synthetic `click` on one is not what the control listens
-  // for — it commits on a real pointer sequence that jsdom does not produce, and on the
-  // keyboard. Enter on the focused option is a path a person actually uses, and it is
-  // the one that works here.
-  fireEvent.keyDown(option, { key: "Enter" })
+function chooseProfile(name: string) {
+  fireEvent.click(profileRadio(name))
 }
 
 describe("RunForm — the controls name things, not identify them", () => {
-  test("each trigger shows the name it stands for, never the id", () => {
-    // The registry's Select renders the item's *value* by default, and both values here
-    // are uuids — so the two controls a consultant chooses with read
-    // `1e43c9d7-b90c-4c49-…`, which is the one string on the page nobody can act on.
-    // The option markup is two lines, so there is no single text node to lift either;
-    // the trigger has to be told how to resolve a value to a label.
+  test("each card shows the name it stands for, never the id", () => {
+    // Both values here are uuids; what a consultant reads and what a screen reader
+    // announces must be the connection's and the preset's names, never those.
     renderForm([V1, V2])
 
-    const connection = screen.getByLabelText("Connection")
-    const profile = screen.getByLabelText("Report profile")
+    const connection = screen.getByRole("group", { name: "Connection" })
+    const profile = screen.getByRole("group", { name: "Report profile" })
 
     expect(connection.textContent).toContain("Contoso production")
     expect(profile.textContent).toContain(V1.name)
 
-    for (const trigger of [connection, profile]) {
-      expect(trigger.textContent ?? "").not.toMatch(
+    for (const group of [connection, profile]) {
+      expect(group.textContent ?? "").not.toMatch(
         /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i
       )
-      expect(trigger.textContent ?? "").not.toContain("tmpl-")
-      expect(trigger.textContent ?? "").not.toContain("sub-")
+      expect(group.textContent ?? "").not.toContain("tmpl-")
+      expect(group.textContent ?? "").not.toContain("sub-")
     }
   })
 
-  test("the chosen name follows the selection", () => {
+  test("the chosen card follows the selection", () => {
     renderForm([V1, V2])
+    expect(profileRadio(V1.name).checked).toBe(true)
     chooseProfile(V2.name)
-    expect(screen.getByLabelText("Report profile").textContent).toContain(
-      V2.name
-    )
+    expect(profileRadio(V2.name).checked).toBe(true)
+    expect(profileRadio(V1.name).checked).toBe(false)
   })
 })
 

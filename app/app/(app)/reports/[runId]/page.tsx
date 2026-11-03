@@ -17,6 +17,9 @@ import { can } from "@/lib/workspaces/policy"
 import { RunFailureNotice } from "@/components/reports/run-failure-notice"
 import { RunProgress } from "@/components/reports/run-progress"
 import { ReportTabs } from "@/components/reports/report-tabs"
+import { RunHero } from "@/components/reports/run-hero"
+import { SOURCE_SHORT_NAMES } from "@/components/subscriptions/provider-mark"
+import { sectionEntry, sectionTitle } from "@/lib/builder/catalogue"
 import { RunReplay, type RunStat, type RunVerdict } from "@/components/reports/run-replay"
 import { RunStatusBadge } from "@/components/reports/run-status-badge"
 import { SnapshotProvenance } from "@/components/reports/snapshot-provenance"
@@ -183,6 +186,65 @@ export default async function RunPage({ params }: RunPageProps) {
     { label: "gaps recorded", value: count(view.gapCount) },
   ]
 
+  const month = monthName(view.periodStart.slice(0, 7))
+  const title = view.templateName ?? subscriptionName
+  const customer =
+    view.customerName ??
+    (run.projectId === null ? null : (projects.find((entry) => entry.id === run.projectId)?.name ?? null))
+  const provider = pinned?.provider ?? null
+  const coverKicker = [
+    provider === null ? null : SOURCE_SHORT_NAMES[provider],
+    subscriptionName,
+  ]
+    .filter((part) => part !== null)
+    .join(" · ")
+  const sectionTitles =
+    pinned === null || pinned.provider === "onprem"
+      ? []
+      : pinned.sectionTypes.map((type) =>
+          sectionTitle(sectionEntry(pinned.provider as "azure" | "aws", type), "en")
+        )
+  const finishedAt = new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: view.timezone,
+    timeZoneName: "short",
+  }).format(new Date(view.updatedAt))
+
+  const meta = (
+    <>
+      <span>{subscriptionName}</span>
+      {subscriptionMaskedId === null ? null : (
+        <>
+          <span aria-hidden="true">·</span>
+          <Identifier
+            value={subscriptionMaskedId}
+            kind="mask"
+            label="Subscription"
+            className="text-muted-foreground"
+          />
+        </>
+      )}
+      <span aria-hidden="true">·</span>
+      <span className="font-mono text-xs tabular-nums">{periodLine(view)}</span>
+    </>
+  )
+
+  const heading = (
+    <div className="flex min-w-0 flex-col gap-1.5">
+      <p className="font-mono text-xs tracking-[0.1em] text-primary uppercase">{month}</p>
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-title text-balance">{title}</h1>
+        <RunStatusBadge status={view.status} />
+      </div>
+      <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted-foreground">
+        {meta}
+      </p>
+    </div>
+  )
+
   return (
     <PageBody kind="wide">
       <Link
@@ -193,44 +255,36 @@ export default async function RunPage({ params }: RunPageProps) {
         Reports
       </Link>
 
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <p className="text-micro text-muted-foreground uppercase">
-            {monthName(view.periodStart.slice(0, 7))}
-          </p>
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="text-title text-balance">
-              {view.templateName ?? subscriptionName}
-            </h1>
-            <RunStatusBadge status={view.status} />
+      {delivered ? (
+        <RunHero
+          kicker={month}
+          title={title}
+          customer={customer}
+          coverKicker={coverKicker}
+          badge={<RunStatusBadge status={view.status} />}
+          meta={meta}
+          finishedAt={finishedAt}
+          verdictTitle={verdict.title}
+          verdictDetail={verdict.detail}
+          actions={
+            <>
+              {/*
+                Requirement 40.1 — one control per recorded artifact, and only while the
+                run is `completed` **and** its stored verification passed.
+              */}
+              <DownloadCard artifactKeys={view.artifactKeys} />
+              <WatchRunButton />
+            </>
+          }
+        />
+      ) : terminal ? (
+        <header className="flex flex-wrap items-end justify-between gap-4">
+          {heading}
+          <div className="flex flex-wrap items-start gap-2">
+            <WatchRunButton />
           </div>
-          <p className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-meta text-muted-foreground">
-            <span>{subscriptionName}</span>
-            {subscriptionMaskedId === null ? null : (
-              <>
-                <span aria-hidden="true">·</span>
-                <Identifier
-                  value={subscriptionMaskedId}
-                  kind="mask"
-                  label="Subscription"
-                  className="text-muted-foreground"
-                />
-              </>
-            )}
-            <span aria-hidden="true">·</span>
-            <span className="font-mono text-xs tabular-nums">{periodLine(view)}</span>
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-start gap-2">
-          {terminal ? <WatchRunButton /> : null}
-          {/*
-            Requirement 40.1 — one control per recorded artifact, and only while the run
-            is `completed` **and** its stored verification passed.
-          */}
-          {delivered ? <DownloadCard artifactKeys={view.artifactKeys} /> : null}
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       {subscriptionState?.kind === "expiring" ? (
         <SecretExpiryBanner state={subscriptionState} />
@@ -239,6 +293,7 @@ export default async function RunPage({ params }: RunPageProps) {
       {terminal ? (
         <>
           <RunReplay
+            layout={delivered ? "split" : "card"}
             status={run.status}
             createdAt={view.createdAt}
             claimedAt={iso(run.claimedAt)}
@@ -334,16 +389,16 @@ export default async function RunPage({ params }: RunPageProps) {
           </div>
         </>
       ) : (
-        <section
-          aria-label="Run"
-          className="rounded-xl border border-border bg-card p-4 md:p-5"
-        >
-          <RunProgress
-            initialRun={view}
-            initialGaps={gaps}
-            subscriptionLabel={subscriptionLabel}
-          />
-        </section>
+        <RunProgress
+          initialRun={view}
+          initialGaps={gaps}
+          subscriptionLabel={subscriptionLabel}
+          heading={heading}
+          sections={sectionTitles}
+          coverTitle={title}
+          coverKicker={coverKicker}
+          phaseTimings={run.phaseTimings ?? null}
+        />
       )}
     </PageBody>
   )
