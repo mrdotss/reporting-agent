@@ -2832,6 +2832,106 @@
     "ui.describe.refining": {
       "en": "Applying your change…",
       "id": "Menerapkan perubahan Anda…"
+    },
+    "ui.report_cover.prepared_for": {
+      "en": "Prepared for {customer}",
+      "id": "Disiapkan untuk {customer}"
+    },
+    "ui.run_form.step_connection": {
+      "en": "Read from",
+      "id": "Baca dari"
+    },
+    "ui.run_form.step_connection_hint": {
+      "en": "The connections this customer has granted. Only ready ones can run.",
+      "id": "Koneksi yang diberikan pelanggan ini. Hanya koneksi yang siap yang dapat dijalankan."
+    },
+    "ui.run_form.step_preset": {
+      "en": "Print with",
+      "id": "Cetak dengan"
+    },
+    "ui.run_form.browse_presets": {
+      "en": "Browse all presets",
+      "id": "Lihat semua preset"
+    },
+    "ui.run_form.step_options": {
+      "en": "Fine-tune",
+      "id": "Sesuaikan"
+    },
+    "ui.run_form.step_options_optional": {
+      "en": "optional",
+      "id": "opsional"
+    },
+    "ui.run_form.step_options_hint": {
+      "en": "Leave these alone for a normal monthly report.",
+      "id": "Biarkan seperti ini untuk laporan bulanan biasa."
+    },
+    "ui.run_form.connection_ready": {
+      "en": "Ready to read",
+      "id": "Siap dibaca"
+    },
+    "ui.request_summary.generate": {
+      "en": "Generate report",
+      "id": "Buat laporan"
+    },
+    "ui.request_summary.sections_label": {
+      "en": "Sections in this report",
+      "id": "Bagian dalam laporan ini"
+    },
+    "ui.request_summary.sections_more": {
+      "en": "+{count} more",
+      "id": "+{count} lainnya"
+    },
+    "ui.run_document.heading": {
+      "en": "The document",
+      "id": "Dokumennya"
+    },
+    "ui.run_document.pages_label": {
+      "en": "Pages of the document",
+      "id": "Halaman dokumen"
+    },
+    "ui.run_document.cover": {
+      "en": "Cover",
+      "id": "Sampul"
+    },
+    "ui.run_document.more": {
+      "en": "+{count} more",
+      "id": "+{count} lainnya"
+    },
+    "ui.run_document.waiting": {
+      "en": "Pages take shape once the data is collected.",
+      "id": "Halaman terbentuk setelah data terkumpul."
+    },
+    "ui.run_document.compiling": {
+      "en": "Putting the sections together.",
+      "id": "Menyusun bagian-bagiannya."
+    },
+    "ui.run_document.rendering": {
+      "en": "Drawing the pages.",
+      "id": "Menggambar halaman."
+    },
+    "ui.run_document.verifying": {
+      "en": "Checking every figure against the snapshot.",
+      "id": "Memeriksa setiap angka terhadap snapshot."
+    },
+    "ui.run_document.verify_note": {
+      "en": "Before the report is released, every figure in it is traced back to the collected snapshot.",
+      "id": "Sebelum laporan dirilis, setiap angka di dalamnya ditelusuri kembali ke snapshot yang dikumpulkan."
+    },
+    "ui.run_progress.elapsed": {
+      "en": "elapsed so far",
+      "id": "waktu berjalan sejauh ini"
+    },
+    "ui.run_progress.activity_heading": {
+      "en": "What the agent has done",
+      "id": "Yang sudah dikerjakan agen"
+    },
+    "ui.run_progress.leave_hint": {
+      "en": "You can leave this page. The run keeps going, and the finished report waits in Reports.",
+      "id": "Anda boleh meninggalkan halaman ini. Proses tetap berjalan, dan laporan yang selesai menunggu di Laporan."
+    },
+    "ui.run_hero.finished": {
+      "en": "Finished {when}",
+      "id": "Selesai {when}"
     }
   }
 }

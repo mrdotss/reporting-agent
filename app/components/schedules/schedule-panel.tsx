@@ -91,8 +91,8 @@ export function SchedulePanel({
   }
 
   return (
-    <fieldset data-slot="run-form-schedule" className="flex flex-col gap-3 rounded-lg border border-border px-3 py-3">
-      <legend className="px-1 font-heading text-sm font-medium tracking-tight">Every month</legend>
+    <fieldset data-slot="run-form-schedule" className="flex flex-col gap-3 rounded-xl border border-border bg-card px-4 pt-3.5 pb-4">
+      <legend className="float-left mb-1 w-full text-sm font-semibold">Every month</legend>
 
       {saved === null ? null : (
         <div className="flex flex-col gap-2">

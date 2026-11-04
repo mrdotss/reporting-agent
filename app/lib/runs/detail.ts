@@ -11,7 +11,7 @@ import {
 } from "@/lib/db/schema"
 import { requireEnv } from "@/lib/env"
 import type { ReportRun } from "@/lib/db/schema"
-import type { RunViewExtras } from "@/lib/db/views"
+import { declaredSectionTypes, type RunViewExtras } from "@/lib/db/views"
 import { latestForRun } from "@/lib/verifications/store"
 
 import { GetObjectCommand } from "@aws-sdk/client-s3"
@@ -58,6 +58,10 @@ export type PinnedVersion = {
   readonly templateName: string
   readonly version: number
   readonly definitionSha256: string
+  /** The source the preset is written for. */
+  readonly provider: (typeof reportTemplates.$inferSelect)["provider"]
+  /** The pinned definition's section types, in order, for the run page's preview. */
+  readonly sectionTypes: readonly string[]
 }
 
 /**
@@ -78,6 +82,8 @@ async function readPinnedVersion(
       templateName: reportTemplates.name,
       version: reportTemplateVersions.version,
       definitionSha256: reportTemplateVersions.definitionSha256,
+      definition: reportTemplateVersions.definition,
+      provider: reportTemplates.provider,
     })
     .from(reportTemplateVersions)
     .innerJoin(
@@ -87,7 +93,9 @@ async function readPinnedVersion(
     .where(eq(reportTemplateVersions.id, templateVersionId))
     .limit(1)
 
-  return row ?? null
+  if (row === undefined) return null
+  const { definition, ...rest } = row
+  return { ...rest, sectionTypes: declaredSectionTypes(definition) }
 }
 
 export { readPinnedVersion }

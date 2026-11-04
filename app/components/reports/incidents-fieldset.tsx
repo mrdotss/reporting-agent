@@ -45,9 +45,9 @@ export function IncidentsFieldset({
   return (
     <fieldset
       data-slot="run-form-incidents"
-      className="flex flex-col gap-4 rounded-lg border border-border px-3 py-3"
+      className="flex flex-col gap-4 rounded-xl border border-border bg-card px-4 pt-3.5 pb-4"
     >
-      <legend className="px-1 font-heading text-sm font-medium tracking-tight">
+      <legend className="float-left mb-1 w-full text-sm font-semibold">
         {messageText("ui.run_form.incidents_heading", "en")}
       </legend>
 

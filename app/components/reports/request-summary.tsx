@@ -1,5 +1,7 @@
 "use client"
 import { useEffect, useState } from "react"
+import { ArrowRightIcon } from "@phosphor-icons/react"
+import { ReportCover } from "@/components/reports/report-cover"
 import { Button } from "@/components/ui/button"
 import { useWorkspace } from "@/components/workspaces/workspace-context"
 import { messageText } from "@/lib/messages/catalog"
@@ -12,6 +14,9 @@ type Summary = {
   theme: string
   sections: number | null
 }
+/** How many section names the summary lists before "+N more". */
+const SECTIONS_SHOWN = 5
+
 export function RequestSummary({
   connectionId,
   templateId,
@@ -20,6 +25,8 @@ export function RequestSummary({
   submitting,
   blockedReason,
   regions,
+  cover = null,
+  sectionTitles = [],
 }: {
   connectionId: string
   templateId: string
@@ -30,6 +37,10 @@ export function RequestSummary({
   blockedReason?: string
   /** The AWS regions the run covers, as a line; absent when the connector offers no choice. */
   regions?: string
+  /** The cover picture's lines, or `null` before a preset is chosen. */
+  cover?: { title: string; customer: string | null; kicker: string } | null
+  /** The chosen preset's sections, in order, for the chips under the summary. */
+  sectionTitles?: readonly string[]
 }) {
   const workspace = useWorkspace()
   const [summary, setSummary] = useState<Summary | null>(null),
@@ -57,17 +68,30 @@ export function RequestSummary({
     return () => controller.abort()
   }, [connectionId, templateId, timezone])
   return (
-    <aside className="h-fit space-y-5 rounded-xl border bg-card p-6 lg:sticky lg:top-24">
-      <div>
-        <p className="text-micro text-muted-foreground uppercase">
+    <aside
+      data-slot="request-summary"
+      className="h-fit space-y-5 overflow-hidden rounded-2xl border bg-card p-5 lg:sticky lg:top-24"
+    >
+      <div className="flex flex-col gap-3">
+        <p className="font-mono text-[11px] tracking-[0.1em] text-muted-foreground uppercase">
           {messageText("ui.request_summary.heading", "en")}
         </p>
-        <h2 className="text-section mt-3">
-          {workspace?.projectName ?? "Your report"}
-        </h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {messageText("ui.request_summary.subheading", "en")}
-        </p>
+        {/*
+          The cover, as the report will open. Drawn from the choices on the left, so it
+          changes as they do — the one place on the page that shows what is being made
+          rather than what it is made from.
+        */}
+        {cover === null ? null : (
+          <ReportCover title={cover.title} customer={cover.customer} kicker={cover.kicker} />
+        )}
+        <div>
+          <h2 className="text-section">
+            {workspace?.projectName ?? "Your report"}
+          </h2>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            {messageText("ui.request_summary.subheading", "en")}
+          </p>
+        </div>
       </div>
       {error ? (
         <p role="alert" className="text-sm text-destructive">
@@ -103,6 +127,24 @@ export function RequestSummary({
           ))}
         </dl>
       )}
+      {error || !summary || sectionTitles.length === 0 ? null : (
+        <ul
+          data-slot="request-summary-sections"
+          aria-label={messageText("ui.request_summary.sections_label", "en") ?? undefined}
+          className="flex flex-wrap gap-1.5"
+        >
+          {sectionTitles.slice(0, SECTIONS_SHOWN).map((title, index) => (
+            <li key={`${title}-${index}`} className="rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] text-muted-foreground">
+              {title}
+            </li>
+          ))}
+          {sectionTitles.length > SECTIONS_SHOWN ? (
+            <li className="rounded-full border border-border px-2.5 py-0.5 text-[11px] font-medium text-primary">
+              {messageText("ui.request_summary.sections_more", "en", { count: String(sectionTitles.length - SECTIONS_SHOWN) })}
+            </li>
+          ) : null}
+        </ul>
+      )}
       {error || !summary ? null : (
         /* What a reviewer rarely needs to check, folded beneath the rest. */
         <details data-slot="request-summary-details" className="border-t pt-3 text-sm">
@@ -124,11 +166,12 @@ export function RequestSummary({
       )}
       <div className="flex flex-col gap-2">
         <Button
-          className="w-full"
+          className="h-12 w-full rounded-xl text-[15px]"
           type="submit"
           disabled={disabled || !summary || !!error}
         >
-          {submitting ? "Submitting…" : "Generate report →"}
+          {submitting ? "Submitting…" : messageText("ui.request_summary.generate", "en")}
+          {submitting ? null : <ArrowRightIcon aria-hidden="true" />}
         </Button>
 
         {/*
