@@ -47,11 +47,12 @@ function clock(ms: number): string {
   return `${minutes}:${String(seconds % 60).padStart(2, "0")}`
 }
 
-function timingsFor(
+export function timingsFor(
   createdAt: string,
   claimedAt: string | null,
   finishedAt: string,
-  phaseTimings: Readonly<Record<string, string>> | null
+  phaseTimings: Readonly<Record<string, string>> | null,
+  failed = false
 ): { phases: readonly PhaseTiming[]; recorded: boolean; totalMs: number } {
   const at = (iso: string | null | undefined) =>
     iso === null || iso === undefined ? Number.NaN : Date.parse(iso)
@@ -66,11 +67,21 @@ function timingsFor(
         : at(phaseTimings?.[status])
 
   const entries = PHASES.map(entry)
-  const recorded = entries.every((value) => Number.isFinite(value))
+  // The last phase the run entered. A run that failed early never entered the later
+  // phases, so their missing instants are not a gap in the record, only in the run.
+  const reached = entries.findLastIndex((value) => Number.isFinite(value))
+  const recorded =
+    reached >= 0 &&
+    entries.slice(0, reached + 1).every((value) => Number.isFinite(value)) &&
+    (failed || reached === entries.length - 1)
 
   const phases = PHASES.map((status, index) => {
     const from = entries[index]
-    const to = index + 1 < entries.length ? entries[index + 1] : end
+    // A phase lasts until the next phase the run actually entered, or the end. Reading
+    // only the very next instant left the phase a run died in with no duration, and the
+    // replay then said it stopped one phase earlier than it did.
+    const next = entries.slice(index + 1).find((value) => Number.isFinite(value))
+    const to = next ?? end
     const ms = Number.isFinite(from) && Number.isFinite(to) ? to - from : null
     return { status, ms: ms !== null && ms >= 0 ? ms : null }
   })
@@ -125,7 +136,8 @@ export function RunReplay({
     createdAt,
     claimedAt,
     finishedAt,
-    phaseTimings
+    phaseTimings,
+    status === "failed"
   )
   const failed = status === "failed"
   // On a failed run, the last phase with a recorded entry is where it stopped.

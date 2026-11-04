@@ -179,7 +179,10 @@ export default async function RunPage({ params }: RunPageProps) {
   const count = (value: number | null | undefined) =>
     value === null || value === undefined ? "—" : value.toLocaleString("en-US")
   const stats: RunStat[] = [
-    ...(verified && verificationView !== null
+    // Only for a delivered report: a run the reaper failed can still have a passing
+    // verification on file, and "1,027 figures traced" beside "Not delivered" reads as
+    // a contradiction.
+    ...(delivered && verificationView !== null
       ? [{ label: "figures traced", value: count(verificationView.figureCount) }]
       : []),
     { label: "resources", value: count(view.resourceCount) },

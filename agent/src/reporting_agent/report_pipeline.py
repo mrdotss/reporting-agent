@@ -100,6 +100,7 @@ from reporting_agent.catalog.loader import (
 )
 from reporting_agent.collect.buckets import MAX_TREND_MONTHS
 from reporting_agent.collect.pipeline import (
+    PHASE_COLLECTING,
     CollectionOutcome,
     CollectionSink,
     RunPlan,
@@ -300,6 +301,13 @@ async def run_generate_report(
     source_actors = snapshot_source_actors(payload.get("snapshot_source_actors"))
     reuse_run_id = str(payload.get("snapshot_run_id") or "")
     if reuse_run_id:
+        # The app's state machine only advances `claimed -> collecting -> compiling`, and
+        # `run_collection` is what normally announces `collecting`. Reuse skips it, so the
+        # transition is announced here: without it every later callback (`compiling`,
+        # `rendering`, `verifying`, `completed`) is refused as skipping a link, the row
+        # stays `claimed`, and the reaper fails a finished, verified report as TIMEOUT
+        # (run 638d4f3b, 4 Nov 2026).
+        await _report(progress, PHASE_COLLECTING, label="Snapshot")
         step = steps.start(
             TOOL_COLLECT_METRICS,
             label="Collecting",
