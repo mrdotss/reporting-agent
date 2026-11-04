@@ -123,3 +123,76 @@ def test_teammate_reuse_preserves_snapshot_and_archive_verification() -> None:
     verification = next(event for event in events if event["type"] == "verification")
     assert verification["status"] == "pass", verification.get("findings")
     assert second.outcome.collection.snapshot_id == first.outcome.collection.snapshot_id
+
+
+class _RecordingProgress:
+    """Stands in for `ProgressReporter`: records the phases, sends nothing."""
+
+    def __init__(self) -> None:
+        self.phases: list[str] = []
+
+    async def report(self, phase: str, **_fields: Any) -> None:
+        self.phases.append(phase)
+
+    async def report_verification(self, **_fields: Any) -> None:
+        return None
+
+
+# The app's transition table (`app/lib/runs/state.ts` DRIVEN), for the phases the
+# runtime announces. A row starts `claimed`; the endpoint refuses any hop not listed.
+_APP_DRIVEN: dict[str, set[str]] = {
+    "claimed": {"collecting"},
+    "collecting": {"compiling", "completed"},
+    "compiling": {"rendering"},
+    "rendering": {"verifying"},
+    "verifying": {"completed"},
+}
+
+
+def _walk(phases: list[str]) -> list[str]:
+    """The transitions the app would refuse, starting from `claimed`."""
+    refused: list[str] = []
+    status = "claimed"
+    for phase in phases:
+        if phase == status:
+            continue
+        if phase in _APP_DRIVEN.get(status, set()):
+            status = phase
+        else:
+            refused.append(f"{status} -> {phase}")
+    return refused
+
+
+def test_a_reuse_run_announces_collecting_so_the_app_can_follow_it() -> None:
+    """Run 638d4f3b (4 Nov 2026): a reuse run never said `collecting`, so the app's row
+    stayed `claimed`, every later callback was refused as skipping a link, and the
+    reaper failed a finished, verified report as TIMEOUT on the `claimed` phase.
+
+    Asserted as a walk over the app's transition table rather than as a list, so the
+    test fails for any phase sequence the app would refuse, not just this one."""
+    first = Pipeline(run_id="announce-source")
+    _events, error = first.run()
+    assert _ok(error), repr(error)
+
+    progress = _RecordingProgress()
+    second = Pipeline(
+        run_id="announce-reuse",
+        store=first.store,
+        payload_extras={"snapshot_run_id": "announce-source"},
+        progress=progress,
+    )
+    _events, error = second.run()
+    assert _ok(error), repr(error)
+    assert progress.phases[:1] == ["collecting"], progress.phases
+    assert "compiling" in progress.phases, progress.phases
+    assert _walk(progress.phases) == [], progress.phases
+
+
+def test_a_fresh_run_walks_the_same_table() -> None:
+    """The control: a collecting run's phases are accepted by the same walk."""
+    progress = _RecordingProgress()
+    pipe = Pipeline(run_id="announce-fresh", progress=progress)
+    _events, error = pipe.run()
+    assert _ok(error), repr(error)
+    assert progress.phases[:1] == ["collecting"], progress.phases
+    assert _walk(progress.phases) == [], progress.phases

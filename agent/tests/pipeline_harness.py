@@ -342,6 +342,9 @@ class Pipeline:
 
     def __init__(self, **overrides: Any) -> None:
         self.prose: Any | None = overrides.pop("prose", None)
+        # A progress reporter, or anything with its two async methods. `None` sends no
+        # callbacks, which is what every scenario that does not assert on them wants.
+        self.progress: Any | None = overrides.pop("progress", None)
         # A second run over the **same** store is what snapshot reuse is: run one collects
         # under its own id, run two reads that snapshot and collects nothing. Both need to
         # be expressible here or the reuse branch cannot be driven at all, which is how it
@@ -468,6 +471,7 @@ class Pipeline:
                 artifact_bucket=BUCKET,
                 outcome=self.outcome,
                 prose=self.prose,
+                progress=self.progress,
                 provider=self.provider,
                 object_store=self.store,
                 catalog=self.catalog,
