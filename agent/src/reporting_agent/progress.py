@@ -28,7 +28,10 @@ next transition corrects it. Losing the terminal callback costs a **false `TIMEO
 run that actually succeeded**, and the container is about to exit, so there is no later
 transition to correct it. Awaiting the terminal callback bounds shutdown by
 `PROGRESS_TIMEOUT_S * PROGRESS_MAX_ATTEMPTS` — ten seconds worst case — and keeps the
-Reaper as the backstop rather than the primary path.
+Reaper as the backstop rather than the primary path. A `completed` the app *answered* with
+a refusal is asked again after `TERMINAL_REFUSED_RETRY_DELAYS_S`, because the proof it
+waits for can land late; the verification callback has its own, longer timeout
+(`VERIFICATION_TIMEOUT_S`) for the same reason.
 
 **In-phase progress is throttled to one callback per 5 seconds per phase**
 (`PROGRESS_THROTTLE_S`, Req 38.15), with both guards stated positively:
@@ -63,10 +66,12 @@ __all__ = [
     "DOCUMENT_PHASES",
     "PROGRESS_MAX_ATTEMPTS",
     "PROGRESS_THROTTLE_S",
-    "TERMINAL_ORDERING_BUDGET_S",
     "PROGRESS_TIMEOUT_S",
+    "TERMINAL_ORDERING_BUDGET_S",
     "TERMINAL_PHASES",
+    "TERMINAL_REFUSED_RETRY_DELAYS_S",
     "TOKEN_HEADER",
+    "VERIFICATION_TIMEOUT_S",
     "HttpxProgressTransport",
     "ProgressReporter",
     "ProgressTransport",
@@ -93,6 +98,25 @@ The endpoint advances a chain, so `completed` sent before `verifying` lands is r
 (criterion 38.10) — but the container exits once the terminal callback returns, so this
 wait cannot be unbounded. One full delivery budget: past it the app is not answering, and
 a late terminal callback is no worse than an unsent one."""
+
+VERIFICATION_TIMEOUT_S: Final[float] = 30.0
+"""How long the verification callback may take, per attempt.
+
+Not `PROGRESS_TIMEOUT_S`. A transition is one guarded UPDATE; the verification endpoint
+reads the result artifact back from S3, checks it, and inserts the row, so it is the
+slowest call the runtime makes against the app. On 4 Nov 2026 three runs in a row
+(`65250370`, `2b27e2ca` and one before them) saw it exceed five seconds twice, gave up,
+and sent `completed` before the proof was stored: refused, and reaped as `TIMEOUT` on a
+run whose report had passed. The endpoint is idempotent on `(run_id, attempt_id)`, so a
+longer wait and a retry are both safe."""
+
+TERMINAL_REFUSED_RETRY_DELAYS_S: Final[tuple[float, ...]] = (3.0, 10.0)
+"""Delays before re-sending a `completed` callback the app refused.
+
+`verifying -> completed` is refused until the verification row is stored, and that row
+can land a few seconds after the runtime stopped waiting for it. A refusal is a fast
+`404`, so re-asking twice adds at most these delays plus two fast round trips to
+shutdown. `failed` is not retried: nothing it depends on can still be landing."""
 
 TOKEN_HEADER: Final[str] = "X-Rpt-Progress-Token"
 """Req 38.2 — where the run-scoped token is presented, and the only place it appears."""
@@ -493,7 +517,22 @@ class ProgressReporter:
                         phase,
                         TERMINAL_ORDERING_BUDGET_S,
                     )
-            await self._deliver(phase, body)
+            outcome = await self._deliver(phase, body)
+            if phase == "completed":
+                # Only an answered refusal is asked again. A timeout or a dropped
+                # connection means the app is not answering, and waiting longer for it
+                # would only hold shutdown open.
+                for delay in TERMINAL_REFUSED_RETRY_DELAYS_S:
+                    if outcome != "refused":
+                        break
+                    logger.warning(
+                        "re-sending %r in %.0fs: the app may still be storing this "
+                        "run's verification.",
+                        phase,
+                        delay,
+                    )
+                    await asyncio.sleep(delay)
+                    outcome = await self._deliver(phase, body)
         except Exception as exc:  # Req 38.4
             logger.warning(
                 "terminal progress callback for phase %r failed; the run's outcome "
@@ -641,7 +680,12 @@ class ProgressReporter:
             "pdf_sha256": pdf_sha256,
             "artifact_key": artifact_key,
         }
-        await self._deliver("verification", body, url=self._verification_url)
+        await self._deliver(
+            "verification",
+            body,
+            url=self._verification_url,
+            timeout=VERIFICATION_TIMEOUT_S,
+        )
 
     # --- delivery --------------------------------------------------------------------
 
@@ -684,22 +728,35 @@ class ProgressReporter:
         await self._deliver(phase, body)
 
     async def _deliver(
-        self, phase: str, body: Mapping[str, Any], *, url: str | None = None
-    ) -> None:
-        """POST `body`, retrying at most once. Never raises (Req 38.3, 38.4)."""
+        self,
+        phase: str,
+        body: Mapping[str, Any],
+        *,
+        url: str | None = None,
+        timeout: float | None = None,
+    ) -> str:
+        """POST `body`, retrying at most once. Never raises (Req 38.3, 38.4).
+
+        Returns `"delivered"` (a 2xx), `"refused"` (the last attempt got an answer that
+        was not 2xx) or `"unanswered"` (it timed out or raised), so the terminal path
+        can tell a refusal from an app that is not answering. `timeout` defaults to `PROGRESS_TIMEOUT_S`, read at call time.
+        """
+        limit = PROGRESS_TIMEOUT_S if timeout is None else timeout
         headers = {TOKEN_HEADER: self._token}
         target = self._url if url is None else url
 
+        last = "unanswered"
         for attempt in range(1, PROGRESS_MAX_ATTEMPTS + 1):
+            last = "unanswered"
             try:
                 status = await asyncio.wait_for(
                     self._transport.post_json(
                         target,
                         body=body,
                         headers=headers,
-                        timeout=PROGRESS_TIMEOUT_S,
+                        timeout=limit,
                     ),
-                    timeout=PROGRESS_TIMEOUT_S,
+                    timeout=limit,
                 )
             except asyncio.CancelledError:
                 # Cooperative cancellation from `aclose`, not a failure. Propagate.
@@ -710,12 +767,15 @@ class ProgressReporter:
                 # report it as a transport failure — losing the "slow" signal that is the
                 # only thing distinguishing this arm from the fallback below. On 3.11+
                 # `asyncio.TimeoutError is TimeoutError`, so this one clause covers both.
-                self._log_failure(phase, attempt, detail="did not complete within 5s")
+                self._log_failure(
+                    phase, attempt, detail=f"did not complete within {limit:g}s"
+                )
             except Exception as exc:  # Req 38.4
                 self._log_failure(phase, attempt, detail=scrub_exception(exc))
             else:
                 if 200 <= status < 300:
-                    return
+                    return "delivered"
+                last = "refused"
                 self._log_failure(phase, attempt, detail=f"returned status {status}")
 
         logger.warning(
@@ -725,6 +785,7 @@ class ProgressReporter:
             phase,
             PROGRESS_MAX_ATTEMPTS,
         )
+        return last
 
     def _log_failure(self, phase: str, attempt: int, *, detail: str) -> None:
         """Record one failed attempt with the token excluded (Req 38.3, 15.7).

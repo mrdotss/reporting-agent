@@ -18,6 +18,7 @@ import logging
 
 import pytest
 
+from reporting_agent import progress as progress_module
 from reporting_agent.progress import (
     AGENT_PHASES,
     PROGRESS_MAX_ATTEMPTS,
@@ -905,3 +906,52 @@ class TestCallbacksArriveInTheOrderTheyWereReported:
                 "a refused `compiling` stopped `rendering` from being sent at all"
             )
         asyncio.run(scenario())
+
+
+# --- late proof: the verification callback and a refused `completed` (4 Nov 2026) ----
+
+
+def test_the_verification_callback_is_given_the_longer_timeout():
+    """It reads the artifact back from S3 and inserts a row, so five seconds was too
+    tight: runs 65250370 and 2b27e2ca gave up on it and were reaped."""
+    transport = FakeTransport()
+    target = reporter(transport)
+    asyncio.run(
+        target.report_verification(
+            attempt_id="a1",
+            status="pass",
+            figure_count=3,
+            snapshot_sha256="s",
+            docx_sha256="d",
+            pdf_sha256="p",
+            artifact_key="k",
+        )
+    )
+    assert transport.calls[0]["timeout"] == progress_module.VERIFICATION_TIMEOUT_S
+    assert progress_module.VERIFICATION_TIMEOUT_S > PROGRESS_TIMEOUT_S
+
+
+def test_a_refused_completed_is_asked_again(monkeypatch):
+    """`completed` is refused while the proof is still being stored; asking again
+    after a pause is what turns a late proof into a delivered run."""
+    monkeypatch.setattr(progress_module, "TERMINAL_REFUSED_RETRY_DELAYS_S", (0.0, 0.0))
+    transport = FakeTransport([404, 404, 204])
+    asyncio.run(reporter(transport).report_terminal("completed"))
+    phases = [call["body"]["phase"] for call in transport.calls]
+    assert phases == ["completed", "completed", "completed"]
+
+
+def test_a_refused_completed_stops_after_its_retries(monkeypatch):
+    monkeypatch.setattr(progress_module, "TERMINAL_REFUSED_RETRY_DELAYS_S", (0.0, 0.0))
+    transport = FakeTransport([404])
+    asyncio.run(reporter(transport).report_terminal("completed"))
+    assert len(transport.calls) == PROGRESS_MAX_ATTEMPTS * 3
+
+
+def test_a_refused_failed_is_not_asked_again(monkeypatch):
+    monkeypatch.setattr(progress_module, "TERMINAL_REFUSED_RETRY_DELAYS_S", (0.0, 0.0))
+    transport = FakeTransport([404])
+    asyncio.run(
+        reporter(transport).report_terminal("failed", error_code="COMPILE_FAILED")
+    )
+    assert len(transport.calls) == PROGRESS_MAX_ATTEMPTS
