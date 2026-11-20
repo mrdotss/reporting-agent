@@ -933,6 +933,10 @@ class Paragraph:
     path: FigurePath
     style: str
     inlines: tuple[Inline, ...] = field(default_factory=tuple)
+    look: str = ""
+    """How the designed PDF sets this paragraph where it is not its style's usual look —
+    `kicker`, `headline` or `lead` on the ownership report's first page. Presentation only,
+    like `Table.look`: the Word file keeps the style, and no verifier reads it."""
 
     def __post_init__(self) -> None:
         _require_text(self.style, "style", f"paragraph {self.path!r}")

@@ -55,6 +55,12 @@ export type Starter = {
   readonly isNew: boolean
   /** False for a brief short enough that a contents page would be most of it. */
   readonly contents?: boolean
+  /**
+   * False for a report that is one page a reader acts on, such as the weekly ownership
+   * report: no cover, no document control page and no contents, so its first page is
+   * the report.
+   */
+  readonly frontPages?: boolean
 }
 
 const COVERAGE: StarterSection = { type: "coverage_and_verification" }
@@ -140,6 +146,7 @@ export const STARTERS: readonly Starter[] = [
     theme: "ledger",
     period: "last_7d",
     isNew: true,
+    frontPages: false,
     providers: ["aws"],
     sections: {
       aws: [
@@ -212,10 +219,24 @@ export function starterDraft(
     ...base,
     identity: { ...base.identity, report_title: name, description: starter.blurb },
     period: { kind: starter.period },
-    design: { ...base.design, preset: theme, accent_color: themeAccent(theme) },
-    ...(starter.contents === false
-      ? { front_matter: { ...base.front_matter, toc: { ...(base.front_matter.toc as Record<string, unknown>), enabled: false } } }
-      : {}),
+    design: {
+      ...base.design,
+      preset: theme,
+      accent_color: themeAccent(theme),
+      ...(starter.frontPages === false ? { cover_page: false } : {}),
+    },
+    ...(starter.frontPages === false
+      ? {
+          front_matter: {
+            ...base.front_matter,
+            cover: { ...(base.front_matter.cover as Record<string, unknown>), enabled: false },
+            document_control: { ...(base.front_matter.document_control as Record<string, unknown>), enabled: false },
+            toc: { ...(base.front_matter.toc as Record<string, unknown>), enabled: false },
+          },
+        }
+      : starter.contents === false
+        ? { front_matter: { ...base.front_matter, toc: { ...(base.front_matter.toc as Record<string, unknown>), enabled: false } } }
+        : {}),
     sections: settled(provider, sections),
   }
 }

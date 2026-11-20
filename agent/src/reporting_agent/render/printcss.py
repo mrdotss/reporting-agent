@@ -627,6 +627,7 @@ input.rpt-fill {{
     css += "\n.rpt-figure[data-estimator-label] { white-space: normal; overflow-wrap: normal; hyphens: none; }"
     css += _TILES_CSS
     css += _STRIP_CSS
+    css += _OWNERSHIP_CSS
     css += _treatments(
         spec,
         h1=h1,
@@ -651,6 +652,80 @@ table.rpt-table[data-look="strip"] [data-status] {
 table.rpt-table[data-look="strip"] [data-status="full"] { background: var(--accent); }
 table.rpt-table[data-look="strip"] [data-status="partial"] { background: #B26A00; }
 table.rpt-table[data-look="strip"] [data-status="none"] { background: #D6DCE0; }
+"""
+
+_OWNERSHIP_CSS: Final[str] = """
+/* The weekly ownership report's first page (`compile/blocks/glance.compile_ownership_glance`):
+   a kicker, a headline sentence, a lead, four figures under a heavy rule, two one-bar
+   breakdowns and a ranked list. Every rule keys on a `data-look` only that page writes, so
+   no other report changes. The colours carry meaning (in use, low use, idle) and are fixed
+   rather than the design's accent, as the canvas the page was drawn from fixes them. */
+.rpt-block[data-look="kicker"] {
+  font-family: var(--heading-face); font-size: 8.5pt; font-weight: 700; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #1F5F6B; margin: 0 0 7pt;
+}
+.rpt-block[data-look="headline"] {
+  font-family: var(--heading-face); font-size: 23pt; line-height: 1.12; font-weight: 800;
+  letter-spacing: -0.02em; color: var(--ink); margin: 0 0 8pt;
+}
+.rpt-block[data-look="headline"] .rpt-figure { font: inherit; color: inherit; letter-spacing: inherit; }
+.rpt-block[data-look="lead"] { color: var(--muted); font-size: 1.04em; line-height: 1.5; max-width: 82%; margin: 0 0 14pt; }
+.rpt-block[data-look="note"] { color: var(--muted); font-size: 0.86em; line-height: 1.45; }
+
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] { border-top: 1.6pt solid var(--ink); margin: 0 0 14pt; }
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] tbody { gap: 0; }
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] tbody tr {
+  border: 0; border-left: 0.5pt solid var(--rule); border-radius: 0; padding: 9pt 10pt 6pt;
+}
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] tbody tr:first-child { border-left: 0; padding-left: 0; }
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] td[data-column-key="metric"] {
+  font-family: inherit; font-weight: 400; color: var(--muted); margin-top: 3pt;
+}
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] td[data-column-key="value"] { color: var(--ink); font-size: 2.3em; }
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] tr[data-row-key="idle"] td[data-column-key="value"] { color: #B5402A; }
+
+.rpt-stack { display: inline-block; width: 47%; vertical-align: top; margin: 0 0 6pt; }
+.rpt-stack + .rpt-stack { margin-left: 5.5%; }
+.rpt-stack-title { font-family: var(--heading-face); font-weight: 700; color: var(--ink); margin: 2pt 0 6pt; }
+.rpt-stack-bar { display: flex; height: 9pt; gap: 1.5pt; margin: 0 0 6pt; }
+.rpt-stack-part { display: block; min-width: 2pt; background: #9AA0A6; }
+table.rpt-table[data-look="stack"] { width: 100%; margin: 0 0 10pt; }
+table.rpt-table[data-look="stack"] caption,
+table.rpt-table[data-look="stack"] thead,
+table.rpt-table[data-look="stack"] colgroup { display: none; }
+table.rpt-table[data-look="stack"] td { border: 0; background: transparent; padding: 2.5pt 0; }
+table.rpt-table[data-look="stack"] tbody tr { background: transparent; }
+table.rpt-table[data-look="stack"] td[data-column-key="count"] { text-align: right; font-weight: 700; }
+table.rpt-table[data-look="stack"] td[data-column-key="segment"]::before {
+  content: ""; display: inline-block; width: 7pt; height: 7pt; margin-right: 7pt; vertical-align: -0.5pt;
+  background: #9AA0A6;
+}
+[data-row-key="active"].rpt-stack-part, tr[data-row-key="active"] td[data-column-key="segment"]::before,
+[data-row-key="cloudtrail"].rpt-stack-part, tr[data-row-key="cloudtrail"] td[data-column-key="segment"]::before { background: #1F5F6B; }
+[data-row-key="in_use"].rpt-stack-part, tr[data-row-key="in_use"] td[data-column-key="segment"]::before { background: #4A8F9A; }
+[data-row-key="tag"].rpt-stack-part, tr[data-row-key="tag"] td[data-column-key="segment"]::before { background: #6FA3AE; }
+[data-row-key="low_use"].rpt-stack-part, tr[data-row-key="low_use"] td[data-column-key="segment"]::before { background: #9A6200; }
+[data-row-key="idle"].rpt-stack-part, tr[data-row-key="idle"] td[data-column-key="segment"]::before { background: #B5402A; }
+[data-row-key="stopped"].rpt-stack-part, tr[data-row-key="stopped"] td[data-column-key="segment"]::before { background: #B9BEC4; }
+[data-row-key="unknown"].rpt-stack-part, tr[data-row-key="unknown"] td[data-column-key="segment"]::before {
+  background: repeating-linear-gradient(45deg, #8C9298 0, #8C9298 1.2pt, #FFFFFF 1.2pt, #FFFFFF 2.6pt);
+}
+
+table.rpt-table[data-look="ranked"] { width: 100%; counter-reset: rank; margin: 2pt 0 12pt; }
+table.rpt-table[data-look="ranked"] thead th {
+  background: transparent; border: 0; border-bottom: 0.5pt solid var(--rule); color: var(--muted);
+  font-size: 0.8em; font-weight: 400; text-align: left; padding: 0 4pt 3pt;
+}
+table.rpt-table[data-look="ranked"] thead th[data-column-key="est_monthly_usd"] { text-align: right; }
+table.rpt-table[data-look="ranked"] tbody tr { counter-increment: rank; background: transparent; }
+table.rpt-table[data-look="ranked"] td { border: 0; border-bottom: 0.5pt solid var(--rule); padding: 8pt 4pt; vertical-align: top; background: transparent; }
+table.rpt-table[data-look="ranked"] td[data-column-key="resource"] { font-weight: 700; color: var(--ink); }
+table.rpt-table[data-look="ranked"] td[data-column-key="resource"]::before {
+  content: counter(rank); display: inline-block; width: 1.5em; color: #1F5F6B; font-weight: 700;
+}
+table.rpt-table[data-look="ranked"] td[data-column-key="what"],
+table.rpt-table[data-look="ranked"] td[data-column-key="creator_type"] { color: var(--muted); }
+table.rpt-table[data-look="ranked"] td[data-column-key="est_monthly_usd"] { text-align: right; font-weight: 700; font-size: 1.1em; }
 """
 
 _TILES_CSS: Final[str] = """

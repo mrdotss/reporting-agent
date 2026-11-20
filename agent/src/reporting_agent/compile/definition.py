@@ -2124,6 +2124,9 @@ _DOCUMENT_CONTROL_ALLOWED_KEYS: Final[frozenset[str]] = frozenset(
         "confidentiality_notice",
         "distribution",
         "approvers",
+        # False prints no document control page (a one-page report such as the weekly
+        # ownership report). Absent is true, so every stored profile renders as before.
+        "enabled",
     }
 )
 _TOC_ALLOWED_KEYS: Final[frozenset[str]] = frozenset({"enabled", "max_level"})
@@ -2253,6 +2256,9 @@ def _validate_document_control(control: object, path: Path, walk: _Walk) -> None
     for key in control:
         if key not in _DOCUMENT_CONTROL_ALLOWED_KEYS:
             walk.add((*path, key), f'Unrecognized document_control field "{key}".')
+
+    if "enabled" in control and not _is_boolean(control["enabled"]):
+        walk.add((*path, "enabled"), "document_control.enabled must be a boolean.")
 
     _optional_bounded_string(
         control, "document_name", path, walk, DOCUMENT_NAME_MAX_LENGTH

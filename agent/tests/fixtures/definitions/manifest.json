@@ -1615,6 +1615,29 @@
           ]
         }
       ]
+    },
+    {
+      "file": "accept-schema-version-4-no-front-matter-pages.json",
+      "mode": "run",
+      "verdict": "accept",
+      "definition_sha256": "6b8fc5fdc04acb631b2d11ae140f8267febff73b8b2fe1b0a6ae16432e5e1655",
+      "offenders": []
+    },
+    {
+      "file": "reject-v4-document-control-enabled-not-boolean.json",
+      "mode": "run",
+      "verdict": "reject",
+      "definition_sha256": "55c5251f49c50cbdd172547ec078b47ef5034dbde6d4ae8a243c21c80cf770cd",
+      "offenders": [
+        {
+          "block_id": null,
+          "path": [
+            "front_matter",
+            "document_control",
+            "enabled"
+          ]
+        }
+      ]
     }
   ]
 }

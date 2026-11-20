@@ -1042,6 +1042,7 @@ def _resolve_front_matter_config(
             distribution=distribution_text,
             distribution_rows=distribution_rows,
             approvers=approvers,
+            enabled=dc_raw.get("enabled") is not False,
         )
 
     # TOC

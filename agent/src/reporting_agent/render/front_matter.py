@@ -284,6 +284,8 @@ class DocumentControlConfig:
     distribution: str | None = None
     distribution_rows: tuple[DistributionRow, ...] = ()
     approvers: tuple[ApproverEntry, ...] = ()
+    enabled: bool = True
+    """`document_control.enabled`; false prints no document control page at all."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -808,164 +810,167 @@ def front_matter_sections(
             sections.append(FrontMatterPageBreak())
 
     # --- document control (Req 13.5, 13.6) -----------------------------------
-    sections.append(
-        FrontMatterHeading(messages.text(DOC_CONTROL_TITLE), DOCUMENT_CONTROL_STYLE)
-    )
-
-    # `ReportA.dc.html`'s own four rows, under their own subheading: who it is for, what
-    # it is called, what kind of document it is, and its number. The previous three
-    # (document name, number, prepared for) named the document twice and the reader once.
-    sections.append(
-        FrontMatterHeading(
-            messages.text(DOC_CONTROL_DOCUMENT_TITLE), DOCUMENT_CONTROL_STYLE
+    # Off for a report that is one page a reader acts on, such as the weekly ownership
+    # report: no document control page, and with it no page break before the body.
+    if control.enabled:
+        sections.append(
+            FrontMatterHeading(messages.text(DOC_CONTROL_TITLE), DOCUMENT_CONTROL_STYLE)
         )
-    )
-    naming: list[tuple[str, str]] = [
-        (messages.text(DOC_CONTROL_CUSTOMER_NAME), run.customer_name),
-        (messages.text(DOC_CONTROL_TITLE_ROW), run.report_title),
-    ]
-    if control.document_name:
-        naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
-    if doc_number:
-        naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
-    sections.append(
-        FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
-    )
 
-    # --- approvers (Req 13.6) ------------------------------------------------
-    approver_rows: list[tuple[str, ...]] = []
-    approver_images: list[bytes | None] = []
-    for role in APPROVER_ROLES:
-        entry = _find_approver(control.approvers, role)
-        role_label_id = APPROVER_ROLE_LABEL_IDS.get(role)
-        approver_rows.append(
-            (
-                messages.text(role_label_id) if role_label_id else role,
-                # The COMPANY column shows the approver's company; `title` remains the
-                # fallback so a profile that put its company there keeps rendering as it did.
-                (entry.company or entry.title) if entry else "",
-                entry.name if entry else "",
-                "",
-            )
-        )
-        approver_images.append(entry.signature_image if entry is not None else None)
-
-    sections.append(
-        FrontMatterGrid(
-            headers=(
-                # Blank, as `ReportA.dc.html` leaves it. The column holds Author, Quality
-                # Control, Reviewed By and Customer — a reader does not need to be told
-                # those are roles, and "Role" over them is a caption for the obvious that
-                # the artifact spends no width on.
-                "",
-                messages.text(APPROVER_HEADER_COMPANY),
-                messages.text(APPROVER_HEADER_NAME),
-                messages.text(APPROVER_HEADER_SIGNATURE),
-            ),
-            rows=tuple(approver_rows),
-            table_style=SIGNATURE_TABLE_STYLE,
-            signature_column=3,
-            images=tuple(approver_images),
-            row_height_twips=SIGNATURE_BOX_HEIGHT_TWIPS,
-        )
-    )
-
-    # --- revision history ----------------------------------------------------
-    if run.revision_history:
-        row = run.revision_history
+        # `ReportA.dc.html`'s own four rows, under their own subheading: who it is for, what
+        # it is called, what kind of document it is, and its number. The previous three
+        # (document name, number, prepared for) named the document twice and the reader once.
         sections.append(
             FrontMatterHeading(
-                messages.text(DOC_CONTROL_REVISION_HISTORY), DOCUMENT_CONTROL_STYLE
+                messages.text(DOC_CONTROL_DOCUMENT_TITLE), DOCUMENT_CONTROL_STYLE
             )
         )
-        # A table with a header row, as `ReportA.dc.html` draws it — `Version | Issue
-        # Date | Pages Changed | Notes`, one row per revision. It was a label/value pairs
-        # block, which reads as a property of the document rather than as its history:
-        # a revision history with one row still has to look like a list somebody will add
-        # a second row to.
-        #
-        # `Published date` carries the run's own publication date and `Pages Changed` an
-        # em dash. Neither is invented: the date is the snapshot's `collected_at` — see
-        # `RunFacts.issued_on`, which explains why it is not a clock — and nothing in the
-        # run record knows which pages a re-run changed, so an em dash fills that column
-        # exactly as the artifact does for a first issue.
-        #
-        # The author is deliberately **not** a column here. It was, carried under the
-        # `Issue Date` header, which is a name in a column asking for a date; the person
-        # is named in the approvers table above, where the document already identifies who
-        # wrote it.
+        naming: list[tuple[str, str]] = [
+            (messages.text(DOC_CONTROL_CUSTOMER_NAME), run.customer_name),
+            (messages.text(DOC_CONTROL_TITLE_ROW), run.report_title),
+        ]
+        if control.document_name:
+            naming.append((messages.text(DOC_CONTROL_DOCUMENT_NAME), control.document_name))
+        if doc_number:
+            naming.append((messages.text(DOC_CONTROL_DOCUMENT_NUMBER), doc_number))
+        sections.append(
+            FrontMatterPairs(tuple(naming), LAYOUT_TABLE_STYLE, DOCUMENT_CONTROL_STYLE)
+        )
+
+        # --- approvers (Req 13.6) ------------------------------------------------
+        approver_rows: list[tuple[str, ...]] = []
+        approver_images: list[bytes | None] = []
+        for role in APPROVER_ROLES:
+            entry = _find_approver(control.approvers, role)
+            role_label_id = APPROVER_ROLE_LABEL_IDS.get(role)
+            approver_rows.append(
+                (
+                    messages.text(role_label_id) if role_label_id else role,
+                    # The COMPANY column shows the approver's company; `title` remains the
+                    # fallback so a profile that put its company there keeps rendering as it did.
+                    (entry.company or entry.title) if entry else "",
+                    entry.name if entry else "",
+                    "",
+                )
+            )
+            approver_images.append(entry.signature_image if entry is not None else None)
+
         sections.append(
             FrontMatterGrid(
                 headers=(
-                    messages.text(REVISION_VERSION_LABEL),
-                    messages.text(REVISION_ISSUE_DATE_LABEL),
-                    messages.text(REVISION_PAGES_CHANGED_LABEL),
-                    messages.text(REVISION_NOTE_LABEL),
+                    # Blank, as `ReportA.dc.html` leaves it. The column holds Author, Quality
+                    # Control, Reviewed By and Customer — a reader does not need to be told
+                    # those are roles, and "Role" over them is a caption for the obvious that
+                    # the artifact spends no width on.
+                    "",
+                    messages.text(APPROVER_HEADER_COMPANY),
+                    messages.text(APPROVER_HEADER_NAME),
+                    messages.text(APPROVER_HEADER_SIGNATURE),
                 ),
-                rows=((row.revision, run.issued_on or "\u2014", "\u2014", row.note or ""),),
-                table_style=LAYOUT_TABLE_STYLE,
-                paragraph_style=DOCUMENT_CONTROL_STYLE,
+                rows=tuple(approver_rows),
+                table_style=SIGNATURE_TABLE_STYLE,
+                signature_column=3,
+                images=tuple(approver_images),
+                row_height_twips=SIGNATURE_BOX_HEIGHT_TWIPS,
             )
         )
 
-    # --- distribution --------------------------------------------------------
-    if control.distribution_rows or control.distribution:
-        sections.append(
-            FrontMatterHeading(messages.text(DOC_CONTROL_DISTRIBUTION), DOCUMENT_CONTROL_STYLE)
-        )
-        if control.distribution_rows:
+        # --- revision history ----------------------------------------------------
+        if run.revision_history:
+            row = run.revision_history
+            sections.append(
+                FrontMatterHeading(
+                    messages.text(DOC_CONTROL_REVISION_HISTORY), DOCUMENT_CONTROL_STYLE
+                )
+            )
+            # A table with a header row, as `ReportA.dc.html` draws it — `Version | Issue
+            # Date | Pages Changed | Notes`, one row per revision. It was a label/value pairs
+            # block, which reads as a property of the document rather than as its history:
+            # a revision history with one row still has to look like a list somebody will add
+            # a second row to.
+            #
+            # `Published date` carries the run's own publication date and `Pages Changed` an
+            # em dash. Neither is invented: the date is the snapshot's `collected_at` — see
+            # `RunFacts.issued_on`, which explains why it is not a clock — and nothing in the
+            # run record knows which pages a re-run changed, so an em dash fills that column
+            # exactly as the artifact does for a first issue.
+            #
+            # The author is deliberately **not** a column here. It was, carried under the
+            # `Issue Date` header, which is a name in a column asking for a date; the person
+            # is named in the approvers table above, where the document already identifies who
+            # wrote it.
             sections.append(
                 FrontMatterGrid(
                     headers=(
-                        messages.text(DISTRIBUTION_HEADER_RECIPIENT),
-                        messages.text(DISTRIBUTION_HEADER_COMPANY),
-                        messages.text(DISTRIBUTION_HEADER_NOTE),
+                        messages.text(REVISION_VERSION_LABEL),
+                        messages.text(REVISION_ISSUE_DATE_LABEL),
+                        messages.text(REVISION_PAGES_CHANGED_LABEL),
+                        messages.text(REVISION_NOTE_LABEL),
                     ),
-                    rows=tuple(
-                        (row.recipient, row.company, row.note)
-                        for row in control.distribution_rows
-                    ),
+                    rows=((row.revision, run.issued_on or "\u2014", "\u2014", row.note or ""),),
                     table_style=LAYOUT_TABLE_STYLE,
                     paragraph_style=DOCUMENT_CONTROL_STYLE,
                 )
             )
-        else:
-            # v1/v2 — one free-text block, unchanged.
+
+        # --- distribution --------------------------------------------------------
+        if control.distribution_rows or control.distribution:
             sections.append(
-                FrontMatterNote(str(control.distribution), DOCUMENT_CONTROL_STYLE)
+                FrontMatterHeading(messages.text(DOC_CONTROL_DISTRIBUTION), DOCUMENT_CONTROL_STYLE)
+            )
+            if control.distribution_rows:
+                sections.append(
+                    FrontMatterGrid(
+                        headers=(
+                            messages.text(DISTRIBUTION_HEADER_RECIPIENT),
+                            messages.text(DISTRIBUTION_HEADER_COMPANY),
+                            messages.text(DISTRIBUTION_HEADER_NOTE),
+                        ),
+                        rows=tuple(
+                            (row.recipient, row.company, row.note)
+                            for row in control.distribution_rows
+                        ),
+                        table_style=LAYOUT_TABLE_STYLE,
+                        paragraph_style=DOCUMENT_CONTROL_STYLE,
+                    )
+                )
+            else:
+                # v1/v2 — one free-text block, unchanged.
+                sections.append(
+                    FrontMatterNote(str(control.distribution), DOCUMENT_CONTROL_STYLE)
+                )
+
+        # --- confidentiality notice ----------------------------------------------
+        # Under its own heading, as `ReportA.dc.html` prints it: the notice is a distinct
+        # section of the document control page, not a trailing paragraph of the distribution
+        # list. Nothing is emitted at all when no notice is configured — an empty heading
+        # would be a promise of text that is not there.
+        notice = _confidentiality_notice(control, messages)
+        if notice is not None:
+            sections.append(
+                FrontMatterHeading(
+                    messages.text(DOC_CONTROL_CONFIDENTIALITY), DOCUMENT_CONTROL_STYLE
+                )
+            )
+            sections.append(FrontMatterNote(notice, DOCUMENT_CONTROL_STYLE))
+
+        # --- proof link ----------------------------------------------------------
+        # Last on the page, where a reader checks that the file in their hands is the one
+        # that was verified. See `FrontMatterProof` for why it is not on the cover.
+        if run.verify_url:
+            sections.append(
+                FrontMatterHeading(messages.text("doc.front_matter.verify"), DOCUMENT_CONTROL_STYLE)
+            )
+            sections.append(
+                FrontMatterProof(
+                    note=messages.text("doc.front_matter.verify_note"),
+                    url=run.verify_url,
+                    qr_png=proof_qr_png(run.verify_url),
+                    style=DOCUMENT_CONTROL_STYLE,
+                )
             )
 
-    # --- confidentiality notice ----------------------------------------------
-    # Under its own heading, as `ReportA.dc.html` prints it: the notice is a distinct
-    # section of the document control page, not a trailing paragraph of the distribution
-    # list. Nothing is emitted at all when no notice is configured — an empty heading
-    # would be a promise of text that is not there.
-    notice = _confidentiality_notice(control, messages)
-    if notice is not None:
-        sections.append(
-            FrontMatterHeading(
-                messages.text(DOC_CONTROL_CONFIDENTIALITY), DOCUMENT_CONTROL_STYLE
-            )
-        )
-        sections.append(FrontMatterNote(notice, DOCUMENT_CONTROL_STYLE))
-
-    # --- proof link ----------------------------------------------------------
-    # Last on the page, where a reader checks that the file in their hands is the one
-    # that was verified. See `FrontMatterProof` for why it is not on the cover.
-    if run.verify_url:
-        sections.append(
-            FrontMatterHeading(messages.text("doc.front_matter.verify"), DOCUMENT_CONTROL_STYLE)
-        )
-        sections.append(
-            FrontMatterProof(
-                note=messages.text("doc.front_matter.verify_note"),
-                url=run.verify_url,
-                qr_png=proof_qr_png(run.verify_url),
-                style=DOCUMENT_CONTROL_STYLE,
-            )
-        )
-
-    sections.append(FrontMatterPageBreak())
+        sections.append(FrontMatterPageBreak())
 
     # --- table of contents (Req 14.3, 14.5, 14.11) ---------------------------
     if include_toc and front_matter.toc.enabled:

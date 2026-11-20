@@ -65,6 +65,9 @@ def ownership_definition() -> dict[str, Any]:
         ]
         sections.append(section)
     base["sections"] = sections
+    # As the starter writes it: no cover, no document control page, no contents.
+    base["design"]["cover_page"] = False
+    base["front_matter"] = {"cover": {"enabled": False}, "document_control": {"enabled": False}, "toc": {"enabled": False}}
     return base
 
 
@@ -127,19 +130,28 @@ def test_the_headline_counts_and_the_email_summary_agree(
     for title in ("Ownership at a Glance", "Idle and Low-Use Resources", "Created This Period",
                   "Who Created What", "Ownership Register", "How this report decides"):
         assert title in text, title
-    table = next(t for t in document.tables if any(c.text == "Creator unknown" for row in t.rows for c in row.cells))
-    values = {row.cells[0].text: row.cells[1].text for row in table.rows[1:]}
+    def rows_of(first: str) -> dict[str, str]:
+        table = next(t for t in document.tables if any(row.cells[0].text == first for row in t.rows))
+        return {row.cells[0].text: row.cells[1].text for row in table.rows if len(row.cells) > 1}
+
     # Instance, stopped instance, volume, database, VPC, address, the security group in use.
-    assert values["Resources tracked"] == "7"
-    assert values["Created this period"] == "2", values  # the instance and its root volume
-    assert values["Stopped"] == "1"
-    assert values["Creator unknown"] == "3", values  # stopped instance, database, security group
+    tiles = rows_of("Live resources")
+    assert tiles["Live resources"] == "7"
+    assert tiles["With a known creator"] == "4", tiles  # all but the stopped instance, database, security group
+    assert tiles["Idle this week"] == "0", tiles
+    assert rows_of("Stopped")["Stopped"] == "1"
+    assert rows_of("Unknown")["Unknown"] == "3"
+    assert "Nothing looks idle this week." in text
+    # The report opens on its own first page: nothing of the cover or document control.
+    opening = [p.text for p in document.paragraphs if p.text.strip()][:2]
+    assert opening[0] == "Weekly ownership report", opening
+    assert "Document control" not in text and "Contents" not in text
 
     glance = json.loads(store.get(next(k for k in store.keys() if k.endswith("/glance.json"))).body)  # type: ignore[union-attr]
     assert glance["focus"] == "ownership"
-    assert [f["key"] for f in glance["figures"]] == [
-        "owned", "new", "idle", "low_use", "stopped", "unknown_creator", "idle_cost",
-    ]
+    assert glance["headline"] == "Nothing looks idle this week."
+    assert [f["key"] for f in glance["figures"]] == ["owned", "known_creator", "idle", "idle_cost"]
+    assert [f["value"] for f in glance["figures"]] == ["7", "4", "0", "0.00 USD"]
     assert all("How this report decides" not in d for d in glance["decisions"])
 
 

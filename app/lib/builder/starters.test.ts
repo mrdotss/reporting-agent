@@ -39,6 +39,13 @@ test("Weekly ownership is an AWS starter over the last 7 days", () => {
   expect(draft.sections.map((section) => section.type)).toEqual([
     "ownership_glance", "idle_resources", "new_resources", "creators", "ownership_register", "coverage_and_verification",
   ])
+  // One page a reader acts on: no cover, no document control page, no contents.
+  const pages = draft.front_matter as Record<string, { enabled?: boolean }>
+  expect(pages.cover.enabled).toBe(false)
+  expect(pages.document_control.enabled).toBe(false)
+  expect(pages.toc.enabled).toBe(false)
+  expect(draft.design.cover_page).toBe(false)
+  expect(collectDefinitionIssues(draft, { mode: "run" })).toEqual([])
 })
 
 test("the three themes the builder added each open a starter, and the brief has no contents page", () => {
