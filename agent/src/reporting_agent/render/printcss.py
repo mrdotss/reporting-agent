@@ -660,6 +660,7 @@ _OWNERSHIP_CSS: Final[str] = """
    breakdowns and a ranked list. Every rule keys on a `data-look` only that page writes, so
    no other report changes. The colours carry meaning (in use, low use, idle) and are fixed
    rather than the design's accent, as the canvas the page was drawn from fixes them. */
+.rpt-block[data-look="under-kicker"] { display: none; }
 .rpt-block[data-look="kicker"] {
   font-family: var(--heading-face); font-size: 8.5pt; font-weight: 700; letter-spacing: 0.14em;
   text-transform: uppercase; color: #1F5F6B; margin: 0 0 7pt;
@@ -681,7 +682,7 @@ _OWNERSHIP_CSS: Final[str] = """
 .rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] td[data-column-key="metric"] {
   font-family: inherit; font-weight: 400; color: var(--muted); margin-top: 3pt;
 }
-.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] td[data-column-key="value"] { color: var(--ink); font-size: 2.3em; }
+.rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] td[data-column-key="value"] { color: var(--ink); font-size: 2.1em; text-align: left; }
 .rpt-block[data-look="headline"] ~ table.rpt-table[data-look="tiles"] tr[data-row-key="idle"] td[data-column-key="value"] { color: #B5402A; }
 
 .rpt-stack { display: inline-block; width: 47%; vertical-align: top; margin: 0 0 6pt; }
@@ -700,14 +701,14 @@ table.rpt-table[data-look="stack"] td[data-column-key="segment"]::before {
   content: ""; display: inline-block; width: 7pt; height: 7pt; margin-right: 7pt; vertical-align: -0.5pt;
   background: #9AA0A6;
 }
-[data-row-key="active"].rpt-stack-part, tr[data-row-key="active"] td[data-column-key="segment"]::before,
-[data-row-key="cloudtrail"].rpt-stack-part, tr[data-row-key="cloudtrail"] td[data-column-key="segment"]::before { background: #1F5F6B; }
-[data-row-key="in_use"].rpt-stack-part, tr[data-row-key="in_use"] td[data-column-key="segment"]::before { background: #4A8F9A; }
-[data-row-key="tag"].rpt-stack-part, tr[data-row-key="tag"] td[data-column-key="segment"]::before { background: #6FA3AE; }
-[data-row-key="low_use"].rpt-stack-part, tr[data-row-key="low_use"] td[data-column-key="segment"]::before { background: #9A6200; }
-[data-row-key="idle"].rpt-stack-part, tr[data-row-key="idle"] td[data-column-key="segment"]::before { background: #B5402A; }
-[data-row-key="stopped"].rpt-stack-part, tr[data-row-key="stopped"] td[data-column-key="segment"]::before { background: #B9BEC4; }
-[data-row-key="unknown"].rpt-stack-part, tr[data-row-key="unknown"] td[data-column-key="segment"]::before {
+[data-row-key="active"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="active"] td[data-column-key="segment"]::before,
+[data-row-key="cloudtrail"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="cloudtrail"] td[data-column-key="segment"]::before { background: #1F5F6B; }
+[data-row-key="in_use"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="in_use"] td[data-column-key="segment"]::before { background: #1F5F6B; }
+[data-row-key="tag"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="tag"] td[data-column-key="segment"]::before { background: #6FA3AE; }
+[data-row-key="low_use"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="low_use"] td[data-column-key="segment"]::before { background: #9A6200; }
+[data-row-key="idle"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="idle"] td[data-column-key="segment"]::before { background: #B5402A; }
+[data-row-key="stopped"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="stopped"] td[data-column-key="segment"]::before { background: #B9BEC4; }
+[data-row-key="unknown"].rpt-stack-part, table.rpt-table[data-look="stack"] tr[data-row-key="unknown"] td[data-column-key="segment"]::before {
   background: repeating-linear-gradient(45deg, #8C9298 0, #8C9298 1.2pt, #FFFFFF 1.2pt, #FFFFFF 2.6pt);
 }
 

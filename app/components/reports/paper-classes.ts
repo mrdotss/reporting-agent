@@ -43,6 +43,11 @@ export const EMITTED_CLASS_NAMES = [
   "rpt-toc-number",
   "rpt-toc-text",
   "rpt-h-number",
+  // The weekly ownership page's one-bar breakdown: the box, its title, the bar and a part.
+  "rpt-stack",
+  "rpt-stack-title",
+  "rpt-stack-bar",
+  "rpt-stack-part",
 ] as const
 // --- END EMITTED_CLASS_NAMES ---
 

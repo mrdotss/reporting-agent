@@ -132,6 +132,19 @@ describe("Requirement 40.1 — exactly two controls, and no URL at render", () =
     expect(screen.queryByRole("menuitem", { name: /snapshot/i })).toBeNull()
   })
 
+  test("a report designed as one page offers only its designed PDF, and every file without one", async () => {
+    const user = userEvent.setup()
+    const designed = [...ARTIFACT_KEYS, reportArtifactKey(ACTOR, RUN, "report-styled.pdf")]
+    const { unmount } = render(<DownloadCard artifactKeys={designed} designedOnly />)
+    expect(await controls(user)).toHaveLength(1)
+    expect(screen.getByRole("menuitem", { name: /pdf \(designed\)/i })).toBeVisible()
+    expect(screen.queryByRole("menuitem", { name: /word document/i })).toBeNull()
+    unmount()
+
+    render(<DownloadCard artifactKeys={ARTIFACT_KEYS} designedOnly />)
+    expect(await controls(user)).toHaveLength(2)
+  })
+
   test("no request is made and no URL appears in the markup before an activation", () => {
     const { container } = render(<DownloadCard artifactKeys={ARTIFACT_KEYS} />)
 

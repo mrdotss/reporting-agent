@@ -223,7 +223,13 @@ export function starterDraft(
       ...base.design,
       preset: theme,
       accent_color: themeAccent(theme),
-      ...(starter.frontPages === false ? { cover_page: false } : {}),
+      // No contents page, so no section numbers for one to list.
+      ...(starter.frontPages === false
+        ? {
+            cover_page: false,
+            style: { ...((base.design as { style?: Record<string, unknown> }).style ?? {}), section_numbers: "none" },
+          }
+        : {}),
     },
     ...(starter.frontPages === false
       ? {

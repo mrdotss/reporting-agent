@@ -80,6 +80,7 @@ export function deliveryEmail(input: {
       ? []
       : [
           "At a glance",
+          ...(glance.headline ? [glance.headline] : []),
           ...glance.figures.map((f) => `- ${f.label}: ${f.value}`),
           ...(glance.decisions.length > 0 ? ["", glance.decisionsTitle, ...glance.decisions.map((d) => `- ${d}`)] : []),
           "",
@@ -125,6 +126,7 @@ function glanceHtml(glance: Glance): string {
           .join("")}</ul>`
   return `<tr><td style="padding:20px 28px 0">
 <p style="margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#696b73">At a glance</p>
+${glance.headline ? `<p style="margin:0 0 10px;font-size:17px;line-height:1.35;font-weight:bold;color:#17181c">${escape(glance.headline)}</p>` : ""}
 <table role="presentation" width="100%" cellpadding="0" cellspacing="6" style="border-collapse:separate;margin:0 -6px">${rows.join("")}</table>
 ${decisions}</td></tr>`
 }

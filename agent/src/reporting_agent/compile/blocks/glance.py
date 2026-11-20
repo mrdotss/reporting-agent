@@ -74,6 +74,8 @@ FOCUS_OWNERSHIP: Final[str] = "ownership"
 OWNERSHIP_HEADLINE_KEYS: Final[tuple[str, ...]] = ("owned", "known_creator", "idle", "idle_cost")
 """The ownership page's four tiles, in order — what the email quotes."""
 
+KICKER_LOOK: Final[str] = "kicker"
+TITLE_UNDER_KICKER_LOOK: Final[str] = "under-kicker"
 TILES_LOOK: Final[str] = "tiles"
 STACK_LOOK: Final[str] = "stack"
 """`Table.look` of a one-bar breakdown: the designed PDF draws the bar from the rows' counts
@@ -464,7 +466,7 @@ def compile_ownership_glance(context: BlockContext, block: BlockSpec, cursor: Bl
         return cursor.child("nodes", len(nodes))
 
     kicker = text_paragraph(at(), "Body Text", messages.text("doc.glance.ownership.kicker"))
-    nodes.append(Paragraph(path=kicker.path, style=kicker.style, inlines=kicker.inlines, look="kicker"))
+    nodes.append(Paragraph(path=kicker.path, style=kicker.style, inlines=kicker.inlines, look=KICKER_LOOK))
     headline_cursor = at()
     nodes.append(Paragraph(
         path=headline_cursor.path, style="Body Text", inlines=tuple(_headline_inlines(context, headline_cursor, when)),

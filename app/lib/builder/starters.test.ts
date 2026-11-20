@@ -45,6 +45,7 @@ test("Weekly ownership is an AWS starter over the last 7 days", () => {
   expect(pages.document_control.enabled).toBe(false)
   expect(pages.toc.enabled).toBe(false)
   expect(draft.design.cover_page).toBe(false)
+  expect((draft.design as { style?: { section_numbers?: string } }).style?.section_numbers).toBe("none")
   expect(collectDefinitionIssues(draft, { mode: "run" })).toEqual([])
 })
 

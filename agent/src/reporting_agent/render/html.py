@@ -42,6 +42,7 @@ is never a verification input.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import html
 import json
 from collections.abc import Mapping, Sequence
@@ -69,7 +70,7 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.blocks.backup import BACKUP_STRIP_LOOK, STRIP_GLYPHS
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
-from reporting_agent.compile.blocks.glance import STACK_LOOK
+from reporting_agent.compile.blocks.glance import KICKER_LOOK, STACK_LOOK, TITLE_UNDER_KICKER_LOOK
 from reporting_agent.compile.messages import Messages
 from reporting_agent.render.toc import (
     ADOPTED_APPROACH,
@@ -1026,7 +1027,19 @@ def emit_html(
         heading_numbers=document_heading_numbers(document),
         design=design,
     )
-    for block in document.blocks:
+    blocks = tuple(document.blocks)
+    for index, block in enumerate(blocks):
+        following = blocks[index + 1] if index + 1 < len(blocks) else None
+        if (
+            isinstance(block, Paragraph)
+            and block.style in _HEADING_TAGS
+            and isinstance(following, Paragraph)
+            and following.look == KICKER_LOOK
+        ):
+            # A section title a kicker stands in for (the weekly ownership page opens on
+            # its kicker and headline). Kept in the markup for the running head and the
+            # verifier's walk; the stylesheet does not print it.
+            block = dataclasses.replace(block, look=TITLE_UNDER_KICKER_LOOK)
         emitter.block(block)
 
     return HtmlOutcome(

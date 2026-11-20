@@ -56,9 +56,17 @@ const LABEL: Readonly<
 
 export function DownloadCard({
   artifactKeys,
+  designedOnly = false,
 }: Readonly<{
   /** The run's recorded downloadable keys. Keys, never URLs (Requirement 40.3). */
   artifactKeys: readonly string[]
+  /**
+   * Offer only the designed PDF, for a report designed as one page a reader acts on (the
+   * weekly ownership report). The Word file is still built, because verification reads
+   * it, but it carries none of the design. Falls back to every file when the run has no
+   * designed PDF.
+   */
+  designedOnly?: boolean
 }>) {
   const [failed, setFailed] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -89,9 +97,11 @@ export function DownloadCard({
     }
   }, [])
 
-  const downloadable = artifactKeys.filter((key) =>
+  const every = artifactKeys.filter((key) =>
     DOWNLOADABLE_LEAF_NAMES.some((leaf) => key.endsWith(`/${leaf}`))
   )
+  const designed = every.filter((key) => key.endsWith("/report-styled.pdf"))
+  const downloadable = designedOnly && designed.length > 0 ? designed : every
 
   if (downloadable.length === 0) return null
 

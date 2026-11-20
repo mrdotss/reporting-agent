@@ -1055,38 +1055,128 @@ function BlankRowsView(props: BlockViewProps) {
  * It is not drawn as tiles, because the report does not print tiles here.
  */
 /** The weekly ownership headline, with illustrative numbers: the canvas has no CloudTrail. */
+/** The weekly ownership page as the designed PDF prints it, on sample numbers. */
+const OWNERSHIP_INK: Record<string, string> = {
+  active: "#1F5F6B", low_use: "#9A6200", idle: "#B5402A", cloudtrail: "#1F5F6B", tag: "#6FA3AE",
+}
+
+function OwnershipStack(props: { title: string; parts: readonly (readonly [string, string, number])[]; ink: string; muted: string }) {
+  const total = props.parts.reduce((sum, [, , count]) => sum + count, 0)
+  return (
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontWeight: 700, color: props.ink, marginBottom: 6 }}>{props.title}</div>
+      <div style={{ display: "flex", gap: 2, height: 9, marginBottom: 6 }}>
+        {props.parts.map(([key, , count]) => (
+          <span
+            key={key}
+            style={{
+              flexGrow: count / total,
+              background: key === "unknown" ? "repeating-linear-gradient(45deg,#8C9298 0 1.5px,#fff 1.5px 3.5px)" : OWNERSHIP_INK[key],
+            }}
+          />
+        ))}
+      </div>
+      {props.parts.map(([key, label, count]) => (
+        <div key={key} style={{ display: "flex", alignItems: "center", gap: 7, padding: "2px 0", color: props.muted }}>
+          <span
+            style={{
+              width: 8, height: 8, flex: "none",
+              background: key === "unknown" ? "repeating-linear-gradient(45deg,#8C9298 0 1.5px,#fff 1.5px 3.5px)" : OWNERSHIP_INK[key],
+            }}
+          />
+          <span style={{ flex: 1 }}>{label}</span>
+          <strong style={{ color: props.ink }}>{count}</strong>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function OwnershipGlanceView(props: BlockViewProps) {
   const { design, language } = props
-  const rows = [
-    [t("doc.glance.ownership.owned", language, "Resources tracked"), "42"],
-    [t("doc.glance.ownership.new", language, "Created this period"), "3"],
-    [t("doc.glance.ownership.idle", language, "Idle"), "5"],
-    [t("doc.glance.ownership.low_use", language, "Low use"), "4"],
-    [t("doc.glance.ownership.stopped", language, "Stopped"), "2"],
-    [t("doc.glance.ownership.unknown_creator", language, "Creator unknown"), "6"],
-    [t("doc.glance.ownership.idle_cost", language, "Idle resources, estimated monthly cost"), "118.40 USD"],
-  ]
+  const ink = design.spec.ink
+  const muted = design.spec.muted
+  const when = t("doc.glance.ownership.when.week", language, "this week")
+  const tiles = [
+    ["76", t("doc.glance.ownership.tile.owned", language, "Live resources"), ink],
+    ["28", t("doc.glance.ownership.tile.known", language, "With a known creator"), ink],
+    ["19", t("doc.glance.ownership.tile.idle", language, "Idle {when}").replace("{when}", when), "#B5402A"],
+    ["410.12 USD", t("doc.glance.ownership.tile.idle_cost", language, "Idle spend per month, estimated"), ink],
+  ] as const
+  const ranked = [
+    ["db-reporting-old", t("doc.ownership.type.database", language, "Database"), "role/Terraform/ci-run", "Deleted", "118.40"],
+    ["web-legacy-2", t("doc.ownership.type.instance", language, "Instance"), "Unknown", "", "61.32"],
+  ] as const
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <Table
-        design={design}
-        head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
-        rows={rows}
-        numeric={[1]}
-        own={props.settings.style}
-      />
-      <Heading design={design} level={2}>{t("doc.glance.decisions", language, "Decisions for you")}</Heading>
-      <p style={{ margin: 0, color: design.spec.ink }}>
+      <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "#1F5F6B" }}>
+        {t("doc.glance.ownership.kicker", language, "Weekly ownership report")}
+      </div>
+      <div style={{ fontSize: 26, lineHeight: 1.12, fontWeight: 800, letterSpacing: "-0.02em", color: ink }}>
+        {t("doc.glance.ownership.headline.many", language, "{idle} resources look idle {when}.").replace("{idle}", "19").replace("{when}", when)}{" "}
+        {t("doc.glance.ownership.unowned.some", language, "{unowned} of them belong to someone who left, or to nobody.").replace("{unowned}", "8")}
+      </div>
+      <div style={{ color: muted, lineHeight: 1.5 }}>
+        {t("doc.glance.ownership.lead", language, "")
+          .replace("{regions}", "ap-southeast-1, ap-southeast-3")
+          .replace("{when}", when)}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", borderTop: `2px solid ${ink}` }}>
+        {tiles.map(([value, label, color], index) => (
+          <div key={label} style={{ padding: "9px 10px 4px", paddingLeft: index === 0 ? 0 : 10, borderLeft: index === 0 ? 0 : `1px solid ${design.spec.rule}` }}>
+            <div style={{ fontSize: 24, fontWeight: 700, color }}>{value}</div>
+            <div style={{ color: muted }}>{label}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 24 }}>
+        <OwnershipStack
+          title={t("doc.glance.ownership.use_title", language, "Is it still used?")}
+          parts={[
+            ["active", t("doc.glance.ownership.use.active", language, "Active"), 49],
+            ["low_use", t("doc.glance.ownership.low_use", language, "Low use"), 8],
+            ["idle", t("doc.glance.ownership.idle", language, "Idle"), 19],
+          ]}
+          ink={ink}
+          muted={muted}
+        />
+        <OwnershipStack
+          title={t("doc.glance.ownership.source_title", language, "How we know who created it")}
+          parts={[
+            ["cloudtrail", t("doc.glance.ownership.source.cloudtrail", language, "CloudTrail create event"), 17],
+            ["tag", t("doc.glance.ownership.source.tag", language, "Owner or CreatedBy tag"), 4],
+            ["unknown", t("doc.glance.ownership.source.unknown", language, "Unknown"), 55],
+          ]}
+          ink={ink}
+          muted={muted}
+        />
+      </div>
+      <Heading design={design} level={2}>{t("doc.glance.ownership.decide.week", language, "Decide this week")}</Heading>
+      <div>
+        {ranked.map(([name, what, creator, status, cost], index) => (
+          <div key={name} style={{ display: "flex", gap: 10, padding: "7px 0", borderBottom: `1px solid ${design.spec.rule}` }}>
+            <span style={{ width: 16, color: "#1F5F6B", fontWeight: 700 }}>{index + 1}</span>
+            <span style={{ flex: 2, fontWeight: 700, color: ink }}>{name}</span>
+            <span style={{ flex: 1, color: muted }}>{what}</span>
+            <span style={{ flex: 2, color: ink }}>{creator}{status ? <span style={{ color: muted }}> · {status}</span> : null}</span>
+            <strong style={{ color: ink }}>{cost}</strong>
+          </div>
+        ))}
+      </div>
+      <p style={{ margin: 0, color: ink }}>
         {t("doc.glance.ownership.decision.idle", language, "Review the idle resources with the people who created them.")}
       </p>
-      <Heading design={design} level={2}>{t("doc.glance.ownership.rules_title", language, "How this report decides")}</Heading>
-      <p style={{ margin: 0, color: design.spec.muted }}>{t("doc.glance.ownership.rules", language, "")}</p>
+      <Heading design={design} level={3}>{t("doc.glance.ownership.rules_title", language, "How this report decides")}</Heading>
+      <p style={{ margin: 0, color: muted, fontSize: "0.9em" }}>{t("doc.glance.ownership.rules", language, "")}</p>
     </div>
   )
 }
 
 function GlanceView(props: BlockViewProps) {
-  if (props.expansion.config.focus === "ownership") return <OwnershipGlanceView {...props} />
+  return props.expansion.config.focus === "ownership" ? <OwnershipGlanceView {...props} /> : <EstateGlanceView {...props} />
+}
+
+function EstateGlanceView(props: BlockViewProps) {
   const { design, language } = props
   const data = useCanvasData()
   const counts = data.counts
