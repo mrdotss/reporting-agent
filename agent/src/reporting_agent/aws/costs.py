@@ -20,7 +20,8 @@ A stopped instance or database bills no compute, so it reads `not running`. Anyt
 price list does not answer reads `not priced`. Both are written as values, so every covered
 resource answers the key.
 
-Values are decimal strings at two places, computed in `Decimal` from the API's own string.
+Values are decimal strings at two places, computed in `Decimal` from the API's own string
+and written by the snapshot's `decimal_string`.
 """
 
 from __future__ import annotations
@@ -28,9 +29,10 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
-from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation
 from typing import Any, Final
 
+from reporting_agent.collect.snapshot import decimal_string
 from reporting_agent.pricing.aws_prices import RDS_ENGINES
 
 __all__ = [
@@ -53,7 +55,6 @@ PRICED_KINDS: Final[frozenset[str]] = frozenset({"instance", "volume", "database
 
 _TOKEN: Final[re.Pattern[str]] = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.\-]*$")
 _PRICE: Final[re.Pattern[str]] = re.compile(r"^\d+(?:\.\d+)?$")
-_CENT: Final[Decimal] = Decimal("0.01")
 
 PriceQuery = tuple[str, tuple[tuple[str, str], ...], str, str]
 """`(service code, ((field, value), …), unit, usage type suffix)` — hashable, so each
@@ -158,7 +159,9 @@ def _monthly(record: Mapping[str, Any], unit: str, rate: str) -> str:
         total = per_unit * Decimal(size)
     else:
         total = per_unit * HOURS_PER_MONTH
-    return format(total.quantize(_CENT, rounding=ROUND_HALF_UP), "f")
+    # Stored at the cent through the snapshot's own decimal rule, as a collected value is:
+    # the report prints this string as written.
+    return decimal_string(total, 2)
 
 
 def price_items(

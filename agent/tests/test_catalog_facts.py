@@ -216,8 +216,10 @@ def test_projectable_and_non_projectable_carry_exactly_one_of_the_two_fields() -
         else:
             assert entry.projection is None, entry.key
             # An ARM read or an AWS describe call that names nothing is `fact_unavailable`,
-            # not a configuration state, so neither declares an absence of its own.
-            if entry.source in ("arm", "aws"):
+            # not a configuration state, so neither declares an absence of its own. The
+            # ownership and list-price passes answer every resource they cover with a value
+            # (`Unknown`, `not priced`), so they have no absence to declare either.
+            if entry.source in ("arm", "aws", "aws_ownership", "aws_list_price"):
                 assert entry.absent_gap_type is None, entry.key
             else:
                 assert entry.absent_gap_type in DECLARED_ABSENT_GAP_TYPES, entry.key

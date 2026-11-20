@@ -22,6 +22,7 @@ from reporting_agent.compile.snapshot_view import (
     CARDINALITY_TOKEN,
     DECIMAL_STRING_PATTERN,
     SKU_CAPABILITIES,
+    SUM_TOKEN,
     CountKind,
     SnapshotResolver,
     SnapshotValue,
@@ -228,12 +229,20 @@ def test_a_derived_cardinality_resolves_and_names_the_collection_it_counted(
     cannot be confused for a stored value), and the derivation on the value names the
     collection whose length it is.
     """
+    sums = f"/{CARDINALITY_NAMESPACE}/{SUM_TOKEN}/"
     cardinalities = [
         value
         for value in view.values()
-        if value.pointer.startswith(f"/{CARDINALITY_NAMESPACE}/")
+        if value.pointer.startswith(f"/{CARDINALITY_NAMESPACE}/") and not value.pointer.startswith(sums)
     ]
     assert cardinalities, "no derived cardinality was indexed"
+
+    # A derived total of cost estimates shares the namespace, in USD, and names what it added.
+    for value in view.values():
+        if value.pointer.startswith(sums):
+            assert view.resolve(value.pointer) is value
+            assert value.unit == "usd" and value.estimator == CARDINALITY_ESTIMATOR
+            assert value.formula.startswith("sum(est_monthly_usd")
 
     for value in cardinalities:
         assert view.resolve(value.pointer) is value

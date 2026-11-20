@@ -2721,7 +2721,7 @@
           "key": "idle_resources",
           "number": 21,
           "title_id": "doc.section.idle_resources",
-          "group": "utilisation",
+          "group": "inventory",
           "position": "free",
           "repeatable": false,
           "needs_resource_types": [

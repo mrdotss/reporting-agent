@@ -73,7 +73,7 @@ scale is a bug to surface at the path that hit it, not a gap to paper over.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation, localcontext
 from typing import Final
 
@@ -563,6 +563,12 @@ def format_figure(
         display_value = bytes_to_gib(display_value)
         scale = max(scale, 2, 1 - display_value.adjusted() if display_value else 2)
         suffix = " GiB"
+    if unit == "usd":
+        # Money reads in cents, `272.40 USD` and never `272.4 USD`. Safe to pin here, unlike
+        # `count` (see `display_scale`): no report delivered before this unit existed
+        # carries a `usd` figure, so no re-verification reformats one.
+        scale = max(scale, 2)
+        number_format = replace(number_format, trim_trailing_zeros=False)
     quantized = _quantize(display_value, scale, at=at)
     rendered = f"{_render_digits(quantized, scale, number_format)}{suffix}"
 
