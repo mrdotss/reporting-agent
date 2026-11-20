@@ -275,7 +275,7 @@ export default async function RunPage({ params }: RunPageProps) {
                 Requirement 40.1 — one control per recorded artifact, and only while the
                 run is `completed` **and** its stored verification passed.
               */}
-              <DownloadCard artifactKeys={view.artifactKeys} />
+              <DownloadCard artifactKeys={view.artifactKeys} designedOnly={glance?.focus === "ownership"} />
               <WatchRunButton />
             </>
           }

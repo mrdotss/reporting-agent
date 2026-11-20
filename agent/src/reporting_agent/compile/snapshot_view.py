@@ -79,6 +79,7 @@ __all__ = [
     "DECIMAL_STRING_PATTERN",
     "FLEET_MIX_SEGMENTS",
     "FLEET_MIX_TYPES",
+    "OWNERSHIP_SOURCE_BUCKETS",
     "SKU_CAPABILITIES",
     "SKU_CAPACITY_ESTIMATOR",
     "SKU_CAPACITY_STATISTIC",
@@ -1450,6 +1451,25 @@ def collected_at_of(document: Mapping[str, object]) -> str:
     return raw if isinstance(raw, str) and raw else "unknown"
 
 
+OWNERSHIP_SOURCE_BUCKETS: Final[tuple[str, ...]] = ("cloudtrail", "tag", "unknown")
+"""How a creator was found, as the ownership report's first page groups it: a CloudTrail
+create event (the resource's own, or its instance's or VPC's), an owner tag, or not at all."""
+
+_CREATOR_SOURCE_FACT_KEY: Final[str] = "creator_source"
+_CREATOR_STATUS_FACT_KEY: Final[str] = "creator_status"
+_CLOUDTRAIL_SOURCES: Final[frozenset[str]] = frozenset(
+    {"CloudTrail", "Launched with its instance", "Created with its VPC"}
+)
+
+
+def _source_bucket(source: str | None, creator: str) -> str:
+    if creator == "Unknown" or source is None:
+        return "unknown"
+    if source in _CLOUDTRAIL_SOURCES:
+        return "cloudtrail"
+    return "tag" if source == "Tag" else "unknown"
+
+
 def _derive_ownership(
     resources: Sequence[ResourceView],
     facts_by_pointer: dict[str, FactTextValue],
@@ -1471,6 +1491,9 @@ def _derive_ownership(
     cost_by_activity = {name: Decimal(0) for name in _activity.ACTIVITY_VALUES}
     created_in_period = 0
     unknown_creator = 0
+    known_creator = 0
+    idle_unowned = 0
+    by_source = dict.fromkeys(OWNERSHIP_SOURCE_BUCKETS, 0)
     covered = 0
     per_creator: dict[str, list[int | Decimal]] = {}
     total_cost = Decimal(0)
@@ -1519,6 +1542,11 @@ def _derive_ownership(
             continue
         if creator == "Unknown":
             unknown_creator += 1
+        else:
+            known_creator += 1
+        by_source[_source_bucket(facts.get(_CREATOR_SOURCE_FACT_KEY), creator)] += 1
+        if activity == _activity.ACTIVITY_IDLE and (creator == "Unknown" or facts.get(_CREATOR_STATUS_FACT_KEY) == "Deleted"):
+            idle_unowned += 1
         held = per_creator.setdefault(creator, [0, 0, Decimal(0)])
         held[0] += 1
         held[1] += 1 if activity in _activity.ATTENTION_VALUES else 0
@@ -1528,6 +1556,9 @@ def _derive_ownership(
         (("ownership", "resources"), covered),
         (("ownership", "created_in_period"), created_in_period),
         (("ownership", "creator_unknown"), unknown_creator),
+        (("ownership", "known_creator"), known_creator),
+        (("ownership", "idle_unowned"), idle_unowned),
+        *((("ownership", "creator_source", name), total) for name, total in by_source.items()),
         (("ownership", "attention"), sum(by_activity[name] for name in _activity.ATTENTION_VALUES)),
         (("created_by",), len(per_creator)),
         *((("ownership", "with_activity", name), total) for name, total in by_activity.items()),

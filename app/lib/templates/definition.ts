@@ -1364,6 +1364,9 @@ const DOCUMENT_CONTROL_ALLOWED_KEYS = [
   "confidentiality_notice",
   "distribution",
   "approvers",
+  // False prints no document control page (a one-page report such as the weekly ownership
+  // report). Absent is true, so every stored profile renders as before.
+  "enabled",
 ] as const
 const TOC_ALLOWED_KEYS = ["enabled", "max_level"] as const
 const APPROVER_ALLOWED_KEYS = ["role", "name", "title"] as const
@@ -1550,6 +1553,10 @@ function validateDocumentControl(
         `Unrecognized document_control field "${key}".`
       )
     }
+  }
+
+  if ("enabled" in control && !isBoolean(control.enabled)) {
+    addIssue(issues, [...path, "enabled"], "document_control.enabled must be a boolean.")
   }
 
   optionalBoundedString(

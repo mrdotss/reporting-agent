@@ -21,7 +21,8 @@ from typing import Final
 import definition_factory as df
 import messages_factory as mf
 import snapshot_factory as sf
-from reporting_agent.compile.ast import Chart, Document, FigurePath, Series
+from reporting_agent.compile.ast import Chart, Document, FigurePath, Series, Table
+from reporting_agent.compile.blocks.glance import STACK_LOOK
 from reporting_agent.compile.blocks import compile_document
 from reporting_agent.compile.snapshot_view import build_snapshot_view
 from reporting_agent.render.html import EMITTED_CLASS_NAMES, emit_html, emit_toc_html
@@ -136,6 +137,7 @@ def _emit_all():
     # Also inject an empty-series Chart to exercise the rpt-notice class (indication).
     patched_blocks: list[object] = []
     injected_empty_chart = False
+    injected_stack = False
     for block in compiled.document.blocks:
         if isinstance(block, Chart) and not block.period_label:
             block = dc_replace(block, period_label="Jul 2026 – Aug 2026 (UTC+7)")
@@ -157,6 +159,12 @@ def _emit_all():
                 )
                 patched_blocks.append(empty_chart)
                 injected_empty_chart = True
+        elif isinstance(block, Table) and not injected_stack and len(block.columns) > 1:
+            # The weekly ownership page's one-bar breakdown: the same table, drawn as a bar
+            # above its legend, exercises the four `rpt-stack*` names.
+            patched_blocks.append(block)
+            patched_blocks.append(dc_replace(block, look=STACK_LOOK, caption="Fixture stack"))
+            injected_stack = True
         else:
             patched_blocks.append(block)
     patched_doc = Document(blocks=tuple(patched_blocks))
@@ -236,8 +244,8 @@ def test_toc_classes_are_subset_of_declaration() -> None:
     )
 
 
-def test_emitted_class_names_has_exactly_twenty_two_entries() -> None:
-    """The declaration carries exactly twenty-two names.
+def test_emitted_class_names_has_exactly_twenty_six_entries() -> None:
+    """The declaration carries exactly twenty-six names.
 
     Grew to eighteen with `rpt-fact`, which a text fact wears **alongside** `rpt-figure`.
     Grew to twenty-one with the contents entry's three: the link that gives the print
@@ -252,9 +260,11 @@ def test_emitted_class_names_has_exactly_twenty_two_entries() -> None:
     Grew to twenty-two with `rpt-h-number`, which prints on the heading the number the
     contents already lists — the contents was naming sections `0.6.2` that stated no
     number of their own anywhere on the page.
+    Grew to twenty-six with the weekly ownership page's one-bar breakdown: `rpt-stack`
+    holds `rpt-stack-title`, the `rpt-stack-bar` of `rpt-stack-part`s, and the legend table.
     """
-    assert len(EMITTED_CLASS_NAMES) == 22, (
-        f"Expected 22 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
+    assert len(EMITTED_CLASS_NAMES) == 26, (
+        f"Expected 26 entries, got {len(EMITTED_CLASS_NAMES)}: {EMITTED_CLASS_NAMES}"
     )
 
 

@@ -42,10 +42,11 @@ is never a verification input.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import html
 import json
-from dataclasses import dataclass, field
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Final
 
 from reporting_agent.compile.ast import (
@@ -69,6 +70,7 @@ from reporting_agent.compile.ast import (
 )
 from reporting_agent.compile.blocks.backup import BACKUP_STRIP_LOOK, STRIP_GLYPHS
 from reporting_agent.compile.blocks.base import EMPTY_SCOPE_TEXT
+from reporting_agent.compile.blocks.glance import KICKER_LOOK, STACK_LOOK, TITLE_UNDER_KICKER_LOOK
 from reporting_agent.compile.messages import Messages
 from reporting_agent.render.toc import (
     ADOPTED_APPROACH,
@@ -78,15 +80,15 @@ from reporting_agent.render.toc import (
 )
 
 __all__ = [
-    "FRONT_MATTER_CLASS_NAMES",
-    "emit_front_matter_html",
     "EMITTED_CLASS_NAMES",
     "EMPTY_CELL_TEXT",
     "FIGURE_CLASS",
+    "FRONT_MATTER_CLASS_NAMES",
     "NOTICE_ROW_CLASS",
     "PAGINATION_FORBIDDEN_ATTRIBUTES",
     "HtmlEmitFailed",
     "HtmlOutcome",
+    "emit_front_matter_html",
     "emit_html",
     "emit_toc_html",
 ]
@@ -117,6 +119,10 @@ EMITTED_CLASS_NAMES: Final[tuple[str, ...]] = (
     "rpt-toc-number",
     "rpt-toc-text",
     "rpt-h-number",
+    "rpt-stack",
+    "rpt-stack-title",
+    "rpt-stack-bar",
+    "rpt-stack-part",
 )
 # --- END EMITTED_CLASS_NAMES ---
 """Every class name the HTML emitter may write into a ``class`` attribute.
@@ -145,6 +151,10 @@ _CLS_FIGURE: Final[str] = EMITTED_CLASS_NAMES[11]    # rpt-figure
 _CLS_COLUMN: Final[str] = EMITTED_CLASS_NAMES[12]    # rpt-column
 _CLS_LAYOUT_ROW: Final[str] = EMITTED_CLASS_NAMES[13]  # rpt-layout-row
 _CLS_HEADING_NUMBER: Final[str] = EMITTED_CLASS_NAMES[21]  # rpt-h-number
+_CLS_STACK: Final[str] = EMITTED_CLASS_NAMES[22]  # rpt-stack
+_CLS_STACK_TITLE: Final[str] = EMITTED_CLASS_NAMES[23]  # rpt-stack-title
+_CLS_STACK_BAR: Final[str] = EMITTED_CLASS_NAMES[24]  # rpt-stack-bar
+_CLS_STACK_PART: Final[str] = EMITTED_CLASS_NAMES[25]  # rpt-stack-part
 _CLS_TOC_NAV: Final[str] = EMITTED_CLASS_NAMES[14]     # rpt-toc
 _CLS_TOC_LIST: Final[str] = EMITTED_CLASS_NAMES[15]    # rpt-toc-list
 _CLS_TOC_ENTRY: Final[str] = EMITTED_CLASS_NAMES[16]   # rpt-toc-entry
@@ -432,9 +442,10 @@ class _Emitter:
                 f' data-heading-text="'
                 f'{html.escape(_heading_text_of(node), quote=True)}"'
             )
+        look = f' data-look="{html.escape(node.look, quote=True)}"' if node.look else ""
         self.write(
             f'<{tag} class="{_CLS_BLOCK}"{identifier} '
-            f'data-style="{html.escape(node.style, quote=True)}"'
+            f'data-style="{html.escape(node.style, quote=True)}"{look}'
             f'{extra} data-path="{html.escape(str(node.path), quote=True)}">{body}</{tag}>'
         )
 
@@ -490,11 +501,40 @@ class _Emitter:
         header = f' data-header="{html.escape(node.header_look, quote=True)}"' if node.header_look else ""
         # A table set as tiles keeps its markup: the stylesheet lays its rows out as cards.
         look = f' data-look="{html.escape(node.look, quote=True)}"' if node.look else ""
-        self.write(
+        markup = (
             f'<table class="{_CLS_TABLE}" data-style="{html.escape(node.style, quote=True)}"'
             f'{header}{look} data-path="{html.escape(str(node.path), quote=True)}">{caption}'
             f"{_colgroup(node)}{''.join(rows)}</table>"
         )
+        if node.look == STACK_LOOK:
+            # The bar and its legend table travel together, so two breakdowns in a row sit
+            # side by side as two boxes.
+            markup = f'<div class="{_CLS_STACK}">{self._stack_bar(node)}{markup}</div>'
+        self.write(markup)
+
+    def _stack_bar(self, node: Table) -> str:
+        """A one-bar breakdown's title and bar, drawn above its table, which then reads as the legend.
+
+        Presentation only, like a chart's drawn coordinates: each part's length is its row's
+        count, and every number printed is still the table's own figure.
+        """
+        parts: list[str] = []
+        for row in node.rows:
+            cell = row.cells[1] if len(row.cells) > 1 else None
+            if not isinstance(cell, FigureCell):
+                continue
+            try:
+                share = float(cell.figure.value)
+            except ValueError:
+                continue
+            if share <= 0:
+                continue
+            parts.append(
+                f'<span class="{_CLS_STACK_PART}" data-row-key="{html.escape(row.key, quote=True)}"'
+                f' style="flex-grow: {share:g}"></span>'
+            )
+        title = f'<p class="{_CLS_STACK_TITLE}">{html.escape(node.caption)}</p>' if node.caption else ""
+        return f'{title}<div class="{_CLS_STACK_BAR}">{"".join(parts)}</div>'
 
     def _marked(self, figure: object, node: Table) -> bool:
         """The Word emitter's rule (`docx._marked`): a percentage at or above the table's own
@@ -760,9 +800,9 @@ def emit_front_matter_html(sections: Sequence[object]) -> str:
     styled PDF to pick up rather than half-built here.
     """
     from reporting_agent.render.front_matter import (
+        FrontMatterBackground,
         FrontMatterContents,
         FrontMatterGrid,
-        FrontMatterBackground,
         FrontMatterHeading,
         FrontMatterLogo,
         FrontMatterNote,
@@ -987,7 +1027,19 @@ def emit_html(
         heading_numbers=document_heading_numbers(document),
         design=design,
     )
-    for block in document.blocks:
+    blocks = tuple(document.blocks)
+    for index, block in enumerate(blocks):
+        following = blocks[index + 1] if index + 1 < len(blocks) else None
+        if (
+            isinstance(block, Paragraph)
+            and block.style in _HEADING_TAGS
+            and isinstance(following, Paragraph)
+            and following.look == KICKER_LOOK
+        ):
+            # A section title a kicker stands in for (the weekly ownership page opens on
+            # its kicker and headline). Kept in the markup for the running head and the
+            # verifier's walk; the stylesheet does not print it.
+            block = dataclasses.replace(block, look=TITLE_UNDER_KICKER_LOOK)
         emitter.block(block)
 
     return HtmlOutcome(

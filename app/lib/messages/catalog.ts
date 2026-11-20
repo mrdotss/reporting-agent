@@ -1018,6 +1018,138 @@ export const MESSAGE_CATALOG = {
     en: "Est. monthly USD",
     id: "Perkiraan USD per bulan",
   },
+  "doc.glance.ownership.kicker": {
+    en: "Weekly ownership report",
+    id: "Laporan kepemilikan mingguan",
+  },
+  "doc.glance.ownership.when.week": {
+    en: "this week",
+    id: "minggu ini",
+  },
+  "doc.glance.ownership.when.period": {
+    en: "this period",
+    id: "pada periode ini",
+  },
+  "doc.glance.ownership.headline.none": {
+    en: "Nothing looks idle {when}.",
+    id: "Tidak ada yang tampak menganggur {when}.",
+  },
+  "doc.glance.ownership.headline.one": {
+    en: "{idle} resource looks idle {when}.",
+    id: "{idle} sumber daya tampak menganggur {when}.",
+  },
+  "doc.glance.ownership.headline.many": {
+    en: "{idle} resources look idle {when}.",
+    id: "{idle} sumber daya tampak menganggur {when}.",
+  },
+  "doc.glance.ownership.joined": {
+    en: "{first} {second}",
+    id: "{first} {second}",
+  },
+  "doc.glance.ownership.unowned.none": {
+    en: "Each one has a creator who is still here.",
+    id: "Semuanya punya pembuat yang masih ada.",
+  },
+  "doc.glance.ownership.unowned.it": {
+    en: "It belongs to someone who left, or to nobody.",
+    id: "Sumber daya itu milik orang yang sudah pergi, atau tanpa pemilik.",
+  },
+  "doc.glance.ownership.unowned.all": {
+    en: "All of them belong to someone who left, or to nobody.",
+    id: "Semuanya milik orang yang sudah pergi, atau tanpa pemilik.",
+  },
+  "doc.glance.ownership.unowned.some": {
+    en: "{unowned} of them belong to someone who left, or to nobody.",
+    id: "{unowned} di antaranya milik orang yang sudah pergi, atau tanpa pemilik.",
+  },
+  "doc.glance.ownership.lead": {
+    en: "Resources in {regions}, each traced to the IAM identity that created it and checked against its CloudWatch activity {when}.",
+    id: "Sumber daya di {regions}, masing-masing ditelusuri ke identitas IAM pembuatnya dan diperiksa terhadap aktivitas CloudWatch-nya {when}.",
+  },
+  "doc.glance.ownership.tile.owned": {
+    en: "Live resources",
+    id: "Sumber daya aktif",
+  },
+  "doc.glance.ownership.tile.known": {
+    en: "With a known creator",
+    id: "Dengan pembuat yang diketahui",
+  },
+  "doc.glance.ownership.tile.idle": {
+    en: "Idle {when}",
+    id: "Menganggur {when}",
+  },
+  "doc.glance.ownership.tile.idle_cost": {
+    en: "Idle spend per month, estimated",
+    id: "Biaya menganggur per bulan, perkiraan",
+  },
+  "doc.glance.ownership.use_title": {
+    en: "Is it still used?",
+    id: "Apakah masih dipakai?",
+  },
+  "doc.glance.ownership.source_title": {
+    en: "How we know who created it",
+    id: "Dari mana pembuatnya diketahui",
+  },
+  "doc.glance.ownership.segment": {
+    en: "Group",
+    id: "Kelompok",
+  },
+  "doc.glance.ownership.use.active": {
+    en: "Active",
+    id: "Aktif",
+  },
+  "doc.glance.ownership.use.in_use": {
+    en: "In use",
+    id: "Terpakai",
+  },
+  "doc.glance.ownership.source.cloudtrail": {
+    en: "CloudTrail create event",
+    id: "Peristiwa pembuatan di CloudTrail",
+  },
+  "doc.glance.ownership.source.tag": {
+    en: "Owner or CreatedBy tag",
+    id: "Tag Owner atau CreatedBy",
+  },
+  "doc.glance.ownership.source.unknown": {
+    en: "Unknown",
+    id: "Tidak diketahui",
+  },
+  "doc.glance.ownership.decide.week": {
+    en: "Decide this week",
+    id: "Putuskan minggu ini",
+  },
+  "doc.glance.ownership.decide.period": {
+    en: "Decide this period",
+    id: "Putuskan pada periode ini",
+  },
+  "doc.glance.ownership.decide.what": {
+    en: "What",
+    id: "Apa",
+  },
+  "doc.ownership.type.instance": {
+    en: "EC2 instance",
+    id: "Instans EC2",
+  },
+  "doc.ownership.type.database": {
+    en: "RDS database",
+    id: "Basis data RDS",
+  },
+  "doc.ownership.type.volume": {
+    en: "EBS volume",
+    id: "Volume EBS",
+  },
+  "doc.ownership.type.eip": {
+    en: "Elastic IP",
+    id: "Alamat Elastic IP",
+  },
+  "doc.ownership.type.vpc": {
+    en: "VPC",
+    id: "Jaringan VPC",
+  },
+  "doc.ownership.type.security_group": {
+    en: "Security group",
+    id: "Grup keamanan",
+  },
   "doc.section.action_register": {
     en: "Actions",
     id: "Tindakan",
