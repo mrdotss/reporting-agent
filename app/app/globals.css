@@ -424,6 +424,48 @@
     color: var(--muted-foreground);
 }
 
+/* The weekly ownership page's one-bar breakdowns: a box holding a title, the bar and its
+   legend table, two side by side. The part colours carry meaning, as in the designed PDF. */
+.rpt-stack {
+    display: inline-block;
+    width: 47%;
+    vertical-align: top;
+    margin-block: 0.25em 0.75em;
+}
+
+.rpt-stack + .rpt-stack {
+    margin-left: 5.5%;
+}
+
+.rpt-stack-title {
+    font-weight: 600;
+    margin-block: 0 0.4em;
+}
+
+.rpt-stack-bar {
+    display: flex;
+    gap: 2px;
+    height: 0.6rem;
+    margin-block-end: 0.4em;
+}
+
+.rpt-stack-part {
+    display: block;
+    min-width: 2px;
+    background: #9aa0a6;
+}
+
+.rpt-stack-part[data-row-key="active"],
+.rpt-stack-part[data-row-key="in_use"],
+.rpt-stack-part[data-row-key="cloudtrail"] { background: #1f5f6b; }
+.rpt-stack-part[data-row-key="tag"] { background: #6fa3ae; }
+.rpt-stack-part[data-row-key="low_use"] { background: #9a6200; }
+.rpt-stack-part[data-row-key="idle"] { background: #b5402a; }
+.rpt-stack-part[data-row-key="stopped"] { background: #b9bec4; }
+.rpt-stack-part[data-row-key="unknown"] {
+    background: repeating-linear-gradient(45deg, #8c9298 0 1.5px, transparent 1.5px 3.5px);
+}
+
 .rpt-chart-period {
     color: var(--muted-foreground);
     font-size: 0.875em;
