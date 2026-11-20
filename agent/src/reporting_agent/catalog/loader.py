@@ -175,7 +175,7 @@ satisfies a decimal grammar and is an operating-system version, while `10.0.0.4`
 version with a grouping separator."""
 
 DECLARED_FACT_SOURCES: Final[frozenset[str]] = frozenset(
-    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "aws_recovery_points", "compute_optimizer"}
+    {"resource_graph", "arm", "recovery_services", "capacity", "advisor", "aws", "aws_backup", "aws_recovery_points", "compute_optimizer", "aws_ownership", "aws_list_price"}
 )
 """Req 4.2's five sources, recorded from the request that produced the fact rather than
 derived from its key — so a fact's provenance is an observation about where it came from
@@ -1231,9 +1231,11 @@ def _validate_one_fact(
                     f"{projection!r}"
                 )
             # ARM and AWS describe facts need not assert a configuration state when absent.
-            # The fold already records an unspecified absence as fact_unavailable.
+            # The fold already records an unspecified absence as fact_unavailable. The AWS
+            # ownership and list-price passes write every key for every resource they cover
+            # (`Unknown`, `not priced`), so an absence there is a failed pass, not a state.
             if absent_gap_type not in DECLARED_ABSENT_GAP_TYPES and not (
-                source in ("arm", "aws") and absent_gap_type is None
+                source in ("arm", "aws", "aws_ownership", "aws_list_price") and absent_gap_type is None
             ):
                 reasons.append(
                     f"a non-projectable fact must declare an `absent_gap_type` drawn "

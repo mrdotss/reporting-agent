@@ -43,6 +43,16 @@
       ]
     },
     {
+      "sid": "Ownership",
+      "purpose": "Who created each resource, from CloudTrail's event history, and whether that IAM user or role still exists. Optional: without it the ownership report says the creator is unknown.",
+      "actions": [
+        "cloudtrail:LookupEvents",
+        "iam:GetUser",
+        "iam:GetRole"
+      ],
+      "optional": true
+    },
+    {
       "sid": "CheckOwnPermissions",
       "purpose": "Lets the preflight prove what this role may do, from this role's own policy.",
       "actions": [

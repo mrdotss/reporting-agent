@@ -27,6 +27,14 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Final
 
+from reporting_agent.aws.costs import (
+    PRICE_SOURCE,
+    PRICED_KINDS,
+    PriceQuery,
+    parse_rate,
+    price_items,
+    price_query,
+)
 from reporting_agent.aws.facts import (
     AWS_BACKUP_SOURCE,
     AWS_FACT_SOURCE,
@@ -39,6 +47,22 @@ from reporting_agent.aws.facts import (
     recovery_point_items,
 )
 from reporting_agent.aws.metrics import DIMENSION_BY_TYPE, CloudWatchCollector
+from reporting_agent.aws.ownership import (
+    CREATION_EVENTS,
+    LOOKUP_DENIED,
+    LOOKUP_FAILED,
+    LOOKUP_OK,
+    OWNERSHIP_KINDS,
+    OWNERSHIP_SOURCE,
+    STATUS_ACTIVE,
+    STATUS_DELETED,
+    STATUS_NOT_CHECKED,
+    creation_index,
+    creations_from_events,
+    lookback_start_of,
+    ownership_items,
+    principals_to_check,
+)
 from reporting_agent.catalog.loader import (
     FactDeclaration,
     LoadedCatalog,
@@ -86,6 +110,11 @@ logger = logging.getLogger(__name__)
 
 FIDELITY_BASELINE: Final[str] = "baseline"
 FIDELITY_ENHANCED: Final[str] = "enhanced"
+
+MAX_LOOKUP_PAGES: Final[int] = 20
+"""CloudTrail pages read per creation event name per region: 1,000 events of each kind."""
+MAX_PRINCIPAL_CHECKS: Final[int] = 50
+"""IAM users and roles checked for whether they still exist; any beyond read `Not checked`."""
 
 TYPE_INSTANCE: Final[str] = "AWS::EC2::Instance"
 TYPE_VOLUME: Final[str] = "AWS::EC2::Volume"
@@ -391,6 +420,12 @@ class AwsProvider:
     _archive: ArchiveWriter | None = field(default=None, repr=False)
     _raw: dict[str, dict[str, Any]] = field(default_factory=dict, repr=False)
     """Discovery's describe item per resource id, kept for the fact pass."""
+    get_products: Callable[..., Mapping[str, Any]] | None = field(default=None, repr=False)
+    """`pricing:GetProducts` with the **runtime's** role (list prices are public), or `None`
+    to leave `est_monthly_cost` unasked."""
+    lookup_pause_s: float = field(default=0.5, repr=False)
+    """The pause between two CloudTrail `LookupEvents` pages in one region: the API allows
+    two calls a second per region, and the run shares that budget with the customer."""
 
     @property
     def archive(self) -> ArchiveWriter:
@@ -583,9 +618,147 @@ class AwsProvider:
             )
             await fold(COMPUTE_OPTIMIZER_SOURCE, instances, body)
 
+        tz = resolve_timezone(request.get("timezone") or "UTC")
+        owned = [rid for rid in resource_ids if (self._raw.get(rid) or {}).get("_kind") in OWNERSHIP_KINDS]
+        if owned:
+            await fold(OWNERSHIP_SOURCE, owned, await self._ownership_body(owned, location, tz))
+
+        priced = [rid for rid in resource_ids if (self._raw.get(rid) or {}).get("_kind") in PRICED_KINDS]
+        if priced and self.get_products is not None:
+            await fold(PRICE_SOURCE, priced, await self._price_body(priced))
+
         result = FactResult(facts=facts, gaps=gaps)
         assert_plain_data(result)
         return result
+
+    async def _creation_events(self, region: str, names: Sequence[str], start: datetime, end: datetime) -> tuple[str, list[dict[str, Any]]]:
+        """Every creation event of `names` in one region since `start`, and how the lookup went.
+
+        Pages are read one at a time with a pause between them: `LookupEvents` allows two
+        calls a second per region, shared with whatever else reads the account's history.
+        `MAX_LOOKUP_PAGES` bounds a very busy account; what lies beyond it reads as not found.
+        """
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        events: list[dict[str, Any]] = []
+        for name in names:
+            token: str | None = None
+            for _ in range(MAX_LOOKUP_PAGES):
+                arguments: dict[str, Any] = {
+                    "LookupAttributes": [{"AttributeKey": "EventName", "AttributeValue": name}],
+                    "StartTime": start,
+                    "EndTime": end,
+                    "MaxResults": 50,
+                }
+                if token:
+                    arguments["NextToken"] = token
+                try:
+                    client = self.clients("cloudtrail", region)
+                    answer = await asyncio.to_thread(client.lookup_events, **arguments)
+                except ClientError as exc:
+                    code = exc.response.get("Error", {}).get("Code", "")
+                    logger.warning("aws ownership: LookupEvents in %s failed (%s)", region, code)
+                    denied = code in ("AccessDenied", "AccessDeniedException", "UnauthorizedOperation")
+                    return (LOOKUP_DENIED if denied else LOOKUP_FAILED), events
+                except BotoCoreError as exc:
+                    logger.warning("aws ownership: LookupEvents in %s failed (%s)", region, type(exc).__name__)
+                    return LOOKUP_FAILED, events
+                events.extend(event for event in answer.get("Events") or [] if isinstance(event, dict))
+                token = answer.get("NextToken")
+                if not token:
+                    break
+                await asyncio.sleep(self.lookup_pause_s)
+        return LOOKUP_OK, events
+
+    async def _principal_status(self, principal: tuple[str, str]) -> str:
+        """Whether an IAM user or role still exists: `Active`, `Deleted` or `Not checked`."""
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        kind, name = principal
+        try:
+            client = self.clients("iam", self.home_region)
+            if kind == "user":
+                await asyncio.to_thread(client.get_user, UserName=name)
+            else:
+                await asyncio.to_thread(client.get_role, RoleName=name)
+        except ClientError as exc:
+            code = exc.response.get("Error", {}).get("Code", "")
+            return STATUS_DELETED if code == "NoSuchEntity" else STATUS_NOT_CHECKED
+        except BotoCoreError:
+            return STATUS_NOT_CHECKED
+        return STATUS_ACTIVE
+
+    async def _ownership_body(
+        self, owned: Sequence[str], location: Mapping[str, str], tz: Any
+    ) -> PlainData:
+        """The `aws_ownership` body: each resource's creator, with the lookups it came from.
+
+        Always a body, never `None`: a region whose history could not be read still answers
+        every resource, as `Unknown` with the reason in `creator_source`.
+        """
+        now = self.clock()
+        start = lookback_start_of(now)
+        kinds_by_region: dict[str, set[str]] = {}
+        for rid in owned:
+            kinds_by_region.setdefault(location.get(rid) or self._raw[rid]["_region"], set()).add(self._raw[rid]["_kind"])
+        regions = sorted(kinds_by_region)
+        answers = await asyncio.gather(
+            *(
+                self._creation_events(
+                    region,
+                    [name for kind in sorted(kinds_by_region[region]) for name in CREATION_EVENTS[kind]],
+                    start,
+                    now,
+                )
+                for region in regions
+            )
+        )
+        lookups = {region: outcome for region, (outcome, _) in zip(regions, answers, strict=True)}
+        creations = creations_from_events([event for _, events in answers for event in events])
+        index = creation_index(creations)
+        principals = principals_to_check(list(index.values()))[:MAX_PRINCIPAL_CHECKS]
+        checked = await asyncio.gather(*(self._principal_status(principal) for principal in principals))
+        statuses = dict(zip(principals, checked, strict=True))
+        items = ownership_items(
+            owned, self._raw, index=index, lookups=lookups, statuses=statuses, lookback_start=start, tz=tz
+        )
+        return {
+            "value": items,
+            "lookback_start": rfc3339_utc(start),
+            "lookups": [{"region": region, "outcome": lookups[region]} for region in regions],
+            "principals": [
+                {"kind": kind, "name": name, "status": statuses[(kind, name)]} for kind, name in principals
+            ],
+        }
+
+    async def _price_body(self, priced: Sequence[str]) -> PlainData:
+        """The `aws_list_price` body: each resource's estimate, with every rate it used."""
+        get_products = self.get_products
+        assert get_products is not None
+        queries = sorted({query for rid in priced if (query := price_query(self._raw[rid])) is not None})
+
+        def ask(query: PriceQuery) -> str | None:
+            service, filters, _, _ = query
+            try:
+                answer = get_products(
+                    ServiceCode=service,
+                    Filters=[{"Type": "TERM_MATCH", "Field": name, "Value": value} for name, value in filters],
+                    MaxResults=100,
+                )
+            except Exception as exc:  # a price is an estimate beside the report, never a failed run
+                logger.warning("aws list price: %s failed (%s)", service, type(exc).__name__)
+                return None
+            return parse_rate(query, answer.get("PriceList") or [])
+
+        rates = dict(zip(queries, await asyncio.gather(*(asyncio.to_thread(ask, q) for q in queries)), strict=True))
+        return {
+            "value": price_items(priced, self._raw, rates),
+            "rates": [
+                {"service": query[0], "filters": [list(pair) for pair in query[1]], "unit": query[2],
+                 "usage": query[3], "usd": rates[query]}
+                for query in queries
+            ],
+        }
 
     async def _optional_call(
         self,
@@ -817,6 +990,12 @@ def build_provider(
     if object_store is None:
         object_store = _default_object_store()
     tier = context.get("fidelity_tier")
+    import boto3
+
+    from reporting_agent.pricing.aws_prices import PRICING_REGION
+
+    # The runtime's own role: list prices are public, and nothing about them is the customer's.
+    pricing = boto3.client("pricing", region_name=PRICING_REGION)
     return AwsProvider(
         clients=client_factory(session),
         catalog=catalog if catalog is not None else load_catalog(),
@@ -826,6 +1005,7 @@ def build_provider(
         run_id=text("run_id"),
         home_region=config.aws_region,
         fidelity_tier=tier if tier in (FIDELITY_BASELINE, FIDELITY_ENHANCED) else FIDELITY_BASELINE,
+        get_products=pricing.get_products,
     )
 
 
