@@ -933,6 +933,30 @@ function InventoryView(props: BlockViewProps) {
     return [...counts.entries()].sort(([a, x], [b, y]) => y - x || a.localeCompare(b)).map(([name, count]) => ({ name, count }))
   }
 
+  if (groupBy === "creator") {
+    // Illustrative: who created what comes from CloudTrail, which the canvas does not read.
+    return (
+      <Table
+        design={design}
+        head={[
+          t("doc.inventory.creator", language, "Created by"),
+          t("doc.inventory.creator_type", language, "Creator type"),
+          t("doc.inventory.creator_status", language, "Creator status"),
+          t("doc.inventory.resources", language, "Resources"),
+          t("doc.inventory.attention", language, "Need attention"),
+          t("doc.inventory.est_monthly_usd", language, "Est. monthly USD"),
+        ]}
+        rows={[
+          ["role/GitHubDeploy/gha-run", "IAM role", "Active", "18", "2", "64.20"],
+          ["user/alice", "IAM user", "Active", "9", "3", "41.10"],
+          ["Unknown", "Unknown", "Unknown", "6", "1", "13.10"],
+        ]}
+        numeric={[3, 4, 5]}
+        own={props.settings.style}
+      />
+    )
+  }
+
   if (groupBy === "region" || groupBy === "resource_group" || groupBy === "resource_type") {
     const rows = rollup(groupBy)
     const withRegion = groupBy === "resource_group"
@@ -1030,7 +1054,39 @@ function BlankRowsView(props: BlockViewProps) {
  * headline counts, then "Decisions for you" as body paragraphs, each the whole sentence.
  * It is not drawn as tiles, because the report does not print tiles here.
  */
+/** The weekly ownership headline, with illustrative numbers: the canvas has no CloudTrail. */
+function OwnershipGlanceView(props: BlockViewProps) {
+  const { design, language } = props
+  const rows = [
+    [t("doc.glance.ownership.owned", language, "Resources tracked"), "42"],
+    [t("doc.glance.ownership.new", language, "Created this period"), "3"],
+    [t("doc.glance.ownership.idle", language, "Idle"), "5"],
+    [t("doc.glance.ownership.low_use", language, "Low use"), "4"],
+    [t("doc.glance.ownership.stopped", language, "Stopped"), "2"],
+    [t("doc.glance.ownership.unknown_creator", language, "Creator unknown"), "6"],
+    [t("doc.glance.ownership.idle_cost", language, "Idle resources, estimated monthly cost"), "118.40 USD"],
+  ]
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <Table
+        design={design}
+        head={[t("doc.table.field", language, "Field"), t("doc.table.value", language, "Value")]}
+        rows={rows}
+        numeric={[1]}
+        own={props.settings.style}
+      />
+      <Heading design={design} level={2}>{t("doc.glance.decisions", language, "Decisions for you")}</Heading>
+      <p style={{ margin: 0, color: design.spec.ink }}>
+        {t("doc.glance.ownership.decision.idle", language, "Review the idle resources with the people who created them.")}
+      </p>
+      <Heading design={design} level={2}>{t("doc.glance.ownership.rules_title", language, "How this report decides")}</Heading>
+      <p style={{ margin: 0, color: design.spec.muted }}>{t("doc.glance.ownership.rules", language, "")}</p>
+    </div>
+  )
+}
+
 function GlanceView(props: BlockViewProps) {
+  if (props.expansion.config.focus === "ownership") return <OwnershipGlanceView {...props} />
   const { design, language } = props
   const data = useCanvasData()
   const counts = data.counts

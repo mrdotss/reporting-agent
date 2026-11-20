@@ -20,27 +20,61 @@ export function periodName(periodStart: string): string {
   )
 }
 
+/** Whether a period is a short one (at most 7 days), which the email names as a week. */
+export function isWeekPeriod(periodStart: string, periodEnd: string | undefined): boolean {
+  if (periodEnd === undefined) return false
+  const days = (Date.parse(`${periodEnd}T00:00:00Z`) - Date.parse(`${periodStart}T00:00:00Z`)) / 86_400_000 + 1
+  return Number.isFinite(days) && days >= 1 && days <= 7
+}
+
+/**
+ * The period as a reader says it: "August 2026" for a month, "17–23 November 2026" for a
+ * week, "28 December 2026 – 3 January 2027" for a week across a year.
+ */
+export function periodLabel(periodStart: string, periodEnd?: string): string {
+  if (periodEnd === undefined || !isWeekPeriod(periodStart, periodEnd)) return periodName(periodStart)
+  const [start, end] = [new Date(`${periodStart}T00:00:00Z`), new Date(`${periodEnd}T00:00:00Z`)]
+  const full = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "UTC" })
+  if (start.getUTCFullYear() !== end.getUTCFullYear()) return `${full.format(start)} – ${full.format(end)}`
+  if (start.getUTCMonth() !== end.getUTCMonth()) {
+    const dayMonth = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", timeZone: "UTC" })
+    return `${dayMonth.format(start)} – ${full.format(end)}`
+  }
+  return `${start.getUTCDate()}–${full.format(end)}`
+}
+
+/** "weekly ownership report", "weekly cloud report" or "cloud report", for the subject and heading. */
+export function reportKind(input: { periodStart: string; periodEnd?: string; glance?: Glance | null }): string {
+  const weekly = isWeekPeriod(input.periodStart, input.periodEnd)
+  const ownership = input.glance?.focus === "ownership"
+  return `${weekly ? "weekly " : ""}${ownership ? "ownership" : "cloud"} report`
+}
+
 export function deliveryEmail(input: {
   contactName: string
   customer: string
   periodStart: string
+  /** The period's last day; a period of 7 days or fewer is named as a week. */
+  periodEnd?: string
   figureCount: number
   reportUrl: string
   proofUrl: string
   expiresAt: Date
   glance?: Glance | null
 }): { subject: string; text: string; html: string } {
-  const period = periodName(input.periodStart)
+  const period = periodLabel(input.periodStart, input.periodEnd)
+  const kind = reportKind(input)
+  const forPeriod = isWeekPeriod(input.periodStart, input.periodEnd) ? `the week of ${period}` : period
   const until = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(
     input.expiresAt
   )
   const figures = input.figureCount.toLocaleString("en-US")
-  const subject = `${input.customer} cloud report, ${period}`
+  const subject = `${input.customer} ${kind}, ${period}`
   const glance = input.glance ?? null
   const text = [
     `Hello ${input.contactName},`,
     "",
-    `Your cloud report for ${period} is ready. Every one of its ${figures} figures was checked against the data collected for it before it was sent.`,
+    `Your ${kind} for ${forPeriod} is ready. Every one of its ${figures} figures was checked against the data collected for it before it was sent.`,
     "",
     ...(glance === null
       ? []
@@ -59,8 +93,8 @@ export function deliveryEmail(input: {
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
 <table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fdfdfc;border:1px solid #e2e2dd;border-radius:10px">
 <tr><td style="padding:28px 28px 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:#696b73">${escape(input.customer)}</td></tr>
-<tr><td style="padding:0 28px;font-size:22px;font-weight:bold;color:#2f3c7e">Your ${escape(period)} cloud report</td></tr>
-<tr><td style="padding:16px 28px 0;font-size:15px;line-height:1.55">Hello ${escape(input.contactName)},<br><br>Your cloud report for ${escape(period)} is ready. Every one of its <strong>${escape(figures)}</strong> figures was checked against the data collected for it before it was sent.</td></tr>
+<tr><td style="padding:0 28px;font-size:22px;font-weight:bold;color:#2f3c7e">Your ${escape(kind)}, ${escape(period)}</td></tr>
+<tr><td style="padding:16px 28px 0;font-size:15px;line-height:1.55">Hello ${escape(input.contactName)},<br><br>Your ${escape(kind)} for ${escape(forPeriod)} is ready. Every one of its <strong>${escape(figures)}</strong> figures was checked against the data collected for it before it was sent.</td></tr>
 ${glance === null ? "" : glanceHtml(glance)}
 <tr><td style="padding:22px 28px"><a href="${escape(input.reportUrl)}" style="display:inline-block;background:#2f3c7e;color:#f4f5fb;text-decoration:none;padding:11px 18px;border-radius:8px;font-size:15px;font-weight:bold">View the report</a></td></tr>
 <tr><td style="padding:0 28px 8px;font-size:13px;color:#4b4d55">The link works until ${escape(until)}.</td></tr>

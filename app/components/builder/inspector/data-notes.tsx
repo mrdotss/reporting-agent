@@ -28,6 +28,8 @@ const FACT_SOURCES: Readonly<Record<string, string>> = {
   aws: "AWS describe calls in each region",
   aws_backup: "AWS Backup",
   compute_optimizer: "AWS Compute Optimizer",
+  aws_ownership: "AWS CloudTrail event history (90 days) and IAM",
+  aws_list_price: "the AWS Price List (on-demand list prices)",
   resource_graph: "Azure Resource Graph",
   arm: "Azure Resource Manager",
   recovery_services: "Azure Backup (Recovery Services)",

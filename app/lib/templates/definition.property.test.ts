@@ -445,6 +445,8 @@ const CONFIG_FIELD_VALUES: Readonly<Record<string, (seed: number) => unknown>> =
     // (`subscription`) and the rollup shape (the other three) alike.
     group_by: (seed) =>
       ["subscription", "resource_group", "region", "resource_type"][seed % 4],
+    // at_a_glance — the estate headline or the weekly ownership one.
+    focus: (seed) => (seed % 2 === 0 ? "estate" : "ownership"),
     // resource_table — `rows` stacks a resource's columns down the page for a
     // section that expands per machine; `pairs` is the other declared value.
     layout: (seed) => (seed % 2 === 0 ? "rows" : "pairs"),

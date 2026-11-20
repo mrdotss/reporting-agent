@@ -9,7 +9,9 @@ const SAVED: ScheduleView = {
   connectedSubscriptionId: "sub-aws",
   templateId: "tmpl-aws",
   regions: [],
+  kind: "monthly",
   dayOfMonth: 1,
+  dayOfWeek: null,
   hour: 2,
   timezone: "Asia/Jakarta",
   enabled: true,
@@ -17,6 +19,8 @@ const SAVED: ScheduleView = {
   next: "1 Nov, 02:00",
   lastRunId: null,
   lastError: null,
+  autoSend: false,
+  lastSendError: null,
 }
 
 let requests: { method: string; body: Record<string, unknown> }[] = []
@@ -89,6 +93,33 @@ describe("SchedulePanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Stop schedule" }))
     await waitFor(() => expect(requests).toEqual([{ method: "DELETE", body: { workspaceId: "ws-1", projectId: "prj-1" } }]))
     expect(await screen.findByRole("button", { name: "Save schedule" })).toBeInTheDocument()
+  })
+
+  test("a weekly panel waits behind a button, defaults to Monday 08:00 and says so", async () => {
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>
+      requests.push({ method: String(init?.method), body })
+      return {
+        ok: true,
+        json: async () => ({
+          schedule: { ...SAVED, kind: "weekly", dayOfMonth: null, dayOfWeek: 1, hour: 8, cadence: "every Monday at 08:00 WIB" },
+        }),
+      } as unknown as Response
+    })
+    renderPanel(null, { cadence: "weekly" })
+
+    expect(screen.queryByRole("button", { name: "Save weekly schedule" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Set up a weekly schedule" }))
+    fireEvent.click(screen.getByRole("button", { name: "Save weekly schedule" }))
+    await waitFor(() => expect(requests).toHaveLength(1))
+    expect(requests[0]?.body).toMatchObject({ cadence: "weekly", dayOfWeek: 1, hour: 8, autoSend: true })
+    expect(requests[0]?.body).not.toHaveProperty("dayOfMonth")
+    expect(await screen.findByText(/Runs automatically every Monday at 08:00 WIB/)).toBeInTheDocument()
+  })
+
+  test("a weekly preset opens the weekly form at once", () => {
+    renderPanel(null, { cadence: "weekly", openByDefault: true })
+    expect(screen.getByRole("button", { name: "Save weekly schedule" })).toBeEnabled()
   })
 
   test("a pairing that cannot be requested cannot be scheduled", () => {

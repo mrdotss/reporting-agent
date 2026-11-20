@@ -13,12 +13,15 @@ import { getSnapshotJson } from "@/lib/aws/s3"
  */
 
 const glanceSchema = z.object({
+  /** `ownership` for the weekly ownership report's headline; absent or `estate` otherwise. */
+  focus: z.string().optional(),
   decisions_title: z.string(),
   figures: z.array(z.object({ key: z.string(), label: z.string(), value: z.string() })).max(8),
   decisions: z.array(z.string()).max(5),
 })
 
 export type Glance = {
+  readonly focus?: string
   readonly decisionsTitle: string
   readonly figures: readonly { readonly label: string; readonly value: string }[]
   readonly decisions: readonly string[]
@@ -28,6 +31,7 @@ export function parseGlance(raw: unknown): Glance | null {
   const parsed = glanceSchema.safeParse(raw)
   if (!parsed.success || parsed.data.figures.length === 0) return null
   return {
+    ...(parsed.data.focus === undefined ? {} : { focus: parsed.data.focus }),
     decisionsTitle: parsed.data.decisions_title,
     figures: parsed.data.figures.map(({ label, value }) => ({ label, value })),
     decisions: parsed.data.decisions,

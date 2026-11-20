@@ -28,6 +28,7 @@ export const STARTER_KEYS_V4 = [
   "backup_exposure",
   "rightsizing_review",
   "quarterly_review",
+  "weekly_ownership",
   "blank",
 ] as const
 
@@ -46,8 +47,10 @@ export type Starter = {
   readonly name: string
   readonly blurb: string
   readonly theme: DesignPreset
-  readonly period: "last_full_month" | "last_30d"
+  readonly period: "last_full_month" | "last_30d" | "last_7d"
   readonly sections: Readonly<Record<Provider, readonly StarterSection[]>>
+  /** The providers the gallery offers it for; every provider when absent. */
+  readonly providers?: readonly Provider[]
   /** Shown as new in the gallery: the starters this redesign added. */
   readonly isNew: boolean
   /** False for a brief short enough that a contents page would be most of it. */
@@ -131,6 +134,27 @@ export const STARTERS: readonly Starter[] = [
     },
   },
   {
+    key: "weekly_ownership",
+    name: "Weekly ownership",
+    blurb: "Who created each resource, what sits idle or barely used, and what it costs, for the week just closed.",
+    theme: "ledger",
+    period: "last_7d",
+    isNew: true,
+    providers: ["aws"],
+    sections: {
+      aws: [
+        { type: "ownership_glance" },
+        { type: "idle_resources", preset: "ownership" },
+        { type: "new_resources" },
+        { type: "creators" },
+        { type: "ownership_register" },
+        COVERAGE,
+      ],
+      // AWS only for now: CloudTrail names the creator. Never offered for Azure (`providers`).
+      azure: [COVERAGE],
+    },
+  },
+  {
     key: "blank",
     name: "Blank",
     blurb: "Only the verification appendix. Add sections from the catalogue.",
@@ -140,6 +164,11 @@ export const STARTERS: readonly Starter[] = [
     sections: { aws: [COVERAGE], azure: [COVERAGE] },
   },
 ]
+
+/** Whether the gallery offers `starter` for `provider`. */
+export function offersProvider(starter: Starter, provider: Provider): boolean {
+  return !starter.providers || starter.providers.includes(provider)
+}
 
 export function starterFor(key: string): Starter | undefined {
   return STARTERS.find((starter) => starter.key === key)

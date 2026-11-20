@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/empty"
 import { requireSession } from "@/lib/auth/guard"
 import { toTemplateView } from "@/lib/db/views"
-import { readSchedule } from "@/lib/schedules/store"
+import { readSchedules } from "@/lib/schedules/store"
 import { listConnectedSubscriptions } from "@/lib/subscriptions/store"
 import { listTemplates, readLatestVersionForView } from "@/lib/templates/store"
 import { selectedContext } from "@/lib/workspaces/context"
@@ -128,10 +128,10 @@ export default async function NewReportPage({
   // `?template=` from the preset list's run action; the form ignores an id it cannot run.
   const params = await searchParams
 
-  const [subscriptions, rows, schedule] = await Promise.all([
+  const [subscriptions, rows, schedules] = await Promise.all([
     listConnectedSubscriptions(user.id, scope),
     listTemplates(user.id, scope),
-    readSchedule(user.id, scope),
+    readSchedules(user.id, scope),
   ])
 
   const templates = await Promise.all(
@@ -157,7 +157,8 @@ export default async function NewReportPage({
         subscriptions={subscriptions}
         templates={templates}
         nowIso={new Date().toISOString()}
-        schedule={schedule}
+        schedule={schedules.find((entry) => entry.kind === "monthly") ?? null}
+        weeklySchedule={schedules.find((entry) => entry.kind === "weekly") ?? null}
         initialTemplateId={typeof params.template === "string" ? params.template : undefined}
       />
     </PageBody>

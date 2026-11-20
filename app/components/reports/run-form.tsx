@@ -29,6 +29,9 @@ import {
   type Incident,
 } from "@/lib/runs/input"
 import type { ScheduleView } from "@/lib/schedules/view"
+
+/** Sections that make a preset a weekly one, so the weekly schedule opens for it. */
+const WEEKLY_SECTIONS: readonly string[] = ["ownership_glance", "idle_resources", "new_resources"]
 import { subscriptionRunBlocker } from "@/lib/subscriptions/state"
 import {
   ProviderMark,
@@ -137,6 +140,7 @@ export function RunForm({
   templates,
   nowIso,
   schedule = null,
+  weeklySchedule = null,
   initialTemplateId,
 }: Readonly<{
   subscriptions: readonly ConnectedSubscriptionView[]
@@ -162,6 +166,8 @@ export function RunForm({
   nowIso: string
   /** This customer's monthly schedule, when it has one. */
   schedule?: ScheduleView | null
+  /** This customer's weekly schedule, when it has one. */
+  weeklySchedule?: ScheduleView | null
   /**
    * A preset to start on, from "Request a report" on the preset list. Honoured only when
    * it is runnable; the connector then starts on the first one of that preset's source.
@@ -730,28 +736,36 @@ export function RunForm({
       ) : null}
 
       {/*
-        A monthly schedule for this customer. Only inside a workspace — a schedule belongs
+        A monthly and a weekly schedule for this customer. Only inside a workspace — a schedule belongs
         to a customer — and never for a preset that needs per-run front-matter values,
         which a timer has nobody to ask for.
       */}
-      {projectScope.workspaceId && projectScope.projectId ? (
-        <SchedulePanel
-          workspaceId={projectScope.workspaceId}
-          projectId={projectScope.projectId}
-          connectedSubscriptionId={connectedSubscriptionId}
-          templateId={templateId}
-          regions={regions}
-          schedule={schedule}
-          nameOfConnector={(id) => subscriptions.find((entry) => entry.id === id)?.displayName}
-          nameOfTemplate={(id) => templates.find((entry) => entry.id === id)?.name}
-          canSave={
-            connectedSubscriptionId !== "" &&
-            selectedTemplate?.currentVersion != null &&
-            !requiresFrontMatter &&
-            !regionsIncomplete
-          }
-        />
-      ) : null}
+      {projectScope.workspaceId && projectScope.projectId
+        ? (["monthly", "weekly"] as const).map((cadence) => (
+            <SchedulePanel
+              key={cadence}
+              cadence={cadence}
+              // A weekly preset (the ownership report) opens the weekly form at once.
+              openByDefault={
+                cadence === "monthly" ? undefined : WEEKLY_SECTIONS.some((type) => selectedTemplate?.sectionTypes.includes(type))
+              }
+              workspaceId={projectScope.workspaceId as string}
+              projectId={projectScope.projectId as string}
+              connectedSubscriptionId={connectedSubscriptionId}
+              templateId={templateId}
+              regions={regions}
+              schedule={cadence === "monthly" ? schedule : weeklySchedule}
+              nameOfConnector={(id) => subscriptions.find((entry) => entry.id === id)?.displayName}
+              nameOfTemplate={(id) => templates.find((entry) => entry.id === id)?.name}
+              canSave={
+                connectedSubscriptionId !== "" &&
+                selectedTemplate?.currentVersion != null &&
+                !requiresFrontMatter &&
+                !regionsIncomplete
+              }
+            />
+          ))
+        : null}
 
       {/* Only for a preset whose report has an Incident Report table to print into. */}
       {selectedTemplate?.hasIncidentReport ? (

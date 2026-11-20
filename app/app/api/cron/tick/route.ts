@@ -8,7 +8,7 @@ import {
   sweepExpiredRuns,
 } from "@/lib/runs/claim"
 import { startRunInvocation } from "@/lib/runs/invoke"
-import { startDueSchedules } from "@/lib/schedules/store"
+import { sendScheduledReports, startDueSchedules } from "@/lib/schedules/store"
 import { sessionIdForRun } from "@/lib/session-id"
 
 /**
@@ -125,7 +125,7 @@ export async function POST(request: Request): Promise<Response> {
       )
     }
 
-    // 1b — Monthly schedules. Enqueued before the claim so a scheduled run starts in this
+    // 1b — Monthly and weekly schedules. Enqueued before the claim so a scheduled run starts in this
     //      same tick. Contained: a schedule that cannot be read must not stop the tick
     //      from claiming the work already queued.
     try {
@@ -139,6 +139,23 @@ export async function POST(request: Request): Promise<Response> {
     } catch (thrown) {
       console.error(
         `[api/cron/tick] reading schedules raised ` +
+          `${thrown instanceof Error ? thrown.name : typeof thrown}; queued runs are still claimed.`
+      )
+    }
+
+    // 1c — Schedules that email on their own: send each scheduled run that has passed
+    //      verification. Contained like 1b.
+    try {
+      for (const attempt of await sendScheduledReports()) {
+        if ("error" in attempt) {
+          console.warn(`[api/cron/tick] schedule ${attempt.scheduleId} did not email run ${attempt.runId}: ${attempt.error}`)
+        } else {
+          console.info(`[api/cron/tick] schedule ${attempt.scheduleId} emailed run ${attempt.runId} (${attempt.status}).`)
+        }
+      }
+    } catch (thrown) {
+      console.error(
+        `[api/cron/tick] sending scheduled reports raised ` +
           `${thrown instanceof Error ? thrown.name : typeof thrown}; queued runs are still claimed.`
       )
     }

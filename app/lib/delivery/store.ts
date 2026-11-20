@@ -205,6 +205,7 @@ export async function approveAndSend(
       contactName: contact.name,
       customer,
       periodStart: run.periodStart,
+      periodEnd: run.periodEnd,
       figureCount,
       reportUrl: `${base}/r/${token}`,
       proofUrl: `${base}/v/${run.id}`,

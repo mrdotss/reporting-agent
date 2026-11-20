@@ -6,7 +6,7 @@ import { useId, useState } from "react"
 import { ProviderMark, SOURCE_NAMES } from "@/components/subscriptions/provider-mark"
 import { useCreationScope } from "@/components/workspaces/workspace-context"
 import { GROUP_ORDER, sectionEntry, sectionTitle, type Provider } from "@/lib/builder/catalogue"
-import { STARTERS, type Starter } from "@/lib/builder/starters"
+import { STARTERS, offersProvider, type Starter } from "@/lib/builder/starters"
 import { NEW_THEMES, THEME_LABELS, pageDesign, themeAccent } from "@/lib/builder/theme"
 import { emptyDraftV4 } from "@/lib/builder/draft"
 import { PRESET_HEADING_FACES } from "@/lib/profiles/preview-sample"
@@ -33,7 +33,8 @@ export function StartScreen({
   initialStarter,
 }: Readonly<{ defaultProvider: Provider; canCreate: boolean; initialStarter?: string }>) {
   // The presets page's "Blank in the builder" door arrives with `?starter=blank`.
-  const first = STARTERS.find((option) => option.key === initialStarter) ?? STARTERS[0]!
+  const requested = STARTERS.find((option) => option.key === initialStarter)
+  const first = requested && offersProvider(requested, defaultProvider) ? requested : STARTERS[0]!
   const router = useRouter()
   const scope = useCreationScope()
   const nameId = useId()
@@ -95,7 +96,9 @@ export function StartScreen({
                 aria-checked={provider === option}
                 onClick={() => {
                   setProvider(option)
-                  if (!named) setName(`${starter.name} — ${option === "aws" ? "AWS" : "Azure"}`)
+                  // A starter the other provider has no sections for falls back to the first.
+                  if (!offersProvider(starter, option)) choose(STARTERS[0]!, option)
+                  else if (!named) setName(`${starter.name} — ${option === "aws" ? "AWS" : "Azure"}`)
                 }}
                 className={cn(
                   "inline-flex h-8 items-center gap-2 rounded-md px-3 text-[13px] text-muted-foreground",
@@ -111,7 +114,7 @@ export function StartScreen({
         </div>
 
         <div role="radiogroup" aria-label="Starter" className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {STARTERS.map((option) => {
+          {STARTERS.filter((option) => offersProvider(option, provider)).map((option) => {
             const on = option.key === starter.key
             return (
               <button

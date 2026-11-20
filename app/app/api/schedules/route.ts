@@ -11,12 +11,18 @@ import {
 } from "@/lib/api/response"
 import { requireSessionForApi } from "@/lib/auth/guard"
 import { isAwsRegion, MAX_RUN_REGIONS } from "@/lib/runs/regions"
-import { MAX_SCHEDULE_DAY, MIN_SCHEDULE_DAY } from "@/lib/schedules/due"
+import {
+  MAX_SCHEDULE_DAY,
+  MAX_SCHEDULE_WEEKDAY,
+  MIN_SCHEDULE_DAY,
+  MIN_SCHEDULE_WEEKDAY,
+} from "@/lib/schedules/due"
 import { deleteSchedule, saveSchedule } from "@/lib/schedules/store"
 import { WorkspaceAccessError } from "@/lib/workspaces/access"
 
 /**
- * `PUT /api/schedules` saves a customer's monthly schedule; `DELETE` stops it.
+ * `PUT /api/schedules` saves a customer's monthly or weekly schedule; `DELETE` stops one.
+ * A body without `cadence` is the monthly schedule, as it was before weekly schedules.
  *
  * Both need edit on the customer. A connector or preset that is not the customer's, and a
  * customer the member cannot edit, all answer 404 — the same answer, so the route does not
@@ -26,19 +32,36 @@ import { WorkspaceAccessError } from "@/lib/workspaces/access"
 export const runtime = "nodejs"
 
 const id = z.string().trim().min(1).max(200)
-const scopeSchema = z.object({ workspaceId: id, projectId: id }).strict()
-
-const saveSchema = z
-  .object({
-    workspaceId: id,
-    projectId: id,
-    connectedSubscriptionId: id,
-    templateId: id,
-    regions: z.array(z.string().trim().refine(isAwsRegion, { error: "Not an AWS region code." })).max(MAX_RUN_REGIONS).optional(),
-    dayOfMonth: z.number().int().min(MIN_SCHEDULE_DAY).max(MAX_SCHEDULE_DAY),
-    hour: z.number().int().min(0).max(23),
-  })
+const scopeSchema = z
+  .object({ workspaceId: id, projectId: id, cadence: z.enum(["monthly", "weekly"]).optional() })
   .strict()
+
+const common = {
+  workspaceId: id,
+  projectId: id,
+  connectedSubscriptionId: id,
+  templateId: id,
+  regions: z.array(z.string().trim().refine(isAwsRegion, { error: "Not an AWS region code." })).max(MAX_RUN_REGIONS).optional(),
+  hour: z.number().int().min(0).max(23),
+  autoSend: z.boolean().optional(),
+}
+
+const saveSchema = z.union([
+  z
+    .object({
+      ...common,
+      cadence: z.literal("monthly").optional(),
+      dayOfMonth: z.number().int().min(MIN_SCHEDULE_DAY).max(MAX_SCHEDULE_DAY),
+    })
+    .strict(),
+  z
+    .object({
+      ...common,
+      cadence: z.literal("weekly"),
+      dayOfWeek: z.number().int().min(MIN_SCHEDULE_WEEKDAY).max(MAX_SCHEDULE_WEEKDAY),
+    })
+    .strict(),
+])
 
 function failed(thrown: unknown, verb: string): Response {
   if (thrown instanceof WorkspaceAccessError) return notFound()
@@ -72,7 +95,8 @@ export async function DELETE(request: Request): Promise<Response> {
   if (!parsed.success) return invalidInput(parsed.error)
 
   try {
-    await deleteSchedule(user.id, parsed.data)
+    const { cadence, ...scope } = parsed.data
+    await deleteSchedule(user.id, scope, cadence ?? "monthly")
     return json(200, { schedule: null })
   } catch (thrown) {
     return failed(thrown, "DELETE")

@@ -18,10 +18,28 @@ vi.mock("@/lib/db", () => ({
   getPool: () => db.pool(),
 }))
 
+// No glance.json or designed PDF in S3 for these runs, and no S3 at all.
+vi.mock("@/lib/aws/s3", () => ({
+  getSnapshotJson: async () => {
+    throw new Error("NoSuchKey")
+  },
+  objectExists: async () => false,
+  getObjectSha256: async () => null,
+}))
+
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres"
 
 import * as schema from "@/lib/db/schema"
-import { deleteSchedule, readSchedule, saveSchedule, startDueSchedules } from "@/lib/schedules/store"
+import { addContact } from "@/lib/delivery/store"
+import type { MailMessage, MailResult } from "@/lib/mail/mailtrap"
+import {
+  deleteSchedule,
+  readSchedule,
+  readSchedules,
+  saveSchedule,
+  sendScheduledReports,
+  startDueSchedules,
+} from "@/lib/schedules/store"
 import type { TemplateDefinition } from "@/lib/templates/definition"
 import { V1_TEST_FIXTURE_DEFINITION } from "@/lib/templates/starters"
 import { definitionSha256 } from "@/lib/templates/version"
@@ -174,5 +192,111 @@ describe.skipIf(!db.enabled)("monthly schedules", () => {
     await expect(deleteSchedule(strangerId, scopeOf(ownerId))).rejects.toBeInstanceOf(WorkspaceAccessError)
     await deleteSchedule(ownerId, scopeOf(ownerId))
     expect(await readSchedule(ownerId, scopeOf(ownerId))).toBeNull()
+  })
+})
+
+// Saturday 21 Nov 2026, 10:00 WIB.
+const SATURDAY = new Date("2026-11-21T03:00:00Z")
+// Monday 23 Nov 2026, 08:30 WIB.
+const MONDAY = new Date("2026-11-23T01:30:00Z")
+const HEX = (c: string) => c.repeat(64)
+
+describe.skipIf(!db.enabled)("weekly schedules", () => {
+  test("a customer keeps a monthly and a weekly schedule side by side, and stops one", async () => {
+    const templateId = await insertTemplate(ownerId, 1)
+    const pairing = { ...scopeOf(ownerId), connectedSubscriptionId: subscriptionId, templateId }
+    await saveSchedule(ownerId, { ...pairing, dayOfMonth: 1, hour: 2 }, SATURDAY)
+    const weekly = await saveSchedule(ownerId, { ...pairing, cadence: "weekly", dayOfWeek: 1, hour: 8 }, SATURDAY)
+
+    expect(weekly).toMatchObject({ kind: "weekly", dayOfWeek: 1, dayOfMonth: null, cadence: "every Monday at 08:00 WIB", next: "23 Nov, 08:00" })
+    expect((await readSchedules(ownerId, scopeOf(ownerId), SATURDAY)).map((view) => view.kind)).toEqual(["monthly", "weekly"])
+
+    await deleteSchedule(ownerId, scopeOf(ownerId), "weekly")
+    expect((await readSchedules(ownerId, scopeOf(ownerId), SATURDAY)).map((view) => view.kind)).toEqual(["monthly"])
+  })
+
+  test("a weekly schedule starts one run a week, on its day, however many ticks see it", async () => {
+    const templateId = await insertTemplate(ownerId, 1)
+    await saveSchedule(
+      ownerId,
+      { ...scopeOf(ownerId), connectedSubscriptionId: subscriptionId, templateId, cadence: "weekly", dayOfWeek: 1, hour: 8 },
+      SATURDAY
+    )
+
+    expect(await startDueSchedules(new Date("2026-11-23T00:59:00Z"))).toEqual([])
+    const [attempt] = await startDueSchedules(MONDAY)
+    expect(attempt).toMatchObject({ deduplicated: false })
+    expect(await startDueSchedules(new Date("2026-11-25T01:30:00Z"))).toEqual([])
+    expect(await runCount()).toBe(1)
+    expect(await readSchedule(ownerId, scopeOf(ownerId), MONDAY, "weekly")).toMatchObject({ next: "30 Nov, 08:00" })
+  })
+
+  test("a schedule that sends emails each run once it verifies, once, and keeps a refusal", async () => {
+    const templateId = await insertTemplate(ownerId, 1)
+    await saveSchedule(
+      ownerId,
+      {
+        ...scopeOf(ownerId), connectedSubscriptionId: subscriptionId, templateId,
+        cadence: "weekly", dayOfWeek: 1, hour: 8, autoSend: true,
+      },
+      SATURDAY
+    )
+    const [attempt] = await startDueSchedules(MONDAY)
+    const runId = (attempt as { runId: string }).runId
+    const sent: MailMessage[] = []
+    const send = async (message: MailMessage): Promise<MailResult> => {
+      sent.push(message)
+      return { ok: true, messageId: `msg-${sent.length}` }
+    }
+
+    // Still collecting: nothing yet, and nothing claimed.
+    expect(await sendScheduledReports(MONDAY, { send })).toEqual([])
+
+    await db.query(`UPDATE report_runs SET status = 'completed' WHERE id = $1`, [runId])
+    const { rows } = await db.query<{ v: string }>(`SELECT template_version_id AS v FROM report_runs WHERE id = $1`, [runId])
+    await db.query(
+      `INSERT INTO report_verifications
+         (id, run_id, attempt_id, template_version_id, status, figure_count, snapshot_sha256, docx_sha256, pdf_sha256,
+          replay, drift_sample, findings, counts, artifact_key)
+       VALUES ($1, $2, 'attempt-1', $3, 'pass', 96, $4, $5, $6, '{}', '{}', '[]', '{}', $7)`,
+      [randomUUID(), runId, rows[0]?.v, HEX("a"), HEX("b"), HEX("c"), `${ownerId}/reports/${runId}/verification-attempt-1.json`]
+    )
+
+    // No contacts: refused, kept, and not retried.
+    const [refused] = await sendScheduledReports(MONDAY, { send })
+    expect(refused).toMatchObject({ runId, error: expect.stringMatching(/contact/) })
+    expect(await sendScheduledReports(MONDAY, { send })).toEqual([])
+    expect((await readSchedule(ownerId, scopeOf(ownerId), MONDAY, "weekly"))?.lastSendError).toMatch(/contact/)
+    expect(sent).toEqual([])
+
+    // The next week's run, with a contact: sent once.
+    await addContact(ownerId, scopeOf(ownerId), { name: "Budi", email: "budi@example.com" })
+    const [next] = await startDueSchedules(new Date("2026-11-30T01:30:00Z"))
+    const nextRun = (next as { runId: string }).runId
+    await db.query(`UPDATE report_runs SET status = 'completed' WHERE id = $1`, [nextRun])
+    await db.query(
+      `INSERT INTO report_verifications
+         (id, run_id, attempt_id, template_version_id, status, figure_count, snapshot_sha256, docx_sha256, pdf_sha256,
+          replay, drift_sample, findings, counts, artifact_key)
+       VALUES ($1, $2, 'attempt-1', $3, 'pass', 96, $4, $5, $6, '{}', '{}', '[]', '{}', $7)`,
+      [randomUUID(), nextRun, rows[0]?.v, HEX("a"), HEX("b"), HEX("c"), `${ownerId}/reports/${nextRun}/verification-attempt-1.json`]
+    )
+    const [delivered] = await sendScheduledReports(new Date("2026-11-30T02:00:00Z"), { send })
+    expect(delivered).toMatchObject({ runId: nextRun, status: "sent" })
+    expect(await sendScheduledReports(new Date("2026-11-30T02:01:00Z"), { send })).toEqual([])
+    expect(sent.map((message) => message.to.email)).toEqual(["budi@example.com"])
+    expect((await readSchedule(ownerId, scopeOf(ownerId), MONDAY, "weekly"))?.lastSendError).toBeNull()
+  })
+
+  test("a schedule that does not send leaves the report for a member to approve", async () => {
+    const templateId = await insertTemplate(ownerId, 1)
+    await saveSchedule(
+      ownerId,
+      { ...scopeOf(ownerId), connectedSubscriptionId: subscriptionId, templateId, cadence: "weekly", dayOfWeek: 1, hour: 8 },
+      SATURDAY
+    )
+    const [attempt] = await startDueSchedules(MONDAY)
+    await db.query(`UPDATE report_runs SET status = 'completed' WHERE id = $1`, [(attempt as { runId: string }).runId])
+    expect(await sendScheduledReports(MONDAY)).toEqual([])
   })
 })

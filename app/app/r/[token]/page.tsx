@@ -5,7 +5,7 @@ import { DownloadSimpleIcon, SealCheckIcon } from "@phosphor-icons/react/ssr"
 
 import { buttonVariants } from "@/components/ui/button"
 import { openDelivery } from "@/lib/delivery/store"
-import { periodName } from "@/lib/delivery/email"
+import { periodLabel, reportKind } from "@/lib/delivery/email"
 
 /**
  * `/r/<token>` — public: the page a customer's email links to. The token is the only
@@ -40,7 +40,9 @@ export default async function DeliveredReportPage({ params }: Readonly<{ params:
       <div className="mx-auto flex max-w-2xl flex-col gap-8">
         <header className="flex flex-col gap-2">
           <p className="text-micro text-muted-foreground uppercase">{report.customer}</p>
-          <h1 className="text-title">Your {periodName(report.periodStart)} cloud report</h1>
+          <h1 className="text-title">
+            Your {reportKind(report)}, {periodLabel(report.periodStart, report.periodEnd)}
+          </h1>
           <p className="flex items-start gap-2 text-meta text-muted-foreground">
             <SealCheckIcon aria-hidden="true" weight="fill" className="mt-0.5 size-4 shrink-0 text-(--status-verified)" />
             <span>

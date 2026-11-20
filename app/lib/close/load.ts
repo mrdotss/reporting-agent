@@ -3,7 +3,7 @@ import "server-only"
 import { getPool } from "@/lib/db"
 
 import { formatSlot, nextScheduledRun } from "@/lib/schedules/due"
-import { scheduleCadence } from "@/lib/schedules/view"
+import { cadenceOf } from "@/lib/schedules/view"
 
 import { buildBoard, type Board, type BoardProject, type BoardRun } from "./board"
 import { closePeriod, trailingMonths, type ClosePeriod } from "./period"
@@ -32,7 +32,7 @@ export async function loadClose(
   const [projects, runs] = await Promise.all([
     getPool().query<BoardProject & ScheduleColumns>(
       `select p.id, p.name, p.archived_at is not null as archived,
-              s.day_of_month as "scheduleDay", s.hour as "scheduleHour", s.timezone as "scheduleTimezone",
+              s.cadence as "scheduleCadence", s.day_of_month as "scheduleDay", s.day_of_week as "scheduleWeekday", s.hour as "scheduleHour", s.timezone as "scheduleTimezone",
               s.last_attempt_month as "scheduleLastAttemptMonth", s.last_error as "scheduleLastError",
               (select count(*)::int from action_items a
                 where a.project_id = p.id and a.status in ('open', 'accepted')) as "openActions",
@@ -43,7 +43,13 @@ export async function loadClose(
                 where t.project_id = p.id and t.archived_at is null order by t.name limit 1) as preset
          from projects p
          join workspace_members m on m.workspace_id = p.workspace_id and m.user_id = $1
-         left join run_schedules s on s.project_id = p.id and s.enabled
+         -- One schedule per customer on the board: the monthly one when there are both.
+         left join lateral (
+           select * from run_schedules rs
+            where rs.project_id = p.id and rs.enabled
+            order by (rs.cadence = 'monthly') desc
+            limit 1
+         ) s on true
         where p.workspace_id = $2
         order by p.created_at, p.id`,
       [userId, workspace.id, CLOSE_TIMEZONE]
@@ -72,7 +78,9 @@ export async function loadClose(
 }
 
 type ScheduleColumns = {
+  scheduleCadence: string | null
   scheduleDay: number | null
+  scheduleWeekday: number | null
   scheduleHour: number | null
   scheduleTimezone: string | null
   scheduleLastAttemptMonth: string | null
@@ -81,21 +89,29 @@ type ScheduleColumns = {
 
 function withSchedule(row: BoardProject & ScheduleColumns, now: Date): BoardProject {
   const {
+    scheduleCadence,
     scheduleDay,
+    scheduleWeekday,
     scheduleHour,
     scheduleTimezone,
     scheduleLastAttemptMonth,
     scheduleLastError,
     ...project
   } = row
-  if (scheduleDay === null || scheduleHour === null || scheduleTimezone === null) {
+  if (scheduleCadence === null || scheduleHour === null || scheduleTimezone === null) {
     return { ...project, schedule: null }
   }
-  const timing = { dayOfMonth: scheduleDay, hour: scheduleHour, timezone: scheduleTimezone }
+  const timing = {
+    cadence: scheduleCadence,
+    dayOfMonth: scheduleDay,
+    dayOfWeek: scheduleWeekday,
+    hour: scheduleHour,
+    timezone: scheduleTimezone,
+  }
   return {
     ...project,
     schedule: {
-      cadence: scheduleCadence(scheduleDay, scheduleHour),
+      cadence: cadenceOf(timing),
       next: formatSlot(nextScheduledRun(timing, scheduleLastAttemptMonth, now)),
       lastError: scheduleLastError,
     },

@@ -64,3 +64,44 @@ describe("At a glance in the delivery email", () => {
     expect(email.html).not.toContain("At a glance")
   })
 })
+
+describe("a weekly ownership email", () => {
+  const base = {
+    contactName: "Budi",
+    customer: "Nusantara Logistik",
+    periodStart: "2026-11-16",
+    periodEnd: "2026-11-22",
+    figureCount: 96,
+    reportUrl: "https://reporting.fatechid.com/r/tok",
+    proofUrl: "https://reporting.fatechid.com/v/run-1",
+    expiresAt: new Date("2026-12-23T02:00:00Z"),
+  }
+
+  test("names the week, and the ownership report when the headline is the ownership one", () => {
+    const glance = {
+      focus: "ownership",
+      decisionsTitle: "Decisions for you",
+      figures: [{ label: "Idle", value: "3" }],
+      decisions: [],
+    }
+    const email = deliveryEmail({ ...base, glance })
+    expect(email.subject).toBe("Nusantara Logistik weekly ownership report, 16–22 November 2026")
+    expect(email.text).toContain("Your weekly ownership report for the week of 16–22 November 2026 is ready.")
+    expect(deliveryEmail({ ...base, glance: null }).subject).toBe("Nusantara Logistik weekly cloud report, 16–22 November 2026")
+  })
+
+  test("a week across a month or a year names both ends", () => {
+    expect(deliveryEmail({ ...base, periodStart: "2026-11-30", periodEnd: "2026-12-06" }).subject).toContain(
+      "30 November – 6 December 2026"
+    )
+    expect(deliveryEmail({ ...base, periodStart: "2026-12-28", periodEnd: "2027-01-03" }).subject).toContain(
+      "28 December 2026 – 3 January 2027"
+    )
+  })
+
+  test("a month stays a month", () => {
+    expect(deliveryEmail({ ...base, periodStart: "2026-08-01", periodEnd: "2026-08-31" }).subject).toBe(
+      "Nusantara Logistik cloud report, August 2026"
+    )
+  })
+})
