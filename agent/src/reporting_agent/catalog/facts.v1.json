@@ -771,7 +771,7 @@
           "projectable": false
         },
         {
-          "key": "est_monthly_cost",
+          "key": "est_monthly_usd",
           "value_kind": "text",
           "source": "aws_list_price",
           "projectable": false
@@ -881,7 +881,7 @@
           "projectable": false
         },
         {
-          "key": "est_monthly_cost",
+          "key": "est_monthly_usd",
           "value_kind": "text",
           "source": "aws_list_price",
           "projectable": false
@@ -1003,7 +1003,7 @@
           "projectable": false
         },
         {
-          "key": "est_monthly_cost",
+          "key": "est_monthly_usd",
           "value_kind": "text",
           "source": "aws_list_price",
           "projectable": false
@@ -1155,7 +1155,7 @@
           "projectable": false
         },
         {
-          "key": "est_monthly_cost",
+          "key": "est_monthly_usd",
           "value_kind": "text",
           "source": "aws_list_price",
           "projectable": false

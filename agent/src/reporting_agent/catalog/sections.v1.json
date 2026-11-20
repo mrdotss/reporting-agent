@@ -1,5 +1,5 @@
 {
-  "catalogue_version": "1.6.0",
+  "catalogue_version": "1.7.0",
   "providers": {
     "azure": {
       "sections": [
@@ -2679,6 +2679,321 @@
                   "Since"
                 ],
                 "rows": 1
+              }
+            }
+          ]
+        },
+        {
+          "key": "ownership_glance",
+          "number": 20,
+          "title_id": "doc.section.ownership_glance",
+          "group": "summary",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [
+            "aws_ownership"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "The weekly ownership report's first page: how many resources the account holds, how many were created this period, how many sit idle or barely used, how many have no known creator, and what the idle ones cost a month at list price. Each count is derived from this run's snapshot; the decisions are chosen by fixed rules.",
+          "expands_to": [
+            {
+              "slot": "title",
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "slot": "glance",
+              "block": "at_a_glance",
+              "per": "section",
+              "config": {
+                "focus": "ownership"
+              }
+            }
+          ]
+        },
+        {
+          "key": "idle_resources",
+          "number": 21,
+          "title_id": "doc.section.idle_resources",
+          "group": "utilisation",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [
+            "AWS::EC2::Instance",
+            "AWS::RDS::DBInstance",
+            "AWS::EC2::Volume",
+            "AWS::EC2::EIP"
+          ],
+          "needs_fact_sources": [],
+          "metric_bearing": true,
+          "optional": true,
+          "presets": {
+            "ownership": [
+              {
+                "metric": "CPUUtilization",
+                "statistic": "p95"
+              },
+              {
+                "metric": "NetworkIn",
+                "statistic": "sum"
+              },
+              {
+                "metric": "NetworkOut",
+                "statistic": "sum"
+              },
+              {
+                "metric": "ReadIOPS",
+                "statistic": "avg"
+              }
+            ]
+          },
+          "notes": "Resources that bill without doing much work this period, with who created each one: running instances and databases whose CPU p95 stays under 20% (idle under 5% with almost no network or reads), stopped ones, and unattached volumes and addresses. Needs CPU p95, network in and out (sum) and read IOPS (average) collected.",
+          "expands_to": [
+            {
+              "slot": "title",
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "slot": "table",
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "activity"
+                  },
+                  {
+                    "kind": "metric",
+                    "metric": "CPUUtilization",
+                    "statistic": "p95"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "created_by"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "est_monthly_usd"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  }
+                ],
+                "_types": [
+                  "AWS::EC2::Instance",
+                  "AWS::RDS::DBInstance",
+                  "AWS::EC2::Volume",
+                  "AWS::EC2::EIP"
+                ],
+                "filter_fact": "attention",
+                "filter_not": "none",
+                "empty_message_id": "doc.section.idle_resources.clear",
+                "observed_span": true
+              }
+            }
+          ]
+        },
+        {
+          "key": "new_resources",
+          "number": 22,
+          "title_id": "doc.section.new_resources",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [
+            "aws_ownership"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "Every resource whose creation date falls in this report's period, with who created it and whether it is used yet.",
+          "expands_to": [
+            {
+              "slot": "title",
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "slot": "table",
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "created_by"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "creator_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "created_on"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "activity"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "location"
+                  }
+                ],
+                "_types": [
+                  "AWS::EC2::Instance",
+                  "AWS::EC2::Volume",
+                  "AWS::RDS::DBInstance",
+                  "AWS::EC2::EIP",
+                  "AWS::EC2::VPC",
+                  "AWS::EC2::SecurityGroup"
+                ],
+                "filter_fact": "created_in_period",
+                "filter_value": "yes",
+                "empty_message_id": "doc.section.new_resources.none",
+                "observed_span": true
+              }
+            }
+          ]
+        },
+        {
+          "key": "creators",
+          "number": 23,
+          "title_id": "doc.section.creators",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [
+            "aws_ownership"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "One row per IAM user, role or SSO user that created resources still live: how many, how many need attention, their estimated monthly cost, and whether that user or role still exists.",
+          "expands_to": [
+            {
+              "slot": "title",
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "slot": "table",
+              "block": "inventory_summary",
+              "per": "section",
+              "config": {
+                "group_by": "creator"
+              }
+            }
+          ]
+        },
+        {
+          "key": "ownership_register",
+          "number": 24,
+          "title_id": "doc.section.ownership_register",
+          "group": "inventory",
+          "position": "free",
+          "repeatable": false,
+          "needs_resource_types": [],
+          "needs_fact_sources": [
+            "aws_ownership"
+          ],
+          "metric_bearing": false,
+          "optional": true,
+          "presets": {},
+          "notes": "Every live resource with its chain of custody: who created it, when, how that was established (CloudTrail, inherited, a tag, or unknown), whether the creator still exists, how it is used this period and its estimated monthly cost.",
+          "expands_to": [
+            {
+              "slot": "title",
+              "block": "heading",
+              "config": {
+                "level": 1
+              },
+              "per": "section"
+            },
+            {
+              "slot": "table",
+              "block": "resource_table",
+              "per": "section",
+              "config": {
+                "columns": [
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_name"
+                  },
+                  {
+                    "kind": "attribute",
+                    "attribute": "resource_type"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "created_by"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "created_on"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "creator_source"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "creator_status"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "activity"
+                  },
+                  {
+                    "kind": "fact",
+                    "fact_key": "est_monthly_usd"
+                  }
+                ],
+                "_types": [
+                  "AWS::EC2::Instance",
+                  "AWS::EC2::Volume",
+                  "AWS::RDS::DBInstance",
+                  "AWS::EC2::EIP",
+                  "AWS::EC2::VPC",
+                  "AWS::EC2::SecurityGroup"
+                ],
+                "observed_span": true
               }
             }
           ]

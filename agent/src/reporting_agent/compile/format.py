@@ -110,6 +110,7 @@ UNIT_PRESENTATION: Final[tuple[tuple[str, str], ...]] = (
     ("count_per_second", "/s"),
     ("count", ""),
     ("days", " days"),
+    ("usd", " USD"),
 )
 """How each declared unit reads immediately after its digits.
 

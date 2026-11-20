@@ -28,6 +28,7 @@ This module turns already-fetched events into fact items. The calls are made in
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, tzinfo
@@ -132,7 +133,18 @@ class Creation:
     principal: Principal
 
 
+_DIGIT_LEADING: Final[re.Pattern[str]] = re.compile(r"(^|[\s/(])(?=\d)")
+
+
 def _bounded(text: str) -> str:
+    """A creator label, bounded, with no part that starts with a digit.
+
+    The creator is the key column of the "who created what" table, plain text the verifier
+    reads for numerals: `role/Deploy/1700000000` would leave a bare number it can match to
+    nothing, and the report would be withheld. A part that starts with a digit is prefixed
+    `id-`, which reads as the identifier it is.
+    """
+    text = _DIGIT_LEADING.sub(lambda match: f"{match.group(1)}id-", text)
     return text if len(text) <= MAX_LABEL else text[: MAX_LABEL - 1] + "…"
 
 

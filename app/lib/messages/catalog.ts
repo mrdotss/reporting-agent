@@ -910,6 +910,114 @@ export const MESSAGE_CATALOG = {
     en: "Nothing needs a decision this month.",
     id: "Tidak ada yang memerlukan keputusan bulan ini.",
   },
+  "doc.section.ownership_glance": {
+    en: "Ownership at a Glance",
+    id: "Sekilas Kepemilikan",
+  },
+  "doc.section.idle_resources": {
+    en: "Idle and Low-Use Resources",
+    id: "Sumber Daya Menganggur dan Jarang Dipakai",
+  },
+  "doc.section.idle_resources.clear": {
+    en: "Nothing idle: every instance, database, volume and address measured this period was in use.",
+    id: "Tidak ada yang menganggur: setiap instans, basis data, volume, dan alamat yang diukur pada periode ini sedang dipakai.",
+  },
+  "doc.section.new_resources": {
+    en: "Created This Period",
+    id: "Dibuat pada Periode Ini",
+  },
+  "doc.section.new_resources.none": {
+    en: "No resource was created in this period.",
+    id: "Tidak ada sumber daya yang dibuat pada periode ini.",
+  },
+  "doc.section.creators": {
+    en: "Who Created What",
+    id: "Siapa Membuat Apa",
+  },
+  "doc.section.ownership_register": {
+    en: "Ownership Register",
+    id: "Daftar Kepemilikan",
+  },
+  "doc.glance.ownership.owned": {
+    en: "Resources tracked",
+    id: "Sumber daya yang dipantau",
+  },
+  "doc.glance.ownership.new": {
+    en: "Created this period",
+    id: "Dibuat pada periode ini",
+  },
+  "doc.glance.ownership.idle": {
+    en: "Idle",
+    id: "Menganggur",
+  },
+  "doc.glance.ownership.low_use": {
+    en: "Low use",
+    id: "Jarang dipakai",
+  },
+  "doc.glance.ownership.stopped": {
+    en: "Stopped",
+    id: "Berhenti",
+  },
+  "doc.glance.ownership.unknown_creator": {
+    en: "Creator unknown",
+    id: "Pembuat tidak diketahui",
+  },
+  "doc.glance.ownership.idle_cost": {
+    en: "Idle resources, estimated monthly cost",
+    id: "Sumber daya menganggur, perkiraan biaya bulanan",
+  },
+  "doc.glance.ownership.decision.idle": {
+    en: "Review the idle resources with the people who created them, and stop or delete what nobody needs, starting with the most expensive.",
+    id: "Tinjau sumber daya yang menganggur bersama pembuatnya, lalu hentikan atau hapus yang tidak diperlukan, dimulai dari yang paling mahal.",
+  },
+  "doc.glance.ownership.decision.deleted": {
+    en: "Some resources were created by an IAM user or role that no longer exists. Give each of them a new owner.",
+    id: "Beberapa sumber daya dibuat oleh pengguna atau peran IAM yang sudah tidak ada. Tetapkan pemilik baru untuk masing-masing.",
+  },
+  "doc.glance.ownership.decision.unknown": {
+    en: "Some resources have no known creator. Add an Owner tag to each, so the next report can name who is responsible.",
+    id: "Beberapa sumber daya tidak diketahui pembuatnya. Tambahkan tag Owner pada masing-masing agar laporan berikutnya dapat menyebut penanggung jawabnya.",
+  },
+  "doc.glance.ownership.decision.new": {
+    en: "Check that every resource created this period was expected.",
+    id: "Periksa bahwa setiap sumber daya yang dibuat pada periode ini memang direncanakan.",
+  },
+  "doc.glance.ownership.decision.none": {
+    en: "Nothing needs a decision this period.",
+    id: "Tidak ada yang memerlukan keputusan pada periode ini.",
+  },
+  "doc.glance.ownership.rules_title": {
+    en: "How this report decides",
+    id: "Cara laporan ini menilai",
+  },
+  "doc.glance.ownership.rules": {
+    en: "Creators come from CloudTrail, which keeps 90 days of history; older resources take their creator from an Owner or CreatedBy tag where one exists. An instance is idle when its CPU p95 stays under 5% and it moves under 5 MB a day, and low use under 20%. A database is idle under 5% CPU with almost no reads. A volume or address is idle when it is attached to nothing or only to a stopped instance. Costs are estimates at the AWS on-demand list price, in USD, before any discount or savings plan.",
+    id: "Pembuat diambil dari CloudTrail, yang menyimpan riwayat 90 hari; sumber daya yang lebih lama memakai tag Owner atau CreatedBy bila ada. Instans dianggap menganggur bila CPU p95 di bawah 5% dan lalu lintasnya di bawah 5 MB per hari, dan jarang dipakai bila di bawah 20%. Basis data dianggap menganggur bila CPU di bawah 5% dan hampir tanpa pembacaan. Volume atau alamat dianggap menganggur bila tidak terpasang ke apa pun atau hanya ke instans yang berhenti. Biaya adalah perkiraan dengan harga daftar on-demand AWS, dalam USD, sebelum diskon atau savings plan.",
+  },
+  "doc.table.observed_between": {
+    en: "The values in this table were observed between {first} and {last}.",
+    id: "Nilai dalam tabel ini diamati antara {first} dan {last}.",
+  },
+  "doc.inventory.creator": {
+    en: "Created by",
+    id: "Dibuat oleh",
+  },
+  "doc.inventory.creator_type": {
+    en: "Creator type",
+    id: "Jenis pembuat",
+  },
+  "doc.inventory.creator_status": {
+    en: "Creator status",
+    id: "Status pembuat",
+  },
+  "doc.inventory.attention": {
+    en: "Need attention",
+    id: "Perlu perhatian",
+  },
+  "doc.inventory.est_monthly_usd": {
+    en: "Est. monthly USD",
+    id: "Perkiraan USD per bulan",
+  },
   "doc.section.action_register": {
     en: "Actions",
     id: "Tindakan",

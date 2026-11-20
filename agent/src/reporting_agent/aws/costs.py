@@ -166,7 +166,7 @@ def price_items(
     raw: Mapping[str, Mapping[str, Any]],
     rates: Mapping[PriceQuery, str | None],
 ) -> list[dict[str, Any]]:
-    """`est_monthly_cost` for each priced resource, every one answered. **Pure.**"""
+    """`est_monthly_usd` for each priced resource, every one answered. **Pure.**"""
     items: list[dict[str, Any]] = []
     for resource_id in sorted(resource_ids):
         record = raw.get(resource_id)
@@ -178,5 +178,5 @@ def price_items(
             query = price_query(record)
             rate = rates.get(query) if query is not None else None
             value = NOT_PRICED if query is None or rate is None else _monthly(record, query[2], rate)
-        items.append({"resource_id": resource_id, "est_monthly_cost": value})
+        items.append({"resource_id": resource_id, "est_monthly_usd": value})
     return items

@@ -32,12 +32,30 @@ from reporting_agent.compile.blocks.base import (
 from reporting_agent.compile.figures import BlockCursor
 from reporting_agent.compile.snapshot_view import HOUSEKEEPING_FACT_KEY, SnapshotView
 
-__all__ = ["GLANCE_ARTIFACT", "HEADLINE_KEYS", "MAX_DECISIONS", "compile_at_a_glance", "decisions_for", "glance_summary"]
+__all__ = [
+    "FOCUS_OWNERSHIP",
+    "GLANCE_ARTIFACT",
+    "HEADLINE_KEYS",
+    "MAX_DECISIONS",
+    "OWNERSHIP_HEADLINE_KEYS",
+    "compile_at_a_glance",
+    "decisions_for",
+    "glance_summary",
+    "ownership_decisions_for",
+]
 
 MAX_DECISIONS: Final[int] = 3
 
 HEADLINE_KEYS: Final[tuple[str, ...]] = ("resources", "housekeeping", "no_backup", "stopped")
 """The headline table's row keys, in order."""
+
+FOCUS_OWNERSHIP: Final[str] = "ownership"
+"""`config.focus` for the weekly ownership report's first page: who created what, and what idles."""
+
+OWNERSHIP_HEADLINE_KEYS: Final[tuple[str, ...]] = (
+    "owned", "new", "idle", "low_use", "stopped", "unknown_creator", "idle_cost",
+)
+"""The ownership headline's row keys, in order."""
 
 GLANCE_ARTIFACT: Final[str] = "glance.json"
 """What the app quotes in the email that delivers the report: see `glance_summary`."""
@@ -80,12 +98,55 @@ def decisions_for(view: SnapshotView) -> tuple[str, ...]:
     return tuple(decisions[:MAX_DECISIONS]) or ("doc.glance.decision.none",)
 
 
-def compile_at_a_glance(context: BlockContext, block: BlockSpec, cursor: BlockCursor) -> BlockOutput:
+def ownership_decisions_for(view: SnapshotView) -> tuple[str, ...]:
+    """The ownership report's decisions, most important first. **Pure.**"""
+    decisions: list[str] = []
+    if _count(view, "ownership", "with_activity", "Idle") > 0:
+        decisions.append("doc.glance.ownership.decision.idle")
+    deleted = any(
+        fact.key == "creator_status" and fact.value == "Deleted"
+        for resource in view.resources
+        for fact in view.facts_for(resource.resource_id)
+    )
+    if deleted:
+        decisions.append("doc.glance.ownership.decision.deleted")
+    if _count(view, "ownership", "creator_unknown") > 0:
+        decisions.append("doc.glance.ownership.decision.unknown")
+    if _count(view, "ownership", "created_in_period") > 0:
+        decisions.append("doc.glance.ownership.decision.new")
+    return tuple(decisions[:MAX_DECISIONS]) or ("doc.glance.ownership.decision.none",)
+
+
+def _headline(context: BlockContext, block: BlockSpec) -> tuple[tuple[str, str, object], ...]:
     view = context.view
     messages = context.messages
-    table_cursor = cursor.child("nodes", 0)
-
-    headline = (
+    if block.config.get("focus") == FOCUS_OWNERSHIP:
+        return (
+            ("owned", messages.text("doc.glance.ownership.owned"), view.cardinality("ownership", "resources")),
+            ("new", messages.text("doc.glance.ownership.new"), view.cardinality("ownership", "created_in_period")),
+            ("idle", messages.text("doc.glance.ownership.idle"), view.cardinality("ownership", "with_activity", "Idle")),
+            (
+                "low_use",
+                messages.text("doc.glance.ownership.low_use"),
+                view.cardinality("ownership", "with_activity", "Low use"),
+            ),
+            (
+                "stopped",
+                messages.text("doc.glance.ownership.stopped"),
+                view.cardinality("ownership", "with_activity", "Stopped"),
+            ),
+            (
+                "unknown_creator",
+                messages.text("doc.glance.ownership.unknown_creator"),
+                view.cardinality("ownership", "creator_unknown"),
+            ),
+            (
+                "idle_cost",
+                messages.text("doc.glance.ownership.idle_cost"),
+                view.derived_sum("cost", "with_activity", "Idle"),
+            ),
+        )
+    return (
         ("resources", messages.text("doc.glance.resources"), view.cardinality("resources")),
         (
             "housekeeping",
@@ -100,6 +161,14 @@ def compile_at_a_glance(context: BlockContext, block: BlockSpec, cursor: BlockCu
         ("stopped", messages.text("doc.glance.stopped"), view.cardinality("resources", "with_gap", "deallocated")),
     )
 
+
+def compile_at_a_glance(context: BlockContext, block: BlockSpec, cursor: BlockCursor) -> BlockOutput:
+    view = context.view
+    messages = context.messages
+    table_cursor = cursor.child("nodes", 0)
+    ownership = block.config.get("focus") == FOCUS_OWNERSHIP
+
+    headline = _headline(context, block)
     rows: list[Row] = []
     for ordinal, (key, label, value) in enumerate(headline):
         row_cursor = table_cursor.child("rows", ordinal)
@@ -127,8 +196,17 @@ def compile_at_a_glance(context: BlockContext, block: BlockSpec, cursor: BlockCu
         table,
         text_paragraph(cursor.child("nodes", 1), "Heading 2", messages.text("doc.glance.decisions")),
     ]
-    for decision in decisions_for(view):
+    for decision in ownership_decisions_for(view) if ownership else decisions_for(view):
         nodes.append(text_paragraph(cursor.child("nodes", len(nodes)), "Body Text", messages.text(decision)))
+    if ownership:
+        # The rules, once, on the page that states their results. Template text: the same
+        # sentences in every render, so the verifier admits their numerals as chrome.
+        nodes.append(text_paragraph(
+            cursor.child("nodes", len(nodes)), "Heading 2", messages.text("doc.glance.ownership.rules_title")
+        ))
+        nodes.append(text_paragraph(
+            cursor.child("nodes", len(nodes)), "Body Text", messages.text("doc.glance.ownership.rules")
+        ))
     return BlockOutput(nodes=tuple(nodes))
 
 
@@ -147,7 +225,8 @@ def glance_summary(blocks: object) -> dict[str, object] | None:
         if not nodes or not isinstance(nodes[0], Table):
             continue
         table = nodes[0]
-        if tuple(row.key for row in table.rows) != HEADLINE_KEYS:
+        keys = tuple(row.key for row in table.rows)
+        if keys not in (HEADLINE_KEYS, OWNERSHIP_HEADLINE_KEYS):
             continue
         figures = []
         for row in table.rows:
@@ -159,14 +238,17 @@ def glance_summary(blocks: object) -> dict[str, object] | None:
                     "value": value.figure.formatted if isinstance(value, FigureCell) else "\u2014",
                 }
             )
-        decisions = [
-            "".join(inline.text for inline in node.inlines if isinstance(inline, Text))
-            for node in nodes[2:]
-            if isinstance(node, Paragraph)
-        ]
+        decisions = []
+        for node in nodes[2:]:
+            if not isinstance(node, Paragraph):
+                continue
+            if getattr(node, "style", "") == "Heading 2":
+                break  # the ownership page's rules follow its decisions; the email quotes decisions only
+            decisions.append("".join(inline.text for inline in node.inlines if isinstance(inline, Text)))
         title = nodes[1]
         return {
             "schema_version": 1,
+            "focus": FOCUS_OWNERSHIP if keys == OWNERSHIP_HEADLINE_KEYS else "estate",
             "decisions_title": "".join(i.text for i in title.inlines if isinstance(i, Text))
             if isinstance(title, Paragraph)
             else "",

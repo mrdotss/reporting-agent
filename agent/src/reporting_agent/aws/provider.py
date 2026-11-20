@@ -422,7 +422,7 @@ class AwsProvider:
     """Discovery's describe item per resource id, kept for the fact pass."""
     get_products: Callable[..., Mapping[str, Any]] | None = field(default=None, repr=False)
     """`pricing:GetProducts` with the **runtime's** role (list prices are public), or `None`
-    to leave `est_monthly_cost` unasked."""
+    to leave `est_monthly_usd` unasked."""
     lookup_pause_s: float = field(default=0.5, repr=False)
     """The pause between two CloudTrail `LookupEvents` pages in one region: the API allows
     two calls a second per region, and the run shares that budget with the customer."""

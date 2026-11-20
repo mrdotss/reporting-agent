@@ -129,7 +129,7 @@ def test_each_priced_kind_is_estimated_from_its_own_rate() -> None:
 
     rates = {price_query(running): "0.0132000000", price_query(volume): "0.0960000000",
              price_query(idle_ip): "0.0050000000"}
-    found = {item["resource_id"]: item["est_monthly_cost"] for item in price_items(sorted(raw), raw, rates)}
+    found = {item["resource_id"]: item["est_monthly_usd"] for item in price_items(sorted(raw), raw, rates)}
     assert found == {"i-run": "9.64", "i-off": NOT_RUNNING, "i-rhel": NOT_PRICED, "vol": "4.80",
                      "eip": "3.65", "db": NOT_PRICED}
 
@@ -166,7 +166,7 @@ def test_the_provider_asks_each_distinct_price_once_and_archives_the_rates() -> 
     aws._raw.update({first: machine, second: machine, arn("elastic-ip", "eipalloc-1"): {"_kind": "eip", "_region": REGION}})
     body = asyncio.run(aws._price_body(sorted(aws._raw)))
     assert asked.count("AmazonEC2") == 1
-    values = {item["resource_id"]: item["est_monthly_cost"] for item in body["value"]}  # type: ignore[index]
+    values = {item["resource_id"]: item["est_monthly_usd"] for item in body["value"]}  # type: ignore[index]
     assert values[first] == values[second] == "9.64"
     assert values[arn("elastic-ip", "eipalloc-1")] == NOT_PRICED, "a failed price is an answer, not a failed run"
     assert {rate["usd"] for rate in body["rates"]} == {"0.0132000000", None}  # type: ignore[index]

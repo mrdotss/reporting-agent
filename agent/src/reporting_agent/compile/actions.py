@@ -6,7 +6,11 @@ function of the document every other figure comes from:
 * `housekeeping` — a resource whose `housekeeping` fact is not `none`;
 * `backup` — a resource the snapshot recorded `backup_not_configured` for;
 * `rightsizing` — an instance Compute Optimizer finds over- or under-provisioned;
-* `advisor` — an Azure Advisor recommendation.
+* `advisor` — an Azure Advisor recommendation;
+* `idle` — a running EC2 or RDS instance the ownership rules find idle over the period
+  (`compile/activity.py`). Only on a snapshot that carries ownership facts, so a report
+  delivered before they existed replays the findings it was delivered with. Volumes and
+  addresses are left to `housekeeping`, which already names them.
 
 The app keeps the register — who owns an item, whether it was accepted or turned down —
 and sends its state as it stood **before** this run (`action_register` in the payload).
@@ -60,6 +64,16 @@ RIGHTSIZING_FINDINGS: Final[frozenset[str]] = frozenset({"overprovisioned", "und
 ADVISOR_TYPE: Final[str] = "microsoft.advisor/recommendations"
 
 
+IDLE_TYPES: Final[frozenset[str]] = frozenset({"aws::ec2::instance", "aws::rds::dbinstance"})
+IDLE_CLEAR: Final[frozenset[str]] = frozenset({"Active", "Low use", "Stopped"})
+"""Activities that settle an `idle` item: measured and not idle. `Not measured` settles nothing."""
+
+
+def _idle_rule_applies(resource_type: str, facts: Mapping[str, str]) -> bool:
+    """An instance or database on a snapshot that carries ownership facts."""
+    return resource_type.casefold() in IDLE_TYPES and "created_by" in facts
+
+
 @dataclass(frozen=True, slots=True)
 class Finding:
     """One thing to act on. `key` is stable across months: kind and resource id."""
@@ -92,6 +106,8 @@ def findings_of(view: SnapshotView) -> tuple[Finding, ...]:
                 resource.resource_id,
                 f"Resize {resource.name} ({finding})" + (f" to {target}" if target else ""),
             )
+        if _idle_rule_applies(resource.resource_type, facts) and facts.get("activity") == "Idle":
+            add("idle", resource.resource_id, f"{resource.name}: running but idle this period")
         if resource.resource_type.casefold() == ADVISOR_TYPE:
             text = facts.get("recommendation") or resource.name
             category = facts.get("category", "")
@@ -134,6 +150,8 @@ def checked_keys(view: SnapshotView) -> frozenset[str]:
         finding = facts.get("rightsizing_finding")
         if finding and finding.casefold() not in RIGHTSIZING_FINDINGS:
             checked.add(f"rightsizing:{resource.resource_id}")
+        if _idle_rule_applies(resource.resource_type, facts) and facts.get("activity") in IDLE_CLEAR:
+            checked.add(f"idle:{resource.resource_id}")
     return frozenset(checked)
 
 
