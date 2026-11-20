@@ -3,7 +3,7 @@ import { z } from "zod"
 import { catalogueFor, sectionEntry, sectionTitle, type Provider } from "@/lib/builder/catalogue"
 import { settled } from "@/lib/builder/draft"
 import type { SectionV4 } from "@/lib/builder/model"
-import { STARTERS, type Starter } from "@/lib/builder/starters"
+import { STARTERS, offersProvider, type Starter } from "@/lib/builder/starters"
 import { THEME_LABELS } from "@/lib/builder/theme"
 import {
   DESIGN_PRESETS,
@@ -30,7 +30,7 @@ import {
 
 export const OUTLINE_AUDIENCES = ["executive", "technical", "mixed"] as const
 export const OUTLINE_LENGTHS = ["short", "standard", "detailed"] as const
-export const OUTLINE_PERIODS = ["last_full_month", "last_30d"] as const
+export const OUTLINE_PERIODS = ["last_full_month", "last_30d", "last_7d"] as const
 
 export type OutlineAudience = (typeof OUTLINE_AUDIENCES)[number]
 export type OutlineLength = (typeof OUTLINE_LENGTHS)[number]
@@ -214,6 +214,7 @@ const STARTER_HINTS: ReadonlyArray<readonly [Starter["key"], RegExp]> = [
   ["executive_brief", /\b(exec|executive|board|one[- ]page|brief|ringkas|eksekutif|direksi)/i],
   ["capacity_planning", /\b(capacity|peak|p95|trend|forecast|kapasitas|tren)/i],
   ["backup_exposure", /\b(backup|exposure|internet|public ip|security|cadangan|keamanan)/i],
+  ["weekly_ownership", /\b(owner|ownership|who created|creator|custody|pemilik|pembuat)/i],
   ["rightsizing_review", /\b(rightsiz|right-siz|saving|cost|idle|oversiz|hemat|biaya)/i],
   ["quarterly_review", /\b(quarter|qbr|business review|kuartal|triwulan)/i],
 ]
@@ -223,7 +224,10 @@ const STARTER_HINTS: ReadonlyArray<readonly [Starter["key"], RegExp]> = [
  * monthly utilisation. Honest about it — `source` says the outline came from a starter.
  */
 export function starterOutline(input: Pick<DescribeInput, "description" | "provider" | "audience">): Outline {
-  const key = STARTER_HINTS.find(([, pattern]) => pattern.test(input.description))?.[0] ?? "monthly_utilization"
+  const hinted = STARTER_HINTS.find(
+    ([key, pattern]) => pattern.test(input.description) && offersProvider(STARTERS.find((entry) => entry.key === key)!, input.provider)
+  )
+  const key = hinted?.[0] ?? "monthly_utilization"
   const starter = STARTERS.find((entry) => entry.key === key)!
   const sections = validSections(
     input.provider,

@@ -25,6 +25,7 @@ from reporting_agent.aws.session import (
     ROLE_NAME,
     ROLE_PATH,
     assume_reader_role,
+    optional_actions,
     reader_policy,
     reader_role_arn,
     required_actions,
@@ -85,8 +86,18 @@ def test_the_policy_file_is_json_the_app_can_import() -> None:
         "Inventory",
         "Metrics",
         "BackupsAndRecommendations",
+        "Ownership",
         "CheckOwnPermissions",
     ]
+
+
+def test_optional_actions_are_granted_but_not_required() -> None:
+    """A role deployed before the Ownership statement existed still connects."""
+    optional = optional_actions()
+    assert optional == ("cloudtrail:LookupEvents", "iam:GetUser", "iam:GetRole")
+    assert not set(optional) & set(required_actions())
+    verbs = {action.split(":", 1)[1] for action in optional}
+    assert all(verb.startswith(("Describe", "Get", "List", "Lookup")) for verb in verbs)
 
 
 class FakeSts:

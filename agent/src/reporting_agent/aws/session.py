@@ -38,6 +38,7 @@ __all__ = [
     "ROLE_NAME",
     "ROLE_PATH",
     "assume_reader_role",
+    "optional_actions",
     "reader_policy",
     "reader_role_arn",
     "required_actions",
@@ -65,11 +66,31 @@ def required_actions(*, self_only: bool | None = None) -> tuple[str, ...]:
 
     `self_only=True` gives the actions granted on the role's own ARN only (the policy
     simulation must evaluate those against that ARN, not `*`); `False` gives the rest.
+
+    A statement marked `optional` is left out: the setup template grants it, but a role
+    deployed before it existed still connects, and the report says what it could not read
+    (see :func:`optional_actions`).
     """
     return tuple(
         action
         for statement in reader_policy()["statements"]
+        if not statement.get("optional")
         if self_only is None or bool(statement.get("self_only")) == self_only
+        for action in statement["actions"]
+    )
+
+
+def optional_actions() -> tuple[str, ...]:
+    """The actions the template grants that a connection does not need to be accepted.
+
+    Today the `Ownership` statement: CloudTrail's event history and the IAM lookups that say
+    who created a resource. A role without them is still a working connection; the ownership
+    sections then print the creator as unknown and say why.
+    """
+    return tuple(
+        action
+        for statement in reader_policy()["statements"]
+        if statement.get("optional")
         for action in statement["actions"]
     )
 

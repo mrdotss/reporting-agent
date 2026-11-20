@@ -273,7 +273,8 @@ class FakeEc2:
             volumes = (
                 [{"VolumeId": "vol-0123456789abcdef0", "VolumeType": "gp3", "Size": 8, "Iops": 3000,
                   "Encrypted": False, "State": "in-use", "AvailabilityZone": "us-east-1a",
-                  "Attachments": [{"InstanceId": "i-0123456789abcdef0"}]}]
+                  "Attachments": [{"InstanceId": "i-0123456789abcdef0"}],
+                  "CreateTime": datetime(2026, 8, 19, 3, 0, 40, tzinfo=UTC)}]
                 if self.region == "us-east-1"
                 else []
             )
@@ -380,6 +381,51 @@ class FakeOptimizer:
         ]}
 
 
+def trail_event(name: str, at: datetime, identity: dict[str, Any], response: dict[str, Any]) -> dict[str, Any]:
+    return {"EventName": name, "EventTime": at,
+            "CloudTrailEvent": json.dumps({"userIdentity": identity, "responseElements": response})}
+
+
+ALICE = {"type": "IAMUser", "userName": "alice", "arn": f"arn:aws:iam::{ACCOUNT}:user/alice"}
+TERRAFORM = {"type": "AssumedRole", "arn": f"arn:aws:sts::{ACCOUNT}:assumed-role/Terraform/ci-run",
+             "sessionContext": {"sessionIssuer": {"type": "Role", "userName": "Terraform"}}}
+
+
+class FakeCloudTrail:
+    """us-east-1 answers in pages; ap-southeast-3 refuses, as a role without the permission would."""
+
+    def __init__(self, region: str) -> None:
+        self.region = region
+
+    def lookup_events(self, **kwargs: Any) -> dict[str, Any]:
+        if self.region != "us-east-1":
+            raise denied("AccessDeniedException")
+        name = kwargs["LookupAttributes"][0]["AttributeValue"]
+        assert kwargs["StartTime"] < kwargs["EndTime"]
+        if name == "RunInstances":
+            if "NextToken" not in kwargs:
+                failed = trail_event("RunInstances", datetime(2026, 8, 18, tzinfo=UTC), ALICE, {})
+                return {"Events": [failed], "NextToken": "page-2"}
+            return {"Events": [trail_event("RunInstances", datetime(2026, 8, 19, 3, 0, tzinfo=UTC), ALICE,
+                                           {"instancesSet": {"items": [{"instanceId": "i-0123456789abcdef0"}]}})]}
+        if name == "CreateVpc":
+            return {"Events": [trail_event("CreateVpc", datetime(2026, 8, 1, 9, tzinfo=UTC), TERRAFORM,
+                                           {"vpc": {"vpcId": "vpc-0example"}})]}
+        if name == "AllocateAddress":
+            return {"Events": [trail_event("AllocateAddress", datetime(2026, 8, 2, tzinfo=UTC), {"type": "Root"},
+                                           {"allocationId": "eipalloc-0example"})]}
+        return {"Events": []}
+
+
+class FakeIam:
+    def get_user(self, UserName: str) -> dict[str, Any]:
+        assert UserName == "alice"
+        return {"User": {"UserName": UserName}}
+
+    def get_role(self, RoleName: str) -> dict[str, Any]:
+        raise denied("NoSuchEntity")
+
+
 def fake_clients(refused: set[str] = frozenset(), *, enrolled: bool = False) -> Any:
     cloudwatch = FakeCloudWatch()
 
@@ -394,6 +440,11 @@ def fake_clients(refused: set[str] = frozenset(), *, enrolled: bool = False) -> 
             return FakeBackup(region)
         if service == "compute-optimizer":
             return FakeOptimizer(enrolled)
+        if service == "cloudtrail":
+            return FakeCloudTrail(region)
+        if service == "iam":
+            assert region == "us-east-1", "IAM is asked once, in the home region"
+            return FakeIam()
         raise AssertionError(service)
 
     clients.cloudwatch = cloudwatch  # type: ignore[attr-defined]
@@ -409,6 +460,7 @@ def provider(store: InMemoryObjectStore, clients: Any) -> AwsProvider:
         actor_id="actor-1",
         run_id="run-1",
         home_region="us-east-1",
+        lookup_pause_s=0,
     )
 
 
@@ -516,13 +568,27 @@ def test_a_collection_replays_to_the_same_digest() -> None:
     archived = [(index, asyncio.run(store.get_bytes(key))) for index, key in enumerate(keys)]
     kinds = sorted(json.loads(gzip.decompress(body))["kind"] for _, body in archived)
     # Every CloudWatch call, and one facts object per source: describe, AWS Backup, its
-    # recovery points and Compute Optimizer.
-    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 4
+    # recovery points, Compute Optimizer and ownership (no price list here: none was given).
+    assert set(kinds) == {ARCHIVE_KIND_CLOUDWATCH, "facts"} and kinds.count("facts") == 5
 
-    facts = {
+    everything = {
         resource["resource_id"]: {fact["key"]: fact["value"] for fact in resource.get("facts") or []}
         for resource in document["resources"]
     }
+    ownership = ("created_by", "creator_type", "created_on", "creator_source", "creator_status")
+    owners = {rid: tuple(values.pop(key, None) for key in ownership) for rid, values in everything.items()}
+    facts = everything
+    assert owners[INSTANCE] == ("user/alice", "IAM user", "2026-08-19", "CloudTrail", "Active")
+    # The root volume was created by RunInstances, so it takes its instance's creator.
+    assert owners[VOLUME] == ("user/alice", "IAM user", "2026-08-19", "Launched with its instance", "Active")
+    assert owners[VPC] == ("role/Terraform/ci-run", "IAM role", "2026-08-01", "CloudTrail", "Deleted")
+    assert owners[EIP] == ("root", "Root user", "2026-08-02", "CloudTrail", "Not applicable")
+    assert owners[STOPPED][:2] == ("Unknown", "Unknown") and owners[STOPPED][2].startswith("before ")
+    assert owners[STOPPED][3] == "No event in 90 days"
+    # ap-southeast-3's history refused: an answer with its reason, not a gap.
+    assert owners[DATABASE] == ("Unknown", "Unknown", "Unknown", "No CloudTrail access", "Unknown")
+    assert owners[SUBNET] == (None,) * 5 and owners[RULE_IN] == (None,) * 5
+    assert not [g for g in outcome.gaps if g.get("source") == "aws_ownership"]
     assert facts[INSTANCE] == {
         "availability_zone": "us-east-1a", "instance_type": "t3.micro", "launch_date": "2026-08-19",
         "memory": "1 GiB", "platform": "Linux/UNIX", "private_ip": "10.0.0.4", "public_ip": "none",

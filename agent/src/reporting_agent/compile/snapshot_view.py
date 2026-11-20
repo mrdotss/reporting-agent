@@ -67,6 +67,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final, Protocol, runtime_checkable
 
+from reporting_agent.compile import activity as _activity
 from reporting_agent.errors import CompileFailedError
 
 __all__ = [
@@ -76,10 +77,13 @@ __all__ = [
     "CARDINALITY_STATISTIC",
     "CARDINALITY_TOKEN",
     "DECIMAL_STRING_PATTERN",
+    "FLEET_MIX_SEGMENTS",
+    "FLEET_MIX_TYPES",
     "SKU_CAPABILITIES",
     "SKU_CAPACITY_ESTIMATOR",
     "SKU_CAPACITY_STATISTIC",
     "SKU_METRIC_PREFIX",
+    "SUM_TOKEN",
     "CountKind",
     "DerivedSource",
     "FactTextValue",
@@ -91,8 +95,6 @@ __all__ = [
     "SnapshotValue",
     "SnapshotView",
     "WindowView",
-    "FLEET_MIX_SEGMENTS",
-    "FLEET_MIX_TYPES",
     "build_snapshot_view",
     "escape_pointer_token",
     "fleet_mix_segment",
@@ -859,6 +861,11 @@ class SnapshotView:
             pointer(CARDINALITY_NAMESPACE, *tokens, CARDINALITY_TOKEN)
         )
 
+    def derived_sum(self, *tokens: str) -> SnapshotValue | None:
+        """A derived total — `view.derived_sum("cost", "with_activity", "Idle")` — as a value
+        with its own re-resolvable pointer, or `None`. See :func:`_sum_value`."""
+        return self._by_pointer.get(pointer(CARDINALITY_NAMESPACE, SUM_TOKEN, *tokens, CARDINALITY_TOKEN))
+
     def count(self, kind: CountKind, *, fidelity_tier: str | None = None) -> int:
         """A count from the snapshot: resources, gaps, statistics or day buckets.
 
@@ -1236,6 +1243,12 @@ def build_snapshot_view(
             _record(by_pointer, value)
             week_stats[(resource_type.casefold(), value.metric, value.statistic, weekday, hour)] = value
 
+    # The ownership report's derived values: each covered AWS resource's activity, whether it
+    # needs attention, and whether it was created in this period (`compile/activity.py`).
+    # Indexed beside the collected facts at their own reserved pointers, so a `TextFact` can
+    # print one and the verifier, rebuilding this view, re-derives it from the same document.
+    ownership_counts = _derive_ownership(resources, facts_by_pointer, window_stats, window, collected_at_of(document))
+
     gaps = tuple(
         _build_gap(raw_gap, position, pointer("gaps", position))
         for position, raw_gap in enumerate(gaps_raw)
@@ -1376,6 +1389,10 @@ def build_snapshot_view(
     ]
     for tokens, total in cardinalities:
         _record(by_pointer, _cardinality_value(tokens, total, window.descriptor))
+    for tokens, total in ownership_counts.counts:
+        _record(by_pointer, _cardinality_value(tokens, total, window.descriptor))
+    for tokens, amount in ownership_counts.sums:
+        _record(by_pointer, _sum_value(tokens, amount, window.descriptor))
 
     return SnapshotView(
         snapshot_id=snapshot_id,
@@ -1407,6 +1424,151 @@ def build_snapshot_view(
         _day_bucket_count=day_bucket_count,
         _month_bucket_count=month_bucket_count,
         _week_stats=MappingProxyType(week_stats),
+    )
+
+
+SUM_TOKEN: Final[str] = "sum"
+"""The first token of a derived **total** under `CARDINALITY_NAMESPACE`: `/$counts/sum/…/count`."""
+
+DERIVED_NAMESPACE: Final[str] = "$derived"
+"""The reserved namespace a **derived fact** is indexed at: `/$derived/resources/<n>/<key>/value`.
+
+The text-side twin of `CARDINALITY_NAMESPACE`, and honest for the same three reasons: no
+key the Snapshot_Builder writes begins with `$`, the derivation is fixed code
+(`compile/activity.py`) over values the document stores, and rebuilding the view from the
+same document derives the same text at the same address."""
+
+
+@dataclass(frozen=True, slots=True)
+class _OwnershipCounts:
+    counts: tuple[tuple[tuple[str, ...], int], ...]
+    sums: tuple[tuple[tuple[str, ...], Decimal], ...]
+
+
+def collected_at_of(document: Mapping[str, object]) -> str:
+    raw = document.get("collected_at")
+    return raw if isinstance(raw, str) and raw else "unknown"
+
+
+def _derive_ownership(
+    resources: Sequence[ResourceView],
+    facts_by_pointer: dict[str, FactTextValue],
+    window_stats: Mapping[tuple[str, str, str, str], SnapshotValue],
+    window: WindowView,
+    collected_at: str,
+) -> _OwnershipCounts:
+    """Index each covered resource's derived facts, and return the counts and totals.
+
+    Every count and total is returned **even at zero**, so a week with nothing idle still
+    has a figure to print — the same rule At a glance's counts follow.
+    """
+    facts_of: dict[str, dict[str, str]] = {}
+    for fact in facts_by_pointer.values():
+        if fact.pointer.endswith("/value"):
+            facts_of.setdefault(fact.resource_id, {})[fact.key] = fact.value
+
+    by_activity = dict.fromkeys(_activity.ACTIVITY_VALUES, 0)
+    cost_by_activity = {name: Decimal(0) for name in _activity.ACTIVITY_VALUES}
+    created_in_period = 0
+    unknown_creator = 0
+    covered = 0
+    per_creator: dict[str, list[int | Decimal]] = {}
+    total_cost = Decimal(0)
+    attention_cost = Decimal(0)
+
+    for index, resource in enumerate(resources):
+        facts = facts_of.get(resource.resource_id, {})
+
+        def stat(metric: str, statistic: str, rid: str = resource.resource_id) -> Decimal | None:
+            found = window_stats.get((rid, metric, statistic, ""))
+            return None if found is None else found.value
+
+        derived = _activity.derive(
+            resource_type=resource.resource_type,
+            power_state=resource.power_state,
+            facts=facts,
+            stat=stat,
+            period_start=window.start,
+            period_end=window.end,
+        )
+        if derived is None:
+            continue
+        covered += 1
+        values = dict(derived.facts)
+        for key, value in derived.facts:
+            at = pointer(DERIVED_NAMESPACE, "resources", index, key, "value")
+            facts_by_pointer[at] = FactTextValue(
+                key=key,
+                value=value,
+                source=_activity.DERIVED_FACT_SOURCE,
+                collected_at=collected_at,
+                pointer=at,
+                resource_id=resource.resource_id,
+            )
+        activity = values[_activity.ACTIVITY_FACT_KEY]
+        by_activity[activity] += 1
+        if values.get(_activity.CREATED_IN_PERIOD_FACT_KEY) == "yes":
+            created_in_period += 1
+        cost = _activity.monthly_cost(facts.get(_activity.COST_FACT_KEY)) or Decimal(0)
+        cost_by_activity[activity] += cost
+        total_cost += cost
+        if activity in _activity.ATTENTION_VALUES:
+            attention_cost += cost
+        creator = facts.get(_activity.CREATOR_FACT_KEY)
+        if creator is None:
+            continue
+        if creator == "Unknown":
+            unknown_creator += 1
+        held = per_creator.setdefault(creator, [0, 0, Decimal(0)])
+        held[0] += 1
+        held[1] += 1 if activity in _activity.ATTENTION_VALUES else 0
+        held[2] += cost
+
+    counts: list[tuple[tuple[str, ...], int]] = [
+        (("ownership", "resources"), covered),
+        (("ownership", "created_in_period"), created_in_period),
+        (("ownership", "creator_unknown"), unknown_creator),
+        (("ownership", "attention"), sum(by_activity[name] for name in _activity.ATTENTION_VALUES)),
+        (("created_by",), len(per_creator)),
+        *((("ownership", "with_activity", name), total) for name, total in by_activity.items()),
+    ]
+    sums: list[tuple[tuple[str, ...], Decimal]] = [
+        (("cost", "total"), total_cost),
+        (("cost", "attention"), attention_cost),
+        *((("cost", "with_activity", name), total) for name, total in cost_by_activity.items()),
+    ]
+    for creator, (resources_count, attention, cost) in sorted(per_creator.items()):
+        counts.append((("created_by", "by_name", creator), int(resources_count)))
+        counts.append((("created_by", "by_name", creator, "attention"), int(attention)))
+        sums.append((("cost", "created_by", creator), Decimal(cost)))
+    return _OwnershipCounts(counts=tuple(counts), sums=tuple(sums))
+
+
+def _sum_value(tokens: tuple[str, ...], total: Decimal, window: str) -> SnapshotValue:
+    """One derived total of `est_monthly_usd` estimates, in USD at two places.
+
+    A cardinality's sibling, under the same reserved namespace and for the same reason: the
+    total is printed as a figure, and a figure needs a pointer the verifier re-resolves. The
+    `formula` names what was added up, and rebuilding the view adds up the same strings.
+    """
+    address = pointer(CARDINALITY_NAMESPACE, SUM_TOKEN, *tokens, CARDINALITY_TOKEN)
+    collection = pointer(*tokens)
+    # Unquantized: each addend is a two-place string, so a real total carries two places,
+    # and an empty one stays the bare `0` the null-context render requires of a derived figure.
+    exponent = total.as_tuple().exponent
+    return SnapshotValue(
+        value=total,
+        unit="usd",
+        statistic=SUM_TOKEN,
+        estimator=CARDINALITY_ESTIMATOR,
+        fidelity_tier="",
+        scale=max(0, -exponent) if isinstance(exponent, int) else 0,
+        metric=f"sum(est_monthly_usd{collection})",
+        resource_id="",
+        window=window,
+        pointer=address,
+        formula=f"sum(est_monthly_usd{collection})",
+        derived_from=(DerivedSource(kind=CARDINALITY_SOURCE_KIND, name=collection, unit="usd"),),
     )
 
 

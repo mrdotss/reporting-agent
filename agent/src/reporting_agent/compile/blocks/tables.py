@@ -404,6 +404,10 @@ def _empty_message_id(block: BlockSpec) -> str | None:
     return declared if isinstance(declared, str) and declared else None
 
 
+OBSERVED_SPAN_KEY: Final[str] = "observed_span"
+"""A catalogue-set `resource_table` config flag: state the facts' observation span in the note."""
+
+
 def _fact_header(key: str) -> str:
     """A fact key as a column label: `private_ip` -> "Private IP".
 
@@ -445,6 +449,8 @@ _FACT_INITIALISMS: Final[Mapping[str, str]] = {
     "az": "AZ",
     "cidr": "CIDR",
     "ips": "IPs",
+    "est": "Est.",
+    "usd": "USD",
 }
 """Words a plain `.capitalize()` gets wrong. Everything else title-cases correctly."""
 
@@ -710,7 +716,11 @@ def _resource_rows_table(
     # One decision, used by the header and by every row, so the two cannot disagree about
     # how many cells a fact contributes.
     instants = _fact_instants(context, shown, answered)
-    with_observed_at = len(instants) > 1
+    # A table that mixes sources on purpose — the ownership register's creator, price and
+    # derived activity, each read at its own instant — states the span once under the
+    # table rather than an instant column beside every value. Catalogue-set, never authored.
+    span = block.config.get(OBSERVED_SPAN_KEY) is True and len(instants) > 1
+    with_observed_at = len(instants) > 1 and not span
     instant = next(iter(instants)) if len(instants) == 1 else None
 
     # The compiler's line under the table: the one instant its facts agree on, and the
@@ -724,6 +734,16 @@ def _resource_rows_table(
     lines: list[str] = []
     if instant is not None:
         lines.append(context.messages.text("doc.table.observed_at", instant=instant))
+    if span:
+        every = sorted(
+            {
+                fact.collected_at
+                for resource in shown
+                for fact in context.view.facts_for(resource.resource_id)
+                if fact.key in set(answered)
+            }
+        )
+        lines.append(context.messages.text("doc.table.observed_between", first=every[0], last=every[-1]))
     if unanswered:
         lines.append(
             context.messages.text("doc.notice.no_facts", keys=", ".join(unanswered))
@@ -1667,8 +1687,12 @@ INVENTORY_GROUP_BY: Final[tuple[str, ...]] = (
     "resource_group",
     "region",
     "resource_type",
+    "creator",
 )
-"""The four groupings, mirrored in `compile/definition.py`'s `BLOCK_CONFIG` enum."""
+"""The five groupings, mirrored in `compile/definition.py`'s `BLOCK_CONFIG` enum.
+
+`creator` groups by the `created_by` fact (`aws/ownership.py`) rather than by a field of
+`ResourceView`, so it has its own table and no `_INVENTORY_DIMENSION` entry."""
 
 _INVENTORY_DIMENSION: Final[dict[str, str]] = {
     "resource_group": "resource_group",
@@ -1687,9 +1711,9 @@ assert set(INVENTORY_GROUP_BY) == set(
     "the groupings this compiler handles and the ones the validator admits disagree: "
     f"{sorted(set(INVENTORY_GROUP_BY) ^ set(BLOCK_CONFIG['inventory_summary']['enums']['group_by']))}"
 )
-assert set(_INVENTORY_DIMENSION) == set(INVENTORY_GROUP_BY) - {"subscription"}, (
-    "every grouping but `subscription` is a rollup and needs a snapshot dimension to "
-    f"count over: {sorted(set(INVENTORY_GROUP_BY) - {'subscription'} ^ set(_INVENTORY_DIMENSION))}"
+assert set(_INVENTORY_DIMENSION) == set(INVENTORY_GROUP_BY) - {"subscription", "creator"}, (
+    "every grouping but `subscription` and `creator` is a rollup and needs a snapshot dimension to "
+    f"count over: {sorted(set(INVENTORY_GROUP_BY) - {'subscription', 'creator'} ^ set(_INVENTORY_DIMENSION))}"
 )
 assert all(
     hasattr(ResourceView, dimension) for dimension in _INVENTORY_DIMENSION.values()
@@ -1752,6 +1776,8 @@ def compile_inventory_summary(
 
     if group_by == "subscription":
         table = _subscription_pairs_table(context, table_cursor, style, caption)
+    elif group_by == "creator":
+        table = _creator_rollup_table(context, table_cursor, style, caption)
     else:
         table = _dimension_rollup_table(
             context, table_cursor, _INVENTORY_DIMENSION[group_by], style, caption
@@ -1912,6 +1938,94 @@ def _dimension_rollup_table(
         path=table_cursor.path,
         style=style,
         columns=columns,
+        rows=tuple(rows),
+        caption=caption,
+    )
+
+
+_CREATOR_FACTS: Final[tuple[str, ...]] = ("created_by", "creator_type", "creator_status")
+"""The creator's name (the key column), type and status."""
+
+
+def _creator_rollup_table(
+    context: BlockContext,
+    table_cursor: BlockCursor,
+    style: str,
+    caption: str | None,
+) -> Table:
+    """One row per creator: who, what kind, whether they still exist, and what they own.
+
+    The weekly ownership report's "who owns what". The creator's name, type and status are
+    **text facts** read off the first resource they created (every resource of one creator
+    carries the same three), so each cell re-resolves to a collected value. The counts and
+    the estimated monthly total are derived figures (`compile/snapshot_view._derive_ownership`).
+
+    Ordered by resources descending, then by those needing attention, then by name, so two
+    creators holding four resources each land in the same order on every replay. `Unknown`
+    is a row like any other: how many resources nobody can be named for is an answer.
+    """
+    messages = context.messages
+    view = context.view
+    members: dict[str, dict[str, FactTextValue]] = {}
+    for resource in view.resources:
+        facts = {fact.key: fact for fact in view.facts_for(resource.resource_id) if fact.key in _CREATOR_FACTS}
+        creator = facts.get("created_by")
+        if creator is not None and creator.value not in members:
+            members[creator.value] = facts
+
+    if not members:
+        return empty_scope_table(table_cursor, style, caption, messages=messages)
+
+    def total(name: str, *tail: str) -> int:
+        value = view.cardinality("created_by", "by_name", name, *tail)
+        return 0 if value is None else int(value.value)
+
+    ordered = sorted(members, key=lambda name: (-total(name), -total(name, "attention"), name))
+    rows: list[Row] = []
+    for ordinal, name in enumerate(ordered[:MAX_TABLE_ROWS]):
+        row_cursor = table_cursor.child("rows", ordinal)
+        # The key column is the creator's name as text — the verifier finds a row by it —
+        # and the same string as the `created_by` fact in the next cell, which proves it.
+        cells: list[object] = [text_cell(row_cursor.child("cells", 0), name)]
+        for key in _CREATOR_FACTS[1:]:
+            cell_cursor = row_cursor.child("cells", len(cells))
+            fact = members[name].get(key)
+            if fact is None:
+                cells.append(empty_cell(cell_cursor))
+            else:
+                cells.append(TextFactCell(path=cell_cursor.path, fact=cell_cursor.child("fact", 0).text_fact(fact)))
+        for value in (
+            view.cardinality("created_by", "by_name", name),
+            view.cardinality("created_by", "by_name", name, "attention"),
+            view.derived_sum("cost", "created_by", name),
+        ):
+            cell_cursor = row_cursor.child("cells", len(cells))
+            cells.append(empty_cell(cell_cursor) if value is None else _figure_cell(cell_cursor, context, value))
+        rows.append(Row(path=row_cursor.path, key=name, cells=tuple(cells)))  # type: ignore[arg-type]
+
+    truncation = omitted_row(
+        table_cursor.child("rows", len(rows)),
+        view,
+        len(rows),
+        len(ordered),
+        messages=messages,
+        total_tokens=("created_by",),
+        cells=6,
+    )
+    if truncation is not None:
+        rows.append(truncation)
+
+    return Table(
+        path=table_cursor.path,
+        style=style,
+        columns=(
+            Column(key="created_by", header=messages.text("doc.inventory.creator")),
+            Column(key="creator_type", header=messages.text("doc.inventory.creator_type")),
+            Column(key="creator_status", header=messages.text("doc.inventory.creator_status")),
+            Column(key="count", header=messages.text("doc.inventory.resources")),
+            Column(key="attention", header=messages.text("doc.inventory.attention")),
+            Column(key="est_monthly_usd", header=messages.text("doc.inventory.est_monthly_usd")),
+        ),
         rows=tuple(rows),
         caption=caption,
     )

@@ -127,8 +127,8 @@ export const BLOCK_CONFIG = {
   },
   at_a_glance: {
     required: [],
-    optional: ["caption"],
-    enums: {},
+    optional: ["caption", "focus"],
+    enums: { focus: ["estate", "ownership"] },
   },
 
   // Req 16.1 — `metrics` names the metric/statistic pairs this row's cards
@@ -187,7 +187,7 @@ export const BLOCK_CONFIG = {
     required: ["group_by"],
     optional: ["caption"],
     enums: {
-      group_by: ["subscription", "resource_group", "region", "resource_type"],
+      group_by: ["subscription", "resource_group", "region", "resource_type", "creator"],
     },
   },
 

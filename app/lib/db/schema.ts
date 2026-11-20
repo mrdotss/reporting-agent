@@ -1450,21 +1450,40 @@ export const runSchedules = pgTable(
       .references(() => reportTemplates.id, { onDelete: "cascade" }),
     /** AWS only: the regions each run covers; empty is every enabled region. */
     regions: text("regions").array(),
-    dayOfMonth: integer("day_of_month").notNull(),
+    /** `monthly` (on `dayOfMonth`) or `weekly` (on `dayOfWeek`); one schedule of each per customer. */
+    cadence: text("cadence").notNull().default("monthly"),
+    dayOfMonth: integer("day_of_month"),
+    /** ISO weekday, 1 (Monday) to 7 (Sunday), for a weekly schedule. */
+    dayOfWeek: integer("day_of_week"),
     hour: integer("hour").notNull(),
     timezone: text("timezone").notNull().default("Asia/Jakarta"),
     enabled: boolean("enabled").notNull().default(true),
+    /** The period last claimed: `YYYY-MM` for a monthly schedule, ISO `YYYY-Www` for a weekly one. */
     lastAttemptMonth: text("last_attempt_month"),
     lastAttemptAt: instant("last_attempt_at"),
     lastRunId: text("last_run_id"),
     lastError: text("last_error"),
+    /**
+     * Email each scheduled run to the customer's contacts once it passes verification,
+     * approved as the member who saved the schedule. Off unless the member turned it on.
+     */
+    autoSend: boolean("auto_send").notNull().default(false),
+    /** The run last emailed by `autoSend`, so a tick sends each run at most once. */
+    lastSentRunId: text("last_sent_run_id"),
+    /** Why the last automatic email did not go, kept for the run form; `null` once one goes. */
+    lastSendError: text("last_send_error"),
     createdAt: instant("created_at").notNull().defaultNow(),
     updatedAt: instant("updated_at").notNull().defaultNow(),
   },
   (t) => [
-    unique("run_schedules_project_uq").on(t.projectId),
+    unique("run_schedules_project_cadence_uq").on(t.projectId, t.cadence),
     index("run_schedules_workspace_idx").on(t.workspaceId),
     check("run_schedules_day_ck", sql`${t.dayOfMonth} between 1 and 28`),
+    check("run_schedules_weekday_ck", sql`${t.dayOfWeek} between 1 and 7`),
+    check(
+      "run_schedules_cadence_ck",
+      sql`(${t.cadence} = 'monthly' and ${t.dayOfMonth} is not null) or (${t.cadence} = 'weekly' and ${t.dayOfWeek} is not null)`
+    ),
     check("run_schedules_hour_ck", sql`${t.hour} between 0 and 23`),
   ]
 )

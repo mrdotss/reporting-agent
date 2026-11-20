@@ -4,7 +4,7 @@ import { METRIC_CATALOG } from "@/lib/templates/catalog"
 import { collectDefinitionIssues } from "@/lib/templates/definition"
 
 import { catalogueFor, type Provider } from "./catalogue"
-import { STARTERS, starterDraft } from "./starters"
+import { STARTERS, offersProvider, starterDraft } from "./starters"
 
 /**
  * Every starter, for both providers, is a draft the validator accepts and names only
@@ -25,9 +25,20 @@ describe.each<Provider>(["aws", "azure"])("%s starters", (provider) => {
   })
 })
 
-test("seven starters, four of them new", () => {
-  expect(STARTERS).toHaveLength(7)
-  expect(STARTERS.filter((starter) => starter.isNew)).toHaveLength(4)
+test("eight starters, five of them new", () => {
+  expect(STARTERS).toHaveLength(8)
+  expect(STARTERS.filter((starter) => starter.isNew)).toHaveLength(5)
+})
+
+test("Weekly ownership is an AWS starter over the last 7 days", () => {
+  const weekly = STARTERS.find((starter) => starter.key === "weekly_ownership")!
+  expect(weekly.period).toBe("last_7d")
+  expect(offersProvider(weekly, "aws")).toBe(true)
+  expect(offersProvider(weekly, "azure")).toBe(false)
+  const draft = starterDraft(weekly, "aws", weekly.name, weekly.theme, METRIC_CATALOG)
+  expect(draft.sections.map((section) => section.type)).toEqual([
+    "ownership_glance", "idle_resources", "new_resources", "creators", "ownership_register", "coverage_and_verification",
+  ])
 })
 
 test("the three themes the builder added each open a starter, and the brief has no contents page", () => {

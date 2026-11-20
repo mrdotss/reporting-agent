@@ -40,7 +40,7 @@ describe("the AWS onboarding artifacts", () => {
     }
     // Nothing that writes: every verb is a read.
     for (const action of fromFile) {
-      expect(action.split(":")[1]).toMatch(/^(Describe|Get|List|Simulate)/)
+      expect(action.split(":")[1]).toMatch(/^(Describe|Get|List|Lookup|Simulate)/)
     }
   })
 

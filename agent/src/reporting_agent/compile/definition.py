@@ -161,8 +161,8 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
     },
     "at_a_glance": {
         "required": [],
-        "optional": ["caption"],
-        "enums": {},
+        "optional": ["caption", "focus"],
+        "enums": {"focus": ["estate", "ownership"]},
     },
     "kpi_row": {
         "required": ["metrics"],
@@ -194,7 +194,7 @@ BLOCK_CONFIG: Final[dict[str, dict[str, object]]] = {
         "required": ["group_by"],
         "optional": ["caption"],
         "enums": {
-            "group_by": ["subscription", "resource_group", "region", "resource_type"]
+            "group_by": ["subscription", "resource_group", "region", "resource_type", "creator"]
         },
     },
     "distribution_chart": {

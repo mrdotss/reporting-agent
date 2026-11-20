@@ -739,6 +739,42 @@
           "source": "compute_optimizer",
           "projectable": false,
           "absent_gap_type": "optimizer_not_available"
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "est_monthly_usd",
+          "value_kind": "text",
+          "source": "aws_list_price",
+          "projectable": false
         }
       ]
     },
@@ -813,6 +849,42 @@
           "source": "aws_recovery_points",
           "projectable": false,
           "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "est_monthly_usd",
+          "value_kind": "text",
+          "source": "aws_list_price",
+          "projectable": false
         }
       ]
     },
@@ -899,6 +971,42 @@
           "source": "aws_recovery_points",
           "projectable": false,
           "absent_gap_type": "backup_not_configured"
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "est_monthly_usd",
+          "value_kind": "text",
+          "source": "aws_list_price",
+          "projectable": false
         }
       ]
     },
@@ -920,6 +1028,36 @@
           "key": "vpc_state",
           "value_kind": "text",
           "source": "aws",
+          "projectable": false
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
           "projectable": false
         }
       ]
@@ -985,6 +1123,42 @@
           "value_kind": "text",
           "source": "aws",
           "projectable": false
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "est_monthly_usd",
+          "value_kind": "text",
+          "source": "aws_list_price",
+          "projectable": false
         }
       ]
     },
@@ -1015,6 +1189,36 @@
           "source": "aws",
           "projectable": false,
           "unit": "count"
+        },
+        {
+          "key": "created_by",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_type",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "created_on",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_source",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
+        },
+        {
+          "key": "creator_status",
+          "value_kind": "text",
+          "source": "aws_ownership",
+          "projectable": false
         }
       ]
     },
