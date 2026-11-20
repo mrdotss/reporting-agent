@@ -143,8 +143,9 @@ def test_the_headline_counts_and_the_email_summary_agree(
     assert rows_of("Unknown")["Unknown"] == "3"
     assert "Nothing looks idle this week." in text
     # The report opens on its own first page: nothing of the cover or document control.
+    # The Word file keeps the section title; the designed PDF prints the kicker in its place.
     opening = [p.text for p in document.paragraphs if p.text.strip()][:2]
-    assert opening[0] == "Weekly ownership report", opening
+    assert opening == ["Ownership at a Glance", "Weekly ownership report"], opening
     assert "Document control" not in text and "Contents" not in text
 
     glance = json.loads(store.get(next(k for k in store.keys() if k.endswith("/glance.json"))).body)  # type: ignore[union-attr]

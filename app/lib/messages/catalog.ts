@@ -1042,6 +1042,10 @@ export const MESSAGE_CATALOG = {
     en: "{idle} resources look idle {when}.",
     id: "{idle} sumber daya tampak menganggur {when}.",
   },
+  "doc.glance.ownership.joined": {
+    en: "{first} {second}",
+    id: "{first} {second}",
+  },
   "doc.glance.ownership.unowned.none": {
     en: "Each one has a creator who is still here.",
     id: "Semuanya punya pembuat yang masih ada.",
@@ -1136,15 +1140,15 @@ export const MESSAGE_CATALOG = {
   },
   "doc.ownership.type.eip": {
     en: "Elastic IP",
-    id: "Elastic IP",
+    id: "Alamat Elastic IP",
   },
   "doc.ownership.type.vpc": {
     en: "VPC",
-    id: "VPC",
+    id: "Jaringan VPC",
   },
   "doc.ownership.type.security_group": {
     en: "Security group",
-    id: "Security group",
+    id: "Grup keamanan",
   },
   "doc.section.action_register": {
     en: "Actions",

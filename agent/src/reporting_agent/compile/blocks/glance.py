@@ -274,7 +274,10 @@ def _count_of(view: SnapshotView, *tokens: str) -> int:
 
 
 def _headline_inlines(context: BlockContext, cursor: BlockCursor, when: str) -> list[Text | Figure]:
+    """Two sentences, the idle count and then how many of those nobody owns, joined by a
+    message of their own so a language that joins sentences differently can say so."""
     view = context.view
+    messages = context.messages
     inlines: list[Text | Figure] = []
     idle = view.cardinality("ownership", "with_activity", _activity.ACTIVITY_IDLE)
     unowned = view.cardinality("ownership", "idle_unowned")
@@ -283,21 +286,26 @@ def _headline_inlines(context: BlockContext, cursor: BlockCursor, when: str) -> 
     if idle is None or idle_n == 0:
         _sentence(context, cursor, inlines, "doc.glance.ownership.headline.none", when=when)
         return inlines
-    _sentence(
-        context, cursor, inlines,
+    first = messages.text(
         "doc.glance.ownership.headline.one" if idle_n == 1 else "doc.glance.ownership.headline.many",
-        (("idle", idle),), when=when,
+        idle=_SLOT, when=when,
     )
-    inlines.append(Text(path=cursor.child("inlines", len(inlines)).path, text=" "))
+    figures: list[SnapshotValue] = [idle]
     if unowned is None or unowned_n == 0:
-        _sentence(context, cursor, inlines, "doc.glance.ownership.unowned.none")
+        second = messages.text("doc.glance.ownership.unowned.none")
     elif unowned_n == idle_n:
-        _sentence(
-            context, cursor, inlines,
-            "doc.glance.ownership.unowned.it" if idle_n == 1 else "doc.glance.ownership.unowned.all",
+        second = messages.text(
+            "doc.glance.ownership.unowned.it" if idle_n == 1 else "doc.glance.ownership.unowned.all"
         )
     else:
-        _sentence(context, cursor, inlines, "doc.glance.ownership.unowned.some", (("unowned", unowned),))
+        second = messages.text("doc.glance.ownership.unowned.some", unowned=_SLOT)
+        figures.append(unowned)
+    parts = messages.text("doc.glance.ownership.joined", first=first, second=second).split(_SLOT)
+    for index, part in enumerate(parts):
+        if part:
+            inlines.append(Text(path=cursor.child("inlines", len(inlines)).path, text=part))
+        if index < len(figures):
+            inlines.append(_figure(context, cursor.child("inlines", len(inlines)), figures[index]))
     return inlines
 
 
